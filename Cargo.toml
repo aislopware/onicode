@@ -253,6 +253,9 @@ objc2-core-audio = { version = "=0.3.2", default-features = false, features = ["
 objc2-core-audio-types = { version = "=0.3.2", default-features = false, features = ["std"] }
 # Caps Lock through the HID system's parameter connection (`onicode_desktop_input::backend`).
 objc2-io-kit = { version = "=0.3.2", default-features = false, features = ["std", "hidsystem", "libc"] }
+# Agent alerts with buttons and a reply field (`onicode_notify::center`); the version gpui-fast
+# already locks.
+objc2-user-notifications = { version = "=0.3.2", default-features = false, features = ["std"] }
 block2 = "=0.6.2"
 # The audio ring model-checked over every interleaving (`onicode-desktop-codec`, `--cfg
 # onicode_loom` only); the version the graph already locks.

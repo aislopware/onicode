@@ -13,6 +13,7 @@
 //! - [`loaders`] — onicode pulse loader, gradient spinner, boot splash.
 
 mod account_usage;
+mod agent_alerts;
 pub mod app_menus;
 pub mod app_update;
 pub mod appearance;
@@ -250,6 +251,9 @@ pub fn run_app(config: UiConfig) {
             }
         })
         .detach();
+        // Agent alerts with actions: installed before the first frame, so the
+        // click that launched the app is not lost.
+        agent_alerts::init(state.clone(), cx);
         // Sessions run in the background engine, which outlives this window
         // (and posts the desktop banners); embedding stays the fallback, or
         // the choice with ONICODE_EMBED_ENGINE=1. An embedded engine posts the
@@ -333,7 +337,7 @@ pub(crate) fn activate_main_window(cx: &mut App) {
 
 /// A clicked banner: bring Onicode forward on its chat or settings destination,
 /// reopening the main window first if ⌘W closed it.
-fn open_notification_target(target: String, state: &gpui::Entity<state::AppState>, cx: &mut App) {
+pub(crate) fn open_notification_target(target: String, state: &gpui::Entity<state::AppState>, cx: &mut App) {
     activate_main_window(cx);
     let shell = cx
         .windows()

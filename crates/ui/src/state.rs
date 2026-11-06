@@ -929,6 +929,9 @@ pub struct AppState {
     /// Device-local agent CLI update lifecycle. Unlike `ListHarnesses`, this
     /// standing stream may be backed by subprocess and network probes.
     pub harness_updates: Vec<onicode_proto::HarnessUpdateStatus>,
+    /// The agent alerts the engine wants shown (`WatchAlerts`), which
+    /// `crate::agent_alerts` presents. Empty unless this app presents them.
+    pub agent_alerts: Vec<onicode_proto::alerts::AgentAlert>,
     /// Data directory (`ui-settings.json`, `composer-defaults.json`); set at
     /// bootstrap so child views can persist small preference files.
     pub data_dir: Option<PathBuf>,
@@ -1051,6 +1054,7 @@ impl AppState {
             review_comment_flushes: HashMap::new(),
             local_device_id: None,
             harness_updates: Vec::new(),
+            agent_alerts: Vec::new(),
             data_dir: None,
             clock: ClockTransitions::default(),
             engine: None,
@@ -1712,6 +1716,14 @@ impl AppState {
             return false;
         }
         self.harness_updates = statuses;
+        true
+    }
+
+    pub fn apply_agent_alerts(&mut self, alerts: Vec<onicode_proto::alerts::AgentAlert>) -> bool {
+        if self.agent_alerts == alerts {
+            return false;
+        }
+        self.agent_alerts = alerts;
         true
     }
 
@@ -2814,8 +2826,10 @@ impl AppState {
     }
 
     /// Whether one of the app's windows is focused, for the engine's desktop
-    /// banners ("only while Onicode isn't focused"). Repeated while focused, so
-    /// a window that dies focused stops counting.
+    /// banners ("only while Onicode isn't focused") and the chat it leaves out
+    /// of the alerts. Repeated while focused or presenting alerts, so a window
+    /// that dies focused stops counting and the engine takes the banners back
+    /// from an app that is gone.
     pub fn set_viewport_focused(&mut self, focused: bool, cx: &mut Context<Self>) {
         if self.viewport_focused == focused && self.focus_task.is_some() {
             return;
@@ -2836,9 +2850,16 @@ impl AppState {
         };
         let viewport_id = self.viewport_id.clone();
         let focused = self.viewport_focused;
+        let chat = self.selected_chat.clone().filter(|_| focused);
+        let presents = crate::agent_alerts::presenting();
         self.focus_task = Some(cx.spawn(async move |_, cx| {
             loop {
-                let params = serde_json::json!({ "viewportId": viewport_id, "focused": focused });
+                let params = serde_json::json!({
+                    "viewportId": viewport_id,
+                    "focused": focused,
+                    "chatId": chat,
+                    "presents": presents,
+                });
                 if let Err(error) = engine
                     .client()
                     .call(methods::SET_VIEWPORT_FOCUS, params)
@@ -2846,7 +2867,7 @@ impl AppState {
                 {
                     tracing::debug!(%error, "viewport focus report failed");
                 }
-                if !focused {
+                if !focused && !presents {
                     return;
                 }
                 cx.background_executor().timer(REPEAT).await;
@@ -2854,16 +2875,20 @@ impl AppState {
         }));
     }
 
-    /// Tell the engine this app's windows are going away unfocused (the app
-    /// is quitting), so banners aren't held back for a focus report that's
-    /// about to go stale.
+    /// Tell the engine this app's windows are going away (the app is
+    /// quitting), so banners aren't held back for a focus report that's about
+    /// to go stale, and the engine posts them itself again.
     pub fn viewport_closing(&self) -> Option<impl std::future::Future<Output = ()> + use<>> {
         let engine = self.engine.clone().filter(|engine| {
             engine
                 .engine_info()
                 .supports(onicode_proto::capabilities::DESKTOP_NOTIFICATIONS_V1)
         })?;
-        let params = serde_json::json!({ "viewportId": self.viewport_id, "focused": false });
+        let params = serde_json::json!({
+            "viewportId": self.viewport_id,
+            "focused": false,
+            "presents": false,
+        });
         Some(async move {
             let _ = engine
                 .client()
@@ -2916,6 +2941,8 @@ impl AppState {
         let engine_info = handle.engine_info();
         let supports_harness_updates =
             engine_info.supports(onicode_proto::capabilities::HARNESS_UPDATES_V1);
+        let takes_alerts = crate::agent_alerts::presenting()
+            && engine_info.supports(onicode_proto::capabilities::DESKTOP_NOTIFICATIONS_V1);
         self.local_device_id = Some(engine_info.device_id.clone());
         self.link_roots_revision = self.link_roots_revision.wrapping_add(1);
         if !supports_harness_updates {
@@ -2980,6 +3007,16 @@ impl AppState {
                 methods::WATCH_HARNESS_UPDATES,
                 AppState::apply_harness_updates,
             ));
+        }
+        if takes_alerts {
+            watch_tasks.push(spawn_watch(
+                cx,
+                handle.clone(),
+                methods::WATCH_ALERTS,
+                AppState::apply_agent_alerts,
+            ));
+        } else {
+            self.agent_alerts.clear();
         }
         self.watch_tasks = watch_tasks;
         self.reconcile_change_request_watches(cx);
@@ -3168,6 +3205,10 @@ impl AppState {
             }
         }
         self.selected_chat = chat_id.clone();
+        // The engine leaves out alerts for the chat on screen.
+        if self.viewport_focused {
+            self.report_focus(cx);
+        }
         // The chat left no longer acks its send from its transcript, and its
         // row may already show the turn that runs it.
         self.adopt_pending_sends(Utc::now());

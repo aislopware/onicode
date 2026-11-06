@@ -17,10 +17,13 @@
 //! - `ONICODE_DISABLE_NOTIFICATIONS` env kill-switch (callers also check the `notificationsEnabled`
 //!   setting);
 //! - failures are logged and swallowed — a missing notifier must never bother the session flow.
+//!
+//! Agent alerts, which carry buttons and a reply field, go through [`center`] instead.
 
 // objc 0.2's `msg_send!` checks a `cargo-clippy` feature this crate lacks.
 #![allow(unexpected_cfgs)]
 
+pub mod center;
 pub mod links;
 
 use std::sync::Mutex;
