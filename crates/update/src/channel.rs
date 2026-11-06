@@ -195,7 +195,8 @@ pub fn macos_version() -> Option<&'static str> {
 /// Whether `system` is at least `minimum` (dotted numbers; a version that
 /// doesn't parse is not).
 pub fn macos_at_least(system: &str, minimum: &str) -> bool {
-    let parts = |v: &str| -> Option<Vec<u64>> { v.trim().split('.').map(|p| p.parse().ok()).collect() };
+    let parts =
+        |v: &str| -> Option<Vec<u64>> { v.trim().split('.').map(|p| p.parse().ok()).collect() };
     match (parts(system), parts(minimum)) {
         (Some(mut have), Some(mut need)) => {
             let len = have.len().max(need.len());
@@ -218,7 +219,9 @@ pub fn beta_unavailable() -> Option<String> {
         Some(version) => Some(format!(
             "Onicode beta needs macOS {BETA_MINIMUM_MACOS} or later. This Mac has macOS {version}."
         )),
-        None => Some(format!("Onicode beta needs macOS {BETA_MINIMUM_MACOS} or later.")),
+        None => Some(format!(
+            "Onicode beta needs macOS {BETA_MINIMUM_MACOS} or later."
+        )),
     }
 }
 
@@ -235,16 +238,33 @@ mod tests {
 
     #[test]
     fn beta_reads_its_own_folder() {
-        assert_eq!(Channel::Stable.base("https://edge.zeron.sh/releases/"), "https://edge.zeron.sh/releases");
-        assert_eq!(Channel::Beta.base("https://edge.zeron.sh/releases"), "https://edge.zeron.sh/releases/beta");
+        assert_eq!(
+            Channel::Stable.base("https://edge.zeron.sh/releases/"),
+            "https://edge.zeron.sh/releases"
+        );
+        assert_eq!(
+            Channel::Beta.base("https://edge.zeron.sh/releases"),
+            "https://edge.zeron.sh/releases/beta"
+        );
     }
 
     #[test]
     fn a_choice_stands_and_without_one_an_app_stays_on_its_own_channel() {
-        let chose = |channel| Some(ChannelRecord { channel, claimed_by: None });
+        let chose = |channel| {
+            Some(ChannelRecord {
+                channel,
+                claimed_by: None,
+            })
+        };
         // Someone turned beta off at that Mac: their choice, on a beta build.
-        assert_eq!(choice_for(chose(Channel::Stable), Some("0.2.136-beta.1")), Channel::Stable);
-        assert_eq!(choice_for(chose(Channel::Beta), Some("0.2.136")), Channel::Beta);
+        assert_eq!(
+            choice_for(chose(Channel::Stable), Some("0.2.136-beta.1")),
+            Channel::Stable
+        );
+        assert_eq!(
+            choice_for(chose(Channel::Beta), Some("0.2.136")),
+            Channel::Beta
+        );
         assert_eq!(choice_for(None, Some("0.2.136-beta.1")), Channel::Beta);
         assert_eq!(choice_for(None, Some("0.2.136")), Channel::Stable);
         assert_eq!(choice_for(None, None), Channel::Stable);

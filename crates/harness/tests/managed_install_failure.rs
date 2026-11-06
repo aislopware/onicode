@@ -11,10 +11,10 @@
 
 use std::os::unix::fs::PermissionsExt;
 
-use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 use onicode_harness::{AcpHarness, Harness, HarnessError, RunControls};
 use onicode_proto::{RunRequest, SandboxLevel};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn silent_npm_enoent_death_surfaces_decoded_error() {

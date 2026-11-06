@@ -5846,7 +5846,16 @@ const ASKED_PERMISSIONS: [&str; 3] = ["bash", "webfetch", "websearch"];
 /// live on 1.19.4): looking around, the agent's own todo list and
 /// questions, and subagents, whose tools answer to the same rules.
 const UNASKED_PERMISSIONS: [&str; 10] = [
-    "read", "glob", "grep", "list", "lsp", "todoread", "todowrite", "question", "task", "skill",
+    "read",
+    "glob",
+    "grep",
+    "list",
+    "lsp",
+    "todoread",
+    "todowrite",
+    "question",
+    "task",
+    "skill",
 ];
 
 /// Where the `plan` agent writes its plan: `.opencode/plans/` in a
@@ -6334,7 +6343,10 @@ if (process.argv.includes('--version')) {{
                 servers["onicode"]["command"],
                 json!(["/path with spaces/onicode", "mcp"])
             );
-            assert_eq!(servers["onicode"]["environment"]["ONICODE_CHAT_ID"], "first");
+            assert_eq!(
+                servers["onicode"]["environment"]["ONICODE_CHAT_ID"],
+                "first"
+            );
             assert_eq!(
                 second.pointer(pointer).unwrap()["onicode"]["environment"]["ONICODE_CHAT_ID"],
                 "second"

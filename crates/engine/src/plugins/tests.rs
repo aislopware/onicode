@@ -97,7 +97,8 @@ async fn plugins_new_plugin_scaffolds_signs_and_is_on() {
     assert!(snapshot.join(MANIFEST_FILE).is_file());
     // Its words, in English, signed and snapshotted with the rest.
     let english: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(dir.join("locales/en.json")).unwrap()).unwrap();
+        serde_json::from_str(&std::fs::read_to_string(dir.join("locales/en.json")).unwrap())
+            .unwrap();
     assert_eq!(english["hello"]["toast"], "Hello from Hello");
     assert!(snapshot.join("locales/en.json").is_file());
     assert!(snapshot.starts_with(f.plugins.plugins_dir().join(".loaded/hello")));
@@ -299,11 +300,19 @@ async fn plugins_auto_resign_does_not_loop_and_never_signs_others() {
 fn plugins_watcher_ignores_reads() {
     use notify::event::{AccessKind, AccessMode, CreateKind, DataChange, EventKind, ModifyKind};
     let event = |kind| notify::Event::new(kind).add_path(PathBuf::from("/p/live/init.luau"));
-    assert!(!is_change(&event(EventKind::Access(AccessKind::Open(AccessMode::Any)))));
-    assert!(!is_change(&event(EventKind::Access(AccessKind::Close(AccessMode::Read)))));
+    assert!(!is_change(&event(EventKind::Access(AccessKind::Open(
+        AccessMode::Any
+    )))));
+    assert!(!is_change(&event(EventKind::Access(AccessKind::Close(
+        AccessMode::Read
+    )))));
     assert!(!is_change(&event(EventKind::Access(AccessKind::Read))));
-    assert!(is_change(&event(EventKind::Access(AccessKind::Close(AccessMode::Write)))));
-    assert!(is_change(&event(EventKind::Modify(ModifyKind::Data(DataChange::Any)))));
+    assert!(is_change(&event(EventKind::Access(AccessKind::Close(
+        AccessMode::Write
+    )))));
+    assert!(is_change(&event(EventKind::Modify(ModifyKind::Data(
+        DataChange::Any
+    )))));
     assert!(is_change(&event(EventKind::Create(CreateKind::File))));
     assert!(is_change(
         &notify::Event::new(EventKind::Other).set_flag(notify::event::Flag::Rescan)
@@ -608,10 +617,24 @@ async fn plugins_verify_any_folder_and_sign_only_in_the_plugins_folder() {
     .unwrap();
     assert_eq!(unsigned["status"], "unsigned");
     // This device's key signs nothing outside the plugins folder (R4).
-    assert!(call(&f.plugins, methods::SIGN_PLUGIN, serde_json::json!({ "path": path })).await.is_err());
+    assert!(
+        call(
+            &f.plugins,
+            methods::SIGN_PLUGIN,
+            serde_json::json!({ "path": path })
+        )
+        .await
+        .is_err()
+    );
     let key = signing::load_or_create_key(&f.data).unwrap();
     sign_folder(&folder, &key).unwrap();
-    let signed = call(&f.plugins, methods::VERIFY_PLUGIN, serde_json::json!({ "path": path })).await.unwrap();
+    let signed = call(
+        &f.plugins,
+        methods::VERIFY_PLUGIN,
+        serde_json::json!({ "path": path }),
+    )
+    .await
+    .unwrap();
     assert_eq!(signed["status"], "ok");
     assert_eq!(signed["author"]["kind"], "you");
     std::fs::write(folder.join("extra.luau"), "x").unwrap();
@@ -719,7 +742,10 @@ async fn plugins_tools_through_the_broker_over_rpc() {
         )
         .await
         .unwrap_err();
-    assert!(closed.to_string().starts_with("Open Onicode on "), "{closed}");
+    assert!(
+        closed.to_string().starts_with("Open Onicode on "),
+        "{closed}"
+    );
     assert!(closed.to_string().ends_with(" to use count_words"));
     let unknown = client
         .call(
@@ -994,7 +1020,11 @@ async fn plugins_native_mcp_servers_run_from_the_snapshot() {
     let snapshot = on["snapshot"].as_str().unwrap();
     assert_eq!(
         servers[0].command,
-        Path::new(snapshot).join("bin").join("server").display().to_string()
+        Path::new(snapshot)
+            .join("bin")
+            .join("server")
+            .display()
+            .to_string()
     );
     assert!(Path::new(&servers[0].command).is_file());
     assert_eq!(servers[0].args, vec!["--stdio".to_string()]);
@@ -1035,34 +1065,103 @@ async fn plugins_onicode_s_own_are_allowed_what_they_ask_turn_off_and_never_go()
     let f = fixture();
     let shipped = f.data.join("app-plugins");
     std::fs::create_dir_all(&shipped).unwrap();
-    write_plugin(&shipped, "github", serde_json::json!({ "name": "GitHub", "permissions": ["ui.add", "github"] }), None);
+    write_plugin(
+        &shipped,
+        "github",
+        serde_json::json!({ "name": "GitHub", "permissions": ["ui.add", "github"] }),
+        None,
+    );
     // One of yours by the same name gives way.
-    write_plugin(f.plugins.plugins_dir(), "github", serde_json::json!({ "name": "Mine" }), None);
-    call(&f.plugins, methods::SET_BUILTIN_PLUGINS, serde_json::json!({ "dir": shipped }))
+    write_plugin(
+        f.plugins.plugins_dir(),
+        "github",
+        serde_json::json!({ "name": "Mine" }),
+        None,
+    );
+    call(
+        &f.plugins,
+        methods::SET_BUILTIN_PLUGINS,
+        serde_json::json!({ "dir": shipped }),
+    )
+    .await
+    .unwrap();
+    let list = call(&f.plugins, methods::LIST_PLUGINS, serde_json::json!({}))
         .await
         .unwrap();
-    let list = call(&f.plugins, methods::LIST_PLUGINS, serde_json::json!({})).await.unwrap();
     let all = list["plugins"].as_array().unwrap();
-    let theirs = all.iter().find(|p| p["id"] == "github" && p["builtin"] == true).expect("Onicode's");
+    let theirs = all
+        .iter()
+        .find(|p| p["id"] == "github" && p["builtin"] == true)
+        .expect("Onicode's");
     assert_eq!(theirs["author"]["kind"], "onicode");
     assert_eq!(theirs["status"], "on");
     assert_eq!(theirs["allowed"], serde_json::json!(["github", "ui.add"]));
-    assert!(theirs["snapshot"].is_string(), "on means a snapshot to load: {theirs}");
-    let mine = all.iter().find(|p| p["id"] == "github" && p["builtin"] != true).expect("yours");
+    assert!(
+        theirs["snapshot"].is_string(),
+        "on means a snapshot to load: {theirs}"
+    );
+    let mine = all
+        .iter()
+        .find(|p| p["id"] == "github" && p["builtin"] != true)
+        .expect("yours");
     assert_eq!(mine["status"], "broken");
     // Off, and on again; never removed.
-    call(&f.plugins, methods::SET_PLUGIN_OFF, serde_json::json!({ "id": "github", "off": true })).await.unwrap();
-    let list = call(&f.plugins, methods::LIST_PLUGINS, serde_json::json!({})).await.unwrap();
-    let off = list["plugins"].as_array().unwrap().iter().find(|p| p["builtin"] == true).unwrap().clone();
+    call(
+        &f.plugins,
+        methods::SET_PLUGIN_OFF,
+        serde_json::json!({ "id": "github", "off": true }),
+    )
+    .await
+    .unwrap();
+    let list = call(&f.plugins, methods::LIST_PLUGINS, serde_json::json!({}))
+        .await
+        .unwrap();
+    let off = list["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["builtin"] == true)
+        .unwrap()
+        .clone();
     assert_eq!(off["status"], "off");
-    let removed = call(&f.plugins, methods::REMOVE_PLUGIN, serde_json::json!({ "id": "github" })).await;
+    let removed = call(
+        &f.plugins,
+        methods::REMOVE_PLUGIN,
+        serde_json::json!({ "id": "github" }),
+    )
+    .await;
     assert!(removed.unwrap_err().contains("turned off, but not removed"));
     // A new version asking more is allowed it as it ships.
-    write_plugin(&shipped, "github", serde_json::json!({ "name": "GitHub", "permissions": ["ui.add", "github", "panel.tabs"] }), None);
-    call(&f.plugins, methods::SET_PLUGIN_OFF, serde_json::json!({ "id": "github", "off": false })).await.unwrap();
-    let list = call(&f.plugins, methods::LIST_PLUGINS, serde_json::json!({})).await.unwrap();
-    let on = list["plugins"].as_array().unwrap().iter().find(|p| p["builtin"] == true).unwrap().clone();
-    assert_eq!((on["status"].as_str(), on["allowed"].as_array().map(Vec::len)), (Some("on"), Some(3)));
+    write_plugin(
+        &shipped,
+        "github",
+        serde_json::json!({ "name": "GitHub", "permissions": ["ui.add", "github", "panel.tabs"] }),
+        None,
+    );
+    call(
+        &f.plugins,
+        methods::SET_PLUGIN_OFF,
+        serde_json::json!({ "id": "github", "off": false }),
+    )
+    .await
+    .unwrap();
+    let list = call(&f.plugins, methods::LIST_PLUGINS, serde_json::json!({}))
+        .await
+        .unwrap();
+    let on = list["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["builtin"] == true)
+        .unwrap()
+        .clone();
+    assert_eq!(
+        (
+            on["status"].as_str(),
+            on["allowed"].as_array().map(Vec::len)
+        ),
+        (Some("on"), Some(3))
+    );
 }
 
 #[tokio::test]
@@ -1073,15 +1172,39 @@ async fn plugins_onicode_s_own_load_from_the_app_s_folder_with_none_of_yours_bes
     let f = fixture();
     let shipped = f.data.join("app-plugins");
     std::fs::create_dir_all(&shipped).unwrap();
-    write_plugin(&shipped, "github", serde_json::json!({ "name": "GitHub", "permissions": ["ui.add", "github"] }), None);
-    call(&f.plugins, methods::SET_BUILTIN_PLUGINS, serde_json::json!({ "dir": shipped }))
+    write_plugin(
+        &shipped,
+        "github",
+        serde_json::json!({ "name": "GitHub", "permissions": ["ui.add", "github"] }),
+        None,
+    );
+    call(
+        &f.plugins,
+        methods::SET_BUILTIN_PLUGINS,
+        serde_json::json!({ "dir": shipped }),
+    )
+    .await
+    .unwrap();
+    let list = call(&f.plugins, methods::LIST_PLUGINS, serde_json::json!({}))
         .await
         .unwrap();
-    let list = call(&f.plugins, methods::LIST_PLUGINS, serde_json::json!({})).await.unwrap();
-    let github = list["plugins"].as_array().unwrap().iter().find(|p| p["id"] == "github").unwrap().clone();
+    let github = list["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == "github")
+        .unwrap()
+        .clone();
     assert_eq!(github["status"], "on");
-    let snapshot = PathBuf::from(github["snapshot"].as_str().expect("on means a snapshot to load"));
-    assert!(snapshot.join("init.luau").is_file(), "its files copied from the app's folder: {snapshot:?}");
+    let snapshot = PathBuf::from(
+        github["snapshot"]
+            .as_str()
+            .expect("on means a snapshot to load"),
+    );
+    assert!(
+        snapshot.join("init.luau").is_file(),
+        "its files copied from the app's folder: {snapshot:?}"
+    );
 }
 
 // ── Third-party lifecycle: install, update, uninstall ──────────────────────
@@ -1093,7 +1216,12 @@ fn someone(f: &Fixture, fake: &Arc<FakeDirectory>, username: &str) -> SigningKey
     let (key, _) = SigningKey::generate().unwrap();
     fake.keys.lock().unwrap().insert(
         key.public(),
-        Lookup::Found { username: Some(username.into()), mine: false, revoked: false, verified: None },
+        Lookup::Found {
+            username: Some(username.into()),
+            mine: false,
+            revoked: false,
+            verified: None,
+        },
     );
     f.plugins.set_directory(fake.clone());
     f.plugins.set_account(|| Some("user-1".into()));
@@ -1112,41 +1240,103 @@ async fn plugins_install_from_a_package_waits_for_consent_unless_yours() {
     let f = fixture();
     let fake = Arc::new(FakeDirectory::default());
     let ada = someone(&f, &fake, "ada");
-    let path = package_file(&f, "focus.onicode-plugin", &signed_package(&ada, "focus", "1.0.0", &["ui.add"], "return 1"));
-    let installed = call(&f.plugins, methods::INSTALL_PLUGIN, serde_json::json!({ "path": path })).await.unwrap();
+    let path = package_file(
+        &f,
+        "focus.onicode-plugin",
+        &signed_package(&ada, "focus", "1.0.0", &["ui.add"], "return 1"),
+    );
+    let installed = call(
+        &f.plugins,
+        methods::INSTALL_PLUGIN,
+        serde_json::json!({ "path": path }),
+    )
+    .await
+    .unwrap();
     assert_eq!(installed["update"], false);
     assert_eq!(installed["waiting"], true, "{installed}");
     let plugin = &installed["plugin"];
     assert_eq!(plugin["status"], "pending");
-    assert_eq!(plugin["author"], serde_json::json!({ "kind": "verified", "username": "ada" }));
+    assert_eq!(
+        plugin["author"],
+        serde_json::json!({ "kind": "verified", "username": "ada" })
+    );
     assert_eq!(plugin["ask"], serde_json::json!(["ui.add"]));
     assert_eq!(plugin["source"]["kind"], "file");
-    assert!(plugin["source"].get("path").is_none(), "never a local path in the list");
+    assert!(
+        plugin["source"].get("path").is_none(),
+        "never a local path in the list"
+    );
     // The consent window's decision turns it on.
-    call(&f.plugins, methods::DECIDE_PLUGIN, serde_json::json!({ "id": "focus", "allow": true, "hash": plugin["hash"] }))
-        .await
-        .unwrap();
+    call(
+        &f.plugins,
+        methods::DECIDE_PLUGIN,
+        serde_json::json!({ "id": "focus", "allow": true, "hash": plugin["hash"] }),
+    )
+    .await
+    .unwrap();
     assert_eq!(item(&f.plugins, "focus").await["status"], "on");
 
     // Signed by this device's key: on at once, no asking.
     let own = signing::load_or_create_key(&f.data).unwrap();
-    let path = package_file(&f, "mine.onicode-plugin", &signed_package(&own, "mine", "1.0.0", &["ui.add", "links.open"], "return 1"));
-    let mine = call(&f.plugins, methods::INSTALL_PLUGIN, serde_json::json!({ "path": path })).await.unwrap();
-    assert_eq!((mine["plugin"]["status"].as_str(), mine["waiting"].as_bool()), (Some("on"), Some(false)), "{mine}");
-    assert_eq!(mine["plugin"]["allowed"], serde_json::json!(["links.open", "ui.add"]));
-    assert_eq!(mine["plugin"]["own"], false, "installed, not one you're editing here");
+    let path = package_file(
+        &f,
+        "mine.onicode-plugin",
+        &signed_package(&own, "mine", "1.0.0", &["ui.add", "links.open"], "return 1"),
+    );
+    let mine = call(
+        &f.plugins,
+        methods::INSTALL_PLUGIN,
+        serde_json::json!({ "path": path }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (mine["plugin"]["status"].as_str(), mine["waiting"].as_bool()),
+        (Some("on"), Some(false)),
+        "{mine}"
+    );
+    assert_eq!(
+        mine["plugin"]["allowed"],
+        serde_json::json!(["links.open", "ui.add"])
+    );
+    assert_eq!(
+        mine["plugin"]["own"], false,
+        "installed, not one you're editing here"
+    );
 
     // Tampered (a file changed after signing): refused, nothing written.
     let mut value: serde_json::Value =
         serde_json::from_slice(&signed_package(&ada, "evil", "1.0.0", &[], "return 1")).unwrap();
-    value["files"]["init.luau"] = serde_json::json!(base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"return 2"));
-    let path = package_file(&f, "evil.onicode-plugin", &serde_json::to_vec(&value).unwrap());
-    let refused = call(&f.plugins, methods::INSTALL_PLUGIN, serde_json::json!({ "path": path })).await.unwrap_err();
+    value["files"]["init.luau"] = serde_json::json!(base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        b"return 2"
+    ));
+    let path = package_file(
+        &f,
+        "evil.onicode-plugin",
+        &serde_json::to_vec(&value).unwrap(),
+    );
+    let refused = call(
+        &f.plugins,
+        methods::INSTALL_PLUGIN,
+        serde_json::json!({ "path": path }),
+    )
+    .await
+    .unwrap_err();
     assert_eq!(refused, install::WORDS.tampered);
     assert!(!f.plugins.plugins_dir().join("evil").exists());
     // Not a package at all.
     let path = package_file(&f, "x.onicode-plugin", b"{}");
-    assert_eq!(call(&f.plugins, methods::INSTALL_PLUGIN, serde_json::json!({ "path": path })).await.unwrap_err(), install::WORDS.not_a_package);
+    assert_eq!(
+        call(
+            &f.plugins,
+            methods::INSTALL_PLUGIN,
+            serde_json::json!({ "path": path })
+        )
+        .await
+        .unwrap_err(),
+        install::WORDS.not_a_package
+    );
 }
 
 #[tokio::test]
@@ -1154,58 +1344,192 @@ async fn plugins_updates_keep_consent_ask_for_new_permissions_and_refuse_tamperi
     let f = fixture();
     let fake = Arc::new(FakeDirectory::default());
     let ada = someone(&f, &fake, "ada");
-    let path = package_file(&f, "focus.onicode-plugin", &signed_package(&ada, "focus", "1.0.0", &["ui.add"], "return 1"));
-    let installed = call(&f.plugins, methods::INSTALL_PLUGIN, serde_json::json!({ "path": path })).await.unwrap();
-    call(&f.plugins, methods::DECIDE_PLUGIN, serde_json::json!({ "id": "focus", "allow": true, "hash": installed["plugin"]["hash"] }))
-        .await
-        .unwrap();
+    let path = package_file(
+        &f,
+        "focus.onicode-plugin",
+        &signed_package(&ada, "focus", "1.0.0", &["ui.add"], "return 1"),
+    );
+    let installed = call(
+        &f.plugins,
+        methods::INSTALL_PLUGIN,
+        serde_json::json!({ "path": path }),
+    )
+    .await
+    .unwrap();
+    call(
+        &f.plugins,
+        methods::DECIDE_PLUGIN,
+        serde_json::json!({ "id": "focus", "allow": true, "hash": installed["plugin"]["hash"] }),
+    )
+    .await
+    .unwrap();
     // Nothing new at the source.
-    let checked = call(&f.plugins, methods::CHECK_PLUGIN_UPDATES, serde_json::json!({})).await.unwrap();
+    let checked = call(
+        &f.plugins,
+        methods::CHECK_PLUGIN_UPDATES,
+        serde_json::json!({}),
+    )
+    .await
+    .unwrap();
     assert_eq!(checked["updates"], serde_json::json!([]), "{checked}");
-    assert!(call(&f.plugins, methods::UPDATE_PLUGIN, serde_json::json!({ "id": "focus" })).await.unwrap_err().contains("up to date"));
+    assert!(
+        call(
+            &f.plugins,
+            methods::UPDATE_PLUGIN,
+            serde_json::json!({ "id": "focus" })
+        )
+        .await
+        .unwrap_err()
+        .contains("up to date")
+    );
 
     // A tampered new version at the source: refused, the installed one kept.
-    let mut value: serde_json::Value =
-        serde_json::from_slice(&signed_package(&ada, "focus", "1.1.0", &["ui.add"], "return 2")).unwrap();
-    value["files"]["init.luau"] = serde_json::json!(base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"steal()"));
+    let mut value: serde_json::Value = serde_json::from_slice(&signed_package(
+        &ada,
+        "focus",
+        "1.1.0",
+        &["ui.add"],
+        "return 2",
+    ))
+    .unwrap();
+    value["files"]["init.luau"] = serde_json::json!(base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        b"steal()"
+    ));
     std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
-    let checked = call(&f.plugins, methods::CHECK_PLUGIN_UPDATES, serde_json::json!({})).await.unwrap();
-    assert_eq!(checked["errors"][0]["error"], install::WORDS.tampered, "{checked}");
-    assert_eq!(call(&f.plugins, methods::UPDATE_PLUGIN, serde_json::json!({ "id": "focus" })).await.unwrap_err(), install::WORDS.tampered);
+    let checked = call(
+        &f.plugins,
+        methods::CHECK_PLUGIN_UPDATES,
+        serde_json::json!({}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        checked["errors"][0]["error"],
+        install::WORDS.tampered,
+        "{checked}"
+    );
+    assert_eq!(
+        call(
+            &f.plugins,
+            methods::UPDATE_PLUGIN,
+            serde_json::json!({ "id": "focus" })
+        )
+        .await
+        .unwrap_err(),
+        install::WORDS.tampered
+    );
     let kept = item(&f.plugins, "focus").await;
-    assert_eq!((kept["version"].as_str(), kept["status"].as_str()), (Some("1.0.0"), Some("on")));
+    assert_eq!(
+        (kept["version"].as_str(), kept["status"].as_str()),
+        (Some("1.0.0"), Some("on"))
+    );
 
     // Signed by someone else: found, but refused.
     let eve = someone(&f, &fake, "eve");
-    std::fs::write(&path, signed_package(&eve, "focus", "6.6.6", &[], "return 6")).unwrap();
-    let checked = call(&f.plugins, methods::CHECK_PLUGIN_UPDATES, serde_json::json!({})).await.unwrap();
-    assert!(checked["updates"][0]["refused"].as_str().unwrap().contains("someone else"), "{checked}");
-    assert!(call(&f.plugins, methods::UPDATE_PLUGIN, serde_json::json!({ "id": "focus" })).await.unwrap_err().contains("someone else"));
+    std::fs::write(
+        &path,
+        signed_package(&eve, "focus", "6.6.6", &[], "return 6"),
+    )
+    .unwrap();
+    let checked = call(
+        &f.plugins,
+        methods::CHECK_PLUGIN_UPDATES,
+        serde_json::json!({}),
+    )
+    .await
+    .unwrap();
+    assert!(
+        checked["updates"][0]["refused"]
+            .as_str()
+            .unwrap()
+            .contains("someone else"),
+        "{checked}"
+    );
+    assert!(
+        call(
+            &f.plugins,
+            methods::UPDATE_PLUGIN,
+            serde_json::json!({ "id": "focus" })
+        )
+        .await
+        .unwrap_err()
+        .contains("someone else")
+    );
     assert_eq!(item(&f.plugins, "focus").await["version"], "1.0.0");
 
     // Same key, same permissions: updated, still on.
-    std::fs::write(&path, signed_package(&ada, "focus", "1.1.0", &["ui.add"], "return 2")).unwrap();
-    let checked = call(&f.plugins, methods::CHECK_PLUGIN_UPDATES, serde_json::json!({})).await.unwrap();
+    std::fs::write(
+        &path,
+        signed_package(&ada, "focus", "1.1.0", &["ui.add"], "return 2"),
+    )
+    .unwrap();
+    let checked = call(
+        &f.plugins,
+        methods::CHECK_PLUGIN_UPDATES,
+        serde_json::json!({}),
+    )
+    .await
+    .unwrap();
     assert_eq!(checked["updates"][0]["version"], "1.1.0");
     let listed = item(&f.plugins, "focus").await;
-    assert_eq!(listed["update"], serde_json::json!({ "version": "1.1.0", "added": [], "removed": [] }));
-    let updated = call(&f.plugins, methods::UPDATE_PLUGIN, serde_json::json!({ "id": "focus" })).await.unwrap();
-    assert_eq!((updated["update"].as_bool(), updated["from"].as_str(), updated["waiting"].as_bool()), (Some(true), Some("1.0.0"), Some(false)));
+    assert_eq!(
+        listed["update"],
+        serde_json::json!({ "version": "1.1.0", "added": [], "removed": [] })
+    );
+    let updated = call(
+        &f.plugins,
+        methods::UPDATE_PLUGIN,
+        serde_json::json!({ "id": "focus" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (
+            updated["update"].as_bool(),
+            updated["from"].as_str(),
+            updated["waiting"].as_bool()
+        ),
+        (Some(true), Some("1.0.0"), Some(false))
+    );
     let now = item(&f.plugins, "focus").await;
-    assert_eq!((now["version"].as_str(), now["status"].as_str()), (Some("1.1.0"), Some("on")));
-    assert!(now.get("update").is_none(), "the update installed is forgotten: {now}");
+    assert_eq!(
+        (now["version"].as_str(), now["status"].as_str()),
+        (Some("1.1.0"), Some("on"))
+    );
+    assert!(
+        now.get("update").is_none(),
+        "the update installed is forgotten: {now}"
+    );
 
     // A new permission: installed, but it waits for you, asking only that.
-    std::fs::write(&path, signed_package(&ada, "focus", "2.0.0", &["ui.add", "github"], "return 3")).unwrap();
-    let updated = call(&f.plugins, methods::UPDATE_PLUGIN, serde_json::json!({ "id": "focus" })).await.unwrap();
+    std::fs::write(
+        &path,
+        signed_package(&ada, "focus", "2.0.0", &["ui.add", "github"], "return 3"),
+    )
+    .unwrap();
+    let updated = call(
+        &f.plugins,
+        methods::UPDATE_PLUGIN,
+        serde_json::json!({ "id": "focus" }),
+    )
+    .await
+    .unwrap();
     assert_eq!(updated["added"], serde_json::json!(["github"]));
     assert_eq!(updated["waiting"], true);
     let waiting = item(&f.plugins, "focus").await;
     assert_eq!(waiting["status"], "pending");
-    assert_eq!((waiting["allowed"].clone(), waiting["ask"].clone()), (serde_json::json!(["ui.add"]), serde_json::json!(["github"])));
-    call(&f.plugins, methods::DECIDE_PLUGIN, serde_json::json!({ "id": "focus", "allow": true, "hash": waiting["hash"] }))
-        .await
-        .unwrap();
+    assert_eq!(
+        (waiting["allowed"].clone(), waiting["ask"].clone()),
+        (serde_json::json!(["ui.add"]), serde_json::json!(["github"]))
+    );
+    call(
+        &f.plugins,
+        methods::DECIDE_PLUGIN,
+        serde_json::json!({ "id": "focus", "allow": true, "hash": waiting["hash"] }),
+    )
+    .await
+    .unwrap();
     assert_eq!(item(&f.plugins, "focus").await["status"], "on");
 }
 
@@ -1214,24 +1538,68 @@ async fn plugins_an_unknown_authors_update_keeps_consent_by_key() {
     let f = fixture();
     // Signed out: no author can be checked.
     let (zed, _) = SigningKey::generate().unwrap();
-    let path = package_file(&f, "z.onicode-plugin", &signed_package(&zed, "zed", "1", &["ui.add"], "return 1"));
-    let installed = call(&f.plugins, methods::INSTALL_PLUGIN, serde_json::json!({ "path": path })).await.unwrap();
+    let path = package_file(
+        &f,
+        "z.onicode-plugin",
+        &signed_package(&zed, "zed", "1", &["ui.add"], "return 1"),
+    );
+    let installed = call(
+        &f.plugins,
+        methods::INSTALL_PLUGIN,
+        serde_json::json!({ "path": path }),
+    )
+    .await
+    .unwrap();
     assert_eq!(installed["plugin"]["author"]["kind"], "unknown");
-    call(&f.plugins, methods::DECIDE_PLUGIN, serde_json::json!({ "id": "zed", "allow": true, "hash": installed["plugin"]["hash"] }))
-        .await
-        .unwrap();
+    call(
+        &f.plugins,
+        methods::DECIDE_PLUGIN,
+        serde_json::json!({ "id": "zed", "allow": true, "hash": installed["plugin"]["hash"] }),
+    )
+    .await
+    .unwrap();
     // Updated, signed by the same key: nobody knows whose key that is, and
     // the decision was for the content, so it waits for you again (R3).
-    std::fs::write(&path, signed_package(&zed, "zed", "2", &["ui.add"], "return 2")).unwrap();
-    let updated = call(&f.plugins, methods::UPDATE_PLUGIN, serde_json::json!({ "id": "zed" })).await.unwrap();
-    assert_eq!(updated["plugin"]["status"], "pending", "same key, same asks: {updated}");
-    call(&f.plugins, methods::DECIDE_PLUGIN, serde_json::json!({ "id": "zed", "allow": true, "hash": updated["plugin"]["hash"] }))
-        .await
-        .unwrap();
-    std::fs::write(&path, signed_package(&zed, "zed", "3", &["ui.add", "notifications"], "return 3")).unwrap();
-    let updated = call(&f.plugins, methods::UPDATE_PLUGIN, serde_json::json!({ "id": "zed" })).await.unwrap();
+    std::fs::write(
+        &path,
+        signed_package(&zed, "zed", "2", &["ui.add"], "return 2"),
+    )
+    .unwrap();
+    let updated = call(
+        &f.plugins,
+        methods::UPDATE_PLUGIN,
+        serde_json::json!({ "id": "zed" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        updated["plugin"]["status"], "pending",
+        "same key, same asks: {updated}"
+    );
+    call(
+        &f.plugins,
+        methods::DECIDE_PLUGIN,
+        serde_json::json!({ "id": "zed", "allow": true, "hash": updated["plugin"]["hash"] }),
+    )
+    .await
+    .unwrap();
+    std::fs::write(
+        &path,
+        signed_package(&zed, "zed", "3", &["ui.add", "notifications"], "return 3"),
+    )
+    .unwrap();
+    let updated = call(
+        &f.plugins,
+        methods::UPDATE_PLUGIN,
+        serde_json::json!({ "id": "zed" }),
+    )
+    .await
+    .unwrap();
     assert_eq!(updated["plugin"]["status"], "pending");
-    assert_eq!(updated["plugin"]["ask"], serde_json::json!(["notifications"]));
+    assert_eq!(
+        updated["plugin"]["ask"],
+        serde_json::json!(["notifications"])
+    );
     // Changed by hand after that: tampered, as before.
     std::fs::write(f.plugins.plugins_dir().join("zed/init.luau"), "changed()").unwrap();
     assert_eq!(item(&f.plugins, "zed").await["status"], "tampered");
@@ -1246,33 +1614,63 @@ async fn plugins_install_from_git_and_update_from_its_branch() {
     let repo = f.data.join("repo");
     let folder = repo.join("plugins/focus");
     let publish = |version: &str, permissions: &[&str], body: &str| {
-        let package = install::parse(signed_package(&ada, "focus", version, permissions, body)).unwrap();
+        let package =
+            install::parse(signed_package(&ada, "focus", version, permissions, body)).unwrap();
         std::fs::create_dir_all(folder.join("ui")).unwrap();
         for (rel, bytes) in &package.files {
             std::fs::write(folder.join(rel), bytes).unwrap();
         }
-        std::fs::write(folder.join(MANIFEST_FILE), signing::pretty(&package.manifest.raw)).unwrap();
+        std::fs::write(
+            folder.join(MANIFEST_FILE),
+            signing::pretty(&package.manifest.raw),
+        )
+        .unwrap();
         let git = |args: &[&str]| {
             let ok = std::process::Command::new("git")
-                .args(["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"])
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@example.com",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
                 .args(args)
                 .current_dir(&repo)
                 .output()
                 .unwrap();
-            assert!(ok.status.success(), "{}", String::from_utf8_lossy(&ok.stderr));
+            assert!(
+                ok.status.success(),
+                "{}",
+                String::from_utf8_lossy(&ok.stderr)
+            );
         };
         git(&["add", "-A"]);
         git(&["commit", "-q", "-m", version]);
     };
     std::fs::create_dir_all(&repo).unwrap();
-    assert!(std::process::Command::new("git").args(["init", "-q", "-b", "main"]).current_dir(&repo).status().unwrap().success());
+    assert!(
+        std::process::Command::new("git")
+            .args(["init", "-q", "-b", "main"])
+            .current_dir(&repo)
+            .status()
+            .unwrap()
+            .success()
+    );
     publish("1.0.0", &["ui.add"], "return 1");
     let url = format!("file://{}", repo.display());
-    let installed = call(&f.plugins, methods::INSTALL_PLUGIN, serde_json::json!({ "url": url, "folder": "plugins/focus" }))
-        .await
-        .unwrap();
+    let installed = call(
+        &f.plugins,
+        methods::INSTALL_PLUGIN,
+        serde_json::json!({ "url": url, "folder": "plugins/focus" }),
+    )
+    .await
+    .unwrap();
     assert_eq!(installed["plugin"]["status"], "pending", "{installed}");
-    assert_eq!(installed["plugin"]["source"], serde_json::json!({ "kind": "git", "url": url }));
+    assert_eq!(
+        installed["plugin"]["source"],
+        serde_json::json!({ "kind": "git", "url": url })
+    );
     let source = install::Source::load(&f.plugins.plugins_dir().join("focus")).unwrap();
     assert_eq!(source.path.as_deref(), Some("plugins/focus"));
     assert!(source.commit.is_some());
@@ -1280,18 +1678,49 @@ async fn plugins_install_from_git_and_update_from_its_branch() {
     let incoming = f.plugins.plugins_dir().join(install::INCOMING_DIR);
     assert_eq!(std::fs::read_dir(&incoming).unwrap().count(), 0);
     // The branch unchanged: no update, without cloning.
-    let checked = call(&f.plugins, methods::CHECK_PLUGIN_UPDATES, serde_json::json!({})).await.unwrap();
+    let checked = call(
+        &f.plugins,
+        methods::CHECK_PLUGIN_UPDATES,
+        serde_json::json!({}),
+    )
+    .await
+    .unwrap();
     assert_eq!(checked, serde_json::json!({ "updates": [], "errors": [] }));
     // A new commit with a new permission.
     publish("1.1.0", &["ui.add", "links.open"], "return 2");
-    let checked = call(&f.plugins, methods::CHECK_PLUGIN_UPDATES, serde_json::json!({ "id": "focus" })).await.unwrap();
-    assert_eq!(checked["updates"][0]["added"], serde_json::json!(["links.open"]), "{checked}");
-    let updated = call(&f.plugins, methods::UPDATE_PLUGIN, serde_json::json!({ "id": "focus" })).await.unwrap();
+    let checked = call(
+        &f.plugins,
+        methods::CHECK_PLUGIN_UPDATES,
+        serde_json::json!({ "id": "focus" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        checked["updates"][0]["added"],
+        serde_json::json!(["links.open"]),
+        "{checked}"
+    );
+    let updated = call(
+        &f.plugins,
+        methods::UPDATE_PLUGIN,
+        serde_json::json!({ "id": "focus" }),
+    )
+    .await
+    .unwrap();
     assert_eq!(updated["plugin"]["version"], "1.1.0");
     let moved = install::Source::load(&f.plugins.plugins_dir().join("focus")).unwrap();
-    assert_ne!(moved.commit, source.commit, "the source follows the commit installed");
+    assert_ne!(
+        moved.commit, source.commit,
+        "the source follows the commit installed"
+    );
     // A folder with no plugin in it.
-    let err = call(&f.plugins, methods::INSTALL_PLUGIN, serde_json::json!({ "url": url, "folder": "nothing" })).await.unwrap_err();
+    let err = call(
+        &f.plugins,
+        methods::INSTALL_PLUGIN,
+        serde_json::json!({ "url": url, "folder": "nothing" }),
+    )
+    .await
+    .unwrap_err();
     assert!(err.contains("no onicode-plugin.json"), "{err}");
 }
 
@@ -1300,48 +1729,118 @@ async fn plugins_uninstall_removes_its_folder_decision_storage_and_update() {
     let f = fixture();
     let fake = Arc::new(FakeDirectory::default());
     let ada = someone(&f, &fake, "ada");
-    let path = package_file(&f, "focus.onicode-plugin", &signed_package(&ada, "focus", "1.0.0", &["ui.add"], "return 1"));
-    let installed = call(&f.plugins, methods::INSTALL_PLUGIN, serde_json::json!({ "path": path })).await.unwrap();
-    call(&f.plugins, methods::DECIDE_PLUGIN, serde_json::json!({ "id": "focus", "allow": true, "hash": installed["plugin"]["hash"] }))
-        .await
-        .unwrap();
+    let path = package_file(
+        &f,
+        "focus.onicode-plugin",
+        &signed_package(&ada, "focus", "1.0.0", &["ui.add"], "return 1"),
+    );
+    let installed = call(
+        &f.plugins,
+        methods::INSTALL_PLUGIN,
+        serde_json::json!({ "path": path }),
+    )
+    .await
+    .unwrap();
+    call(
+        &f.plugins,
+        methods::DECIDE_PLUGIN,
+        serde_json::json!({ "id": "focus", "allow": true, "hash": installed["plugin"]["hash"] }),
+    )
+    .await
+    .unwrap();
     let storage = f.plugins.plugins_dir().join(".storage");
     std::fs::create_dir_all(&storage).unwrap();
     std::fs::write(storage.join("focus.json"), "{}").unwrap();
-    std::fs::write(&path, signed_package(&ada, "focus", "1.1.0", &["ui.add"], "return 2")).unwrap();
-    call(&f.plugins, methods::CHECK_PLUGIN_UPDATES, serde_json::json!({})).await.unwrap();
+    std::fs::write(
+        &path,
+        signed_package(&ada, "focus", "1.1.0", &["ui.add"], "return 2"),
+    )
+    .unwrap();
+    call(
+        &f.plugins,
+        methods::CHECK_PLUGIN_UPDATES,
+        serde_json::json!({}),
+    )
+    .await
+    .unwrap();
     assert!(install::found_package_path(f.plugins.plugins_dir(), "focus").is_file());
 
-    call(&f.plugins, methods::REMOVE_PLUGIN, serde_json::json!({ "id": "focus" })).await.unwrap();
+    call(
+        &f.plugins,
+        methods::REMOVE_PLUGIN,
+        serde_json::json!({ "id": "focus" }),
+    )
+    .await
+    .unwrap();
     assert!(!f.plugins.plugins_dir().join("focus").exists());
     assert!(!storage.join("focus.json").exists());
     assert!(!install::found_package_path(f.plugins.plugins_dir(), "focus").exists());
-    assert!(!State::load(f.plugins.plugins_dir()).decisions.contains_key("focus"));
-    let list = call(&f.plugins, methods::LIST_PLUGINS, serde_json::json!({})).await.unwrap();
-    assert!(list["plugins"].as_array().unwrap().iter().all(|p| p["id"] != "focus"));
+    assert!(
+        !State::load(f.plugins.plugins_dir())
+            .decisions
+            .contains_key("focus")
+    );
+    let list = call(&f.plugins, methods::LIST_PLUGINS, serde_json::json!({}))
+        .await
+        .unwrap();
+    assert!(
+        list["plugins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["id"] != "focus")
+    );
     // Installed again, it asks again.
-    let again = call(&f.plugins, methods::INSTALL_PLUGIN, serde_json::json!({ "path": path })).await.unwrap();
+    let again = call(
+        &f.plugins,
+        methods::INSTALL_PLUGIN,
+        serde_json::json!({ "path": path }),
+    )
+    .await
+    .unwrap();
     assert_eq!(again["plugin"]["status"], "pending");
 }
 
 #[tokio::test]
 async fn plugins_export_packs_a_plugin_that_installs_elsewhere() {
     let f = fixture();
-    call(&f.plugins, methods::NEW_PLUGIN, serde_json::json!({ "id": "hello", "name": "Hello", "permissions": ["ui.add"] }))
-        .await
-        .unwrap();
+    call(
+        &f.plugins,
+        methods::NEW_PLUGIN,
+        serde_json::json!({ "id": "hello", "name": "Hello", "permissions": ["ui.add"] }),
+    )
+    .await
+    .unwrap();
     let out = f.data.join("out");
-    let exported = call(&f.plugins, methods::EXPORT_PLUGIN, serde_json::json!({ "id": "hello", "to": out })).await.unwrap();
+    let exported = call(
+        &f.plugins,
+        methods::EXPORT_PLUGIN,
+        serde_json::json!({ "id": "hello", "to": out }),
+    )
+    .await
+    .unwrap();
     let path = PathBuf::from(exported["path"].as_str().unwrap());
     assert_eq!(path, out.join("hello-0.1.0.onicode-plugin"));
     let package = install::parse(std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(package.key, signing::load_key(&f.data).unwrap().public());
     // On another device of someone else's.
     let g = fixture();
-    let there = call(&g.plugins, methods::INSTALL_PLUGIN, serde_json::json!({ "path": path })).await.unwrap();
+    let there = call(
+        &g.plugins,
+        methods::INSTALL_PLUGIN,
+        serde_json::json!({ "path": path }),
+    )
+    .await
+    .unwrap();
     assert_eq!(there["plugin"]["status"], "pending");
     // Over a plugin you're making here, refused.
-    let here = call(&f.plugins, methods::INSTALL_PLUGIN, serde_json::json!({ "path": path })).await.unwrap_err();
+    let here = call(
+        &f.plugins,
+        methods::INSTALL_PLUGIN,
+        serde_json::json!({ "path": path }),
+    )
+    .await
+    .unwrap_err();
     assert!(here.contains("making a plugin called hello"), "{here}");
 }
 
@@ -1350,25 +1849,78 @@ async fn plugins_export_packs_a_plugin_that_installs_elsewhere() {
 #[tokio::test]
 async fn theme_methods_write_this_device_s_files_and_tell_the_window() {
     let f = fixture();
-    let mut told = match f.plugins.dispatch(methods::WATCH_THEMES, serde_json::json!({})).await {
+    let mut told = match f
+        .plugins
+        .dispatch(methods::WATCH_THEMES, serde_json::json!({}))
+        .await
+    {
         Ok(RpcReply::Stream(stream)) => stream,
         _ => panic!("stream"),
     };
-    let nord = onicode_theme::builtin_registry().families.iter().flat_map(|fam| &fam.variants).find(|v| v.id == "nord").unwrap();
+    let nord = onicode_theme::builtin_registry()
+        .families
+        .iter()
+        .flat_map(|fam| &fam.variants)
+        .find(|v| v.id == "nord")
+        .unwrap();
     let dark = onicode_theme::catalog::Palette::of(nord).to_json(None);
-    let made = call(&f.plugins, methods::CREATE_THEME, serde_json::json!({ "name": "Ink", "dark": dark })).await.unwrap();
+    let made = call(
+        &f.plugins,
+        methods::CREATE_THEME,
+        serde_json::json!({ "name": "Ink", "dark": dark }),
+    )
+    .await
+    .unwrap();
     assert_eq!(made["id"], "custom-ink");
-    assert_eq!(told.next().await.unwrap(), serde_json::json!({ "changed": true }));
-    assert!(onicode_theme::CustomThemeLibrary::load(&f.data).unwrap().entry("custom-ink").is_some(), "in the data dir");
-    call(&f.plugins, methods::USE_THEME, serde_json::json!({ "id": "custom-ink" })).await.unwrap();
-    assert_eq!(told.next().await.unwrap(), serde_json::json!({ "changed": true }));
-    assert_eq!(onicode_theme::catalog::chosen(&f.data).dark.as_deref(), Some("custom-ink-dark"));
+    assert_eq!(
+        told.next().await.unwrap(),
+        serde_json::json!({ "changed": true })
+    );
+    assert!(
+        onicode_theme::CustomThemeLibrary::load(&f.data)
+            .unwrap()
+            .entry("custom-ink")
+            .is_some(),
+        "in the data dir"
+    );
+    call(
+        &f.plugins,
+        methods::USE_THEME,
+        serde_json::json!({ "id": "custom-ink" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        told.next().await.unwrap(),
+        serde_json::json!({ "changed": true })
+    );
+    assert_eq!(
+        onicode_theme::catalog::chosen(&f.data).dark.as_deref(),
+        Some("custom-ink-dark")
+    );
     // Reading tells nothing; a refusal says why and changes nothing.
-    let listed = call(&f.plugins, methods::LIST_THEMES, serde_json::json!({})).await.unwrap();
+    let listed = call(&f.plugins, methods::LIST_THEMES, serde_json::json!({}))
+        .await
+        .unwrap();
     assert_eq!(listed["wearing"]["dark"]["theme"], "custom-ink");
-    let refused = call(&f.plugins, methods::DELETE_THEME, serde_json::json!({ "id": "gruvbox" })).await.unwrap_err();
+    let refused = call(
+        &f.plugins,
+        methods::DELETE_THEME,
+        serde_json::json!({ "id": "gruvbox" }),
+    )
+    .await
+    .unwrap_err();
     assert!(refused.contains("built in"), "{refused}");
-    call(&f.plugins, methods::DELETE_THEME, serde_json::json!({ "id": "custom-ink" })).await.unwrap();
-    assert_eq!(told.next().await.unwrap(), serde_json::json!({ "changed": true }));
+    call(
+        &f.plugins,
+        methods::DELETE_THEME,
+        serde_json::json!({ "id": "custom-ink" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        told.next().await.unwrap(),
+        serde_json::json!({ "changed": true })
+    );
     assert!(onicode_theme::catalog::chosen(&f.data).is_empty());
 }

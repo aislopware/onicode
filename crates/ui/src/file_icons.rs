@@ -13,9 +13,9 @@ use std::{
 };
 
 use gpui::{App, AssetSource, Img, RenderImage, Result, SharedString, Styled as _, img};
+use onicode_syntax::LanguageId;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
-use onicode_syntax::LanguageId;
 
 use crate::theme::{Appearance, Theme};
 

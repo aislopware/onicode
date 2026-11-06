@@ -3,11 +3,6 @@
 //! (recorded from a real Muse Code 1.4.x host, plus hand-written error
 //! shapes): see fixtures/muse/fake-muse.py.
 use futures::StreamExt;
-use serde_json::Value;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
-use tokio::sync::{mpsc, oneshot};
 use onicode_harness::{
     CancellationToken, Harness, MuseHarness, RunControls, SteerMessage, TurnControl,
 };
@@ -15,6 +10,11 @@ use onicode_proto::{
     AccessMode, AgentEvent, DoneStatus, HarnessId, RunRequest, SandboxLevel, ToolCall,
     UserInputAnswer, UserInputQuestion,
 };
+use serde_json::Value;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+use tokio::sync::{mpsc, oneshot};
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/muse")
@@ -116,7 +116,8 @@ fn controls(answers: Vec<UserInputAnswer>) -> (RunControls, Controls) {
     )
 }
 
-type Events = futures::stream::BoxStream<'static, Result<AgentEvent, onicode_harness::HarnessError>>;
+type Events =
+    futures::stream::BoxStream<'static, Result<AgentEvent, onicode_harness::HarnessError>>;
 
 /// Events up to and including the next `Done`.
 async fn turn(stream: &mut Events) -> Vec<AgentEvent> {

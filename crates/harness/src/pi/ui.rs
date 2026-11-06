@@ -1,8 +1,8 @@
 use super::{normalize::string, rpc::Client};
+use onicode_proto::{UserInputAnswer, UserInputQuestion};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex, PoisonError};
 use tokio::{sync::oneshot, task::JoinSet};
-use onicode_proto::{UserInputAnswer, UserInputQuestion};
 pub(super) type Input =
     dyn Fn(Vec<UserInputQuestion>) -> oneshot::Receiver<Vec<UserInputAnswer>> + Send + Sync;
 #[derive(Default)]

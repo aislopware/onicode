@@ -1,7 +1,8 @@
 //! Persisted names are independent of ephemeral process/listener observations.
 use crate::discovery::{Listener, command_identity, framework};
-use onicode_preview_label::process_label;
 use anyhow::Context;
+use onicode_preview_label::process_label;
+use onicode_proto::{PREVIEW_PROXY_PORT, PreviewService, PreviewSnapshot};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -10,7 +11,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokio::sync::watch;
-use onicode_proto::{PREVIEW_PROXY_PORT, PreviewService, PreviewSnapshot};
 
 #[derive(Clone)]
 pub struct Catalog(Arc<Inner>);
@@ -489,9 +489,12 @@ mod tests {
     #[test]
     fn an_advertised_service_carries_no_argument_but_its_script() {
         let temp = tempfile::tempdir().unwrap();
-        let catalog =
-            Catalog::open(&temp.path().join("previews.json"), "device-id".into(), "MacBook".into())
-                .unwrap();
+        let catalog = Catalog::open(
+            &temp.path().join("previews.json"),
+            "device-id".into(),
+            "MacBook".into(),
+        )
+        .unwrap();
         let mut listener = server(3000, 1, "server.js");
         listener.args.extend([
             "--token=abc".into(),
@@ -503,8 +506,18 @@ mod tests {
             .replace_local(vec![(PathBuf::from("/work/my-app"), listener)])
             .unwrap();
         let advertised = serde_json::to_string(&catalog.snapshot().services).unwrap();
-        assert!(advertised.contains(r#""process":"node server.js""#), "{advertised}");
-        for secret in ["abc", "hunter2", "user:pass", "key=1", "--token", "--password"] {
+        assert!(
+            advertised.contains(r#""process":"node server.js""#),
+            "{advertised}"
+        );
+        for secret in [
+            "abc",
+            "hunter2",
+            "user:pass",
+            "key=1",
+            "--token",
+            "--password",
+        ] {
             assert!(!advertised.contains(secret), "{secret} in {advertised}");
         }
     }

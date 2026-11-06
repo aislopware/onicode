@@ -30,7 +30,10 @@ pub fn ensure(data_dir: &Path) -> (PathBuf, PathBuf) {
         }
         path
     };
-    (write("plugins.md", PLUGINS), write("templates.md", TEMPLATES))
+    (
+        write("plugins.md", PLUGINS),
+        write("templates.md", TEMPLATES),
+    )
 }
 
 /// The themes guide in `<data_dir>/docs/`, written where missing or

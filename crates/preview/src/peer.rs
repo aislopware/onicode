@@ -448,7 +448,10 @@ impl Handler {
         let initiator = self.initiator;
         let changed = self.changed.clone();
         tokio::spawn(async move {
-            let valid = channel.label().await.is_ok_and(|s| s == "onicode-preview-v1")
+            let valid = channel
+                .label()
+                .await
+                .is_ok_and(|s| s == "onicode-preview-v1")
                 && channel.ordered().await.unwrap_or(false)
                 && channel.max_retransmits().await.is_ok_and(|v| v.is_none())
                 && channel

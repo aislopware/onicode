@@ -4,8 +4,8 @@
 //! questions for the input bridge; any other shape is declined — a valid
 //! answer the server handles, where a JSON-RPC error failed its tool call.
 
-use serde_json::{Map, Value, json};
 use onicode_proto::{UserInputAnswer, UserInputQuestion};
+use serde_json::{Map, Value, json};
 
 enum Kind {
     Text,

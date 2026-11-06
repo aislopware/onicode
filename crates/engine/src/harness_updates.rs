@@ -9,12 +9,12 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use futures::StreamExt;
+use onicode_harness::process::{Command, Stdio};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use tokio::io::AsyncWriteExt as _;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
-use onicode_harness::process::{Command, Stdio};
 
 use onicode_proto::{
     HarnessId, HarnessInstallSource, HarnessUpdateFailure, HarnessUpdateFailureKind,
@@ -206,7 +206,9 @@ impl UpdatePlan {
         match self {
             // Onicode's own installers: a folder per version, and old ones go only
             // when nothing is running from them.
-            UpdatePlan::Registry(_) | UpdatePlan::AntigravityArchive | UpdatePlan::CodexStandalone(_) => Ok(()),
+            UpdatePlan::Registry(_)
+            | UpdatePlan::AntigravityArchive
+            | UpdatePlan::CodexStandalone(_) => Ok(()),
             UpdatePlan::Homebrew(_) => Err("Homebrew deletes the old version straight away."),
             UpdatePlan::Package { .. } => Err(REPLACES_FILES),
             UpdatePlan::MuseLauncher(_) => Err("Updating removes the version running chats use."),
@@ -225,7 +227,13 @@ impl UpdatePlan {
                     }
                     // Chats run Cursor through its SDK, not this CLI.
                     HarnessId::Cursor => Ok(()),
-                    HarnessId::Grok if !real.components().any(|part| part.as_os_str() == "node_modules") => Ok(()),
+                    HarnessId::Grok
+                        if !real
+                            .components()
+                            .any(|part| part.as_os_str() == "node_modules") =>
+                    {
+                        Ok(())
+                    }
                     HarnessId::Opencode => Err("Updating replaces the program in place."),
                     _ => Err(REPLACES_FILES),
                 }
@@ -529,7 +537,10 @@ fn update_plan(
     // (`Cellar/<token>/<version>/libexec/lib/node_modules/…`): that's Homebrew's
     // install. `npm install --prefix` there would change a keg behind brew's back.
     let homebrew = homebrew_package(executable);
-    if let Some(package) = homebrew.as_ref().filter(|package| !package.is_node_runtime()) {
+    if let Some(package) = homebrew
+        .as_ref()
+        .filter(|package| !package.is_node_runtime())
+    {
         // Without that prefix's own brew nothing proves who owns it, and the
         // CLI's own updater would write a second copy elsewhere.
         resolve_brew(&package.brew)?;
@@ -767,7 +778,10 @@ impl HarnessUpdateCoordinator {
             .into_iter()
             .filter(|descriptor| {
                 descriptor.id != HarnessId::Mock
-                    && descriptor.id.registry().is_none_or(crate::acp_registry::from_registry)
+                    && descriptor
+                        .id
+                        .registry()
+                        .is_none_or(crate::acp_registry::from_registry)
             })
             .map(|descriptor| descriptor.id)
             .collect();
@@ -1569,7 +1583,10 @@ impl HarnessUpdateCoordinator {
                 channel: current.channel.as_deref(),
             },
         )?;
-        if advisory.as_ref().is_some_and(|advisory| *advisory != plan.identity()) {
+        if advisory
+            .as_ref()
+            .is_some_and(|advisory| *advisory != plan.identity())
+        {
             return Err(self.install_changed(harness));
         }
         // What the rest of this update holds the install to: what the check
@@ -1601,7 +1618,9 @@ impl HarnessUpdateCoordinator {
         // version. Automatic updates still pick a quiet moment.
         let wait_reason = match plan.while_chats_run(harness) {
             Ok(()) if !automatic => None,
-            Ok(()) => Some("Waiting for running chats to finish, as automatic updates do.".to_owned()),
+            Ok(()) => {
+                Some("Waiting for running chats to finish, as automatic updates do.".to_owned())
+            }
             Err(why) => Some(format!("Waiting for running chats to finish. {why}")),
         };
         let mut intent = UpdateIntentGuard {
@@ -1754,7 +1773,10 @@ impl HarnessUpdateCoordinator {
                     .await
             }
             UpdatePlan::Registry(agent) => match self.begin_install(harness, &cancel) {
-                Ok(()) => crate::acp_registry::install_latest(agent, current.latest_version.as_deref()).await,
+                Ok(()) => {
+                    crate::acp_registry::install_latest(agent, current.latest_version.as_deref())
+                        .await
+                }
                 Err(error) => Err(error),
             },
             UpdatePlan::Package {
@@ -1796,11 +1818,14 @@ impl HarnessUpdateCoordinator {
                 }
             }
             UpdatePlan::MuseLauncher(launcher) => match self.begin_install(harness, &cancel) {
-                Ok(()) => {
-                    run_command_output_env(&launcher, &["--version"], UPDATE_TIMEOUT, MUSE_UPDATE_ENV)
-                        .await
-                        .map(drop)
-                }
+                Ok(()) => run_command_output_env(
+                    &launcher,
+                    &["--version"],
+                    UPDATE_TIMEOUT,
+                    MUSE_UPDATE_ENV,
+                )
+                .await
+                .map(drop),
                 Err(error) => Err(error),
             },
             UpdatePlan::Homebrew(package) => match resolve_brew(&package.brew) {
@@ -1945,9 +1970,8 @@ impl HarnessUpdateCoordinator {
         let checked = lock(&self.inner.checked_binaries)
             .get(&harness)
             .map(|fingerprint| fingerprint.path.clone());
-        checked.is_none_or(|checked| {
-            std::fs::canonicalize(executable).ok().as_ref() == Some(&checked)
-        })
+        checked
+            .is_none_or(|checked| std::fs::canonicalize(executable).ok().as_ref() == Some(&checked))
     }
 
     /// The install isn't the one a check offered an update for (reinstalled
@@ -1979,8 +2003,12 @@ impl HarnessUpdateCoordinator {
         if !matches!(provider(harness).latest, LatestSource::Hermes) {
             return Ok(false);
         }
-        let output = run_command_output(executable, &["update", "--check"], COMMAND_TIMEOUT).await?;
-        Ok(matches!(parse_hermes_update_check(&output)?, UpdateCheck::Current))
+        let output =
+            run_command_output(executable, &["update", "--check"], COMMAND_TIMEOUT).await?;
+        Ok(matches!(
+            parse_hermes_update_check(&output)?,
+            UpdateCheck::Current
+        ))
     }
 
     /// Serialize the final cancellation check and installation commit with
@@ -3021,7 +3049,11 @@ fn parse_hermes_update_check(output: &str) -> Result<UpdateCheck, String> {
 
 /// The version installed: an agent from the ACP registry's is its record's
 /// (Onicode installed it), every other CLI's what it says of itself.
-async fn installed_version_of(harness: HarnessId, executable: &Path, args: &[&str]) -> Result<String, String> {
+async fn installed_version_of(
+    harness: HarnessId,
+    executable: &Path,
+    args: &[&str],
+) -> Result<String, String> {
     if let Some(agent) = harness.registry() {
         return onicode_harness::acp_registry::record(agent)
             .map(|record| record.version)
@@ -3280,7 +3312,8 @@ fn is_muse_launcher(path: &Path) -> bool {
         return false;
     }
     let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    std::fs::metadata(&real).is_ok_and(|metadata| metadata.is_file() && metadata.len() <= 128 * 1024)
+    std::fs::metadata(&real)
+        .is_ok_and(|metadata| metadata.is_file() && metadata.len() <= 128 * 1024)
         && std::fs::read(&real).is_ok_and(|bytes| {
             let text = String::from_utf8_lossy(&bytes);
             text.contains("muse-code/launcher-") && text.contains("MUSE_SYNC_UPDATE")
@@ -3699,8 +3732,8 @@ esac
     #[cfg(unix)]
     #[tokio::test]
     async fn hermes_commit_updates_can_install_without_changing_the_cli_version() {
-        use std::os::unix::fs::PermissionsExt;
         use onicode_proto::HarnessUpdatePolicy;
+        use std::os::unix::fs::PermissionsExt;
 
         let temp = tempfile::tempdir().unwrap();
         let executable = temp.path().join("hermes");
@@ -4613,8 +4646,8 @@ esac
     #[cfg(unix)]
     #[tokio::test]
     async fn unknown_claude_channel_clears_stale_release_and_never_auto_installs() {
-        use std::os::unix::fs::PermissionsExt;
         use onicode_proto::HarnessUpdatePolicy;
+        use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
         let executable = temp.path().join("claude");
         std::fs::write(&executable, "#!/bin/sh\ncase $1 in\n --version) echo '2.1.100 (Claude Code)' ;;\n doctor) echo 'Old diagnostic with no channel' ;;\n update) exit 42 ;;\nesac\n").unwrap();
@@ -5066,7 +5099,10 @@ esac
         let launcher = temp.path().join("grok");
         symlink(&first, &launcher).unwrap();
         let registry = Arc::new(HarnessRegistry::new());
-        registry.register(Arc::new(ExecutableHarness(launcher.clone(), HarnessId::Grok)));
+        registry.register(Arc::new(ExecutableHarness(
+            launcher.clone(),
+            HarnessId::Grok,
+        )));
         let coordinator = super::HarnessUpdateCoordinator::new(temp.path(), registry.clone());
         coordinator.check_one(HarnessId::Grok).await.unwrap();
         assert_eq!(
@@ -5080,7 +5116,12 @@ esac
             let coordinator = coordinator.clone();
             tokio::spawn(async move { coordinator.apply(HarnessId::Grok).await })
         };
-        wait_for_phase(&coordinator, HarnessId::Grok, HarnessUpdatePhase::WaitingForIdle).await;
+        wait_for_phase(
+            &coordinator,
+            HarnessId::Grok,
+            HarnessUpdatePhase::WaitingForIdle,
+        )
+        .await;
         std::fs::remove_file(&launcher).unwrap();
         symlink(&second, &launcher).unwrap();
         drop(session);
@@ -5143,10 +5184,7 @@ esac
         use std::os::unix::fs::PermissionsExt;
         for (updater, moved) in [
             ("exit 0", false),
-            (
-                "printf '#!/bin/sh\\necho 2026.2\\n' > \"$0\"",
-                true,
-            ),
+            ("printf '#!/bin/sh\\necho 2026.2\\n' > \"$0\"", true),
         ] {
             let temp = tempfile::tempdir().unwrap();
             let executable = temp.path().join("cursor-agent");
@@ -5195,9 +5233,7 @@ esac
             std::fs::write(&path, "").unwrap();
             path
         };
-        let keg = file(
-            "Cellar/opencode/1.2.0/libexec/lib/node_modules/opencode-ai/bin/opencode",
-        );
+        let keg = file("Cellar/opencode/1.2.0/libexec/lib/node_modules/opencode-ai/bin/opencode");
         let plain = super::PlanContext::default();
 
         // No brew at this prefix yet.
@@ -5210,15 +5246,22 @@ esac
         file("bin/brew");
         file("bin/npm");
         let plan = super::update_plan(HarnessId::Opencode, &keg, plain).unwrap();
-        assert!(matches!(plan, super::UpdatePlan::Homebrew(_)), "{}", plan.identity());
+        assert!(
+            matches!(plan, super::UpdatePlan::Homebrew(_)),
+            "{}",
+            plan.identity()
+        );
         let cask = file("Caskroom/claude-code/2.1.100/claude");
         assert!(super::can_apply_update(HarnessId::ClaudeCode, &cask));
 
-        let node_global = file(
-            "Cellar/node@20/20.1.0/libexec/lib/node_modules/@anthropic-ai/claude-code/cli.js",
-        );
+        let node_global =
+            file("Cellar/node@20/20.1.0/libexec/lib/node_modules/@anthropic-ai/claude-code/cli.js");
         let plan = super::update_plan(HarnessId::ClaudeCode, &node_global, plain).unwrap();
-        assert!(matches!(plan, super::UpdatePlan::Package { .. }), "{}", plan.identity());
+        assert!(
+            matches!(plan, super::UpdatePlan::Package { .. }),
+            "{}",
+            plan.identity()
+        );
     }
 
     /// A chat is running, and someone asks for the update: an installer that
@@ -5228,16 +5271,30 @@ esac
     async fn an_update_someone_asked_for_goes_ahead_under_a_running_chat() {
         let (temp, coordinator) = cli_fixture("standalone");
         coordinator.check_one(HarnessId::Grok).await.unwrap();
-        assert_eq!(coordinator.status(HarnessId::Grok).phase, HarnessUpdatePhase::Available);
-        let running = coordinator.inner.registry.execution_lease(HarnessId::Grok).await;
+        assert_eq!(
+            coordinator.status(HarnessId::Grok).phase,
+            HarnessUpdatePhase::Available
+        );
+        let running = coordinator
+            .inner
+            .registry
+            .execution_lease(HarnessId::Grok)
+            .await;
 
-        let version = tokio::time::timeout(Duration::from_secs(10), coordinator.apply(HarnessId::Grok))
-            .await
-            .expect("it must not wait for the running chat")
-            .unwrap();
+        let version =
+            tokio::time::timeout(Duration::from_secs(10), coordinator.apply(HarnessId::Grok))
+                .await
+                .expect("it must not wait for the running chat")
+                .unwrap();
         assert_eq!(version, "2.0.0");
-        assert_eq!(std::fs::read_to_string(temp.path().join("version")).unwrap(), "2.0.0\n");
-        assert_eq!(coordinator.status(HarnessId::Grok).phase, HarnessUpdatePhase::Updated);
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join("version")).unwrap(),
+            "2.0.0\n"
+        );
+        assert_eq!(
+            coordinator.status(HarnessId::Grok).phase,
+            HarnessUpdatePhase::Updated
+        );
         assert_eq!(coordinator.status(HarnessId::Grok).wait_reason, None);
         // The running chat was never told to wind down, and new ones can start.
         assert!(!coordinator.inner.registry.update_pending(HarnessId::Grok));
@@ -5258,12 +5315,24 @@ esac
         use onicode_proto::HarnessUpdatePolicy;
         let (temp, coordinator) = cli_fixture("standalone");
         coordinator.check_one(HarnessId::Grok).await.unwrap();
-        let running = coordinator.inner.registry.execution_lease(HarnessId::Grok).await;
+        let running = coordinator
+            .inner
+            .registry
+            .execution_lease(HarnessId::Grok)
+            .await;
         coordinator.set_policy(HarnessId::Grok, HarnessUpdatePolicy::AutoWhenIdle);
-        wait_for_phase(&coordinator, HarnessId::Grok, HarnessUpdatePhase::WaitingForIdle).await;
+        wait_for_phase(
+            &coordinator,
+            HarnessId::Grok,
+            HarnessUpdatePhase::WaitingForIdle,
+        )
+        .await;
         let reason = coordinator.status(HarnessId::Grok).wait_reason.unwrap();
         assert!(reason.contains("automatic"), "{reason}");
-        assert_eq!(std::fs::read_to_string(temp.path().join("version")).unwrap(), "1.0.0\n");
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join("version")).unwrap(),
+            "1.0.0\n"
+        );
         drop(running);
         wait_for_phase(&coordinator, HarnessId::Grok, HarnessUpdatePhase::Updated).await;
         coordinator.shutdown().await;
@@ -5275,15 +5344,30 @@ esac
     async fn an_installer_that_replaces_files_waits_and_says_why() {
         let (temp, coordinator) = cli_fixture("node_modules");
         coordinator.check_one(HarnessId::Grok).await.unwrap();
-        let running = coordinator.inner.registry.execution_lease(HarnessId::Grok).await;
+        let running = coordinator
+            .inner
+            .registry
+            .execution_lease(HarnessId::Grok)
+            .await;
         let apply = {
             let coordinator = coordinator.clone();
             tokio::spawn(async move { coordinator.apply(HarnessId::Grok).await })
         };
-        wait_for_phase(&coordinator, HarnessId::Grok, HarnessUpdatePhase::WaitingForIdle).await;
+        wait_for_phase(
+            &coordinator,
+            HarnessId::Grok,
+            HarnessUpdatePhase::WaitingForIdle,
+        )
+        .await;
         let reason = coordinator.status(HarnessId::Grok).wait_reason.unwrap();
-        assert!(reason.contains("replaces files running chats still load"), "{reason}");
-        assert_eq!(std::fs::read_to_string(temp.path().join("version")).unwrap(), "1.0.0\n");
+        assert!(
+            reason.contains("replaces files running chats still load"),
+            "{reason}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join("version")).unwrap(),
+            "1.0.0\n"
+        );
         drop(running);
         assert_eq!(apply.await.unwrap().unwrap(), "2.0.0");
         assert_eq!(coordinator.status(HarnessId::Grok).wait_reason, None);
@@ -5348,12 +5432,16 @@ esac
             },
             HarnessId::ClaudeCode
         ));
-        assert!(!ok(UpdatePlan::MuseLauncher(plain.clone()), HarnessId::Muse));
+        assert!(!ok(
+            UpdatePlan::MuseLauncher(plain.clone()),
+            HarnessId::Muse
+        ));
     }
 
     #[test]
     fn chocolatey_claude_stays_with_chocolatey() {
-        let path = std::path::Path::new("C:/ProgramData/chocolatey/lib/claude-code/tools/claude.exe");
+        let path =
+            std::path::Path::new("C:/ProgramData/chocolatey/lib/claude-code/tools/claude.exe");
         assert_eq!(
             super::claude_package_manager_command(path).as_deref(),
             Some("choco upgrade claude-code")

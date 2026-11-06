@@ -5,10 +5,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use onicode_engine::{EdgeConfig, EngineCore, HarnessId, default_registry};
 use onicode_proto::{CloudState, CloudStatus, CloudUsage, VaultStatus};
 use onicode_rpc::{memory_client, methods};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// Request lines (`METHOD /path`) + their Authorization headers.
 type Seen = Arc<Mutex<Vec<(String, Option<String>)>>>;
@@ -628,7 +628,11 @@ async fn deleting_a_cloud_chat_deletes_its_machine() {
     })
     .await
     .unwrap_or_else(|_| panic!("{expected} not called: {:?}", deletes(&seen)));
-    assert_eq!(deletes(&seen), vec![expected], "only the Cloud chat's machine");
+    assert_eq!(
+        deletes(&seen),
+        vec![expected],
+        "only the Cloud chat's machine"
+    );
     core.shutdown().await;
 }
 
@@ -646,9 +650,8 @@ async fn provider_switch_is_refused_for_a_host_that_cannot_switch() {
     )
     .unwrap();
     let client = memory_client(core.rpc_service());
-    let config = |harness: &str| {
-        serde_json::json!({ "harness": harness, "sandbox": "workspace-write" })
-    };
+    let config =
+        |harness: &str| serde_json::json!({ "harness": harness, "sandbox": "workspace-write" });
     let cwd = dir.path().display().to_string();
     for (chat, device) in [
         ("old-host-chat", "cloud-old-machine".to_string()),
@@ -670,7 +673,10 @@ async fn provider_switch_is_refused_for_a_host_that_cannot_switch() {
             serde_json::json!({ "op": "setChatConfig", "chatId": chat, "config": config(harness) }),
         )
     };
-    let refused = switch("old-host-chat", "codex").await.unwrap_err().to_string();
+    let refused = switch("old-host-chat", "codex")
+        .await
+        .unwrap_err()
+        .to_string();
     assert!(refused.contains("newer Onicode"), "{refused}");
     // The same provider (a model or effort change) still goes through.
     switch("old-host-chat", "claude-code").await.unwrap();

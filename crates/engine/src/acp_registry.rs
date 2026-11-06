@@ -21,11 +21,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use onicode_harness::acp_registry::{self as reg, Entry, Readiness};
 use onicode_proto::{HarnessId, RegistryAgent};
 use onicode_rpc::{RpcError, RpcReply, methods};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use crate::registry::HarnessRegistry;
 
@@ -147,15 +147,27 @@ pub(crate) async fn latest_version(harness: HarnessId) -> Result<String, String>
 /// coordinator's install (`UpdatePlan::Registry`), under its exclusive
 /// lease. `expected`: the version the check found, refused if the registry
 /// has moved on since (check again first).
-pub(crate) async fn install_latest(agent: RegistryAgent, expected: Option<&str>) -> Result<(), String> {
+pub(crate) async fn install_latest(
+    agent: RegistryAgent,
+    expected: Option<&str>,
+) -> Result<(), String> {
     let service = service().map_err(|e| e.to_string())?;
-    let current = service.cache().entries.iter().find(|e| e.id == agent.registry_id()).map(|e| e.version.clone());
+    let current = service
+        .cache()
+        .entries
+        .iter()
+        .find(|e| e.id == agent.registry_id())
+        .map(|e| e.version.clone());
     if let (Some(expected), Some(current)) = (expected, current.as_deref())
         && expected != current
     {
         return Err("the registry has another version now; check again".into());
     }
-    service.add(agent.registry_id()).await.map(drop).map_err(|e| e.to_string())
+    service
+        .add(agent.registry_id())
+        .await
+        .map(drop)
+        .map_err(|e| e.to_string())
 }
 
 fn service() -> Result<Arc<AcpRegistry>, RpcError> {
@@ -184,21 +196,34 @@ pub(crate) fn handles(method: &str) -> bool {
 const SIGN_IN_FRESH: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 /// Each added agent's sign-in as it last said it (asking starts it).
-fn sign_ins()
--> &'static Mutex<std::collections::HashMap<RegistryAgent, (std::time::Instant, onicode_harness::acp::RegistrySignIn)>> {
+fn sign_ins() -> &'static Mutex<
+    std::collections::HashMap<
+        RegistryAgent,
+        (std::time::Instant, onicode_harness::acp::RegistrySignIn),
+    >,
+> {
     static SIGN_INS: OnceLock<
-        Mutex<std::collections::HashMap<RegistryAgent, (std::time::Instant, onicode_harness::acp::RegistrySignIn)>>,
+        Mutex<
+            std::collections::HashMap<
+                RegistryAgent,
+                (std::time::Instant, onicode_harness::acp::RegistrySignIn),
+            >,
+        >,
     > = OnceLock::new();
     SIGN_INS.get_or_init(Default::default)
 }
 
 /// A sign-in or sign-out ran: what the agent said before no longer stands.
 pub(crate) fn forget_sign_in(agent: RegistryAgent) {
-    sign_ins().lock().unwrap_or_else(PoisonError::into_inner).remove(&agent);
+    sign_ins()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .remove(&agent);
 }
 
 fn harness_of(agent: RegistryAgent) -> Result<onicode_harness::AcpHarness, RpcError> {
-    let record = reg::record(agent).ok_or_else(|| RpcError::Failed(format!("{} isn't added here", agent.registry_id())))?;
+    let record = reg::record(agent)
+        .ok_or_else(|| RpcError::Failed(format!("{} isn't added here", agent.registry_id())))?;
     Ok(onicode_harness::AcpHarness::registry(agent, &record.name))
 }
 
@@ -254,7 +279,9 @@ pub(crate) async fn dispatch(
     params: Value,
 ) -> Result<RpcReply, RpcError> {
     if crate::runner::is_cloud_platform() {
-        return Err(RpcError::Failed("Cloud runs only the agents it's provisioned with".into()));
+        return Err(RpcError::Failed(
+            "Cloud runs only the agents it's provisioned with".into(),
+        ));
     }
     let service = service()?;
     match method {
@@ -279,7 +306,8 @@ pub(crate) async fn dispatch(
                 (Some(_), Some(updates)) => {
                     updates.check_one(harness).await.map_err(RpcError::Failed)?;
                     updates.apply(harness).await.map_err(RpcError::Failed)?;
-                    reg::record(agent).ok_or_else(|| RpcError::Failed("the update didn't land".into()))?
+                    reg::record(agent)
+                        .ok_or_else(|| RpcError::Failed("the update didn't land".into()))?
                 }
                 _ => service.add(&p.id).await?,
             };
@@ -309,14 +337,21 @@ pub(crate) async fn dispatch(
         }
         methods::SET_ACP_AGENT_ENV => {
             let p: EnvParams = parse(params)?;
-            let env = reg::set_user_env(agent_of(&p.id)?, &p.env).map_err(|e| RpcError::Failed(e.to_string()))?;
+            let env = reg::set_user_env(agent_of(&p.id)?, &p.env)
+                .map_err(|e| RpcError::Failed(e.to_string()))?;
             RpcReply::value(&json!({ "env": reg::env_text(&env) }))
         }
         methods::GET_ACP_AGENT_SIGN_IN => {
             let p: SignInParams = parse(params)?;
             let agent = agent_of(&p.id)?;
-            let kept = sign_ins().lock().unwrap_or_else(PoisonError::into_inner).get(&agent).cloned();
-            if let Some((at, state)) = kept.filter(|(at, _)| !p.refresh && at.elapsed() < SIGN_IN_FRESH) {
+            let kept = sign_ins()
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(&agent)
+                .cloned();
+            if let Some((at, state)) =
+                kept.filter(|(at, _)| !p.refresh && at.elapsed() < SIGN_IN_FRESH)
+            {
                 let _ = at;
                 return RpcReply::value(&state);
             }
@@ -345,7 +380,9 @@ pub(crate) async fn dispatch(
             let valid = !p.var.is_empty()
                 && p.var.len() <= 64
                 && p.var.starts_with(|c: char| c.is_ascii_uppercase())
-                && p.var.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
+                && p.var
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
             let value = p.value.trim();
             if !valid || value.chars().any(char::is_control) || value.len() > 4096 {
                 return Err(RpcError::BadParams("not a key".into()));
@@ -356,17 +393,22 @@ pub(crate) async fn dispatch(
             } else {
                 env.insert(p.var.clone(), value.to_owned());
             }
-            reg::set_user_env(agent, &reg::env_text(&env)).map_err(|e| RpcError::Failed(e.to_string()))?;
+            reg::set_user_env(agent, &reg::env_text(&env))
+                .map_err(|e| RpcError::Failed(e.to_string()))?;
             forget_sign_in(agent);
             tracing::info!(agent = agent.registry_id(), var = %p.var, set = !value.is_empty(), "registry agent key set");
             RpcReply::value(&json!({ "ok": true }))
         }
         methods::ADD_OWN_AGENT => {
             let p: OwnParams = parse(params)?;
-            let record = reg::add_own(&p.name, &p.command, &p.env).map_err(|e| RpcError::Failed(e.to_string()))?;
+            let record = reg::add_own(&p.name, &p.command, &p.env)
+                .map_err(|e| RpcError::Failed(e.to_string()))?;
             registry.register_registry_agent(&record);
             let cache = service.cache();
-            let agent = service.listings(&cache).into_iter().find(|l| l.id == record.id);
+            let agent = service
+                .listings(&cache)
+                .into_iter()
+                .find(|l| l.id == record.id);
             RpcReply::value(&json!({ "agent": agent, "harnesses": registry.descriptors_for(true) }))
         }
         other => Err(RpcError::UnknownMethod(other.to_owned())),
@@ -421,7 +463,9 @@ impl AcpRegistry {
             for icon in icons.filter_map(Result::ok) {
                 let name = icon.file_name().to_string_lossy().to_string();
                 if let Some(id) = name.strip_suffix(".svg")
-                    && let Some(svg) = std::fs::read_to_string(icon.path()).ok().and_then(|t| reg::clean_svg(&t))
+                    && let Some(svg) = std::fs::read_to_string(icon.path())
+                        .ok()
+                        .and_then(|t| reg::clean_svg(&t))
                 {
                     cache.icons.insert(id.to_owned(), svg);
                 }
@@ -445,7 +489,8 @@ impl AcpRegistry {
             return Ok(());
         }
         let url = reg::index_url();
-        let (bytes, etag) = reg::fetch_index(&url, if empty { None } else { etag.as_deref() }).await?;
+        let (bytes, etag) =
+            reg::fetch_index(&url, if empty { None } else { etag.as_deref() }).await?;
         if let Some(bytes) = &bytes {
             let entries = reg::parse_index(bytes)?;
             let _ = std::fs::create_dir_all(&self.dir);
@@ -459,9 +504,15 @@ impl AcpRegistry {
             let mut cache = self.cache();
             cache.etag = etag.clone();
             cache.fetched_at = Some(now());
-            let saved = Saved { etag, fetched_at: cache.fetched_at };
+            let saved = Saved {
+                etag,
+                fetched_at: cache.fetched_at,
+            };
             let _ = std::fs::create_dir_all(&self.dir);
-            let _ = std::fs::write(self.dir.join("state.json"), serde_json::to_vec(&saved).unwrap_or_default());
+            let _ = std::fs::write(
+                self.dir.join("state.json"),
+                serde_json::to_vec(&saved).unwrap_or_default(),
+            );
         }
         self.fetch_icons().await;
         Ok(())
@@ -497,9 +548,15 @@ impl AcpRegistry {
     /// Every agent of the registry, then any added here that has since
     /// left it, in the registry's order (by name).
     fn listings(&self, cache: &Cache) -> Vec<Listing> {
-        let records: BTreeMap<String, reg::Record> =
-            reg::records().into_iter().map(|r| (r.id.clone(), r)).collect();
-        let adding = self.adding.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        let records: BTreeMap<String, reg::Record> = reg::records()
+            .into_iter()
+            .map(|r| (r.id.clone(), r))
+            .collect();
+        let adding = self
+            .adding
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         let mut out: Vec<Listing> = cache
             .entries
             .iter()
@@ -587,7 +644,11 @@ impl AcpRegistry {
         struct Done<'a>(&'a AcpRegistry, String);
         impl Drop for Done<'_> {
             fn drop(&mut self) {
-                self.0.adding.lock().unwrap_or_else(PoisonError::into_inner).remove(&self.1);
+                self.0
+                    .adding
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .remove(&self.1);
             }
         }
         let _done = Done(self, id.to_owned());
@@ -599,7 +660,9 @@ impl AcpRegistry {
                 None => None,
             },
         };
-        reg::install(&entry, icon).await.map_err(|e| RpcError::Failed(e.to_string()))
+        reg::install(&entry, icon)
+            .await
+            .map_err(|e| RpcError::Failed(e.to_string()))
     }
 }
 

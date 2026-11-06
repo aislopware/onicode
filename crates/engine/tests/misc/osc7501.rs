@@ -7,7 +7,7 @@ use std::time::Duration;
 use base64::Engine as _;
 use chrono::Utc;
 use onicode_engine::{EngineCore, HarnessRegistry};
-use onicode_mcp::{Origin, Tools, Onicode};
+use onicode_mcp::{Onicode, Origin, Tools};
 use onicode_proto::{ChatIndicator, HarnessId, Session, SessionStatus, TerminalEvent};
 use onicode_rpc::memory_client;
 

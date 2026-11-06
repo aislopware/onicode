@@ -14,7 +14,9 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 
-use onicode_doc::{CommandBasedOn, SessionCommandEntry, SessionCommandPayload, SessionCommandStatus};
+use onicode_doc::{
+    CommandBasedOn, SessionCommandEntry, SessionCommandPayload, SessionCommandStatus,
+};
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::{Harness, HarnessError, RunControls};
 use onicode_proto::{
@@ -337,10 +339,16 @@ async fn two_engines_share_a_workspace() {
         .expect("set space icon");
     wait_for(
         || {
-            a.workspace.read_spaces().unwrap_or_default().iter().any(|s| {
-                s.id == "space-1"
-                    && s.icon.as_ref().is_some_and(|i| i.emoji.as_deref() == Some("🚀") && i.hue.as_deref() == Some("amber"))
-            })
+            a.workspace
+                .read_spaces()
+                .unwrap_or_default()
+                .iter()
+                .any(|s| {
+                    s.id == "space-1"
+                        && s.icon.as_ref().is_some_and(|i| {
+                            i.emoji.as_deref() == Some("🚀") && i.hue.as_deref() == Some("amber")
+                        })
+                })
         },
         "space icon on A",
     )
@@ -355,7 +363,13 @@ async fn two_engines_share_a_workspace() {
             .await
             .is_err()
     );
-    let kept = b.workspace.read_spaces().unwrap().into_iter().find(|s| s.id == "space-1").unwrap();
+    let kept = b
+        .workspace
+        .read_spaces()
+        .unwrap()
+        .into_iter()
+        .find(|s| s.id == "space-1")
+        .unwrap();
     assert_eq!(kept.icon.and_then(|i| i.emoji).as_deref(), Some("🚀"));
 
     // Device rename from B visible on A.

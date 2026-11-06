@@ -189,7 +189,8 @@ pub(super) fn commit_trial(incoming: &Path, directory: &Path, version: &str) -> 
         return Err(err).context("installing the updated executable");
     }
     refresh_installer_version(version);
-    std::fs::write(directory.join(VERSION_FILE), version).context("recording the installed version")?;
+    std::fs::write(directory.join(VERSION_FILE), version)
+        .context("recording the installed version")?;
     Ok(())
 }
 

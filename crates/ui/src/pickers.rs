@@ -1697,7 +1697,8 @@ impl Pickers {
     }
 
     fn plan_offered(&self, cx: &App) -> bool {
-        self.effective_descriptor(cx).is_some_and(|d| d.supports_plan)
+        self.effective_descriptor(cx)
+            .is_some_and(|d| d.supports_plan)
     }
 
     /// The chat's mode, else the draft's pick, else the remembered one —
@@ -4984,7 +4985,11 @@ impl Pickers {
     /// has a single mode, so a chat never runs with more access than it
     /// says; None only before the catalog names the modes (or from an
     /// engine predating them).
-    fn access_chip(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<gpui::Stateful<gpui::Div>> {
+    fn access_chip(
+        &self,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::Stateful<gpui::Div>> {
         if self.title.is_some() {
             return None;
         }
@@ -7168,7 +7173,13 @@ impl Render for Pickers {
             });
         let model_chip = model_chip.w(px(chip_width));
         let access_chip = self.access_chip(&theme, cx).map(|chip| {
-            attach_overlay_end(chip, &mut overlay, PickerKind::Access, "access-popover", closing)
+            attach_overlay_end(
+                chip,
+                &mut overlay,
+                PickerKind::Access,
+                "access-popover",
+                closing,
+            )
         });
         // Both presentations align to the chip's trailing edge beside Send.
         let model_chip = attach_overlay_end(
@@ -7280,10 +7291,13 @@ mod tests {
         let state = cx.new(|_| {
             let mut state = AppState::new();
             state.local_device_id = Some("mac".into());
-            state.chats.push(serde_json::from_value(serde_json::json!({
-                "id":"cloud-chat", "deviceId":"cloud-machine", "archived":false,
-                "createdAt":"2026-09-01T00:00:00Z",
-            })).unwrap());
+            state.chats.push(
+                serde_json::from_value(serde_json::json!({
+                    "id":"cloud-chat", "deviceId":"cloud-machine", "archived":false,
+                    "createdAt":"2026-09-01T00:00:00Z",
+                }))
+                .unwrap(),
+            );
             state
         });
         let pickers = cx.new(|cx| Pickers::new(state.clone(), cx));
@@ -7301,7 +7315,9 @@ mod tests {
             assert_eq!(pickers.catalog_owner.as_deref(), Some("cloud-machine"));
         });
         assert_eq!(
-            state.read_with(cx, |state, _| state.effective_device_id()).as_deref(),
+            state
+                .read_with(cx, |state, _| state.effective_device_id())
+                .as_deref(),
             Some("mac")
         );
         // Back on the new-chat canvas, the Mac's catalogs again.
@@ -7463,7 +7479,10 @@ mod tests {
         });
         cx.run_until_parked();
         let sent = requests.try_recv().expect("a refs request went out");
-        assert!(sent.contains("ListCloudBranches") && sent.contains("acme/app"), "{sent}");
+        assert!(
+            sent.contains("ListCloudBranches") && sent.contains("acme/app"),
+            "{sent}"
+        );
         cx.update(|cx| {
             let pickers = pickers.read(cx);
             assert_eq!(
@@ -7668,19 +7687,38 @@ mod tests {
                 pickers.pick_harness(HarnessId::Codex, cx);
                 let resolved = pickers.resolved(cx);
                 assert_eq!(resolved.harness, Some(HarnessId::Codex));
-                assert_eq!(resolved.model, None, "the old provider's model must not linger");
+                assert_eq!(
+                    resolved.model, None,
+                    "the old provider's model must not linger"
+                );
                 assert!(resolved.model_options.is_empty());
-                assert!(pickers.mutate_task.is_some(), "a saved chat persists the switch");
+                assert!(
+                    pickers.mutate_task.is_some(),
+                    "a saved chat persists the switch"
+                );
             });
             (state, pickers)
         });
         cx.run_until_parked();
         let sent = requests.try_recv().expect("setChatConfig went out");
-        assert!(sent.contains("setChatConfig") && sent.contains("\"codex\""), "{sent}");
+        assert!(
+            sent.contains("setChatConfig") && sent.contains("\"codex\""),
+            "{sent}"
+        );
         cx.update(|cx| {
-            let row = state.read(cx).selected_chat_row().unwrap().config.clone().unwrap();
+            let row = state
+                .read(cx)
+                .selected_chat_row()
+                .unwrap()
+                .config
+                .clone()
+                .unwrap();
             assert_eq!(row.harness, HarnessId::Codex);
-            assert_eq!(row.sandbox, onicode_proto::SandboxLevel::ReadOnly, "sandbox is kept");
+            assert_eq!(
+                row.sandbox,
+                onicode_proto::SandboxLevel::ReadOnly,
+                "sandbox is kept"
+            );
 
             // A turn starts: the switch is refused until it ends.
             state.update(cx, |state, _| {
@@ -7692,7 +7730,10 @@ mod tests {
                 assert_eq!(pickers.resolved(cx).harness, Some(HarnessId::Codex));
             });
             state.update(cx, |state, _| state.apply_sessions(Vec::new()));
-            assert!(!pickers.read(cx).harness_locked(cx), "unlocks when the turn ends");
+            assert!(
+                !pickers.read(cx).harness_locked(cx),
+                "unlocks when the turn ends"
+            );
         });
     }
 
@@ -7723,7 +7764,11 @@ mod tests {
             pickers.update(cx, |pickers, cx| {
                 pickers.show_compact_models(cx);
                 assert_eq!(pickers.model_rail, ModelRail::Harness);
-                assert_eq!(providers(pickers, cx), vec![HarnessId::Codex], "locked mid-turn");
+                assert_eq!(
+                    providers(pickers, cx),
+                    vec![HarnessId::Codex],
+                    "locked mid-turn"
+                );
                 pickers.pick_compact_provider(HarnessId::ClaudeCode, cx);
                 assert_eq!(pickers.resolved(cx).harness, Some(HarnessId::Codex));
             });
@@ -11039,7 +11084,10 @@ mod tests {
         assert_eq!(escape_typed_path(r"C:\a", false), r"C:\a");
         // A Windows device before anything listed: rooted paths wait for it.
         assert_eq!(resolve_typed_path("/code", None, None, true), None);
-        assert_eq!(resolve(r"D:\Random\..\onicode\"), Some(r"D:\onicode".into()));
+        assert_eq!(
+            resolve(r"D:\Random\..\onicode\"),
+            Some(r"D:\onicode".into())
+        );
         assert_eq!(
             resolve("D:/Random/./onicode"),
             Some(r"D:\Random\onicode".into())

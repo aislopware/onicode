@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use std::hint::black_box;
 use onicode_text::*;
+use std::hint::black_box;
 
 struct Fallback;
 

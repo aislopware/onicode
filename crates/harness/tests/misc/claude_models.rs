@@ -1,8 +1,8 @@
 #![cfg(unix)]
-use serde_json::json;
-use std::os::unix::fs::PermissionsExt;
 use onicode_harness::{ClaudeHarness, Harness};
 use onicode_proto::ReasoningLevel;
+use serde_json::json;
+use std::os::unix::fs::PermissionsExt;
 
 fn fixture(response: serde_json::Value) -> (tempfile::TempDir, ClaudeHarness) {
     let dir = tempfile::tempdir().unwrap();

@@ -201,7 +201,11 @@ pub fn newer(candidate: &str, installed: &str) -> bool {
     if let (Ok(a), Ok(b)) = (semver::Version::parse(&a), semver::Version::parse(&b)) {
         return a > b;
     }
-    let numbers = |v: &str| v.split('.').map(|p| p.parse::<u64>().ok()).collect::<Option<Vec<u64>>>();
+    let numbers = |v: &str| {
+        v.split('.')
+            .map(|p| p.parse::<u64>().ok())
+            .collect::<Option<Vec<u64>>>()
+    };
     let (Some(mut a), Some(mut b)) = (numbers(&a), numbers(&b)) else {
         return false;
     };
@@ -212,7 +216,9 @@ pub fn newer(candidate: &str, installed: &str) -> bool {
 }
 
 pub fn not_newer(candidate: &str, installed: &str) -> String {
-    format!("Version {candidate} isn't later than the {installed} installed, so it won't replace it")
+    format!(
+        "Version {candidate} isn't later than the {installed} installed, so it won't replace it"
+    )
 }
 
 /// What was installed over, when it was an update.
@@ -247,7 +253,11 @@ fn installed(dir: &Path) -> Result<(String, Replaced), String> {
 /// Install `package` under `plugins_dir`, from `source`. Over an installed
 /// plugin only when the same key signed both; never over anything else.
 /// Returns what it replaced.
-pub fn install(plugins_dir: &Path, package: &Package, source: &Source) -> Result<Option<Replaced>, String> {
+pub fn install(
+    plugins_dir: &Path,
+    package: &Package,
+    source: &Source,
+) -> Result<Option<Replaced>, String> {
     let id = package.id().to_owned();
     let dir = plugins_dir.join(&id);
     let replaced = if std::fs::symlink_metadata(&dir).is_ok() {
@@ -277,7 +287,8 @@ pub fn install(plugins_dir: &Path, package: &Package, source: &Source) -> Result
         }
         if replaced.is_some() {
             let old = incoming.join(format!("{id}-old-{}", crate::new_id()));
-            std::fs::rename(&dir, &old).map_err(|_| "Couldn't replace the installed one".to_string())?;
+            std::fs::rename(&dir, &old)
+                .map_err(|_| "Couldn't replace the installed one".to_string())?;
             if std::fs::rename(&staged, &dir).is_err() {
                 let _ = std::fs::rename(&old, &dir);
                 return Err("Couldn't replace the installed one".into());
@@ -306,7 +317,11 @@ fn stage(staged: &Path, package: &Package, source: &Source) -> Result<(), String
         }
         std::fs::write(&path, bytes).map_err(write_error)?;
     }
-    std::fs::write(staged.join(MANIFEST_FILE), signing::pretty(&package.manifest.raw)).map_err(write_error)?;
+    std::fs::write(
+        staged.join(MANIFEST_FILE),
+        signing::pretty(&package.manifest.raw),
+    )
+    .map_err(write_error)?;
     let source = serde_json::to_vec_pretty(source).unwrap_or_default();
     std::fs::write(staged.join(SOURCE_FILE), source).map_err(write_error)?;
     Ok(())
@@ -322,7 +337,11 @@ pub enum Origin {
     /// A GitHub repository's release (`None`: the latest).
     Release { repo: String, tag: Option<String> },
     /// A git repository, at a branch or tag, the plugin in a folder of it.
-    Git { url: String, git_ref: Option<String>, path: Option<String> },
+    Git {
+        url: String,
+        git_ref: Option<String>,
+        path: Option<String>,
+    },
 }
 
 fn plain_url(url: &str) -> bool {
@@ -337,11 +356,17 @@ pub fn https_link(link: &str) -> Option<String> {
     // `owner/repo`: GitHub.
     let shorthand = link.split('/').count() == 2
         && !link.contains(':')
-        && link.split('/').all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c)));
+        && link.split('/').all(|p| {
+            !p.is_empty()
+                && p.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        });
     // A host without a scheme (`github.com/owner/repo`, as people paste
     // it): https.
     let bare_host = !link.contains("://")
-        && link.split('/').next().is_some_and(|host| host.contains('.') && !host.starts_with('.') && !host.contains(['@', ':']))
+        && link.split('/').next().is_some_and(|host| {
+            host.contains('.') && !host.starts_with('.') && !host.contains(['@', ':'])
+        })
         && link.split('/').count() > 1;
     let link = if shorthand {
         format!("https://github.com/{link}")
@@ -363,7 +388,11 @@ pub fn origin(link: &str, git_ref: Option<&str>, path: Option<&str>) -> Result<O
     if link.is_empty() || link.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err(not_one());
     }
-    let clean = |s: Option<&str>| s.map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
+    let clean = |s: Option<&str>| {
+        s.map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    };
     let (git_ref, path) = (clean(git_ref), clean(path));
     if let Some(path) = &path
         && !package::plain_path(path)
@@ -378,7 +407,11 @@ pub fn origin(link: &str, git_ref: Option<&str>, path: Option<&str>) -> Result<O
     let Some(link) = https_link(link) else {
         return Err("Plugins come from https links".into());
     };
-    let bare = link.split(['?', '#']).next().unwrap_or(&link).trim_end_matches('/');
+    let bare = link
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(&link)
+        .trim_end_matches('/');
     if bare.ends_with(&format!(".{EXTENSION}")) {
         return Ok(Origin::Link(link));
     }
@@ -390,8 +423,15 @@ pub fn origin(link: &str, git_ref: Option<&str>, path: Option<&str>) -> Result<O
         let repo = format!("{}/{}", parts[0], parts[1].trim_end_matches(".git"));
         match &parts[2..] {
             [] => {}
-            ["releases"] | ["releases", "latest"] => return Ok(Origin::Release { repo, tag: None }),
-            ["releases", "tag", tag] => return Ok(Origin::Release { repo, tag: Some((*tag).to_owned()) }),
+            ["releases"] | ["releases", "latest"] => {
+                return Ok(Origin::Release { repo, tag: None });
+            }
+            ["releases", "tag", tag] => {
+                return Ok(Origin::Release {
+                    repo,
+                    tag: Some((*tag).to_owned()),
+                });
+            }
             ["tree", branch, folder @ ..] => {
                 let folder = (!folder.is_empty()).then(|| folder.join("/"));
                 if let Some(folder) = &folder
@@ -407,9 +447,17 @@ pub fn origin(link: &str, git_ref: Option<&str>, path: Option<&str>) -> Result<O
             }
             _ => return Err(not_one()),
         }
-        return Ok(Origin::Git { url: format!("https://github.com/{repo}.git"), git_ref, path });
+        return Ok(Origin::Git {
+            url: format!("https://github.com/{repo}.git"),
+            git_ref,
+            path,
+        });
     }
-    Ok(Origin::Git { url: link, git_ref, path })
+    Ok(Origin::Git {
+        url: link,
+        git_ref,
+        path,
+    })
 }
 
 fn http() -> reqwest::Client {
@@ -429,13 +477,23 @@ pub async fn download(url: &str) -> Result<Vec<u8>, String> {
         .await
         .map_err(|_| "Couldn't download it".to_string())?;
     if !response.status().is_success() {
-        return Err(format!("Couldn't download it ({})", response.status().as_u16()));
+        return Err(format!(
+            "Couldn't download it ({})",
+            response.status().as_u16()
+        ));
     }
-    if response.content_length().is_some_and(|n| n > MAX_PACKAGE_BYTES) {
+    if response
+        .content_length()
+        .is_some_and(|n| n > MAX_PACKAGE_BYTES)
+    {
         return Err(WORDS.too_big.into());
     }
     let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| "Couldn't download it".to_string())? {
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "Couldn't download it".to_string())?
+    {
         bytes.extend_from_slice(&chunk);
         if bytes.len() as u64 > MAX_PACKAGE_BYTES {
             return Err(WORDS.too_big.into());
@@ -451,7 +509,11 @@ pub async fn release_asset(repo: &str, tag: Option<&str>) -> Result<String, Stri
 
 /// The asset of `repo`'s release `tag` (the latest when none) whose name
 /// ends `.{extension}` (a plugin's, a template's).
-pub async fn release_asset_of(repo: &str, tag: Option<&str>, extension: &str) -> Result<String, String> {
+pub async fn release_asset_of(
+    repo: &str,
+    tag: Option<&str>,
+    extension: &str,
+) -> Result<String, String> {
     let api = match tag {
         Some(tag) => format!("https://api.github.com/repos/{repo}/releases/tags/{tag}"),
         None => format!("https://api.github.com/repos/{repo}/releases/latest"),
@@ -465,12 +527,19 @@ pub async fn release_asset_of(repo: &str, tag: Option<&str>, extension: &str) ->
     if !response.status().is_success() {
         return Err("That release can't be found".into());
     }
-    let release: Value = response.json().await.map_err(|_| "Couldn't read that release".to_string())?;
+    let release: Value = response
+        .json()
+        .await
+        .map_err(|_| "Couldn't read that release".to_string())?;
     release["assets"]
         .as_array()
         .into_iter()
         .flatten()
-        .find(|a| a["name"].as_str().is_some_and(|n| n.ends_with(&format!(".{extension}"))))
+        .find(|a| {
+            a["name"]
+                .as_str()
+                .is_some_and(|n| n.ends_with(&format!(".{extension}")))
+        })
         .and_then(|a| a["browser_download_url"].as_str())
         .map(str::to_owned)
         .ok_or_else(|| format!("That release has no .{extension} file"))
@@ -479,7 +548,12 @@ pub async fn release_asset_of(repo: &str, tag: Option<&str>, extension: &str) ->
 async fn git(args: &[&str], cwd: Option<&Path>) -> Result<String, String> {
     let mut cmd = tokio::process::Command::new("git");
     if !cfg!(test) {
-        cmd.args(["-c", "protocol.file.allow=never", "-c", "protocol.ext.allow=never"]);
+        cmd.args([
+            "-c",
+            "protocol.file.allow=never",
+            "-c",
+            "protocol.ext.allow=never",
+        ]);
     }
     cmd.args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -495,7 +569,9 @@ async fn git(args: &[&str], cwd: Option<&Path>) -> Result<String, String> {
         .map_err(|_| "The repository took too long to answer".to_string())?
         .map_err(|_| "git isn't available".to_string())?;
     if !output.status.success() {
-        return Err("Couldn't read that repository (is it public, and is the branch right?)".into());
+        return Err(
+            "Couldn't read that repository (is it public, and is the branch right?)".into(),
+        );
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
@@ -513,7 +589,12 @@ pub async fn git_head(url: &str, git_ref: Option<&str>) -> Result<String, String
 
 /// `url` at `git_ref`, cloned into `scratch`: the plugin in it (at `path`)
 /// packed, and the commit.
-pub async fn from_git(url: &str, git_ref: Option<&str>, path: Option<&str>, scratch: &Path) -> Result<(Vec<u8>, String), String> {
+pub async fn from_git(
+    url: &str,
+    git_ref: Option<&str>,
+    path: Option<&str>,
+    scratch: &Path,
+) -> Result<(Vec<u8>, String), String> {
     let clone = scratch.join(format!("git-{}", crate::new_id()));
     let dest = clone.display().to_string();
     let mut args = vec!["clone", "--depth", "1", "--single-branch", "--no-tags"];
@@ -550,7 +631,15 @@ pub async fn fetch(origin: &Origin, scratch: &Path) -> Result<(Package, Source),
     let (raw, source) = match origin {
         Origin::Link(url) => (
             download(url).await?,
-            Source { kind: "link".into(), url: Some(url.clone()), path: None, git_ref: None, commit: None, version: String::new(), installed_at: 0 },
+            Source {
+                kind: "link".into(),
+                url: Some(url.clone()),
+                path: None,
+                git_ref: None,
+                commit: None,
+                version: String::new(),
+                installed_at: 0,
+            },
         ),
         Origin::Release { repo, tag } => {
             let asset = release_asset(repo, tag.as_deref()).await?;
@@ -571,7 +660,15 @@ pub async fn fetch(origin: &Origin, scratch: &Path) -> Result<(Package, Source),
             let (raw, commit) = from_git(url, git_ref.as_deref(), path.as_deref(), scratch).await?;
             (
                 raw,
-                Source { kind: "git".into(), url: Some(url.clone()), path: path.clone(), git_ref: git_ref.clone(), commit: Some(commit), version: String::new(), installed_at: 0 },
+                Source {
+                    kind: "git".into(),
+                    url: Some(url.clone()),
+                    path: path.clone(),
+                    git_ref: git_ref.clone(),
+                    commit: Some(commit),
+                    version: String::new(),
+                    installed_at: 0,
+                },
             )
         }
     };
@@ -583,17 +680,23 @@ pub async fn fetch(origin: &Origin, scratch: &Path) -> Result<(Package, Source),
 
 /// Where `source` is now, if it may have changed: `None` when it surely
 /// hasn't (a git branch still at the same commit; a package file gone).
-pub async fn fetch_again(source: &Source, scratch: &Path) -> Result<Option<(Package, Source)>, String> {
+pub async fn fetch_again(
+    source: &Source,
+    scratch: &Path,
+) -> Result<Option<(Package, Source)>, String> {
     match source.kind.as_str() {
         "file" => {
-            let Some(path) = source.path.clone() else { return Ok(None) };
+            let Some(path) = source.path.clone() else {
+                return Ok(None);
+            };
             let path = PathBuf::from(path);
             if !path.is_file() {
                 return Ok(None);
             }
-            let package = tokio::task::spawn_blocking(move || package::read(&path, &WORDS).and_then(parse))
-                .await
-                .map_err(|_| "Couldn't read it".to_string())??;
+            let package =
+                tokio::task::spawn_blocking(move || package::read(&path, &WORDS).and_then(parse))
+                    .await
+                    .map_err(|_| "Couldn't read it".to_string())??;
             Ok(Some((package, source.clone())))
         }
         "link" => {
@@ -603,7 +706,15 @@ pub async fn fetch_again(source: &Source, scratch: &Path) -> Result<Option<(Pack
         "release" => {
             let url = source.url.as_deref().ok_or("It has no repository")?;
             let repo = url.trim_start_matches("https://github.com/").to_owned();
-            fetch(&Origin::Release { repo, tag: source.git_ref.clone() }, scratch).await.map(Some)
+            fetch(
+                &Origin::Release {
+                    repo,
+                    tag: source.git_ref.clone(),
+                },
+                scratch,
+            )
+            .await
+            .map(Some)
         }
         "git" => {
             let url = source.url.clone().ok_or("It has no repository")?;
@@ -611,9 +722,16 @@ pub async fn fetch_again(source: &Source, scratch: &Path) -> Result<Option<(Pack
             if source.commit.as_deref() == Some(head.as_str()) {
                 return Ok(None);
             }
-            fetch(&Origin::Git { url, git_ref: source.git_ref.clone(), path: source.path.clone() }, scratch)
-                .await
-                .map(Some)
+            fetch(
+                &Origin::Git {
+                    url,
+                    git_ref: source.git_ref.clone(),
+                    path: source.path.clone(),
+                },
+                scratch,
+            )
+            .await
+            .map(Some)
         }
         _ => Ok(None),
     }
@@ -650,7 +768,8 @@ pub struct Found {
 impl Found {
     /// What the app is shown.
     pub fn shown(&self) -> Value {
-        let mut value = json!({ "version": self.version, "added": self.added, "removed": self.removed });
+        let mut value =
+            json!({ "version": self.version, "added": self.added, "removed": self.removed });
         if let Some(refused) = &self.refused {
             value["refused"] = json!(refused);
         }
@@ -687,20 +806,27 @@ pub fn forget_found(plugins_dir: &Path, id: &str) {
 }
 
 /// Keep `package` as `id`'s update, found against the plugin at `from`.
-pub fn keep_found(plugins_dir: &Path, id: &str, found: &Found, package: Option<&Package>) -> Result<(), String> {
+pub fn keep_found(
+    plugins_dir: &Path,
+    id: &str,
+    found: &Found,
+    package: Option<&Package>,
+) -> Result<(), String> {
     let dir = updates_dir(plugins_dir);
     std::fs::create_dir_all(&dir).map_err(|_| "Couldn't keep the update".to_string())?;
     match package {
         Some(package) => {
             let raw = package::pack(FORMAT, &package.manifest.raw, &package.files)?;
-            std::fs::write(found_package_path(plugins_dir, id), raw).map_err(|_| "Couldn't keep the update".to_string())?;
+            std::fs::write(found_package_path(plugins_dir, id), raw)
+                .map_err(|_| "Couldn't keep the update".to_string())?;
         }
         None => {
             let _ = std::fs::remove_file(found_package_path(plugins_dir, id));
         }
     }
     let bytes = serde_json::to_vec_pretty(found).unwrap_or_default();
-    std::fs::write(found_path(plugins_dir, id), bytes).map_err(|_| "Couldn't keep the update".to_string())
+    std::fs::write(found_path(plugins_dir, id), bytes)
+        .map_err(|_| "Couldn't keep the update".to_string())
 }
 
 /// The plugin installed, as a check compares a new version with it.
@@ -717,13 +843,23 @@ pub struct Installed<'a> {
 /// What a check of `installed` found in `fetched`: nothing new, or an
 /// update (refused when someone else signed it, or it isn't later).
 pub fn compare(installed: &Installed<'_>, fetched: &Package, source: Source) -> Option<Found> {
-    let Installed { id, key, version, permissions, hash, allowed } = *installed;
+    let Installed {
+        id,
+        key,
+        version,
+        permissions,
+        hash,
+        allowed,
+    } = *installed;
     if fetched.hash == hash {
         return None;
     }
     let change = grant_change(permissions, &fetched.manifest.permissions);
     let refused = if fetched.id() != id {
-        Some(format!("The new version is a different plugin ({})", fetched.id()))
+        Some(format!(
+            "The new version is a different plugin ({})",
+            fetched.id()
+        ))
     } else if fetched.key != key {
         Some("The new version is signed by someone else, so it won't be installed".to_string())
     } else if !newer(&fetched.manifest.version, version) {
@@ -749,7 +885,13 @@ pub(crate) mod tests {
     use super::*;
     use crate::plugins::signing::SigningKey;
 
-    pub fn signed_package(key: &SigningKey, id: &str, version: &str, permissions: &[&str], body: &str) -> Vec<u8> {
+    pub fn signed_package(
+        key: &SigningKey,
+        id: &str,
+        version: &str,
+        permissions: &[&str],
+        body: &str,
+    ) -> Vec<u8> {
         let mut files = BTreeMap::new();
         files.insert("init.luau".to_string(), body.as_bytes().to_vec());
         files.insert("ui/badge.luau".to_string(), b"return {}".to_vec());
@@ -766,64 +908,155 @@ pub(crate) mod tests {
         let (key, _) = SigningKey::generate().unwrap();
         let raw = signed_package(&key, "focus", "1.0.0", &["ui.add"], "return 1");
         let package = parse(raw.clone()).unwrap();
-        assert_eq!((package.id(), package.key.as_str()), ("focus", key.public().as_str()));
-        let source = Source { kind: "file".into(), url: None, path: Some("/x.onicode-plugin".into()), git_ref: None, commit: None, version: "1.0.0".into(), installed_at: 1 };
+        assert_eq!(
+            (package.id(), package.key.as_str()),
+            ("focus", key.public().as_str())
+        );
+        let source = Source {
+            kind: "file".into(),
+            url: None,
+            path: Some("/x.onicode-plugin".into()),
+            git_ref: None,
+            commit: None,
+            version: "1.0.0".into(),
+            installed_at: 1,
+        };
         assert!(install(dir.path(), &package, &source).unwrap().is_none());
         let installed = scan::inspect(&dir.path().join("focus"), true);
         assert_eq!(installed.sig, SigCheck::Valid(key.public()));
         assert_eq!(installed.hash, package.hash);
-        assert_eq!(Source::load(&dir.path().join("focus")), Some(source.clone()));
+        assert_eq!(
+            Source::load(&dir.path().join("focus")),
+            Some(source.clone())
+        );
         // Nothing left half-way.
-        assert_eq!(std::fs::read_dir(dir.path().join(INCOMING_DIR)).unwrap().count(), 0);
+        assert_eq!(
+            std::fs::read_dir(dir.path().join(INCOMING_DIR))
+                .unwrap()
+                .count(),
+            0
+        );
         // Packed back from its folder, it's the same plugin.
         let again = parse(pack_folder(&dir.path().join("focus")).unwrap()).unwrap();
         assert_eq!(again.hash, package.hash);
 
         // An update by the same key replaces it; by another key, refused.
-        let newer = parse(signed_package(&key, "focus", "1.1.0", &["ui.add", "links.open"], "return 2")).unwrap();
+        let newer = parse(signed_package(
+            &key,
+            "focus",
+            "1.1.0",
+            &["ui.add", "links.open"],
+            "return 2",
+        ))
+        .unwrap();
         let replaced = install(dir.path(), &newer, &source).unwrap().unwrap();
-        assert_eq!((replaced.version.as_str(), replaced.hash.as_str()), ("1.0.0", package.hash.as_str()));
-        assert_eq!(grant_change(&replaced.permissions, &newer.manifest.permissions), GrantChange { added: vec!["links.open".into()], removed: vec![] });
+        assert_eq!(
+            (replaced.version.as_str(), replaced.hash.as_str()),
+            ("1.0.0", package.hash.as_str())
+        );
+        assert_eq!(
+            grant_change(&replaced.permissions, &newer.manifest.permissions),
+            GrantChange {
+                added: vec!["links.open".into()],
+                removed: vec![]
+            }
+        );
         let (eve, _) = SigningKey::generate().unwrap();
         let theirs = parse(signed_package(&eve, "focus", "9.0.0", &[], "return 3")).unwrap();
-        assert!(install(dir.path(), &theirs, &source).unwrap_err().contains("signed by someone else"));
-        assert_eq!(scan::inspect(&dir.path().join("focus"), true).hash, newer.hash);
+        assert!(
+            install(dir.path(), &theirs, &source)
+                .unwrap_err()
+                .contains("signed by someone else")
+        );
+        assert_eq!(
+            scan::inspect(&dir.path().join("focus"), true).hash,
+            newer.hash
+        );
 
         // A package carrying its own onicode-plugin.json as a file, refused.
         let mut files = BTreeMap::new();
         files.insert("init.luau".to_string(), b"return 1".to_vec());
         files.insert(MANIFEST_FILE.to_string(), b"{}".to_vec());
-        let manifest = key.sign_manifest(&json!({ "id": "sneaky", "name": "S", "version": "1", "entry": "init.luau" }), &package::hashes(&files));
-        assert!(parse(package::pack(FORMAT, &manifest, &files).unwrap()).unwrap_err().starts_with("It has a file Onicode won't write"));
+        let manifest = key.sign_manifest(
+            &json!({ "id": "sneaky", "name": "S", "version": "1", "entry": "init.luau" }),
+            &package::hashes(&files),
+        );
+        assert!(
+            parse(package::pack(FORMAT, &manifest, &files).unwrap())
+                .unwrap_err()
+                .starts_with("It has a file Onicode won't write")
+        );
         // Onicode's own name, refused.
         assert!(parse(signed_package(&key, "onicode", "1", &[], "return 1")).is_err());
     }
 
     #[test]
     fn links_name_where_a_plugin_comes_from() {
-        let git = |url: &str, r: Option<&str>, p: Option<&str>| Origin::Git { url: url.into(), git_ref: r.map(Into::into), path: p.map(Into::into) };
-        assert_eq!(origin("ada/focus", None, None).unwrap(), git("https://github.com/ada/focus.git", None, None));
-        assert_eq!(origin("https://github.com/ada/focus", Some("v2"), None).unwrap(), git("https://github.com/ada/focus.git", Some("v2"), None));
-        assert_eq!(origin("github.com/ada/focus", None, None).unwrap(), git("https://github.com/ada/focus.git", None, None));
+        let git = |url: &str, r: Option<&str>, p: Option<&str>| Origin::Git {
+            url: url.into(),
+            git_ref: r.map(Into::into),
+            path: p.map(Into::into),
+        };
+        assert_eq!(
+            origin("ada/focus", None, None).unwrap(),
+            git("https://github.com/ada/focus.git", None, None)
+        );
+        assert_eq!(
+            origin("https://github.com/ada/focus", Some("v2"), None).unwrap(),
+            git("https://github.com/ada/focus.git", Some("v2"), None)
+        );
+        assert_eq!(
+            origin("github.com/ada/focus", None, None).unwrap(),
+            git("https://github.com/ada/focus.git", None, None)
+        );
         assert_eq!(
             origin("example.com/x/focus.onicode-plugin", None, None).unwrap(),
             Origin::Link("https://example.com/x/focus.onicode-plugin".into())
         );
         assert_eq!(
-            origin("https://github.com/ada/tools/tree/main/plugins/focus", None, None).unwrap(),
-            git("https://github.com/ada/tools.git", Some("main"), Some("plugins/focus"))
+            origin(
+                "https://github.com/ada/tools/tree/main/plugins/focus",
+                None,
+                None
+            )
+            .unwrap(),
+            git(
+                "https://github.com/ada/tools.git",
+                Some("main"),
+                Some("plugins/focus")
+            )
         );
-        assert_eq!(origin("https://github.com/ada/focus/releases/latest", None, None).unwrap(), Origin::Release { repo: "ada/focus".into(), tag: None });
+        assert_eq!(
+            origin("https://github.com/ada/focus/releases/latest", None, None).unwrap(),
+            Origin::Release {
+                repo: "ada/focus".into(),
+                tag: None
+            }
+        );
         assert_eq!(
             origin("https://github.com/ada/focus/releases/tag/v1.2", None, None).unwrap(),
-            Origin::Release { repo: "ada/focus".into(), tag: Some("v1.2".into()) }
+            Origin::Release {
+                repo: "ada/focus".into(),
+                tag: Some("v1.2".into())
+            }
         );
         assert_eq!(
             origin("https://example.com/focus.onicode-plugin", None, None).unwrap(),
             Origin::Link("https://example.com/focus.onicode-plugin".into())
         );
-        assert_eq!(origin("https://git.example.com/focus.git", None, None).unwrap(), git("https://git.example.com/focus.git", None, None));
-        for bad in ["http://example.com/x.onicode-plugin", "ssh://git@github.com/a/b", "ext::sh -c x", "", "/etc/passwd", "a b/c", "git@github.com:a/b"] {
+        assert_eq!(
+            origin("https://git.example.com/focus.git", None, None).unwrap(),
+            git("https://git.example.com/focus.git", None, None)
+        );
+        for bad in [
+            "http://example.com/x.onicode-plugin",
+            "ssh://git@github.com/a/b",
+            "ext::sh -c x",
+            "",
+            "/etc/passwd",
+            "a b/c",
+            "git@github.com:a/b",
+        ] {
             assert!(origin(bad, None, None).is_err(), "{bad}");
         }
         assert!(origin("ada/focus", Some("--upload-pack=x"), None).is_err());
@@ -834,17 +1067,62 @@ pub(crate) mod tests {
     fn a_check_finds_an_update_only_when_its_signer_is_the_same() {
         let (key, _) = SigningKey::generate().unwrap();
         let (eve, _) = SigningKey::generate().unwrap();
-        let installed = parse(signed_package(&key, "focus", "1.0.0", &["ui.add"], "return 1")).unwrap();
-        let source = Source { kind: "link".into(), url: Some("https://e/x.onicode-plugin".into()), path: None, git_ref: None, commit: None, version: "1.0.0".into(), installed_at: 0 };
+        let installed = parse(signed_package(
+            &key,
+            "focus",
+            "1.0.0",
+            &["ui.add"],
+            "return 1",
+        ))
+        .unwrap();
+        let source = Source {
+            kind: "link".into(),
+            url: Some("https://e/x.onicode-plugin".into()),
+            path: None,
+            git_ref: None,
+            commit: None,
+            version: "1.0.0".into(),
+            installed_at: 0,
+        };
         let perms = installed.manifest.permissions.clone();
         let record = crate::plugins::capability::record(&installed.manifest);
         let key_public = key.public();
-        let was = Installed { id: "focus", key: &key_public, version: "1.0.0", permissions: &perms, hash: &installed.hash, allowed: &record };
+        let was = Installed {
+            id: "focus",
+            key: &key_public,
+            version: "1.0.0",
+            permissions: &perms,
+            hash: &installed.hash,
+            allowed: &record,
+        };
         assert_eq!(compare(&was, &installed, source.clone()), None);
-        let later = parse(signed_package(&key, "focus", "1.1.0", &["github"], "return 2")).unwrap();
+        let later = parse(signed_package(
+            &key,
+            "focus",
+            "1.1.0",
+            &["github"],
+            "return 2",
+        ))
+        .unwrap();
         let found = compare(&was, &later, source.clone()).unwrap();
-        assert_eq!((found.version.as_str(), found.added.clone(), found.removed.clone(), found.refused.clone()), ("1.1.0", vec!["github".to_string()], vec!["ui.add".to_string()], None));
-        assert_eq!(found.digest_diff.unwrap()["permissions_added"], json!(["github"]));
+        assert_eq!(
+            (
+                found.version.as_str(),
+                found.added.clone(),
+                found.removed.clone(),
+                found.refused.clone()
+            ),
+            (
+                "1.1.0",
+                vec!["github".to_string()],
+                vec!["ui.add".to_string()],
+                None
+            )
+        );
+        assert_eq!(
+            found.digest_diff.unwrap()["permissions_added"],
+            json!(["github"])
+        );
         let theirs = parse(signed_package(&eve, "focus", "2.0.0", &[], "return 3")).unwrap();
         assert!(compare(&was, &theirs, source).unwrap().refused.is_some());
     }
@@ -854,24 +1132,64 @@ pub(crate) mod tests {
     /// an older, vulnerable version.
     #[test]
     fn a_signed_downgrade_is_refused() {
-        assert!(newer("1.1.0", "1.0.0") && newer("2", "1.9") && newer("v1.10", "1.9") && newer("1.0.0", "1.0.0-beta"));
-        assert!(!newer("1.0.0", "1.0.0") && !newer("0.9", "1.0") && !newer("1", "1.0.0") && !newer("tomorrow", "1"));
+        assert!(
+            newer("1.1.0", "1.0.0")
+                && newer("2", "1.9")
+                && newer("v1.10", "1.9")
+                && newer("1.0.0", "1.0.0-beta")
+        );
+        assert!(
+            !newer("1.0.0", "1.0.0")
+                && !newer("0.9", "1.0")
+                && !newer("1", "1.0.0")
+                && !newer("tomorrow", "1")
+        );
         let dir = tempfile::tempdir().unwrap();
         let (key, _) = SigningKey::generate().unwrap();
-        let source = Source { kind: "file".into(), url: None, path: None, git_ref: None, commit: None, version: String::new(), installed_at: 0 };
+        let source = Source {
+            kind: "file".into(),
+            url: None,
+            path: None,
+            git_ref: None,
+            commit: None,
+            version: String::new(),
+            installed_at: 0,
+        };
         let v2 = parse(signed_package(&key, "focus", "2.0.0", &[], "return 2")).unwrap();
         install(dir.path(), &v2, &source).unwrap();
         let v1 = parse(signed_package(&key, "focus", "1.0.0", &[], "return 1")).unwrap();
-        assert!(install(dir.path(), &v1, &source).unwrap_err().contains("isn't later"));
-        let same_version = parse(signed_package(&key, "focus", "2.0.0", &[], "return 666")).unwrap();
-        assert!(install(dir.path(), &same_version, &source).unwrap_err().contains("isn't later"));
+        assert!(
+            install(dir.path(), &v1, &source)
+                .unwrap_err()
+                .contains("isn't later")
+        );
+        let same_version =
+            parse(signed_package(&key, "focus", "2.0.0", &[], "return 666")).unwrap();
+        assert!(
+            install(dir.path(), &same_version, &source)
+                .unwrap_err()
+                .contains("isn't later")
+        );
         // The same package again is no change.
         assert!(install(dir.path(), &v2, &source).is_ok());
         let perms = Vec::new();
         let record = crate::plugins::capability::record(&v2.manifest);
         let key_public = key.public();
-        let was = Installed { id: "focus", key: &key_public, version: "2.0.0", permissions: &perms, hash: &v2.hash, allowed: &record };
-        assert!(compare(&was, &v1, source).unwrap().refused.unwrap().contains("isn't later"));
+        let was = Installed {
+            id: "focus",
+            key: &key_public,
+            version: "2.0.0",
+            permissions: &perms,
+            hash: &v2.hash,
+            allowed: &record,
+        };
+        assert!(
+            compare(&was, &v1, source)
+                .unwrap()
+                .refused
+                .unwrap()
+                .contains("isn't later")
+        );
         assert_eq!(scan::inspect(&dir.path().join("focus"), true).hash, v2.hash);
     }
 }

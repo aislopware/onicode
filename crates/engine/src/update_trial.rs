@@ -29,16 +29,20 @@ const TRIAL_FAILED_EXIT: i32 = 75;
 /// version hands this process over to the new one. An error means the databases
 /// aren't safe to open yet.
 pub(crate) fn boot(data_dir: &Path) -> anyhow::Result<()> {
-    transaction::boot(data_dir, &transaction::BootOptions::for_this_process(), || {
-        let deadline = std::time::Instant::now() + HANDOFF;
-        loop {
-            match InstanceLock::acquire(data_dir) {
-                Ok(lock) => return Ok(lock),
-                Err(err) if std::time::Instant::now() >= deadline => return Err(err.into()),
-                Err(_) => std::thread::sleep(Duration::from_millis(250)),
+    transaction::boot(
+        data_dir,
+        &transaction::BootOptions::for_this_process(),
+        || {
+            let deadline = std::time::Instant::now() + HANDOFF;
+            loop {
+                match InstanceLock::acquire(data_dir) {
+                    Ok(lock) => return Ok(lock),
+                    Err(err) if std::time::Instant::now() >= deadline => return Err(err.into()),
+                    Err(_) => std::thread::sleep(Duration::from_millis(250)),
+                }
             }
-        }
-    })
+        },
+    )
 }
 
 /// An engine that didn't come through [`boot`] (the app embedding one when it
@@ -70,7 +74,10 @@ async fn answers_on_its_port(port: u16, data_dir: &Path) -> Result<(), String> {
     let client = onicode_rpc::connect_ipc(port, Some(data_dir))
         .await
         .map_err(|err| format!("it isn't answering on its port ({err})"))?;
-    for method in [onicode_rpc::methods::ENGINE_INFO, onicode_rpc::methods::ENGINE_READY] {
+    for method in [
+        onicode_rpc::methods::ENGINE_INFO,
+        onicode_rpc::methods::ENGINE_READY,
+    ] {
         client
             .call(method, serde_json::json!({}))
             .await
@@ -89,7 +96,11 @@ async fn edge_answers(edge_url: &str) -> bool {
     else {
         return false;
     };
-    client.get(url).send().await.is_ok_and(|reply| reply.status().is_success())
+    client
+        .get(url)
+        .send()
+        .await
+        .is_ok_and(|reply| reply.status().is_success())
 }
 
 struct Proof {
@@ -116,7 +127,10 @@ impl Proof {
         let deadline = tokio::time::Instant::now() + EDGE_PROOF;
         loop {
             if !self.auth.state().is_signed_in()
-                || self.workspace.sync_status().is_some_and(|room| room.connected)
+                || self
+                    .workspace
+                    .sync_status()
+                    .is_some_and(|room| room.connected)
             {
                 return Ok(());
             }
@@ -153,12 +167,18 @@ pub(crate) fn prove_and_commit(core: &EngineCore, config: &EngineConfig) {
     tokio::spawn(async move {
         tracing::info!(id = %trial.id, version = %trial.target, left = ?trial.remaining(), "proving this update is ready");
         if let Err(why) = proof.run().await {
-            fail(&proof.data_dir, &format!("The new version started, but {why}."));
+            fail(
+                &proof.data_dir,
+                &format!("The new version started, but {why}."),
+            );
         }
         tokio::time::sleep(SETTLE).await;
         if let Err(err) = transaction::commit_trial() {
             tracing::error!(error = %format!("{err:#}"), "couldn't commit the update");
-            fail(&proof.data_dir, "The new version couldn't be saved as the current one.");
+            fail(
+                &proof.data_dir,
+                "The new version couldn't be saved as the current one.",
+            );
         }
         tracing::info!(version = %trial.target, "update committed");
         if let Some(updater) = &updater {
@@ -169,7 +189,9 @@ pub(crate) fn prove_and_commit(core: &EngineCore, config: &EngineConfig) {
         // What every other start does during assembly.
         match tokio::task::spawn_blocking(move || sessions.recover_stale()).await {
             Ok(Ok(0)) => {}
-            Ok(Ok(recovered)) => tracing::info!(recovered, "stale sessions recovered after the update"),
+            Ok(Ok(recovered)) => {
+                tracing::info!(recovered, "stale sessions recovered after the update")
+            }
             Ok(Err(err)) => tracing::error!(error = %err, "stale-session recovery failed"),
             Err(err) => tracing::error!(error = %err, "stale-session recovery panicked"),
         }
@@ -196,12 +218,18 @@ pub(crate) fn commit_without_a_profile(config: &EngineConfig) {
             Err(err) => Err(err.to_string()),
         };
         if let Err(why) = answered {
-            fail(&data_dir, &format!("The new version started, but it isn't answering on its port ({why})."));
+            fail(
+                &data_dir,
+                &format!("The new version started, but it isn't answering on its port ({why})."),
+            );
         }
         tokio::time::sleep(SETTLE).await;
         if let Err(err) = transaction::commit_trial() {
             tracing::error!(error = %format!("{err:#}"), "couldn't commit the update");
-            fail(&data_dir, "The new version couldn't be saved as the current one.");
+            fail(
+                &data_dir,
+                "The new version couldn't be saved as the current one.",
+            );
         }
         tokio::time::sleep(TIDY_AFTER).await;
         transaction::tidy_latest(&data_dir);

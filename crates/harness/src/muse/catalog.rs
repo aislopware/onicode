@@ -1,6 +1,6 @@
 //! `model/list` → [`Model`]s, and the reasoning tiers both ways.
-use serde_json::Value;
 use onicode_proto::{Model, ReasoningLevel};
+use serde_json::Value;
 
 use super::normalize::string;
 

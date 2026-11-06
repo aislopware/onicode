@@ -567,7 +567,10 @@ async fn mcp_injection_reaches_sdk_on_create_and_resume_with_fresh_identity() {
             options["mcpServers"]["onicode"]["args"],
             serde_json::json!(["mcp"])
         );
-        assert_eq!(options["mcpServers"]["onicode"]["env"]["ONICODE_CHAT_ID"], chat);
+        assert_eq!(
+            options["mcpServers"]["onicode"]["env"]["ONICODE_CHAT_ID"],
+            chat
+        );
         assert_eq!(
             options["mcpServers"]["onicode"]["env"]["ONICODE_IPC_PORT"],
             "27699"

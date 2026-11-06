@@ -16,13 +16,13 @@
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use serde::Deserialize;
-use serde::de::DeserializeOwned;
 use onicode_proto::{
     BillingLink, BillingStatus, CloudSession, CloudSessions, CloudStatus, CloudUsage,
     GithubConnectProgress, GithubDeviceFlow, GithubRepo, HarnessId, VaultAccount,
     VaultAccountProfile, VaultProvider, VaultStatus,
 };
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
 
 #[derive(Deserialize)]
 struct AccountList {
@@ -1156,7 +1156,6 @@ impl Target {
     }
 }
 
-
 fn available_vault(status: VaultStatus) -> VaultStatus {
     VaultStatus {
         available: true,
@@ -1224,9 +1223,9 @@ fn edge_error(status: u16, body: &[u8], what: &str) -> EngineError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use onicode_proto::{CloudState, GithubConnectState, VaultConnectionStatus};
     use std::sync::Mutex;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use onicode_proto::{CloudState, GithubConnectState, VaultConnectionStatus};
 
     #[derive(Debug, Clone)]
     struct Recorded {
@@ -1396,7 +1395,9 @@ mod tests {
                 serde_json::json!({"chatId": "chat-1", "deviceId": "cloud-s1",
                     "spaceId": "sp-1", "state": "deleting", "createdAt": 3}),
             ),
-            ("DELETE", "/cloud/org_1") => (200, serde_json::json!({"state": "off", "available": true})),
+            ("DELETE", "/cloud/org_1") => {
+                (200, serde_json::json!({"state": "off", "available": true}))
+            }
             ("GET", "/cloud/org_1/usage?from=2026-09-29&to=2026-09-30") => (
                 200,
                 serde_json::json!({

@@ -1,8 +1,8 @@
 //! Offline tests for the remote voice protocol against a fake native Codex package.
-use serde_json::json;
 use onicode_engine::{EngineCore, EngineProfile, HarnessRegistry};
 use onicode_proto::HarnessId;
 use onicode_rpc::methods;
+use serde_json::json;
 
 #[cfg(unix)]
 fn native_package(root: &std::path::Path) -> std::path::PathBuf {
@@ -83,8 +83,12 @@ async fn remote_failed_prepare_after_rotation_preserves_thread_for_retry() {
             None,
         )
         .unwrap();
-    core.workspace
-        .set_chat_harness_session(&previous, "remembered-thread", "", Some(HarnessId::Codex));
+    core.workspace.set_chat_harness_session(
+        &previous,
+        "remembered-thread",
+        "",
+        Some(HarnessId::Codex),
+    );
     // The engine's `ROTATE_AFTER`.
     const ROTATE_AFTER: usize = 1000;
     let doc = core.doc_host.open(&previous).unwrap();
@@ -121,7 +125,10 @@ async fn remote_failed_prepare_after_rotation_preserves_thread_for_retry() {
         "cleanup must keep the predecessor"
     );
     assert_eq!(
-        core.workspace.chat_harness_session(&previous).unwrap().session_id,
+        core.workspace
+            .chat_harness_session(&previous)
+            .unwrap()
+            .session_id,
         "remembered-thread"
     );
     assert_eq!(doc.doc().read_entries().unwrap().len(), ROTATE_AFTER);
@@ -358,9 +365,9 @@ mod voice_relay;
 #[cfg(unix)]
 #[tokio::test]
 async fn remote_voice_crosses_two_engines_and_owner_drop_releases_host() {
-    use std::{sync::Arc, time::Duration};
     use onicode_proto::voice::{VoiceEvent, remote as wire};
     use onicode_rpc::{HostRelay, HostRelayConfig, LinkCache, LinkCacheConfig, StaticToken};
+    use std::{sync::Arc, time::Duration};
     let temp = tempfile::tempdir().unwrap();
     let host = native_core(&temp).await;
     std::fs::remove_file(

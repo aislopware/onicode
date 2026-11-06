@@ -257,7 +257,10 @@ pub fn run(version: &'static str, engines: Engines) -> Launch {
         init_logging(
             long_running,
             mode,
-            matches!(&cli.command, Some(Command::Mcp | Command::Plugin { .. } | Command::Template { .. })),
+            matches!(
+                &cli.command,
+                Some(Command::Mcp | Command::Plugin { .. } | Command::Template { .. })
+            ),
         );
     }
     if long_running {
@@ -285,7 +288,9 @@ pub fn run(version: &'static str, engines: Engines) -> Launch {
         Some(Command::Update { check }) => Launch::Done(
             tokio::runtime::Runtime::new()
                 .map_err(anyhow::Error::from)
-                .and_then(|runtime| runtime.block_on(update_cli::update(&edge_url_from_env(), check))),
+                .and_then(|runtime| {
+                    runtime.block_on(update_cli::update(&edge_url_from_env(), check))
+                }),
         ),
         Some(Command::UpdateWatchdog) => Launch::Done(onicode_update::transaction::run_watchdog()),
         Some(Command::Daemon { command }) => Launch::Done(match command {
@@ -376,8 +381,13 @@ pub fn help_for(version: &'static str, path: &[String]) -> String {
         .chain(path.iter().cloned())
         .chain(std::iter::once("--help".to_owned()));
     match command(version).try_get_matches_from(argv) {
-        Err(help) if help.kind() == clap::error::ErrorKind::DisplayHelp => help.render().to_string(),
-        other => panic!("onicode {} --help didn't print help: {other:?}", path.join(" ")),
+        Err(help) if help.kind() == clap::error::ErrorKind::DisplayHelp => {
+            help.render().to_string()
+        }
+        other => panic!(
+            "onicode {} --help didn't print help: {other:?}",
+            path.join(" ")
+        ),
     }
 }
 

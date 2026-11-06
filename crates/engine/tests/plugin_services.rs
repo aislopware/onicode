@@ -18,7 +18,9 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
-use tokio_tungstenite::tungstenite::handshake::server::{Request as WsRequest, Response as WsResponse};
+use tokio_tungstenite::tungstenite::handshake::server::{
+    Request as WsRequest, Response as WsResponse,
+};
 
 use onicode_engine::{EngineCore, HarnessId, HarnessRegistry};
 use onicode_rpc::{
@@ -43,16 +45,22 @@ async fn device_rooms() -> String {
             let rooms = rooms.clone();
             tokio::spawn(async move {
                 let mut uri = String::new();
-                let Ok(ws) = tokio_tungstenite::accept_hdr_async(stream, |req: &WsRequest, res: WsResponse| {
-                    uri = req.uri().to_string();
-                    Ok(res)
-                })
+                let Ok(ws) = tokio_tungstenite::accept_hdr_async(
+                    stream,
+                    |req: &WsRequest, res: WsResponse| {
+                        uri = req.uri().to_string();
+                        Ok(res)
+                    },
+                )
                 .await
                 else {
                     return;
                 };
                 let (path, query) = uri.split_once('?').unwrap_or((&uri, ""));
-                let device = path.trim_start_matches("/device/").trim_end_matches("/ws").to_string();
+                let device = path
+                    .trim_start_matches("/device/")
+                    .trim_end_matches("/ws")
+                    .to_string();
                 let is_host = query.contains("role=host");
                 let conn = query
                     .split('&')
@@ -61,7 +69,10 @@ async fn device_rooms() -> String {
                     .to_string();
                 // The dialing device, as the edge stamps it once its proof
                 // checks out (this stand-in takes the dial's word).
-                let caller = query.split('&').find_map(|kv| kv.strip_prefix("callerDevice=")).map(str::to_owned);
+                let caller = query
+                    .split('&')
+                    .find_map(|kv| kv.strip_prefix("callerDevice="))
+                    .map(str::to_owned);
                 let (mut sink, mut incoming) = ws.split();
                 let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 {
@@ -80,8 +91,12 @@ async fn device_rooms() -> String {
                     }
                 });
                 while let Some(Ok(message)) = incoming.next().await {
-                    let WsMessage::Binary(bytes) = message else { continue };
-                    let Ok((header, payload)) = decode_device_frame(&bytes) else { break };
+                    let WsMessage::Binary(bytes) = message else {
+                        continue;
+                    };
+                    let Ok((header, payload)) = decode_device_frame(&bytes) else {
+                        break;
+                    };
                     let rooms = rooms.lock().unwrap();
                     if is_host {
                         let Some(to) = header.to else { continue };
@@ -117,16 +132,25 @@ fn engine(dir: &Path, device: &str, rooms: &str) -> Engine {
     let core = EngineCore::assemble(dir, Arc::new(HarnessRegistry::new()), HarnessId::Mock, None)
         .expect("engine assembles");
     let host = core.start_host_relay(rooms);
-    let mut links = LinkCacheConfig::new(rooms.to_string(), Arc::new(StaticToken("test-user".into())));
+    let mut links =
+        LinkCacheConfig::new(rooms.to_string(), Arc::new(StaticToken("test-user".into())));
     links.probe_timeout = Duration::from_secs(5);
     // Each dial says which device it is (the edge verifies the proof).
     let me = device.to_owned();
     links.caller_proof = Some(Arc::new(move |_: &str, _: &str, _: i64| {
-        Some(onicode_rpc::CallerProof { device: me.clone(), key: "test-key".into(), signature: "test-sig".into() })
+        Some(onicode_rpc::CallerProof {
+            device: me.clone(),
+            key: "test-key".into(),
+            signature: "test-sig".into(),
+        })
     }));
     core.set_links(LinkCache::new(links));
     let client = onicode_rpc::memory_client(core.rpc_service());
-    Engine { core, client, _host: host }
+    Engine {
+        core,
+        client,
+        _host: host,
+    }
 }
 
 const SERVICE: &str = r#"
@@ -144,7 +168,8 @@ end)
 "#;
 
 /// Its icon: listed with it, so another device's window can draw it.
-const ICON: &str = r#"<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="currentColor"/></svg>"#;
+const ICON: &str =
+    r#"<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="currentColor"/></svg>"#;
 
 /// The plugin, installed in `dir`'s engine as `version`, signed as yours.
 async fn install(e: &Engine, dir: &Path, version: &str) {
@@ -152,19 +177,30 @@ async fn install(e: &Engine, dir: &Path, version: &str) {
     std::fs::create_dir_all(&folder).unwrap();
     std::fs::write(folder.join("init.luau"), "return nil").unwrap();
     std::fs::write(folder.join("service.luau"), SERVICE).unwrap();
-    std::fs::write(folder.join("onicode.luau"), onicode_engine::plugins::scaffold::SDK).unwrap();
+    std::fs::write(
+        folder.join("onicode.luau"),
+        onicode_engine::plugins::scaffold::SDK,
+    )
+    .unwrap();
     std::fs::write(folder.join("icon.svg"), ICON).unwrap();
     let manifest = json!({
         "id": "hello-devices", "name": "Hello devices", "version": version, "entry": "init.luau",
         "service": "service.luau", "permissions": ["service", "commands"], "commands": ["echo"],
         "icon": "icon.svg",
     });
-    std::fs::write(folder.join("onicode-plugin.json"), serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    std::fs::write(
+        folder.join("onicode-plugin.json"),
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
     // As Onicode's consent window signs: with a review for it as listed.
     let review = review(e, "hello-devices").await;
     let signed = e
         .client
-        .call(methods::SIGN_PLUGIN, json!({ "id": "hello-devices", "review": review }))
+        .call(
+            methods::SIGN_PLUGIN,
+            json!({ "id": "hello-devices", "review": review }),
+        )
         .await
         .unwrap();
     assert_eq!(signed["version"], version, "{signed}");
@@ -172,18 +208,35 @@ async fn install(e: &Engine, dir: &Path, version: &str) {
 
 /// A consent-window review for plugin `id` as `e` lists it now.
 async fn review(e: &Engine, id: &str) -> Value {
-    let list = e.client.call(methods::LIST_PLUGINS, json!({})).await.unwrap();
-    let item = list["plugins"].as_array().unwrap().iter().find(|p| p["id"] == id).cloned().unwrap();
+    let list = e
+        .client
+        .call(methods::LIST_PLUGINS, json!({}))
+        .await
+        .unwrap();
+    let item = list["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == id)
+        .cloned()
+        .unwrap();
     let minted = e
         .client
-        .call(methods::REVIEW_PLUGIN, json!({ "id": id, "hash": item["hash"] }))
+        .call(
+            methods::REVIEW_PLUGIN,
+            json!({ "id": id, "hash": item["hash"] }),
+        )
         .await
         .unwrap();
     minted["review"].clone()
 }
 
 async fn allow(e: &Engine) {
-    let list = e.client.call(methods::LIST_PLUGINS, json!({})).await.unwrap();
+    let list = e
+        .client
+        .call(methods::LIST_PLUGINS, json!({}))
+        .await
+        .unwrap();
     let item = list["plugins"]
         .as_array()
         .unwrap()
@@ -242,7 +295,6 @@ async fn a_window_on_one_device_calls_its_service_on_another() {
     let a = engine(&dir_a, "device-a", &rooms);
     let b = engine(&dir_b, "device-b", &rooms);
 
-
     // Not on B yet.
     install(&a, &dir_a, "1.0.0").await;
     allow(&a).await;
@@ -260,10 +312,19 @@ async fn a_window_on_one_device_calls_its_service_on_another() {
     // it, and B's service answers, running B's own `echo`.
     let on_b = a
         .client
-        .call(methods::LIST_PLUGINS, json!({ "targetDeviceId": "device-b" }))
+        .call(
+            methods::LIST_PLUGINS,
+            json!({ "targetDeviceId": "device-b" }),
+        )
         .await
         .unwrap();
-    let item = on_b["plugins"].as_array().unwrap().iter().find(|p| p["id"] == "hello-devices").cloned().unwrap();
+    let item = on_b["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == "hello-devices")
+        .cloned()
+        .unwrap();
     assert_eq!(item["status"], "pending", "B lists its own: {item}");
     assert_eq!(item["ask"], json!(["commands", "service"]), "{item}");
     // Its icon is B's file, carried in the listing (A can't read B's disk).
@@ -276,17 +337,33 @@ async fn a_window_on_one_device_calls_its_service_on_another() {
                 json!({ "targetDeviceId": "device-b", "id": "hello-devices", "allow": true, "hash": item["hash"], "review": review }),
             )
             .await;
-        assert!(forwarded.is_err(), "another device allowed it: {forwarded:?}");
+        assert!(
+            forwarded.is_err(),
+            "another device allowed it: {forwarded:?}"
+        );
     }
     // (Nor past A's own refusal: B's relay refuses it on arrival.)
-    let list = b.client.call(methods::LIST_PLUGINS, json!({})).await.unwrap();
-    let still = list["plugins"].as_array().unwrap().iter().find(|p| p["id"] == "hello-devices").cloned().unwrap();
+    let list = b
+        .client
+        .call(methods::LIST_PLUGINS, json!({}))
+        .await
+        .unwrap();
+    let still = list["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == "hello-devices")
+        .cloned()
+        .unwrap();
     assert_eq!(still["status"], "pending", "{still}");
     allow(&b).await;
     // (A file here can't be installed there.)
     let refused = a
         .client
-        .call(methods::INSTALL_PLUGIN, json!({ "targetDeviceId": "device-b", "path": "/tmp/x.onicode-plugin" }))
+        .call(
+            methods::INSTALL_PLUGIN,
+            json!({ "targetDeviceId": "device-b", "path": "/tmp/x.onicode-plugin" }),
+        )
         .await;
     assert!(refused.is_err(), "{refused:?}");
     let answered = ask(&a, "device-b", "where", json!({})).await;
@@ -299,14 +376,23 @@ async fn a_window_on_one_device_calls_its_service_on_another() {
     assert_eq!(here["value"]["device"], "device-a", "{here}");
 
     // A's window watches B's service: B's events reach A's windows.
-    let mut channel = a.client.subscribe_scoped(methods::WATCH_PLUGIN_CHANNEL, json!({})).await.unwrap();
+    let mut channel = a
+        .client
+        .subscribe_scoped(methods::WATCH_PLUGIN_CHANNEL, json!({}))
+        .await
+        .unwrap();
     assert_eq!(ask(&a, "device-b", "@watch", Value::Null).await["ok"], true);
     // (Until A's channel is subscribed, an event has nowhere to land: shout
     // again until one does.)
     let mut event = None;
     for _ in 0..20 {
-        assert_eq!(ask(&a, "device-b", "shout", json!({ "word": "hey" })).await["ok"], true);
-        if let Ok(Some(heard)) = tokio::time::timeout(Duration::from_millis(500), channel.recv()).await {
+        assert_eq!(
+            ask(&a, "device-b", "shout", json!({ "word": "hey" })).await["ok"],
+            true
+        );
+        if let Ok(Some(heard)) =
+            tokio::time::timeout(Duration::from_millis(500), channel.recv()).await
+        {
             event = Some(heard);
             break;
         }
@@ -325,11 +411,17 @@ async fn a_window_on_one_device_calls_its_service_on_another() {
     install(&b, &dir_b, "1.0.0").await;
     let off = a
         .client
-        .call(methods::SET_PLUGIN_OFF, json!({ "targetDeviceId": "device-b", "id": "hello-devices", "off": true }))
+        .call(
+            methods::SET_PLUGIN_OFF,
+            json!({ "targetDeviceId": "device-b", "id": "hello-devices", "off": true }),
+        )
         .await
         .unwrap();
     assert_eq!(off["status"], "off", "{off}");
-    assert_eq!(ask(&a, "device-b", "where", json!({})).await["reason"], "off");
+    assert_eq!(
+        ask(&a, "device-b", "where", json!({})).await["reason"],
+        "off"
+    );
 
     // A device that isn't up.
     let refused = ask(&a, "device-z", "where", json!({})).await;
@@ -339,7 +431,13 @@ async fn a_window_on_one_device_calls_its_service_on_another() {
     );
     // Its plugins can't be listed: an error, which Settings → Plugins says
     // as the device being offline.
-    let listed = a.client.call(methods::LIST_PLUGINS, json!({ "targetDeviceId": "device-z" })).await;
+    let listed = a
+        .client
+        .call(
+            methods::LIST_PLUGINS,
+            json!({ "targetDeviceId": "device-z" }),
+        )
+        .await;
     assert!(format!("{listed:?}").contains("unreachable"), "{listed:?}");
 
     a.core.shutdown().await;

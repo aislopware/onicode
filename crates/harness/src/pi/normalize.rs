@@ -1,6 +1,6 @@
+use onicode_proto::{AgentEvent, DoneStatus, ToolCall, ToolDiff};
 use serde_json::Value;
 use std::collections::HashMap;
-use onicode_proto::{AgentEvent, DoneStatus, ToolCall, ToolDiff};
 
 #[derive(Default)]
 pub(super) struct Normalizer {

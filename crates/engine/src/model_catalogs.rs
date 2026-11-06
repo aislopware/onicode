@@ -1,14 +1,14 @@
 //! Persist only successful live catalogs, partitioned by credential/binary context.
+use onicode_harness::{
+    CatalogFailure, CatalogFailureCode, Harness, HarnessError, ModelCatalog, ModelContext,
+};
+use onicode_proto::Model;
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use onicode_harness::{
-    CatalogFailure, CatalogFailureCode, Harness, HarnessError, ModelCatalog, ModelContext,
-};
-use onicode_proto::Model;
 
 #[derive(Serialize, Deserialize)]
 struct Saved {

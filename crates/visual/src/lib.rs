@@ -223,7 +223,12 @@ impl Visual {
             result
         };
         randomseed.call::<()>(seed)?;
-        let returned = call(&|| lua.load(source).set_name("=visual").set_mode(mlua::chunk::ChunkMode::Text).eval::<Value>())?;
+        let returned = call(&|| {
+            lua.load(source)
+                .set_name("=visual")
+                .set_mode(mlua::chunk::ChunkMode::Text)
+                .eval::<Value>()
+        })?;
         let view = match returned {
             Value::Function(view) => view,
             Value::Table(tree) => lua.create_function(move |_, ()| Ok(tree.clone()))?,

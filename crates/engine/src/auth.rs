@@ -342,8 +342,9 @@ const FRESH_TICKET_WAIT: Duration = Duration::from_secs(8);
 /// What runs when an interactive sign-in (or step-up) brings a fresh ticket,
 /// given the signed-in user's id: before a sign-in is announced, so before
 /// the app restarts the engine and the in-memory ticket is gone.
-pub type FreshTicketHook =
-    Arc<dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>;
+pub type FreshTicketHook = Arc<
+    dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync,
+>;
 
 /// Why [`Auth::delete_account`] didn't.
 #[derive(Debug)]
@@ -358,7 +359,10 @@ pub enum DeleteAccountError {
     /// `last_admin` (the only admin of `organization`, which others are in),
     /// `busy` (another admin change is under way: try again), or `upstream`
     /// (anything else on the edge's side).
-    Refused { code: String, organization: Option<String> },
+    Refused {
+        code: String,
+        organization: Option<String>,
+    },
 }
 
 impl DeleteAccountError {
@@ -377,16 +381,35 @@ impl DeleteAccountError {
 impl std::fmt::Display for DeleteAccountError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DeleteAccountError::StepUpRequired => write!(f, "Sign in again to confirm it's you, then delete the account"),
+            DeleteAccountError::StepUpRequired => write!(
+                f,
+                "Sign in again to confirm it's you, then delete the account"
+            ),
             DeleteAccountError::SignedOut => write!(f, "Sign in first"),
-            DeleteAccountError::Offline(why) => write!(f, "Onicode couldn't reach its server: {why}"),
-            DeleteAccountError::Refused { code, organization } => match (code.as_str(), organization) {
-                ("invalid", _) => write!(f, "That isn't this account's email address"),
-                ("last_admin", Some(org)) => write!(f, "You're the only admin of {org}: make someone else an admin first"),
-                ("last_admin", None) => write!(f, "You're the only admin of an organization others are in: make someone else an admin first"),
-                ("busy", _) => write!(f, "Another change to your organizations is under way; try again in a moment"),
-                _ => write!(f, "The account couldn't be deleted right now; try again later"),
-            },
+            DeleteAccountError::Offline(why) => {
+                write!(f, "Onicode couldn't reach its server: {why}")
+            }
+            DeleteAccountError::Refused { code, organization } => {
+                match (code.as_str(), organization) {
+                    ("invalid", _) => write!(f, "That isn't this account's email address"),
+                    ("last_admin", Some(org)) => write!(
+                        f,
+                        "You're the only admin of {org}: make someone else an admin first"
+                    ),
+                    ("last_admin", None) => write!(
+                        f,
+                        "You're the only admin of an organization others are in: make someone else an admin first"
+                    ),
+                    ("busy", _) => write!(
+                        f,
+                        "Another change to your organizations is under way; try again in a moment"
+                    ),
+                    _ => write!(
+                        f,
+                        "The account couldn't be deleted right now; try again later"
+                    ),
+                }
+            }
         }
     }
 }
@@ -763,7 +786,9 @@ impl Auth {
     async fn run_fresh_ticket(&self, user_id: String) {
         let hook = lock(&self.inner.fresh_ticket).clone();
         if let Some(hook) = hook
-            && tokio::time::timeout(FRESH_TICKET_WAIT, hook(user_id)).await.is_err()
+            && tokio::time::timeout(FRESH_TICKET_WAIT, hook(user_id))
+                .await
+                .is_err()
         {
             tracing::warn!("auth: what a fresh sign-in runs took too long; signing in anyway");
         }
@@ -794,9 +819,16 @@ impl Auth {
         let port = self.ensure_loopback().await?;
         let url = self.begin_sign_in(
             &format!("http://127.0.0.1:{port}/callback"),
-            SignInOptions { fresh: true, ..SignInOptions::default() },
+            SignInOptions {
+                fresh: true,
+                ..SignInOptions::default()
+            },
         );
-        if let Some(state) = url.split("&state=").nth(1).and_then(|rest| rest.split('&').next()) {
+        if let Some(state) = url
+            .split("&state=")
+            .nth(1)
+            .and_then(|rest| rest.split('&').next())
+        {
             lock(&self.inner.step_up_states).insert(state.to_owned());
         }
         Ok(url)
@@ -845,10 +877,17 @@ impl Auth {
 
     /// A code exchanged: a step-up keeps its ticket if it's the account
     /// signed in now (and changes nothing else); a sign-in signs in.
-    async fn finish_exchange(&self, state: &str, result: SignInResult, generation: u64) -> Result<(), EngineError> {
+    async fn finish_exchange(
+        &self,
+        state: &str,
+        result: SignInResult,
+        generation: u64,
+    ) -> Result<(), EngineError> {
         if lock(&self.inner.step_up_states).remove(state) {
             if self.user_id().as_deref() != Some(result.user.id.as_str()) {
-                return Err(EngineError::Other("That was another account: sign in as the one using Onicode here".into()));
+                return Err(EngineError::Other(
+                    "That was another account: sign in as the one using Onicode here".into(),
+                ));
             }
             let fresh = result.step_up.is_some();
             self.keep_step_up(result.step_up);
@@ -865,7 +904,8 @@ impl Auth {
     }
 
     fn keep_step_up(&self, step_up: Option<(String, Duration)>) {
-        *lock(&self.inner.step_up) = step_up.map(|(ticket, ttl)| (ticket, Instant::now() + ttl.min(STEP_UP_TTL)));
+        *lock(&self.inner.step_up) =
+            step_up.map(|(ticket, ttl)| (ticket, Instant::now() + ttl.min(STEP_UP_TTL)));
     }
 
     pub fn sign_out(&self) {
@@ -1080,14 +1120,22 @@ impl Auth {
             refresh_token: body.refresh_token,
             step_up: body.step_up.filter(|s| !s.token.is_empty()).map(|s| {
                 let left_ms = s.expires_at - chrono::Utc::now().timestamp_millis();
-                let ttl = if s.expires_at > 0 { Duration::from_millis(left_ms.max(0) as u64) } else { STEP_UP_TTL };
+                let ttl = if s.expires_at > 0 {
+                    Duration::from_millis(left_ms.max(0) as u64)
+                } else {
+                    STEP_UP_TTL
+                };
                 (s.token, ttl)
             }),
         })
     }
 
     /// Keep a sign-in's credentials (not yet announced): its user and org.
-    fn commit_sign_in(&self, result: SignInResult, generation: u64) -> Result<(AuthUser, Option<String>), EngineError> {
+    fn commit_sign_in(
+        &self,
+        result: SignInResult,
+        generation: u64,
+    ) -> Result<(AuthUser, Option<String>), EngineError> {
         // Serialize the final commit with sign-out. A callback can consume its
         // OAuth state and spend time exchanging the code; if cancellation wins
         // during that await, its old generation must never restore credentials.
@@ -1112,7 +1160,12 @@ impl Auth {
     }
 
     /// Say a committed sign-in is in, unless a sign-out came first.
-    fn announce_sign_in(&self, user: AuthUser, org_id: Option<String>, generation: u64) -> Result<(), EngineError> {
+    fn announce_sign_in(
+        &self,
+        user: AuthUser,
+        org_id: Option<String>,
+        generation: u64,
+    ) -> Result<(), EngineError> {
         let sign_in = lock(&self.inner.sign_in);
         if sign_in.generation != generation {
             return Err(EngineError::Other(
@@ -1121,9 +1174,7 @@ impl Auth {
         }
         tracing::info!(email = %user.email, org = org_id.as_deref().unwrap_or("<none>"),
             "auth: signed in");
-        self.inner
-            .state_tx
-            .send_replace(state_for(user, org_id));
+        self.inner.state_tx.send_replace(state_for(user, org_id));
         self.inner
             .token_tx
             .send_modify(|epoch| *epoch = epoch.wrapping_add(1));

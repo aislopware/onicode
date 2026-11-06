@@ -774,16 +774,17 @@ async fn interrupt_stamps_streaming_entry_aborted() {
         core.sessions
             .session_status(CHAT)
             .unwrap()
-            .last_turn_outcome.map(|o| o.status),
+            .last_turn_outcome
+            .map(|o| o.status),
         Some(DoneStatus::Interrupted)
     );
     wait_for(
         || {
-            core.sessions
-                .watch_sessions()
-                .borrow()
-                .iter()
-                .any(|s| s.chat_id == CHAT && s.last_turn_outcome.is_some_and(|o| o.status == DoneStatus::Interrupted))
+            core.sessions.watch_sessions().borrow().iter().any(|s| {
+                s.chat_id == CHAT
+                    && s.last_turn_outcome
+                        .is_some_and(|o| o.status == DoneStatus::Interrupted)
+            })
         },
         "interrupted activity projection",
     )
@@ -1488,7 +1489,10 @@ async fn rpc_surface_over_in_memory_transport() {
 
     // ListHarnesses + ListModels.
     let harnesses = client
-        .call(onicode_rpc::methods::LIST_HARNESSES, serde_json::Value::Null)
+        .call(
+            onicode_rpc::methods::LIST_HARNESSES,
+            serde_json::Value::Null,
+        )
         .await
         .unwrap();
     assert_eq!(harnesses[0]["id"], "mock");
@@ -1503,7 +1507,10 @@ async fn rpc_surface_over_in_memory_transport() {
 
     // WatchSessions + WatchDocMessages streams.
     let mut sessions_stream = client
-        .subscribe(onicode_rpc::methods::WATCH_SESSIONS, serde_json::Value::Null)
+        .subscribe(
+            onicode_rpc::methods::WATCH_SESSIONS,
+            serde_json::Value::Null,
+        )
         .await
         .unwrap();
     let first_sessions = tokio::time::timeout(Duration::from_secs(5), sessions_stream.recv())
@@ -2819,7 +2826,11 @@ async fn parked_session_ignores_trailing_frames_and_stays_idle() {
             "trailing frames must not re-arm Working"
         );
         assert_eq!(
-            core.sessions.session_status(CHAT).unwrap().last_turn_outcome.map(|o| o.status),
+            core.sessions
+                .session_status(CHAT)
+                .unwrap()
+                .last_turn_outcome
+                .map(|o| o.status),
             Some(DoneStatus::Completed),
             "parked teardown must preserve the real turn outcome"
         );

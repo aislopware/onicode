@@ -140,7 +140,11 @@ pub struct DeviceFrameHeader {
     /// by the room from a dial whose proof checked out
     /// ([`CallerProof`]), never from a client's own frame. Absent: the
     /// caller is an unknown device of the account.
-    #[serde(default, rename = "fromDevice", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "fromDevice",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub from_device: Option<String>,
 }
 
@@ -350,7 +354,9 @@ impl RpcService for RelayGuard {
                 format!("{method}: only this device's own window can do that")
             }));
         }
-        let caller = crate::Caller::Peer { device: self.device.clone() };
+        let caller = crate::Caller::Peer {
+            device: self.device.clone(),
+        };
         crate::with_caller(caller, self.inner.handle(method, params)).await
     }
 }
@@ -504,7 +510,10 @@ fn make_virtual_conn(
     host_out: mpsc::Sender<Vec<u8>>,
 ) -> VirtualConn {
     // Peers never reach what only a local client may call.
-    let service: Arc<dyn RpcService> = Arc::new(RelayGuard { inner: service, device: device.clone() });
+    let service: Arc<dyn RpcService> = Arc::new(RelayGuard {
+        inner: service,
+        device: device.clone(),
+    });
     let (in_tx, in_rx) = mpsc::channel::<String>(256);
     let (srv_out_tx, mut srv_out_rx) = mpsc::channel::<String>(256);
     tokio::spawn(serve_connection(service, srv_out_tx, in_rx));
@@ -638,9 +647,9 @@ async fn handle_host_frame(
         return;
     };
     let device = header.from_device;
-    let conn = conns
-        .entry(from.clone())
-        .or_insert_with(|| make_virtual_conn(service.clone(), from, device.clone(), out_tx.clone()));
+    let conn = conns.entry(from.clone()).or_insert_with(|| {
+        make_virtual_conn(service.clone(), from, device.clone(), out_tx.clone())
+    });
     if conn.device != device {
         tracing::warn!("device-room: a conn's verified device changed; dropping the frame");
         return;
@@ -884,7 +893,11 @@ pub fn caller_proof_message(target: &str, conn_id: &str, ts: i64) -> String {
 /// `&callerDevice=…&callerKey=…&callerTs=…&callerProof=…`, or nothing when a
 /// value isn't URL-safe as is (ids, b64url).
 fn caller_query(proof: &CallerProof, ts: i64) -> String {
-    let safe = |v: &str| !v.is_empty() && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    let safe = |v: &str| {
+        !v.is_empty()
+            && v.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    };
     if !(safe(&proof.device) && safe(&proof.key) && safe(&proof.signature)) {
         return String::new();
     }
@@ -1189,7 +1202,9 @@ impl LinkCache {
         // means the edge refused it (say, a key not registered yet).
         match &stamped {
             Some(id) => tracing::debug!(device = %device_id, "relay dial stamped as {id}"),
-            None => tracing::debug!(device = %device_id, proof_sent = proved, "relay dial unstamped"),
+            None => {
+                tracing::debug!(device = %device_id, proof_sent = proved, "relay dial unstamped")
+            }
         }
         let link = Arc::new(link);
         // Readiness probe: prove the host answers before caching (an offline host bounces
@@ -1264,7 +1279,10 @@ mod tests {
         }
 
         let reached = Arc::new(AtomicUsize::new(0));
-        let guard = super::RelayGuard { inner: Arc::new(Echo(reached.clone())), device: None };
+        let guard = super::RelayGuard {
+            inner: Arc::new(Echo(reached.clone())),
+            device: None,
+        };
         assert!(crate::local_only(methods::ACCESS_TOKEN));
         match guard
             .handle(methods::ACCESS_TOKEN, serde_json::json!({}))
@@ -1310,41 +1328,78 @@ mod tests {
                 method: &str,
                 _params: serde_json::Value,
             ) -> Result<RpcReply, crate::RpcError> {
-                self.0.lock().unwrap().push((method.to_owned(), crate::caller()));
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push((method.to_owned(), crate::caller()));
                 Ok(RpcReply::Value(serde_json::json!({})))
             }
         }
 
         let seen = Arc::new(Mutex::new(Vec::new()));
-        let guard = super::RelayGuard { inner: Arc::new(Seen(seen.clone())), device: None };
+        let guard = super::RelayGuard {
+            inner: Arc::new(Seen(seen.clone())),
+            device: None,
+        };
         let hash = "ab".repeat(32);
         for (method, params) in [
-            (methods::DECIDE_PLUGIN, serde_json::json!({"id": "x", "allow": true, "hash": hash})),
-            (methods::DECIDE_PLUGIN, serde_json::json!({"id": "x", "allow": true, "hash": hash, "review": "r"})),
-            (methods::DECIDE_PLUGIN, serde_json::json!({"id": "x", "hash": hash})),
-            (methods::REVIEW_PLUGIN, serde_json::json!({"id": "x", "hash": hash})),
+            (
+                methods::DECIDE_PLUGIN,
+                serde_json::json!({"id": "x", "allow": true, "hash": hash}),
+            ),
+            (
+                methods::DECIDE_PLUGIN,
+                serde_json::json!({"id": "x", "allow": true, "hash": hash, "review": "r"}),
+            ),
+            (
+                methods::DECIDE_PLUGIN,
+                serde_json::json!({"id": "x", "hash": hash}),
+            ),
+            (
+                methods::REVIEW_PLUGIN,
+                serde_json::json!({"id": "x", "hash": hash}),
+            ),
             (methods::SIGN_PLUGIN, serde_json::json!({"id": "x"})),
-            (methods::DECIDE_TEMPLATE, serde_json::json!({"pending": "x", "allow": true, "hash": hash})),
-            (methods::INSTALL_PLUGIN, serde_json::json!({"path": "/tmp/x.onicode-plugin"})),
+            (
+                methods::DECIDE_TEMPLATE,
+                serde_json::json!({"pending": "x", "allow": true, "hash": hash}),
+            ),
+            (
+                methods::INSTALL_PLUGIN,
+                serde_json::json!({"path": "/tmp/x.onicode-plugin"}),
+            ),
         ] {
             assert!(
                 guard.handle(method, params.clone()).await.is_err(),
                 "a peer must not reach {method} {params}"
             );
         }
-        assert!(seen.lock().unwrap().is_empty(), "refused before the service");
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "refused before the service"
+        );
 
         for (method, params) in [
-            (methods::DECIDE_PLUGIN, serde_json::json!({"id": "x", "allow": false, "hash": hash})),
-            (methods::SET_PLUGIN_OFF, serde_json::json!({"id": "x", "off": true})),
-            (methods::INSTALL_PLUGIN, serde_json::json!({"url": "https://example.com/x.onicode-plugin"})),
+            (
+                methods::DECIDE_PLUGIN,
+                serde_json::json!({"id": "x", "allow": false, "hash": hash}),
+            ),
+            (
+                methods::SET_PLUGIN_OFF,
+                serde_json::json!({"id": "x", "off": true}),
+            ),
+            (
+                methods::INSTALL_PLUGIN,
+                serde_json::json!({"url": "https://example.com/x.onicode-plugin"}),
+            ),
         ] {
             guard.handle(method, params).await.expect(method);
         }
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 3);
         assert!(
-            seen.iter().all(|(_, caller)| matches!(caller, crate::Caller::Peer { .. })),
+            seen.iter()
+                .all(|(_, caller)| matches!(caller, crate::Caller::Peer { .. })),
             "served as a peer: {seen:?}"
         );
     }
@@ -1477,7 +1532,11 @@ mod tests {
         struct Seen(Arc<Mutex<Vec<crate::Caller>>>);
         #[async_trait::async_trait]
         impl RpcService for Seen {
-            async fn handle(&self, _method: &str, _params: serde_json::Value) -> Result<RpcReply, crate::RpcError> {
+            async fn handle(
+                &self,
+                _method: &str,
+                _params: serde_json::Value,
+            ) -> Result<RpcReply, crate::RpcError> {
                 self.0.lock().unwrap().push(crate::caller());
                 Ok(RpcReply::Value(serde_json::json!({})))
             }
@@ -1499,13 +1558,35 @@ mod tests {
             let mut header = DeviceFrameHeader::new(RPC_KIND, RPC_KIND);
             header.from = Some(from.into());
             header.from_device = device.map(str::to_owned);
-            let call = serde_json::json!({"id": id, "method": "ListPlugins", "params": {}}).to_string();
+            let call =
+                serde_json::json!({"id": id, "method": "ListPlugins", "params": {}}).to_string();
             encode_device_frame(&header, call.as_bytes()).unwrap()
         };
-        handle_host_frame(&frame("c1", Some("device-a"), 1), &mut conns, &service, &out_tx, &on_nudge).await;
-        handle_host_frame(&frame("c2", None, 1), &mut conns, &service, &out_tx, &on_nudge).await;
+        handle_host_frame(
+            &frame("c1", Some("device-a"), 1),
+            &mut conns,
+            &service,
+            &out_tx,
+            &on_nudge,
+        )
+        .await;
+        handle_host_frame(
+            &frame("c2", None, 1),
+            &mut conns,
+            &service,
+            &out_tx,
+            &on_nudge,
+        )
+        .await;
         // Same conn, another device: dropped.
-        handle_host_frame(&frame("c1", Some("device-b"), 2), &mut conns, &service, &out_tx, &on_nudge).await;
+        handle_host_frame(
+            &frame("c1", Some("device-b"), 2),
+            &mut conns,
+            &service,
+            &out_tx,
+            &on_nudge,
+        )
+        .await;
         for _ in 0..50 {
             if seen.lock().unwrap().len() >= 2 {
                 break;
@@ -1515,21 +1596,39 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
         let seen = seen.lock().unwrap().clone();
         assert_eq!(seen.len(), 2, "{seen:?}");
-        assert!(seen.contains(&crate::Caller::Peer { device: Some("device-a".into()) }), "{seen:?}");
-        assert!(seen.contains(&crate::Caller::Peer { device: None }), "{seen:?}");
+        assert!(
+            seen.contains(&crate::Caller::Peer {
+                device: Some("device-a".into())
+            }),
+            "{seen:?}"
+        );
+        assert!(
+            seen.contains(&crate::Caller::Peer { device: None }),
+            "{seen:?}"
+        );
     }
 
     #[test]
     fn a_dial_carries_its_proof() {
-        let proof = CallerProof { device: "dev-a".into(), key: "K_ey-1".into(), signature: "s1g_-".into() };
+        let proof = CallerProof {
+            device: "dev-a".into(),
+            key: "K_ey-1".into(),
+            signature: "s1g_-".into(),
+        };
         assert_eq!(
             caller_query(&proof, 1700000000000),
             "&callerDevice=dev-a&callerKey=K_ey-1&callerTs=1700000000000&callerProof=s1g_-"
         );
         // Anything that would need escaping isn't sent at all (unstamped).
-        let odd = CallerProof { device: "dev a&x=1".into(), ..proof };
+        let odd = CallerProof {
+            device: "dev a&x=1".into(),
+            ..proof
+        };
         assert_eq!(caller_query(&odd, 1), "");
-        assert_eq!(caller_proof_message("dev-b", "c1", 5), "onicode-device-link:v1:dev-b:c1:5");
+        assert_eq!(
+            caller_proof_message("dev-b", "c1", 5),
+            "onicode-device-link:v1:dev-b:c1:5"
+        );
     }
 
     #[test]

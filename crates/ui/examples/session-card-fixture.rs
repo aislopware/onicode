@@ -12,9 +12,9 @@
 //! overrides the toggle's computed position (logical px).
 use anyhow::Context as _;
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
+use onicode_ui::*;
 use serde_json::json;
 use std::path::PathBuf;
-use onicode_ui::*;
 
 /// Main column 1100 − 256 = 844 < 1092, the least that docks the card
 /// beside the default 736px reading column.
@@ -89,8 +89,10 @@ fn main() -> anyhow::Result<()> {
     .enumerate()
     {
         let at = 1_788_900_000_000_i64 + ix as i64 * 60_000;
-        entries.push(json!({"id": format!("u{ix}"), "role": "user", "createdAt": at, "deviceId": "local",
-            "parts": [{"id": "t", "kind": "text", "text": prompt}]}));
+        entries.push(
+            json!({"id": format!("u{ix}"), "role": "user", "createdAt": at, "deviceId": "local",
+            "parts": [{"id": "t", "kind": "text", "text": prompt}]}),
+        );
         entries.push(json!({"id": format!("a{ix}"), "role": "assistant", "createdAt": at + 1000, "deviceId": "local", "status": "complete",
             "parts": [{"id": "t", "kind": "text", "text": REPLY}]}));
     }

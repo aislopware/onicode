@@ -1,8 +1,8 @@
 //! Against a real `muse` (opt-in): `MUSE_LIVE_BIN=/path/to/muse cargo test
 //! -p onicode-harness --test muse_account_live -- --ignored --nocapture`.
 //! Uses a throwaway, file-backed config root: never the user's own login.
-use std::collections::BTreeMap;
 use onicode_harness::muse::account;
+use std::collections::BTreeMap;
 
 fn live() -> Option<(
     std::path::PathBuf,

@@ -51,7 +51,9 @@ pub struct Decision {
 impl Decision {
     /// What it allowed, as a capability record.
     pub fn allowed_record(&self) -> serde_json::Value {
-        self.grants.clone().unwrap_or_else(|| capability::legacy(&self.permissions))
+        self.grants
+            .clone()
+            .unwrap_or_else(|| capability::legacy(&self.permissions))
     }
 }
 
@@ -194,10 +196,18 @@ pub fn decide(facts: &Facts<'_>, decision: Option<&Decision>) -> Verdict {
     let settled = |d: &Decision| -> Verdict {
         let diff = capability::diff(&d.allowed_record(), facts.record);
         if !d.reask && !diff.grew() {
-            return verdict(if d.off { Status::Off } else { Status::On }, sorted(&d.permissions), Vec::new());
+            return verdict(
+                if d.off { Status::Off } else { Status::On },
+                sorted(&d.permissions),
+                Vec::new(),
+            );
         }
         let have: BTreeSet<&String> = d.permissions.iter().collect();
-        let missing: Vec<String> = asked.iter().filter(|p| !have.contains(p)).cloned().collect();
+        let missing: Vec<String> = asked
+            .iter()
+            .filter(|p| !have.contains(p))
+            .cloned()
+            .collect();
         Verdict {
             status: Status::Pending,
             allowed: sorted(&d.permissions),
@@ -221,7 +231,9 @@ pub fn decide(facts: &Facts<'_>, decision: Option<&Decision>) -> Verdict {
             && d.content_hash
                 .as_deref()
                 .is_none_or(|hash| hash == facts.hash)
-            && d.grants.as_ref().is_none_or(|g| capability::digest(g) == capability::digest(facts.record));
+            && d.grants
+                .as_ref()
+                .is_none_or(|g| capability::digest(g) == capability::digest(facts.record));
         let status = if unchanged {
             Status::Off
         } else {
@@ -234,7 +246,11 @@ pub fn decide(facts: &Facts<'_>, decision: Option<&Decision>) -> Verdict {
         // Onicode's own: allowed what it asks as it ships, on unless turned
         // off (`scan::builtin_entry` settles it; this is its default).
         Author::Onicode => verdict(
-            if decision.is_some_and(|d| d.off) { Status::Off } else { Status::On },
+            if decision.is_some_and(|d| d.off) {
+                Status::Off
+            } else {
+                Status::On
+            },
             all(),
             Vec::new(),
         ),
@@ -557,7 +573,14 @@ mod tests {
         let v1_record = capability::record(&v1);
         let asked = v1.permissions.clone();
         for author in [Author::You, verified()] {
-            let f1 = Facts { broken: false, asked: &asked, author: &author, key: Some("K"), hash: "h1", record: &v1_record };
+            let f1 = Facts {
+                broken: false,
+                asked: &asked,
+                author: &author,
+                key: Some("K"),
+                hash: "h1",
+                record: &v1_record,
+            };
             let decision = f1.record(true);
             assert_eq!(decide(&f1, Some(&decision)).status, Status::On);
             for swap in [
@@ -567,19 +590,40 @@ mod tests {
             ] {
                 let v2 = manifest(swap.clone());
                 let r2 = capability::record(&v2);
-                let f2 = Facts { broken: false, asked: &asked, author: &author, key: Some("K"), hash: "h2", record: &r2 };
+                let f2 = Facts {
+                    broken: false,
+                    asked: &asked,
+                    author: &author,
+                    key: Some("K"),
+                    hash: "h2",
+                    record: &r2,
+                };
                 let v = decide(&f2, Some(&decision));
                 assert_eq!(v.status, Status::Pending, "{author:?} {swap}");
                 assert!(v.diff.is_some(), "says what grew");
                 assert!(!v.ask.is_empty());
             }
             // The same powers, new code: still on.
-            let f2 = Facts { broken: false, asked: &asked, author: &author, key: Some("K"), hash: "h3", record: &v1_record };
+            let f2 = Facts {
+                broken: false,
+                asked: &asked,
+                author: &author,
+                key: Some("K"),
+                hash: "h3",
+                record: &v1_record,
+            };
             assert_eq!(decide(&f2, Some(&decision)).status, Status::On);
         }
         // A decision from before records: anything beyond its names asks once.
         let legacy = allowed(&["commands", "native", "tools"], Some("K"), None);
-        let f = Facts { broken: false, asked: &asked, author: &Author::You, key: Some("K"), hash: "h1", record: &v1_record };
+        let f = Facts {
+            broken: false,
+            asked: &asked,
+            author: &Author::You,
+            key: Some("K"),
+            hash: "h1",
+            record: &v1_record,
+        };
         let v = decide(&f, Some(&legacy));
         assert_eq!(v.status, Status::Pending);
         assert_eq!(v.diff.unwrap()["added_commands"], serde_json::json!(["gh"]));
@@ -600,9 +644,15 @@ mod tests {
         let mut d = facts(&asked, &a, None, "h2").record(true);
         d.reask = true;
         let v = decide(&facts(&asked, &a, None, "h2"), Some(&d));
-        assert_eq!((v.status, v.allowed.clone(), v.ask.clone()), (Status::Pending, perms(&["ui.add"]), perms(&["ui.add"])));
+        assert_eq!(
+            (v.status, v.allowed.clone(), v.ask.clone()),
+            (Status::Pending, perms(&["ui.add"]), perms(&["ui.add"]))
+        );
         d.reask = false;
-        assert_eq!(decide(&facts(&asked, &a, None, "h2"), Some(&d)).status, Status::On);
+        assert_eq!(
+            decide(&facts(&asked, &a, None, "h2"), Some(&d)).status,
+            Status::On
+        );
     }
 
     #[test]
@@ -610,8 +660,12 @@ mod tests {
         let mut state = State::default();
         state.own.insert("gone".into());
         state.own.insert("here".into());
-        state.decisions.insert("gone".into(), allowed(&["ui.add"], Some("K"), None));
-        state.decisions.insert("here".into(), allowed(&["ui.add"], Some("K"), None));
+        state
+            .decisions
+            .insert("gone".into(), allowed(&["ui.add"], Some("K"), None));
+        state
+            .decisions
+            .insert("here".into(), allowed(&["ui.add"], Some("K"), None));
         let present: BTreeSet<String> = ["here".to_string()].into();
         assert!(state.prune(&present));
         assert!(!state.prune(&present));

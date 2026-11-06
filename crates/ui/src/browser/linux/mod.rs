@@ -51,9 +51,7 @@ impl Engine {
         match std::env::var("ONICODE_BROWSER_ENGINE").as_deref() {
             Ok("gtk") => (Self::Gtk, true),
             Ok("wpe") => (Self::Wpe, true),
-            _ if wpe::HELPER.is_empty() || WPE_FAILED.load(Ordering::Relaxed) => {
-                (Self::Gtk, false)
-            }
+            _ if wpe::HELPER.is_empty() || WPE_FAILED.load(Ordering::Relaxed) => (Self::Gtk, false),
             _ => (Self::Wpe, false),
         }
     }
@@ -197,7 +195,9 @@ fn read_startup(stdout: &mut impl Read, runtime: &str) -> Result<Vec<u8>, Startu
         .map_err(|error| error.to_string())?;
     match header[0] {
         b'R' => Ok(message),
-        b'E' => Err(Startup::Storage(String::from_utf8_lossy(&message).into_owned())),
+        b'E' => Err(Startup::Storage(
+            String::from_utf8_lossy(&message).into_owned(),
+        )),
         _ => Err("Invalid browser startup response".to_owned().into()),
     }
 }
@@ -408,7 +408,10 @@ fn spawn_helper(command: &mut Command) -> std::io::Result<Child> {
     command.spawn()
 }
 
-fn spawn_gtk(executable: &std::path::Path, profile: Option<&std::path::Path>) -> Result<Worker, String> {
+fn spawn_gtk(
+    executable: &std::path::Path,
+    profile: Option<&std::path::Path>,
+) -> Result<Worker, String> {
     let mut command = Command::new(executable);
     if let Some(profile) = profile {
         command.arg("--profile").arg(profile);
@@ -419,49 +422,77 @@ fn spawn_gtk(executable: &std::path::Path, profile: Option<&std::path::Path>) ->
     let stdout = child.stdout.take().unwrap();
     // Report startup/storage failures on the page instead of silently opening
     // an ephemeral session. Bound the wait if the display/runtime hangs.
-    let mut stdout = match await_startup(stdout, "WebKitGTK 4.1", std::time::Duration::from_secs(10)) {
-        Ok((stdout, _)) => stdout,
-        Err(error) => {
-            abandon(child);
-            return Err(error.into());
-        }
-    };
+    let mut stdout =
+        match await_startup(stdout, "WebKitGTK 4.1", std::time::Duration::from_secs(10)) {
+            Ok((stdout, _)) => stdout,
+            Err(error) => {
+                abandon(child);
+                return Err(error.into());
+            }
+        };
     let routes: Arc<Mutex<HashMap<u32, Weak<Route>>>> = Arc::default();
     let reader_routes = routes.clone();
     let stopped = Arc::new(AtomicBool::new(false));
     let reader_stopped = stopped.clone();
-    std::thread::Builder::new().name("browser-frames".into()).spawn(move || {
-        let result = (|| -> std::io::Result<()> {
-            loop {
-                let mut header = [0u8; 9]; stdout.read_exact(&mut header)?;
-                let id = u32::from_le_bytes(header[1..5].try_into().unwrap());
-                let length = u32::from_le_bytes(header[5..9].try_into().unwrap()) as usize;
-                if length > 8192 * 8192 * 4 + 12 { return Err(std::io::Error::other("Browser packet is too large")); }
-                let mut data = vec![0; length]; stdout.read_exact(&mut data)?;
-                let route = reader_routes.lock().unwrap().get(&id).and_then(Weak::upgrade);
-                let Some(route) = route else { continue; };
-                let event = match header[0] {
-                    b'F' => {
-                        if data.len() < 12 { continue; }
-                        let width = u32::from_le_bytes(data[..4].try_into().unwrap());
-                        let height = u32::from_le_bytes(data[4..8].try_into().unwrap());
-                        let scale=f32::from_bits(u32::from_le_bytes(data[8..12].try_into().unwrap()));
-                        if !scale.is_finite() || !(0.5..=4.).contains(&scale) {continue;}
-                        data.drain(..12);
-                        let Some(pixels) = image::RgbaImage::from_raw(width, height, data) else { continue; };
-                        *route.frame.lock().unwrap() = Some((Arc::new(RenderImage::new([image::Frame::new(pixels)])),scale));
-                        NativeEvent::Frame
+    std::thread::Builder::new()
+        .name("browser-frames".into())
+        .spawn(move || {
+            let result = (|| -> std::io::Result<()> {
+                loop {
+                    let mut header = [0u8; 9];
+                    stdout.read_exact(&mut header)?;
+                    let id = u32::from_le_bytes(header[1..5].try_into().unwrap());
+                    let length = u32::from_le_bytes(header[5..9].try_into().unwrap()) as usize;
+                    if length > 8192 * 8192 * 4 + 12 {
+                        return Err(std::io::Error::other("Browser packet is too large"));
                     }
-                    kind => match common_packet(&route, kind, data) { Some(event) => event, None => continue },
-                };
-                deliver(&route, event);
+                    let mut data = vec![0; length];
+                    stdout.read_exact(&mut data)?;
+                    let route = reader_routes
+                        .lock()
+                        .unwrap()
+                        .get(&id)
+                        .and_then(Weak::upgrade);
+                    let Some(route) = route else {
+                        continue;
+                    };
+                    let event = match header[0] {
+                        b'F' => {
+                            if data.len() < 12 {
+                                continue;
+                            }
+                            let width = u32::from_le_bytes(data[..4].try_into().unwrap());
+                            let height = u32::from_le_bytes(data[4..8].try_into().unwrap());
+                            let scale =
+                                f32::from_bits(u32::from_le_bytes(data[8..12].try_into().unwrap()));
+                            if !scale.is_finite() || !(0.5..=4.).contains(&scale) {
+                                continue;
+                            }
+                            data.drain(..12);
+                            let Some(pixels) = image::RgbaImage::from_raw(width, height, data)
+                            else {
+                                continue;
+                            };
+                            *route.frame.lock().unwrap() = Some((
+                                Arc::new(RenderImage::new([image::Frame::new(pixels)])),
+                                scale,
+                            ));
+                            NativeEvent::Frame
+                        }
+                        kind => match common_packet(&route, kind, data) {
+                            Some(event) => event,
+                            None => continue,
+                        },
+                    };
+                    deliver(&route, event);
+                }
+            })();
+            if result.is_err() {
+                reader_stopped.store(true, Ordering::Relaxed);
+                helper_stopped(&reader_routes, Engine::Gtk);
             }
-        })();
-        if result.is_err() {
-            reader_stopped.store(true, Ordering::Relaxed);
-            helper_stopped(&reader_routes, Engine::Gtk);
-        }
-    }).map_err(|e| e.to_string())?;
+        })
+        .map_err(|e| e.to_string())?;
     Ok(Worker {
         engine: Engine::Gtk,
         child: Mutex::new(child),
@@ -520,7 +551,10 @@ fn spawn_wpe(
             return Err(error);
         }
     };
-    tracing::info!("browser engine: WPE WebKit {}", String::from_utf8_lossy(&ready));
+    tracing::info!(
+        "browser engine: WPE WebKit {}",
+        String::from_utf8_lossy(&ready)
+    );
     let outbox = wpe::writer(socket.try_clone().map_err(|e| e.to_string())?);
     let routes: Arc<Mutex<HashMap<u32, Weak<Route>>>> = Arc::default();
     let reader_routes = routes.clone();
@@ -535,7 +569,11 @@ fn spawn_wpe(
             let result = (|| -> std::io::Result<()> {
                 loop {
                     let (kind, id, data) = reader.next()?;
-                    let route = reader_routes.lock().unwrap().get(&id).and_then(Weak::upgrade);
+                    let route = reader_routes
+                        .lock()
+                        .unwrap()
+                        .get(&id)
+                        .and_then(Weak::upgrade);
                     let Some(route) = route else {
                         // A closed page: still consume the descriptor it sent.
                         if kind == b'B' {
@@ -543,13 +581,14 @@ fn spawn_wpe(
                         }
                         continue;
                     };
-                    let event = match wpe::packet(&route, &reader_outbox, id, kind, &data, &mut reader)? {
-                        Some(event) => event,
-                        None => match common_packet(&route, kind, data) {
+                    let event =
+                        match wpe::packet(&route, &reader_outbox, id, kind, &data, &mut reader)? {
                             Some(event) => event,
-                            None => continue,
-                        },
-                    };
+                            None => match common_packet(&route, kind, data) {
+                                Some(event) => event,
+                                None => continue,
+                            },
+                        };
                     deliver(&route, event);
                 }
             })();
@@ -774,7 +813,8 @@ impl NativePage {
             #[cfg(feature = "browser-fixture")]
             if self.log.image.replace(image.id) != Some(image.id) {
                 self.log.painted();
-                self.log.copied(image.as_bytes(0).map_or(0, |b| b.len() as u64), false);
+                self.log
+                    .copied(image.as_bytes(0).map_or(0, |b| b.len() as u64), false);
             }
             if let Some(bytes) = image.as_bytes(0).filter(|b| b.len() >= 4) {
                 let color = gpui::rgb(
@@ -1088,9 +1128,15 @@ impl super::BrowserSurface {
 /// Feeds WebKit one vblank per GPUI frame callback, which follow the
 /// compositor's refresh, for as long as WebKit wants them. A page keeps the
 /// display's rate while its window is in the background, like any browser.
-fn vblank(entity: gpui::WeakEntity<super::BrowserSurface>, window: &mut gpui::Window, cx: &mut gpui::App) {
+fn vblank(
+    entity: gpui::WeakEntity<super::BrowserSurface>,
+    window: &mut gpui::Window,
+    cx: &mut gpui::App,
+) {
     let again = entity
-        .update(cx, |this, _| this.native.as_mut().is_some_and(NativePage::vblank))
+        .update(cx, |this, _| {
+            this.native.as_mut().is_some_and(NativePage::vblank)
+        })
         .unwrap_or(false);
     if again {
         window.on_next_display_frame(move |window, cx| vblank(entity, window, cx));
@@ -1145,7 +1191,13 @@ impl super::BrowserSurface {
             return Value::Null;
         };
         let mut frames = presenter.fixture_frames();
-        frames["shared"] = native.route.surface.lock().unwrap().fixture_buffers().into();
+        frames["shared"] = native
+            .route
+            .surface
+            .lock()
+            .unwrap()
+            .fixture_buffers()
+            .into();
         frames
     }
 }

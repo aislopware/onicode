@@ -74,9 +74,7 @@ impl BrowserSurface {
                         return;
                     }
                     "v" => {
-                        if let Some(text) =
-                            cx.read_from_clipboard().and_then(|item| item.text())
-                        {
+                        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
                             native.command(serde_json::json!({"cmd":"text","text":text}));
                         }
                         cx.stop_propagation();
@@ -756,53 +754,183 @@ impl Render for BrowserSurface {
             } else {
                 let entity = cx.entity().downgrade();
                 let wpe = native.engine() == super::linux::Engine::Wpe;
-                body.child(gpui::canvas(|_,_,_| (), move |bounds,_,window,cx| {
-                    let scale = window.scale_factor();
-                    if let Some(view)=entity.upgrade() {
-                        let focus=view.read(cx).focus.clone();
-                        window.handle_input(&focus,gpui::ElementInputHandler::new(bounds,view),cx);
-                    }
-                    let _ = entity.update(cx, |this,_| {
-                        let focused = this.focus.is_focused(window);
-                        if let Some(native)=&mut this.native {
-                            native.sync(bounds,scale);
-                            native.paint(bounds, focused, window);
-                        }
-                    });
-                    let capture=entity.clone();
-                    window.on_mouse_event(move |event: &gpui::MouseMoveEvent,phase,_,cx| {
-                        if phase==gpui::DispatchPhase::Bubble && !bounds.contains(&event.position) && !cx.has_active_drag() {
-                            let _=capture.update(cx,|this,_| {
-                                if this.native.as_ref().is_some_and(|n|n.pressed.get().is_some()) {
-                                    this.linux_pointer("move",event.position,event.pressed_button,event.modifiers,0);
+                body.child(
+                    gpui::canvas(
+                        |_, _, _| (),
+                        move |bounds, _, window, cx| {
+                            let scale = window.scale_factor();
+                            if let Some(view) = entity.upgrade() {
+                                let focus = view.read(cx).focus.clone();
+                                window.handle_input(
+                                    &focus,
+                                    gpui::ElementInputHandler::new(bounds, view),
+                                    cx,
+                                );
+                            }
+                            let _ = entity.update(cx, |this, _| {
+                                let focused = this.focus.is_focused(window);
+                                if let Some(native) = &mut this.native {
+                                    native.sync(bounds, scale);
+                                    native.paint(bounds, focused, window);
                                 }
                             });
-                        }
-                    });
-                }).absolute().inset_0())
+                            let capture = entity.clone();
+                            window.on_mouse_event(
+                                move |event: &gpui::MouseMoveEvent, phase, _, cx| {
+                                    if phase == gpui::DispatchPhase::Bubble
+                                        && !bounds.contains(&event.position)
+                                        && !cx.has_active_drag()
+                                    {
+                                        let _ = capture.update(cx, |this, _| {
+                                            if this
+                                                .native
+                                                .as_ref()
+                                                .is_some_and(|n| n.pressed.get().is_some())
+                                            {
+                                                this.linux_pointer(
+                                                    "move",
+                                                    event.position,
+                                                    event.pressed_button,
+                                                    event.modifiers,
+                                                    0,
+                                                );
+                                            }
+                                        });
+                                    }
+                                },
+                            );
+                        },
+                    )
+                    .absolute()
+                    .inset_0(),
+                )
                 .cursor(self.page_cursor)
-                .when(wpe, |body| body.on_hover(cx.listener(|this, hovered: &bool, window, _| {
-                    if !*hovered {
-                        this.linux_pointer("leave", window.mouse_position(), None, window.modifiers(), 0);
-                    }
-                })))
-                .on_mouse_down(MouseButton::Left,cx.listener(|this,event: &gpui::MouseDownEvent,w,cx| {
-                    if !cx.has_active_drag() { w.focus(&this.focus,cx); this.linux_pointer("down",event.position,Some(event.button),event.modifiers,event.click_count); cx.stop_propagation(); }
-                }))
-                .on_mouse_down(MouseButton::Right,cx.listener(|this,event: &gpui::MouseDownEvent,w,cx| {
-                    w.focus(&this.focus,cx);this.linux_pointer("down",event.position,Some(event.button),event.modifiers,event.click_count);cx.stop_propagation();
-                }))
-                .on_mouse_up(MouseButton::Left,cx.listener(|this,event: &gpui::MouseUpEvent,_,cx| {this.linux_pointer("up",event.position,Some(event.button),event.modifiers,event.click_count);cx.stop_propagation();}))
-                .on_mouse_up_out(MouseButton::Left,cx.listener(|this,event: &gpui::MouseUpEvent,_,_| {this.linux_pointer("up",event.position,Some(event.button),event.modifiers,event.click_count);}))
-                .on_mouse_up(MouseButton::Right,cx.listener(|this,event: &gpui::MouseUpEvent,_,cx| {this.linux_pointer("up",event.position,Some(event.button),event.modifiers,event.click_count);cx.stop_propagation();}))
-                .on_mouse_down(MouseButton::Middle,cx.listener(|this,event: &gpui::MouseDownEvent,w,cx| {w.focus(&this.focus,cx);this.linux_pointer("down",event.position,Some(event.button),event.modifiers,event.click_count);cx.stop_propagation();}))
-                .on_mouse_up(MouseButton::Middle,cx.listener(|this,event: &gpui::MouseUpEvent,_,cx| {this.linux_pointer("up",event.position,Some(event.button),event.modifiers,event.click_count);cx.stop_propagation();}))
-                .on_mouse_move(cx.listener(|this,event: &gpui::MouseMoveEvent,_,cx| {if !cx.has_active_drag(){this.linux_pointer("move",event.position,event.pressed_button,event.modifiers,0);}}))
-                .on_scroll_wheel(cx.listener(|this,event: &gpui::ScrollWheelEvent,_,cx| {
-                    if this.linux_scroll(event) {
+                .when(wpe, |body| {
+                    body.on_hover(cx.listener(|this, hovered: &bool, window, _| {
+                        if !*hovered {
+                            this.linux_pointer(
+                                "leave",
+                                window.mouse_position(),
+                                None,
+                                window.modifiers(),
+                                0,
+                            );
+                        }
+                    }))
+                })
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, event: &gpui::MouseDownEvent, w, cx| {
+                        if !cx.has_active_drag() {
+                            w.focus(&this.focus, cx);
+                            this.linux_pointer(
+                                "down",
+                                event.position,
+                                Some(event.button),
+                                event.modifiers,
+                                event.click_count,
+                            );
+                            cx.stop_propagation();
+                        }
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, event: &gpui::MouseDownEvent, w, cx| {
+                        w.focus(&this.focus, cx);
+                        this.linux_pointer(
+                            "down",
+                            event.position,
+                            Some(event.button),
+                            event.modifiers,
+                            event.click_count,
+                        );
                         cx.stop_propagation();
+                    }),
+                )
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
+                        this.linux_pointer(
+                            "up",
+                            event.position,
+                            Some(event.button),
+                            event.modifiers,
+                            event.click_count,
+                        );
+                        cx.stop_propagation();
+                    }),
+                )
+                .on_mouse_up_out(
+                    MouseButton::Left,
+                    cx.listener(|this, event: &gpui::MouseUpEvent, _, _| {
+                        this.linux_pointer(
+                            "up",
+                            event.position,
+                            Some(event.button),
+                            event.modifiers,
+                            event.click_count,
+                        );
+                    }),
+                )
+                .on_mouse_up(
+                    MouseButton::Right,
+                    cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
+                        this.linux_pointer(
+                            "up",
+                            event.position,
+                            Some(event.button),
+                            event.modifiers,
+                            event.click_count,
+                        );
+                        cx.stop_propagation();
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Middle,
+                    cx.listener(|this, event: &gpui::MouseDownEvent, w, cx| {
+                        w.focus(&this.focus, cx);
+                        this.linux_pointer(
+                            "down",
+                            event.position,
+                            Some(event.button),
+                            event.modifiers,
+                            event.click_count,
+                        );
+                        cx.stop_propagation();
+                    }),
+                )
+                .on_mouse_up(
+                    MouseButton::Middle,
+                    cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
+                        this.linux_pointer(
+                            "up",
+                            event.position,
+                            Some(event.button),
+                            event.modifiers,
+                            event.click_count,
+                        );
+                        cx.stop_propagation();
+                    }),
+                )
+                .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                    if !cx.has_active_drag() {
+                        this.linux_pointer(
+                            "move",
+                            event.position,
+                            event.pressed_button,
+                            event.modifiers,
+                            0,
+                        );
                     }
                 }))
+                .on_scroll_wheel(cx.listener(
+                    |this, event: &gpui::ScrollWheelEvent, _, cx| {
+                        if this.linux_scroll(event) {
+                            cx.stop_propagation();
+                        }
+                    },
+                ))
             }
         } else {
             body.child(self.empty_body(&theme, cx))

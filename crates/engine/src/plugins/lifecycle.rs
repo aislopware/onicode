@@ -14,15 +14,15 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use onicode_rpc::{RpcError, RpcReply, methods, parse_params};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use onicode_rpc::{RpcError, RpcReply, methods, parse_params};
 
 use super::capability;
 use super::install::{self, Package, Source};
 use super::package;
-use super::template_packages;
 use super::status::{Author, Decision, Status};
+use super::template_packages;
 use super::{Plugins, failed, lock, now_secs};
 
 /// The first check after the engine starts, then how often.
@@ -62,11 +62,16 @@ struct ExportParams {
 pub fn handles(method: &str) -> bool {
     matches!(
         method,
-        methods::INSTALL_PLUGIN | methods::CHECK_PLUGIN_UPDATES | methods::UPDATE_PLUGIN | methods::EXPORT_PLUGIN
+        methods::INSTALL_PLUGIN
+            | methods::CHECK_PLUGIN_UPDATES
+            | methods::UPDATE_PLUGIN
+            | methods::EXPORT_PLUGIN
     )
 }
 
-async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, RpcError> {
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, RpcError> {
     tokio::task::spawn_blocking(f)
         .await
         .map_err(|_| failed("It stopped part way"))?
@@ -74,7 +79,11 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
 }
 
 impl Plugins {
-    pub(super) async fn lifecycle(&self, method: &str, params: Value) -> Result<RpcReply, RpcError> {
+    pub(super) async fn lifecycle(
+        &self,
+        method: &str,
+        params: Value,
+    ) -> Result<RpcReply, RpcError> {
         match method {
             methods::INSTALL_PLUGIN => {
                 let p: InstallParams = parse_params(params)?;
@@ -87,7 +96,10 @@ impl Plugins {
                             return Err(failed("Give the package file's full path"));
                         }
                         let read = path.clone();
-                        let package = blocking(move || package::read(&read, &install::WORDS).and_then(install::parse)).await?;
+                        let package = blocking(move || {
+                            package::read(&read, &install::WORDS).and_then(install::parse)
+                        })
+                        .await?;
                         let shown = std::fs::canonicalize(&path).unwrap_or(path);
                         let source = Source {
                             kind: "file".into(),
@@ -101,8 +113,12 @@ impl Plugins {
                         (package, source)
                     }
                     (None, Some(url)) => {
-                        let origin = install::origin(&url, p.git_ref.as_deref(), p.folder.as_deref()).map_err(failed)?;
-                        install::fetch(&origin, &self.scratch()?).await.map_err(failed)?
+                        let origin =
+                            install::origin(&url, p.git_ref.as_deref(), p.folder.as_deref())
+                                .map_err(failed)?;
+                        install::fetch(&origin, &self.scratch()?)
+                            .await
+                            .map_err(failed)?
                     }
                     _ => return Err(failed("Give a package file (`path`) or a link (`url`)")),
                 };
@@ -119,15 +135,27 @@ impl Plugins {
             methods::EXPORT_PLUGIN => {
                 let p: ExportParams = parse_params(params)?;
                 self.rescan().await;
-                let entry = self.entry(&p.id).ok_or_else(|| failed(format!("There's no plugin {}", p.id)))?;
+                let entry = self
+                    .entry(&p.id)
+                    .ok_or_else(|| failed(format!("There's no plugin {}", p.id)))?;
                 let name = format!(
                     "{}-{}.{}",
                     entry.item.id,
-                    if entry.item.version.is_empty() { "1" } else { entry.item.version.as_str() },
+                    if entry.item.version.is_empty() {
+                        "1"
+                    } else {
+                        entry.item.version.as_str()
+                    },
                     install::EXTENSION
                 );
-                let out = match p.to.filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s.trim())) {
-                    Some(to) if !to.is_absolute() => return Err(failed("Give a full path to save it to")),
+                let out = match p
+                    .to
+                    .filter(|s| !s.trim().is_empty())
+                    .map(|s| PathBuf::from(s.trim()))
+                {
+                    Some(to) if !to.is_absolute() => {
+                        return Err(failed("Give a full path to save it to"));
+                    }
                     Some(to) if to.extension().is_some_and(|e| e == install::EXTENSION) => to,
                     Some(to) => to.join(name),
                     None => self.inner.data_dir.join("plugin-exports").join(name),
@@ -146,9 +174,11 @@ impl Plugins {
                     }
                     let raw = install::pack_folder(&dir)?;
                     if let Some(parent) = written.parent() {
-                        std::fs::create_dir_all(parent).map_err(|_| "Couldn't make that folder".to_string())?;
+                        std::fs::create_dir_all(parent)
+                            .map_err(|_| "Couldn't make that folder".to_string())?;
                     }
-                    std::fs::write(&written, &raw).map_err(|_| "Couldn't save it there".to_string())?;
+                    std::fs::write(&written, &raw)
+                        .map_err(|_| "Couldn't save it there".to_string())?;
                     Ok(raw.len())
                 })
                 .await?;
@@ -168,7 +198,11 @@ impl Plugins {
 
     /// Install a verified package, keep the decisions right, and say what
     /// changed.
-    async fn install_package(&self, package: Package, mut source: Source) -> Result<RpcReply, RpcError> {
+    async fn install_package(
+        &self,
+        package: Package,
+        mut source: Source,
+    ) -> Result<RpcReply, RpcError> {
         self.rescan().await;
         let id = package.id().to_owned();
         if let Some(entry) = self.entry(&id) {
@@ -239,9 +273,14 @@ impl Plugins {
         drop(scan_guard);
         install::forget_found(&self.inner.plugins_dir, &id);
         self.rescan().await;
-        let entry = self.entry(&id).ok_or_else(|| failed(format!("There's no plugin {id}")))?;
+        let entry = self
+            .entry(&id)
+            .ok_or_else(|| failed(format!("There's no plugin {id}")))?;
         let change = install::grant_change(
-            replaced.as_ref().map(|r| r.permissions.as_slice()).unwrap_or_default(),
+            replaced
+                .as_ref()
+                .map(|r| r.permissions.as_slice())
+                .unwrap_or_default(),
             &package.manifest.permissions,
         );
         let mut reply = json!({
@@ -304,7 +343,9 @@ impl Plugins {
         };
         for c in candidates {
             let (id, name) = (c.id.clone(), c.name.clone());
-            let Some(source) = Source::load(&c.dir) else { continue };
+            let Some(source) = Source::load(&c.dir) else {
+                continue;
+            };
             let plugins_dir = self.inner.plugins_dir.clone();
             let installed = install::Installed {
                 id: &c.id,
@@ -315,7 +356,8 @@ impl Plugins {
                 allowed: &c.allowed,
             };
             match install::fetch_again(&source, &scratch).await {
-                Ok(Some((fetched, source))) => match install::compare(&installed, &fetched, source) {
+                Ok(Some((fetched, source))) => match install::compare(&installed, &fetched, source)
+                {
                     Some(found) => {
                         let keep = found.refused.is_none().then_some(&fetched);
                         if let Err(error) = install::keep_found(&plugins_dir, &id, &found, keep) {
@@ -344,26 +386,34 @@ impl Plugins {
         let dir = self.inner.data_dir.join(super::TEMPLATES_DIR);
         let listed = {
             let dir = dir.clone();
-            tokio::task::spawn_blocking(move || template_packages::checkable(&dir)).await.unwrap_or_default()
+            tokio::task::spawn_blocking(move || template_packages::checkable(&dir))
+                .await
+                .unwrap_or_default()
         };
         let mut updates = Vec::new();
         let mut errors = Vec::new();
-        for (id, name, key, hash, source) in listed.into_iter().filter(|c| only.is_none_or(|o| o == c.0)) {
+        for (id, name, key, hash, source) in
+            listed.into_iter().filter(|c| only.is_none_or(|o| o == c.0))
+        {
             match template_packages::fetch_again(&source).await {
-                Ok(Some((fetched, source))) => match template_packages::compare(&dir, &id, &key, &hash, &fetched, source) {
-                    Some(found) => {
-                        let keep = found.refused.is_none().then_some(&fetched);
-                        if let Err(error) = template_packages::keep_found(&dir, &id, &found, keep) {
-                            errors.push(json!({ "id": id, "name": name, "error": error }));
-                            continue;
+                Ok(Some((fetched, source))) => {
+                    match template_packages::compare(&dir, &id, &key, &hash, &fetched, source) {
+                        Some(found) => {
+                            let keep = found.refused.is_none().then_some(&fetched);
+                            if let Err(error) =
+                                template_packages::keep_found(&dir, &id, &found, keep)
+                            {
+                                errors.push(json!({ "id": id, "name": name, "error": error }));
+                                continue;
+                            }
+                            let mut shown = found.shown();
+                            shown["id"] = json!(id);
+                            shown["name"] = json!(name);
+                            updates.push(shown);
                         }
-                        let mut shown = found.shown();
-                        shown["id"] = json!(id);
-                        shown["name"] = json!(name);
-                        updates.push(shown);
+                        None => template_packages::forget_found(&dir, &id),
                     }
-                    None => template_packages::forget_found(&dir, &id),
-                },
+                }
                 Ok(None) => template_packages::forget_found(&dir, &id),
                 Err(error) => errors.push(json!({ "id": id, "name": name, "error": error })),
             }
@@ -373,7 +423,9 @@ impl Plugins {
 
     async fn update(&self, id: &str) -> Result<RpcReply, RpcError> {
         self.rescan().await;
-        let entry = self.entry(id).ok_or_else(|| failed(format!("There's no plugin {id}")))?;
+        let entry = self
+            .entry(id)
+            .ok_or_else(|| failed(format!("There's no plugin {id}")))?;
         if entry.item.builtin {
             return Err(failed("Built-in plugins update when Onicode does"));
         }
@@ -381,7 +433,12 @@ impl Plugins {
         if found.is_none() {
             let checked = self.check_updates(Some(id)).await;
             if let Some(error) = checked["errors"].as_array().and_then(|e| e.first()) {
-                return Err(failed(error["error"].as_str().unwrap_or("Couldn't check for an update").to_owned()));
+                return Err(failed(
+                    error["error"]
+                        .as_str()
+                        .unwrap_or("Couldn't check for an update")
+                        .to_owned(),
+                ));
             }
             found = install::found(&self.inner.plugins_dir, id, &entry.item.hash);
         }
@@ -392,7 +449,9 @@ impl Plugins {
             return Err(failed(refused));
         }
         let path = install::found_package_path(&self.inner.plugins_dir, id);
-        let package = blocking(move || package::read(&path, &install::WORDS).and_then(install::parse)).await?;
+        let package =
+            blocking(move || package::read(&path, &install::WORDS).and_then(install::parse))
+                .await?;
         if package.hash != found.hash {
             return Err(failed("The update changed since it was found; check again"));
         }
@@ -415,11 +474,19 @@ impl Plugins {
                 let Some(inner) = weak.upgrade() else { return };
                 let plugins = Plugins { inner };
                 let checked = plugins.check_updates(None).await;
-                if let Some(n) = checked["updates"].as_array().map(Vec::len).filter(|n| *n > 0) {
+                if let Some(n) = checked["updates"]
+                    .as_array()
+                    .map(Vec::len)
+                    .filter(|n| *n > 0)
+                {
                     tracing::info!(updates = n, "plugins: updates found");
                 }
                 let checked = plugins.check_template_updates(None).await;
-                if let Some(n) = checked["updates"].as_array().map(Vec::len).filter(|n| *n > 0) {
+                if let Some(n) = checked["updates"]
+                    .as_array()
+                    .map(Vec::len)
+                    .filter(|n| *n > 0)
+                {
                     tracing::info!(updates = n, "templates: updates found");
                 }
                 drop(plugins);
@@ -440,4 +507,3 @@ pub(super) fn annotate(plugins_dir: &Path, item: &mut super::scan::PluginItem) {
     item.source = Source::load(dir).map(|s| s.shown());
     item.update = install::found(plugins_dir, &item.id, &item.hash).map(|f| f.shown());
 }
-

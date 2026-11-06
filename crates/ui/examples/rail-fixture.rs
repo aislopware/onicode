@@ -3,9 +3,9 @@
 //! rail pinned to the bottom, hovered, wheel-scrolled and after a jump, then
 //! quits; ONICODE_PALETTE_LIGHT=1 renders the light theme.
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
+use onicode_ui::*;
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use onicode_ui::*;
 
 const PROMPTS: [&str; 12] = [
     "Why does the order sheet double-count croissants on Saturdays?",

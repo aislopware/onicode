@@ -2490,7 +2490,10 @@ mod mcp_injection_tests {
                 .collect(),
         };
         let parsed: Value = serde_json::from_str(&mcp_config_arg(&mcp)).unwrap();
-        assert_eq!(parsed["mcpServers"]["onicode"]["command"], "/opt/onicode/onicode");
+        assert_eq!(
+            parsed["mcpServers"]["onicode"]["command"],
+            "/opt/onicode/onicode"
+        );
         assert_eq!(
             parsed["mcpServers"]["onicode"]["args"],
             serde_json::json!(["mcp"])
@@ -2519,7 +2522,10 @@ mod mcp_injection_tests {
             &mcp_servers_config_arg(Some(&onicode), std::slice::from_ref(&extra)).unwrap(),
         )
         .unwrap();
-        assert_eq!(both["mcpServers"]["onicode"]["command"], "/opt/onicode/onicode");
+        assert_eq!(
+            both["mcpServers"]["onicode"]["command"],
+            "/opt/onicode/onicode"
+        );
         let plugin = &both["mcpServers"]["plugin-focus"];
         assert_eq!(
             plugin["command"],

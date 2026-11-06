@@ -90,9 +90,11 @@ mod tests {
                 ))
             })
             .collect();
-        let first: onicode_proto::McpServer = serde_json::from_str(&envs["ONICODE_PI_MCP"]).unwrap();
+        let first: onicode_proto::McpServer =
+            serde_json::from_str(&envs["ONICODE_PI_MCP"]).unwrap();
         assert_eq!(first, onicode);
-        let second: onicode_proto::McpServer = serde_json::from_str(&envs["ONICODE_PI_MCP_1"]).unwrap();
+        let second: onicode_proto::McpServer =
+            serde_json::from_str(&envs["ONICODE_PI_MCP_1"]).unwrap();
         assert_eq!(second, extra);
         let copy = std::fs::read_to_string(scratch.path().join("onicode-mcp-1.mjs")).unwrap();
         assert!(copy.contains("process.env.ONICODE_PI_MCP_1)"));

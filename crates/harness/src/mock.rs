@@ -306,7 +306,9 @@ impl Harness for MockHarness {
                     send("I'll run the test suite first.\n\n");
                     tokio::time::sleep(pause).await;
                     let question = crate::approval::command("Mock", "cargo test --workspace");
-                    let answers = request_input(vec![question.clone()]).await.unwrap_or_default();
+                    let answers = request_input(vec![question.clone()])
+                        .await
+                        .unwrap_or_default();
                     if crate::approval::approved(&question, &answers) {
                         let _ = tx.send(AgentEvent::ToolCall {
                             id: "mock-approved-tool".into(),
@@ -780,11 +782,15 @@ impl Harness for MockHarness {
                             onicode_proto::TodoItem::new(
                                 *text,
                                 match ix.cmp(&active) {
-                                    std::cmp::Ordering::Less => onicode_proto::TodoStatus::Completed,
+                                    std::cmp::Ordering::Less => {
+                                        onicode_proto::TodoStatus::Completed
+                                    }
                                     std::cmp::Ordering::Equal => {
                                         onicode_proto::TodoStatus::InProgress
                                     }
-                                    std::cmp::Ordering::Greater => onicode_proto::TodoStatus::Pending,
+                                    std::cmp::Ordering::Greater => {
+                                        onicode_proto::TodoStatus::Pending
+                                    }
                                 },
                             )
                         })

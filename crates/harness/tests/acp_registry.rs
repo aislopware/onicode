@@ -11,10 +11,10 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use sha2::{Digest, Sha256};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use onicode_harness::{AcpHarness, Harness, acp_registry as reg};
 use onicode_proto::{HarnessId, RegistryAgent};
+use sha2::{Digest, Sha256};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake-acp.sh")
@@ -28,7 +28,8 @@ fn archive() -> Vec<u8> {
     header.set_size(script.len() as u64);
     header.set_mode(0o755);
     header.set_cksum();
-    tar.append_data(&mut header, "fake/agent", &script[..]).unwrap();
+    tar.append_data(&mut header, "fake/agent", &script[..])
+        .unwrap();
     let tar = tar.into_inner().unwrap();
     let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     gz.write_all(&tar).unwrap();
@@ -41,7 +42,9 @@ async fn serve(files: Vec<(&'static str, Vec<u8>)>) -> String {
     let base = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move {
         loop {
-            let Ok((mut socket, _)) = listener.accept().await else { return };
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
             let files = files.clone();
             tokio::spawn(async move {
                 let mut buf = vec![0; 4096];
@@ -50,11 +53,18 @@ async fn serve(files: Vec<(&'static str, Vec<u8>)>) -> String {
                 let path = request.split_whitespace().nth(1).unwrap_or("/").to_owned();
                 let reply = match files.iter().find(|(p, _)| *p == path) {
                     Some((_, body)) => {
-                        let mut r = format!("HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n", body.len()).into_bytes();
+                        let mut r = format!(
+                            "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                            body.len()
+                        )
+                        .into_bytes();
                         r.extend_from_slice(body);
                         r
                     }
-                    None => b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n".to_vec(),
+                    None => {
+                        b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                            .to_vec()
+                    }
                 };
                 let _ = socket.write_all(&reply).await;
             });
@@ -82,7 +92,11 @@ async fn a_registry_agent_installs_launches_and_is_removed() {
     let base = serve(vec![
         ("/fake.tar.gz", built),
         ("/tampered.tar.gz", tampered),
-        ("/icon.svg", b"<svg viewBox=\"0 0 16 16\"><path fill=\"currentColor\" d=\"M0 0h16v16H0z\"/></svg>".to_vec()),
+        (
+            "/icon.svg",
+            b"<svg viewBox=\"0 0 16 16\"><path fill=\"currentColor\" d=\"M0 0h16v16H0z\"/></svg>"
+                .to_vec(),
+        ),
     ])
     .await;
     let platform = reg::platform().expect("a registry platform");
@@ -112,7 +126,9 @@ async fn a_registry_agent_installs_launches_and_is_removed() {
     assert_eq!(reg::readiness(&entries[0]), reg::Readiness::Ready);
 
     // A download that doesn't match its checksum never lands.
-    let refused = reg::install(&entries[1], None).await.expect_err("checksum mismatch");
+    let refused = reg::install(&entries[1], None)
+        .await
+        .expect_err("checksum mismatch");
     assert!(refused.to_string().contains("checksum"), "{refused}");
     let tampered = RegistryAgent::new("tampered").unwrap();
     assert!(!reg::installed(tampered));
@@ -122,7 +138,11 @@ async fn a_registry_agent_installs_launches_and_is_removed() {
     let record = reg::install(&entries[0], icon).await.expect("install");
     assert!(record.verified);
     assert_eq!(record.version, "1.2.3");
-    assert!(record.program.starts_with(root.path().join("fake-agent").join("1.2.3")));
+    assert!(
+        record
+            .program
+            .starts_with(root.path().join("fake-agent").join("1.2.3"))
+    );
     let agent = RegistryAgent::new("fake-agent").unwrap();
     assert!(reg::installed(agent));
     assert_eq!(reg::records().len(), 1);

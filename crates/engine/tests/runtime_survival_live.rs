@@ -581,7 +581,10 @@ async fn stop_tears_down_all_agent_work() {
             onicode_proto::HarnessId::ClaudeCode,
             Arc::new(ClaudeHarness::new()),
         ),
-        "codex" => (onicode_proto::HarnessId::Codex, Arc::new(CodexHarness::new())),
+        "codex" => (
+            onicode_proto::HarnessId::Codex,
+            Arc::new(CodexHarness::new()),
+        ),
         _ => panic!("claude or codex"),
     };
     let alive = || {

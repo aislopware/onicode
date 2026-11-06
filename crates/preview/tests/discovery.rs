@@ -1,12 +1,12 @@
 //! Real OS process/listener association: only servers a Onicode agent or
 //! terminal started (carrying its origin marker), each under the right checkout.
+use onicode_preview::{PreviewService, Scope};
+use onicode_proto::{ORIGIN_ENV, chat_origin, terminal_origin};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
 };
-use onicode_preview::{PreviewService, Scope};
-use onicode_proto::{ORIGIN_ENV, chat_origin, terminal_origin};
 /// Every service binds the proxy port (7331, else one the system picks), so
 /// tests in this binary must not run concurrently: one test holding 7331 to
 /// see its proxy move elsewhere would otherwise race another test's service.
@@ -125,7 +125,11 @@ async fn only_agent_started_http_processes_are_exposed_and_removals_are_live() {
         let snapshot = service.catalog().snapshot();
         assert_eq!(snapshot.error, None);
         assert_ne!(snapshot.proxy_port, 7331);
-        assert!(snapshot.services[0].url(snapshot.proxy_port).ends_with(&format!(":{}", snapshot.proxy_port)));
+        assert!(
+            snapshot.services[0]
+                .url(snapshot.proxy_port)
+                .ends_with(&format!(":{}", snapshot.proxy_port))
+        );
     }
     // Several cycles pass and the user's server never joins it.
     tokio::time::sleep(Duration::from_secs(5)).await;

@@ -17,12 +17,12 @@
 //! ONICODE_RIGHT_TREE=x,y0 (the explorer's first row) when a layout moves.
 use anyhow::Context as _;
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
+use onicode_ui::*;
 use serde_json::json;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use onicode_ui::*;
 
 const WINDOW: (f32, f32) = (1440.0, 900.0);
 const SIDEBAR: f32 = 256.0;
@@ -262,7 +262,8 @@ async fn film(
     capture(window, cx, &dir, "right-empty-660");
     // The picker's rows (Browser, Terminal, Diffs, History in a git
     // project: 44px rows, 8px gaps) centre in the pane below the titlebar.
-    let content_mid = theme::Theme::TITLEBAR_HEIGHT + (WINDOW.1 - theme::Theme::TITLEBAR_HEIGHT) / 2.0;
+    let content_mid =
+        theme::Theme::TITLEBAR_HEIGHT + (WINDOW.1 - theme::Theme::TITLEBAR_HEIGHT) / 2.0;
     let terminal_at = xy(
         "ONICODE_RIGHT_TERMINAL",
         (target_left + RIGHT_PANE / 2.0, content_mid - 26.0),
@@ -291,8 +292,22 @@ async fn film(
     // 4px apart, centred on y≈21 in the 38px titlebar.
     let chip0 = split_left + 9.0 + 56.0;
     hover_capture(window, cx, &dir, "right-tabs-hover-inactive", (chip0, 21.0)).await;
-    hover_capture(window, cx, &dir, "right-tabs-hover-active", (chip0 + 116.0, 21.0)).await;
-    hover_capture(window, cx, &dir, "right-tabs-hover-plus", (split_left + 9.0 + 232.0 + 12.0, 21.0)).await;
+    hover_capture(
+        window,
+        cx,
+        &dir,
+        "right-tabs-hover-active",
+        (chip0 + 116.0, 21.0),
+    )
+    .await;
+    hover_capture(
+        window,
+        cx,
+        &dir,
+        "right-tabs-hover-plus",
+        (split_left + 9.0 + 232.0 + 12.0, 21.0),
+    )
+    .await;
     hover(window, cx, (500.0, 600.0));
     pause(cx, 400).await;
     drag_seam(window, cx, split_left, target_left).await;
@@ -362,7 +377,11 @@ fn main() -> anyhow::Result<()> {
     let ipc_port = std::net::TcpListener::bind("127.0.0.1:0")?
         .local_addr()?
         .port();
-    let _ipc = runtime.block_on(onicode_engine::serve_ipc(ipc_port, &data, core.rpc_service()))?;
+    let _ipc = runtime.block_on(onicode_engine::serve_ipc(
+        ipc_port,
+        &data,
+        core.rpc_service(),
+    ))?;
     let boot = EngineBootConfig {
         data_dir: data.clone(),
         ipc_port,

@@ -10,11 +10,11 @@ pub mod engine_commands;
 pub mod ipc_cli;
 pub mod plugin_cli;
 
+pub use engine_commands::run_engine_command;
 pub use onicode_cli::{
     DEFAULT_EDGE_URL, DEFAULT_WORKOS_CLIENT_ID, edge_url_from_env, init_logging,
     long_running_setup, open_log_file, paths, workos_client_id_from_env,
 };
-pub use engine_commands::run_engine_command;
 
 /// mimalloc, macOS only: libmalloc never returns the streaming churn's
 /// high-water pages, so transient allocation became permanent RSS

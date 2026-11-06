@@ -1480,7 +1480,9 @@ mod tests {
                         parent_id: None,
                     },
                 ],
-                github_install_url: Some("https://github.com/apps/onicode/installations/new".into()),
+                github_install_url: Some(
+                    "https://github.com/apps/onicode/installations/new".into(),
+                ),
             },
             VaultStatus {
                 available: true,

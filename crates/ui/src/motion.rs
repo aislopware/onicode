@@ -170,7 +170,14 @@ fn activity_pulse_every(view: EntityId, stride: u64, cx: &mut App) -> ActivityPu
         });
     let phase = if animate {
         schedule_pulse_every(view, if subtle { 2 } else { stride }, cx);
-        pulse_phase(if subtle { &ONICODE_PULSE } else { &GRADIENT_SPIN }, cx)
+        pulse_phase(
+            if subtle {
+                &ONICODE_PULSE
+            } else {
+                &GRADIENT_SPIN
+            },
+            cx,
+        )
     } else {
         0.0
     };
@@ -1786,12 +1793,18 @@ mod tests {
 
         // Reverse mid-flight re-anchors — no jump — then lands at 1.
         let at_flip = morph(&mut morphs, true, ms(80));
-        assert!((at_flip - mid).abs() < 1e-4, "continuity: {mid} vs {at_flip}");
+        assert!(
+            (at_flip - mid).abs() < 1e-4,
+            "continuity: {mid} vs {at_flip}"
+        );
         assert_eq!(morph(&mut morphs, true, ms(400)), 1.0);
         assert!(!morphs.tick_at(ms(400)));
 
         // Reduced motion snaps a flip.
-        assert_eq!(morphs.value_at("glyph", false, GLYPH_STATE, true, ms(500)), 0.0);
+        assert_eq!(
+            morphs.value_at("glyph", false, GLYPH_STATE, true, ms(500)),
+            0.0
+        );
 
         // Unread for a full frame: pruned (a remount snaps again).
         morphs.tick_at(ms(600));

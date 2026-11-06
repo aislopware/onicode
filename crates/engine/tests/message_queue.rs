@@ -675,12 +675,9 @@ async fn interrupt_bypasses_a_saturated_prompt_command_drain() {
     let handle = core.doc_host.open(CHAT).unwrap();
     wait_for(
         || {
-            handle
-                .doc()
-                .read_commands()
-                .unwrap()
-                .iter()
-                .any(|c| c.id == interrupt && c.status == onicode_doc::SessionCommandStatus::Applied)
+            handle.doc().read_commands().unwrap().iter().any(|c| {
+                c.id == interrupt && c.status == onicode_doc::SessionCommandStatus::Applied
+            })
         },
         "interrupt to bypass blocked prompts",
     )

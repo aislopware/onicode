@@ -19,11 +19,11 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use futures::stream::BoxStream;
-use serde_json::json;
-use tokio_util::sync::CancellationToken;
 use onicode_proto::TerminalEvent;
 use onicode_rpc::{RpcError, methods};
 use onicode_term_link::remote::{Direct, Relay, TerminalPath, Write};
+use serde_json::json;
+use tokio_util::sync::CancellationToken;
 
 use crate::client::{Client, ClientInner};
 use crate::error::{ClientError, Result};

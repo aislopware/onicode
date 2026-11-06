@@ -25,8 +25,8 @@
 //! for, so a onicode that adapted is not held back by it. A range is a semver
 //! requirement; `||` separates alternatives.
 
-use serde::{Deserialize, Serialize};
 use onicode_proto::{HarnessCompatibility, HarnessCompatibilityStatus, HarnessId};
+use serde::{Deserialize, Serialize};
 
 const BUILT_IN: &str = include_str!("compatibility.json");
 

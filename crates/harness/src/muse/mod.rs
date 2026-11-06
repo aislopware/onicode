@@ -31,11 +31,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::{StreamExt, stream::BoxStream};
-use serde_json::json;
-use tokio::sync::mpsc;
 use onicode_proto::{
     AccessMode, AgentEvent, HarnessId, Model, ReasoningLevel, RunRequest, SteeringMode,
 };
+use serde_json::json;
+use tokio::sync::mpsc;
 
 use crate::{Harness, HarnessError, RunControls};
 use host::{Host, Mode};

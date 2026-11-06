@@ -177,8 +177,10 @@ impl WorktreeSettingsCard {
                     _ => error.to_string(),
                 })
                 .and_then(|value| {
-                    serde_json::from_value::<onicode_engine::commit_credit::CommitCreditStatus>(value)
-                        .map_err(|error| error.to_string())
+                    serde_json::from_value::<onicode_engine::commit_credit::CommitCreditStatus>(
+                        value,
+                    )
+                    .map_err(|error| error.to_string())
                 });
             this.update(cx, |card, cx| {
                 card.credit_saving = false;

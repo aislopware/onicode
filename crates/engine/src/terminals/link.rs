@@ -78,8 +78,8 @@ mod tests {
     use super::*;
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
-    use std::time::Duration;
     use onicode_proto::TerminalEvent;
+    use std::time::Duration;
 
     fn text(events: &[TerminalEvent]) -> String {
         let mut out = Vec::new();

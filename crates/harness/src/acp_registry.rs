@@ -28,10 +28,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use futures::StreamExt;
+use onicode_proto::RegistryAgent;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
-use onicode_proto::RegistryAgent;
 
 use crate::HarnessError;
 
@@ -144,7 +144,10 @@ pub fn built_in(registry_id: &str) -> Option<&'static str> {
 /// entry never hides the rest. Errs only when the index itself is unusable.
 pub fn parse_index(bytes: &[u8]) -> Result<Vec<Entry>, String> {
     if bytes.len() > MAX_INDEX_BYTES {
-        return Err(format!("the registry index is over {} KiB", MAX_INDEX_BYTES / 1024));
+        return Err(format!(
+            "the registry index is over {} KiB",
+            MAX_INDEX_BYTES / 1024
+        ));
     }
     let index: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|e| format!("the registry index isn't JSON: {e}"))?;
@@ -213,10 +216,9 @@ pub fn npm_pin(spec: &str) -> Option<(&str, &str)> {
     let exact = semver::Version::parse(version).is_ok();
     let name_ok = !name.is_empty()
         && name.len() <= 214
-        && name
-            .trim_start_matches('@')
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'_' | b'.' | b'/'))
+        && name.trim_start_matches('@').bytes().all(|b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'_' | b'.' | b'/')
+        })
         && name.matches('/').count() == usize::from(name.starts_with('@'));
     (exact && name_ok).then_some((name, version))
 }
@@ -226,10 +228,14 @@ pub fn uv_pin(spec: &str) -> Option<(&str, &str)> {
     let (name, version) = spec.split_once("==").or_else(|| spec.split_once('@'))?;
     let name_ok = !name.is_empty()
         && name.len() <= 128
-        && name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'));
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'));
     let version_ok = !version.is_empty()
         && version.len() <= 64
-        && version.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'+'));
+        && version
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'+'));
     (name_ok && version_ok).then_some((name, version))
 }
 
@@ -327,11 +333,18 @@ fn choose_for<'a>(entry: &'a Entry, platform: Option<&str>) -> Option<Choice<'a>
     let d = &entry.distribution;
     if let Some(platform) = platform {
         let fallback = (platform == "windows-aarch64").then_some("windows-x86_64");
-        if let Some(t) = d.binary.get(platform).or_else(|| fallback.and_then(|f| d.binary.get(f))) {
+        if let Some(t) = d
+            .binary
+            .get(platform)
+            .or_else(|| fallback.and_then(|f| d.binary.get(f)))
+        {
             return Some(Choice::Binary(t));
         }
     }
-    d.npx.as_ref().map(Choice::Npx).or_else(|| d.uvx.as_ref().map(Choice::Uvx))
+    d.npx
+        .as_ref()
+        .map(Choice::Npx)
+        .or_else(|| d.uvx.as_ref().map(Choice::Uvx))
 }
 
 /// What a device lacks to run an entry: nothing, Node.js (npm), uv, or a
@@ -411,7 +424,11 @@ pub fn set_agents_root(dir: PathBuf) {
 /// managed adapters (`~/.onicode/agents`; the local app-data directory on
 /// Windows).
 pub fn agents_root() -> Option<PathBuf> {
-    let value = |key: &str| std::env::var_os(key).filter(|v| !v.is_empty()).map(PathBuf::from);
+    let value = |key: &str| {
+        std::env::var_os(key)
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+    };
     if let Some(dir) = value("ONICODE_AGENTS_DIR") {
         return Some(dir);
     }
@@ -461,9 +478,14 @@ pub fn installed(agent: RegistryAgent) -> bool {
 
 /// How the agent launches: the program, its arguments (an npm bin runs
 /// under Node.js) and the environment the registry gives it.
-pub fn launch(agent: RegistryAgent) -> Result<(PathBuf, Vec<String>, Vec<(String, String)>), HarnessError> {
+pub fn launch(
+    agent: RegistryAgent,
+) -> Result<(PathBuf, Vec<String>, Vec<(String, String)>), HarnessError> {
     let record = record(agent).ok_or_else(|| {
-        HarnessError::NotInstalled(format!("{} isn't added on this device", agent.registry_id()))
+        HarnessError::NotInstalled(format!(
+            "{} isn't added on this device",
+            agent.registry_id()
+        ))
     })?;
     if !record.program.is_file() {
         return Err(HarnessError::NotInstalled(format!(
@@ -545,10 +567,19 @@ pub fn env_text(env: &BTreeMap<String, String>) -> String {
 
 /// Keeps `text` as the agent's environment on this device (owner-only,
 /// written whole or not at all); empty forgets it.
-pub fn set_user_env(agent: RegistryAgent, text: &str) -> Result<BTreeMap<String, String>, HarnessError> {
+pub fn set_user_env(
+    agent: RegistryAgent,
+    text: &str,
+) -> Result<BTreeMap<String, String>, HarnessError> {
     let env = parse_env(text).map_err(HarnessError::Install)?;
-    record(agent).ok_or_else(|| HarnessError::NotInstalled(format!("{} isn't added on this device", agent.registry_id())))?;
-    let file = env_file(agent).ok_or_else(|| HarnessError::Install("no data directory for agents".into()))?;
+    record(agent).ok_or_else(|| {
+        HarnessError::NotInstalled(format!(
+            "{} isn't added on this device",
+            agent.registry_id()
+        ))
+    })?;
+    let file = env_file(agent)
+        .ok_or_else(|| HarnessError::Install("no data directory for agents".into()))?;
     if env.is_empty() {
         let _ = std::fs::remove_file(&file);
         return Ok(env);
@@ -645,10 +676,13 @@ pub fn add_own(name: &str, command: &str, env: &str) -> Result<Record, HarnessEr
     if !short(name, 80) {
         return Err(HarnessError::Install("a name is needed".into()));
     }
-    let id = own_id(name).ok_or_else(|| HarnessError::Install("the name needs a letter or digit".into()))?;
+    let id = own_id(name)
+        .ok_or_else(|| HarnessError::Install("the name needs a letter or digit".into()))?;
     let agent = RegistryAgent::new(&id).expect("an own id is a registry id");
     if record(agent).is_some() {
-        return Err(HarnessError::Install(format!("there's already an agent called {name}")));
+        return Err(HarnessError::Install(format!(
+            "there's already an agent called {name}"
+        )));
     }
     let env_map = parse_env(env).map_err(HarnessError::Install)?;
     let mut words = split_command(command).map_err(HarnessError::Install)?;
@@ -662,13 +696,18 @@ pub fn add_own(name: &str, command: &str, env: &str) -> Result<Record, HarnessEr
     let program = if expanded.components().count() > 1 || expanded.is_absolute() {
         expanded
     } else {
-        crate::executable::find_on_paths(&first, Vec::new())
-            .ok_or_else(|| HarnessError::NotInstalled(format!("{first} isn't on this device's PATH")))?
+        crate::executable::find_on_paths(&first, Vec::new()).ok_or_else(|| {
+            HarnessError::NotInstalled(format!("{first} isn't on this device's PATH"))
+        })?
     };
     if !program.is_file() {
-        return Err(HarnessError::NotInstalled(format!("{} isn't on this device", program.display())));
+        return Err(HarnessError::NotInstalled(format!(
+            "{} isn't on this device",
+            program.display()
+        )));
     }
-    let dir = agent_dir(agent).ok_or_else(|| HarnessError::Install("no data directory for agents".into()))?;
+    let dir = agent_dir(agent)
+        .ok_or_else(|| HarnessError::Install("no data directory for agents".into()))?;
     std::fs::create_dir_all(&dir)?;
     let record = Record {
         id: id.clone(),
@@ -718,13 +757,17 @@ pub async fn install(entry: &Entry, icon_svg: Option<String>) -> Result<Record, 
         return Err(HarnessError::Install(format!("{} is built in", entry.name)));
     }
     if !valid(entry) {
-        return Err(HarnessError::Install(format!("{}'s registry entry isn't usable", entry.name)));
+        return Err(HarnessError::Install(format!(
+            "{}'s registry entry isn't usable",
+            entry.name
+        )));
     }
     let choice = choose(entry).ok_or_else(|| {
         HarnessError::NotInstalled(format!("{} has no build for this device", entry.name))
     })?;
-    let dir = agent_dir(agent)
-        .ok_or_else(|| HarnessError::Install("no data directory for agents on this device".into()))?;
+    let dir = agent_dir(agent).ok_or_else(|| {
+        HarnessError::Install("no data directory for agents on this device".into())
+    })?;
     std::fs::create_dir_all(&dir)?;
     let _guard = crate::adapter_install::install_lock().lock().await;
     let version_dir = dir.join(safe_component(&entry.version));
@@ -734,7 +777,11 @@ pub async fn install(entry: &Entry, icon_svg: Option<String>) -> Result<Record, 
     let tmp = if in_place {
         version_dir.clone()
     } else {
-        dir.join(format!(".tmp-{}-{}", safe_component(&entry.version), std::process::id()))
+        dir.join(format!(
+            ".tmp-{}-{}",
+            safe_component(&entry.version),
+            std::process::id()
+        ))
     };
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp)?;
@@ -802,7 +849,13 @@ fn version_in_use(version_dir: &Path, running: Option<&[String]>) -> bool {
 
 fn safe_component(text: &str) -> String {
     text.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+') { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+') {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .trim_start_matches('.')
         .to_owned()
@@ -811,7 +864,9 @@ fn safe_component(text: &str) -> String {
 fn write_record(dir: &Path, record: &Record) -> Result<(), HarnessError> {
     let tmp = dir.join(format!(".agent.json.{}", std::process::id()));
     let mut file = std::fs::File::create(&tmp)?;
-    file.write_all(&serde_json::to_vec_pretty(record).map_err(|e| HarnessError::Install(e.to_string()))?)?;
+    file.write_all(
+        &serde_json::to_vec_pretty(record).map_err(|e| HarnessError::Install(e.to_string()))?,
+    )?;
     file.sync_all()?;
     drop(file);
     std::fs::rename(&tmp, dir.join("agent.json"))?;
@@ -820,14 +875,24 @@ fn write_record(dir: &Path, record: &Record) -> Result<(), HarnessError> {
 
 /// Installs the choice into `tmp`: the entry relative to it, and whether a
 /// published checksum was matched.
-async fn stage(entry: &Entry, choice: &Choice<'_>, tmp: &Path) -> Result<(PathBuf, bool), HarnessError> {
+async fn stage(
+    entry: &Entry,
+    choice: &Choice<'_>,
+    tmp: &Path,
+) -> Result<(PathBuf, bool), HarnessError> {
     match choice {
         Choice::Binary(t) => {
             let download = tmp.join(".download");
             download_checked(&t.archive, t.sha256.as_deref(), &download, &entry.name).await?;
-            let cmd = relative_cmd(&t.cmd)
-                .ok_or_else(|| HarnessError::Install(format!("{}'s command leaves its archive", entry.name)))?;
-            let url = t.archive.split(['?', '#']).next().unwrap_or_default().to_ascii_lowercase();
+            let cmd = relative_cmd(&t.cmd).ok_or_else(|| {
+                HarnessError::Install(format!("{}'s command leaves its archive", entry.name))
+            })?;
+            let url = t
+                .archive
+                .split(['?', '#'])
+                .next()
+                .unwrap_or_default()
+                .to_ascii_lowercase();
             let (from, to) = (download.clone(), tmp.to_owned());
             let cmd_name = cmd.clone();
             tokio::task::spawn_blocking(move || extract(&url, &from, &to, &cmd_name))
@@ -860,23 +925,30 @@ async fn stage(entry: &Entry, choice: &Choice<'_>, tmp: &Path) -> Result<(PathBu
                 name: Box::leak(name.to_owned().into_boxed_str()),
                 version: Box::leak(version.to_owned().into_boxed_str()),
             };
-            let cache = agents_root().map(|r| r.join(".npm-cache")).unwrap_or_else(|| tmp.join(".npm-cache"));
-            crate::adapter_install::install_into(&npm, &pin, tmp, &cache, &entry.name, true).await?;
+            let cache = agents_root()
+                .map(|r| r.join(".npm-cache"))
+                .unwrap_or_else(|| tmp.join(".npm-cache"));
+            crate::adapter_install::install_into(&npm, &pin, tmp, &cache, &entry.name, true)
+                .await?;
             let bin = name.rsplit('/').next().unwrap_or(name);
-            let entry_path = crate::adapter_install::bin_entry(tmp, &pin, bin).ok_or_else(|| {
-                HarnessError::Install(format!("{} has nothing to run", p.package))
-            })?;
+            let entry_path =
+                crate::adapter_install::bin_entry(tmp, &pin, bin).ok_or_else(|| {
+                    HarnessError::Install(format!("{} has nothing to run", p.package))
+                })?;
             let relative = entry_path
                 .strip_prefix(tmp)
                 .map(Path::to_path_buf)
-                .map_err(|_| HarnessError::Install(format!("{}'s entry leaves its install", p.package)))?;
+                .map_err(|_| {
+                    HarnessError::Install(format!("{}'s entry leaves its install", p.package))
+                })?;
             Ok((relative, false))
         }
         Choice::Uvx(p) => {
             let (name, _) = uv_pin(&p.package)
                 .ok_or_else(|| HarnessError::Install(format!("{} isn't pinned", p.package)))?;
-            let uv = find_uv()
-                .ok_or_else(|| HarnessError::NotInstalled(format!("uv, to install {}", entry.name)))?;
+            let uv = find_uv().ok_or_else(|| {
+                HarnessError::NotInstalled(format!("uv, to install {}", entry.name))
+            })?;
             let mut cmd = crate::process::Command::new(&uv);
             cmd.args(["tool", "install", "--force", "--quiet", &p.package])
                 .env("UV_TOOL_DIR", tmp.join("tools"))
@@ -888,7 +960,9 @@ async fn stage(entry: &Entry, choice: &Choice<'_>, tmp: &Path) -> Result<(PathBu
             crate::compose_child_path(&mut cmd, &uv);
             let output = tokio::time::timeout(UV_TIMEOUT, cmd.output())
                 .await
-                .map_err(|_| HarnessError::Install(format!("uv took too long to install {}", entry.name)))??;
+                .map_err(|_| {
+                    HarnessError::Install(format!("uv took too long to install {}", entry.name))
+                })??;
             if !output.status.success() {
                 let err = String::from_utf8_lossy(&output.stderr);
                 return Err(HarnessError::Install(format!(
@@ -897,7 +971,13 @@ async fn stage(entry: &Entry, choice: &Choice<'_>, tmp: &Path) -> Result<(PathBu
                     err.trim().lines().last().unwrap_or("no reason given")
                 )));
             }
-            let exe = |n: &str| if cfg!(windows) { format!("{n}.exe") } else { n.to_owned() };
+            let exe = |n: &str| {
+                if cfg!(windows) {
+                    format!("{n}.exe")
+                } else {
+                    n.to_owned()
+                }
+            };
             let bin = tmp.join("bin");
             let named = bin.join(exe(name));
             let program = if named.is_file() {
@@ -912,18 +992,34 @@ async fn stage(entry: &Entry, choice: &Choice<'_>, tmp: &Path) -> Result<(PathBu
                     .collect();
                 found.sort();
                 if found.len() != 1 {
-                    return Err(HarnessError::Install(format!("{} installed no single command to run", p.package)));
+                    return Err(HarnessError::Install(format!(
+                        "{} installed no single command to run",
+                        p.package
+                    )));
                 }
                 found.remove(0)
             };
-            Ok((program.strip_prefix(tmp).map(Path::to_path_buf).unwrap_or(program), false))
+            Ok((
+                program
+                    .strip_prefix(tmp)
+                    .map(Path::to_path_buf)
+                    .unwrap_or(program),
+                false,
+            ))
         }
     }
 }
 
 /// Downloads `url` to `dest`, checking it against `sha256` when given.
-async fn download_checked(url: &str, sha256: Option<&str>, dest: &Path, name: &str) -> Result<(), HarnessError> {
-    let failed = |detail: String| HarnessError::Install(format!("{name}'s download didn't finish: {detail}"));
+async fn download_checked(
+    url: &str,
+    sha256: Option<&str>,
+    dest: &Path,
+    name: &str,
+) -> Result<(), HarnessError> {
+    let failed = |detail: String| {
+        HarnessError::Install(format!("{name}'s download didn't finish: {detail}"))
+    };
     if !safe_url(url) {
         return Err(failed("not an https address".into()));
     }
@@ -937,7 +1033,10 @@ async fn download_checked(url: &str, sha256: Option<&str>, dest: &Path, name: &s
         .await
         .and_then(reqwest::Response::error_for_status)
         .map_err(|e| failed(e.to_string()))?;
-    if response.content_length().is_some_and(|n| n > MAX_ARCHIVE_BYTES) {
+    if response
+        .content_length()
+        .is_some_and(|n| n > MAX_ARCHIVE_BYTES)
+    {
         return Err(failed("it's larger than Onicode takes".into()));
     }
     let mut body = response.bytes_stream();
@@ -989,8 +1088,15 @@ fn extract(url: &str, archive: &Path, dest: &Path, cmd: &Path) -> Result<(), Har
     if url.ends_with(".tar") {
         return extract_tar(file()?, dest);
     }
-    if url.ends_with(".tar.xz") || url.ends_with(".txz") || url.ends_with(".dmg") || url.ends_with(".pkg") || url.ends_with(".msi") {
-        return Err(HarnessError::Install("the build comes in a format Onicode can't unpack".into()));
+    if url.ends_with(".tar.xz")
+        || url.ends_with(".txz")
+        || url.ends_with(".dmg")
+        || url.ends_with(".pkg")
+        || url.ends_with(".msi")
+    {
+        return Err(HarnessError::Install(
+            "the build comes in a format Onicode can't unpack".into(),
+        ));
     }
     // A raw executable, named as the registry's `cmd`.
     let target = dest.join(cmd);
@@ -1008,7 +1114,12 @@ fn enclosed(dest: &Path, name: &Path) -> Result<PathBuf, HarnessError> {
         match part {
             Component::Normal(p) => out.push(p),
             Component::CurDir => {}
-            _ => return Err(HarnessError::Install(format!("the archive has an unsafe path ({})", name.display()))),
+            _ => {
+                return Err(HarnessError::Install(format!(
+                    "the archive has an unsafe path ({})",
+                    name.display()
+                )));
+            }
         }
     }
     Ok(dest.join(out))
@@ -1020,7 +1131,9 @@ fn extract_tar(reader: impl std::io::Read, dest: &Path) -> Result<(), HarnessErr
     let mut total = 0_u64;
     for (count, entry) in archive.entries().map_err(bad)?.enumerate() {
         if count >= MAX_ARCHIVE_ENTRIES {
-            return Err(HarnessError::Install("the archive has too many files".into()));
+            return Err(HarnessError::Install(
+                "the archive has too many files".into(),
+            ));
         }
         let mut entry = entry.map_err(bad)?;
         let path = entry.path().map_err(bad)?.into_owned();
@@ -1030,16 +1143,24 @@ fn extract_tar(reader: impl std::io::Read, dest: &Path) -> Result<(), HarnessErr
             std::fs::create_dir_all(&output)?;
             continue;
         }
-        if kind.is_pax_global_extensions() || kind.is_pax_local_extensions() || kind.is_gnu_longname() {
+        if kind.is_pax_global_extensions()
+            || kind.is_pax_local_extensions()
+            || kind.is_gnu_longname()
+        {
             continue;
         }
         if !kind.is_file() {
             // Links and special files never land (a link could point out).
-            return Err(HarnessError::Install(format!("the archive has a link or special file ({})", path.display())));
+            return Err(HarnessError::Install(format!(
+                "the archive has a link or special file ({})",
+                path.display()
+            )));
         }
         total = total.saturating_add(entry.size());
         if total > MAX_EXTRACTED_BYTES {
-            return Err(HarnessError::Install("the archive unpacks larger than Onicode takes".into()));
+            return Err(HarnessError::Install(
+                "the archive unpacks larger than Onicode takes".into(),
+            ));
         }
         if let Some(parent) = output.parent() {
             std::fs::create_dir_all(parent)?;
@@ -1049,7 +1170,10 @@ fn extract_tar(reader: impl std::io::Read, dest: &Path) -> Result<(), HarnessErr
         #[cfg(unix)]
         if let Ok(mode) = entry.header().mode() {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&output, std::fs::Permissions::from_mode(mode & 0o755 | 0o600));
+            let _ = std::fs::set_permissions(
+                &output,
+                std::fs::Permissions::from_mode(mode & 0o755 | 0o600),
+            );
         }
     }
     Ok(())
@@ -1059,7 +1183,9 @@ fn extract_zip(archive: &Path, dest: &Path) -> Result<(), HarnessError> {
     let mut zip = zip::ZipArchive::new(std::fs::File::open(archive)?)
         .map_err(|e| HarnessError::Install(format!("the archive is damaged: {e}")))?;
     if zip.len() > MAX_ARCHIVE_ENTRIES {
-        return Err(HarnessError::Install("the archive has too many files".into()));
+        return Err(HarnessError::Install(
+            "the archive has too many files".into(),
+        ));
     }
     let mut total = 0_u64;
     for i in 0..zip.len() {
@@ -1073,7 +1199,10 @@ fn extract_zip(archive: &Path, dest: &Path) -> Result<(), HarnessError> {
         if let Some(mode) = entry.unix_mode()
             && !matches!(mode & 0o170000, 0 | 0o040000 | 0o100000)
         {
-            return Err(HarnessError::Install(format!("the archive has a link or special file ({})", name.display())));
+            return Err(HarnessError::Install(format!(
+                "the archive has a link or special file ({})",
+                name.display()
+            )));
         }
         if entry.is_dir() {
             std::fs::create_dir_all(&output)?;
@@ -1081,7 +1210,9 @@ fn extract_zip(archive: &Path, dest: &Path) -> Result<(), HarnessError> {
         }
         total = total.saturating_add(entry.size());
         if total > MAX_EXTRACTED_BYTES {
-            return Err(HarnessError::Install("the archive unpacks larger than Onicode takes".into()));
+            return Err(HarnessError::Install(
+                "the archive unpacks larger than Onicode takes".into(),
+            ));
         }
         if let Some(parent) = output.parent() {
             std::fs::create_dir_all(parent)?;
@@ -1091,7 +1222,10 @@ fn extract_zip(archive: &Path, dest: &Path) -> Result<(), HarnessError> {
         #[cfg(unix)]
         if let Some(mode) = entry.unix_mode() {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&output, std::fs::Permissions::from_mode(mode & 0o755 | 0o600));
+            let _ = std::fs::set_permissions(
+                &output,
+                std::fs::Permissions::from_mode(mode & 0o755 | 0o600),
+            );
         }
     }
     Ok(())
@@ -1112,7 +1246,10 @@ fn make_executable(path: &Path) -> std::io::Result<()> {
 
 /// Fetches the index (`url`, normally [`INDEX_URL`]): its bytes, and the
 /// ETag to ask with next time. `None` bytes: unchanged since `etag`.
-pub async fn fetch_index(url: &str, etag: Option<&str>) -> Result<(Option<Vec<u8>>, Option<String>), String> {
+pub async fn fetch_index(
+    url: &str,
+    etag: Option<&str>,
+) -> Result<(Option<Vec<u8>>, Option<String>), String> {
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30))
@@ -1158,19 +1295,34 @@ pub async fn fetch_icon(url: &str) -> Option<String> {
 pub fn clean_svg(text: &str) -> Option<String> {
     let lower = text.to_ascii_lowercase();
     let svg = lower.contains("<svg")
-        && !["<script", "javascript:", "<foreignobject", " on", "href=\"http", "href='http", "<!entity", "<image"]
-            .iter()
-            .any(|bad| {
-                if *bad == " on" {
-                    // Event handlers: ` onload=`, ` onclick=`, …
-                    lower.match_indices(" on").any(|(i, _)| {
-                        lower[i + 3..].bytes().take_while(u8::is_ascii_alphabetic).count() > 0
-                            && lower[i + 3..].trim_start_matches(|c: char| c.is_ascii_alphabetic()).starts_with('=')
-                    })
-                } else {
-                    lower.contains(bad)
-                }
-            });
+        && ![
+            "<script",
+            "javascript:",
+            "<foreignobject",
+            " on",
+            "href=\"http",
+            "href='http",
+            "<!entity",
+            "<image",
+        ]
+        .iter()
+        .any(|bad| {
+            if *bad == " on" {
+                // Event handlers: ` onload=`, ` onclick=`, …
+                lower.match_indices(" on").any(|(i, _)| {
+                    lower[i + 3..]
+                        .bytes()
+                        .take_while(u8::is_ascii_alphabetic)
+                        .count()
+                        > 0
+                        && lower[i + 3..]
+                            .trim_start_matches(|c: char| c.is_ascii_alphabetic())
+                            .starts_with('=')
+                })
+            } else {
+                lower.contains(bad)
+            }
+        });
     (svg && text.len() <= MAX_ICON_BYTES).then(|| text.to_owned())
 }
 
@@ -1233,8 +1385,14 @@ mod tests {
     fn a_version_a_chat_runs_from_is_kept() {
         let dir = std::path::Path::new("/data/acp-registry/agent/1.0.0");
         let running = |line: &str| vec![line.to_owned()];
-        assert!(version_in_use(dir, Some(&running("/data/acp-registry/agent/1.0.0/bin/agent --acp"))));
-        assert!(!version_in_use(dir, Some(&running("/data/acp-registry/agent/2.0.0/bin/agent --acp"))));
+        assert!(version_in_use(
+            dir,
+            Some(&running("/data/acp-registry/agent/1.0.0/bin/agent --acp"))
+        ));
+        assert!(!version_in_use(
+            dir,
+            Some(&running("/data/acp-registry/agent/2.0.0/bin/agent --acp"))
+        ));
         assert!(!version_in_use(dir, Some(&[])));
         // Can't tell: keep it.
         assert!(version_in_use(dir, None));
@@ -1254,24 +1412,42 @@ mod tests {
     fn a_device_takes_its_own_build_first_then_npm_then_uv() {
         let entries = parse_index(&serde_json::to_vec(&index()).unwrap()).unwrap();
         let goose = &entries[1];
-        assert!(matches!(choose_for(goose, Some("darwin-aarch64")), Some(Choice::Binary(t)) if t.sha256.is_some()));
+        assert!(
+            matches!(choose_for(goose, Some("darwin-aarch64")), Some(Choice::Binary(t)) if t.sha256.is_some())
+        );
         // Windows on ARM runs the x64 build.
-        assert!(matches!(choose_for(goose, Some("windows-aarch64")), Some(Choice::Binary(t)) if t.archive.ends_with(".zip")));
+        assert!(
+            matches!(choose_for(goose, Some("windows-aarch64")), Some(Choice::Binary(t)) if t.archive.ends_with(".zip"))
+        );
         assert_eq!(choose_for(goose, Some("linux-aarch64")), None);
-        assert!(matches!(choose_for(&entries[0], Some("linux-aarch64")), Some(Choice::Npx(_))));
-        assert!(matches!(choose_for(&entries[2], None), Some(Choice::Uvx(p)) if p.env["FAST_AGENT_MODEL"] == "codexplan"));
+        assert!(matches!(
+            choose_for(&entries[0], Some("linux-aarch64")),
+            Some(Choice::Npx(_))
+        ));
+        assert!(
+            matches!(choose_for(&entries[2], None), Some(Choice::Uvx(p)) if p.env["FAST_AGENT_MODEL"] == "codexplan")
+        );
     }
 
     #[test]
     fn pins_are_exact_versions() {
-        assert_eq!(npm_pin("@google/gemini-cli@0.66.0"), Some(("@google/gemini-cli", "0.66.0")));
+        assert_eq!(
+            npm_pin("@google/gemini-cli@0.66.0"),
+            Some(("@google/gemini-cli", "0.66.0"))
+        );
         assert_eq!(npm_pin("cline@3.0.74"), Some(("cline", "3.0.74")));
         assert_eq!(npm_pin("cline@^3"), None);
         assert_eq!(npm_pin("cline"), None);
         assert_eq!(npm_pin("../x@1.0.0"), None);
-        assert_eq!(uv_pin("fast-agent-acp==0.10.1"), Some(("fast-agent-acp", "0.10.1")));
+        assert_eq!(
+            uv_pin("fast-agent-acp==0.10.1"),
+            Some(("fast-agent-acp", "0.10.1"))
+        );
         assert_eq!(uv_pin("fast-agent-acp>=0.10"), None);
-        assert_eq!(uv_pin("minion-code@0.1.44"), Some(("minion-code", "0.1.44")));
+        assert_eq!(
+            uv_pin("minion-code@0.1.44"),
+            Some(("minion-code", "0.1.44"))
+        );
     }
 
     #[test]
@@ -1282,10 +1458,16 @@ mod tests {
         assert!(parse_env("not a pair").is_err());
         assert!(parse_env("1X=y").is_err());
         assert_eq!(env_text(&env), "MODEL=gpt 5\nOPENAI_API_KEY=sk-1\n");
-        assert_eq!(split_command("~/bin/agent --acp 'a b' c\\ d").unwrap(), ["~/bin/agent", "--acp", "a b", "c d"]);
+        assert_eq!(
+            split_command("~/bin/agent --acp 'a b' c\\ d").unwrap(),
+            ["~/bin/agent", "--acp", "a b", "c d"]
+        );
         assert!(split_command("agent | tee").is_err());
         assert!(split_command("agent 'open").is_err());
-        assert_eq!(own_id("Halcyon agent").as_deref(), Some("own.halcyon-agent"));
+        assert_eq!(
+            own_id("Halcyon agent").as_deref(),
+            Some("own.halcyon-agent")
+        );
         assert_eq!(own_id("  ").as_deref(), None);
     }
 
@@ -1298,7 +1480,12 @@ mod tests {
 
     #[test]
     fn icons_draw_and_do_nothing_else() {
-        assert!(clean_svg("<svg viewBox=\"0 0 16 16\"><path fill=\"currentColor\" d=\"M0 0h16v16z\"/></svg>").is_some());
+        assert!(
+            clean_svg(
+                "<svg viewBox=\"0 0 16 16\"><path fill=\"currentColor\" d=\"M0 0h16v16z\"/></svg>"
+            )
+            .is_some()
+        );
         assert!(clean_svg("<svg><script>alert(1)</script></svg>").is_none());
         assert!(clean_svg("<svg onload=\"x()\"></svg>").is_none());
         assert!(clean_svg("<svg><image href=\"http://x\"/></svg>").is_none());
@@ -1311,8 +1498,16 @@ mod tests {
         // (Refused before any request: another host, plain http.)
         if std::env::var("ONICODE_ACP_REGISTRY_LOOPBACK").is_err() {
             assert!(fetch_icon("https://example.com/gemini.svg").await.is_none());
-            assert!(fetch_icon("http://cdn.agentclientprotocol.com/registry/v1/latest/gemini.svg").await.is_none());
-            assert!(fetch_icon("https://cdn.agentclientprotocol.com.example.com/gemini.svg").await.is_none());
+            assert!(
+                fetch_icon("http://cdn.agentclientprotocol.com/registry/v1/latest/gemini.svg")
+                    .await
+                    .is_none()
+            );
+            assert!(
+                fetch_icon("https://cdn.agentclientprotocol.com.example.com/gemini.svg")
+                    .await
+                    .is_none()
+            );
         }
         // Too big to be an icon.
         let big = format!("<svg>{}</svg>", " ".repeat(MAX_ICON_BYTES));
@@ -1327,7 +1522,9 @@ mod tests {
         header.set_size(4);
         header.set_mode(0o755);
         header.set_cksum();
-        built.append_data(&mut header, "pkg/agent", &b"#!/x"[..]).unwrap();
+        built
+            .append_data(&mut header, "pkg/agent", &b"#!/x"[..])
+            .unwrap();
         let bytes = built.into_inner().unwrap();
         extract_tar(&bytes[..], dir.path()).unwrap();
         assert!(dir.path().join("pkg/agent").is_file());
@@ -1337,12 +1534,17 @@ mod tests {
         header.set_entry_type(tar::EntryType::Symlink);
         header.set_size(0);
         header.set_cksum();
-        linked.append_link(&mut header, "evil", "/etc/passwd").unwrap();
+        linked
+            .append_link(&mut header, "evil", "/etc/passwd")
+            .unwrap();
         let bytes = linked.into_inner().unwrap();
         assert!(extract_tar(&bytes[..], dir.path()).is_err());
         assert!(enclosed(dir.path(), Path::new("../x")).is_err());
         assert!(enclosed(dir.path(), Path::new("/etc/x")).is_err());
-        assert_eq!(relative_cmd("./goose-package\\goose.exe"), Some(PathBuf::from("goose-package/goose.exe")));
+        assert_eq!(
+            relative_cmd("./goose-package\\goose.exe"),
+            Some(PathBuf::from("goose-package/goose.exe"))
+        );
         assert_eq!(relative_cmd("../sh"), None);
         assert_eq!(relative_cmd("C:/x"), None);
     }

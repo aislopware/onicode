@@ -596,7 +596,8 @@ struct ReadChatImageChunkParams {
 
 const _: () = assert!(onicode_proto::VISUAL_MAX_BYTES == onicode_visual::MAX_SCRIPT_BYTES);
 const _: () = assert!(onicode_proto::VISUAL_MAX_ASSETS == onicode_visual::assets::MAX_ASSETS);
-const _: () = assert!(onicode_proto::VISUAL_MAX_ASSET_BYTES == onicode_visual::assets::MAX_ASSET_BYTES);
+const _: () =
+    assert!(onicode_proto::VISUAL_MAX_ASSET_BYTES == onicode_visual::assets::MAX_ASSET_BYTES);
 const _: () = assert!(
     onicode_proto::VISUAL_MAX_TOTAL_ASSET_BYTES == onicode_visual::assets::MAX_TOTAL_ASSET_BYTES
 );
@@ -1600,7 +1601,7 @@ impl EngineRpc {
                         {
                             self.cancel_remote_login(target, &login_id).await;
                             return RpcReply::value(&AgentLoginPoll {
-            code: None,
+                                code: None,
                                 status: AgentLoginStatus::Error,
                                 message: Some(error.to_string()),
                                 url: None,
@@ -1651,7 +1652,10 @@ impl EngineRpc {
     ) -> Result<RpcReply, RpcError> {
         const RETRY: std::time::Duration = std::time::Duration::from_millis(500);
         const ASK_AGAIN: std::time::Duration = std::time::Duration::from_secs(30);
-        let first = match self.forward(&target, methods::UPDATE_STATUS, params.clone()).await? {
+        let first = match self
+            .forward(&target, methods::UPDATE_STATUS, params.clone())
+            .await?
+        {
             RpcReply::Stream(stream) => stream,
             value @ RpcReply::Value(_) => return Ok(value),
         };
@@ -1679,8 +1683,9 @@ impl EngineRpc {
                     } else {
                         tokio::time::sleep(RETRY).await;
                     }
-                    if let Ok(RpcReply::Stream(stream)) =
-                        rpc.forward(&target, methods::UPDATE_STATUS, params.clone()).await
+                    if let Ok(RpcReply::Stream(stream)) = rpc
+                        .forward(&target, methods::UPDATE_STATUS, params.clone())
+                        .await
                     {
                         current = Some(stream);
                     }
@@ -2212,7 +2217,8 @@ async fn run_requested_install(
     cancel: onicode_harness::CancellationToken,
 ) -> Result<(), onicode_harness::HarnessError> {
     #[cfg(test)]
-    if let Ok(script) = std::env::var(format!("ONICODE_INSTALLER_COMMAND_{harness:?}").to_uppercase())
+    if let Ok(script) =
+        std::env::var(format!("ONICODE_INSTALLER_COMMAND_{harness:?}").to_uppercase())
     {
         return onicode_harness::install::install_with_command(harness, &script, cancel).await;
     }
@@ -2513,7 +2519,8 @@ fn doc_messages_stream(
                 };
                 let replay_baseline = match prev.as_ref() {
                     None => {
-                        opening_baseline = onicode_doc::TranscriptBaseline::capture(&current.entries);
+                        opening_baseline =
+                            onicode_doc::TranscriptBaseline::capture(&current.entries);
                         Some(opening_baseline.clone())
                     }
                     Some(prev)
@@ -2689,7 +2696,11 @@ impl RpcService for AuthRpc {
                             "error": error.code(),
                             "message": error.to_string(),
                         });
-                        if let crate::auth::DeleteAccountError::Refused { organization: Some(org), .. } = &error {
+                        if let crate::auth::DeleteAccountError::Refused {
+                            organization: Some(org),
+                            ..
+                        } = &error
+                        {
                             reply["organization"] = serde_json::json!(org);
                         }
                         RpcReply::value(&reply)
@@ -2795,9 +2806,11 @@ impl RpcService for EngineRpc {
             let target = target.to_string();
             // A file on this device can't be read there: another device
             // installs from a link.
-            if method == methods::INSTALL_PLUGIN && params.get("path").is_some_and(|p| !p.is_null()) {
+            if method == methods::INSTALL_PLUGIN && params.get("path").is_some_and(|p| !p.is_null())
+            {
                 return Err(RpcError::BadParams(
-                    "Another device installs a plugin from a link (url), not a file on this one".into(),
+                    "Another device installs a plugin from a link (url), not a file on this one"
+                        .into(),
                 ));
             }
             // Allowing a plugin is that device's person's, in its own window
@@ -3244,9 +3257,19 @@ impl RpcService for EngineRpc {
                     session: Option<String>,
                 }
                 let p: Params = parse_params(params)?;
-                let title: String = p.title.lines().next().unwrap_or_default().trim().chars().take(120).collect();
+                let title: String = p
+                    .title
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .chars()
+                    .take(120)
+                    .collect();
                 if title.is_empty() || p.source.is_empty() {
-                    return Err(RpcError::BadParams("A notification needs a title and who asked".into()));
+                    return Err(RpcError::BadParams(
+                        "A notification needs a title and who asked".into(),
+                    ));
                 }
                 let outcome = crate::desktop_notify::post_for(
                     self.repos.data_dir(),
@@ -3905,7 +3928,9 @@ impl RpcService for EngineRpc {
                     ));
                 }
                 if !crate::source_control::valid_comment_body(&p.body) {
-                    return Err(RpcError::BadParams("Comment must contain 1–60000 bytes".into()));
+                    return Err(RpcError::BadParams(
+                        "Comment must contain 1–60000 bytes".into(),
+                    ));
                 }
                 let comment = self
                     .github
@@ -3930,7 +3955,9 @@ impl RpcService for EngineRpc {
                 }
                 if method == methods::REPLY_CHANGE_REQUEST_THREAD {
                     if !crate::source_control::valid_comment_body(&p.body) {
-                        return Err(RpcError::BadParams("Comment must contain 1–60000 bytes".into()));
+                        return Err(RpcError::BadParams(
+                            "Comment must contain 1–60000 bytes".into(),
+                        ));
                     }
                     let comment = self
                         .github
@@ -3939,7 +3966,9 @@ impl RpcService for EngineRpc {
                         .map_err(change_request_rpc_error)?;
                     return RpcReply::value(&comment);
                 }
-                let resolved = p.resolved.ok_or_else(|| RpcError::BadParams("resolved: true or false".into()))?;
+                let resolved = p
+                    .resolved
+                    .ok_or_else(|| RpcError::BadParams("resolved: true or false".into()))?;
                 let now = self
                     .github
                     .set_thread_resolved(&p.url, &p.thread, resolved)
@@ -5136,12 +5165,12 @@ impl RpcService for EngineRpc {
                     .map_err(|e| match e {
                         E::NotACommand | E::BadOffset => RpcError::BadParams(e.to_string()),
                         // Stable codes: a client words these for its reader.
-                        E::NotAvailable => RpcError::Capability(
-                            capability_errors::TOOL_OUTPUT_UNAVAILABLE.into(),
-                        ),
-                        E::NotFinished => RpcError::Capability(
-                            capability_errors::TOOL_OUTPUT_NOT_FINISHED.into(),
-                        ),
+                        E::NotAvailable => {
+                            RpcError::Capability(capability_errors::TOOL_OUTPUT_UNAVAILABLE.into())
+                        }
+                        E::NotFinished => {
+                            RpcError::Capability(capability_errors::TOOL_OUTPUT_NOT_FINISHED.into())
+                        }
                         E::Journal(err) => RpcError::Failed(err.to_string()),
                     })?;
                 RpcReply::value(&chunk)
@@ -5343,7 +5372,12 @@ mod tests {
         let rpc = core.rpc_service();
         use onicode_proto::ChildKind;
         for (chat, parent, kind, expected) in [
-            ("sub", Some("main"), Some("subagent"), Some(ChildKind::Subagent)),
+            (
+                "sub",
+                Some("main"),
+                Some("subagent"),
+                Some(ChildKind::Subagent),
+            ),
             ("side", Some("main"), Some("side"), Some(ChildKind::Side)),
             // A person's side chat names none; a newer peer's kind reads as none.
             ("plain-side", Some("main"), None, None),
@@ -5563,10 +5597,10 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_install_rpc_verifies_archive_and_refreshes_descriptors() {
+        use onicode_harness::archive_install::{ArchivePin, ensure_installed, installed_entry};
         use sha2::{Digest, Sha512};
         use std::io::Write;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        use onicode_harness::archive_install::{ArchivePin, ensure_installed, installed_entry};
         if std::env::var_os("ONICODE_INSTALL_RPC_TEST").is_none() {
             let root = tempfile::tempdir().unwrap();
             let output = tokio::process::Command::new(std::env::current_exe().unwrap())

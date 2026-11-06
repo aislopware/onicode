@@ -32,7 +32,6 @@ mod composer_markdown;
 mod context_usage;
 mod dictation;
 pub mod edge_fade;
-pub mod rounded_clip;
 pub mod file_icons;
 pub mod files;
 pub mod frost;
@@ -50,7 +49,9 @@ mod new_thread_background_effects;
 mod new_thread_background_image;
 mod new_thread_background_mask;
 mod notice;
+pub mod rounded_clip;
 pub use onicode_notify as notify;
+mod background_tray;
 pub mod onboarding;
 pub mod orb;
 pub mod overscroll;
@@ -76,12 +77,11 @@ pub mod state;
 pub(crate) mod surface_chrome;
 pub mod syntax_cache;
 pub mod terminal;
-mod background_tray;
-mod todo_panel;
-pub(crate) mod tool_images;
 pub mod theme;
 pub mod theme_library;
 pub mod toast;
+mod todo_panel;
+pub(crate) mod tool_images;
 pub mod transcript;
 pub mod typography;
 pub mod visuals;
@@ -93,8 +93,8 @@ use std::path::PathBuf;
 use futures::{FutureExt as _, StreamExt as _};
 use gpui::{App, AppContext as _, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 
-pub use state::EngineBootConfig;
 pub use onicode_proto::HarnessId;
+pub use state::EngineBootConfig;
 
 /// Everything the headed binary passes in (config/env resolution lives in
 /// `apps/onicode`, not here).
@@ -262,7 +262,9 @@ pub fn run_app(config: UiConfig) {
         // the choice with ONICODE_EMBED_ENGINE=1. An embedded engine posts the
         // banners itself.
         onicode_engine::desktop_notify::enable();
-        if std::env::var_os("ONICODE_EMBED_ENGINE").is_none_or(|value| value.is_empty() || value == "0") {
+        if std::env::var_os("ONICODE_EMBED_ENGINE")
+            .is_none_or(|value| value.is_empty() || value == "0")
+        {
             state::launch_background_engine();
         }
         state::AppState::bootstrap(state.clone(), config.boot(), cx);

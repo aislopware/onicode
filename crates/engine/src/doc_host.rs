@@ -925,23 +925,30 @@ impl ChatDocHandle {
         // The send that switches wrote its message first: the seam goes
         // before it (and any other unanswered message), so it reads as the
         // new provider's question, not the old one's.
-        let unanswered = entries.iter().rev().take_while(|entry| entry.role == MessageRole::User).count();
-        self.doc.insert_message_before_last(unanswered, &SessionMessageEntry {
-            id: id.clone(),
-            role: MessageRole::System,
-            parts: vec![MessagePart::Switch {
-                id,
-                from: from.to_string(),
-                to: to.to_string(),
-                from_harness: Some(from_id.as_str().to_owned()),
-                to_harness: Some(to_id.as_str().to_owned()),
-            }],
-            created_at,
-            device_id: self.device_id.clone(),
-            status: Some(MessageStatus::Complete),
-            continuation_of: None,
-            duration_ms: None,
-        })?;
+        let unanswered = entries
+            .iter()
+            .rev()
+            .take_while(|entry| entry.role == MessageRole::User)
+            .count();
+        self.doc.insert_message_before_last(
+            unanswered,
+            &SessionMessageEntry {
+                id: id.clone(),
+                role: MessageRole::System,
+                parts: vec![MessagePart::Switch {
+                    id,
+                    from: from.to_string(),
+                    to: to.to_string(),
+                    from_harness: Some(from_id.as_str().to_owned()),
+                    to_harness: Some(to_id.as_str().to_owned()),
+                }],
+                created_at,
+                device_id: self.device_id.clone(),
+                status: Some(MessageStatus::Complete),
+                continuation_of: None,
+                duration_ms: None,
+            },
+        )?;
         self.doc.mark_provider_switched()?;
         Ok(true)
     }
@@ -1250,7 +1257,10 @@ impl DocHost {
     /// see — so watch session status instead and re-drain every warm chat.
     /// `drain_queue` is a cheap no-op for empty queues and busy agents, which
     /// is why this can afford to be indiscriminate.
-    fn spawn_queue_flush_watcher(&self, mut statuses: watch::Receiver<Vec<onicode_proto::Session>>) {
+    fn spawn_queue_flush_watcher(
+        &self,
+        mut statuses: watch::Receiver<Vec<onicode_proto::Session>>,
+    ) {
         let host = self.clone();
         self.spawn_worker(async move {
             while statuses.changed().await.is_ok() {
@@ -3027,7 +3037,8 @@ impl DocHost {
         let doc = handle.doc.clone();
         let body = tokio::task::spawn_blocking(move || {
             let tail =
-                onicode_doc::materialize_tail(&doc, now_ms(), onicode_doc::TAIL_MESSAGE_COUNT).ok()?;
+                onicode_doc::materialize_tail(&doc, now_ms(), onicode_doc::TAIL_MESSAGE_COUNT)
+                    .ok()?;
             serde_json::to_vec(&tail).ok()
         })
         .await
@@ -3499,7 +3510,9 @@ impl DocHost {
         }
         match snapshot.stats {
             Some(stats) if snapshot.delivery_live && stats.pending_pushes == 0 => S::Synced,
-            Some(_) if !snapshot.delivery_live && onicode_sync::wake::path_is_offline() => S::Offline,
+            Some(_) if !snapshot.delivery_live && onicode_sync::wake::path_is_offline() => {
+                S::Offline
+            }
             _ => S::Connecting,
         }
     }
@@ -5593,7 +5606,8 @@ impl DocHost {
                     if onicode_proto::projectless::is_home_cwd(&request.cwd)
                         && let Ok(Some(chat)) = ws.chat(chat_id)
                         && let Some(cwd) = chat.cwd.filter(|cwd| {
-                            chat.space_id.is_none() && onicode_proto::projectless::is_scratch_cwd(cwd)
+                            chat.space_id.is_none()
+                                && onicode_proto::projectless::is_scratch_cwd(cwd)
                         })
                     {
                         request.cwd = cwd;
@@ -5646,8 +5660,11 @@ impl DocHost {
                 // A run on another provider than the live turn's (a stale
                 // client, another device's switch) waits for the turn: the
                 // provider never changes by killing a turn mid-flight.
-                let other_provider = sessions.live_harness(chat_id).is_some_and(|live| live != harness);
-                if other_provider || sessions.defers_to_turn_end(chat_id, Some((harness, &request))) {
+                let other_provider = sessions
+                    .live_harness(chat_id)
+                    .is_some_and(|live| live != harness);
+                if other_provider || sessions.defers_to_turn_end(chat_id, Some((harness, &request)))
+                {
                     self.hold_until_turn_end(
                         handle,
                         message_id,
@@ -6495,9 +6512,9 @@ mod degrade_grace_tests {
     #[tokio::test]
     async fn dormant_chat_clears_old_degradation_before_reconnection() {
         use super::{DocHost, DocHostConfig, EdgeConfig, lock};
+        use onicode_proto::{ChatSyncState, HarnessId};
         use std::sync::Arc;
         use std::sync::atomic::Ordering;
-        use onicode_proto::{ChatSyncState, HarnessId};
 
         let dir = tempfile::tempdir().unwrap();
         let host = DocHost::new(

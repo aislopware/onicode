@@ -65,7 +65,10 @@ pub fn set_app_version(version: &str) {
 /// The version the desktop app compares releases with: [`set_app_version`]'s,
 /// or [`current_version`].
 pub fn app_version() -> &'static str {
-    APP_VERSION.get().map(String::as_str).unwrap_or(current_version())
+    APP_VERSION
+        .get()
+        .map(String::as_str)
+        .unwrap_or(current_version())
 }
 
 /// Successful checks repeat this often. The feed is a sub-kilobyte,
@@ -113,11 +116,19 @@ pub struct Manifest {
     pub files: BTreeMap<String, FileMeta>,
     /// The engine inside the release's app, when it isn't `version`'s own (a
     /// beta app carries the stable engine).
-    #[serde(default, rename = "engineVersion", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "engineVersion",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub engine_version: Option<String>,
     /// The oldest macOS the release's app runs on, when it's newer than the
     /// stable app's (beta: [`channel::BETA_MINIMUM_MACOS`]).
-    #[serde(default, rename = "minimumMacOS", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "minimumMacOS",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub minimum_macos: Option<String>,
     /// The channel this manifest was fetched from: where its files are.
     #[serde(skip)]
@@ -864,7 +875,9 @@ pub fn detect_install() -> InstallKind {
             // going to become.
             if let Some(installed) = std::env::var_os(INSTALLED_AT_ENV).map(PathBuf::from) {
                 #[cfg(windows)]
-                return InstallKind::WindowsPortable { directory: installed };
+                return InstallKind::WindowsPortable {
+                    directory: installed,
+                };
                 #[cfg(not(windows))]
                 return InstallKind::MacApp { bundle: installed };
             }
@@ -939,7 +952,8 @@ pub fn installed_version(kind: &InstallKind) -> Option<String> {
 /// restart a beta's engine forever.
 pub fn bundle_engine_version(bundle: &Path) -> Option<String> {
     let plist = std::fs::read_to_string(bundle.join("Contents/Info.plist")).ok()?;
-    plist_string(&plist, "OnicodeEngineVersion").or_else(|| plist_string(&plist, "CFBundleShortVersionString"))
+    plist_string(&plist, "OnicodeEngineVersion")
+        .or_else(|| plist_string(&plist, "CFBundleShortVersionString"))
 }
 
 /// The app's own version in a macOS bundle (a beta's isn't its engine's).
@@ -1216,7 +1230,11 @@ pub fn restart_service() -> anyhow::Result<()> {
         let uid = String::from_utf8_lossy(&output.stdout).trim().to_string();
         run(
             "launchctl",
-            &["kickstart", "-k", &format!("gui/{uid}/dev.aislopware.onicode")],
+            &[
+                "kickstart",
+                "-k",
+                &format!("gui/{uid}/dev.aislopware.onicode"),
+            ],
         )
     } else {
         ask_systemd_to_restart(&service_unit())
@@ -1335,12 +1353,17 @@ pub fn process_runs_from(dir: &Path) -> bool {
             return true;
         }
         let mut path = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
-        pids.iter().take(count as usize).filter(|pid| **pid > 0).any(|&pid| {
-            // SAFETY: `path` is PROC_PIDPATHINFO_MAXSIZE bytes, as the call needs.
-            let len =
-                unsafe { libc::proc_pidpath(pid, path.as_mut_ptr().cast(), path.len() as u32) };
-            len > 0 && Path::new(std::ffi::OsStr::from_bytes(&path[..len as usize])).starts_with(&dir)
-        })
+        pids.iter()
+            .take(count as usize)
+            .filter(|pid| **pid > 0)
+            .any(|&pid| {
+                // SAFETY: `path` is PROC_PIDPATHINFO_MAXSIZE bytes, as the call needs.
+                let len =
+                    unsafe { libc::proc_pidpath(pid, path.as_mut_ptr().cast(), path.len() as u32) };
+                len > 0
+                    && Path::new(std::ffi::OsStr::from_bytes(&path[..len as usize]))
+                        .starts_with(&dir)
+            })
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -1392,8 +1415,13 @@ pub(crate) fn swap_mac_bundles(incoming: &Path, bundle: &Path) -> anyhow::Result
         if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_SWAP) } != 0 {
             return Err(std::io::Error::last_os_error()).context("swapping in the new app");
         }
-        let parent = bundle.parent().context("app bundle has no parent directory")?;
-        let name = bundle.file_name().context("app bundle has no name")?.to_string_lossy();
+        let parent = bundle
+            .parent()
+            .context("app bundle has no parent directory")?;
+        let name = bundle
+            .file_name()
+            .context("app bundle has no name")?
+            .to_string_lossy();
         let retired = parent.join(format!(".{name}.old-{}", std::process::id()));
         // If this is lost to a crash, it's tidied up under the name it has.
         let _ = std::fs::rename(incoming, &retired);
@@ -1402,7 +1430,10 @@ pub(crate) fn swap_mac_bundles(incoming: &Path, bundle: &Path) -> anyhow::Result
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (incoming, bundle);
-        bail!("macOS app updates are not supported on {}", std::env::consts::OS)
+        bail!(
+            "macOS app updates are not supported on {}",
+            std::env::consts::OS
+        )
     }
 }
 
@@ -1966,8 +1997,7 @@ impl Updater {
             bail!("An update is already in progress on this device.");
         }
         let manifest = fetch_latest(&self.edge_url).await?;
-        let Some(prepared) =
-            prepare_this_install(&self.edge_url, &manifest, &data_dir).await?
+        let Some(prepared) = prepare_this_install(&self.edge_url, &manifest, &data_dir).await?
         else {
             bail!("already up to date ({})", current_version());
         };
@@ -1987,7 +2017,9 @@ impl Updater {
                     if MANAGED_RESTART.get().is_some() {
                         transaction::RestartMode::Relaunch
                     } else {
-                        transaction::RestartMode::Service { unit: service_unit() }
+                        transaction::RestartMode::Service {
+                            unit: service_unit(),
+                        }
                     },
                 )?;
                 self.refresh_update_report();
@@ -2004,7 +2036,8 @@ impl Updater {
                     transaction::fail_request(
                         data_dir,
                         id,
-                        "Onicode couldn't restart to install the update, so nothing changed.".into(),
+                        "Onicode couldn't restart to install the update, so nothing changed."
+                            .into(),
                     );
                     updater.refresh_update_report();
                 }
@@ -2058,7 +2091,8 @@ async fn prepare_this_install(
         }
         InstallKind::MacApp { bundle } => {
             // The engine's version isn't the app's (a beta carries stable's).
-            let from = bundle_app_version(&bundle).context("reading the installed app's version")?;
+            let from =
+                bundle_app_version(&bundle).context("reading the installed app's version")?;
             match offer(
                 manifest,
                 &from,
@@ -2070,20 +2104,29 @@ async fn prepare_this_install(
                 Offer::Held(why) => bail!(why),
                 Offer::Current => return Ok(None),
             }
-            let parent = bundle.parent().context("app bundle has no parent directory")?;
+            let parent = bundle
+                .parent()
+                .context("app bundle has no parent directory")?;
             let download = artifact_size(edge_url, manifest, &mac_app_artifact(&manifest.version))
                 .await
                 .unwrap_or(transaction::UNKNOWN_ARTIFACT_BYTES);
             // A staged copy and the one beside the installed app.
-            if let Err(why) = transaction::ensure_room(data_dir, parent, download.saturating_mul(2)) {
+            if let Err(why) = transaction::ensure_room(data_dir, parent, download.saturating_mul(2))
+            {
                 bail!(why);
             }
             let staged = stage_mac_app(edge_url, manifest, data_dir).await?;
-            let name = bundle.file_name().context("app bundle has no name")?.to_string_lossy();
+            let name = bundle
+                .file_name()
+                .context("app bundle has no name")?
+                .to_string_lossy();
             let incoming = parent.join(format!(".{name}.new-{}", transaction::new_id()));
             // Everything that can fail about installing it happens here, with
             // nothing stopped: it's a plain copy, and then one atomic swap.
-            if let Err(err) = run("ditto", &[&staged.to_string_lossy(), &incoming.to_string_lossy()]) {
+            if let Err(err) = run(
+                "ditto",
+                &[&staged.to_string_lossy(), &incoming.to_string_lossy()],
+            ) {
                 let _ = std::fs::remove_dir_all(&incoming);
                 return Err(err).context("copying the new app into place");
             }
@@ -2113,7 +2156,10 @@ async fn prepare_this_install(
             let incoming = windows::stage(edge_url, manifest, &directory).await?;
             Ok(Some(PreparedInstall {
                 from,
-                layout: Some(transaction::Layout::WindowsFolder { directory, incoming }),
+                layout: Some(transaction::Layout::WindowsFolder {
+                    directory,
+                    incoming,
+                }),
             }))
         }
         InstallKind::Unmanaged => bail!("this install doesn't update itself"),
@@ -2156,7 +2202,10 @@ async fn artifact_size(edge_url: &str, manifest: &Manifest, file: &str) -> Optio
     let base = manifest.channel.base(&release_base(edge_url).ok()?);
     let url = format!("{base}/{file}");
     let response = http_client().ok()?.head(&url).send().await.ok()?;
-    response.status().is_success().then(|| response.content_length())?
+    response
+        .status()
+        .is_success()
+        .then(|| response.content_length())?
 }
 
 /// Wall-clock check deadlines with failure backoff.
@@ -2278,7 +2327,8 @@ mod tests {
     /// one's cgroup isn't its own.
     #[test]
     fn the_service_is_recognised_by_its_own_unit_only() {
-        let cgroups = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/onicode.service\n";
+        let cgroups =
+            "0::/user.slice/user-1000.slice/user@1000.service/app.slice/onicode.service\n";
         assert!(in_service_cgroup(cgroups, "onicode.service"));
         assert!(!in_service_cgroup(cgroups, "onicode-test.service"));
     }
@@ -2320,7 +2370,12 @@ mod tests {
         );
         assert_eq!(read_only.install, InstallMethod::LinuxService);
         assert!(!read_only.can_apply_remotely);
-        assert!(read_only.cannot_apply_reason.unwrap().contains("/opt/onicode"));
+        assert!(
+            read_only
+                .cannot_apply_reason
+                .unwrap()
+                .contains("/opt/onicode")
+        );
 
         let bundle = InstallKind::MacApp {
             bundle: PathBuf::from("/Applications/Onicode.app"),
@@ -2339,7 +2394,12 @@ mod tests {
             Some(UpdateBlocker::Translocated),
         );
         assert!(!mac_translocated.can_apply_remotely);
-        assert!(mac_translocated.cannot_apply_reason.unwrap().contains("Applications"));
+        assert!(
+            mac_translocated
+                .cannot_apply_reason
+                .unwrap()
+                .contains("Applications")
+        );
 
         // No macOS headless release exists, whatever the old layout says.
         let old_mac_service = UpdateAbility::decide(&managed(), "macos", true, true, None);
@@ -2348,8 +2408,12 @@ mod tests {
 
         let source = UpdateAbility::decide(&InstallKind::Unmanaged, "linux", false, false, None);
         assert_eq!(source.install, InstallMethod::Unmanaged);
-        assert_eq!(source.manual_command.as_deref(), Some(LINUX_INSTALL_COMMAND));
-        let mac_source = UpdateAbility::decide(&InstallKind::Unmanaged, "macos", false, false, None);
+        assert_eq!(
+            source.manual_command.as_deref(),
+            Some(LINUX_INSTALL_COMMAND)
+        );
+        let mac_source =
+            UpdateAbility::decide(&InstallKind::Unmanaged, "macos", false, false, None);
         assert_eq!(mac_source.manual_command, None);
     }
 
@@ -2697,10 +2761,13 @@ mod tests {
                 .contains("not supported on windows")
         );
         assert!(
-            apply_mac_app(&data_dir.join("Onicode.app"), &data_dir.join("Installed.app"))
-                .unwrap_err()
-                .to_string()
-                .contains("not supported on windows")
+            apply_mac_app(
+                &data_dir.join("Onicode.app"),
+                &data_dir.join("Installed.app")
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("not supported on windows")
         );
         assert!(
             restart_service()
@@ -2828,10 +2895,19 @@ mod tests {
     fn bundle_version_reads_the_packaged_plist() {
         let template = include_str!("../../../packaging/macos/Info.plist");
         let plist = template.replace("__VERSION__", "0.3.1");
-        assert_eq!(plist_string(&plist, "CFBundleShortVersionString").as_deref(), Some("0.3.1"));
+        assert_eq!(
+            plist_string(&plist, "CFBundleShortVersionString").as_deref(),
+            Some("0.3.1")
+        );
         // Packaging names the engine it bundles.
-        assert_eq!(plist_string(&plist, "OnicodeEngineVersion").as_deref(), Some("0.3.1"));
-        assert_eq!(plist_string("<plist></plist>", "CFBundleShortVersionString"), None);
+        assert_eq!(
+            plist_string(&plist, "OnicodeEngineVersion").as_deref(),
+            Some("0.3.1")
+        );
+        assert_eq!(
+            plist_string("<plist></plist>", "CFBundleShortVersionString"),
+            None
+        );
     }
 
     #[test]
@@ -2847,19 +2923,36 @@ mod tests {
              <key>OnicodeEngineVersion</key><string>0.2.135</string></dict></plist>",
         );
         assert_eq!(bundle_engine_version(&bundle).as_deref(), Some("0.2.135"));
-        let mac = InstallKind::MacApp { bundle: bundle.clone() };
+        let mac = InstallKind::MacApp {
+            bundle: bundle.clone(),
+        };
         assert_eq!(installed_version(&mac).as_deref(), Some("0.2.135"));
         // A bundle from before the key.
-        write("<plist><dict><key>CFBundleShortVersionString</key><string>0.2.134</string></dict></plist>");
+        write(
+            "<plist><dict><key>CFBundleShortVersionString</key><string>0.2.134</string></dict></plist>",
+        );
         assert_eq!(bundle_engine_version(&bundle).as_deref(), Some("0.2.134"));
     }
 
     #[test]
     fn prereleases_sort_as_semver_says() {
-        let ordered = ["0.2.134", "0.2.135", "0.2.136-beta.1", "0.2.136-beta.2", "0.2.136-beta.10", "0.2.136", "0.2.137-beta.1"];
+        let ordered = [
+            "0.2.134",
+            "0.2.135",
+            "0.2.136-beta.1",
+            "0.2.136-beta.2",
+            "0.2.136-beta.10",
+            "0.2.136",
+            "0.2.137-beta.1",
+        ];
         for pair in ordered.windows(2) {
             assert!(version_newer(pair[1], pair[0]), "{} > {}", pair[1], pair[0]);
-            assert!(!version_newer(pair[0], pair[1]), "{} < {}", pair[0], pair[1]);
+            assert!(
+                !version_newer(pair[0], pair[1]),
+                "{} < {}",
+                pair[0],
+                pair[1]
+            );
         }
         assert!(!version_newer("0.2.136-beta.1", "0.2.136-beta.1"));
         assert!(version_newer("v0.2.136-beta.1", "0.2.135"));
@@ -2883,39 +2976,111 @@ mod tests {
     #[test]
     fn a_build_takes_newer_releases_of_its_channel() {
         let stable = manifest_of("0.2.136", Channel::Stable);
-        assert_eq!(offer(&stable, "0.2.135", Channel::Stable, None, None), Offer::Newer);
-        assert_eq!(offer(&stable, "0.2.136", Channel::Stable, None, None), Offer::Current);
-        assert_eq!(offer(&stable, "0.2.137", Channel::Stable, None, None), Offer::Current);
+        assert_eq!(
+            offer(&stable, "0.2.135", Channel::Stable, None, None),
+            Offer::Newer
+        );
+        assert_eq!(
+            offer(&stable, "0.2.136", Channel::Stable, None, None),
+            Offer::Current
+        );
+        assert_eq!(
+            offer(&stable, "0.2.137", Channel::Stable, None, None),
+            Offer::Current
+        );
         let beta = manifest_of("0.2.136-beta.2", Channel::Beta);
-        assert_eq!(offer(&beta, "0.2.136-beta.1", Channel::Beta, Some("0.2.135"), None), Offer::Newer);
-        assert_eq!(offer(&beta, "0.2.136-beta.2", Channel::Beta, Some("0.2.135"), None), Offer::Current);
+        assert_eq!(
+            offer(
+                &beta,
+                "0.2.136-beta.1",
+                Channel::Beta,
+                Some("0.2.135"),
+                None
+            ),
+            Offer::Newer
+        );
+        assert_eq!(
+            offer(
+                &beta,
+                "0.2.136-beta.2",
+                Channel::Beta,
+                Some("0.2.135"),
+                None
+            ),
+            Offer::Current
+        );
     }
 
     #[test]
     fn choosing_beta_on_stable_takes_only_a_newer_beta() {
         let beta = manifest_of("0.2.136-beta.1", Channel::Beta);
-        assert_eq!(offer(&beta, "0.2.135", Channel::Beta, None, None), Offer::Newer);
+        assert_eq!(
+            offer(&beta, "0.2.135", Channel::Beta, None, None),
+            Offer::Newer
+        );
         // Stable moved past the last beta: wait for the next one.
-        assert_eq!(offer(&beta, "0.2.136", Channel::Beta, None, None), Offer::Current);
+        assert_eq!(
+            offer(&beta, "0.2.136", Channel::Beta, None, None),
+            Offer::Current
+        );
     }
 
     #[test]
     fn leaving_beta_installs_stable_even_when_older() {
         let stable = manifest_of("0.2.135", Channel::Stable);
-        assert_eq!(offer(&stable, "0.2.136-beta.2", Channel::Stable, Some("0.2.135"), None), Offer::Switch);
+        assert_eq!(
+            offer(
+                &stable,
+                "0.2.136-beta.2",
+                Channel::Stable,
+                Some("0.2.135"),
+                None
+            ),
+            Offer::Switch
+        );
         // A stable that caught up is simply newer.
         let caught_up = manifest_of("0.2.136", Channel::Stable);
-        assert_eq!(offer(&caught_up, "0.2.136-beta.2", Channel::Stable, Some("0.2.135"), None), Offer::Newer);
+        assert_eq!(
+            offer(
+                &caught_up,
+                "0.2.136-beta.2",
+                Channel::Stable,
+                Some("0.2.135"),
+                None
+            ),
+            Offer::Newer
+        );
     }
 
     #[test]
     fn leaving_beta_waits_when_stable_s_engine_is_older_than_the_beta_s() {
         let stable = manifest_of("0.2.135", Channel::Stable);
-        let held = offer(&stable, "0.2.136-beta.3", Channel::Stable, Some("0.2.136"), None);
-        assert!(matches!(&held, Offer::Held(why) if why.contains("catches up")), "{held:?}");
+        let held = offer(
+            &stable,
+            "0.2.136-beta.3",
+            Channel::Stable,
+            Some("0.2.136"),
+            None,
+        );
+        assert!(
+            matches!(&held, Offer::Held(why) if why.contains("catches up")),
+            "{held:?}"
+        );
         // A manifest naming its engine is weighed by that.
-        let named = Manifest { engine_version: Some("0.2.136".into()), ..stable };
-        assert_eq!(offer(&named, "0.2.136-beta.3", Channel::Stable, Some("0.2.136"), None), Offer::Switch);
+        let named = Manifest {
+            engine_version: Some("0.2.136".into()),
+            ..stable
+        };
+        assert_eq!(
+            offer(
+                &named,
+                "0.2.136-beta.3",
+                Channel::Stable,
+                Some("0.2.136"),
+                None
+            ),
+            Offer::Switch
+        );
     }
 
     #[test]
@@ -2925,8 +3090,14 @@ mod tests {
             ..manifest_of("0.2.136-beta.1", Channel::Beta)
         };
         let held = offer(&beta, "0.2.135", Channel::Beta, None, Some("13.6"));
-        assert!(matches!(&held, Offer::Held(why) if why.contains("macOS 14.0")), "{held:?}");
-        assert_eq!(offer(&beta, "0.2.135", Channel::Beta, None, Some("14.1")), Offer::Newer);
+        assert!(
+            matches!(&held, Offer::Held(why) if why.contains("macOS 14.0")),
+            "{held:?}"
+        );
+        assert_eq!(
+            offer(&beta, "0.2.135", Channel::Beta, None, Some("14.1")),
+            Offer::Newer
+        );
         assert!(!held.installs());
     }
 

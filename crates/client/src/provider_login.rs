@@ -23,11 +23,11 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD as BASE64, URL_SAFE_NO_PAD as BASE64_URL};
+use onicode_proto::{VaultAccountProfile, VaultProvider};
 use sha2::{Digest as _, Sha256};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
-use onicode_proto::{VaultAccountProfile, VaultProvider};
 
 use crate::Client;
 use crate::error::{ClientError, Result};
@@ -637,6 +637,8 @@ mod tests {
         let mut browser = browser.await.unwrap();
         let mut reply = String::new();
         browser.read_to_string(&mut reply).await.unwrap();
-        assert!(reply.starts_with("HTTP/1.1 302") && reply.contains("Location: onicode://signed-in"));
+        assert!(
+            reply.starts_with("HTTP/1.1 302") && reply.contains("Location: onicode://signed-in")
+        );
     }
 }

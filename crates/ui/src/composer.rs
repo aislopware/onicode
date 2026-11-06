@@ -3634,7 +3634,9 @@ impl ComposerInput {
             }
             text.push_str(&self.content[at..link.range.start]);
             text.push_str(&onicode_proto::invocation::invocation_prompt(
-                &onicode_proto::file_mentions::file_mention_prompt(&self.content[link.range.clone()]),
+                &onicode_proto::file_mentions::file_mention_prompt(
+                    &self.content[link.range.clone()],
+                ),
             ));
             at = link.range.end;
         }
@@ -7938,8 +7940,10 @@ impl Composer {
                         .await
                         .ok()
                         .and_then(|v| {
-                            serde_json::from_value::<Option<Vec<onicode_proto::invocation::Skill>>>(v)
-                                .ok()
+                            serde_json::from_value::<Option<Vec<onicode_proto::invocation::Skill>>>(
+                                v,
+                            )
+                            .ok()
                         })
                         .flatten()
                         .unwrap_or_default()

@@ -6,9 +6,11 @@
 //! same geometry as primitives. One routine for both means a row's measured
 //! height and its painted content can never disagree.
 
-use std::sync::Arc;
 use onicode_markdown::parser::{Block, InlineRun, InlineStyle, TableAlign};
-use onicode_text::{InlineBox, OverflowWrap, PrepareOptions, Prepared, Span, WhiteSpace, WidthCache, line_growth};
+use onicode_text::{
+    InlineBox, OverflowWrap, PrepareOptions, Prepared, Span, WhiteSpace, WidthCache, line_growth,
+};
+use std::sync::Arc;
 
 use super::display::{ColorRole, Decoration, DisplayBuilder, TextRun, WidgetKind};
 use super::style::{Family, Resolved, TYPE, Typography, Weight, baseline};
@@ -85,7 +87,8 @@ impl MathFailures {
     fn compact(&mut self) {
         if self.laid_order.len() > 4 * Self::LAID_CAP.max(self.laid.len()) {
             let laid = &self.laid;
-            self.laid_order.retain(|(key, tick)| laid.get(key).is_some_and(|entry| entry.1 == *tick));
+            self.laid_order
+                .retain(|(key, tick)| laid.get(key).is_some_and(|entry| entry.1 == *tick));
         }
     }
 
@@ -108,7 +111,9 @@ impl MathFailures {
         }
         self.compact();
         while self.laid.len() > Self::LAID_CAP || self.laid_bytes > Self::LAID_BYTES {
-            let Some((old, tick)) = self.laid_order.pop_front() else { break };
+            let Some((old, tick)) = self.laid_order.pop_front() else {
+                break;
+            };
             if self.laid.get(&old).is_some_and(|entry| entry.1 == tick)
                 && let Some((old, _)) = self.laid.remove(&old)
             {
@@ -124,7 +129,9 @@ impl MathFailures {
 
     /// Whether `key` failed before (and mark it recently used).
     fn known(&mut self, key: u64) -> bool {
-        let Some(i) = self.keys.iter().rposition(|k| *k == key) else { return false };
+        let Some(i) = self.keys.iter().rposition(|k| *k == key) else {
+            return false;
+        };
         self.keys.remove(i);
         self.keys.push_back(key);
         self.hits += 1;
@@ -179,22 +186,34 @@ fn layout_math(ctx: &mut Ctx, tex: &str, display: bool, size: f32) -> Option<Arc
         return None;
     }
     // Acceptance differs in a table cell, so it's part of the key.
-    let key = ctx.math_failures.key(tex, (display, ctx.in_table), ctx.math.face, size);
+    let key = ctx
+        .math_failures
+        .key(tex, (display, ctx.in_table), ctx.math.face, size);
     if ctx.math_failures.known(key) {
         return None;
     }
     if let Some(formula) = ctx.math_failures.laid(key) {
         return charge(ctx, formula, display);
     }
-    let options = if display { zatex::Options::display(size) } else { zatex::Options::inline(size) };
-    let formula = zatex::bundled::layout(tex, ctx.math.face, &options).ok().filter(|f| {
-        if display {
-            f.span() <= MATH_MAX_WIDTH && f.span() * f.height() <= MATH_MAX_AREA
-        } else {
-            let ems = if ctx.in_table { MATH_MAX_CELL_EMS } else { MATH_MAX_INLINE_EMS };
-            f.height() <= ems * size
-        }
-    });
+    let options = if display {
+        zatex::Options::display(size)
+    } else {
+        zatex::Options::inline(size)
+    };
+    let formula = zatex::bundled::layout(tex, ctx.math.face, &options)
+        .ok()
+        .filter(|f| {
+            if display {
+                f.span() <= MATH_MAX_WIDTH && f.span() * f.height() <= MATH_MAX_AREA
+            } else {
+                let ems = if ctx.in_table {
+                    MATH_MAX_CELL_EMS
+                } else {
+                    MATH_MAX_INLINE_EMS
+                };
+                f.height() <= ems * size
+            }
+        });
     match formula {
         Some(formula) => {
             let formula = Arc::new(formula);
@@ -210,7 +229,11 @@ fn layout_math(ctx: &mut Ctx, tex: &str, display: bool, size: f32) -> Option<Arc
 
 /// `formula` if its row's budget ([`MATH_ROW_AREA`]) still holds it, charged
 /// to that budget; past it, the formula shows as source.
-fn charge(ctx: &mut Ctx, formula: Arc<zatex::Formula>, display: bool) -> Option<Arc<zatex::Formula>> {
+fn charge(
+    ctx: &mut Ctx,
+    formula: Arc<zatex::Formula>,
+    display: bool,
+) -> Option<Arc<zatex::Formula>> {
     let band = if display {
         formula.height()
     } else {
@@ -238,7 +261,12 @@ impl MathSettings {
     pub const SIZE_PERCENT: std::ops::RangeInclusive<u16> = 75..=200;
 
     pub fn new(enabled: bool, face: zatex::bundled::Face, size_percent: u16) -> Self {
-        Self { enabled, face, size_percent: size_percent.clamp(*Self::SIZE_PERCENT.start(), *Self::SIZE_PERCENT.end()) }
+        Self {
+            enabled,
+            face,
+            size_percent: size_percent
+                .clamp(*Self::SIZE_PERCENT.start(), *Self::SIZE_PERCENT.end()),
+        }
     }
 
     /// A formula's font size beside text of `text_px`.
@@ -249,7 +277,11 @@ impl MathSettings {
 
 impl Default for MathSettings {
     fn default() -> Self {
-        Self { enabled: true, face: zatex::bundled::Face::Fira, size_percent: 100 }
+        Self {
+            enabled: true,
+            face: zatex::bundled::Face::Fira,
+            size_percent: 100,
+        }
     }
 }
 
@@ -335,12 +367,26 @@ fn size_lh(kind: TextKind) -> (f32, f32) {
 }
 
 /// Measure inline runs as one wrapping flow.
-pub(crate) fn prepare_runs(ctx: &mut Ctx, runs: &[InlineRun], kind: TextKind, muted: bool) -> PText {
+pub(crate) fn prepare_runs(
+    ctx: &mut Ctx,
+    runs: &[InlineRun],
+    kind: TextKind,
+    muted: bool,
+) -> PText {
     let (size, lh) = size_lh(kind);
     let heading = matches!(kind, TextKind::Heading(_) | TextKind::TableHeader);
-    let base_weight = if heading { Weight::Semibold } else { Weight::Regular };
+    let base_weight = if heading {
+        Weight::Semibold
+    } else {
+        Weight::Regular
+    };
     let body = ctx.typo.style(Family::Sans, base_weight, false, size);
-    let code = ctx.typo.style(Family::Mono, Weight::Regular, false, size * TYPE.inline_code / TYPE.body.0);
+    let code = ctx.typo.style(
+        Family::Mono,
+        Weight::Regular,
+        false,
+        size * TYPE.inline_code / TYPE.body.0,
+    );
     let pad = ctx.typo.px(4.0);
     let chip_h = code.ascent + code.descent + ctx.typo.px(4.0);
     let lh = ctx.typo.px(lh);
@@ -360,7 +406,11 @@ pub(crate) fn prepare_runs(ctx: &mut Ctx, runs: &[InlineRun], kind: TextKind, mu
         }
         let (content, link) = match &s.image {
             Some(img) => (
-                if img.alt.is_empty() { "image".to_owned() } else { img.alt.clone() },
+                if img.alt.is_empty() {
+                    "image".to_owned()
+                } else {
+                    img.alt.clone()
+                },
                 Some(img.link.clone().unwrap_or_else(|| img.source.clone())),
             ),
             None => (run.text.clone(), s.link.clone()),
@@ -379,12 +429,22 @@ pub(crate) fn prepare_runs(ctx: &mut Ctx, runs: &[InlineRun], kind: TextKind, mu
         // zatex can't render (an unknown command, a half-streamed formula),
         // or any with math rendering off, shows as a code chip, delimiters
         // and all, so nothing is lost.
-        let formula = if s.math { layout_math(ctx, &content, false, math_size) } else { None };
+        let formula = if s.math {
+            layout_math(ctx, &content, false, math_size)
+        } else {
+            None
+        };
         let chip = s.code || (s.math && formula.is_none());
         let style = if chip {
             code
         } else {
-            let weight = if s.bold { Weight::Semibold.max(base_weight) } else if link.is_some() { Weight::Medium.max(base_weight) } else { base_weight };
+            let weight = if s.bold {
+                Weight::Semibold.max(base_weight)
+            } else if link.is_some() {
+                Weight::Medium.max(base_weight)
+            } else {
+                base_weight
+            };
             ctx.typo.style(Family::Sans, weight, s.italic, size)
         };
         let start = text.len();
@@ -434,7 +494,11 @@ pub(crate) fn prepare_runs(ctx: &mut Ctx, runs: &[InlineRun], kind: TextKind, mu
         };
         paints.push(SpanPaint {
             color,
-            decoration: if s.strikethrough { Decoration::Strikethrough } else { Decoration::None },
+            decoration: if s.strikethrough {
+                Decoration::Strikethrough
+            } else {
+                Decoration::None
+            },
             link,
             chip,
         });
@@ -515,7 +579,9 @@ pub(crate) fn prepare_block(ctx: &mut Ctx, block: &Block, depth: usize, muted: b
         Block::Heading { level, runs } => {
             PBlock::Heading(prepare_runs(ctx, runs, TextKind::Heading(*level), muted))
         }
-        Block::CodeBlock { language, code } => PBlock::Code(Box::new(prepare_code(ctx, language.as_deref(), code))),
+        Block::CodeBlock { language, code } => {
+            PBlock::Code(Box::new(prepare_code(ctx, language.as_deref(), code)))
+        }
         // Laid out once here, at body size (scaled per the math setting);
         // source zatex can't render (or any, with math rendering off) shows
         // as a `math` code block — or, when long, as wrapping code text: a
@@ -526,19 +592,37 @@ pub(crate) fn prepare_block(ctx: &mut Ctx, block: &Block, depth: usize, muted: b
             match layout_math(ctx, tex, true, size) {
                 Some(formula) => PBlock::Math(Box::new(PMath {
                     formula,
-                    color: if muted { ColorRole::TextSecondary } else { ColorRole::Text },
+                    color: if muted {
+                        ColorRole::TextSecondary
+                    } else {
+                        ColorRole::Text
+                    },
                 })),
-                None if tex.len() <= MATH_SOURCE_BLOCK_MAX => PBlock::Code(Box::new(prepare_code(ctx, Some("math"), tex))),
+                None if tex.len() <= MATH_SOURCE_BLOCK_MAX => {
+                    PBlock::Code(Box::new(prepare_code(ctx, Some("math"), tex)))
+                }
                 None => {
-                    let source = InlineRun { text: format!("$${tex}$$"), style: InlineStyle { code: true, ..InlineStyle::default() } };
+                    let source = InlineRun {
+                        text: format!("$${tex}$$"),
+                        style: InlineStyle {
+                            code: true,
+                            ..InlineStyle::default()
+                        },
+                    };
                     PBlock::Text(prepare_runs(ctx, &[source], TextKind::Body, muted))
                 }
             }
         }
         Block::BlockQuote { children } => PBlock::Quote(
-            children.iter().map(|b| prepare_block(ctx, b, depth, true)).collect(),
+            children
+                .iter()
+                .map(|b| prepare_block(ctx, b, depth, true))
+                .collect(),
         ),
-        Block::List { ordered_start, items } => {
+        Block::List {
+            ordered_start,
+            items,
+        } => {
             let (size, lh) = TYPE.body;
             let style = ctx.typo.style(Family::Sans, Weight::Regular, false, size);
             let lh = ctx.typo.px(lh);
@@ -548,7 +632,10 @@ pub(crate) fn prepare_block(ctx: &mut Ctx, block: &Block, depth: usize, muted: b
                 .enumerate()
                 .map(|(i, children)| {
                     let task = children.first().and_then(|b| match b {
-                        Block::Paragraph { runs } => runs.first().and_then(|r| r.style.task.as_ref()).map(|t| t.checked),
+                        Block::Paragraph { runs } => runs
+                            .first()
+                            .and_then(|r| r.style.task.as_ref())
+                            .map(|t| t.checked),
                         _ => None,
                     });
                     let marker = if task.is_some() {
@@ -559,26 +646,44 @@ pub(crate) fn prepare_block(ctx: &mut Ctx, block: &Block, depth: usize, muted: b
                             Some(start) => format!("{}.", start + i as u64),
                             None => ["•", "◦", "▪"][depth.min(2)].to_owned(),
                         };
-                        let m = prepare_plain(ctx, &label, style, lh, ColorRole::TextSecondary, WhiteSpace::Pre);
+                        let m = prepare_plain(
+                            ctx,
+                            &label,
+                            style,
+                            lh,
+                            ColorRole::TextSecondary,
+                            WhiteSpace::Pre,
+                        );
                         marker_w = marker_w.max(m.p.max_content_width() + ctx.typo.px(8.0));
                         Some(m)
                     };
                     PItem {
                         marker,
                         task,
-                        children: children.iter().map(|b| prepare_block(ctx, b, depth + 1, muted)).collect(),
+                        children: children
+                            .iter()
+                            .map(|b| prepare_block(ctx, b, depth + 1, muted))
+                            .collect(),
                     }
                 })
                 .collect();
             PBlock::List { items, marker_w }
         }
-        Block::Table { header, rows, align } => {
+        Block::Table {
+            header,
+            rows,
+            align,
+        } => {
             let (table, area) = prepare_table(ctx, header, rows, align, muted);
             // A table is one scrolling canvas as wide as all its columns and
             // as tall as all its rows: formulas that widen a column or raise
             // a row multiply across the whole table. Past the budget it's set
             // with its formulas as source, i.e. as a text table.
-            let math = table.cells.iter().flatten().any(|cell| !cell.math.is_empty());
+            let math = table
+                .cells
+                .iter()
+                .flatten()
+                .any(|cell| !cell.math.is_empty());
             if math && area > MATH_TABLE_AREA {
                 let enabled = std::mem::replace(&mut ctx.math.enabled, false);
                 let (plain, _) = prepare_table(ctx, header, rows, align, muted);
@@ -606,9 +711,18 @@ fn prepare_table(
     // Restored after the table (a header-only table has no rows to reset
     // it), so the blocks after it keep their own limits.
     let outer = std::mem::replace(&mut ctx.in_table, true);
-    cells.push(header.iter().map(|c| prepare_runs(ctx, c, TextKind::TableHeader, muted)).collect::<Vec<_>>());
+    cells.push(
+        header
+            .iter()
+            .map(|c| prepare_runs(ctx, c, TextKind::TableHeader, muted))
+            .collect::<Vec<_>>(),
+    );
     for row in rows {
-        cells.push(row.iter().map(|c| prepare_runs(ctx, c, TextKind::Body, muted)).collect());
+        cells.push(
+            row.iter()
+                .map(|c| prepare_runs(ctx, c, TextKind::Body, muted))
+                .collect(),
+        );
     }
     ctx.in_table = outer;
     let ncols = cells.iter().map(Vec::len).max().unwrap_or(0);
@@ -626,10 +740,21 @@ fn prepare_table(
     };
     let cols: Vec<f32> = (0..ncols)
         .map(|c| {
-            let (min, max, boxed) = cells.iter().filter_map(|r| r.get(c)).fold((0f32, 0f32, 0f32), |(mn, mx, bx), t| {
-                (mn.max(t.p.min_content_width()), mx.max(t.p.max_content_width()), bx.max(widest_box(t)))
-            });
-            max.min(cap).max(min.min(cap)).max(boxed).max(ctx.typo.px(24.0)).ceil()
+            let (min, max, boxed) = cells.iter().filter_map(|r| r.get(c)).fold(
+                (0f32, 0f32, 0f32),
+                |(mn, mx, bx), t| {
+                    (
+                        mn.max(t.p.min_content_width()),
+                        mx.max(t.p.max_content_width()),
+                        bx.max(widest_box(t)),
+                    )
+                },
+            );
+            max.min(cap)
+                .max(min.min(cap))
+                .max(boxed)
+                .max(ctx.typo.px(24.0))
+                .ceil()
         })
         .collect();
     let (pad_x, pad_y) = (ctx.typo.px(geom::CELL_PAD_X), ctx.typo.px(geom::CELL_PAD_Y));
@@ -637,10 +762,21 @@ fn prepare_table(
     let height: f32 = cells
         .iter()
         .map(|row| {
-            row.iter().zip(&cols).map(|(cell, w)| place_text(cell, 0.0, 0.0, *w, None)).fold(0f32, f32::max) + pad_y * 2.0
+            row.iter()
+                .zip(&cols)
+                .map(|(cell, w)| place_text(cell, 0.0, 0.0, *w, None))
+                .fold(0f32, f32::max)
+                + pad_y * 2.0
         })
         .sum();
-    (PTable { cells, align: align.to_vec(), cols }, width * height)
+    (
+        PTable {
+            cells,
+            align: align.to_vec(),
+            cols,
+        },
+        width * height,
+    )
 }
 
 fn syntax_color(kind: onicode_syntax::HighlightKind) -> ColorRole {
@@ -665,7 +801,10 @@ fn syntax_color(kind: onicode_syntax::HighlightKind) -> ColorRole {
 }
 
 /// Highlight spans as contiguous (range, color) cover of `source`.
-fn highlight_cover(source: &str, language: Option<&str>) -> Vec<(std::ops::Range<usize>, ColorRole)> {
+fn highlight_cover(
+    source: &str,
+    language: Option<&str>,
+) -> Vec<(std::ops::Range<usize>, ColorRole)> {
     let mut cover = Vec::new();
     let mut cursor = 0usize;
     let doc = (source.len() <= 64 * 1024)
@@ -682,7 +821,9 @@ fn highlight_cover(source: &str, language: Option<&str>) -> Vec<(std::ops::Range
         let mut line_start = 0usize;
         for (i, line) in doc.lines.iter().enumerate() {
             if i > 0 {
-                line_start = source[line_start..].find('\n').map_or(source.len(), |n| line_start + n + 1);
+                line_start = source[line_start..]
+                    .find('\n')
+                    .map_or(source.len(), |n| line_start + n + 1);
             }
             for span in line {
                 let (s, e) = (line_start + span.range.start, line_start + span.range.end);
@@ -754,7 +895,9 @@ fn prepare_code(ctx: &mut Ctx, language: Option<&str>, code: &str) -> PCode {
     };
     let label = language.filter(|l| !l.is_empty()).map(|l| {
         let (size, lh) = TYPE.small;
-        let style = ctx.typo.style(Family::Sans, Weight::Medium, false, size - 1.0);
+        let style = ctx
+            .typo
+            .style(Family::Sans, Weight::Medium, false, size - 1.0);
         let lh = ctx.typo.px(lh);
         prepare_plain(ctx, l, style, lh, ColorRole::TextTertiary, WhiteSpace::Pre)
     });
@@ -796,7 +939,13 @@ impl Px {
 /// Place wrapped text at (x, y) within `width`; returns its height. Lines are
 /// `lh` tall, each grown by `line_growth` around its inline formulas: the
 /// growth above lands before the baseline, the growth below after the line.
-pub(crate) fn place_text(t: &PText, x: f32, y: f32, width: f32, out: Option<&mut DisplayBuilder>) -> f32 {
+pub(crate) fn place_text(
+    t: &PText,
+    x: f32,
+    y: f32,
+    width: f32,
+    out: Option<&mut DisplayBuilder>,
+) -> f32 {
     let Some(out) = out else {
         return t.p.height(width, t.lh, t.base);
     };
@@ -838,29 +987,54 @@ pub(crate) fn place_text(t: &PText, x: f32, y: f32, width: f32, out: Option<&mut
                 text_w -= span.pad_end;
             }
             if paint.chip {
-                out.fill(x + f.x, text_top + t.chip.0, f.width, t.chip.1, 5.0, ColorRole::InlineCodeBackground);
+                out.fill(
+                    x + f.x,
+                    text_top + t.chip.0,
+                    f.width,
+                    t.chip.1,
+                    5.0,
+                    ColorRole::InlineCodeBackground,
+                );
             }
             if f.range.start == span.range.start
                 && let Some((_, icon)) = t.marks.iter().find(|(span, _)| *span == f.span)
             {
                 let size = (span.pad_start - 4.0).max(0.0);
                 out.widget(
-                    WidgetKind::Icon { name: icon.clone(), color: ColorRole::TextSecondary },
+                    WidgetKind::Icon {
+                        name: icon.clone(),
+                        color: ColorRole::TextSecondary,
+                    },
                     (x + f.x + 2.0, text_top + (t.lh - size) / 2.0, size, size),
                     None,
                 );
             }
             if let Some((_, icon)) = t.badges.iter().find(|(span, _)| *span == f.span) {
                 let (chip_top, chip_h) = t.chip;
-                out.fill(x + f.x, text_top + chip_top, f.width, chip_h, 5.0, ColorRole::ToolBadge);
+                out.fill(
+                    x + f.x,
+                    text_top + chip_top,
+                    f.width,
+                    chip_h,
+                    5.0,
+                    ColorRole::ToolBadge,
+                );
                 if f.range.start == span.range.start {
                     let well = chip_h - 2.0;
                     let (wx, wy) = (x + f.x + 1.0, text_top + chip_top + 1.0);
                     out.fill(wx, wy, well, well, 4.0, ColorRole::ToolWell);
                     let size = well - 4.0;
                     out.widget(
-                        WidgetKind::Icon { name: icon.clone(), color: ColorRole::TextSoft },
-                        (wx + (well - size) / 2.0, wy + (well - size) / 2.0, size, size),
+                        WidgetKind::Icon {
+                            name: icon.clone(),
+                            color: ColorRole::TextSoft,
+                        },
+                        (
+                            wx + (well - size) / 2.0,
+                            wy + (well - size) / 2.0,
+                            size,
+                            size,
+                        ),
                         None,
                     );
                 }
@@ -879,8 +1053,19 @@ pub(crate) fn place_text(t: &PText, x: f32, y: f32, width: f32, out: Option<&mut
                 // so measured and painted heights can't disagree.
                 let avail = x + width - text_x - span.pad_end;
                 let span = formula.span();
-                let scale = if span > avail && avail > 0.0 { avail / span } else { 1.0 };
-                out.formula(formula, text_x - formula.left * scale, baseline, scale, paint.color, start);
+                let scale = if span > avail && avail > 0.0 {
+                    avail / span
+                } else {
+                    1.0
+                };
+                out.formula(
+                    formula,
+                    text_x - formula.left * scale,
+                    baseline,
+                    scale,
+                    paint.color,
+                    start,
+                );
                 // Decorations cross the formula like the text around it
                 // (the painter's run offsets: strike 5 above, underline 2 below).
                 let dy = match paint.decoration {
@@ -943,7 +1128,14 @@ pub(crate) fn place_stack(
 
 /// The geometry routine: height of `block` at `width`, emitting primitives when
 /// `out` is given.
-pub(crate) fn place(block: &PBlock, px: Px, x: f32, y: f32, width: f32, out: Option<&mut DisplayBuilder>) -> f32 {
+pub(crate) fn place(
+    block: &PBlock,
+    px: Px,
+    x: f32,
+    y: f32,
+    width: f32,
+    out: Option<&mut DisplayBuilder>,
+) -> f32 {
     use geom::*;
     match block {
         PBlock::Text(t) | PBlock::Heading(t) => place_text(t, x, y, width, out),
@@ -952,9 +1144,24 @@ pub(crate) fn place(block: &PBlock, px: Px, x: f32, y: f32, width: f32, out: Opt
         PBlock::Quote(children) => {
             let indent = px.v(QUOTE_INDENT);
             let mut out = out;
-            let h = place_stack(children, px, x + indent, y, (width - indent).max(1.0), PARA_GAP, out.as_deref_mut());
+            let h = place_stack(
+                children,
+                px,
+                x + indent,
+                y,
+                (width - indent).max(1.0),
+                PARA_GAP,
+                out.as_deref_mut(),
+            );
             if let Some(out) = out {
-                out.fill(x, y, px.v(QUOTE_BAR), h, px.v(QUOTE_BAR) / 2.0, ColorRole::QuoteBar);
+                out.fill(
+                    x,
+                    y,
+                    px.v(QUOTE_BAR),
+                    h,
+                    px.v(QUOTE_BAR) / 2.0,
+                    ColorRole::QuoteBar,
+                );
             }
             h
         }
@@ -968,7 +1175,15 @@ pub(crate) fn place(block: &PBlock, px: Px, x: f32, y: f32, width: f32, out: Opt
                 let top = y + h;
                 let child_x = x + marker_w;
                 let child_w = (width - marker_w).max(1.0);
-                let ih = place_stack(&item.children, px, child_x, top, child_w, PARA_GAP, out.as_deref_mut());
+                let ih = place_stack(
+                    &item.children,
+                    px,
+                    child_x,
+                    top,
+                    child_w,
+                    PARA_GAP,
+                    out.as_deref_mut(),
+                );
                 if let Some(out) = out.as_deref_mut() {
                     // Markers sit on the first line's text, below any growth.
                     let top = top + first_line_above(&item.children, child_w);
@@ -982,8 +1197,17 @@ pub(crate) fn place(block: &PBlock, px: Px, x: f32, y: f32, width: f32, out: Opt
                         let lh = px.v(TYPE.body.1);
                         out.widget(
                             WidgetKind::Icon {
-                                name: if checked { "checkmark.square.fill" } else { "square" }.into(),
-                                color: if checked { ColorRole::Accent } else { ColorRole::TextTertiary },
+                                name: if checked {
+                                    "checkmark.square.fill"
+                                } else {
+                                    "square"
+                                }
+                                .into(),
+                                color: if checked {
+                                    ColorRole::Accent
+                                } else {
+                                    ColorRole::TextTertiary
+                                },
                             },
                             (x, top + (lh - s) / 2.0, s, s),
                             None,
@@ -1008,15 +1232,29 @@ pub(crate) fn place(block: &PBlock, px: Px, x: f32, y: f32, width: f32, out: Opt
 /// How much the first line of `blocks` grew above its text to fit an inline
 /// formula (0 for anything but a paragraph or heading).
 fn first_line_above(blocks: &[PBlock], width: f32) -> f32 {
-    let Some(PBlock::Text(t) | PBlock::Heading(t)) = blocks.first() else { return 0.0 };
+    let Some(PBlock::Text(t) | PBlock::Heading(t)) = blocks.first() else {
+        return 0.0;
+    };
     if !t.p.has_inline_boxes() {
         return 0.0;
     }
     let first = t.p.layout_next_line(onicode_text::Cursor::START, width);
-    line_growth(first.and_then(|l| t.p.line_range_box_extents(&l)), t.lh, t.base).0
+    line_growth(
+        first.and_then(|l| t.p.line_range_box_extents(&l)),
+        t.lh,
+        t.base,
+    )
+    .0
 }
 
-fn place_code(c: &PCode, px: Px, x: f32, y: f32, width: f32, out: Option<&mut DisplayBuilder>) -> f32 {
+fn place_code(
+    c: &PCode,
+    px: Px,
+    x: f32,
+    y: f32,
+    width: f32,
+    out: Option<&mut DisplayBuilder>,
+) -> f32 {
     use geom::*;
     let header = px.v(CODE_HEADER);
     let body_h = c.lines as f32 * c.body.lh + px.v(CODE_PAD_BOTTOM);
@@ -1026,10 +1264,20 @@ fn place_code(c: &PCode, px: Px, x: f32, y: f32, width: f32, out: Option<&mut Di
     out.hairline(x, y, width, h, px.v(CODE_RADIUS), ColorRole::CodeBorder);
     if let Some(label) = &c.label {
         let lw = width - px.v(CODE_PAD_X) - px.v(44.0);
-        place_text(label, x + px.v(CODE_PAD_X), y + (header - label.lh) / 2.0, lw.max(1.0), Some(out));
+        place_text(
+            label,
+            x + px.v(CODE_PAD_X),
+            y + (header - label.lh) / 2.0,
+            lw.max(1.0),
+            Some(out),
+        );
     }
     let bw = px.v(44.0);
-    out.widget(WidgetKind::CopyCode, (x + width - bw, y, bw, header), Some(c.source.clone()));
+    out.widget(
+        WidgetKind::CopyCode,
+        (x + width - bw, y, bw, header),
+        Some(c.source.clone()),
+    );
     let pad = px.v(CODE_PAD_X);
     out.begin_scroller(x, y + header, width, body_h, c.content_width + pad * 2.0);
     place_text(&c.body, pad, 0.0, f32::INFINITY, Some(out));
@@ -1037,7 +1285,14 @@ fn place_code(c: &PCode, px: Px, x: f32, y: f32, width: f32, out: Option<&mut Di
     h
 }
 
-fn place_math(m: &PMath, px: Px, x: f32, y: f32, width: f32, out: Option<&mut DisplayBuilder>) -> f32 {
+fn place_math(
+    m: &PMath,
+    px: Px,
+    x: f32,
+    y: f32,
+    width: f32,
+    out: Option<&mut DisplayBuilder>,
+) -> f32 {
     let f = &m.formula;
     let pad = px.v(geom::MATH_PAD_Y);
     let h = f.height() + pad * 2.0;
@@ -1054,12 +1309,26 @@ fn place_math(m: &PMath, px: Px, x: f32, y: f32, width: f32, out: Option<&mut Di
         out.formula(f, side - f.left, pad + f.ascent, 1.0, m.color, start);
         out.end_scroller();
     } else {
-        out.formula(f, x + (width - span) / 2.0 - f.left, y + pad + f.ascent, 1.0, m.color, start);
+        out.formula(
+            f,
+            x + (width - span) / 2.0 - f.left,
+            y + pad + f.ascent,
+            1.0,
+            m.color,
+            start,
+        );
     }
     h
 }
 
-fn place_table(t: &PTable, px: Px, x: f32, y: f32, width: f32, out: Option<&mut DisplayBuilder>) -> f32 {
+fn place_table(
+    t: &PTable,
+    px: Px,
+    x: f32,
+    y: f32,
+    width: f32,
+    out: Option<&mut DisplayBuilder>,
+) -> f32 {
     use geom::*;
     let pad_x = px.v(CELL_PAD_X);
     let pad_y = px.v(CELL_PAD_Y);
@@ -1088,10 +1357,31 @@ fn place_table(t: &PTable, px: Px, x: f32, y: f32, width: f32, out: Option<&mut 
     let radius = px.v(10.0);
     if let Some(first) = row_heights.first() {
         // Rounded top corners only: a rounded fill plus a square lower half.
-        out.fill(ox, oy, content_w, *first, radius, ColorRole::TableHeaderBackground);
-        out.fill(ox, oy + first / 2.0, content_w, first / 2.0, 0.0, ColorRole::TableHeaderBackground);
+        out.fill(
+            ox,
+            oy,
+            content_w,
+            *first,
+            radius,
+            ColorRole::TableHeaderBackground,
+        );
+        out.fill(
+            ox,
+            oy + first / 2.0,
+            content_w,
+            first / 2.0,
+            0.0,
+            ColorRole::TableHeaderBackground,
+        );
     }
-    out.hairline(ox, oy, if scrolls { content_w } else { table_w }, h, radius, ColorRole::TableBorder);
+    out.hairline(
+        ox,
+        oy,
+        if scrolls { content_w } else { table_w },
+        h,
+        radius,
+        ColorRole::TableBorder,
+    );
     let mut ry = oy;
     for (r, row) in t.cells.iter().enumerate() {
         if r > 0 {

@@ -407,7 +407,12 @@ pub async fn connect_ipc_as_agent(
     port: u16,
     data_dir: Option<&std::path::Path>,
 ) -> Result<RpcClient, RpcError> {
-    connect_ipc_with(port, data_dir, crate::ipc_auth::agent_client_tokens(data_dir)).await
+    connect_ipc_with(
+        port,
+        data_dir,
+        crate::ipc_auth::agent_client_tokens(data_dir),
+    )
+    .await
 }
 
 async fn connect_ipc_with(
@@ -471,10 +476,14 @@ async fn dial(url: &str, token: Option<&str>) -> Result<RpcClient, DialError> {
     }
     // An agent's MCP server says which chat it serves, for the engine's
     // record of who asked (claimed, never an authority).
-    if let Some(chat) = std::env::var("ONICODE_CHAT_ID").ok().filter(|c| !c.is_empty())
+    if let Some(chat) = std::env::var("ONICODE_CHAT_ID")
+        .ok()
+        .filter(|c| !c.is_empty())
         && let Ok(value) = HeaderValue::from_str(&chat)
     {
-        request.headers_mut().insert(crate::ipc_auth::CHAT_HEADER, value);
+        request
+            .headers_mut()
+            .insert(crate::ipc_auth::CHAT_HEADER, value);
     }
     let (ws, _) = tokio::time::timeout(
         CONNECT_TIMEOUT,

@@ -11,9 +11,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use onicode_client::workspace::WorkspaceSnapshot;
 use onicode_doc::parts::MessagePart;
 use onicode_doc::parts::MessageStatus;
-use onicode_client::workspace::WorkspaceSnapshot;
 use onicode_doc::schema::{MessageRole, SessionMessageEntry};
 use onicode_markdown::parser::{IncrementalParser, TopBlock};
 use onicode_text::WhiteSpace;
@@ -112,9 +112,17 @@ pub(crate) enum Content {
     Notice(Notice),
     /// One muted line on the agent's side: `Message to [mark] Chat` for a
     /// message this chat's agent sent. Faded while sending.
-    Caption { text: PText, pending: bool },
-    Image { reference: String },
-    Working { since_ms: Option<i64>, streaming: bool },
+    Caption {
+        text: PText,
+        pending: bool,
+    },
+    Image {
+        reference: String,
+    },
+    Working {
+        since_ms: Option<i64>,
+        streaming: bool,
+    },
     /// An agent visual: its height comes from its worker.
     Visual(Arc<crate::visual::VisualSlot>),
 }
@@ -250,14 +258,24 @@ impl RowBuilder {
             let rows = match reuse {
                 Some(rows) => {
                     for part in &entry.parts {
-                        if matches!(part, MessagePart::Text { .. } | MessagePart::Reasoning { .. }) {
+                        if matches!(
+                            part,
+                            MessagePart::Text { .. } | MessagePart::Reasoning { .. }
+                        ) {
                             live_parts.insert(format!("{}#{}", entry.id, part.id()));
                         }
                     }
                     rows
                 }
                 None => {
-                    let rows = self.entry_rows(ctx, entry, first, prev_role, input.workspace.as_deref(), &mut live_parts);
+                    let rows = self.entry_rows(
+                        ctx,
+                        entry,
+                        first,
+                        prev_role,
+                        input.workspace.as_deref(),
+                        &mut live_parts,
+                    );
                     self.entries.insert(
                         entry.id.clone(),
                         EntryState {
@@ -274,7 +292,8 @@ impl RowBuilder {
             }
             out.extend(rows);
         }
-        self.entries.retain(|id, _| live_entries.contains(id.as_str()));
+        self.entries
+            .retain(|id, _| live_entries.contains(id.as_str()));
         self.parts.retain(|id, _| live_parts.contains(id));
         self.thoughts.retain(|id, _| live_parts.contains(id));
 
@@ -285,7 +304,11 @@ impl RowBuilder {
                 continue;
             }
             live_pending.insert(p.id.clone());
-            let gap = if out.is_empty() { Gap::First } else { Gap::Turn };
+            let gap = if out.is_empty() {
+                Gap::First
+            } else {
+                Gap::Turn
+            };
             let cached = self
                 .pending
                 .get(&p.id)
@@ -293,7 +316,8 @@ impl RowBuilder {
                 .map(|(_, row)| row.clone());
             let core = cached.unwrap_or_else(|| {
                 let row = Arc::new(self.user_row(ctx, &p.id, &p.text, true, None));
-                self.pending.insert(p.id.clone(), (p.text.clone(), row.clone()));
+                self.pending
+                    .insert(p.id.clone(), (p.text.clone(), row.clone()));
                 row
             });
             out.push(Placed { core, gap });
@@ -319,7 +343,10 @@ impl RowBuilder {
                 }));
             }
             let core = self.working.clone().expect("set above");
-            out.push(Placed { core, gap: Gap::Reply });
+            out.push(Placed {
+                core,
+                gap: Gap::Reply,
+            });
         }
         out
     }
@@ -327,21 +354,33 @@ impl RowBuilder {
     /// Drop cached rows owning `key` so the next build re-prepares them
     /// (disclosure toggles). Only that entry pays.
     pub fn invalidate(&mut self, key: u64) {
-        self.entries.retain(|_, s| !s.rows.iter().any(|p| p.core.key == key));
+        self.entries
+            .retain(|_, s| !s.rows.iter().any(|p| p.core.key == key));
         self.pending.retain(|_, (_, row)| row.key != key);
     }
 
     /// Context outside the entry that changes its rows: gaps, and an agent
     /// message's sender as the workspace lists it (a rename, a provider).
-    fn entry_sig(&self, entry: &SessionMessageEntry, first: bool, prev: Option<MessageRole>, workspace: Option<&WorkspaceSnapshot>) -> u64 {
+    fn entry_sig(
+        &self,
+        entry: &SessionMessageEntry,
+        first: bool,
+        prev: Option<MessageRole>,
+        workspace: Option<&WorkspaceSnapshot>,
+    ) -> u64 {
         let gaps = (first as u64) | ((prev.map_or(0, |r| r as u64 + 1)) << 1);
         use std::hash::{Hash, Hasher};
         if entry.role != MessageRole::User {
             // Messages this agent sent: each recipient as the workspace lists it.
             let mut h = None::<std::collections::hash_map::DefaultHasher>;
             for part in &entry.parts {
-                let MessagePart::Tool { call, .. } = part else { continue };
-                for message in onicode_proto::agent_messages::outgoing_messages(call).into_iter().flatten() {
+                let MessagePart::Tool { call, .. } = part else {
+                    continue;
+                };
+                for message in onicode_proto::agent_messages::outgoing_messages(call)
+                    .into_iter()
+                    .flatten()
+                {
                     let h = h.get_or_insert_with(|| {
                         let mut h = std::collections::hash_map::DefaultHasher::new();
                         gaps.hash(&mut h);
@@ -352,7 +391,11 @@ impl RowBuilder {
             }
             return h.map_or(gaps, |h| h.finish());
         }
-        let Some(MessagePart::Text { text, .. }) = entry.parts.iter().find(|p| matches!(p, MessagePart::Text { .. })) else {
+        let Some(MessagePart::Text { text, .. }) = entry
+            .parts
+            .iter()
+            .find(|p| matches!(p, MessagePart::Text { .. }))
+        else {
             return gaps;
         };
         let Some((sender, _)) = onicode_proto::agent_messages::agent_message_sender(text) else {
@@ -400,22 +443,35 @@ impl RowBuilder {
                 .collect::<Vec<_>>()
                 .join("\n");
             let gap = if first { Gap::First } else { Gap::Turn };
-            rows.push(Placed { core: Arc::new(self.user_row(ctx, &entry.id, &text, false, workspace)), gap });
+            rows.push(Placed {
+                core: Arc::new(self.user_row(ctx, &entry.id, &text, false, workspace)),
+                gap,
+            });
             return rows;
         }
         let streaming = entry.status == Some(MessageStatus::Streaming);
         let mut tools: Vec<&MessagePart> = Vec::new();
         let mut group_ix = 0usize;
-        let flush_tools = |this: &mut Self, ctx: &mut Ctx, rows: &mut Vec<Placed>, tools: &mut Vec<&MessagePart>, group_ix: &mut usize, tail: bool| {
+        let flush_tools = |this: &mut Self,
+                           ctx: &mut Ctx,
+                           rows: &mut Vec<Placed>,
+                           tools: &mut Vec<&MessagePart>,
+                           group_ix: &mut usize,
+                           tail: bool| {
             if tools.is_empty() {
                 return;
             }
             let id = format!("{}#g{}", entry.id, group_ix);
             *group_ix += 1;
             let gap = gap_for(rows, false);
-            let agents = tools.iter().any(|p| matches!(p, MessagePart::Tool { call, .. } if call.is_subagent_spawn()));
+            let agents = tools
+                .iter()
+                .any(|p| matches!(p, MessagePart::Tool { call, .. } if call.is_subagent_spawn()));
             let row = this.tool_row(ctx, &entry.id, &id, tools, streaming && tail, agents);
-            rows.push(Placed { core: Arc::new(row), gap });
+            rows.push(Placed {
+                core: Arc::new(row),
+                gap,
+            });
             tools.clear();
         };
         let nparts = entry.parts.len();
@@ -423,17 +479,32 @@ impl RowBuilder {
             match part {
                 // Consecutive tools and thoughts share a group; subagent
                 // spawns never share one with ordinary tools (desktop genus).
-                MessagePart::Tool { id, call, is_error, resolved, .. }
-                    if let Some(sent) = onicode_proto::agent_messages::outgoing_messages(call) =>
-                {
+                MessagePart::Tool {
+                    id,
+                    call,
+                    is_error,
+                    resolved,
+                    ..
+                } if let Some(sent) = onicode_proto::agent_messages::outgoing_messages(call) => {
                     // A message to another chat reads as one line naming the
                     // recipient, not a tool: it leaves the group, one line
                     // per recipient.
                     flush_tools(self, ctx, &mut rows, &mut tools, &mut group_ix, false);
                     for (mi, message) in sent.iter().enumerate() {
                         let gap = gap_for(&rows, false);
-                        let row = self.outgoing_row(ctx, &entry.id, &format!("{id}.m{mi}"), message, !*resolved, *is_error, workspace);
-                        rows.push(Placed { core: Arc::new(row), gap });
+                        let row = self.outgoing_row(
+                            ctx,
+                            &entry.id,
+                            &format!("{id}.m{mi}"),
+                            message,
+                            !*resolved,
+                            *is_error,
+                            workspace,
+                        );
+                        rows.push(Placed {
+                            core: Arc::new(row),
+                            gap,
+                        });
                     }
                 }
                 MessagePart::Tool { call, .. } => {
@@ -448,7 +519,9 @@ impl RowBuilder {
                     tools.push(part);
                 }
                 MessagePart::Reasoning { text, .. } if !text.trim().is_empty() => {
-                    if tools.iter().any(|p| matches!(p, MessagePart::Tool { call, .. } if call.is_subagent_spawn())) {
+                    if tools.iter().any(
+                        |p| matches!(p, MessagePart::Tool { call, .. } if call.is_subagent_spawn()),
+                    ) {
                         flush_tools(self, ctx, &mut rows, &mut tools, &mut group_ix, false);
                     }
                     live_parts.insert(format!("{}#{}", entry.id, part.id()));
@@ -464,9 +537,13 @@ impl RowBuilder {
                             let part_streaming = streaming && pi + 1 == nparts;
                             let blocks = self.text_blocks(ctx, &pkey, text, part_streaming);
                             for (bi, (_, core)) in blocks.iter().enumerate() {
-                                let heading = matches!(core.content, Content::Block(PBlock::Heading(_)));
+                                let heading =
+                                    matches!(core.content, Content::Block(PBlock::Heading(_)));
                                 let gap = gap_for(&rows, heading && bi > 0);
-                                rows.push(Placed { core: core.clone(), gap });
+                                rows.push(Placed {
+                                    core: core.clone(),
+                                    gap,
+                                });
                             }
                         }
                         MessagePart::Image { id, path, .. } => {
@@ -476,7 +553,9 @@ impl RowBuilder {
                                 version: next_version(),
                                 kind: RowKind::Image,
                                 entry_id: Arc::from(entry.id.as_str()),
-                                content: Content::Image { reference: path.clone() },
+                                content: Content::Image {
+                                    reference: path.clone(),
+                                },
                                 copy_text: String::new(),
                             });
                             rows.push(Placed { core, gap });
@@ -498,33 +577,100 @@ impl RowBuilder {
                             });
                             rows.push(Placed { core, gap });
                         }
-                        MessagePart::Input { id, questions, resolved, answers, .. } => {
+                        MessagePart::Input {
+                            id,
+                            questions,
+                            resolved,
+                            answers,
+                            ..
+                        } => {
                             use onicode_proto::view::InputOutcome;
-                            let (text, white_space) = match onicode_proto::view::input_outcome(questions, *resolved, answers.as_deref()) {
-                                InputOutcome::Pending => (questions.first().map_or("Awaiting your answer…".to_owned(), |q| q.question.clone()), WhiteSpace::Normal),
+                            let (text, white_space) = match onicode_proto::view::input_outcome(
+                                questions,
+                                *resolved,
+                                answers.as_deref(),
+                            ) {
+                                InputOutcome::Pending => (
+                                    questions
+                                        .first()
+                                        .map_or("Awaiting your answer…".to_owned(), |q| {
+                                            q.question.clone()
+                                        }),
+                                    WhiteSpace::Normal,
+                                ),
                                 // Resolved before answers were recorded.
-                                InputOutcome::Unrecorded => ("Answered a question".to_owned(), WhiteSpace::Normal),
-                                InputOutcome::Closed(line) => (line.to_string(), WhiteSpace::Normal),
+                                InputOutcome::Unrecorded => {
+                                    ("Answered a question".to_owned(), WhiteSpace::Normal)
+                                }
+                                InputOutcome::Closed(line) => {
+                                    (line.to_string(), WhiteSpace::Normal)
+                                }
                                 // `Recherche → Deep dive`, one line per question: each
                                 // line is already single-line, so the breaks are the joins.
-                                InputOutcome::Answered(lines) => (lines.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n"), WhiteSpace::PreLine),
+                                InputOutcome::Answered(lines) => (
+                                    lines
+                                        .iter()
+                                        .map(ToString::to_string)
+                                        .collect::<Vec<_>>()
+                                        .join("\n"),
+                                    WhiteSpace::PreLine,
+                                ),
                             };
                             let gap = gap_for(&rows, false);
-                            rows.push(Placed { core: Arc::new(chip_row(ctx, &entry.id, id, "questionmark.bubble", ColorRole::Accent, &text, white_space)), gap });
+                            rows.push(Placed {
+                                core: Arc::new(chip_row(
+                                    ctx,
+                                    &entry.id,
+                                    id,
+                                    "questionmark.bubble",
+                                    ColorRole::Accent,
+                                    &text,
+                                    white_space,
+                                )),
+                                gap,
+                            });
                         }
                         MessagePart::Error { id, message } => {
                             let gap = gap_for(&rows, false);
-                            rows.push(Placed { core: Arc::new(notice_row(ctx, &entry.id, id, message)), gap });
+                            rows.push(Placed {
+                                core: Arc::new(notice_row(ctx, &entry.id, id, message)),
+                                gap,
+                            });
                         }
-                        MessagePart::Fork { id, source_title, .. } => {
+                        MessagePart::Fork {
+                            id, source_title, ..
+                        } => {
                             let gap = gap_for(&rows, false);
                             let text = format!("Forked from {source_title}");
-                            rows.push(Placed { core: Arc::new(chip_row(ctx, &entry.id, id, "arrow.triangle.branch", ColorRole::TextTertiary, &text, WhiteSpace::Normal)), gap });
+                            rows.push(Placed {
+                                core: Arc::new(chip_row(
+                                    ctx,
+                                    &entry.id,
+                                    id,
+                                    "arrow.triangle.branch",
+                                    ColorRole::TextTertiary,
+                                    &text,
+                                    WhiteSpace::Normal,
+                                )),
+                                gap,
+                            });
                         }
-                        MessagePart::Switch { id, from, to, from_harness, to_harness } => {
+                        MessagePart::Switch {
+                            id,
+                            from,
+                            to,
+                            from_harness,
+                            to_harness,
+                        } => {
                             let gap = gap_for(&rows, false);
                             rows.push(Placed {
-                                core: Arc::new(switch_row(ctx, &entry.id, id, (from, from_harness.as_deref()), (to, to_harness.as_deref()))),
+                                core: Arc::new(switch_row(
+                                    ctx,
+                                    &entry.id,
+                                    id,
+                                    (from, from_harness.as_deref()),
+                                    (to, to_harness.as_deref()),
+                                )),
                                 gap,
                             });
                         }
@@ -537,23 +683,39 @@ impl RowBuilder {
         rows
     }
 
-    fn text_blocks(&mut self, ctx: &mut Ctx, pkey: &str, text: &str, streaming: bool) -> Vec<(Arc<TopBlock>, Arc<RowCore>)> {
+    fn text_blocks(
+        &mut self,
+        ctx: &mut Ctx,
+        pkey: &str,
+        text: &str,
+        streaming: bool,
+    ) -> Vec<(Arc<TopBlock>, Arc<RowCore>)> {
         let hash = quick_hash(text);
-        let state = self.parts.entry(pkey.to_owned()).or_insert_with(|| PartState {
-            parser: IncrementalParser::new(),
-            source_len: usize::MAX,
-            source_hash: 0,
-            streaming,
-            blocks: Vec::new(),
-        });
-        if state.source_len == text.len() && state.source_hash == hash && state.streaming == streaming {
+        let state = self
+            .parts
+            .entry(pkey.to_owned())
+            .or_insert_with(|| PartState {
+                parser: IncrementalParser::new(),
+                source_len: usize::MAX,
+                source_hash: 0,
+                streaming,
+                blocks: Vec::new(),
+            });
+        if state.source_len == text.len()
+            && state.source_hash == hash
+            && state.streaming == streaming
+        {
             return state.blocks.clone();
         }
         state.parser.set_text(text);
         state.source_len = text.len();
         state.source_hash = hash;
         state.streaming = streaming;
-        let tree = if streaming { state.parser.display_tree() } else { state.parser.tree().clone() };
+        let tree = if streaming {
+            state.parser.display_tree()
+        } else {
+            state.parser.tree().clone()
+        };
         let mut next = Vec::with_capacity(tree.blocks.len());
         for (bi, block) in tree.blocks.iter().enumerate() {
             let copy = text.get(block.range.clone()).unwrap_or("").trim_end();
@@ -562,7 +724,9 @@ impl RowBuilder {
             let reuse = state
                 .blocks
                 .get(bi)
-                .filter(|(b, core)| (Arc::ptr_eq(b, block) || b.block == block.block) && core.copy_text == copy)
+                .filter(|(b, core)| {
+                    (Arc::ptr_eq(b, block) || b.block == block.block) && core.copy_text == copy
+                })
                 .map(|(_, core)| core.clone());
             let core = reuse.unwrap_or_else(|| {
                 let id = format!("{pkey}.{bi}");
@@ -598,19 +762,33 @@ impl RowBuilder {
         workspace: Option<&WorkspaceSnapshot>,
     ) -> RowCore {
         let (title, harness, id) = recipient_chat(&message.chat, workspace);
-        let lead = if failed { "Couldn't message" } else { "Message to" };
+        let lead = if failed {
+            "Couldn't message"
+        } else {
+            "Message to"
+        };
         RowCore {
             key: row_key(&format!("{entry_id}#{part_id}")),
             version: next_version(),
             // Agent content, not a prompt: user rows anchor the turn scroll.
             kind: RowKind::Markdown,
             entry_id: Arc::from(entry_id),
-            content: Content::Caption { text: chat_caption(ctx, lead, &title, harness.as_deref(), id.as_deref()), pending },
+            content: Content::Caption {
+                text: chat_caption(ctx, lead, &title, harness.as_deref(), id.as_deref()),
+                pending,
+            },
             copy_text: format!("{lead} {title}"),
         }
     }
 
-    fn user_row(&mut self, ctx: &mut Ctx, id: &str, content: &str, pending: bool, workspace: Option<&WorkspaceSnapshot>) -> RowCore {
+    fn user_row(
+        &mut self,
+        ctx: &mut Ctx,
+        id: &str,
+        content: &str,
+        pending: bool,
+        workspace: Option<&WorkspaceSnapshot>,
+    ) -> RowCore {
         let key = row_key(&format!("{id}#u"));
         // An agent's message: its sender rides over the bubble, and only the
         // body under the routing header goes in it.
@@ -626,12 +804,19 @@ impl RowBuilder {
         // Chips stand in for their attachments (as on the desktop): those
         // leave the strip, and an image chip opens its upload on tap.
         let mentions = onicode_proto::attachment_mentions::attachment_mentions(&parsed.text);
-        let chipped = |path: &str| mentions.iter().any(|mention| mention.names_attachment(path));
+        let chipped = |path: &str| {
+            mentions
+                .iter()
+                .any(|mention| mention.names_attachment(path))
+        };
         let previews: Vec<(u32, String)> = mentions
             .iter()
             .filter(|mention| mention.is_image)
             .filter_map(|mention| {
-                let image = parsed.images.iter().find(|image| mention.names_attachment(&image.path))?;
+                let image = parsed
+                    .images
+                    .iter()
+                    .find(|image| mention.names_attachment(&image.path))?;
                 Some((mention.index, image.path.clone()))
             })
             .collect();
@@ -652,7 +837,17 @@ impl RowBuilder {
             .iter()
             .map(|f| {
                 let name = onicode_proto::attachment_mentions::attachment_display_name(&f.name);
-                (file_icon_asset(name), prepare_plain(ctx, name, mstyle, ctx.typo.px(mlh), ColorRole::Text, WhiteSpace::Pre))
+                (
+                    file_icon_asset(name),
+                    prepare_plain(
+                        ctx,
+                        name,
+                        mstyle,
+                        ctx.typo.px(mlh),
+                        ColorRole::Text,
+                        WhiteSpace::Pre,
+                    ),
+                )
             })
             .collect();
         let expanded = self.expanded.contains(&key);
@@ -681,7 +876,6 @@ impl RowBuilder {
             copy_text: body,
         }
     }
-
 }
 
 /// One chip in a sent prompt: its source range, label and icon, and for an
@@ -714,27 +908,48 @@ fn user_chips(body: &str, previews: &[(u32, String)]) -> Vec<UserChip> {
     let mut chips: Vec<UserChip> = onicode_proto::file_mentions::file_mention_links(body)
         .into_iter()
         .map(|link| UserChip {
-            icon: if link.is_dir { "fileicon-folders-folder".to_owned() } else { file_icon_asset(&link.path) },
+            icon: if link.is_dir {
+                "fileicon-folders-folder".to_owned()
+            } else {
+                file_icon_asset(&link.path)
+            },
             range: link.range,
             label: link.basename,
             open: None,
         })
         .collect();
-    chips.extend(onicode_proto::invocation::invocation_links(body).into_iter().map(|(range, invocation)| UserChip {
-        range,
-        label: invocation.name().to_owned(),
-        icon: if invocation.prefix() == '/' { "command" } else { "wand.and.stars" }.to_owned(),
-        open: None,
-    }));
-    chips.extend(onicode_proto::attachment_mentions::attachment_mentions(body).into_iter().map(|mention| UserChip {
-        range: mention.range,
-        icon: if mention.is_image { "photo".to_owned() } else { file_icon_asset(&mention.label) },
-        open: previews
-            .iter()
-            .find(|(index, _)| mention.is_image && *index == mention.index)
-            .map(|(_, reference)| image_preview_link(reference)),
-        label: mention.label,
-    }));
+    chips.extend(
+        onicode_proto::invocation::invocation_links(body)
+            .into_iter()
+            .map(|(range, invocation)| UserChip {
+                range,
+                label: invocation.name().to_owned(),
+                icon: if invocation.prefix() == '/' {
+                    "command"
+                } else {
+                    "wand.and.stars"
+                }
+                .to_owned(),
+                open: None,
+            }),
+    );
+    chips.extend(
+        onicode_proto::attachment_mentions::attachment_mentions(body)
+            .into_iter()
+            .map(|mention| UserChip {
+                range: mention.range,
+                icon: if mention.is_image {
+                    "photo".to_owned()
+                } else {
+                    file_icon_asset(&mention.label)
+                },
+                open: previews
+                    .iter()
+                    .find(|(index, _)| mention.is_image && *index == mention.index)
+                    .map(|(_, reference)| image_preview_link(reference)),
+                label: mention.label,
+            }),
+    );
     chips.sort_by_key(|chip| chip.range.start);
     // Links never nest; drop any overlap rather than paint two chips at once.
     let mut end = 0;
@@ -750,7 +965,13 @@ fn user_chips(body: &str, previews: &[(u32, String)]) -> Vec<UserChip> {
 
 /// User prompt text with its canonical links shown as atomic chips: the
 /// desktop's soft pill with an icon well, the label in the body font.
-fn prepare_user_text(ctx: &mut Ctx, body: &str, style: super::style::Resolved, lh: f32, previews: &[(u32, String)]) -> PText {
+fn prepare_user_text(
+    ctx: &mut Ctx,
+    body: &str,
+    style: super::style::Resolved,
+    lh: f32,
+    previews: &[(u32, String)],
+) -> PText {
     let chips = user_chips(body, previews);
     if chips.is_empty() {
         return prepare_plain(ctx, body, style, lh, ColorRole::Text, WhiteSpace::PreWrap);
@@ -766,30 +987,37 @@ fn prepare_user_text(ctx: &mut Ctx, body: &str, style: super::style::Resolved, l
     let mut links = Vec::new();
     let mut at = 0;
     // Returns the index of the span pushed for a non-empty piece.
-    let mut push = |text: &mut String, piece: &str, pad: (f32, f32), atomic: bool, link: Option<u16>| {
-        if piece.is_empty() {
-            return None;
-        }
-        let start = text.len();
-        text.push_str(piece);
-        spans.push(onicode_text::Span {
-            range: start..text.len(),
-            style: style.id,
-            pad_start: pad.0,
-            pad_end: pad.1,
-            atomic,
-            inline_box: None,
-        });
-        paints.push(super::markdown::SpanPaint {
-            color: ColorRole::Text,
-            decoration: super::display::Decoration::None,
-            link,
-            chip: false,
-        });
-        Some(spans.len() - 1)
-    };
+    let mut push =
+        |text: &mut String, piece: &str, pad: (f32, f32), atomic: bool, link: Option<u16>| {
+            if piece.is_empty() {
+                return None;
+            }
+            let start = text.len();
+            text.push_str(piece);
+            spans.push(onicode_text::Span {
+                range: start..text.len(),
+                style: style.id,
+                pad_start: pad.0,
+                pad_end: pad.1,
+                atomic,
+                inline_box: None,
+            });
+            paints.push(super::markdown::SpanPaint {
+                color: ColorRole::Text,
+                decoration: super::display::Decoration::None,
+                link,
+                chip: false,
+            });
+            Some(spans.len() - 1)
+        };
     for chip in chips {
-        push(&mut text, &body[at..chip.range.start], (0.0, 0.0), false, None);
+        push(
+            &mut text,
+            &body[at..chip.range.start],
+            (0.0, 0.0),
+            false,
+            None,
+        );
         let link = chip.open.map(|url| {
             links.push(url);
             (links.len() - 1) as u16
@@ -824,7 +1052,15 @@ fn prepare_user_text(ctx: &mut Ctx, body: &str, style: super::style::Resolved, l
     }
 }
 
-fn chip_row(ctx: &mut Ctx, entry_id: &str, part_id: &str, icon: &'static str, color: ColorRole, text: &str, white_space: WhiteSpace) -> RowCore {
+fn chip_row(
+    ctx: &mut Ctx,
+    entry_id: &str,
+    part_id: &str,
+    icon: &'static str,
+    color: ColorRole,
+    text: &str,
+    white_space: WhiteSpace,
+) -> RowCore {
     let (size, lh) = TYPE.small;
     let style = ctx.typo.style(Family::Sans, Weight::Medium, false, size);
     let lh = ctx.typo.px(lh);
@@ -836,7 +1072,18 @@ fn chip_row(ctx: &mut Ctx, entry_id: &str, part_id: &str, icon: &'static str, co
         content: Content::Chip(Chip {
             icon,
             color,
-            text: prepare_plain(ctx, text, style, lh, if color == ColorRole::Danger { ColorRole::Danger } else { ColorRole::TextSecondary }, white_space),
+            text: prepare_plain(
+                ctx,
+                text,
+                style,
+                lh,
+                if color == ColorRole::Danger {
+                    ColorRole::Danger
+                } else {
+                    ColorRole::TextSecondary
+                },
+                white_space,
+            ),
         }),
         copy_text: text.to_owned(),
     }
@@ -846,14 +1093,22 @@ fn notice_row(ctx: &mut Ctx, entry_id: &str, part_id: &str, message: &str) -> Ro
     let (size, lh) = TYPE.small;
     let style = ctx.typo.style(Family::Sans, Weight::Medium, false, size);
     let lh = ctx.typo.px(lh);
-    let action = onicode_proto::run_errors::provider_problem(message).map(|problem| ("sign-in", problem.action_label()));
+    let action = onicode_proto::run_errors::provider_problem(message)
+        .map(|problem| ("sign-in", problem.action_label()));
     RowCore {
         key: row_key(&format!("{entry_id}#{part_id}")),
         version: next_version(),
         kind: RowKind::Notice,
         entry_id: Arc::from(entry_id),
         content: Content::Notice(Notice {
-            text: prepare_plain(ctx, message, style, lh, ColorRole::DangerSoft, WhiteSpace::Normal),
+            text: prepare_plain(
+                ctx,
+                message,
+                style,
+                lh,
+                ColorRole::DangerSoft,
+                WhiteSpace::Normal,
+            ),
             action,
         }),
         copy_text: message.to_owned(),
@@ -863,49 +1118,86 @@ fn notice_row(ctx: &mut Ctx, entry_id: &str, part_id: &str, message: &str) -> Ro
 /// An agent message's sender as this workspace lists it: its live title
 /// (the header's for an untitled or unlisted chat), its provider, and
 /// whether it is listed (and so opens).
-fn sender_chat(sender: &onicode_proto::agent_messages::AgentSender, workspace: Option<&WorkspaceSnapshot>) -> (String, Option<String>, bool) {
+fn sender_chat(
+    sender: &onicode_proto::agent_messages::AgentSender,
+    workspace: Option<&WorkspaceSnapshot>,
+) -> (String, Option<String>, bool) {
     let row = workspace.and_then(|ws| ws.session(&sender.chat_id));
     let title = row
         .filter(|row| row.has_title)
         .map(|row| row.title.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|title| !title.is_empty())
         .unwrap_or_else(|| sender.title.clone());
-    (title, row.and_then(|row| row.harness.clone()).filter(|h| !h.is_empty()), row.is_some())
+    (
+        title,
+        row.and_then(|row| row.harness.clone())
+            .filter(|h| !h.is_empty()),
+        row.is_some(),
+    )
 }
 
 /// The chat a message this agent sent went to, as this workspace lists it:
 /// its title (the call's own key when unlisted), its provider, and its id
 /// when listed (and so it opens).
-fn recipient_chat(key: &str, workspace: Option<&WorkspaceSnapshot>) -> (String, Option<String>, Option<String>) {
+fn recipient_chat(
+    key: &str,
+    workspace: Option<&WorkspaceSnapshot>,
+) -> (String, Option<String>, Option<String>) {
     let row = workspace.and_then(|ws| {
         let chats: Vec<(&str, Option<&str>)> = ws
             .sessions
             .values()
             .map(|row| (row.id.as_str(), row.has_title.then_some(row.title.as_str())))
             .collect();
-        ws.session(onicode_proto::agent_messages::resolve_chat_key(key, &chats)?)
+        ws.session(onicode_proto::agent_messages::resolve_chat_key(
+            key, &chats,
+        )?)
     });
     let Some(row) = row else {
-        return (key.split_whitespace().collect::<Vec<_>>().join(" "), None, None);
+        return (
+            key.split_whitespace().collect::<Vec<_>>().join(" "),
+            None,
+            None,
+        );
     };
     let title = Some(row.title.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|title| row.has_title && !title.is_empty())
         .unwrap_or_else(|| row.id.chars().take(8).collect());
-    (title, row.harness.clone().filter(|h| !h.is_empty()), Some(row.id.clone()))
+    (
+        title,
+        row.harness.clone().filter(|h| !h.is_empty()),
+        Some(row.id.clone()),
+    )
 }
 
 /// `Message from [mark] Chat`, the desktop's caption over an agent-sent
 /// bubble: the sending chat's provider mark (a chat glyph when unknown) and
 /// title, which opens that chat when the workspace lists it.
-fn sender_caption(ctx: &mut Ctx, sender: &onicode_proto::agent_messages::AgentSender, workspace: Option<&WorkspaceSnapshot>) -> PText {
+fn sender_caption(
+    ctx: &mut Ctx,
+    sender: &onicode_proto::agent_messages::AgentSender,
+    workspace: Option<&WorkspaceSnapshot>,
+) -> PText {
     let (title, harness, known) = sender_chat(sender, workspace);
-    chat_caption(ctx, "Message from", &title, harness.as_deref(), known.then_some(sender.chat_id.as_str()))
+    chat_caption(
+        ctx,
+        "Message from",
+        &title,
+        harness.as_deref(),
+        known.then_some(sender.chat_id.as_str()),
+    )
 }
 
 /// `{lead} [mark] Chat`: a muted one-line caption over a message between
 /// chats, the chat's provider mark (a chat glyph when unknown) beside its
 /// title, which opens chat `open`.
-fn chat_caption(ctx: &mut Ctx, lead: &str, title: &str, harness: Option<&str>, open: Option<&str>) -> PText {
+fn chat_caption(
+    ctx: &mut Ctx,
+    lead: &str,
+    title: &str,
+    harness: Option<&str>,
+    open: Option<&str>,
+) -> PText {
     let (size, lh) = TYPE.small;
     let regular = ctx.typo.style(Family::Sans, Weight::Regular, false, size);
     let medium = ctx.typo.style(Family::Sans, Weight::Medium, false, size);
@@ -916,25 +1208,50 @@ fn chat_caption(ctx: &mut Ctx, lead: &str, title: &str, harness: Option<&str>, o
     let text = format!("{lead} \u{2060} {title}");
     let split = lead.len() + 1;
     let spans = vec![
-        onicode_text::Span { range: 0..split, style: regular.id, pad_start: 0.0, pad_end: 0.0, atomic: false, inline_box: None },
-        onicode_text::Span { range: split..text.len(), style: medium.id, pad_start: mark + 4.0, pad_end: 0.0, atomic: false, inline_box: None },
+        onicode_text::Span {
+            range: 0..split,
+            style: regular.id,
+            pad_start: 0.0,
+            pad_end: 0.0,
+            atomic: false,
+            inline_box: None,
+        },
+        onicode_text::Span {
+            range: split..text.len(),
+            style: medium.id,
+            pad_start: mark + 4.0,
+            pad_end: 0.0,
+            atomic: false,
+            inline_box: None,
+        },
     ];
     let icon = harness.map_or_else(|| "bubble.left".to_owned(), |h| format!("brand:{h}"));
     // One link (one tap target, one accessibility element): the chat.
-    let paint = |link| super::markdown::SpanPaint { color: ColorRole::TextSecondary, decoration: super::display::Decoration::None, link, chip: false };
+    let paint = |link| super::markdown::SpanPaint {
+        color: ColorRole::TextSecondary,
+        decoration: super::display::Decoration::None,
+        link,
+        chip: false,
+    };
     let p = onicode_text::prepare(
         &ctx.typo.book,
         ctx.cache,
         &text,
         &spans,
-        &onicode_text::PrepareOptions { white_space: WhiteSpace::Pre, ..Default::default() },
+        &onicode_text::PrepareOptions {
+            white_space: WhiteSpace::Pre,
+            ..Default::default()
+        },
     );
     PText {
         p,
         lh,
         base: super::style::baseline(lh, regular),
         paints: vec![paint(None), paint(open.map(|_| 0))],
-        links: open.map(|id| format!("{OPEN_CHAT_SCHEME}://open?id={id}")).into_iter().collect(),
+        links: open
+            .map(|id| format!("{OPEN_CHAT_SCHEME}://open?id={id}"))
+            .into_iter()
+            .collect(),
         chip: (0.0, 0.0),
         badges: Vec::new(),
         marks: vec![(1, icon)],
@@ -945,7 +1262,13 @@ fn chat_caption(ctx: &mut Ctx, lead: &str, title: &str, harness: Option<&str>, o
 /// The provider-switch seam: "Switched from [logo] to [logo]", each
 /// provider by its logo alone (its name stays in the copied text). A seam
 /// written without harness ids names them instead.
-fn switch_row(ctx: &mut Ctx, entry_id: &str, part_id: &str, from: (&str, Option<&str>), to: (&str, Option<&str>)) -> RowCore {
+fn switch_row(
+    ctx: &mut Ctx,
+    entry_id: &str,
+    part_id: &str,
+    from: (&str, Option<&str>),
+    to: (&str, Option<&str>),
+) -> RowCore {
     let (size, lh) = TYPE.small;
     let style = ctx.typo.style(Family::Sans, Weight::Medium, false, size);
     let lh = ctx.typo.px(lh);
@@ -959,7 +1282,14 @@ fn switch_row(ctx: &mut Ctx, entry_id: &str, part_id: &str, from: (&str, Option<
         // padding the logo is drawn in.
         text.push_str(if harness.is_some() { "\u{2060}" } else { piece });
         let pad = if harness.is_some() { mark + 4.0 } else { 0.0 };
-        spans.push(onicode_text::Span { range: start..text.len(), style: style.id, pad_start: pad, pad_end: 0.0, atomic: harness.is_some(), inline_box: None });
+        spans.push(onicode_text::Span {
+            range: start..text.len(),
+            style: style.id,
+            pad_start: pad,
+            pad_end: 0.0,
+            atomic: harness.is_some(),
+            inline_box: None,
+        });
         if let Some(harness) = harness {
             marks.push((spans.len() - 1, format!("brand:{harness}")));
         }
@@ -970,14 +1300,23 @@ fn switch_row(ctx: &mut Ctx, entry_id: &str, part_id: &str, from: (&str, Option<
     push(&mut text, to.0, to.1.filter(|h| !h.is_empty()));
     let paints = spans
         .iter()
-        .map(|_| super::markdown::SpanPaint { color: ColorRole::TextSecondary, decoration: super::display::Decoration::None, link: None, chip: false })
+        .map(|_| super::markdown::SpanPaint {
+            color: ColorRole::TextSecondary,
+            decoration: super::display::Decoration::None,
+            link: None,
+            chip: false,
+        })
         .collect();
     let p = onicode_text::prepare(
         &ctx.typo.book,
         ctx.cache,
         &text,
         &spans,
-        &onicode_text::PrepareOptions { white_space: WhiteSpace::Normal, overflow_wrap: onicode_text::OverflowWrap::Anywhere, ..Default::default() },
+        &onicode_text::PrepareOptions {
+            white_space: WhiteSpace::Normal,
+            overflow_wrap: onicode_text::OverflowWrap::Anywhere,
+            ..Default::default()
+        },
     );
     let copy_text = format!("Switched from {} to {}", from.0, to.0);
     RowCore {
@@ -988,7 +1327,17 @@ fn switch_row(ctx: &mut Ctx, entry_id: &str, part_id: &str, from: (&str, Option<
         content: Content::Chip(Chip {
             icon: "arrow.left.arrow.right",
             color: ColorRole::TextTertiary,
-            text: PText { p, lh, base: super::style::baseline(lh, style), paints, links: Vec::new(), chip: (0.0, 0.0), badges: Vec::new(), marks, math: Vec::new() },
+            text: PText {
+                p,
+                lh,
+                base: super::style::baseline(lh, style),
+                paints,
+                links: Vec::new(),
+                chip: (0.0, 0.0),
+                badges: Vec::new(),
+                marks,
+                math: Vec::new(),
+            },
         }),
         copy_text,
     }
@@ -1026,12 +1375,21 @@ pub(crate) fn place_row(
             if let Some(out) = out.as_deref_mut() {
                 let s = px.v(16.0);
                 out.widget(
-                    WidgetKind::Icon { name: c.icon.into(), color: c.color },
+                    WidgetKind::Icon {
+                        name: c.icon.into(),
+                        color: c.color,
+                    },
                     (x, top + (c.text.lh - s) / 2.0 + px.v(4.0), s, s),
                     None,
                 );
             }
-            let th = place_text(&c.text, x + px.v(24.0), top + px.v(4.0), cw - px.v(24.0), out);
+            let th = place_text(
+                &c.text,
+                x + px.v(24.0),
+                top + px.v(4.0),
+                cw - px.v(24.0),
+                out,
+            );
             h.max(th + px.v(8.0))
         }
         Content::Caption { text, pending } => {
@@ -1056,7 +1414,9 @@ pub(crate) fn place_row(
             let icon = px.v(16.0);
             let gap = px.v(10.0);
             let text_x = x + pad + icon + gap;
-            let button = n.action.map(|_| (px.v(NOTICE_BUTTON_W), px.v(NOTICE_BUTTON)));
+            let button = n
+                .action
+                .map(|_| (px.v(NOTICE_BUTTON_W), px.v(NOTICE_BUTTON)));
             let trailing = button.map_or(0.0, |(w, _)| w + gap);
             let text_w = (cw - (text_x - x) - pad - trailing).max(px.v(40.0));
             // Measure first (no output), then paint the card under the text.
@@ -1067,7 +1427,10 @@ pub(crate) fn place_row(
             if let Some(out) = out.as_deref_mut() {
                 out.fill(x, top, cw, h, px.v(14.0), ColorRole::DangerWash);
                 out.widget(
-                    WidgetKind::Icon { name: "exclamationmark.triangle.fill".into(), color: ColorRole::DangerSoft },
+                    WidgetKind::Icon {
+                        name: "exclamationmark.triangle.fill".into(),
+                        color: ColorRole::DangerSoft,
+                    },
                     (x + pad, text_y + (n.text.lh - icon) / 2.0, icon, icon),
                     None,
                 );
@@ -1075,7 +1438,10 @@ pub(crate) fn place_row(
             place_text(&n.text, text_x, text_y, text_w, out.as_deref_mut());
             if let (Some((action, label)), Some((bw, bh)), Some(out)) = (n.action, button, out) {
                 out.widget(
-                    WidgetKind::Action { action: action.into(), label: label.into() },
+                    WidgetKind::Action {
+                        action: action.into(),
+                        label: label.into(),
+                    },
                     (x + cw - pad - bw, top + pad + (body - bh) / 2.0, bw, bh),
                     None,
                 );
@@ -1086,7 +1452,13 @@ pub(crate) fn place_row(
             let side = px.v(IMAGE).min(cw);
             if let Some(out) = out {
                 out.fill(x, top, side, side, px.v(14.0), ColorRole::ChipBackground);
-                out.widget(WidgetKind::Image { reference: reference.clone() }, (x, top, side, side), None);
+                out.widget(
+                    WidgetKind::Image {
+                        reference: reference.clone(),
+                    },
+                    (x, top, side, side),
+                    None,
+                );
             }
             side
         }
@@ -1094,11 +1466,20 @@ pub(crate) fn place_row(
             // Until its worker has measured it: the loading line.
             let h = visual.unwrap_or(px.v(VISUAL_LOADING));
             if let Some(out) = out {
-                out.widget(WidgetKind::Visual { id: slot.id.clone() }, (x, top, cw, h), None);
+                out.widget(
+                    WidgetKind::Visual {
+                        id: slot.id.clone(),
+                    },
+                    (x, top, cw, h),
+                    None,
+                );
             }
             h
         }
-        Content::Working { since_ms, streaming } => {
+        Content::Working {
+            since_ms,
+            streaming,
+        } => {
             let h = px.v(WORKING);
             if let Some(out) = out {
                 out.widget(
@@ -1120,7 +1501,15 @@ pub(crate) fn place_row(
 /// fades instead of cutting: a one-line slot keeps the line unwrapped and
 /// fades it out at the slot's right edge; a multi-line slot fades its last
 /// visible line downward.
-pub(crate) fn place_text_lines(t: &PText, x: f32, y: f32, width: f32, max_lines: usize, px: Px, out: &mut DisplayBuilder) -> f32 {
+pub(crate) fn place_text_lines(
+    t: &PText,
+    x: f32,
+    y: f32,
+    width: f32,
+    max_lines: usize,
+    px: Px,
+    out: &mut DisplayBuilder,
+) -> f32 {
     let runs_before = out.runs.len();
     if max_lines == 1 && t.p.max_content_width() > width {
         // One unwrapped line; runs starting past the slot are dropped, the
@@ -1145,7 +1534,13 @@ pub(crate) fn place_text_lines(t: &PText, x: f32, y: f32, width: f32, max_lines:
     let h = place_text(t, x, y, width, Some(out));
     let limit = y + max_lines as f32 * t.lh;
     if h > max_lines as f32 * t.lh {
-        out.runs.truncate(runs_before + out.runs[runs_before..].iter().take_while(|r: &&TextRun| r.baseline < limit).count());
+        out.runs.truncate(
+            runs_before
+                + out.runs[runs_before..]
+                    .iter()
+                    .take_while(|r: &&TextRun| r.baseline < limit)
+                    .count(),
+        );
         out.links.retain(|l| l.y < limit);
         out.fade(x, limit - t.lh, width, t.lh, FadeEdge::Bottom);
         return max_lines as f32 * t.lh;
@@ -1153,7 +1548,14 @@ pub(crate) fn place_text_lines(t: &PText, x: f32, y: f32, width: f32, max_lines:
     h
 }
 
-fn place_user(u: &UserBubble, px: Px, x: f32, y: f32, cw: f32, out: Option<&mut DisplayBuilder>) -> f32 {
+fn place_user(
+    u: &UserBubble,
+    px: Px,
+    x: f32,
+    y: f32,
+    cw: f32,
+    out: Option<&mut DisplayBuilder>,
+) -> f32 {
     use geom::*;
     let pad_x = px.v(BUBBLE_PAD_X);
     let pad_y = px.v(BUBBLE_PAD_Y);
@@ -1161,18 +1563,34 @@ fn place_user(u: &UserBubble, px: Px, x: f32, y: f32, cw: f32, out: Option<&mut 
     let text_w = (max_w - pad_x * 2.0).max(20.0);
     let stats = u.text.p.stats(text_w);
     let folds = stats.line_count > BUBBLE_FOLD_LINES;
-    let shown = if folds && !u.expanded { BUBBLE_FOLD_SHOW } else { stats.line_count };
+    let shown = if folds && !u.expanded {
+        BUBBLE_FOLD_SHOW
+    } else {
+        stats.line_count
+    };
     let text_h = shown as f32 * u.text.lh;
     let more_h = if folds { u.more.lh + px.v(4.0) } else { 0.0 };
-    let bubble_w = if folds { max_w } else { stats.max_line_width.ceil() + pad_x * 2.0 };
-    let bubble_h = if stats.line_count == 0 { 0.0 } else { text_h + more_h + pad_y * 2.0 };
+    let bubble_w = if folds {
+        max_w
+    } else {
+        stats.max_line_width.ceil() + pad_x * 2.0
+    };
+    let bubble_h = if stats.line_count == 0 {
+        0.0
+    } else {
+        text_h + more_h + pad_y * 2.0
+    };
     let side = px.v(THUMB);
     let gap = px.v(6.0);
     let pill_h = px.v(FILE_PILL);
     // Thumbnails row, then one pill per file, stacked above the bubble.
     let files_y = if u.images.is_empty() { 0.0 } else { side + gap };
     let attach_h = (files_y + u.files.len() as f32 * (pill_h + gap) - gap).max(0.0);
-    let thumbs_h = if attach_h > 0.0 { attach_h + if bubble_h > 0.0 { px.v(8.0) } else { 0.0 } } else { 0.0 };
+    let thumbs_h = if attach_h > 0.0 {
+        attach_h + if bubble_h > 0.0 { px.v(8.0) } else { 0.0 }
+    } else {
+        0.0
+    };
     let caption_h = u.sender.as_ref().map_or(0.0, |c| c.lh + px.v(CAPTION_GAP));
     let h = caption_h + thumbs_h + bubble_h;
     let Some(out) = out else { return h };
@@ -1188,7 +1606,13 @@ fn place_user(u: &UserBubble, px: Px, x: f32, y: f32, cw: f32, out: Option<&mut 
     let mut tx = x + cw - side;
     for img in u.images.iter().rev() {
         out.fill(tx, y, side, side, px.v(12.0), ColorRole::ChipBackground);
-        out.widget(WidgetKind::Image { reference: img.clone() }, (tx, y, side, side), None);
+        out.widget(
+            WidgetKind::Image {
+                reference: img.clone(),
+            },
+            (tx, y, side, side),
+            None,
+        );
         tx -= side + gap;
     }
     // Files: right-aligned icon + name pills; long names fade at the edge.
@@ -1201,20 +1625,48 @@ fn place_user(u: &UserBubble, px: Px, x: f32, y: f32, cw: f32, out: Option<&mut 
         let pw = chrome + name.p.max_content_width().ceil().min(name_w);
         let fx = x + cw - pw;
         out.fill(fx, fy, pw, pill_h, px.v(12.0), ColorRole::ChipBackground);
-        out.widget(WidgetKind::Icon { name: icon.clone(), color: ColorRole::TextSoft }, (fx + px.v(10.0), fy + (pill_h - is) / 2.0, is, is), None);
-        place_text_lines(name, fx + inset, fy + (pill_h - name.lh) / 2.0, name_w, 1, px, out);
+        out.widget(
+            WidgetKind::Icon {
+                name: icon.clone(),
+                color: ColorRole::TextSoft,
+            },
+            (fx + px.v(10.0), fy + (pill_h - is) / 2.0, is, is),
+            None,
+        );
+        place_text_lines(
+            name,
+            fx + inset,
+            fy + (pill_h - name.lh) / 2.0,
+            name_w,
+            1,
+            px,
+            out,
+        );
         fy += pill_h + gap;
     }
     if bubble_h > 0.0 {
         let bx = x + cw - bubble_w;
         let by = y + thumbs_h;
-        out.fill(bx, by, bubble_w, bubble_h, px.v(BUBBLE_RADIUS).min(bubble_h / 2.0), ColorRole::UserBubble);
+        out.fill(
+            bx,
+            by,
+            bubble_w,
+            bubble_h,
+            px.v(BUBBLE_RADIUS).min(bubble_h / 2.0),
+            ColorRole::UserBubble,
+        );
         place_text_lines(&u.text, bx + pad_x, by + pad_y, text_w, shown, px, out);
         if folds {
             let my = by + pad_y + text_h + px.v(4.0);
             let mw = u.more.p.max_content_width();
             place_text(&u.more, bx + pad_x, my, mw + 1.0, Some(out));
-            out.widget(WidgetKind::Disclosure { expanded: u.expanded }, (bx, my - px.v(8.0), bubble_w, u.more.lh + px.v(16.0)), None);
+            out.widget(
+                WidgetKind::Disclosure {
+                    expanded: u.expanded,
+                },
+                (bx, my - px.v(8.0), bubble_w, u.more.lh + px.v(16.0)),
+                None,
+            );
         }
         if u.pending {
             // Faded until the host echoes it; the painter animates alpha.
@@ -1233,25 +1685,43 @@ pub(crate) fn content_heap_bytes(content: &Content) -> usize {
     }
     // The side table itself, then each formula's items.
     fn math_bytes(t: &PText) -> usize {
-        t.math.capacity() * std::mem::size_of::<(usize, zatex::Formula)>() + t.math.iter().map(|(_, f)| formula_bytes(f)).sum::<usize>()
+        t.math.capacity() * std::mem::size_of::<(usize, zatex::Formula)>()
+            + t.math.iter().map(|(_, f)| formula_bytes(f)).sum::<usize>()
     }
     fn block(b: &PBlock) -> usize {
         match b {
             PBlock::Text(t) | PBlock::Heading(t) => t.p.heap_bytes() + math_bytes(t),
-            PBlock::Code(c) => c.body.p.heap_bytes() + c.source.len() + c.label.as_ref().map_or(0, |l| l.p.heap_bytes()),
+            PBlock::Code(c) => {
+                c.body.p.heap_bytes()
+                    + c.source.len()
+                    + c.label.as_ref().map_or(0, |l| l.p.heap_bytes())
+            }
             PBlock::Math(m) => formula_bytes(&m.formula),
             PBlock::Quote(children) => children.iter().map(block).sum(),
             PBlock::List { items, .. } => items
                 .iter()
-                .map(|i| i.children.iter().map(block).sum::<usize>() + i.marker.as_ref().map_or(0, |m| m.p.heap_bytes()))
+                .map(|i| {
+                    i.children.iter().map(block).sum::<usize>()
+                        + i.marker.as_ref().map_or(0, |m| m.p.heap_bytes())
+                })
                 .sum(),
-            PBlock::Table(t) => t.cells.iter().flatten().map(|c| c.p.heap_bytes() + math_bytes(c)).sum(),
+            PBlock::Table(t) => t
+                .cells
+                .iter()
+                .flatten()
+                .map(|c| c.p.heap_bytes() + math_bytes(c))
+                .sum(),
             PBlock::Rule => 0,
         }
     }
     match content {
         Content::Block(b) => block(b),
-        Content::User(u) => u.sender.as_ref().map_or(0, |c| c.p.heap_bytes()) + u.text.p.heap_bytes() + u.more.p.heap_bytes() + u.files.iter().map(|(_, n)| n.p.heap_bytes()).sum::<usize>(),
+        Content::User(u) => {
+            u.sender.as_ref().map_or(0, |c| c.p.heap_bytes())
+                + u.text.p.heap_bytes()
+                + u.more.p.heap_bytes()
+                + u.files.iter().map(|(_, n)| n.p.heap_bytes()).sum::<usize>()
+        }
         Content::Tools(t) => super::tools::heap_bytes(t),
         Content::Chip(c) => c.text.p.heap_bytes(),
         Content::Caption { text, .. } => text.p.heap_bytes(),

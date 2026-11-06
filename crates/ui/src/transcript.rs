@@ -1547,7 +1547,8 @@ pub fn rows_for_entry(
                 // A message to another chat reads as one line naming the
                 // recipient, one per recipient, out of the tool fold (compact
                 // mode folds it with the rest of the work).
-                if !compact && let Some(sent) = onicode_proto::agent_messages::outgoing_messages(call)
+                if !compact
+                    && let Some(sent) = onicode_proto::agent_messages::outgoing_messages(call)
                 {
                     flush_group(
                         &mut rows,
@@ -1965,8 +1966,9 @@ fn is_compact_work_part(ix: usize, part: &MessagePart, reply_start: Option<usize
 /// the smoothness measurement knob. Off by default; zero cost when off.
 fn frame_stats_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED
-        .get_or_init(|| std::env::var("ONICODE_FRAME_STATS").is_ok_and(|v| !v.is_empty() && v != "0"))
+    *ENABLED.get_or_init(|| {
+        std::env::var("ONICODE_FRAME_STATS").is_ok_and(|v| !v.is_empty() && v != "0")
+    })
 }
 
 const FRAME_STATS_WINDOW: usize = 240;
@@ -12146,7 +12148,9 @@ mod tests {
                         onicode_doc::TranscriptUpdate {
                             frame,
                             context_usage: None,
-                            replay_baseline: Some(onicode_doc::TranscriptBaseline::capture(&history)),
+                            replay_baseline: Some(onicode_doc::TranscriptBaseline::capture(
+                                &history,
+                            )),
                         },
                         cx,
                     )
@@ -15056,9 +15060,9 @@ mod tests {
                                 onicode_doc::TranscriptUpdate {
                                     frame: onicode_doc::TranscriptFrame::reset(&history),
                                     context_usage: None,
-                                    replay_baseline: Some(onicode_doc::TranscriptBaseline::capture(
-                                        &history,
-                                    )),
+                                    replay_baseline: Some(
+                                        onicode_doc::TranscriptBaseline::capture(&history),
+                                    ),
                                 },
                                 cx,
                             )
@@ -15086,9 +15090,9 @@ mod tests {
                                     context_usage: None,
                                     // The RPC must retain its opening cutoff when
                                     // publishing subsequent changed-part history.
-                                    replay_baseline: Some(onicode_doc::TranscriptBaseline::capture(
-                                        &cutoff,
-                                    )),
+                                    replay_baseline: Some(
+                                        onicode_doc::TranscriptBaseline::capture(&cutoff),
+                                    ),
                                 },
                                 cx,
                             )
@@ -15139,9 +15143,9 @@ mod tests {
                                 onicode_doc::TranscriptUpdate {
                                     frame: onicode_doc::TranscriptFrame::reset(&history),
                                     context_usage: None,
-                                    replay_baseline: Some(onicode_doc::TranscriptBaseline::capture(
-                                        &history,
-                                    )),
+                                    replay_baseline: Some(
+                                        onicode_doc::TranscriptBaseline::capture(&history),
+                                    ),
                                 },
                                 cx,
                             )
@@ -15201,9 +15205,9 @@ mod tests {
                                 onicode_doc::TranscriptUpdate {
                                     frame: onicode_doc::diff_transcript(&live, &next),
                                     context_usage: None,
-                                    replay_baseline: Some(onicode_doc::TranscriptBaseline::capture(
-                                        &next_history,
-                                    )),
+                                    replay_baseline: Some(
+                                        onicode_doc::TranscriptBaseline::capture(&next_history),
+                                    ),
                                 },
                                 cx,
                             )

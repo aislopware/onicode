@@ -6,11 +6,11 @@
 //! prints `READY` once the fold is open, keeps the window up for `hold-secs`
 //! (default 20) so the compositor can capture it, then quits.
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
-use serde_json::json;
-use std::{io::Write, sync::Arc, time::Duration};
 use onicode_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry, SubagentStatus};
 use onicode_proto::ToolCall;
 use onicode_ui::*;
+use serde_json::json;
+use std::{io::Write, sync::Arc, time::Duration};
 
 fn port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
@@ -128,7 +128,11 @@ fn main() -> anyhow::Result<()> {
     std::fs::create_dir(&data)?;
     // The viewport reads the IPC bearer from its own data dir.
     let ipc_port = port();
-    let _ipc = runtime.block_on(onicode_engine::serve_ipc(ipc_port, &data, core.rpc_service()))?;
+    let _ipc = runtime.block_on(onicode_engine::serve_ipc(
+        ipc_port,
+        &data,
+        core.rpc_service(),
+    ))?;
     let boot = EngineBootConfig {
         data_dir: data.clone(),
         ipc_port,

@@ -6,13 +6,13 @@ use std::sync::{Arc, Mutex};
 
 use base64::Engine as _;
 use futures::{SinkExt, StreamExt};
+use onicode_engine::{AuthState, Engine, EngineConfig, EngineInfo, HarnessId, WorkspaceScope};
+use onicode_rpc::{connect_ipc, connect_ws, memory_client, methods};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::tungstenite::handshake::server::{
     Request as WsRequest, Response as WsResponse,
 };
-use onicode_engine::{AuthState, Engine, EngineConfig, EngineInfo, HarnessId, WorkspaceScope};
-use onicode_rpc::{connect_ipc, connect_ws, memory_client, methods};
 
 fn config(
     data_dir: &std::path::Path,

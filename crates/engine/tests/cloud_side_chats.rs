@@ -11,9 +11,13 @@ use onicode_rpc::{memory_client, methods};
 #[tokio::test]
 async fn a_side_chat_of_a_cloud_chat_runs_on_its_machine_without_a_project() {
     let dir = tempfile::tempdir().unwrap();
-    let core =
-        EngineCore::assemble(dir.path(), Arc::new(default_registry()), HarnessId::Mock, None)
-            .unwrap();
+    let core = EngineCore::assemble(
+        dir.path(),
+        Arc::new(default_registry()),
+        HarnessId::Mock,
+        None,
+    )
+    .unwrap();
     core.workspace
         .create_chat_hosted(
             "main",
@@ -41,16 +45,23 @@ async fn a_side_chat_of_a_cloud_chat_runs_on_its_machine_without_a_project() {
         .unwrap();
     assert_eq!(created["deviceId"], "cloud-main");
     let side = core.workspace.chat("side").unwrap().unwrap();
-    assert_eq!(side.device_id, "cloud-main", "the side chat runs on its parent's machine");
+    assert_eq!(
+        side.device_id, "cloud-main",
+        "the side chat runs on its parent's machine"
+    );
     assert_eq!(side.parent_chat_id.as_deref(), Some("main"));
 }
 
 #[tokio::test]
 async fn deleting_a_cloud_chat_deletes_its_cloud_children() {
     let dir = tempfile::tempdir().unwrap();
-    let core =
-        EngineCore::assemble(dir.path(), Arc::new(default_registry()), HarnessId::Mock, None)
-            .unwrap();
+    let core = EngineCore::assemble(
+        dir.path(),
+        Arc::new(default_registry()),
+        HarnessId::Mock,
+        None,
+    )
+    .unwrap();
     let chat = |id: &str, host: &str, parent: Option<&str>| {
         core.workspace
             .create_chat_hosted(
@@ -78,7 +89,13 @@ async fn deleting_a_cloud_chat_deletes_its_cloud_children() {
         .await
         .unwrap();
     for gone in ["main", "delegate", "side"] {
-        assert!(core.workspace.chat(gone).unwrap().is_none(), "{gone} survived");
+        assert!(
+            core.workspace.chat(gone).unwrap().is_none(),
+            "{gone} survived"
+        );
     }
-    assert!(core.workspace.chat("other").unwrap().is_some(), "another main chat is untouched");
+    assert!(
+        core.workspace.chat("other").unwrap().is_some(),
+        "another main chat is untouched"
+    );
 }

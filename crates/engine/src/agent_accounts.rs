@@ -107,9 +107,9 @@ pub struct RelayedCallback {
 
 mod muse;
 mod oauth;
-mod registry_login;
 #[cfg(test)]
 mod provider_tests;
+mod registry_login;
 pub use muse::MuseRunEnvironment;
 mod stores;
 mod usage;
@@ -2410,7 +2410,7 @@ impl AgentAccounts {
                 }
                 Some(LoginFlow::Claude { .. }) => {
                     return Ok(AgentLoginPoll {
-                code: None,
+                        code: None,
                         status: AgentLoginStatus::Pending,
                         message: None,
                         url: None,
@@ -2525,7 +2525,7 @@ impl AgentAccounts {
                 .register(login_id, port, requester, FLOW_TTL);
         }
         Ok(AgentLoginPoll {
-                code: None,
+            code: None,
             status: AgentLoginStatus::Pending,
             message: message.map(|code| format!("Enter the code {code} when asked.")),
             url,
@@ -2562,14 +2562,14 @@ impl AgentAccounts {
                     });
                 }
                 Some(Ok(())) => AgentLoginPoll {
-                code: None,
+                    code: None,
                     status: AgentLoginStatus::Done,
                     message: None,
                     url: None,
                     callback_port: None,
                 },
                 Some(Err(message)) => AgentLoginPoll {
-                code: None,
+                    code: None,
                     status: AgentLoginStatus::Error,
                     message: Some(onicode_harness::redact::redact_output(message)),
                     url: None,
@@ -2672,7 +2672,10 @@ impl AgentAccounts {
                 let _ = std::fs::remove_dir_all(&home);
             }
             Some(LoginFlow::Task {
-                handle, home, harness, ..
+                handle,
+                home,
+                harness,
+                ..
             }) => {
                 tracing::info!(%login_id, ?harness, "agent sign-in cancelled");
                 handle.abort();

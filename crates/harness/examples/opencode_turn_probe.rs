@@ -11,9 +11,9 @@
 //!         "Reply with exactly: PONG"
 
 use futures::StreamExt;
-use tokio::sync::mpsc;
 use onicode_harness::{CancellationToken, Harness, OpencodeHarness, RunControls};
 use onicode_proto::{AgentEvent, RunRequest, SandboxLevel};
+use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() {

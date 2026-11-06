@@ -2,6 +2,8 @@
 //! This models delayed bytes, a temporary blackout and a connection reset;
 //! it does not claim to reproduce TCP packet loss or an airline network.
 
+use onicode_doc::RegistryDoc;
+use onicode_sync::{RegistryClient, registry::mock_server::MockRegistryServer};
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
@@ -10,8 +12,6 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, watch};
-use onicode_doc::RegistryDoc;
-use onicode_sync::{RegistryClient, registry::mock_server::MockRegistryServer};
 
 struct ImpairedProxy {
     url: String,

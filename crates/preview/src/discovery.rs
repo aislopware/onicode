@@ -2,6 +2,7 @@
 //! run or terminal that started it (see [`onicode_proto::ORIGIN_ENV`]). HTTP probes
 //! run only after that origin is established and commands performing
 //! authentication have been excluded.
+use onicode_proto::ORIGIN_ENV;
 use std::{
     collections::{HashMap, HashSet},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -9,7 +10,6 @@ use std::{
     time::Duration,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use onicode_proto::ORIGIN_ENV;
 
 #[derive(Debug, Clone)]
 pub struct Listener {
@@ -204,7 +204,10 @@ impl Origins {
                 Some(marker) => marker.clone(),
                 None => match read(pid) {
                     Some(environment) => {
-                        let marker = (origin_marker(&environment), has_variable(&environment, SIGN_IN_ENV));
+                        let marker = (
+                            origin_marker(&environment),
+                            has_variable(&environment, SIGN_IN_ENV),
+                        );
                         self.markers.insert(key, marker.clone());
                         marker
                     }
@@ -248,7 +251,9 @@ impl Origins {
 /// Whether a NUL-separated environment block sets `name`.
 fn has_variable(environment: &[u8], name: &str) -> bool {
     let prefix = format!("{name}=");
-    environment.split(|b| *b == 0).any(|entry| entry.starts_with(prefix.as_bytes()))
+    environment
+        .split(|b| *b == 0)
+        .any(|entry| entry.starts_with(prefix.as_bytes()))
 }
 
 /// The origin marker's value in a NUL-separated environment block.
@@ -829,10 +834,34 @@ mod tests {
         // A chat's engine (onicode-owned, chat:a) runs an agent's sign-in
         // (the marker on it); the agent's callback server is its child.
         let processes: HashMap<u32, Process> = [
-            (100, Process { parent: 1, started_at: 1 }),
-            (101, Process { parent: 100, started_at: 2 }),
-            (102, Process { parent: 101, started_at: 3 }),
-            (103, Process { parent: 100, started_at: 4 }),
+            (
+                100,
+                Process {
+                    parent: 1,
+                    started_at: 1,
+                },
+            ),
+            (
+                101,
+                Process {
+                    parent: 100,
+                    started_at: 2,
+                },
+            ),
+            (
+                102,
+                Process {
+                    parent: 101,
+                    started_at: 3,
+                },
+            ),
+            (
+                103,
+                Process {
+                    parent: 100,
+                    started_at: 4,
+                },
+            ),
         ]
         .into();
         let read = |pid: u32| {
@@ -845,10 +874,22 @@ mod tests {
         let mut origins = Origins::default();
         let mut listeners = vec![listener_of(102), listener_of(103)];
         origins.attribute(&mut listeners, &processes, read);
-        assert!(listeners[0].onicode_owned && listeners[0].signing_in, "the sign-in's callback");
-        assert!(listeners[1].onicode_owned && !listeners[1].signing_in, "a dev server beside it");
-        assert!(has_variable(&environment(&["A=1", "ONICODE_LOGIN_URL_FILE="]), SIGN_IN_ENV));
-        assert!(!has_variable(&environment(&["XONICODE_LOGIN_URL_FILE=1"]), SIGN_IN_ENV));
+        assert!(
+            listeners[0].onicode_owned && listeners[0].signing_in,
+            "the sign-in's callback"
+        );
+        assert!(
+            listeners[1].onicode_owned && !listeners[1].signing_in,
+            "a dev server beside it"
+        );
+        assert!(has_variable(
+            &environment(&["A=1", "ONICODE_LOGIN_URL_FILE="]),
+            SIGN_IN_ENV
+        ));
+        assert!(!has_variable(
+            &environment(&["XONICODE_LOGIN_URL_FILE=1"]),
+            SIGN_IN_ENV
+        ));
     }
     #[test]
     fn an_unreadable_environment_is_retried_not_remembered() {

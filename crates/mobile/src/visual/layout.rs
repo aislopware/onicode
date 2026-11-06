@@ -580,7 +580,14 @@ impl Layouter<'_, '_> {
             .collect()
     }
 
-    fn row(&mut self, stack: &onicode_visual::Stack, path: &str, x: f32, y: f32, width: f32) -> f32 {
+    fn row(
+        &mut self,
+        stack: &onicode_visual::Stack,
+        path: &str,
+        x: f32,
+        y: f32,
+        width: f32,
+    ) -> f32 {
         let n = stack.children.len();
         if n == 0 {
             return 0.0;

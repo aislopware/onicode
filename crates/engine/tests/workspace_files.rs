@@ -766,9 +766,11 @@ async fn workspace_mutations_validate_revision_and_publish_semantic_events() {
         loop {
             let frame: WorkspaceFileChanges =
                 serde_json::from_value(watch.recv().await.unwrap()).unwrap();
-            if frame.changes.iter().any(|c| {
-                c.operation_id.as_deref() == Some("create") && c.path == "src/new.rs"
-            }) {
+            if frame
+                .changes
+                .iter()
+                .any(|c| c.operation_id.as_deref() == Some("create") && c.path == "src/new.rs")
+            {
                 break;
             }
         }

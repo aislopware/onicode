@@ -25,6 +25,9 @@ use super::{
     rpc::{Client, Inbound, command_id},
 };
 use crate::{HarnessError, SteerMessage, TurnControl};
+use onicode_proto::{
+    AgentEvent, DoneStatus, HarnessId, RunRequest, UserInputAnswer, UserInputQuestion,
+};
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -35,9 +38,6 @@ use std::{
 use tokio::{
     sync::{mpsc, oneshot},
     task::{AbortHandle, JoinSet},
-};
-use onicode_proto::{
-    AgentEvent, DoneStatus, HarnessId, RunRequest, UserInputAnswer, UserInputQuestion,
 };
 
 pub(super) type Input =
@@ -1081,8 +1081,12 @@ mod session_mcp_tests {
             session_mcp_config(Some(&onicode), std::slice::from_ref(&extra), false),
             None
         );
-        let config = session_mcp_config(Some(&onicode), std::slice::from_ref(&extra), true).unwrap();
-        assert_eq!(config["mcpServers"]["onicode"]["command"], "/opt/onicode/onicode");
+        let config =
+            session_mcp_config(Some(&onicode), std::slice::from_ref(&extra), true).unwrap();
+        assert_eq!(
+            config["mcpServers"]["onicode"]["command"],
+            "/opt/onicode/onicode"
+        );
         assert_eq!(
             config["mcpServers"]["plugin-focus"],
             json!({

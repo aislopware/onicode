@@ -1,8 +1,8 @@
 //! Frame → [`AgentEvent`] normalization (init dedupe, subagent tagging, tool
 //! decoding, error-code mapping).
 
-use serde_json::Value;
 use onicode_proto::{AgentEvent, DoneStatus, HarnessId, TodoItem, TodoStatus, ToolCall};
+use serde_json::Value;
 
 use super::wire::{ContentBlock, Frame, MessageFrame, ResultFrame};
 

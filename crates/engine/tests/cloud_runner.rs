@@ -1240,7 +1240,10 @@ async fn list_github_repos_on_a_local_engine_asks_for_a_signed_in_account() {
     // Laptops list through the edge's vault (they hold no GitHub grant); a
     // local profile has no edge, so it answers with the sign-in hint and
     // never pretends GitHub is merely disconnected.
-    assert!(err.to_string().contains("signed-in Onicode account"), "{err}");
+    assert!(
+        err.to_string().contains("signed-in Onicode account"),
+        "{err}"
+    );
     assert!(!err.to_string().contains(GITHUB_NOT_CONNECTED), "{err}");
     core.shutdown().await;
 }

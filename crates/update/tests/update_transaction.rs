@@ -59,9 +59,14 @@ fn fake_engine() {
     // Before anything can move this executable (a commit does).
     let version = this_version();
     let options = BootOptions {
-        watchdog_args: ["--exact", "fake_watchdog", "--test-threads=1", "--nocapture"]
-            .map(Into::into)
-            .to_vec(),
+        watchdog_args: [
+            "--exact",
+            "fake_watchdog",
+            "--test-threads=1",
+            "--nocapture",
+        ]
+        .map(Into::into)
+        .to_vec(),
         engine_args: std::env::args_os().skip(1).collect(),
     };
     let booted = transaction::boot(&data, &options, || -> anyhow::Result<()> { Ok(()) });
@@ -152,10 +157,20 @@ impl Rig {
         let root = std::fs::canonicalize(dir.path()).unwrap();
         let data = root.join(".onicode");
         let app = data.join("app");
-        let rig = Self { _dir: dir, data, app, mac: None, windows: None };
+        let rig = Self {
+            _dir: dir,
+            data,
+            app,
+            mac: None,
+            windows: None,
+        };
         std::fs::create_dir_all(docs(&rig.data).parent().unwrap()).unwrap();
         std::fs::write(docs(&rig.data), ORIGINAL).unwrap();
-        std::fs::write(docs(&rig.data).with_file_name("docs.sqlite3-wal"), "the wal").unwrap();
+        std::fs::write(
+            docs(&rig.data).with_file_name("docs.sqlite3-wal"),
+            "the wal",
+        )
+        .unwrap();
         #[cfg(unix)]
         {
             rig.install("1.0.0", "ok");
@@ -210,7 +225,9 @@ impl Rig {
                 bundle: mac.bundle.clone(),
                 incoming: mac.incoming.clone(),
             },
-            None => Layout::Versioned { app_root: self.app.clone() },
+            None => Layout::Versioned {
+                app_root: self.app.clone(),
+            },
         }
     }
 
@@ -246,7 +263,9 @@ impl Rig {
     }
 
     fn service() -> RestartMode {
-        RestartMode::Service { unit: "no-such-unit-for-this-test.service".into() }
+        RestartMode::Service {
+            unit: "no-such-unit-for-this-test.service".into(),
+        }
     }
 
     /// One start of the service, as a service manager makes it: whatever
@@ -267,7 +286,10 @@ impl Rig {
             command.env("ONICODE_UPDATE_CRASH_AT", step);
         }
         let status = command.status().unwrap();
-        eprintln!("start ({crash_at:?}) ended {status:?}, phase {:?}", transaction::read(&self.data).map(|t| t.phase));
+        eprintln!(
+            "start ({crash_at:?}) ended {status:?}, phase {:?}",
+            transaction::read(&self.data).map(|t| t.phase)
+        );
         status
     }
 
@@ -280,7 +302,11 @@ impl Rig {
                 return;
             }
         }
-        panic!("never settled: {:?} ran {:?}", self.record().phase, self.last_ran());
+        panic!(
+            "never settled: {:?} ran {:?}",
+            self.record().phase,
+            self.last_ran()
+        );
     }
 
     fn record(&self) -> transaction::Transaction {
@@ -319,7 +345,10 @@ impl Rig {
         assert_eq!(self.current(), "2.0.0");
         assert_eq!(self.last_ran().as_deref(), Some("2.0.0"));
         assert_eq!(self.database(), MIGRATED);
-        assert!(!self.data.join("update-snapshots").exists(), "backup left behind");
+        assert!(
+            !self.data.join("update-snapshots").exists(),
+            "backup left behind"
+        );
         self.assert_no_bundles_left();
     }
 
@@ -358,7 +387,10 @@ impl Rig {
             std::fs::read_to_string(docs(&self.data).with_file_name("docs.sqlite3-wal")).unwrap(),
             "the wal"
         );
-        assert!(!self.data.join("update-snapshots").exists(), "backup left behind");
+        assert!(
+            !self.data.join("update-snapshots").exists(),
+            "backup left behind"
+        );
         self.assert_no_bundles_left();
     }
 }
@@ -383,7 +415,10 @@ mod versioned {
         let id = rig.request(Rig::service(), 60);
         rig.run_until_settled();
         rig.assert_updated(&id);
-        assert_eq!(rig.record().report().state, onicode_update::UpdateState::Updated);
+        assert_eq!(
+            rig.record().report().state,
+            onicode_update::UpdateState::Updated
+        );
     }
 
     #[test]
@@ -392,7 +427,10 @@ mod versioned {
         let id = rig.request(Rig::service(), 60);
         rig.run_until_settled();
         rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-        assert_eq!(rig.record().report().state, onicode_update::UpdateState::RolledBack);
+        assert_eq!(
+            rig.record().report().state,
+            onicode_update::UpdateState::RolledBack
+        );
     }
 
     /// A clean exit is still a failed trial, whatever a service manager makes of it.
@@ -410,7 +448,11 @@ mod versioned {
         let id = rig.request(Rig::service(), 60);
         let first = rig.start(None);
         assert_eq!(first.code(), Some(1));
-        assert_eq!(rig.database(), MIGRATED, "the trial should have got that far");
+        assert_eq!(
+            rig.database(),
+            MIGRATED,
+            "the trial should have got that far"
+        );
         rig.run_until_settled();
         rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
     }
@@ -437,8 +479,14 @@ mod versioned {
         let waited = started.elapsed();
         use std::os::unix::process::ExitStatusExt as _;
         assert_eq!(hung.signal(), Some(libc_sigkill()), "{hung:?}");
-        assert!(waited >= Duration::from_secs(2), "killed too soon: {waited:?}");
-        assert!(waited < Duration::from_secs(20), "killed too late: {waited:?}");
+        assert!(
+            waited >= Duration::from_secs(2),
+            "killed too soon: {waited:?}"
+        );
+        assert!(
+            waited < Duration::from_secs(20),
+            "killed too late: {waited:?}"
+        );
         rig.run_until_settled();
         rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
         let reason = rig.record().reason.unwrap();
@@ -456,13 +504,20 @@ mod versioned {
             let trial = scope.spawn(|| rig.start(None));
             let waited = Instant::now();
             while rig.record().phase != Phase::Trial || rig.database() != MIGRATED {
-                assert!(waited.elapsed() < Duration::from_secs(10), "the trial never started");
+                assert!(
+                    waited.elapsed() < Duration::from_secs(10),
+                    "the trial never started"
+                );
                 std::thread::sleep(Duration::from_millis(20));
             }
             let second = rig.start(None);
             assert_eq!(second.code(), Some(4), "{second:?}");
             assert_eq!(rig.record().phase, Phase::Trial);
-            assert_eq!(rig.database(), MIGRATED, "it must not have restored under the trial");
+            assert_eq!(
+                rig.database(),
+                MIGRATED,
+                "it must not have restored under the trial"
+            );
             let _ = trial.join();
         });
         rig.run_until_settled();
@@ -483,7 +538,10 @@ mod versioned {
             rig.start(None);
             let waited = Instant::now();
             while rig.last_ran().is_none() {
-                assert!(waited.elapsed() < Duration::from_secs(30), "{behavior}: nothing came back");
+                assert!(
+                    waited.elapsed() < Duration::from_secs(30),
+                    "{behavior}: nothing came back"
+                );
                 std::thread::sleep(Duration::from_millis(100));
             }
             rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
@@ -525,7 +583,12 @@ mod versioned {
     /// opens the databases, and the record ends up true.
     #[test]
     fn a_crash_at_any_step_of_going_back_still_gets_back() {
-        for step in ["restore-marked", "restore-partial", "restored", "rollback-recorded"] {
+        for step in [
+            "restore-marked",
+            "restore-partial",
+            "restored",
+            "rollback-recorded",
+        ] {
             let rig = Rig::new("migrate-then-exit");
             let id = rig.request(Rig::service(), 60);
             assert_eq!(rig.start(None).code(), Some(1));
@@ -563,7 +626,10 @@ mod versioned {
         std::fs::remove_dir_all(rig.app.join("2.0.0")).unwrap();
         rig.run_until_settled();
         rig.assert_back_on_the_old_version(&id, Phase::Failed);
-        assert_eq!(rig.record().report().state, onicode_update::UpdateState::Failed);
+        assert_eq!(
+            rig.record().report().state,
+            onicode_update::UpdateState::Failed
+        );
     }
 
     /// A binary that can't even be started: it never ran, so nothing was restored
@@ -596,9 +662,12 @@ mod versioned {
         assert_eq!(record.id, id);
         assert_eq!(record.phase, Phase::Failed);
         assert_eq!(rig.last_ran().as_deref(), Some("3.0.0"));
-        assert_eq!(rig.database(), MIGRATED, "it must not restore over another version's data");
+        assert_eq!(
+            rig.database(),
+            MIGRATED,
+            "it must not restore over another version's data"
+        );
     }
-
 }
 
 /// Windows: no replacing a process, so the old one starts the new exe and stays on
@@ -625,7 +694,10 @@ mod windows {
             rig.start(None);
             wait_for_ran(&rig, "1.0.0");
             rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-            assert!(!rig.windows.as_ref().unwrap().1.exists(), "{behavior}: new exe left behind");
+            assert!(
+                !rig.windows.as_ref().unwrap().1.exists(),
+                "{behavior}: new exe left behind"
+            );
         }
     }
 
@@ -636,7 +708,12 @@ mod windows {
         rig.start(None);
         wait_for_ran(&rig, "1.0.0");
         rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-        assert!(rig.record().reason.unwrap().contains("didn't finish starting"));
+        assert!(
+            rig.record()
+                .reason
+                .unwrap()
+                .contains("didn't finish starting")
+        );
     }
 
     fn wait_for_ran(rig: &Rig, version: &str) {
@@ -683,7 +760,10 @@ mod mac {
         rig.start(None);
         let waited = Instant::now();
         while rig.last_ran().is_none() {
-            assert!(waited.elapsed() < Duration::from_secs(30), "nothing came back");
+            assert!(
+                waited.elapsed() < Duration::from_secs(30),
+                "nothing came back"
+            );
             std::thread::sleep(Duration::from_millis(100));
         }
         rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
@@ -725,8 +805,16 @@ mod mac {
         std::fs::create_dir_all(retired.join("Contents/MacOS")).unwrap();
         let sleeper = retired.join("Contents/MacOS/sleeper");
         let source = root.join("sleep.c");
-        std::fs::write(&source, "#include <unistd.h>\nint main(void){sleep(30);return 0;}\n").unwrap();
-        let compiled = Command::new("cc").arg("-o").arg(&sleeper).arg(&source).status();
+        std::fs::write(
+            &source,
+            "#include <unistd.h>\nint main(void){sleep(30);return 0;}\n",
+        )
+        .unwrap();
+        let compiled = Command::new("cc")
+            .arg("-o")
+            .arg(&sleeper)
+            .arg(&source)
+            .status();
         if !compiled.is_ok_and(|status| status.success()) {
             eprintln!("no C compiler: skipping");
             return;

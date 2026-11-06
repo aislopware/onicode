@@ -2,13 +2,13 @@
 //! local mock web app is served on 127.0.0.1; the chat's browser tab opens
 //! it. Close the window to exit. No agent runs.
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
+use onicode_ui::*;
 use serde_json::json;
 use std::{
     io::{BufRead, BufReader, Write},
     net::TcpListener,
     sync::Arc,
 };
-use onicode_ui::*;
 
 const SITE: &str = include_str!("browser-annotation-site.html");
 
@@ -97,7 +97,11 @@ fn main() -> anyhow::Result<()> {
     let data = temp.path().join("ui");
     std::fs::create_dir(&data)?;
     // Publish the IPC bearer where the attaching viewport looks for it.
-    let _ipc = runtime.block_on(onicode_engine::serve_ipc(ipc_port, &data, core.rpc_service()))?;
+    let _ipc = runtime.block_on(onicode_engine::serve_ipc(
+        ipc_port,
+        &data,
+        core.rpc_service(),
+    ))?;
     let boot = EngineBootConfig {
         data_dir: data.clone(),
         ipc_port,

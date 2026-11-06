@@ -6,9 +6,9 @@ use crate::{
     dsp::Resampler,
     native::AudioIo,
 };
+use onicode_proto::voice::VoiceFrame;
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
-use onicode_proto::voice::VoiceFrame;
 
 pub struct AudioWorker {
     pub io: AudioIo,

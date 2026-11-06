@@ -10,9 +10,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-use sha2::{Digest, Sha256};
-use tokio::sync::{Notify, broadcast, mpsc};
-use tokio_util::sync::CancellationToken;
 use onicode_proto::{
     ListWorkspaceDirectoryRequest, ReadWorkspaceFileRequest, SearchWorkspaceContentRequest,
     SearchWorkspaceFilesRequest, WarmWorkspaceSearchRequest, WarmWorkspaceSearchResult,
@@ -25,6 +22,9 @@ use onicode_proto::{
     WriteWorkspaceFileRequest,
 };
 use onicode_rpc::RpcError;
+use sha2::{Digest, Sha256};
+use tokio::sync::{Notify, broadcast, mpsc};
+use tokio_util::sync::CancellationToken;
 
 use crate::workspace_search::{IndexState, NameKinds, normalize_name_query};
 use crate::{Repos, WorkspaceHost, WorkspaceSearch};
@@ -1539,8 +1539,8 @@ fn read_image_blocking(
     request: &onicode_proto::ReadWorkspaceImageRequest,
 ) -> Result<onicode_proto::WorkspaceImageChunk, WorkspaceFilesError> {
     use base64::Engine as _;
-    use std::io::Read;
     use onicode_proto::{MAX_WORKSPACE_IMAGE_BYTES, WORKSPACE_IMAGE_CHUNK_BYTES};
+    use std::io::Read;
     let mime = match relative
         .as_path()
         .extension()

@@ -1,10 +1,10 @@
 //! Real native Pi, isolated settings, and a local provider (no network/API spend).
 #![cfg(unix)]
 use futures::StreamExt;
-use std::{os::unix::fs::PermissionsExt, time::Duration};
-use tokio::sync::{mpsc, oneshot};
 use onicode_harness::{CancellationToken, Harness, PiHarness, RunControls, SteerMessage};
 use onicode_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel, UserInputAnswer};
+use std::{os::unix::fs::PermissionsExt, time::Duration};
+use tokio::sync::{mpsc, oneshot};
 
 fn isolated_pi() -> (tempfile::TempDir, PiHarness) {
     let dir = tempfile::tempdir().unwrap();

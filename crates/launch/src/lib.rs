@@ -215,7 +215,9 @@ mod tests {
     #[test]
     fn app_path_is_the_bundle_on_macos_layouts() {
         assert_eq!(
-            app_path(Path::new("/Applications/Onicode.app/Contents/MacOS/onicode")),
+            app_path(Path::new(
+                "/Applications/Onicode.app/Contents/MacOS/onicode"
+            )),
             PathBuf::from("/Applications/Onicode.app")
         );
         assert_eq!(

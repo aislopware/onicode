@@ -19,18 +19,18 @@ use gpui::{
     AppContext, Bounds, KeyDownEvent, Keystroke, PlatformInput, WindowBounds, WindowOptions, px,
     size,
 };
-use serde_json::json;
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
 use onicode_doc::{
     MessagePart, MessageRole, MessageStatus, SessionCommandPayload, SessionCommandStatus,
     SessionMessageEntry,
 };
 use onicode_proto::{UserInputAnswer, UserInputQuestion};
 use onicode_ui::*;
+use serde_json::json;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 const CHAT: &str = "questions";
 /// The question left open for the panel.
@@ -382,7 +382,11 @@ fn main() -> anyhow::Result<()> {
     let data = temp.path().join("ui");
     std::fs::create_dir(&data)?;
     // Publish the IPC bearer where the attaching viewport looks for it.
-    let _ipc = runtime.block_on(onicode_engine::serve_ipc(ipc_port, &data, core.rpc_service()))?;
+    let _ipc = runtime.block_on(onicode_engine::serve_ipc(
+        ipc_port,
+        &data,
+        core.rpc_service(),
+    ))?;
     let boot = EngineBootConfig {
         data_dir: data.clone(),
         ipc_port,

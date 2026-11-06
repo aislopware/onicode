@@ -46,7 +46,11 @@ pub struct Verified {
 }
 
 /// `manifest` (signed over `files`' hashes) and `files` as a package.
-pub fn pack(format: &str, manifest: &Value, files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<u8>, String> {
+pub fn pack(
+    format: &str,
+    manifest: &Value,
+    files: &BTreeMap<String, Vec<u8>>,
+) -> Result<Vec<u8>, String> {
     let package = json!({
         "format": format,
         "manifest": manifest,
@@ -69,7 +73,13 @@ pub fn read(path: &Path, words: &Words) -> Result<Vec<u8>, String> {
 
 /// The package `raw`, of `format`, signed in `prefix`'s domain, its paths
 /// each kept by `keep_path`: verified, or why not.
-pub fn parse(raw: Vec<u8>, format: &str, prefix: &str, keep_path: impl Fn(&str) -> bool, words: &Words) -> Result<Verified, String> {
+pub fn parse(
+    raw: Vec<u8>,
+    format: &str,
+    prefix: &str,
+    keep_path: impl Fn(&str) -> bool,
+    words: &Words,
+) -> Result<Verified, String> {
     if raw.len() as u64 > MAX_PACKAGE_BYTES {
         return Err(words.too_big.into());
     }
@@ -109,12 +119,21 @@ pub fn parse(raw: Vec<u8>, format: &str, prefix: &str, keep_path: impl Fn(&str) 
         SigCheck::BadSignature => return Err(words.bad_signature.into()),
     };
     let hash = signing::sha256_hex(&raw);
-    Ok(Verified { manifest, key, files: decoded, raw, hash })
+    Ok(Verified {
+        manifest,
+        key,
+        files: decoded,
+        raw,
+        hash,
+    })
 }
 
 /// Each file's sha256, as a signature covers them.
 pub fn hashes(files: &BTreeMap<String, Vec<u8>>) -> FileHashes {
-    files.iter().map(|(rel, bytes)| (rel.clone(), signing::sha256_hex(bytes))).collect()
+    files
+        .iter()
+        .map(|(rel, bytes)| (rel.clone(), signing::sha256_hex(bytes)))
+        .collect()
 }
 
 /// A plain relative path: `/`-separated parts, none empty, `.` or `..`, and
@@ -144,25 +163,81 @@ mod tests {
         let mut files = BTreeMap::new();
         files.insert("init.luau".to_string(), b"return 1".to_vec());
         let manifest = key.sign_manifest(&json!({ "id": "p", "name": "P" }), &hashes(&files));
-        (pack("onicode-plugin:v1", &manifest, &files).unwrap(), key.public())
+        (
+            pack("onicode-plugin:v1", &manifest, &files).unwrap(),
+            key.public(),
+        )
     }
 
     #[test]
     fn a_package_verifies_over_every_file_before_anything_is_kept() {
         let (raw, key) = signed();
-        let v = parse(raw.clone(), "onicode-plugin:v1", PAYLOAD_PREFIX, plain_path, &WORDS).unwrap();
-        assert_eq!((v.key, v.files.len(), v.hash), (key, 1, signing::sha256_hex(&raw)));
+        let v = parse(
+            raw.clone(),
+            "onicode-plugin:v1",
+            PAYLOAD_PREFIX,
+            plain_path,
+            &WORDS,
+        )
+        .unwrap();
+        assert_eq!(
+            (v.key, v.files.len(), v.hash),
+            (key, 1, signing::sha256_hex(&raw))
+        );
         // Another kind's format, a file changed, a path outside, unsigned.
-        assert_eq!(parse(raw.clone(), "onicode-template:v1", PAYLOAD_PREFIX, plain_path, &WORDS).unwrap_err(), "not a package");
+        assert_eq!(
+            parse(
+                raw.clone(),
+                "onicode-template:v1",
+                PAYLOAD_PREFIX,
+                plain_path,
+                &WORDS
+            )
+            .unwrap_err(),
+            "not a package"
+        );
         let mut value: Value = serde_json::from_slice(&raw).unwrap();
         value["files"]["init.luau"] = json!(B64.encode(b"return 2"));
-        assert_eq!(parse(serde_json::to_vec(&value).unwrap(), "onicode-plugin:v1", PAYLOAD_PREFIX, plain_path, &WORDS).unwrap_err(), "tampered");
+        assert_eq!(
+            parse(
+                serde_json::to_vec(&value).unwrap(),
+                "onicode-plugin:v1",
+                PAYLOAD_PREFIX,
+                plain_path,
+                &WORDS
+            )
+            .unwrap_err(),
+            "tampered"
+        );
         let mut value: Value = serde_json::from_slice(&raw).unwrap();
         value["files"]["../evil"] = json!(B64.encode(b"x"));
-        assert!(parse(serde_json::to_vec(&value).unwrap(), "onicode-plugin:v1", PAYLOAD_PREFIX, plain_path, &WORDS).unwrap_err().starts_with("won't write"));
+        assert!(
+            parse(
+                serde_json::to_vec(&value).unwrap(),
+                "onicode-plugin:v1",
+                PAYLOAD_PREFIX,
+                plain_path,
+                &WORDS
+            )
+            .unwrap_err()
+            .starts_with("won't write")
+        );
         let mut value: Value = serde_json::from_slice(&raw).unwrap();
-        value["manifest"].as_object_mut().unwrap().remove("signature");
-        assert_eq!(parse(serde_json::to_vec(&value).unwrap(), "onicode-plugin:v1", PAYLOAD_PREFIX, plain_path, &WORDS).unwrap_err(), "unsigned");
+        value["manifest"]
+            .as_object_mut()
+            .unwrap()
+            .remove("signature");
+        assert_eq!(
+            parse(
+                serde_json::to_vec(&value).unwrap(),
+                "onicode-plugin:v1",
+                PAYLOAD_PREFIX,
+                plain_path,
+                &WORDS
+            )
+            .unwrap_err(),
+            "unsigned"
+        );
     }
 
     /// R9: a signed package naming a drive-relative path (`D:x.cmd`, or
@@ -172,21 +247,43 @@ mod tests {
     #[test]
     fn a_package_path_that_escapes_on_windows_is_refused() {
         let (key, _) = SigningKey::generate().unwrap();
-        for bad in ["D:x.cmd", "C:../Roaming/Microsoft/Windows/Start Menu/Programs/Startup/x.cmd", "ui/NUL.luau", "init.luau.", "a:stream"] {
+        for bad in [
+            "D:x.cmd",
+            "C:../Roaming/Microsoft/Windows/Start Menu/Programs/Startup/x.cmd",
+            "ui/NUL.luau",
+            "init.luau.",
+            "a:stream",
+        ] {
             let mut files = BTreeMap::new();
             files.insert("init.luau".to_string(), b"return 1".to_vec());
             files.insert(bad.to_string(), b"evil".to_vec());
             let manifest = key.sign_manifest(&json!({ "id": "p", "name": "P" }), &hashes(&files));
             let raw = pack("onicode-plugin:v1", &manifest, &files).unwrap();
             let refused = parse(raw, "onicode-plugin:v1", PAYLOAD_PREFIX, plain_path, &WORDS);
-            assert!(refused.is_err_and(|e| e.starts_with("won't write")), "{bad}");
+            assert!(
+                refused.is_err_and(|e| e.starts_with("won't write")),
+                "{bad}"
+            );
         }
     }
 
     #[test]
     fn plain_paths_only() {
         assert!(plain_path("init.luau") && plain_path("ui/badge.luau"));
-        for bad in ["", "/etc/x", "../x", "a/../b", ".git/config", "a//b", "a\\b", "D:x.cmd", "CON", "com1.luau", "a. ", "x."] {
+        for bad in [
+            "",
+            "/etc/x",
+            "../x",
+            "a/../b",
+            ".git/config",
+            "a//b",
+            "a\\b",
+            "D:x.cmd",
+            "CON",
+            "com1.luau",
+            "a. ",
+            "x.",
+        ] {
             assert!(!plain_path(bad), "{bad}");
         }
     }

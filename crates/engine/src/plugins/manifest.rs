@@ -98,7 +98,9 @@ pub fn change_target_problem(target: &str) -> Option<String> {
         return refuse("a selector is one short line");
     }
     if target.trim_start().starts_with('@') {
-        return refuse("\"ui.change\" names parts of the screen, not modules (that's \"ui.replace\")");
+        return refuse(
+            "\"ui.change\" names parts of the screen, not modules (that's \"ui.replace\")",
+        );
     }
     for piece in target.split(">>") {
         let mut rest = piece.trim();
@@ -126,8 +128,13 @@ pub fn change_target_problem(target: &str) -> Option<String> {
                 .map_or(rest.len(), |at| at + prefix);
             let name = &rest[prefix..name_end];
             rest = rest[name_end..].trim_start();
-            if name.is_empty() || name.contains(['@', '*', '[', ']', '~', '"', '#']) || name == "row" {
-                return refuse("it isn't a selector (#id, .class, hook:name, role:name or \"name\")");
+            if name.is_empty()
+                || name.contains(['@', '*', '[', ']', '~', '"', '#'])
+                || name == "row"
+            {
+                return refuse(
+                    "it isn't a selector (#id, .class, hook:name, role:name or \"name\")",
+                );
             }
             if class && name.starts_with("plugin-") {
                 return refuse("plugins' tabs, pages and badges are their own and Onicode's");
@@ -392,7 +399,9 @@ impl Manifest {
                 })
             }
             Some(_) => {
-                problems.push("Its \"network\" must be an object (\"hosts\": [\"api.example.com\"])".into());
+                problems.push(
+                    "Its \"network\" must be an object (\"hosts\": [\"api.example.com\"])".into(),
+                );
                 Vec::new()
             }
         };
@@ -452,14 +461,18 @@ impl Manifest {
             return Some("It asks for \"commands\" but names no program to run".into());
         }
         if let Some(bad) = self.commands.iter().find(|c| !valid_command(c)) {
-            return Some(format!("\"{bad}\" isn't a program's name: name it as it's found on the PATH"));
+            return Some(format!(
+                "\"{bad}\" isn't a program's name: name it as it's found on the PATH"
+            ));
         }
         match &self.service {
             Some(_) if !asks("service") => {
                 return Some("It has a service but doesn't ask for \"service\"".into());
             }
             None if asks("service") => {
-                return Some("It asks for \"service\" but has none (\"service\": \"service.luau\")".into());
+                return Some(
+                    "It asks for \"service\" but has none (\"service\": \"service.luau\")".into(),
+                );
             }
             Some(path) if !valid_service_path(path) => {
                 return Some(format!(
@@ -544,12 +557,37 @@ mod tests {
             }
             m
         };
-        let ok = Manifest::from_value(with(serde_json::json!(["commands"]), serde_json::json!(["gh", "git"]))).unwrap();
-        assert_eq!((ok.problem(), ok.commands.clone()), (None, vec!["gh".to_string(), "git".to_string()]));
-        assert!(problem(with(serde_json::json!([]), serde_json::json!(["gh"]))).unwrap().contains("doesn't ask for \"commands\""));
-        assert!(problem(with(serde_json::json!(["commands"]), serde_json::Value::Null)).unwrap().contains("names no program"));
+        let ok = Manifest::from_value(with(
+            serde_json::json!(["commands"]),
+            serde_json::json!(["gh", "git"]),
+        ))
+        .unwrap();
+        assert_eq!(
+            (ok.problem(), ok.commands.clone()),
+            (None, vec!["gh".to_string(), "git".to_string()])
+        );
+        assert!(
+            problem(with(serde_json::json!([]), serde_json::json!(["gh"])))
+                .unwrap()
+                .contains("doesn't ask for \"commands\"")
+        );
+        assert!(
+            problem(with(
+                serde_json::json!(["commands"]),
+                serde_json::Value::Null
+            ))
+            .unwrap()
+            .contains("names no program")
+        );
         for bad in ["/usr/bin/gh", "../gh", "gh git", "", "-rf"] {
-            assert!(problem(with(serde_json::json!(["commands"]), serde_json::json!([bad]))).is_some(), "{bad}");
+            assert!(
+                problem(with(
+                    serde_json::json!(["commands"]),
+                    serde_json::json!([bad])
+                ))
+                .is_some(),
+                "{bad}"
+            );
         }
     }
 
@@ -662,6 +700,9 @@ mod tests {
         // R29: `<plugin>__<tool>` names one plugin's one tool. Before, plugin
         // `a--b`'s tool `c` and plugin `a`'s tool `b__c` were both `a__b__c`.
         assert!(!valid_tool_name("b__c"));
-        assert_ne!(crate::plugins::mcp_name("a--b", "c"), crate::plugins::mcp_name("a", "b_c"));
+        assert_ne!(
+            crate::plugins::mcp_name("a--b", "c"),
+            crate::plugins::mcp_name("a", "b_c")
+        );
     }
 }

@@ -39,13 +39,13 @@ fn resource_limit_child() {
 #[cfg(unix)]
 async fn stress() {
     use futures::{SinkExt, StreamExt};
-    use std::{sync::Arc, time::Duration};
     use onicode_engine::{DocHost, DocHostConfig, EdgeConfig};
     use onicode_proto::HarnessId;
     use onicode_sync::{
         DocsStore,
         chat_frames::{decode, encode, frame_type},
     };
+    use std::{sync::Arc, time::Duration};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (disconnect, _) = tokio::sync::watch::channel(0u64);

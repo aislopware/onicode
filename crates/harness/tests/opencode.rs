@@ -10,9 +10,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::StreamExt;
-use serde_json::{Value, json};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::{broadcast, mpsc, oneshot};
 use onicode_harness::{
     CancellationToken, Harness, HarnessError, OpencodeHarness, RunControls, SteerMessage,
 };
@@ -20,6 +17,9 @@ use onicode_proto::{
     AccessMode, AgentEvent, DoneStatus, ReasoningLevel, RunRequest, SandboxLevel, ToolCall,
     UserInputAnswer,
 };
+use serde_json::{Value, json};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::{broadcast, mpsc, oneshot};
 
 // ---------------------------------------------------------------------------
 // Fake server

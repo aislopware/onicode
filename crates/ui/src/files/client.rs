@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde::{Serialize, de::DeserializeOwned};
-use serde_json::Value;
-use tokio::sync::mpsc;
 use onicode_proto::{
     ListWorkspaceDirectoryRequest, ReadWorkspaceFileRequest, SearchWorkspaceContentRequest,
     SearchWorkspaceFilesRequest, WarmWorkspaceSearchRequest, WarmWorkspaceSearchResult,
@@ -12,6 +9,9 @@ use onicode_proto::{
     WriteWorkspaceFileRequest,
 };
 use onicode_rpc::{RpcError, methods};
+use serde::{Serialize, de::DeserializeOwned};
+use serde_json::Value;
+use tokio::sync::mpsc;
 
 use crate::state::{AppState, EngineHandle};
 

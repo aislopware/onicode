@@ -300,11 +300,11 @@ fn error_response(id: Value, code: i64, message: &str) -> Value {
 mod tests {
     use super::*;
 
-    use crate::onicode::{Origin, Onicode};
+    use crate::onicode::{Onicode, Origin};
     use async_trait::async_trait;
     use futures::StreamExt;
-    use std::time::Duration;
     use onicode_rpc::{RpcError, RpcReply, RpcService, memory_client, methods};
+    use std::time::Duration;
 
     /// An engine whose plugin tools go from one to two, then stay.
     struct Watching;

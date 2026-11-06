@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use unicode_segmentation::UnicodeSegmentation;
 use onicode_text::*;
+use unicode_segmentation::UnicodeSegmentation;
 
 pub fn font_bytes(name: &str) -> Vec<u8> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

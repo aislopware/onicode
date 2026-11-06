@@ -1,7 +1,7 @@
 use super::{Process, normalize::string};
 use crate::HarnessError;
-use serde_json::{Value, json};
 use onicode_proto::{Model, ModelOption, ModelOptionChoice, ReasoningLevel, SlashCommand};
+use serde_json::{Value, json};
 
 pub(super) fn levels(data: &Value) -> Vec<ReasoningLevel> {
     data["levels"]

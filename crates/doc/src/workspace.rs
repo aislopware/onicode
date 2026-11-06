@@ -297,7 +297,11 @@ impl WorkspaceDoc {
         set_opt_str(&row, "parentChatId", chat.parent_chat_id.as_deref())?;
         set_opt_ms(&row, "lastSeenAt", chat.last_seen_at)?;
         set_opt_str(&row, "parentChatId", chat.parent_chat_id.as_deref())?;
-        set_opt_str(&row, "childKind", chat.child_kind.map(onicode_proto::ChildKind::as_str))?;
+        set_opt_str(
+            &row,
+            "childKind",
+            chat.child_kind.map(onicode_proto::ChildKind::as_str),
+        )?;
         self.doc.commit();
         Ok(())
     }

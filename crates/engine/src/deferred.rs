@@ -18,10 +18,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::sync::{Mutex, OnceCell, watch};
-use tokio::task::JoinHandle;
 use onicode_proto::{EngineInfo, WorkspaceScope};
 use onicode_rpc::{RpcError, RpcReply, RpcService, methods};
+use tokio::sync::{Mutex, OnceCell, watch};
+use tokio::task::JoinHandle;
 
 use crate::rpc::AuthRpc;
 use crate::{Auth, Engine, EngineConfig, EngineProfile, EngineRuntime, InstanceLock};
@@ -290,9 +290,12 @@ mod tests {
             methods::DESCRIBE_APP,
             methods::CHECK_PLUGIN_UPDATES,
         ] {
-            let answered = tokio::time::timeout(Duration::from_secs(1), rpc.handle(method, serde_json::json!({})))
-                .await
-                .unwrap_or_else(|_| panic!("{method} hung during setup"));
+            let answered = tokio::time::timeout(
+                Duration::from_secs(1),
+                rpc.handle(method, serde_json::json!({})),
+            )
+            .await
+            .unwrap_or_else(|_| panic!("{method} hung during setup"));
             assert!(
                 matches!(&answered, Err(RpcError::Capability(code)) if code == SETUP_INCOMPLETE),
                 "{method}: {:?}",
@@ -300,19 +303,38 @@ mod tests {
             );
         }
         // Identity still answers; everything else waits, unanswered, as before.
-        assert!(rpc.handle(methods::ENGINE_INFO, serde_json::json!({})).await.is_ok());
-        for method in [methods::WATCH_CHATS, methods::LIST_HARNESSES, methods::MUTATE, methods::QUEUE_MESSAGE] {
-            let waiting = tokio::time::timeout(Duration::from_millis(100), rpc.handle(method, serde_json::json!({}))).await;
+        assert!(
+            rpc.handle(methods::ENGINE_INFO, serde_json::json!({}))
+                .await
+                .is_ok()
+        );
+        for method in [
+            methods::WATCH_CHATS,
+            methods::LIST_HARNESSES,
+            methods::MUTATE,
+            methods::QUEUE_MESSAGE,
+        ] {
+            let waiting = tokio::time::timeout(
+                Duration::from_millis(100),
+                rpc.handle(method, serde_json::json!({})),
+            )
+            .await;
             assert!(waiting.is_err(), "{method} waits for the workspace");
         }
 
         // Set up and assembling: calls wait (briefly) for it, as before.
         state_tx.send_replace(DeferredState::Waiting);
-        let waiting = tokio::time::timeout(Duration::from_millis(100), rpc.handle(methods::LIST_PLUGINS, serde_json::json!({}))).await;
+        let waiting = tokio::time::timeout(
+            Duration::from_millis(100),
+            rpc.handle(methods::LIST_PLUGINS, serde_json::json!({})),
+        )
+        .await;
         assert!(waiting.is_err(), "assembling: waits rather than refusing");
         // And a failed assembly still answers its reason.
         state_tx.send_replace(DeferredState::Failed("boom".into()));
-        let failed = rpc.handle(methods::LIST_PLUGINS, serde_json::json!({})).await;
+        let failed = rpc
+            .handle(methods::LIST_PLUGINS, serde_json::json!({}))
+            .await;
         assert!(matches!(failed, Err(RpcError::Failed(m)) if m == "boom"));
     }
 }

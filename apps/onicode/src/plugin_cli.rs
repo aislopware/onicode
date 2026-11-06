@@ -2,9 +2,9 @@
 //! Onicode (the same local connection `onicode mcp` uses). `onicode template …`
 //! does the same for templates (whole replacements of Onicode's interface).
 
-use serde_json::{Value, json};
 use onicode_cli::{PluginCommand, TemplateCommand};
 use onicode_rpc::methods;
+use serde_json::{Value, json};
 
 async fn connect(
     ipc_port: u16,
@@ -13,7 +13,9 @@ async fn connect(
     onicode_rpc::connect_ipc(ipc_port, Some(data_dir))
         .await
         .map_err(|_| {
-            anyhow::anyhow!("Onicode isn't running here. Open it, or start it with `onicode headless`.")
+            anyhow::anyhow!(
+                "Onicode isn't running here. Open it, or start it with `onicode headless`."
+            )
         })
 }
 
@@ -75,7 +77,10 @@ pub async fn run_template(
                 str_of(&reply, "dir"),
                 if files == 1 { "" } else { "s" }
             );
-            println!("Use it with `onicode template use {}`.", str_of(&reply, "id"));
+            println!(
+                "Use it with `onicode template use {}`.",
+                str_of(&reply, "id")
+            );
         }
         TemplateCommand::Status { id } => {
             let reply = call(&client, methods::TEMPLATE_STATUS, json!({ "id": id })).await?;

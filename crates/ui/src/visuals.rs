@@ -83,7 +83,10 @@ struct Local {
 #[derive(Default)]
 struct ShaderCache {
     /// The newest frame and the uniforms it was drawn with.
-    shown: Option<(onicode_visual::shader::ShaderUniforms, Arc<gpui::RenderImage>)>,
+    shown: Option<(
+        onicode_visual::shader::ShaderUniforms,
+        Arc<gpui::RenderImage>,
+    )>,
     /// Frames started, and the wall time the last one was started at.
     frame: u32,
     last_time: f64,

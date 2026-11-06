@@ -6,9 +6,9 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
-use tokio_util::sync::CancellationToken;
 use onicode_doc::RegistryDoc;
 use onicode_proto::{Chat, ChatConfig, SidebarPinChange, SidebarSectionChange};
+use tokio_util::sync::CancellationToken;
 
 use crate::attachments::{self, AttachmentCache};
 use crate::auth::TokenProvider;
@@ -819,7 +819,10 @@ impl Client {
             .chat(parent_id)
             .ok_or_else(|| ClientError::NotFound(parent_id.to_owned()))?;
         // One level deep: a side chat's own side chat hangs off the root.
-        let root = parent.parent_chat_id.clone().unwrap_or_else(|| parent.id.clone());
+        let root = parent
+            .parent_chat_id
+            .clone()
+            .unwrap_or_else(|| parent.id.clone());
         let mut chat = parent;
         chat.id = crate::new_id();
         chat.parent_chat_id = Some(root);
@@ -847,7 +850,10 @@ impl Client {
             .workspace
             .chat(source_id)
             .ok_or_else(|| ClientError::NotFound(source_id.to_owned()))?;
-        let parent = source.parent_chat_id.clone().unwrap_or_else(|| source.id.clone());
+        let parent = source
+            .parent_chat_id
+            .clone()
+            .unwrap_or_else(|| source.id.clone());
         let chat_id = crate::new_id();
         let reply = self
             .inner
@@ -955,7 +961,11 @@ impl Client {
             self.forget_local_session(child);
         }
         if on_cloud {
-            self.delete_cloud_machines(std::iter::once(chat_id.to_owned()).chain(children).collect());
+            self.delete_cloud_machines(
+                std::iter::once(chat_id.to_owned())
+                    .chain(children)
+                    .collect(),
+            );
         }
         self.forget_local_session(chat_id);
         Ok(())

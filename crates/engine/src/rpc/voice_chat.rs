@@ -16,7 +16,9 @@ fn current<'a>(chats: &'a [Chat], device: &str) -> Option<&'a Chat> {
     chats
         .iter()
         .filter(|c| {
-            onicode_proto::voice::is_orchestrator_chat(&c.id) && c.device_id == device && !c.archived
+            onicode_proto::voice::is_orchestrator_chat(&c.id)
+                && c.device_id == device
+                && !c.archived
         })
         .max_by_key(|c| c.created_at)
 }
@@ -178,8 +180,12 @@ mod tests {
         let row = core.workspace.chat(&first).unwrap().unwrap();
         assert_eq!(row.config, Some(config("b")));
 
-        core.workspace
-            .set_chat_harness_session(&first, "codex-thread", "/home/me", Some(HarnessId::Codex));
+        core.workspace.set_chat_harness_session(
+            &first,
+            "codex-thread",
+            "/home/me",
+            Some(HarnessId::Codex),
+        );
         let doc = core.doc_host.open(&first).unwrap();
         for i in 0..ROTATE_AFTER {
             doc.write_user_message(&format!("m{i}"), "hi", i as i64)

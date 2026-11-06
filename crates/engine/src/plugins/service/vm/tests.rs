@@ -36,7 +36,11 @@ fn folder(files: &[(&str, &str)]) -> tempfile::TempDir {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, text).unwrap();
     }
-    std::fs::write(dir.path().join("onicode.luau"), crate::plugins::scaffold::SDK).unwrap();
+    std::fs::write(
+        dir.path().join("onicode.luau"),
+        crate::plugins::scaffold::SDK,
+    )
+    .unwrap();
     dir
 }
 
@@ -59,10 +63,13 @@ async fn start(dir: &Path, limits: Limits) -> (Vm, Result<Described, String>, Ar
 }
 
 async fn ask(vm: &Vm, name: &str, args: Json) -> Result<Reply, &'static str> {
-    tokio::time::timeout(Duration::from_secs(10), vm.call(Kind::Method, name, args, json!({})))
-        .await
-        .map_err(|_| "timed out")?
-        .map_err(|_| "ended")
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        vm.call(Kind::Method, name, args, json!({})),
+    )
+    .await
+    .map_err(|_| "timed out")?
+    .map_err(|_| "ended")
 }
 
 const SERVICE: &str = r#"
@@ -123,22 +130,37 @@ async fn a_service_loads_serves_and_awaits() {
     assert_eq!(described.tools, vec!["count".to_string()]);
     assert_eq!(described.timers, vec![("#1".to_string(), 60.0)]);
 
-    let added = ask(&vm, "add", json!({ "a": 2, "b": 3 })).await.unwrap().unwrap();
+    let added = ask(&vm, "add", json!({ "a": 2, "b": 3 }))
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(added, json!({ "sum": 5, "device": "Laptop" }));
 
-    let ran = ask(&vm, "run", json!({ "word": "hi" })).await.unwrap().unwrap();
+    let ran = ask(&vm, "run", json!({ "word": "hi" }))
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(ran["kind"], "run");
     assert_eq!(ran["args"]["program"], "echo");
     assert_eq!(ran["args"]["args"], json!(["hi"]));
-    assert_eq!(ops.emitted.lock().unwrap().as_slice(), &[("ran".to_string(), json!({ "word": "hi" }))]);
+    assert_eq!(
+        ops.emitted.lock().unwrap().as_slice(),
+        &[("ran".to_string(), json!({ "word": "hi" }))]
+    );
 
     // A refused op fails the handler that awaited it, with the reason.
     match ask(&vm, "refused", json!({})).await.unwrap() {
         Err(Failure::Error(why)) => assert!(why.contains("not allowed"), "{why}"),
         other => panic!("{other:?}"),
     }
-    assert_eq!(ask(&vm, "nap", json!({})).await.unwrap().unwrap(), json!("napnap"));
-    assert_eq!(ask(&vm, "missing", json!({})).await.unwrap(), Err(Failure::Unknown));
+    assert_eq!(
+        ask(&vm, "nap", json!({})).await.unwrap().unwrap(),
+        json!("napnap")
+    );
+    assert_eq!(
+        ask(&vm, "missing", json!({})).await.unwrap(),
+        Err(Failure::Unknown)
+    );
     assert_eq!(
         ask(&vm, "boom", json!({})).await.unwrap(),
         Err(Failure::Error("it broke".into()))
@@ -160,7 +182,10 @@ async fn calls_overlap_while_one_awaits() {
     let (vm, described, _) = start(dir.path(), Limits::default()).await;
     described.unwrap();
     let slow = vm.call(Kind::Method, "nap", json!({}), json!({}));
-    let quick = ask(&vm, "add", json!({ "a": 1, "b": 1 })).await.unwrap().unwrap();
+    let quick = ask(&vm, "add", json!({ "a": 1, "b": 1 }))
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(quick["sum"], 2);
     assert_eq!(slow.await.unwrap().unwrap(), json!("napnap"));
 }
@@ -170,11 +195,17 @@ async fn the_store_survives_a_restart() {
     let dir = folder(&[("service.luau", SERVICE), ("lib/util.luau", UTIL)]);
     let (vm, described, _) = start(dir.path(), Limits::default()).await;
     described.unwrap();
-    assert_eq!(ask(&vm, "keep", json!({ "by": 2 })).await.unwrap().unwrap(), json!(2));
+    assert_eq!(
+        ask(&vm, "keep", json!({ "by": 2 })).await.unwrap().unwrap(),
+        json!(2)
+    );
     vm.stop();
     let (vm, described, _) = start(dir.path(), Limits::default()).await;
     described.unwrap();
-    assert_eq!(ask(&vm, "keep", json!({ "by": 3 })).await.unwrap().unwrap(), json!(5));
+    assert_eq!(
+        ask(&vm, "keep", json!({ "by": 3 })).await.unwrap().unwrap(),
+        json!(5)
+    );
 }
 
 #[tokio::test]
@@ -190,7 +221,13 @@ async fn a_runaway_loop_fails_its_call_and_the_vm_goes_on() {
         Err(Failure::Error(why)) => assert!(why.contains("time budget"), "{why}"),
         other => panic!("{other:?}"),
     }
-    assert_eq!(ask(&vm, "add", json!({ "a": 1, "b": 2 })).await.unwrap().unwrap()["sum"], 3);
+    assert_eq!(
+        ask(&vm, "add", json!({ "a": 1, "b": 2 }))
+            .await
+            .unwrap()
+            .unwrap()["sum"],
+        3
+    );
 }
 
 #[tokio::test]
@@ -240,11 +277,17 @@ local _ = "{}"
         "@self/x".into(),
         "./.hidden".into(),
     ] {
-        let tried = ask(&vm, "try", json!({ "path": path })).await.unwrap().unwrap();
+        let tried = ask(&vm, "try", json!({ "path": path }))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(tried["ok"], false, "{path}: {tried}");
     }
     let globals = ask(&vm, "globals", json!({})).await.unwrap().unwrap();
-    assert_eq!(globals, json!({ "io": true, "loadstring": true, "debug": true, "getfenv_g": false }));
+    assert_eq!(
+        globals,
+        json!({ "io": true, "loadstring": true, "debug": true, "getfenv_g": false })
+    );
 }
 
 #[tokio::test]
@@ -263,9 +306,15 @@ async fn a_broken_service_says_why_it_didnt_load() {
 
 #[test]
 fn paths_resolve_inside_the_plugin() {
-    assert_eq!(resolve("service.luau", "./onicode").as_deref(), Some("onicode.luau"));
+    assert_eq!(
+        resolve("service.luau", "./onicode").as_deref(),
+        Some("onicode.luau")
+    );
     assert_eq!(resolve("lib/a.luau", "./b").as_deref(), Some("lib/b.luau"));
-    assert_eq!(resolve("lib/a.luau", "../onicode").as_deref(), Some("onicode.luau"));
+    assert_eq!(
+        resolve("lib/a.luau", "../onicode").as_deref(),
+        Some("onicode.luau")
+    );
     assert_eq!(resolve("service.luau", "../x"), None);
     assert_eq!(resolve("service.luau", "x"), None);
     assert_eq!(resolve("service.luau", "/etc/x"), None);

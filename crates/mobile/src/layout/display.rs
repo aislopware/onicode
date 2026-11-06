@@ -244,7 +244,10 @@ pub enum WidgetKind {
     Image { reference: String },
     /// Working indicator at the tail of a live turn. The painter ticks the
     /// elapsed label itself so time never forces a relayout.
-    Working { since_ms: Option<i64>, streaming: bool },
+    Working {
+        since_ms: Option<i64>,
+        streaming: bool,
+    },
     /// A small activity spinner (running tools).
     Spinner,
     /// Tap target revealing the full text in `payload` (truncated tool lines).
@@ -258,7 +261,14 @@ pub enum WidgetKind {
     /// quadratic elbow (radius `bend`) at `row_mid` below the row top, then a
     /// branch to `branch_end`. The trunk continues through a row's full
     /// height (open details) into the next row.
-    ToolRail { trunk_x: f32, bend: f32, branch_end: f32, row_mid: f32, tops: Vec<f32>, heights: Vec<f32> },
+    ToolRail {
+        trunk_x: f32,
+        bend: f32,
+        branch_end: f32,
+        row_mid: f32,
+        tops: Vec<f32>,
+        heights: Vec<f32>,
+    },
     /// Tap target toggling one tool row's inline detail.
     ToolToggle { detail: u64, open: bool },
     /// Shimmer sweep over the active group's title (text drawn by the canvas
@@ -272,7 +282,12 @@ pub enum WidgetKind {
     Action { action: String, label: String },
     /// A subagent spawn's card: opens the child's transcript (`doc_id`;
     /// `None` while the host hasn't bound one yet).
-    Subagent { doc_id: Option<String>, title: String, running: bool, failed: bool },
+    Subagent {
+        doc_id: Option<String>,
+        title: String,
+        running: bool,
+        failed: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -365,10 +380,24 @@ impl DisplayBuilder {
     /// (1 = as laid out; less shrinks glyphs, offsets and rules uniformly
     /// about the origin); `start` is its placeholder's UTF-16 offset in the
     /// row text.
-    pub fn formula(&mut self, f: &zatex::Formula, x: f32, y: f32, scale: f32, color: ColorRole, start: u32) {
+    pub fn formula(
+        &mut self,
+        f: &zatex::Formula,
+        x: f32,
+        y: f32,
+        scale: f32,
+        color: ColorRole,
+        start: u32,
+    ) {
         for item in &f.items {
             match *item {
-                zatex::Item::Glyph { font, glyph, x: gx, y: gy, size } => self.glyphs.push(GlyphPrim {
+                zatex::Item::Glyph {
+                    font,
+                    glyph,
+                    x: gx,
+                    y: gy,
+                    size,
+                } => self.glyphs.push(GlyphPrim {
                     font,
                     glyph,
                     x: x + gx * scale,
@@ -378,9 +407,19 @@ impl DisplayBuilder {
                     scroller: self.scroller,
                     start,
                 }),
-                zatex::Item::Rule { x: rx, y: ry, width, height } => {
-                    self.formula_fill(x + rx * scale, y + ry * scale, width * scale, height * scale, color, start)
-                }
+                zatex::Item::Rule {
+                    x: rx,
+                    y: ry,
+                    width,
+                    height,
+                } => self.formula_fill(
+                    x + rx * scale,
+                    y + ry * scale,
+                    width * scale,
+                    height * scale,
+                    color,
+                    start,
+                ),
             }
         }
     }

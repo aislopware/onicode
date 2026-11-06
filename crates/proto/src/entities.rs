@@ -367,7 +367,10 @@ where
     D: serde::Deserializer<'de>,
 {
     let value = Option::<serde_json::Value>::deserialize(deserializer)?;
-    Ok(value.as_ref().and_then(serde_json::Value::as_str).and_then(ChildKind::parse))
+    Ok(value
+        .as_ref()
+        .and_then(serde_json::Value::as_str)
+        .and_then(ChildKind::parse))
 }
 
 impl Chat {
@@ -2368,24 +2371,57 @@ mod space_icon_tests {
     use super::SpaceIcon;
 
     fn icon(emoji: Option<&str>, image: Option<&str>, hue: Option<&str>) -> SpaceIcon {
-        SpaceIcon { emoji: emoji.map(Into::into), image: image.map(Into::into), hue: hue.map(Into::into) }
+        SpaceIcon {
+            emoji: emoji.map(Into::into),
+            image: image.map(Into::into),
+            hue: hue.map(Into::into),
+        }
     }
 
     #[test]
     fn a_space_icon_is_trimmed_checked_and_empty_is_none() {
-        assert_eq!(icon(Some(" 🚀 "), None, Some("violet")).normalized(), Ok(Some(icon(Some("🚀"), None, Some("violet")))));
+        assert_eq!(
+            icon(Some(" 🚀 "), None, Some("violet")).normalized(),
+            Ok(Some(icon(Some("🚀"), None, Some("violet"))))
+        );
         assert_eq!(icon(Some("  "), Some(""), None).normalized(), Ok(None));
-        assert_eq!(icon(None, Some("https://e.test/auth/avatars/a"), None).normalized(), Ok(Some(icon(None, Some("https://e.test/auth/avatars/a"), None))));
+        assert_eq!(
+            icon(None, Some("https://e.test/auth/avatars/a"), None).normalized(),
+            Ok(Some(icon(
+                None,
+                Some("https://e.test/auth/avatars/a"),
+                None
+            )))
+        );
         // A family with skin tones fits; a paragraph doesn't.
-        assert!(icon(Some("👩🏽\u{200d}👩🏽\u{200d}👧🏽"), None, None).normalized().is_ok());
-        assert_eq!(icon(Some(&"x".repeat(65)), None, None).normalized(), Err("emoji"));
+        assert!(
+            icon(Some("👩🏽\u{200d}👩🏽\u{200d}👧🏽"), None, None)
+                .normalized()
+                .is_ok()
+        );
+        assert_eq!(
+            icon(Some(&"x".repeat(65)), None, None).normalized(),
+            Err("emoji")
+        );
         assert_eq!(icon(Some("a\nb"), None, None).normalized(), Err("emoji"));
-        assert_eq!(icon(None, Some("http://e.test/a.png"), None).normalized(), Err("image"));
-        assert_eq!(icon(None, Some("file:///etc/passwd"), None).normalized(), Err("image"));
+        assert_eq!(
+            icon(None, Some("http://e.test/a.png"), None).normalized(),
+            Err("image")
+        );
+        assert_eq!(
+            icon(None, Some("file:///etc/passwd"), None).normalized(),
+            Err("image")
+        );
         assert_eq!(icon(None, None, Some("Violet")).normalized(), Err("hue"));
-        assert_eq!(icon(Some("🚀"), Some("https://e.test/a"), None).normalized(), Err("both"));
+        assert_eq!(
+            icon(Some("🚀"), Some("https://e.test/a"), None).normalized(),
+            Err("both")
+        );
         // A hue alone colours the default tile.
-        assert_eq!(icon(None, None, Some("amber")).normalized(), Ok(Some(icon(None, None, Some("amber")))));
+        assert_eq!(
+            icon(None, None, Some("amber")).normalized(),
+            Ok(Some(icon(None, None, Some("amber"))))
+        );
     }
 }
 
@@ -2407,16 +2443,30 @@ mod child_kind_tests {
 
     #[test]
     fn a_child_kind_round_trips_and_an_unknown_one_costs_only_itself() {
-        let chat: Chat = serde_json::from_value(row(serde_json::json!({ "childKind": "subagent" }))).unwrap();
+        let chat: Chat =
+            serde_json::from_value(row(serde_json::json!({ "childKind": "subagent" }))).unwrap();
         assert_eq!(chat.child_kind, Some(ChildKind::Subagent));
-        assert_eq!(serde_json::to_value(&chat).unwrap()["childKind"], "subagent");
-        let side: Chat = serde_json::from_value(row(serde_json::json!({ "childKind": "side" }))).unwrap();
+        assert_eq!(
+            serde_json::to_value(&chat).unwrap()["childKind"],
+            "subagent"
+        );
+        let side: Chat =
+            serde_json::from_value(row(serde_json::json!({ "childKind": "side" }))).unwrap();
         assert_eq!(side.child_kind, Some(ChildKind::Side));
         // A newer peer's kind, or none at all: the row stays, the kind is None.
-        for extra in [serde_json::json!({ "childKind": "orbit" }), serde_json::json!({ "childKind": 3 }), serde_json::json!({})] {
+        for extra in [
+            serde_json::json!({ "childKind": "orbit" }),
+            serde_json::json!({ "childKind": 3 }),
+            serde_json::json!({}),
+        ] {
             let chat: Chat = serde_json::from_value(row(extra)).unwrap();
             assert_eq!(chat.child_kind, None);
-            assert!(serde_json::to_value(&chat).unwrap().get("childKind").is_none());
+            assert!(
+                serde_json::to_value(&chat)
+                    .unwrap()
+                    .get("childKind")
+                    .is_none()
+            );
         }
     }
 }

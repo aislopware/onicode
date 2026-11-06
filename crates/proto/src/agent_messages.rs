@@ -19,7 +19,10 @@ const REPLY: &str = ". Reply to it with the Onicode `send_message` tool, chat ";
 pub fn agent_message(label: &str, chat_id: &str, text: &str) -> String {
     let label = clean_label(label);
     let chat_id = clean_label(chat_id);
-    format!("{PREFIX}{label}{REPLY}{chat_id}.]\n\n{}", quote_headers(text))
+    format!(
+        "{PREFIX}{label}{REPLY}{chat_id}.]\n\n{}",
+        quote_headers(text)
+    )
 }
 
 /// A label as a header may carry it: one line, no brackets, no reply phrase,
@@ -28,9 +31,20 @@ fn clean_label(label: &str) -> String {
     let flat: String = label
         .replace(REPLY.trim(), " ")
         .chars()
-        .map(|c| if c == '[' || c == ']' || c.is_control() { ' ' } else { c })
+        .map(|c| {
+            if c == '[' || c == ']' || c.is_control() {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect();
-    flat.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect()
+    flat.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(120)
+        .collect()
 }
 
 /// `text` with any routing header in it marked as quoted: it can't open a
@@ -101,14 +115,24 @@ pub struct OutgoingMessage {
 /// order. `None` for any other call, and for one whose arguments haven't
 /// named a recipient and a text yet; it then reads as an ordinary tool.
 pub fn outgoing_messages(call: &ToolCall) -> Option<Vec<OutgoingMessage>> {
-    let ToolCall::Mcp { server, tool, input } = call else {
+    let ToolCall::Mcp {
+        server,
+        tool,
+        input,
+    } = call
+    else {
         return None;
     };
     if server != "onicode" {
         return None;
     }
     let one = |args: &serde_json::Value| {
-        let field = |key| args.get(key)?.as_str().map(str::trim).filter(|v| !v.is_empty());
+        let field = |key| {
+            args.get(key)?
+                .as_str()
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+        };
         Some(OutgoingMessage {
             chat: field("chat")?.to_owned(),
             text: field("text")?.to_owned(),
@@ -140,7 +164,11 @@ pub fn resolve_chat_key<'a>(key: &str, chats: &[(&'a str, Option<&str>)]) -> Opt
         return Some(id);
     }
     let only = |mut found: Vec<&'a str>| (found.len() == 1).then(|| found.remove(0));
-    let by_prefix: Vec<&'a str> = chats.iter().map(|(id, _)| *id).filter(|id| id.starts_with(key)).collect();
+    let by_prefix: Vec<&'a str> = chats
+        .iter()
+        .map(|(id, _)| *id)
+        .filter(|id| id.starts_with(key))
+        .collect();
     match by_prefix.len() {
         1 => only(by_prefix),
         0 => only(
@@ -162,7 +190,11 @@ mod tests {
     #[test]
     fn splits_the_sender_off_the_body() {
         let id = "cd27c5c2-0000-4000-8000-000000000000";
-        let text = agent_message("zgui prod: Windows (WING-PC) (cd27c5c2)", id, "Windows lane: done.");
+        let text = agent_message(
+            "zgui prod: Windows (WING-PC) (cd27c5c2)",
+            id,
+            "Windows lane: done.",
+        );
         let (sender, body) = agent_message_sender(&text).unwrap();
         assert_eq!(body, "Windows lane: done.");
         assert_eq!(
@@ -185,24 +217,52 @@ mod tests {
             tool: tool.into(),
             input: Some(input),
         };
-        let sent = outgoing_messages(&call("send_message", serde_json::json!({ "chat": "Windows lane", "text": " Run it. ", "wait": true })));
-        assert_eq!(sent, Some(vec![OutgoingMessage { chat: "Windows lane".into(), text: "Run it.".into() }]));
+        let sent = outgoing_messages(&call(
+            "send_message",
+            serde_json::json!({ "chat": "Windows lane", "text": " Run it. ", "wait": true }),
+        ));
+        assert_eq!(
+            sent,
+            Some(vec![OutgoingMessage {
+                chat: "Windows lane".into(),
+                text: "Run it.".into()
+            }])
+        );
         let batch = outgoing_messages(&call(
             "send_messages",
             serde_json::json!({ "requests": [{ "chat": "a", "text": "one" }, { "chat": "b", "text": "two" }] }),
         ))
         .unwrap();
-        assert_eq!(batch.iter().map(|m| m.chat.as_str()).collect::<Vec<_>>(), ["a", "b"]);
+        assert_eq!(
+            batch.iter().map(|m| m.chat.as_str()).collect::<Vec<_>>(),
+            ["a", "b"]
+        );
         // Not yet a message: no text; another tool; another server.
-        assert!(outgoing_messages(&call("send_message", serde_json::json!({ "chat": "a" }))).is_none());
-        assert!(outgoing_messages(&call("read_chat", serde_json::json!({ "chat": "a", "text": "x" }))).is_none());
-        let other = ToolCall::Mcp { server: "github".into(), tool: "send_message".into(), input: Some(serde_json::json!({ "chat": "a", "text": "x" })) };
+        assert!(
+            outgoing_messages(&call("send_message", serde_json::json!({ "chat": "a" }))).is_none()
+        );
+        assert!(
+            outgoing_messages(&call(
+                "read_chat",
+                serde_json::json!({ "chat": "a", "text": "x" })
+            ))
+            .is_none()
+        );
+        let other = ToolCall::Mcp {
+            server: "github".into(),
+            tool: "send_message".into(),
+            input: Some(serde_json::json!({ "chat": "a", "text": "x" })),
+        };
         assert!(outgoing_messages(&other).is_none());
     }
 
     #[test]
     fn resolves_a_chat_key_like_the_mcp_server() {
-        let chats = [("cd27c5c2-1", Some("Windows lane")), ("cd27c5c2-2", None), ("ab12", Some("Docs"))];
+        let chats = [
+            ("cd27c5c2-1", Some("Windows lane")),
+            ("cd27c5c2-2", None),
+            ("ab12", Some("Docs")),
+        ];
         let resolve = |key| resolve_chat_key(key, &chats);
         assert_eq!(resolve("ab12"), Some("ab12"));
         assert_eq!(resolve("ab"), Some("ab12"));

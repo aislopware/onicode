@@ -5,9 +5,7 @@ use super::model::{PageState, Presentation, allowed_navigation};
 use gpui::{Bounds, Pixels, Window};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{
-    DefinedClass, MainThreadMarker, MainThreadOnly, class, define_class, msg_send, sel,
-};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, class, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSColor, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSScreen, NSView,
     NSWindowOrderingMode,
@@ -84,7 +82,9 @@ impl BrowserData {
                     _ => objc2_web_kit::WKWebsiteDataStore::nonPersistentDataStore(mtm),
                 }
             });
-            let port = data.preview_port.unwrap_or(onicode_proto::PREVIEW_PROXY_PORT);
+            let port = data
+                .preview_port
+                .unwrap_or(onicode_proto::PREVIEW_PROXY_PORT);
             if let Err(error) =
                 configure_preview_proxy(data.store.as_ref().unwrap(), &data.preview_hosts, port)
             {
@@ -113,7 +113,10 @@ impl BrowserData {
             return;
         }
         let mut data = self.0.borrow_mut();
-        let moved = data.preview_port.replace(port).is_some_and(|was| was != port);
+        let moved = data
+            .preview_port
+            .replace(port)
+            .is_some_and(|was| was != port);
         if !data.preview_hosts.insert(host.into()) && !moved {
             return;
         }
@@ -212,7 +215,10 @@ pub(super) enum NativeEvent {
     Finished,
     NewTab(String),
     Key(gpui::Keystroke),
-    Favicon { page: String, url: String },
+    Favicon {
+        page: String,
+        url: String,
+    },
     /// A script's string result (`None` for any other value or a failure).
     Evaluated(Option<String>),
 }
@@ -632,8 +638,10 @@ impl NativePage {
             let _ = tx.try_send(NativeEvent::Evaluated(result));
         });
         unsafe {
-            host.view
-                .evaluateJavaScript_completionHandler(&NSString::from_str(script), Some(&completion));
+            host.view.evaluateJavaScript_completionHandler(
+                &NSString::from_str(script),
+                Some(&completion),
+            );
         }
     }
 
@@ -1123,19 +1131,35 @@ impl NativePage {
     pub fn fixture_cookies(&self, completion: impl FnOnce(Vec<String>) + 'static) {
         use objc2_foundation::{NSArray, NSHTTPCookie};
         let completion = RefCell::new(Some(completion));
-        let block = block2::RcBlock::new(move |cookies: std::ptr::NonNull<NSArray<NSHTTPCookie>>| {
-            let cookies = unsafe { cookies.as_ref() };
-            let values = cookies.iter().map(|cookie| format!(
-                "{}={}; domain={}; path={}; httpOnly={}; sessionOnly={}",
-                cookie.name(), cookie.value(), cookie.domain(), cookie.path(),
-                cookie.isHTTPOnly(), cookie.isSessionOnly()
-            )).collect();
-            if let Some(completion) = completion.borrow_mut().take() {
-                completion(values);
-            }
-        });
+        let block =
+            block2::RcBlock::new(move |cookies: std::ptr::NonNull<NSArray<NSHTTPCookie>>| {
+                let cookies = unsafe { cookies.as_ref() };
+                let values = cookies
+                    .iter()
+                    .map(|cookie| {
+                        format!(
+                            "{}={}; domain={}; path={}; httpOnly={}; sessionOnly={}",
+                            cookie.name(),
+                            cookie.value(),
+                            cookie.domain(),
+                            cookie.path(),
+                            cookie.isHTTPOnly(),
+                            cookie.isSessionOnly()
+                        )
+                    })
+                    .collect();
+                if let Some(completion) = completion.borrow_mut().take() {
+                    completion(values);
+                }
+            });
         unsafe {
-            self.0.borrow().view.configuration().websiteDataStore().httpCookieStore().getAllCookies(&block);
+            self.0
+                .borrow()
+                .view
+                .configuration()
+                .websiteDataStore()
+                .httpCookieStore()
+                .getAllCookies(&block);
         }
     }
 

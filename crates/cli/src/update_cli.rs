@@ -26,7 +26,10 @@ pub async fn update(edge_url: &str, check_only: bool) -> anyhow::Result<()> {
     ) {
         Offer::Newer | Offer::Switch => {}
         Offer::Held(why) => {
-            println!("onicode {current}: {} isn't installable here. {why}", manifest.version);
+            println!(
+                "onicode {current}: {} isn't installable here. {why}",
+                manifest.version
+            );
             return Ok(());
         }
         Offer::Current => {
@@ -60,7 +63,9 @@ pub async fn update(edge_url: &str, check_only: bool) -> anyhow::Result<()> {
             .unwrap_or_else(|| onicode_update::current_version().to_owned());
             let requested = onicode_update::transaction::request(
                 &data_dir,
-                onicode_update::transaction::Layout::Versioned { app_root: app_root.clone() },
+                onicode_update::transaction::Layout::Versioned {
+                    app_root: app_root.clone(),
+                },
                 &from,
                 &manifest.version,
                 onicode_update::transaction::RestartMode::Service {
@@ -75,7 +80,10 @@ pub async fn update(edge_url: &str, check_only: bool) -> anyhow::Result<()> {
                 );
                 bail!("couldn't restart the engine service: {err:#}");
             }
-            println!("engine service restarting; waiting for {} to prove it's ready…", manifest.version);
+            println!(
+                "engine service restarting; waiting for {} to prove it's ready…",
+                manifest.version
+            );
             wait_for_outcome(&data_dir, &requested).await
         }
         InstallKind::Managed { app_root } => {
@@ -137,7 +145,12 @@ pub async fn update(edge_url: &str, check_only: bool) -> anyhow::Result<()> {
 fn service_running() -> bool {
     cfg!(target_os = "linux")
         && std::process::Command::new("systemctl")
-            .args(["--user", "--quiet", "is-active", &onicode_update::service_unit()])
+            .args([
+                "--user",
+                "--quiet",
+                "is-active",
+                &onicode_update::service_unit(),
+            ])
             .status()
             .is_ok_and(|status| status.success())
 }

@@ -21,6 +21,7 @@ use gpui::{
     AnyWindowHandle, AppContext, AsyncApp, Bounds, Entity, EntityInputHandler, MouseButton, Pixels,
     PlatformInput, Point, SharedString, WindowBounds, WindowOptions, prelude::*, px, size,
 };
+use onicode_ui::*;
 use std::{
     io::Write,
     path::{Path, PathBuf},
@@ -29,7 +30,6 @@ use std::{
     sync::{Arc, Mutex, mpsc},
     time::{Duration, Instant},
 };
-use onicode_ui::*;
 
 const FPS: u32 = 30;
 const HOME: &str = "/tmp/onicode-demo/ana";

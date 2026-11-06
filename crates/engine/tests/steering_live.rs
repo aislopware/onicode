@@ -1,12 +1,12 @@
 //! Opt-in real-model checks through the production queue and command executor.
 //! ONICODE_TEST_HARNESS=claude ONICODE_TEST_MODEL=claude-haiku-4-5 cargo test -p onicode-engine --test steering_live -- --ignored --nocapture
-use std::{sync::Arc, time::Duration};
 use onicode_doc::{MessageRole, SessionCommandPayload};
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::{
     AcpHarness, ClaudeHarness, CodexHarness, CursorHarness, Harness, OpencodeHarness,
 };
 use onicode_proto::{ChatConfig, RunRequest, SandboxLevel, SessionStatus};
+use std::{sync::Arc, time::Duration};
 
 async fn wait(core: &EngineCore, mut predicate: impl FnMut() -> bool, what: &str) {
     if tokio::time::timeout(Duration::from_secs(180), async {

@@ -1,9 +1,9 @@
 //! Keep this in its own test binary: the allocator counts all live allocations.
 //! Measuring retained allocations avoids platform-dependent RSS/GC thresholds.
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use onicode_doc::{MessagePart, SegmentWriter, SessionDoc, fold_event_into_parts};
 use onicode_proto::AgentEvent;
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
 struct CountingAllocator;
 static LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);

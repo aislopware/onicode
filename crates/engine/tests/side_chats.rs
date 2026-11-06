@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use futures::{StreamExt, stream::BoxStream};
-use std::sync::{Arc, Mutex};
 use onicode_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry, SubagentStatus};
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::{Harness, HarnessError, RunControls};
@@ -9,6 +8,7 @@ use onicode_proto::{
     SteeringMode, ToolCall,
 };
 use onicode_rpc::methods;
+use std::sync::{Arc, Mutex};
 
 struct Capture(Arc<Mutex<Vec<RunRequest>>>);
 #[async_trait]

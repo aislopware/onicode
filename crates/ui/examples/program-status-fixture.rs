@@ -8,9 +8,9 @@ fn main() -> anyhow::Result<()> {
 #[cfg(unix)]
 fn main() -> anyhow::Result<()> {
     use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
-    use std::{path::PathBuf, sync::Arc, time::Duration};
     use onicode_proto::{ChatIndicator, Session};
     use onicode_ui::*;
+    use std::{path::PathBuf, sync::Arc, time::Duration};
 
     fn summary(core: &onicode_engine::EngineCore) -> (Vec<Session>, String) {
         let sessions = core.sessions.watch_sessions().borrow().clone();

@@ -159,7 +159,11 @@ pub async fn serve_ws_listener(listener: TcpListener, service: Arc<dyn RpcServic
 /// agent-scoped one, whose connections reach only
 /// [`crate::agent_allowed`] methods and are served as
 /// [`crate::Caller::Agent`].
-pub async fn serve_ws_listener_scoped(listener: TcpListener, service: Arc<dyn RpcService>, tokens: IpcTokens) {
+pub async fn serve_ws_listener_scoped(
+    listener: TcpListener,
+    service: Arc<dyn RpcService>,
+    tokens: IpcTokens,
+) {
     let tokens = Arc::new(tokens);
     loop {
         match listener.accept().await {
@@ -184,14 +188,20 @@ pub(crate) struct AgentGuard {
 
 #[async_trait::async_trait]
 impl RpcService for AgentGuard {
-    async fn handle(&self, method: &str, params: serde_json::Value) -> Result<crate::RpcReply, RpcError> {
+    async fn handle(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<crate::RpcReply, RpcError> {
         if !crate::agent_allowed(method) {
             tracing::warn!(method, chat = ?self.chat, "rpc: refused an agent's call outside its scope");
             return Err(RpcError::Failed(format!(
                 "{method} isn't open to agents: only the person can do that, in Onicode"
             )));
         }
-        let caller = crate::Caller::Agent { chat: self.chat.clone() };
+        let caller = crate::Caller::Agent {
+            chat: self.chat.clone(),
+        };
         crate::with_caller(caller, self.inner.handle(method, params)).await
     }
 }
@@ -246,7 +256,9 @@ async fn serve_ws_socket(stream: TcpStream, service: Arc<dyn RpcService>, tokens
                 .get(crate::ipc_auth::CHAT_HEADER)
                 .and_then(|value| value.to_str().ok())
                 .map(|chat| chat.chars().take(128).collect::<String>());
-            *scope.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(chat);
+            *scope
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(chat);
         }
         Ok(resp)
     };
@@ -276,8 +288,14 @@ async fn serve_ws_socket(stream: TcpStream, service: Arc<dyn RpcService>, tokens
         }
     });
 
-    let service: Arc<dyn RpcService> = match scope.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner) {
-        Some(chat) => Arc::new(AgentGuard { inner: service, chat }),
+    let service: Arc<dyn RpcService> = match scope
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    {
+        Some(chat) => Arc::new(AgentGuard {
+            inner: service,
+            chat,
+        }),
         None => service,
     };
     serve_connection(service, out_tx, in_rx).await;

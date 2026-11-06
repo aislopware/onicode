@@ -28,8 +28,7 @@ const GIT_OUTPUT_LIMIT: usize = 64 * 1024;
 /// `ssh -G` only reads configuration; it never connects.
 const SSH_CONFIG_TIMEOUT: Duration = Duration::from_secs(3);
 /// `repository()` follows renames: the old name resolves to the current one.
-const GITHUB_REPOSITORY_QUERY: &str =
-    "query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { nameWithOwner } }";
+const GITHUB_REPOSITORY_QUERY: &str = "query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { nameWithOwner } }";
 const GITHUB_OUTPUT_LIMIT: usize = 1024 * 1024;
 const GITHUB_RESULT_LIMIT: &str = "20";
 const GITHUB_JSON_FIELDS: &str = "number,title,url,state,baseRefName,headRefName,updatedAt,isCrossRepository,headRepositoryOwner";
@@ -559,11 +558,21 @@ impl GitHubCli {
         }
         let parsed = reqwest::Url::parse(&url).map_err(|_| ChangeRequestError::Decode)?;
         let parts: Vec<_> = parsed.path().trim_matches('/').split('/').collect();
-        let endpoint = format!("repos/{}/{}/pulls/{}/comments", parts[0], parts[1], parts[3]);
+        let endpoint = format!(
+            "repos/{}/{}/pulls/{}/comments",
+            parts[0], parts[1], parts[3]
+        );
         let output = self
             .runner
             .run(ProcessRequest {
-                args: vec!["api".into(), "--method".into(), "POST".into(), endpoint, "--input".into(), "-".into()],
+                args: vec![
+                    "api".into(),
+                    "--method".into(),
+                    "POST".into(),
+                    endpoint,
+                    "--input".into(),
+                    "-".into(),
+                ],
                 stdin: Some(
                     serde_json::to_vec(&serde_json::json!({
                         "body": body,
@@ -616,7 +625,9 @@ impl GitHubCli {
             url: c["url"].as_str().unwrap_or_default().into(),
             viewer_did_author: true,
             body: c["body"].as_str().ok_or(ChangeRequestError::Decode)?.into(),
-            author: onicode_proto::ChangeRequestActor { login: c["author"]["login"].as_str().unwrap_or_default().into() },
+            author: onicode_proto::ChangeRequestActor {
+                login: c["author"]["login"].as_str().unwrap_or_default().into(),
+            },
             created_at: c["createdAt"].as_str().unwrap_or_default().into(),
             ..Default::default()
         })
@@ -625,12 +636,21 @@ impl GitHubCli {
     /// A review thread resolved, or opened again (GitHub's
     /// `resolveReviewThread` / `unresolveReviewThread`): whether it's
     /// resolved now.
-    pub async fn set_thread_resolved(&self, url: &str, thread: &str, resolved: bool) -> Result<bool, ChangeRequestError> {
+    pub async fn set_thread_resolved(
+        &self,
+        url: &str,
+        thread: &str,
+        resolved: bool,
+    ) -> Result<bool, ChangeRequestError> {
         let url = validated_pull_request_url(url)?;
         if !valid_node_id(thread) {
             return Err(ChangeRequestError::Decode);
         }
-        let mutation = if resolved { "resolveReviewThread" } else { "unresolveReviewThread" };
+        let mutation = if resolved {
+            "resolveReviewThread"
+        } else {
+            "unresolveReviewThread"
+        };
         let value = self
             .graphql_write(
                 &format!("mutation($thread:ID!) {{ {mutation}(input:{{threadId:$thread}}) {{ thread {{ isResolved }} }} }}"),
@@ -638,7 +658,9 @@ impl GitHubCli {
             )
             .await;
         self.evict_detail(&url).await;
-        value?["data"][mutation]["thread"]["isResolved"].as_bool().ok_or(ChangeRequestError::Decode)
+        value?["data"][mutation]["thread"]["isResolved"]
+            .as_bool()
+            .ok_or(ChangeRequestError::Decode)
     }
 
     /// One GraphQL write, its body on stdin.
@@ -648,8 +670,10 @@ impl GitHubCli {
             .run(ProcessRequest {
                 args: vec!["api".into(), "graphql".into(), "--input".into(), "-".into()],
                 stdin: Some(
-                    serde_json::to_vec(&serde_json::json!({ "query": query, "variables": variables }))
-                        .map_err(|_| ChangeRequestError::Decode)?,
+                    serde_json::to_vec(
+                        &serde_json::json!({ "query": query, "variables": variables }),
+                    )
+                    .map_err(|_| ChangeRequestError::Decode)?,
                 ),
                 ..github_request()
             })
@@ -661,7 +685,8 @@ impl GitHubCli {
         if output.stdout_truncated {
             return Err(ChangeRequestError::Decode);
         }
-        let value: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| ChangeRequestError::Decode)?;
+        let value: serde_json::Value =
+            serde_json::from_slice(&output.stdout).map_err(|_| ChangeRequestError::Decode)?;
         if value.get("errors").is_some() {
             return Err(ChangeRequestError::Decode);
         }
@@ -978,7 +1003,9 @@ impl GitHubCli {
         {
             return Ok(page);
         }
-        let page = self.fetch_list_page(repository, filter, after, refresh).await?;
+        let page = self
+            .fetch_list_page(repository, filter, after, refresh)
+            .await?;
         if let Some((store, account)) = stored {
             store.save(&account, repository, filter, &page).await;
         }
@@ -1172,7 +1199,11 @@ impl GitHubCli {
     /// Where an open pull request's review and checks stand (`gh pr view
     /// --json reviewDecision,reviewRequests,statusCheckRollup`), and whether
     /// a review is requested of the signed-in account. `None` on any failure.
-    async fn signals_for(&self, source: &CheckoutSourceContext, url: &str) -> Option<onicode_proto::ChangeRequestSignals> {
+    async fn signals_for(
+        &self,
+        source: &CheckoutSourceContext,
+        url: &str,
+    ) -> Option<onicode_proto::ChangeRequestSignals> {
         let request = ProcessRequest {
             program: "gh".into(),
             args: vec![
@@ -2023,7 +2054,10 @@ fn select_pull_request(
 /// An open pull request's signals from `gh pr view`'s JSON: its review
 /// decision, whether `viewer` (the signed-in login) is among the requested
 /// reviewers, and its checks' rollup.
-pub(crate) fn signals_from(value: &serde_json::Value, viewer: Option<&str>) -> onicode_proto::ChangeRequestSignals {
+pub(crate) fn signals_from(
+    value: &serde_json::Value,
+    viewer: Option<&str>,
+) -> onicode_proto::ChangeRequestSignals {
     use onicode_proto::ChangeRequestReviewDecision as Decision;
     let review_decision = match value["reviewDecision"].as_str().unwrap_or_default() {
         "APPROVED" => Decision::Approved,
@@ -2032,9 +2066,15 @@ pub(crate) fn signals_from(value: &serde_json::Value, viewer: Option<&str>) -> o
         _ => Decision::Unknown,
     };
     let review_requested_of_viewer = viewer.map(|login| {
-        value["reviewRequests"].as_array().into_iter().flatten().any(|r| {
-            r["login"].as_str().is_some_and(|l| l.eq_ignore_ascii_case(login))
-        })
+        value["reviewRequests"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|r| {
+                r["login"]
+                    .as_str()
+                    .is_some_and(|l| l.eq_ignore_ascii_case(login))
+            })
     });
     let checks: Vec<onicode_proto::ChangeRequestCheck> = value["statusCheckRollup"]
         .as_array()
@@ -2047,7 +2087,11 @@ pub(crate) fn signals_from(value: &serde_json::Value, viewer: Option<&str>) -> o
     } else {
         onicode_proto::change_request_assessment::CiState::Unknown
     };
-    onicode_proto::ChangeRequestSignals { review_decision, review_requested_of_viewer, ci }
+    onicode_proto::ChangeRequestSignals {
+        review_decision,
+        review_requested_of_viewer,
+        ci,
+    }
 }
 
 fn to_summary(
@@ -2167,16 +2211,25 @@ pub fn valid_comment_body(body: &str) -> bool {
 
 /// A GitHub node id (a review thread's).
 pub fn valid_node_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 200 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'=')
+    !id.is_empty()
+        && id.len() <= 200
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'=')
 }
 
 /// A comment as GitHub's REST API returns one.
-fn rest_comment(value: &serde_json::Value) -> Result<onicode_proto::ChangeRequestComment, ChangeRequestError> {
+fn rest_comment(
+    value: &serde_json::Value,
+) -> Result<onicode_proto::ChangeRequestComment, ChangeRequestError> {
     Ok(onicode_proto::ChangeRequestComment {
         id: value["node_id"].as_str().unwrap_or_default().into(),
         url: value["html_url"].as_str().unwrap_or_default().into(),
         viewer_did_author: true,
-        body: value["body"].as_str().ok_or(ChangeRequestError::Decode)?.into(),
+        body: value["body"]
+            .as_str()
+            .ok_or(ChangeRequestError::Decode)?
+            .into(),
         author: onicode_proto::ChangeRequestActor {
             login: value["user"]["login"].as_str().unwrap_or_default().into(),
         },
@@ -2407,7 +2460,12 @@ mod tests {
     const PR: &str = "https://github.com/acme/onicode/pull/7";
 
     fn line(path: &str, line: u64, side: &str, commit: &str) -> ReviewLine {
-        ReviewLine { path: path.into(), line, side: side.into(), commit_id: commit.into() }
+        ReviewLine {
+            path: path.into(),
+            line,
+            side: side.into(),
+            commit_id: commit.into(),
+        }
     }
 
     fn stdin_json(request: &ProcessRequest) -> serde_json::Value {
@@ -2420,10 +2478,26 @@ mod tests {
         let runner = FakeProcessRunner::with_responses([command_success(reply.to_vec())]);
         let github = GitHubCli::with_runner(runner.clone());
         let commit = "a".repeat(40);
-        let comment = github.post_review_comment(PR, &line("src/a.rs", 11, "RIGHT", &commit), "Why?").await.unwrap();
-        assert_eq!((comment.body.as_str(), comment.author.login.as_str()), ("Why?", "ada"));
+        let comment = github
+            .post_review_comment(PR, &line("src/a.rs", 11, "RIGHT", &commit), "Why?")
+            .await
+            .unwrap();
+        assert_eq!(
+            (comment.body.as_str(), comment.author.login.as_str()),
+            ("Why?", "ada")
+        );
         let request = &runner.requests()[0];
-        assert_eq!(request.args, ["api", "--method", "POST", "repos/acme/onicode/pulls/7/comments", "--input", "-"]);
+        assert_eq!(
+            request.args,
+            [
+                "api",
+                "--method",
+                "POST",
+                "repos/acme/onicode/pulls/7/comments",
+                "--input",
+                "-"
+            ]
+        );
         assert_eq!(
             stdin_json(request),
             serde_json::json!({ "body": "Why?", "commit_id": commit, "path": "src/a.rs", "line": 11, "side": "RIGHT" })
@@ -2441,17 +2515,48 @@ mod tests {
             command_success(reopened.to_vec()),
         ]);
         let github = GitHubCli::with_runner(runner.clone());
-        let comment = github.reply_to_thread(PR, "PRRT_kwDO1", "Fixed.").await.unwrap();
+        let comment = github
+            .reply_to_thread(PR, "PRRT_kwDO1", "Fixed.")
+            .await
+            .unwrap();
         assert_eq!(comment.body, "Fixed.");
-        assert!(github.set_thread_resolved(PR, "PRRT_kwDO1", true).await.unwrap());
-        assert!(!github.set_thread_resolved(PR, "PRRT_kwDO1", false).await.unwrap());
+        assert!(
+            github
+                .set_thread_resolved(PR, "PRRT_kwDO1", true)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !github
+                .set_thread_resolved(PR, "PRRT_kwDO1", false)
+                .await
+                .unwrap()
+        );
         let requests = runner.requests();
         assert_eq!(requests[0].args, ["api", "graphql", "--input", "-"]);
         let asked = stdin_json(&requests[0]);
-        assert!(asked["query"].as_str().unwrap().contains("addPullRequestReviewThreadReply"));
-        assert_eq!(asked["variables"], serde_json::json!({ "thread": "PRRT_kwDO1", "body": "Fixed." }));
-        assert!(stdin_json(&requests[1])["query"].as_str().unwrap().contains("resolveReviewThread(input"));
-        assert!(stdin_json(&requests[2])["query"].as_str().unwrap().contains("unresolveReviewThread"));
+        assert!(
+            asked["query"]
+                .as_str()
+                .unwrap()
+                .contains("addPullRequestReviewThreadReply")
+        );
+        assert_eq!(
+            asked["variables"],
+            serde_json::json!({ "thread": "PRRT_kwDO1", "body": "Fixed." })
+        );
+        assert!(
+            stdin_json(&requests[1])["query"]
+                .as_str()
+                .unwrap()
+                .contains("resolveReviewThread(input")
+        );
+        assert!(
+            stdin_json(&requests[2])["query"]
+                .as_str()
+                .unwrap()
+                .contains("unresolveReviewThread")
+        );
     }
 
     #[tokio::test]
@@ -2469,9 +2574,19 @@ mod tests {
             assert!(!bad.valid(), "{bad:?}");
             assert!(github.post_review_comment(PR, &bad, "x").await.is_err());
         }
-        assert!(github.post_review_comment(PR, &line("a.rs", 1, "LEFT", &commit), "  ").await.is_err());
+        assert!(
+            github
+                .post_review_comment(PR, &line("a.rs", 1, "LEFT", &commit), "  ")
+                .await
+                .is_err()
+        );
         assert!(github.reply_to_thread(PR, "not an id!", "x").await.is_err());
-        assert!(github.set_thread_resolved("https://evil.example/a/b/pull/1", "PRRT_1", true).await.is_err());
+        assert!(
+            github
+                .set_thread_resolved("https://evil.example/a/b/pull/1", "PRRT_1", true)
+                .await
+                .is_err()
+        );
         assert!(runner.requests().is_empty(), "nothing ran");
     }
 
@@ -2488,12 +2603,32 @@ mod tests {
             ],
         });
         let s = signals_from(&value, Some("ada"));
-        assert_eq!((s.review_decision, s.review_requested_of_viewer, s.ci), (Decision::ChangesRequested, Some(true), CiState::Failed));
-        assert_eq!(signals_from(&value, Some("lin")).review_requested_of_viewer, Some(false));
-        assert_eq!(signals_from(&value, None).review_requested_of_viewer, None, "the account can't be told");
-        let quiet = signals_from(&serde_json::json!({ "reviewDecision": "", "reviewRequests": [], "statusCheckRollup": [] }), Some("ada"));
-        assert_eq!((quiet.review_decision, quiet.ci), (Decision::Unknown, CiState::NoChecks));
-        assert_eq!(signals_from(&serde_json::json!({}), None).ci, CiState::Unknown, "no rollup told");
+        assert_eq!(
+            (s.review_decision, s.review_requested_of_viewer, s.ci),
+            (Decision::ChangesRequested, Some(true), CiState::Failed)
+        );
+        assert_eq!(
+            signals_from(&value, Some("lin")).review_requested_of_viewer,
+            Some(false)
+        );
+        assert_eq!(
+            signals_from(&value, None).review_requested_of_viewer,
+            None,
+            "the account can't be told"
+        );
+        let quiet = signals_from(
+            &serde_json::json!({ "reviewDecision": "", "reviewRequests": [], "statusCheckRollup": [] }),
+            Some("ada"),
+        );
+        assert_eq!(
+            (quiet.review_decision, quiet.ci),
+            (Decision::Unknown, CiState::NoChecks)
+        );
+        assert_eq!(
+            signals_from(&serde_json::json!({}), None).ci,
+            CiState::Unknown,
+            "no rollup told"
+        );
     }
 
     struct ExecutableGhRunner {
@@ -2555,9 +2690,9 @@ mod tests {
     /// execution is scripted. Repository discovery still runs real local Git.
     #[tokio::test]
     async fn pull_request_workflow_crosses_engine_transport_and_github() {
-        use serde_json::json;
         use onicode_proto::{ChangeRequestComment, ChangeRequestDetail, ChangeRequestPage};
         use onicode_rpc::{RpcError, capability_errors, methods};
+        use serde_json::json;
 
         let dir = tempfile::tempdir().unwrap();
         let checkout = dir.path().join("checkout");
@@ -3008,9 +3143,8 @@ mod tests {
 
     #[tokio::test]
     async fn ssh_alias_remote_matches_through_ssh_config() {
-        let runner = FakeProcessRunner::with_responses([command_success(
-            "user git\nhostname github.com\n",
-        )]);
+        let runner =
+            FakeProcessRunner::with_responses([command_success("user git\nhostname github.com\n")]);
         let resolver = ChangeRequestResolver {
             inspector: GitCheckoutInspector::new(runner.clone()),
             github: GitHubCli::with_runner(runner.clone()),
@@ -3033,7 +3167,12 @@ mod tests {
                 .as_deref(),
             Some("acme/onicode")
         );
-        assert_eq!(resolver.github_slug("https://gitlab.com/acme/onicode").await, None);
+        assert_eq!(
+            resolver
+                .github_slug("https://gitlab.com/acme/onicode")
+                .await,
+            None
+        );
         assert_eq!(runner.requests().len(), 1);
     }
 
@@ -3417,14 +3556,23 @@ mod tests {
         assert_eq!(summary.number, 90);
         assert_eq!(summary.state, ChangeRequestState::Open);
         assert_eq!(summary.provider, "github");
-        assert_eq!(summary.signals, None, "signals unanswered: none, and the watch goes on");
+        assert_eq!(
+            summary.signals, None,
+            "signals unanswered: none, and the watch goes on"
+        );
         let requests = runner.requests();
         assert_eq!(requests.len(), 2);
         // Then the open one's review and checks, alone.
         assert_eq!(requests[1].cwd.as_deref(), Some(Path::new("/checkout")));
         assert_eq!(
             requests[1].args,
-            ["pr", "view", summary.url.as_str(), "--json", "reviewDecision,reviewRequests,statusCheckRollup"]
+            [
+                "pr",
+                "view",
+                summary.url.as_str(),
+                "--json",
+                "reviewDecision,reviewRequests,statusCheckRollup"
+            ]
         );
         assert_eq!(requests[0].program, "gh");
         assert_eq!(requests[0].cwd.as_deref(), Some(Path::new("/checkout")));
@@ -3509,7 +3657,13 @@ mod tests {
         assert_eq!(first.next_cursor.as_deref(), Some("Y3Vyc29yOjUw"));
         assert_eq!(first.total_count, Some(120));
         let second = github
-            .list_page("acme/onicode", filter, first.next_cursor.as_deref(), false, false)
+            .list_page(
+                "acme/onicode",
+                filter,
+                first.next_cursor.as_deref(),
+                false,
+                false,
+            )
             .await
             .unwrap();
         assert_eq!(second.items[0].number, 2);
@@ -3970,7 +4124,11 @@ mod tests {
                 .iter()
                 .map(|item| (item.repository.as_str(), item.number))
                 .collect::<Vec<_>>(),
-            [("acme/onicode", 2), ("acme/onicode", 4), ("acme/onicode", 8)]
+            [
+                ("acme/onicode", 2),
+                ("acme/onicode", 4),
+                ("acme/onicode", 8)
+            ]
         );
         assert_eq!(items[2].title, "A title with spacing");
         assert_eq!(items[0].state, ChangeRequestState::Open);
@@ -4252,10 +4410,10 @@ printf '%s\n' '[{"number":90,"title":"Host-resolved pull request","url":"https:/
             // Git reports slash-separated paths on Windows, while settings
             // retain canonical Win32 prefixes. Compare the actual directory.
             assert!(
-                refs.iter().any(|entry| entry
-                    .worktree_path
-                    .as_ref()
-                    .is_some_and(|listed| same_file::is_same_file(listed, path).unwrap_or(false))),
+                refs.iter()
+                    .any(|entry| entry.worktree_path.as_ref().is_some_and(|listed| {
+                        same_file::is_same_file(listed, path).unwrap_or(false)
+                    })),
                 "Git refs must include worktree {path}; got {refs:?}"
             );
         }
@@ -4315,7 +4473,12 @@ printf '%s\n' '[{"number":90,"title":"Host-resolved pull request","url":"https:/
         run_git(&checkout, &["init", "-q", "-b", "main"]);
         run_git(
             &checkout,
-            &["remote", "add", "upstream", "git@github.com:acme/onicode.git"],
+            &[
+                "remote",
+                "add",
+                "upstream",
+                "git@github.com:acme/onicode.git",
+            ],
         );
         run_git(
             &checkout,
@@ -4328,7 +4491,10 @@ printf '%s\n' '[{"number":90,"title":"Host-resolved pull request","url":"https:/
             ],
         );
         run_git(&checkout, &["config", "branch.main.remote", "upstream"]);
-        run_git(&checkout, &["config", "branch.main.merge", "refs/heads/main"]);
+        run_git(
+            &checkout,
+            &["config", "branch.main.merge", "refs/heads/main"],
+        );
 
         let resolver = ChangeRequestResolver::new();
         let source = resolver
@@ -4671,22 +4837,47 @@ printf '%s\n' '[{"number":90,"title":"Host-resolved pull request","url":"https:/
         let (result, runner) = resolve_with(&source, command_success(json)).await;
 
         assert_eq!(result.unwrap().unwrap().number, 90);
-        assert_eq!(runner.requests().len(), 2, "the list, then the open one's signals; no default-branch lookup");
+        assert_eq!(
+            runner.requests().len(),
+            2,
+            "the list, then the open one's signals; no default-branch lookup"
+        );
     }
 
     #[tokio::test]
     async fn an_open_pull_request_carries_its_review_and_checks() {
         let source = source("feature/status", "acme", Some("main"));
-        let list = serde_json::to_vec(&vec![pull_request(90, "OPEN", "acme", "feature/status", "2026-08-15T12:00:00Z")]).unwrap();
+        let list = serde_json::to_vec(&vec![pull_request(
+            90,
+            "OPEN",
+            "acme",
+            "feature/status",
+            "2026-08-15T12:00:00Z",
+        )])
+        .unwrap();
         let view = br#"{"reviewDecision":"REVIEW_REQUIRED","reviewRequests":[{"__typename":"User","login":"ada"}],"statusCheckRollup":[{"__typename":"CheckRun","name":"tests","status":"COMPLETED","conclusion":"FAILURE"}]}"#;
-        let runner = FakeProcessRunner::with_responses([command_success(list), command_success(view.to_vec()), command_success("ada\n")]);
+        let runner = FakeProcessRunner::with_responses([
+            command_success(list),
+            command_success(view.to_vec()),
+            command_success("ada\n"),
+        ]);
         let github = GitHubCli::with_runner(runner.clone());
         let summary = github.find_for_branch(&source).await.unwrap().unwrap();
         let signals = summary.signals.expect("signals");
-        assert_eq!(signals.review_decision, onicode_proto::ChangeRequestReviewDecision::ReviewRequired);
-        assert_eq!(signals.ci, onicode_proto::change_request_assessment::CiState::Failed);
+        assert_eq!(
+            signals.review_decision,
+            onicode_proto::ChangeRequestReviewDecision::ReviewRequired
+        );
+        assert_eq!(
+            signals.ci,
+            onicode_proto::change_request_assessment::CiState::Failed
+        );
         if std::env::var_os("GH_TOKEN").is_none() && std::env::var_os("GITHUB_TOKEN").is_none() {
-            assert_eq!(signals.review_requested_of_viewer, Some(true), "requested of the signed-in account");
+            assert_eq!(
+                signals.review_requested_of_viewer,
+                Some(true),
+                "requested of the signed-in account"
+            );
         }
     }
 

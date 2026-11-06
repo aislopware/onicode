@@ -8,18 +8,45 @@
 /// --inspect server.js`): any other flag without `=` is read as taking the
 /// argument after it.
 const SWITCHES: &[&str] = &[
-    "-u", "-B", "-O", "-OO", "-E", "-s", "-S", "-I", "-q", "-b", "-bb", "-d", "-i", "-v",
-    "--inspect", "--inspect-brk", "--watch", "--trace-warnings", "--no-warnings",
-    "--enable-source-maps", "--hot", "--smol",
+    "-u",
+    "-B",
+    "-O",
+    "-OO",
+    "-E",
+    "-s",
+    "-S",
+    "-I",
+    "-q",
+    "-b",
+    "-bb",
+    "-d",
+    "-i",
+    "-v",
+    "--inspect",
+    "--inspect-brk",
+    "--watch",
+    "--trace-warnings",
+    "--no-warnings",
+    "--enable-source-maps",
+    "--hot",
+    "--smol",
 ];
 
 /// A flag whose name looks like a credential's (`--token`, `--api-key`,
 /// `--password`).
 fn secret_flag(flag: &str) -> bool {
     let name = flag.trim_start_matches('-').to_ascii_lowercase();
-    ["token", "secret", "passw", "auth", "credential", "cookie", "key"]
-        .iter()
-        .any(|word| name.contains(word))
+    [
+        "token",
+        "secret",
+        "passw",
+        "auth",
+        "credential",
+        "cookie",
+        "key",
+    ]
+    .iter()
+    .any(|word| name.contains(word))
 }
 
 /// What a listener is, in a few words, for clients to name it by: its
@@ -76,7 +103,8 @@ pub fn process_label(args: &[String]) -> String {
                 continue;
             }
             if arg.starts_with('-') {
-                value = !arg.contains('=') && (secret_flag(arg) || !SWITCHES.contains(&arg.as_str()));
+                value =
+                    !arg.contains('=') && (secret_flag(arg) || !SWITCHES.contains(&arg.as_str()));
                 continue;
             }
             out.push(arg);
@@ -92,12 +120,18 @@ pub fn process_label(args: &[String]) -> String {
         {
             return format!("{program} -m {module}");
         }
-        if !inline && let Some(script) = words().next().map(|s| base(s)) && plain(script, "") {
+        if !inline
+            && let Some(script) = words().next().map(|s| base(s))
+            && plain(script, "")
+        {
             return format!("{program} {script}");
         }
         return program.to_string();
     }
-    if matches!(lower.as_str(), "node" | "bun" | "deno" | "ruby" | "perl" | "php") {
+    if matches!(
+        lower.as_str(),
+        "node" | "bun" | "deno" | "ruby" | "perl" | "php"
+    ) {
         if inline {
             return program.to_string();
         }
@@ -111,7 +145,11 @@ pub fn process_label(args: &[String]) -> String {
                 } else {
                     after.split('/').next().unwrap_or(after).to_string()
                 };
-                if plain(&package, "@/") { package } else { program.to_string() }
+                if plain(&package, "@/") {
+                    package
+                } else {
+                    program.to_string()
+                }
             }
             Some(script) if plain(base(script), "") => format!("{program} {}", base(script)),
             _ => program.to_string(),
@@ -127,7 +165,11 @@ pub fn process_label(args: &[String]) -> String {
         };
         // npx/bunx/uvx run a package: its name.
         if matches!(lower.as_str(), "npx" | "bunx" | "uvx") {
-            return if plain(sub, "@/") { format!("{program} {sub}") } else { program.to_string() };
+            return if plain(sub, "@/") {
+                format!("{program} {sub}")
+            } else {
+                program.to_string()
+            };
         }
         if !matches!(
             sub.as_str(),
@@ -187,29 +229,63 @@ mod tests {
 
     #[test]
     fn a_process_is_named_by_its_program_and_what_it_runs_only() {
-        let label = |a: &[&str]| process_label(&a.iter().map(|s| s.to_string()).collect::<Vec<_>>());
-        assert_eq!(label(&["/usr/bin/python3", "-m", "http.server", "8000"]), "python3 -m http.server");
+        let label =
+            |a: &[&str]| process_label(&a.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(
+            label(&["/usr/bin/python3", "-m", "http.server", "8000"]),
+            "python3 -m http.server"
+        );
         assert_eq!(label(&["python", "app.py", "--token=abc"]), "python app.py");
         assert_eq!(label(&["python", "-c", "print(1)"]), "python");
-        assert_eq!(label(&["node", "/w/server.js", "--port", "3000"]), "node server.js");
+        assert_eq!(
+            label(&["node", "/w/server.js", "--port", "3000"]),
+            "node server.js"
+        );
         assert_eq!(label(&["node", "/w/node_modules/.bin/vite"]), "vite");
-        assert_eq!(label(&["node", "/w/node_modules/@scope/cli/bin/run.js"]), "@scope/cli");
+        assert_eq!(
+            label(&["node", "/w/node_modules/@scope/cli/bin/run.js"]),
+            "@scope/cli"
+        );
         assert_eq!(label(&["npm", "run", "dev"]), "npm run dev");
         assert_eq!(label(&["cargo", "test", "-p", "x"]), "cargo test");
-        assert_eq!(label(&["/w/target/debug/deps/onicode_engine-0123456789abcdef", "--x"]), "cargo test onicode_engine");
-        assert_eq!(label(&["/usr/bin/onicode-engine", "serve", "--token", "abc"]), "onicode-engine");
+        assert_eq!(
+            label(&[
+                "/w/target/debug/deps/onicode_engine-0123456789abcdef",
+                "--x"
+            ]),
+            "cargo test onicode_engine"
+        );
+        assert_eq!(
+            label(&["/usr/bin/onicode-engine", "serve", "--token", "abc"]),
+            "onicode-engine"
+        );
         assert_eq!(label(&[]), "");
         // A flag's value is never what runs: `--flag value` is a pair.
         assert_eq!(label(&["node", "-p", "3000", "server.js"]), "node");
-        assert_eq!(label(&["node", "--port", "3000", "server.js"]), "node server.js");
+        assert_eq!(
+            label(&["node", "--port", "3000", "server.js"]),
+            "node server.js"
+        );
         assert_eq!(label(&["node", "--inspect", "server.js"]), "node server.js");
         assert_eq!(label(&["python3", "-u", "app.py"]), "python3 app.py");
-        assert_eq!(label(&["python3", "--token", "abc", "app.py"]), "python3 app.py");
-        assert_eq!(label(&["node", "--api-key", "s3cr3t", "app.js"]), "node app.js");
-        assert_eq!(label(&["node", "--api-key=s3cr3t", "app.js"]), "node app.js");
+        assert_eq!(
+            label(&["python3", "--token", "abc", "app.py"]),
+            "python3 app.py"
+        );
+        assert_eq!(
+            label(&["node", "--api-key", "s3cr3t", "app.js"]),
+            "node app.js"
+        );
+        assert_eq!(
+            label(&["node", "--api-key=s3cr3t", "app.js"]),
+            "node app.js"
+        );
         assert_eq!(label(&["npx", "--token", "abc", "server"]), "npx server");
         assert_eq!(label(&["npx", "--token=abc", "server"]), "npx server");
-        assert_eq!(label(&["npm", "--auth", "abc", "run", "dev"]), "npm run dev");
+        assert_eq!(
+            label(&["npm", "--auth", "abc", "run", "dev"]),
+            "npm run dev"
+        );
         assert_eq!(label(&["server", "-p", "3000"]), "server");
         // Nothing but plain names: a secret in a script's place, a URL, a
         // runner's argument, never.
@@ -243,9 +319,9 @@ mod tests {
             "1",
             "https://user:pass@host/x?key=1",
         ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
         assert_eq!(
             shown_command(&args).join(" "),
             "serve --token … API_KEY=… --port 1 https://…@host/x"

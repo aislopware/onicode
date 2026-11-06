@@ -13,6 +13,7 @@ use crate::{
 use async_trait::async_trait;
 use futures::{StreamExt, stream::BoxStream};
 use normalize::{Normalizer, string};
+use onicode_proto::{AgentEvent, HarnessId, Model, ReasoningLevel, RunRequest, SteeringMode};
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -20,7 +21,6 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc;
-use onicode_proto::{AgentEvent, HarnessId, Model, ReasoningLevel, RunRequest, SteeringMode};
 
 /// Bound on a state query (`get_state`, `get_entries`) a turn's end waits on.
 /// Pi answers them at once even mid-run; silence past this is a wedged

@@ -11,9 +11,9 @@
 //! window up for `hold-secs` (default 20) so the compositor can capture it,
 //! then quits. Captures: `docs/screenshots/agent-images/`.
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
+use onicode_ui::*;
 use serde_json::json;
 use std::{io::Write, path::Path, sync::Arc, time::Duration};
-use onicode_ui::*;
 
 fn port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
@@ -217,7 +217,11 @@ fn main() -> anyhow::Result<()> {
     let data = temp.path().join("ui");
     std::fs::create_dir(&data)?;
     let ipc_port = port();
-    let _ipc = runtime.block_on(onicode_engine::serve_ipc(ipc_port, &data, core.rpc_service()))?;
+    let _ipc = runtime.block_on(onicode_engine::serve_ipc(
+        ipc_port,
+        &data,
+        core.rpc_service(),
+    ))?;
     let boot = EngineBootConfig {
         data_dir: data.clone(),
         ipc_port,

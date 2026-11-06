@@ -992,7 +992,10 @@ impl RelayActivity {
     /// ([`passive`]): an app merely open on a Cloud chat lists, reads and
     /// watches, and must not keep the machine awake (and billed). Echo
     /// keepalives are relay-control frames that never reach the service.
-    pub fn wrap(&self, inner: Arc<dyn onicode_rpc::RpcService>) -> Arc<dyn onicode_rpc::RpcService> {
+    pub fn wrap(
+        &self,
+        inner: Arc<dyn onicode_rpc::RpcService>,
+    ) -> Arc<dyn onicode_rpc::RpcService> {
         Arc::new(CountingService {
             inner,
             activity: self.clone(),

@@ -42,17 +42,17 @@ use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use futures::stream::BoxStream;
+use onicode_rpc::{RpcError, RpcReply, methods, parse_params};
 use serde::Deserialize;
 use tokio::sync::{mpsc, watch};
-use onicode_rpc::{RpcError, RpcReply, methods, parse_params};
 
 use broker::{CallError, Slot, ToolAnswer, ToolBroker};
 use keys::{CachedKey, KeyCache, KeyDirectory};
 use manifest::MANIFEST_FILE;
 use scan::{Entry, Inspected};
+use service::{Plan, Refusal, Services, reason};
 use signing::{SigCheck, SigningKey};
 use snapshot::Retention;
-use service::{Plan, Refusal, Services, reason};
 use status::{Author, State, Status};
 
 pub const PLUGINS_DIR: &str = "plugins";
@@ -559,7 +559,10 @@ impl Plugins {
         // the first sign-in happens): its keys are looked up and registered
         // with the edge it signs in against.
         if self.directory().is_none() && auth.workos_enabled() {
-            self.set_directory(Arc::new(keys::EdgeDirectory::new(auth.edge_url(), Arc::new(auth.clone()))));
+            self.set_directory(Arc::new(keys::EdgeDirectory::new(
+                auth.edge_url(),
+                Arc::new(auth.clone()),
+            )));
         }
         // A fresh ticket (a sign-in, before it's announced and the app
         // restarts the engine; a step-up): this device's key registered with
@@ -568,12 +571,17 @@ impl Plugins {
         // bearer: the engine may have no edge of its own (local mode, where
         // the first sign-in happens), and the sign-in isn't announced yet.
         let weak = Arc::downgrade(&self.inner);
-        let fresh: Arc<dyn KeyDirectory> = Arc::new(keys::EdgeDirectory::new(auth.edge_url(), auth.session_bearer()));
+        let fresh: Arc<dyn KeyDirectory> = Arc::new(keys::EdgeDirectory::new(
+            auth.edge_url(),
+            auth.session_bearer(),
+        ));
         auth.on_fresh_ticket(Arc::new(move |account: String| {
             let (weak, fresh) = (weak.clone(), fresh.clone());
             Box::pin(async move {
                 if let Some(inner) = weak.upgrade() {
-                    Plugins { inner }.register_key_through(fresh.as_ref(), &account).await;
+                    Plugins { inner }
+                        .register_key_through(fresh.as_ref(), &account)
+                        .await;
                 }
             })
         }));
@@ -653,7 +661,8 @@ impl Plugins {
                 if !plugins.inner.channel.is_open() {
                     continue;
                 }
-                let watching: Vec<(String, String)> = lock(&plugins.inner.watching).iter().cloned().collect();
+                let watching: Vec<(String, String)> =
+                    lock(&plugins.inner.watching).iter().cloned().collect();
                 for (plugin, device) in watching {
                     let this = plugins.clone();
                     tokio::spawn(async move {
@@ -712,12 +721,18 @@ impl Plugins {
     /// worker's debounce), so a built-in plugin edited in a checkout
     /// reloads as it's saved. In an installed app the folder never changes.
     fn watch_builtin(&self, dir: &Path) {
-        let Some(tx) = lock(&self.inner.kick).clone() else { return };
-        let watch = crate::fs_watch::FsWatchHub::global().watch(dir, notify::RecursiveMode::Recursive, move |event: &notify::Event| {
-            if is_change(event) {
-                let _ = tx.send(Kick::Rescan);
-            }
-        });
+        let Some(tx) = lock(&self.inner.kick).clone() else {
+            return;
+        };
+        let watch = crate::fs_watch::FsWatchHub::global().watch(
+            dir,
+            notify::RecursiveMode::Recursive,
+            move |event: &notify::Event| {
+                if is_change(event) {
+                    let _ = tx.send(Kick::Rescan);
+                }
+            },
+        );
         *lock(&self.inner.builtin_watch) = Some(watch);
     }
 
@@ -855,11 +870,13 @@ impl Plugins {
     /// [`Self::register_key`] in the background, when this device's key
     /// isn't registered for the account signed in.
     fn spawn_register(&self) {
-        let (Some(account), Ok(runtime)) = (self.account(), tokio::runtime::Handle::try_current()) else {
+        let (Some(account), Ok(runtime)) = (self.account(), tokio::runtime::Handle::try_current())
+        else {
             return;
         };
-        let registered = signing::load_key(&self.inner.data_dir)
-            .is_some_and(|key| keys::Registration::load(&self.inner.data_dir).covers(&key.public(), &account));
+        let registered = signing::load_key(&self.inner.data_dir).is_some_and(|key| {
+            keys::Registration::load(&self.inner.data_dir).covers(&key.public(), &account)
+        });
         if !registered {
             let this = self.clone();
             runtime.spawn(async move { this.register_key().await });
@@ -909,7 +926,12 @@ impl Plugins {
     /// session still there to revoke with.)
     pub async fn retire_signing_key(&self) {
         let directory = self.directory();
-        keys::retire_key(&self.inner.data_dir, directory.as_deref(), self.account().as_deref()).await;
+        keys::retire_key(
+            &self.inner.data_dir,
+            directory.as_deref(),
+            self.account().as_deref(),
+        )
+        .await;
         lock(&self.inner.new_keys).clear();
     }
 
@@ -919,11 +941,22 @@ impl Plugins {
         let (Some(directory), Some(account)) = (self.directory(), self.account()) else {
             return false;
         };
-        match keys::new_keys_elsewhere(&self.inner.data_dir, directory.as_ref(), &self.inner.device_id, &account).await {
+        match keys::new_keys_elsewhere(
+            &self.inner.data_dir,
+            directory.as_ref(),
+            &self.inner.device_id,
+            &account,
+        )
+        .await
+        {
             Ok(rows) => {
                 for row in &rows {
                     let named = self.device_name(&row.device_id);
-                    let device = if named == row.device_id || named.trim().is_empty() { "another device".to_owned() } else { named };
+                    let device = if named == row.device_id || named.trim().is_empty() {
+                        "another device".to_owned()
+                    } else {
+                        named
+                    };
                     tracing::info!(device = %row.device_id, fingerprint = %row.fingerprint, "plugins: a new signing key on the account");
                     self.key_notice(
                         &format!("key-added:{}", row.key),
@@ -962,7 +995,11 @@ impl Plugins {
         *lock(&self.inner.own_key_checked) = Some(Instant::now());
         let revoked = match directory.lookup(&key).await {
             // Revoked on this account (whatever this device's file says).
-            Ok(keys::Lookup::Found { revoked: true, mine: true, .. }) => true,
+            Ok(keys::Lookup::Found {
+                revoked: true,
+                mine: true,
+                ..
+            }) => true,
             // Registered here, and now gone or someone else's.
             Ok(keys::Lookup::Found { mine: false, .. }) | Ok(keys::Lookup::Unknown) => registered,
             Ok(keys::Lookup::Found { .. }) => false,
@@ -978,14 +1015,19 @@ impl Plugins {
     }
 
     async fn own_key_revoked(&self, key: &str) {
-        tracing::warn!("plugins: this device's signing key was revoked elsewhere; making a new one");
+        tracing::warn!(
+            "plugins: this device's signing key was revoked elsewhere; making a new one"
+        );
         // Revoked already: nothing to revoke, just never sign with it again.
         signing::delete_key(&self.inner.data_dir);
         let _ = std::fs::remove_file(self.inner.data_dir.join(keys::REGISTRATION_FILE));
         let cached = {
             let mut cache = lock(&self.inner.cache);
             if let Some(account) = self.account() {
-                cache.0.insert(key.to_owned(), keys::CachedKey::from_lookup(&keys::Lookup::Unknown, &account, now_secs()));
+                cache.0.insert(
+                    key.to_owned(),
+                    keys::CachedKey::from_lookup(&keys::Lookup::Unknown, &account, now_secs()),
+                );
             }
             cache.clone()
         };
@@ -997,7 +1039,8 @@ impl Plugins {
             for id in own {
                 if let Some(d) = state.decisions.get_mut(&id) {
                     let inside = capability::inside_sandbox(&d.allowed_record());
-                    d.permissions.retain(|p| !capability::OUTSIDE_SANDBOX.contains(&p.as_str()));
+                    d.permissions
+                        .retain(|p| !capability::OUTSIDE_SANDBOX.contains(&p.as_str()));
                     d.grants = Some(inside);
                 }
             }
@@ -1010,7 +1053,11 @@ impl Plugins {
         })
         .await;
         lock(&self.inner.new_keys).retain(|row| row.key != key);
-        let here = if cfg!(target_os = "macos") { "This Mac's" } else { "This device's" };
+        let here = if cfg!(target_os = "macos") {
+            "This Mac's"
+        } else {
+            "This device's"
+        };
         self.key_notice(
             &format!("key-revoked:{key}"),
             "own_key_revoked",
@@ -1027,7 +1074,10 @@ impl Plugins {
     /// Tell `device` a key was revoked, so it checks its own now rather
     /// than at its next regular check (best effort: offline, it checks then).
     fn tell_key_revoked(&self, device: String) {
-        let (Some(links), Ok(runtime)) = (lock(&self.inner.links).clone(), tokio::runtime::Handle::try_current()) else {
+        let (Some(links), Ok(runtime)) = (
+            lock(&self.inner.links).clone(),
+            tokio::runtime::Handle::try_current(),
+        ) else {
             return;
         };
         runtime.spawn(async move {
@@ -1050,7 +1100,9 @@ impl Plugins {
             if notices.iter().any(|n| n["id"] == id) {
                 return;
             }
-            notices.push(serde_json::json!({ "id": id, "kind": kind, "device": device, "words": words }));
+            notices.push(
+                serde_json::json!({ "id": id, "kind": kind, "device": device, "words": words }),
+            );
             let excess = notices.len().saturating_sub(20);
             notices.drain(..excess);
         }
@@ -1063,7 +1115,8 @@ impl Plugins {
     /// A peer said it revoked a key (`CheckPluginKey`): this device's own
     /// looked up now, unless it was a moment ago.
     async fn check_own_key_soon(&self) {
-        let recent = lock(&self.inner.own_key_checked).is_some_and(|at| at.elapsed() < OWN_KEY_CHECK_APART);
+        let recent =
+            lock(&self.inner.own_key_checked).is_some_and(|at| at.elapsed() < OWN_KEY_CHECK_APART);
         if !recent {
             self.check_own_key().await;
         }
@@ -1174,7 +1227,8 @@ impl Plugins {
                 .filter_map(|d| d.file_name().map(|n| n.to_string_lossy().into_owned()))
                 .collect()
         };
-        let mut present: std::collections::BTreeSet<String> = names(&self.inner.plugins_dir).into_iter().collect();
+        let mut present: std::collections::BTreeSet<String> =
+            names(&self.inner.plugins_dir).into_iter().collect();
         if let Some(dir) = lock(&self.inner.builtin_dir).clone() {
             present.extend(names(&dir));
         }
@@ -1351,7 +1405,14 @@ impl Plugins {
         let gave_up = self.directory().is_none()
             || account.is_none()
             || lock(&self.inner.lookup_failed).contains_key(key);
-        let resolved = keys::resolve_cached(&cache, key, own_key.as_deref(), account.as_deref(), now_secs(), gave_up);
+        let resolved = keys::resolve_cached(
+            &cache,
+            key,
+            own_key.as_deref(),
+            account.as_deref(),
+            now_secs(),
+            gave_up,
+        );
         if resolved.is_err() {
             self.spawn_lookups(vec![key.to_owned()]);
         }
@@ -1382,7 +1443,8 @@ impl Plugins {
             {
                 entry["imported"]["source"] = source.shown();
             }
-            if let (Some(id), Some(hash)) = (entry["id"].as_str(), entry["imported"]["hash"].as_str())
+            if let (Some(id), Some(hash)) =
+                (entry["id"].as_str(), entry["imported"]["hash"].as_str())
                 && let Some(found) = template_packages::found(&dir, id, hash)
             {
                 entry["update"] = found.shown();
@@ -1528,7 +1590,9 @@ impl Plugins {
             (None, None) => None,
         };
         let Some(id) = id else {
-            return Err(failed("Only a plugin in your plugins folder can be signed, by its id"));
+            return Err(failed(
+                "Only a plugin in your plugins folder can be signed, by its id",
+            ));
         };
         self.rescan().await;
         let hash = self.entry(&id).map(|e| e.item.hash).unwrap_or_default();
@@ -1569,7 +1633,11 @@ impl Plugins {
                     lock(&self.inner.reviews).mint(reviews::Kind::Plugin, &id, &p.hash)?
                 } else {
                     let pending = p.pending.unwrap_or_default();
-                    lock(&self.inner.reviews).mint(reviews::Kind::Template, pending.trim(), &p.hash)?
+                    lock(&self.inner.reviews).mint(
+                        reviews::Kind::Template,
+                        pending.trim(),
+                        &p.hash,
+                    )?
                 };
                 RpcReply::value(&serde_json::json!({ "review": review }))
             }
@@ -1615,7 +1683,9 @@ impl Plugins {
                     && self.resolve_now(key).await != entry.item.author
                 {
                     self.rescan().await;
-                    return Err(failed("Who made it couldn't be confirmed just now; review it again"));
+                    return Err(failed(
+                        "Who made it couldn't be confirmed just now; review it again",
+                    ));
                 }
                 let decision = entry.facts().record(p.allow);
                 self.update_state(|state| {
@@ -1648,7 +1718,11 @@ impl Plugins {
                 // Onicode's own: on or off is all there is to decide.
                 if entry.item.builtin {
                     self.update_state(|state| {
-                        let mut decision = state.decisions.get(&p.id).cloned().unwrap_or_else(|| entry.facts().record(true));
+                        let mut decision = state
+                            .decisions
+                            .get(&p.id)
+                            .cloned()
+                            .unwrap_or_else(|| entry.facts().record(true));
                         decision.off = p.off;
                         state.decisions.insert(p.id.clone(), decision);
                     })?;
@@ -1675,7 +1749,9 @@ impl Plugins {
             methods::REMOVE_PLUGIN => {
                 let p: IdParams = parse_params(params)?;
                 if self.entry(&p.id).is_some_and(|e| e.item.builtin) {
-                    return Err(failed("Built-in plugins can be turned off, but not removed"));
+                    return Err(failed(
+                        "Built-in plugins can be turned off, but not removed",
+                    ));
                 }
                 // (One plain name, joined so it stays in the plugins folder on
                 // every system: never `C:`, a device name or a trailing dot.)
@@ -1695,14 +1771,32 @@ impl Plugins {
                     state.own.remove(&p.id);
                 })?;
                 // What it kept (`onicode.store`, the app's) goes with it.
-                let _ = std::fs::remove_file(self.inner.plugins_dir.join(".storage").join(format!("{}.json", p.id)));
+                let _ = std::fs::remove_file(
+                    self.inner
+                        .plugins_dir
+                        .join(".storage")
+                        .join(format!("{}.json", p.id)),
+                );
                 // And its settings (the app's: what you set on its page).
-                let _ = std::fs::remove_file(self.inner.plugins_dir.join(".storage").join(format!("{}.settings.json", p.id)));
+                let _ = std::fs::remove_file(
+                    self.inner
+                        .plugins_dir
+                        .join(".storage")
+                        .join(format!("{}.settings.json", p.id)),
+                );
                 // Its service's (`onicode.store` in service.luau).
-                let _ = std::fs::remove_file(Services::store_path(&self.inner.plugins_dir.join(".storage"), &p.id));
+                let _ = std::fs::remove_file(Services::store_path(
+                    &self.inner.plugins_dir.join(".storage"),
+                    &p.id,
+                ));
                 // Its database (`onicode.db`), and SQLite's files beside it.
                 for end in ["sqlite3", "sqlite3-wal", "sqlite3-shm"] {
-                    let _ = std::fs::remove_file(self.inner.plugins_dir.join(".storage").join(format!("{}.{end}", p.id)));
+                    let _ = std::fs::remove_file(
+                        self.inner
+                            .plugins_dir
+                            .join(".storage")
+                            .join(format!("{}.{end}", p.id)),
+                    );
                 }
                 install::forget_found(&self.inner.plugins_dir, &p.id);
                 self.rescan().await;
@@ -1934,12 +2028,15 @@ impl Plugins {
                     tracing::info!(method, %by, "themes: asked by an agent");
                 }
                 let (data_dir, asked) = (self.inner.data_dir.clone(), method.to_owned());
-                let reply = tokio::task::spawn_blocking(move || themes::answer(&data_dir, &asked, &params))
-                    .await
-                    .map_err(|_| failed("Couldn't reach the themes"))?
-                    .map_err(failed)?;
+                let reply =
+                    tokio::task::spawn_blocking(move || themes::answer(&data_dir, &asked, &params))
+                        .await
+                        .map_err(|_| failed("Couldn't reach the themes"))?
+                        .map_err(failed)?;
                 if themes::changes(method) {
-                    self.inner.themes.push(serde_json::json!({ "changed": true }));
+                    self.inner
+                        .themes
+                        .push(serde_json::json!({ "changed": true }));
                 }
                 RpcReply::value(&reply)
             }
@@ -1983,13 +2080,22 @@ impl Plugins {
                         (methods::CREATE_TEMPLATE, Some(id)) => {
                             let name = p.name.as_deref().map(str::trim).filter(|n| !n.is_empty());
                             let (_, guide) = guides::ensure(&data_dir);
-                            templates::create(&dir, id, name.unwrap_or(id), p.from.as_deref(), &guide).map(|mut v| {
+                            templates::create(
+                                &dir,
+                                id,
+                                name.unwrap_or(id),
+                                p.from.as_deref(),
+                                &guide,
+                            )
+                            .map(|mut v| {
                                 v["guide"] = serde_json::json!(guide.display().to_string());
                                 v["guide_summary"] = serde_json::json!(guides::TEMPLATES_SUMMARY);
                                 v
                             })
                         }
-                        (methods::USE_TEMPLATE, Some(id)) => templates::use_template(&dir, id, by.as_ref()),
+                        (methods::USE_TEMPLATE, Some(id)) => {
+                            templates::use_template(&dir, id, by.as_ref())
+                        }
                         (methods::TEMPLATE_STATUS, Some(id)) => templates::status(&dir, id),
                         (_, Some(id)) => templates::delete(&dir, id),
                     }
@@ -2000,20 +2106,34 @@ impl Plugins {
                 RpcReply::value(&self.with_template_authors(reply))
             }
             // From a link: fetched and verified, then imported as a file is.
-            methods::IMPORT_TEMPLATE if params.get("url").and_then(|u| u.as_str()).is_some_and(|u| !u.trim().is_empty()) => {
-                if params.get("path").and_then(|p| p.as_str()).is_some_and(|p| !p.trim().is_empty()) {
-                    return Err(failed("Give a template file (`path`) or a link (`url`), not both"));
+            methods::IMPORT_TEMPLATE
+                if params
+                    .get("url")
+                    .and_then(|u| u.as_str())
+                    .is_some_and(|u| !u.trim().is_empty()) =>
+            {
+                if params
+                    .get("path")
+                    .and_then(|p| p.as_str())
+                    .is_some_and(|p| !p.trim().is_empty())
+                {
+                    return Err(failed(
+                        "Give a template file (`path`) or a link (`url`), not both",
+                    ));
                 }
                 let url = params["url"].as_str().unwrap_or("").to_owned();
                 let origin = template_packages::origin(&url).map_err(failed)?;
-                let (package, mut source) = template_packages::fetch(&origin).await.map_err(failed)?;
+                let (package, mut source) =
+                    template_packages::fetch(&origin).await.map_err(failed)?;
                 source.version = package.version();
                 source.installed_at = now_secs();
                 let from = source.url.clone().unwrap_or_default();
                 let dir = self.inner.data_dir.join(TEMPLATES_DIR);
                 let this = self.clone();
                 let reply = tokio::task::spawn_blocking(move || {
-                    template_packages::import_package(&dir, package, &from, source, |key: &str| this.author_of(key))
+                    template_packages::import_package(&dir, package, &from, source, |key: &str| {
+                        this.author_of(key)
+                    })
                 })
                 .await
                 .map_err(|_| failed("Couldn't reach the templates folder"))?
@@ -2077,7 +2197,9 @@ impl Plugins {
                 // path of its choosing is the person's (their save dialog).
                 if method == methods::EXPORT_TEMPLATE
                     && !onicode_rpc::caller().is_local()
-                    && p.path.as_deref().is_some_and(|path| !path.trim().is_empty())
+                    && p.path
+                        .as_deref()
+                        .is_some_and(|path| !path.trim().is_empty())
                 {
                     return Err(failed(
                         "Agents export to Onicode's exports folder: leave out `path` (the reply says where it went)",
@@ -2087,7 +2209,12 @@ impl Plugins {
                 let this = self.clone();
                 let method = method.to_owned();
                 let reply = tokio::task::spawn_blocking(move || {
-                    let path = p.path.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(PathBuf::from);
+                    let path = p
+                        .path
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|p| !p.is_empty())
+                        .map(PathBuf::from);
                     let author_of = |key: &str| this.author_of(key);
                     match method.as_str() {
                         methods::EXPORT_TEMPLATE => {
@@ -2099,13 +2226,22 @@ impl Plugins {
                             // yours; else Onicode's exports folder.
                             let path = match path {
                                 Some(path) => {
-                                    template_packages::check_export_path(&path, &this.inner.data_dir, Some(&crate::repos::home_dir()))?;
+                                    template_packages::check_export_path(
+                                        &path,
+                                        &this.inner.data_dir,
+                                        Some(&crate::repos::home_dir()),
+                                    )?;
                                     path
                                 }
                                 None => {
-                                    let path = template_packages::default_export_path(&this.inner.data_dir, id);
+                                    let path = template_packages::default_export_path(
+                                        &this.inner.data_dir,
+                                        id,
+                                    );
                                     if let Some(parent) = path.parent() {
-                                        std::fs::create_dir_all(parent).map_err(|e| format!("Couldn't make its folder: {e}"))?;
+                                        std::fs::create_dir_all(parent).map_err(|e| {
+                                            format!("Couldn't make its folder: {e}")
+                                        })?;
                                     }
                                     path
                                 }
@@ -2114,12 +2250,20 @@ impl Plugins {
                             template_packages::export(&dir, id, &path, &key)
                         }
                         methods::IMPORT_TEMPLATE => {
-                            let path = path.ok_or("Say which file to import (`path`, a .onicode-template file).")?;
+                            let path = path.ok_or(
+                                "Say which file to import (`path`, a .onicode-template file).",
+                            )?;
                             template_packages::import(&dir, &path, author_of)
                         }
                         _ => {
                             let pending = p.pending.unwrap_or_default();
-                            template_packages::decide(&dir, pending.trim(), p.allow, p.hash.as_deref().unwrap_or(""), author_of)
+                            template_packages::decide(
+                                &dir,
+                                pending.trim(),
+                                p.allow,
+                                p.hash.as_deref().unwrap_or(""),
+                                author_of,
+                            )
                         }
                     }
                 })
@@ -2142,7 +2286,14 @@ impl Plugins {
                     .ok_or_else(|| failed(format!("There's no plugin {}", p.id)))?;
                 let item = serde_json::to_value(&entry.item).unwrap_or_default();
                 let mut out = serde_json::json!({ "id": entry.item.id, "name": entry.item.name });
-                for key in ["status", "error", "permissions", "allowed", "dir", "version"] {
+                for key in [
+                    "status",
+                    "error",
+                    "permissions",
+                    "allowed",
+                    "dir",
+                    "version",
+                ] {
                     if let Some(v) = item.get(key).filter(|v| !v.is_null()) {
                         out[key] = v.clone();
                     }
@@ -2150,7 +2301,11 @@ impl Plugins {
                 // Its service here: running, what it serves, its last log lines.
                 if entry.item.service.is_some() {
                     let status = self.inner.services.status(&entry.item.id);
-                    out["service"] = if status.is_null() { serde_json::json!({ "running": false }) } else { status };
+                    out["service"] = if status.is_null() {
+                        serde_json::json!({ "running": false })
+                    } else {
+                        status
+                    };
                 }
                 // The window's account: where the plugin's nodes are, and
                 // what its row says (the app answers this call itself).
@@ -2158,7 +2313,13 @@ impl Plugins {
                 match self
                     .inner
                     .tools
-                    .call(&entry.item.id, tool, serde_json::json!({}), None, STATUS_TIMEOUT)
+                    .call(
+                        &entry.item.id,
+                        tool,
+                        serde_json::json!({}),
+                        None,
+                        STATUS_TIMEOUT,
+                    )
                     .await
                 {
                     Ok(window) => {
@@ -2169,7 +2330,9 @@ impl Plugins {
                     }
                     Err(CallError::NotOpen) => {
                         out["open"] = serde_json::json!(false);
-                        out["note"] = serde_json::json!("Onicode's window isn't open on this device: open it to see where the plugin shows.");
+                        out["note"] = serde_json::json!(
+                            "Onicode's window isn't open on this device: open it to see where the plugin shows."
+                        );
                     }
                     Err(CallError::TimedOut) => {
                         out["open"] = serde_json::json!(true);
@@ -2187,8 +2350,9 @@ impl Plugins {
                 let text = tokio::fs::read_to_string(&path).await.map_err(|_| {
                     failed("Onicode's window hasn't said where plugins can go yet: open Onicode, then ask again.")
                 })?;
-                let mut map: serde_json::Value = serde_json::from_str(&text)
-                    .map_err(|_| failed("Onicode's map of where plugins can go couldn't be read."))?;
+                let mut map: serde_json::Value = serde_json::from_str(&text).map_err(|_| {
+                    failed("Onicode's map of where plugins can go couldn't be read.")
+                })?;
                 let (guide, _) = guides::ensure(&self.inner.data_dir);
                 map["guide"] = serde_json::json!(guide.display().to_string());
                 map["guide_summary"] = serde_json::json!(guides::PLUGINS_SUMMARY);
@@ -2214,20 +2378,31 @@ impl Plugins {
                     revoke: Option<String>,
                 }
                 let p: KeyParams = parse_params(params)?;
-                if let Some(revoke) = p.revoke.map(|k| k.trim().to_owned()).filter(|k| !k.is_empty()) {
-                    let directory = self.directory().ok_or_else(|| failed("Sign in to revoke a key"))?;
+                if let Some(revoke) = p
+                    .revoke
+                    .map(|k| k.trim().to_owned())
+                    .filter(|k| !k.is_empty())
+                {
+                    let directory = self
+                        .directory()
+                        .ok_or_else(|| failed("Sign in to revoke a key"))?;
                     let own = signing::load_key(&self.inner.data_dir).map(|k| k.public());
                     if own.as_deref() == Some(revoke.as_str()) {
                         self.retire_signing_key().await;
                     } else {
                         // Whose device it's on, to tell it at once.
-                        let device = directory
-                            .keys_since(0)
+                        let device = directory.keys_since(0).await.ok().and_then(|(rows, _)| {
+                            rows.into_iter()
+                                .find(|r| r.key == revoke)
+                                .map(|r| r.device_id)
+                        });
+                        directory
+                            .revoke(&revoke)
                             .await
-                            .ok()
-                            .and_then(|(rows, _)| rows.into_iter().find(|r| r.key == revoke).map(|r| r.device_id));
-                        directory.revoke(&revoke).await.map_err(|_| failed("Couldn't revoke it: the edge can't be reached"))?;
-                        if let Some(device) = device.filter(|d| !d.is_empty() && *d != self.inner.device_id) {
+                            .map_err(|_| failed("Couldn't revoke it: the edge can't be reached"))?;
+                        if let Some(device) =
+                            device.filter(|d| !d.is_empty() && *d != self.inner.device_id)
+                        {
                             self.tell_key_revoked(device);
                         }
                     }
@@ -2238,8 +2413,13 @@ impl Plugins {
                     return RpcReply::value(&serde_json::json!({ "revoked": revoke }));
                 }
                 let listed = if p.keys {
-                    let directory = self.directory().ok_or_else(|| failed("Sign in to see your keys"))?;
-                    let (rows, _) = directory.keys_since(0).await.map_err(|_| failed("Couldn't list your keys"))?;
+                    let directory = self
+                        .directory()
+                        .ok_or_else(|| failed("Sign in to see your keys"))?;
+                    let (rows, _) = directory
+                        .keys_since(0)
+                        .await
+                        .map_err(|_| failed("Couldn't list your keys"))?;
                     Some(rows)
                 } else {
                     None
@@ -2258,15 +2438,18 @@ impl Plugins {
                 let new_keys = lock(&self.inner.new_keys).clone();
                 let mut reply = serde_json::json!({ "key": key.public(), "registered": registered, "new_keys": new_keys });
                 if let Some(rows) = listed {
-                    reply["keys"] = serde_json::json!(rows
-                        .iter()
-                        .map(|row| {
-                            let mut row_value = serde_json::json!(row);
-                            row_value["this_device"] = serde_json::json!(row.key == key.public());
-                            row_value["device_name"] = serde_json::json!(self.device_name(&row.device_id));
-                            row_value
-                        })
-                        .collect::<Vec<_>>());
+                    reply["keys"] = serde_json::json!(
+                        rows.iter()
+                            .map(|row| {
+                                let mut row_value = serde_json::json!(row);
+                                row_value["this_device"] =
+                                    serde_json::json!(row.key == key.public());
+                                row_value["device_name"] =
+                                    serde_json::json!(self.device_name(&row.device_id));
+                                row_value
+                            })
+                            .collect::<Vec<_>>()
+                    );
                 }
                 RpcReply::value(&reply)
             }
@@ -2346,7 +2529,14 @@ impl Plugins {
             match self
                 .inner
                 .services
-                .call(&plan, service::Kind::Tool, &tool, args.clone(), call, broker::TOOL_TIMEOUT)
+                .call(
+                    &plan,
+                    service::Kind::Tool,
+                    &tool,
+                    args.clone(),
+                    call,
+                    broker::TOOL_TIMEOUT,
+                )
                 .await
             {
                 Ok(value) => {
@@ -2464,7 +2654,11 @@ impl Plugins {
         let Some(entry) = self.entry(&p.plugin) else {
             return outcome::NOT_INSTALLED;
         };
-        let needs = if p.event.is_some() { "service" } else { "devices" };
+        let needs = if p.event.is_some() {
+            "service"
+        } else {
+            "devices"
+        };
         if !entry.allows(needs) {
             return outcome::NOT_ALLOWED;
         }
@@ -2554,7 +2748,10 @@ impl service::Hooks for ServiceHooks {
     }
 
     fn notify(&self, plugin: &str, title: &str, body: &str, session: Option<&str>) -> String {
-        let notify = self.inner.upgrade().and_then(|inner| lock(&inner.notifier).clone());
+        let notify = self
+            .inner
+            .upgrade()
+            .and_then(|inner| lock(&inner.notifier).clone());
         match notify {
             Some(notify) => notify(plugin, title, body, session),
             None => "unavailable".into(),
@@ -2569,7 +2766,10 @@ impl service::Hooks for ServiceHooks {
     }
 
     fn folders(&self) -> Vec<String> {
-        let folders = self.inner.upgrade().and_then(|inner| lock(&inner.folders).clone());
+        let folders = self
+            .inner
+            .upgrade()
+            .and_then(|inner| lock(&inner.folders).clone());
         folders.map(|f| f()).unwrap_or_default()
     }
 
@@ -2582,10 +2782,14 @@ impl service::Hooks for ServiceHooks {
         };
         tracing::warn!(plugin = %plan.plugin, %why, "plugins: a service's snapshot changed; not loaded");
         snapshot::remove(&plan.dir);
-        if let (Some(inner), Ok(runtime)) = (self.inner.upgrade(), tokio::runtime::Handle::try_current()) {
+        if let (Some(inner), Ok(runtime)) =
+            (self.inner.upgrade(), tokio::runtime::Handle::try_current())
+        {
             runtime.spawn(async move { Plugins { inner }.rescan().await });
         }
-        Err(format!("its files changed since you allowed it ({why}); Onicode is checking it again"))
+        Err(format!(
+            "its files changed since you allowed it ({why}); Onicode is checking it again"
+        ))
     }
 }
 
@@ -2598,7 +2802,10 @@ impl Plugins {
 
     /// Run what should run, after a scan.
     fn sync_services(&self) {
-        let plans: Vec<Plan> = lock(&self.inner.entries).iter().filter_map(service_plan).collect();
+        let plans: Vec<Plan> = lock(&self.inner.entries)
+            .iter()
+            .filter_map(service_plan)
+            .collect();
         self.inner.services.sync(plans);
     }
 
@@ -2615,12 +2822,16 @@ impl Plugins {
         let now = Instant::now();
         let targets: Vec<String> = {
             let mut watchers = lock(&self.inner.watchers);
-            let Some(devices) = watchers.get_mut(plugin) else { return };
+            let Some(devices) = watchers.get_mut(plugin) else {
+                return;
+            };
             devices.retain(|_, until| *until > now);
             devices.keys().cloned().collect()
         };
-        let (Some(links), Ok(runtime)) = (lock(&self.inner.links).clone(), tokio::runtime::Handle::try_current())
-        else {
+        let (Some(links), Ok(runtime)) = (
+            lock(&self.inner.links).clone(),
+            tokio::runtime::Handle::try_current(),
+        ) else {
             return;
         };
         let deliver = serde_json::json!({
@@ -2631,10 +2842,19 @@ impl Plugins {
             "data": data,
         });
         for target in targets {
-            let (links, deliver, this, plugin) = (links.clone(), deliver.clone(), self.clone(), plugin.to_owned());
+            let (links, deliver, this, plugin) = (
+                links.clone(),
+                deliver.clone(),
+                self.clone(),
+                plugin.to_owned(),
+            );
             runtime.spawn(async move {
                 let reply = tokio::time::timeout(DELIVER_TIMEOUT, async {
-                    links.client(&target).await?.call(methods::PLUGIN_DELIVER, deliver).await
+                    links
+                        .client(&target)
+                        .await?
+                        .call(methods::PLUGIN_DELIVER, deliver)
+                        .await
                 })
                 .await;
                 let gone = match &reply {
@@ -2658,7 +2878,11 @@ impl Plugins {
         self.ensure_scanned().await;
         let here = self.device_name(&self.inner.device_id);
         let Some(entry) = self.entry(&p.plugin) else {
-            return Refusal::new(reason::NOT_INSTALLED, format!("There's no plugin {} on {here}", p.plugin)).to_json();
+            return Refusal::new(
+                reason::NOT_INSTALLED,
+                format!("There's no plugin {} on {here}", p.plugin),
+            )
+            .to_json();
         };
         if p.method.is_empty() {
             return Refusal::new(reason::BAD_CALL, "Say which method to call").to_json();
@@ -2673,7 +2897,10 @@ impl Plugins {
             timeout: p.timeout,
             unverified_from: false,
         };
-        let target = p.device.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty() && *d != self.inner.device_id);
+        let target = p
+            .device
+            .map(|d| d.trim().to_owned())
+            .filter(|d| !d.is_empty() && *d != self.inner.device_id);
         let Some(target) = target else {
             return self.serve_call(call).await;
         };
@@ -2687,12 +2914,20 @@ impl Plugins {
     async fn forward_call(&self, target: &str, call: ServeParams) -> serde_json::Value {
         let name = self.device_name(target);
         let Some(links) = lock(&self.inner.links).clone() else {
-            return Refusal::new(reason::OFFLINE, format!("{name} can't be reached: this device isn't connected")).to_json();
+            return Refusal::new(
+                reason::OFFLINE,
+                format!("{name} can't be reached: this device isn't connected"),
+            )
+            .to_json();
         };
         let wait = clamp_timeout(call.timeout) + LINK_SLACK;
         let params = serde_json::to_value(&call).unwrap_or_default();
         let reply = tokio::time::timeout(wait, async {
-            links.client(target).await?.call(methods::SERVE_PLUGIN_CALL, params).await
+            links
+                .client(target)
+                .await?
+                .call(methods::SERVE_PLUGIN_CALL, params)
+                .await
         })
         .await;
         match reply {
@@ -2707,12 +2942,20 @@ impl Plugins {
                 if matches!(error, RpcError::Closed | RpcError::Transport(_)) {
                     links.invalidate(target);
                 }
-                Refusal::new(reason::OFFLINE, format!("{name} can't be reached right now ({error})")).to_json()
+                Refusal::new(
+                    reason::OFFLINE,
+                    format!("{name} can't be reached right now ({error})"),
+                )
+                .to_json()
             }
             Err(_) => {
                 // Perhaps a dead link: the next call dials again.
                 links.invalidate(target);
-                Refusal::new(reason::TIMEOUT, format!("{name} didn't answer within {} s", wait.as_secs())).to_json()
+                Refusal::new(
+                    reason::TIMEOUT,
+                    format!("{name} didn't answer within {} s", wait.as_secs()),
+                )
+                .to_json()
             }
         }
     }
@@ -2729,19 +2972,37 @@ impl Plugins {
     async fn serve_inner(&self, p: ServeParams) -> Result<serde_json::Value, Refusal> {
         self.ensure_scanned().await;
         let here = self.device_name(&self.inner.device_id);
-        let entry = self
-            .entry(&p.plugin)
-            .ok_or_else(|| Refusal::new(reason::NOT_INSTALLED, format!("{} isn't installed on {here}", p.plugin)))?;
+        let entry = self.entry(&p.plugin).ok_or_else(|| {
+            Refusal::new(
+                reason::NOT_INSTALLED,
+                format!("{} isn't installed on {here}", p.plugin),
+            )
+        })?;
         let name = entry.item.name.clone();
         match entry.item.status {
             Status::On => {}
-            Status::Off => return Err(Refusal::new(reason::OFF, format!("{name} is turned off on {here}"))),
+            Status::Off => {
+                return Err(Refusal::new(
+                    reason::OFF,
+                    format!("{name} is turned off on {here}"),
+                ));
+            }
             Status::Pending => {
-                return Err(Refusal::new(reason::NOT_APPROVED, format!("{name} is waiting to be allowed on {here}")));
+                return Err(Refusal::new(
+                    reason::NOT_APPROVED,
+                    format!("{name} is waiting to be allowed on {here}"),
+                ));
             }
             Status::Tampered | Status::Broken => {
-                let why = entry.item.error.clone().unwrap_or_else(|| "its files don't match its signature".into());
-                return Err(Refusal::new(reason::BROKEN, format!("{name} can't run on {here}: {why}")));
+                let why = entry
+                    .item
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "its files don't match its signature".into());
+                return Err(Refusal::new(
+                    reason::BROKEN,
+                    format!("{name} can't run on {here}: {why}"),
+                ));
             }
         }
         if entry.item.service.is_none() {
@@ -2751,7 +3012,10 @@ impl Plugins {
             ));
         }
         if !entry.allows("service") {
-            return Err(Refusal::new(reason::NOT_APPROVED, format!("{name}'s service isn't allowed on {here} yet")));
+            return Err(Refusal::new(
+                reason::NOT_APPROVED,
+                format!("{name}'s service isn't allowed on {here} yet"),
+            ));
         }
         // Every caller says its version (an engine before that said none,
         // and was let through).
@@ -2768,7 +3032,10 @@ impl Plugins {
         if p.from != self.inner.device_id
             && serde_json::to_vec(&p.args).map_or(usize::MAX, |b| b.len()) > MAX_CALL_BYTES
         {
-            return Err(Refusal::new(reason::BAD_CALL, "That call's arguments are too big"));
+            return Err(Refusal::new(
+                reason::BAD_CALL,
+                "That call's arguments are too big",
+            ));
         }
         if !self.same_author(&entry, p.author_key.as_deref()).await {
             return Err(Refusal::new(
@@ -2776,8 +3043,12 @@ impl Plugins {
                 format!("The {name} on {here} is someone else's plugin by the same name"),
             ));
         }
-        let plan = service_plan(&entry)
-            .ok_or_else(|| Refusal::new(reason::NOT_LOADED, format!("{name} isn't ready on {here} yet")))?;
+        let plan = service_plan(&entry).ok_or_else(|| {
+            Refusal::new(
+                reason::NOT_LOADED,
+                format!("{name} isn't ready on {here} yet"),
+            )
+        })?;
         if p.method == "@watch" {
             // Only another of your devices is sent events (never an id
             // that isn't one: `trusted_from` empties it).
@@ -2790,7 +3061,10 @@ impl Plugins {
             return Ok(serde_json::Value::Null);
         }
         if p.method.is_empty() || p.method.starts_with('@') {
-            return Err(Refusal::new(reason::BAD_CALL, format!("\"{}\" isn't a method", p.method)));
+            return Err(Refusal::new(
+                reason::BAD_CALL,
+                format!("\"{}\" isn't a method", p.method),
+            ));
         }
         let from = if p.from.is_empty() && !p.unverified_from {
             self.sender(&self.inner.device_id, false)
@@ -2801,10 +3075,21 @@ impl Plugins {
             "kind": "call",
             "from": from,
         });
-        let args = if p.args.is_null() { serde_json::json!({}) } else { p.args };
+        let args = if p.args.is_null() {
+            serde_json::json!({})
+        } else {
+            p.args
+        };
         self.inner
             .services
-            .call(&plan, service::Kind::Method, &p.method, args, call, clamp_timeout(p.timeout))
+            .call(
+                &plan,
+                service::Kind::Method,
+                &p.method,
+                args,
+                call,
+                clamp_timeout(p.timeout),
+            )
             .await
     }
 }
@@ -2813,7 +3098,9 @@ impl Plugins {
 fn clamp_timeout(asked: Option<f64>) -> Duration {
     asked
         .filter(|s| s.is_finite() && *s > 0.0)
-        .map_or(service::DEFAULT_TIMEOUT, |s| Duration::from_secs_f64(s).min(service::MAX_TIMEOUT))
+        .map_or(service::DEFAULT_TIMEOUT, |s| {
+            Duration::from_secs_f64(s).min(service::MAX_TIMEOUT)
+        })
 }
 
 /// Whether two resolved authors are the same account: this device's key
@@ -2823,7 +3110,14 @@ pub fn same_account(a: &Author, b: &Author) -> bool {
     let mine = |x: &Author| matches!(x, Author::You | Author::Verified { mine: true, .. });
     match (a, b) {
         _ if mine(a) && mine(b) => true,
-        (Author::Verified { username: Some(x), .. }, Author::Verified { username: Some(y), .. }) => x == y,
+        (
+            Author::Verified {
+                username: Some(x), ..
+            },
+            Author::Verified {
+                username: Some(y), ..
+            },
+        ) => x == y,
         _ => false,
     }
 }
@@ -2848,7 +3142,9 @@ impl Plugins {
     fn trusted_from(&self, claimed: String, unverified: &mut bool) -> String {
         match onicode_rpc::caller() {
             onicode_rpc::Caller::Local => claimed,
-            onicode_rpc::Caller::Peer { device: Some(device) } => device,
+            onicode_rpc::Caller::Peer {
+                device: Some(device),
+            } => device,
             onicode_rpc::Caller::Peer { device: None } | onicode_rpc::Caller::Agent { .. } => {
                 *unverified = true;
                 String::new()
@@ -2883,11 +3179,11 @@ fn watch_stream(rx: watch::Receiver<serde_json::Value>) -> BoxStream<'static, se
 
 #[cfg(test)]
 mod authority_tests;
-#[cfg(test)]
-mod tests;
+#[cfg(all(test, unix))]
+mod git_service_tests;
 #[cfg(test)]
 mod identity_tests;
 #[cfg(test)]
 mod service_tests;
-#[cfg(all(test, unix))]
-mod git_service_tests;
+#[cfg(test)]
+mod tests;

@@ -469,7 +469,6 @@ impl Connector for LocalConnector {
     }
 }
 
-
 /// The local preview proxy, listening: on its usual port, or, with that
 /// taken (another Onicode engine on this computer has it: the app's and a
 /// development one, say), on one the system picks. Every preview address is
@@ -479,7 +478,13 @@ async fn serve_proxy(
     router: proxy::Router,
     stop: &CancellationToken,
 ) -> anyhow::Result<(u16, Vec<tokio::task::JoinHandle<()>>)> {
-    match proxy::serve(router.clone(), onicode_proto::PREVIEW_PROXY_PORT, stop.child_token()).await {
+    match proxy::serve(
+        router.clone(),
+        onicode_proto::PREVIEW_PROXY_PORT,
+        stop.child_token(),
+    )
+    .await
+    {
         Err(error) if address_in_use(&error) => {
             tracing::info!(
                 port = onicode_proto::PREVIEW_PROXY_PORT,

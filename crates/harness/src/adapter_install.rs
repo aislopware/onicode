@@ -577,8 +577,13 @@ pub(crate) async fn install_into(
         dir = %tmp_dir.display(),
         "installing ACP adapter"
     );
-    let (program, args) =
-        npm_install_plan(npm, pin, cache_dir, crate::executable::Platform::current(), ignore_scripts)?;
+    let (program, args) = npm_install_plan(
+        npm,
+        pin,
+        cache_dir,
+        crate::executable::Platform::current(),
+        ignore_scripts,
+    )?;
     let mut cmd = crate::process::Command::new(&program);
     cmd.args(args)
         .current_dir(tmp_dir)
@@ -871,8 +876,14 @@ mod tests {
 
         let cache = temp.path().join("cache's Ω & $(echo nope); ^ % !");
         let pin = NpmPin::parse("@scope/tool@1.2.3");
-        let (program, args) =
-            npm_install_plan(&npm, &pin, &cache, crate::executable::Platform::Windows, false).unwrap();
+        let (program, args) = npm_install_plan(
+            &npm,
+            &pin,
+            &cache,
+            crate::executable::Platform::Windows,
+            false,
+        )
+        .unwrap();
         assert_eq!(program, node);
         assert_eq!(args.first(), Some(&npm.into_os_string()));
         assert_eq!(args[1], OsString::from("install"));

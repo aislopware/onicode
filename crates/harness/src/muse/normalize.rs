@@ -7,9 +7,9 @@
 //! re-send after deltas never duplicates. Items Onicode does not show:
 //! `userMessage` (the prompt itself), `reminderChild` (Muse's per-step
 //! housekeeping agents) and `compaction`.
+use onicode_proto::{AgentEvent, DoneStatus, TodoItem, TodoStatus, ToolCall, ToolDiff};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
-use onicode_proto::{AgentEvent, DoneStatus, TodoItem, TodoStatus, ToolCall, ToolDiff};
 
 /// Tools whose own item carries the work (subagents, the todo list, a
 /// question): their tool row would only duplicate it.

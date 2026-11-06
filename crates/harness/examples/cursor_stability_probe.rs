@@ -2,13 +2,13 @@
 //! ONICODE_CURSOR_STATE_DIR=$(mktemp -d) cargo run -p onicode-harness --example cursor_stability_probe -- sessions 20
 //! cargo run -p onicode-harness --example cursor_stability_probe -- models 1000
 use futures::StreamExt;
+use onicode_harness::{CancellationToken, CursorHarness, Harness, RunControls};
+use onicode_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
 use std::{
     path::PathBuf,
     time::{Duration, Instant},
 };
 use tokio::sync::{mpsc, oneshot};
-use onicode_harness::{CancellationToken, CursorHarness, Harness, RunControls};
-use onicode_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
 
 async fn turn(
     harness: &CursorHarness,
@@ -96,8 +96,10 @@ async fn turn(
                             let dir =
                                 std::fs::read_to_string(root.join("by-agent").join(&id)).unwrap();
                             let owner: serde_json::Value = serde_json::from_slice(
-                                &std::fs::read(PathBuf::from(dir.trim()).join(".onicode-owner.json"))
-                                    .unwrap(),
+                                &std::fs::read(
+                                    PathBuf::from(dir.trim()).join(".onicode-owner.json"),
+                                )
+                                .unwrap(),
                             )
                             .unwrap();
                             assert!(

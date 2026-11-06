@@ -1963,12 +1963,18 @@ async fn codex_banked_resets_list_persist_and_redeem_against_the_mock() {
     .await;
     let tmp = tempfile::tempdir().unwrap();
     let (accounts, config) = accounts_with(tmp.path(), mocked(&server.base));
-    write(&config.codex_home.join("auth.json"), &codex_auth("ada@example.com", "acct-ada"));
+    write(
+        &config.codex_home.join("auth.json"),
+        &codex_auth("ada@example.com", "acct-ada"),
+    );
 
     // The probe loads the credits alongside the usage.
     let codex = rows(&accounts.list(true).await.unwrap(), HarnessId::Codex);
     assert_eq!(codex.len(), 1);
-    let credits = codex[0].codex_reset_credits.clone().expect("credits listed");
+    let credits = codex[0]
+        .codex_reset_credits
+        .clone()
+        .expect("credits listed");
     assert_eq!(credits.available_count, 2);
     assert_eq!(credits.credits[0].id, "credit-1");
     assert!((codex[0].usage_windows[0].used_fraction - 1.0).abs() < 1e-6);
@@ -1978,7 +1984,13 @@ async fn codex_banked_resets_list_persist_and_redeem_against_the_mock() {
     // before it probes again.
     let (restarted, _) = accounts_with(tmp.path(), mocked(&server.base));
     let cold = rows(&restarted.list(false).await.unwrap(), HarnessId::Codex);
-    assert_eq!(cold[0].codex_reset_credits.as_ref().map(|c| c.available_count), Some(2));
+    assert_eq!(
+        cold[0]
+            .codex_reset_credits
+            .as_ref()
+            .map(|c| c.available_count),
+        Some(2)
+    );
 
     // Redeeming checks the account, then sends Codex's own request.
     let outcome = accounts
@@ -1997,17 +2009,36 @@ async fn codex_banked_resets_list_persist_and_redeem_against_the_mock() {
         .consume_codex_reset_credit(&account, "credit-2", "key-2")
         .await
         .unwrap_err();
-    assert!(refused.to_string().contains("different account"), "{refused}");
-    assert_eq!(server.hits("POST /backend-api/wham/rate-limit-reset-credits/consume"), 1);
+    assert!(
+        refused.to_string().contains("different account"),
+        "{refused}"
+    );
+    assert_eq!(
+        server.hits("POST /backend-api/wham/rate-limit-reset-credits/consume"),
+        1
+    );
     // ...and a fresh engine's probe shows no numbers for it.
     let fresh = tempfile::tempdir().unwrap();
     let (other, config) = accounts_with(fresh.path(), mocked(&server.base));
-    write(&config.codex_home.join("auth.json"), &codex_auth("ada@example.com", "acct-ada"));
+    write(
+        &config.codex_home.join("auth.json"),
+        &codex_auth("ada@example.com", "acct-ada"),
+    );
     let refused = rows(&other.list(true).await.unwrap(), HarnessId::Codex);
     assert!(refused[0].usage_windows.is_empty());
     assert!(refused[0].codex_reset_credits.is_none());
 
     // Nothing to redeem with: refused before any request.
-    assert!(accounts.consume_codex_reset_credit(&account, "", "key-3").await.is_err());
-    assert!(accounts.consume_codex_reset_credit("no-such-account", "credit-2", "key-4").await.is_err());
+    assert!(
+        accounts
+            .consume_codex_reset_credit(&account, "", "key-3")
+            .await
+            .is_err()
+    );
+    assert!(
+        accounts
+            .consume_codex_reset_credit("no-such-account", "credit-2", "key-4")
+            .await
+            .is_err()
+    );
 }

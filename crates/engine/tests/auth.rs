@@ -334,12 +334,17 @@ async fn a_fresh_ticket_is_used_before_the_sign_in_is_announced() {
         Box::pin(async move {
             // The bearer works already (registering needs it).
             let bearer = probe.access_token().await.is_ok();
-            record.lock().unwrap().push((user, probe.state(), probe.step_up(), bearer));
+            record
+                .lock()
+                .unwrap()
+                .push((user, probe.state(), probe.step_up(), bearer));
         })
     }));
     let url = auth.start_headless_sign_in();
     let state = query_param(&url, "state").expect("state param");
-    auth.complete_sign_in(&format!("{state}.code123")).await.expect("sign-in");
+    auth.complete_sign_in(&format!("{state}.code123"))
+        .await
+        .expect("sign-in");
     let seen = seen.lock().unwrap().clone();
     assert_eq!(seen.len(), 1);
     let (user, state_then, ticket, bearer) = &seen[0];
@@ -347,7 +352,10 @@ async fn a_fresh_ticket_is_used_before_the_sign_in_is_announced() {
     assert_eq!(*state_then, AuthState::SignedOut, "not announced yet");
     assert_eq!(ticket.as_deref(), Some("ticket-1"));
     assert!(bearer);
-    assert!(matches!(auth.state(), AuthState::NeedsOrganization { .. }), "announced after");
+    assert!(
+        matches!(auth.state(), AuthState::NeedsOrganization { .. }),
+        "announced after"
+    );
 }
 
 /// The app's first sign-in runs on its local engine (no edge of its own),
@@ -370,7 +378,9 @@ async fn a_local_engine_registers_its_signing_key_with_the_sign_ins_ticket() {
     core.set_auth(auth.clone());
     let url = auth.start_headless_sign_in();
     let state = query_param(&url, "state").expect("state param");
-    auth.complete_sign_in(&format!("{state}.code123")).await.expect("sign-in");
+    auth.complete_sign_in(&format!("{state}.code123"))
+        .await
+        .expect("sign-in");
     // By the time the sign-in is announced (and the app would restart the
     // engine), the key is registered with the ticket.
     let registered = edge.state.plugin_keys.lock().unwrap().clone();
@@ -378,8 +388,15 @@ async fn a_local_engine_registers_its_signing_key_with_the_sign_ins_ticket() {
     assert_eq!(registered[0]["stepUp"], "ticket-1");
     assert_eq!(registered[0]["deviceId"], "device-local");
     let registration: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(dir.path().join("plugin-signing-key.json")).unwrap()).unwrap();
-    assert_eq!((registration["registered_for"].as_str(), registration["key"].clone()), (Some("user_1"), registered[0]["key"].clone()));
+        serde_json::from_slice(&std::fs::read(dir.path().join("plugin-signing-key.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        (
+            registration["registered_for"].as_str(),
+            registration["key"].clone()
+        ),
+        (Some("user_1"), registered[0]["key"].clone())
+    );
 }
 
 #[tokio::test]

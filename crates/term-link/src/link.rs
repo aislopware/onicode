@@ -26,9 +26,9 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use onicode_proto::TerminalEvent;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
-use onicode_proto::TerminalEvent;
 
 /// A device's own terminals, as the link's host side serves them.
 pub trait HostTerminals: Clone + Send + Sync + 'static {

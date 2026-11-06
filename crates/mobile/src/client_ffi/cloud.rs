@@ -132,7 +132,8 @@ impl From<onicode_proto::VaultStatus> for VaultInfo {
                 .map(|c| VaultConnectionInfo {
                     provider: c.provider.as_str().to_owned(),
                     account: c.account,
-                    needs_reconnect: c.status == onicode_proto::VaultConnectionStatus::NeedsReconnect,
+                    needs_reconnect: c.status
+                        == onicode_proto::VaultConnectionStatus::NeedsReconnect,
                     accounts: c.accounts,
                     has_active: c.has_active,
                 })

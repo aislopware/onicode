@@ -4509,7 +4509,9 @@ mod tests {
             10
         );
         assert_eq!(
-            registry.variants_for(onicode_theme::Appearance::Dark).count(),
+            registry
+                .variants_for(onicode_theme::Appearance::Dark)
+                .count(),
             20
         );
     }

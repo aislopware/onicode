@@ -1,7 +1,7 @@
 //! Native Appshots layout evidence with isolated data. No agent messages are sent.
 use gpui::{AppContext, AsyncApp, Bounds, WindowBounds, WindowOptions, px, size};
-use std::{path::PathBuf, sync::Arc, time::Duration};
 use onicode_ui::*;
+use std::{path::PathBuf, sync::Arc, time::Duration};
 async fn pause(cx: &mut AsyncApp, ms: u64) {
     cx.background_executor()
         .timer(Duration::from_millis(ms))
@@ -73,7 +73,11 @@ fn main() -> anyhow::Result<()> {
     let data = temp.path().join("ui");
     std::fs::create_dir(&data)?;
     // Publish the IPC bearer where the attaching viewport looks for it.
-    let _ipc = runtime.block_on(onicode_engine::serve_ipc(ipc_port, &data, core.rpc_service()))?;
+    let _ipc = runtime.block_on(onicode_engine::serve_ipc(
+        ipc_port,
+        &data,
+        core.rpc_service(),
+    ))?;
     let boot = EngineBootConfig {
         data_dir: data.clone(),
         ipc_port,

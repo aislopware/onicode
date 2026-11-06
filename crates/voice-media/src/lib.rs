@@ -1,6 +1,7 @@
 //! Codex's packaged WebRTC helper protocol (Apache-2.0, OpenAI rust-v0.159.0).
 //! Audio, AEC, interruption and encrypted media stay inside that native process.
 //! Only bounded SDP signaling, controls and level meters cross this pipe.
+use onicode_proto::voice::VoiceRejection;
 use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
@@ -11,7 +12,6 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     process::{ChildStdin, ChildStdout, Command},
 };
-use onicode_proto::voice::VoiceRejection;
 const MAX_FRAME: usize = 128 * 1024;
 
 pub struct NativeHost {
@@ -495,8 +495,8 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn desktop_media_opens_default_devices_with_old_and_new_helpers() {
-        use std::os::unix::fs::PermissionsExt;
         use onicode_voice_session::VoiceMediaEndpoint;
+        use std::os::unix::fs::PermissionsExt;
 
         for version in [None, Some("0.159.0"), Some("0.160.0"), Some("0.161.0")] {
             let dir = tempfile::tempdir().unwrap();

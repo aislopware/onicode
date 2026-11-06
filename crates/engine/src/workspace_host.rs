@@ -404,7 +404,11 @@ impl WorkspaceHost {
     /// server through this. Production always goes through [`Self::join_room`].
     #[doc(hidden)]
     pub fn connect_registry_url(&self, url: &str) {
-        self.spawn_join(Arc::new(onicode_sync::StaticUrl(url.to_string())), None, None);
+        self.spawn_join(
+            Arc::new(onicode_sync::StaticUrl(url.to_string())),
+            None,
+            None,
+        );
     }
 
     fn spawn_join(
@@ -1214,7 +1218,10 @@ impl WorkspaceHost {
                 git_checked_at: Some(Utc::now()),
                 checkout_id: None,
                 // Groups with the clones of the repository on other devices.
-                repository_id: Some(onicode_proto::view::cloud_repository_id(&spaces, github_repo)),
+                repository_id: Some(onicode_proto::view::cloud_repository_id(
+                    &spaces,
+                    github_repo,
+                )),
                 github_repo: Some(github_repo.to_string()),
                 icon: None,
                 created_at: Utc::now(),
@@ -1227,7 +1234,11 @@ impl WorkspaceHost {
         Ok(self.mutate(|doc| doc.rename_space(space_id, name))?)
     }
 
-    pub fn set_space_icon(&self, space_id: &str, icon: Option<&onicode_proto::SpaceIcon>) -> Result<bool, EngineError> {
+    pub fn set_space_icon(
+        &self,
+        space_id: &str,
+        icon: Option<&onicode_proto::SpaceIcon>,
+    ) -> Result<bool, EngineError> {
         Ok(self.mutate(|doc| doc.set_space_icon(space_id, icon))?)
     }
 
@@ -2107,8 +2118,14 @@ mod tests {
                 clocks: Default::default(),
             }],
         );
-        assert_eq!(host.peer_liveness("cloud-1"), onicode_rpc::PeerLiveness::Dark);
-        assert_eq!(host.peer_liveness("laptop"), onicode_rpc::PeerLiveness::Live);
+        assert_eq!(
+            host.peer_liveness("cloud-1"),
+            onicode_rpc::PeerLiveness::Dark
+        );
+        assert_eq!(
+            host.peer_liveness("laptop"),
+            onicode_rpc::PeerLiveness::Live
+        );
     }
 
     /// A claimed row doesn't know its parent until the chat's `createChat`

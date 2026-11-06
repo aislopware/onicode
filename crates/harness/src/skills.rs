@@ -1,11 +1,11 @@
 //! Host-side discovery for providers without a typed skills catalog. Only
 //! configured skill roots are traversed; bodies stay on the host until invoked.
 use crate::HarnessError;
+use onicode_proto::{HarnessId, invocation::Skill};
 use std::{
     collections::{BTreeMap, HashSet},
     path::{Path, PathBuf},
 };
-use onicode_proto::{HarnessId, invocation::Skill};
 
 const MAX_DISCOVERY_ENTRIES: usize = 4096;
 
@@ -14,8 +14,13 @@ const MAX_DISCOVERY_ENTRIES: usize = 4096;
 /// plugin and workspace changes are not hidden behind a persistent host cache.
 #[derive(Default)]
 pub(crate) struct CommandDiscovery {
-    latest:
-        tokio::sync::Mutex<Option<(PathBuf, std::time::Instant, Vec<onicode_proto::SlashCommand>)>>,
+    latest: tokio::sync::Mutex<
+        Option<(
+            PathBuf,
+            std::time::Instant,
+            Vec<onicode_proto::SlashCommand>,
+        )>,
+    >,
 }
 
 impl CommandDiscovery {

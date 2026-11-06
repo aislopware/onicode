@@ -13,7 +13,10 @@ pub async fn quiesce_cli(ipc_port: u16, data_dir: &std::path::Path) -> anyhow::R
         .await
         .map_err(|e| anyhow::anyhow!("no engine listening on 127.0.0.1:{ipc_port} ({e})"))?;
     let reply = client
-        .call(onicode_rpc::methods::QUIESCE_FOR_SLEEP, serde_json::json!({}))
+        .call(
+            onicode_rpc::methods::QUIESCE_FOR_SLEEP,
+            serde_json::json!({}),
+        )
         .await
         .map_err(|e| anyhow::anyhow!("QuiesceForSleep failed: {e}"))?;
     if reply["quiesced"].as_bool() == Some(true) {
@@ -31,7 +34,9 @@ pub async fn sync_cli(ipc_port: u16, data_dir: &std::path::Path) -> anyhow::Resu
     let client = onicode_rpc::connect_ipc(ipc_port, Some(data_dir))
         .await
         .map_err(|e| {
-            anyhow::anyhow!("no engine listening on 127.0.0.1:{ipc_port} ({e}) — is onicode running?")
+            anyhow::anyhow!(
+                "no engine listening on 127.0.0.1:{ipc_port} ({e}) — is onicode running?"
+            )
         })?;
     let status = client
         .call(onicode_rpc::methods::SYNC_STATUS, serde_json::json!({}))

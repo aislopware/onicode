@@ -33,7 +33,11 @@ fn rig(config: Config) -> Rig {
     let services = Services::new(&dir.path().join(".storage"), config);
     let hooks = Arc::new(Recorder::default());
     services.set_hooks(hooks.clone());
-    Rig { dir, services, hooks }
+    Rig {
+        dir,
+        services,
+        hooks,
+    }
 }
 
 fn quick() -> Config {
@@ -66,7 +70,14 @@ impl Rig {
 
     async fn ask(&self, plan: &Plan, method: &str, args: Json) -> Result<Json, Refusal> {
         self.services
-            .call(plan, Kind::Method, method, args, json!({}), Duration::from_secs(10))
+            .call(
+                plan,
+                Kind::Method,
+                method,
+                args,
+                json!({}),
+                Duration::from_secs(10),
+            )
             .await
     }
 
@@ -118,13 +129,22 @@ async fn it_starts_on_the_first_call_and_stops_when_idle() {
     let r = rig(quick());
     let plan = r.plan("1.0.0", V1, &["service"]);
     assert!(!r.running());
-    assert_eq!(r.ask(&plan, "version", json!({})).await.unwrap(), json!("v1"));
+    assert_eq!(
+        r.ask(&plan, "version", json!({})).await.unwrap(),
+        json!("v1")
+    );
     assert!(r.running());
-    assert_eq!(r.ask(&plan, "version", json!({})).await.unwrap(), json!("v1"));
+    assert_eq!(
+        r.ask(&plan, "version", json!({})).await.unwrap(),
+        json!("v1")
+    );
     assert_eq!(r.starts(), 1, "one VM serves both calls");
     until("idle stop", || !r.running()).await;
     // And the next call starts it again.
-    assert_eq!(r.ask(&plan, "version", json!({})).await.unwrap(), json!("v1"));
+    assert_eq!(
+        r.ask(&plan, "version", json!({})).await.unwrap(),
+        json!("v1")
+    );
     assert_eq!(r.starts(), 2);
 }
 
@@ -136,7 +156,10 @@ async fn a_call_in_flight_keeps_it_from_stopping() {
         ..Config::default()
     });
     let plan = r.plan("1.0.0", V1, &["service"]);
-    assert_eq!(r.ask(&plan, "slow", json!({})).await.unwrap(), json!("slow v1"));
+    assert_eq!(
+        r.ask(&plan, "slow", json!({})).await.unwrap(),
+        json!("slow v1")
+    );
     assert_eq!(r.starts(), 1);
 }
 
@@ -153,14 +176,24 @@ async fn an_update_swaps_after_the_new_version_loads() {
         let (services, v1) = (r.services.clone(), v1.clone());
         tokio::spawn(async move {
             services
-                .call(&v1, Kind::Method, "slow", json!({}), json!({}), Duration::from_secs(10))
+                .call(
+                    &v1,
+                    Kind::Method,
+                    "slow",
+                    json!({}),
+                    json!({}),
+                    Duration::from_secs(10),
+                )
                 .await
         })
     };
     tokio::time::sleep(Duration::from_millis(50)).await;
     let v2 = r.plan("2.0.0", V2, &["service"]);
     r.services.sync(vec![v2.clone()]);
-    until("v2 loaded", || r.services.status("svc")["version"] == "2.0.0").await;
+    until("v2 loaded", || {
+        r.services.status("svc")["version"] == "2.0.0"
+    })
+    .await;
     assert_eq!(r.ask(&v2, "version", json!({})).await.unwrap(), json!("v2"));
     // v1 finished the call it had.
     assert_eq!(slow.await.unwrap().unwrap(), json!("slow v1"));
@@ -190,7 +223,10 @@ async fn turned_off_it_stops() {
     let r = rig(Config::default());
     let plan = r.plan("1.0.0", V1, &["service"]);
     r.services.sync(vec![plan.clone()]);
-    assert_eq!(r.ask(&plan, "version", json!({})).await.unwrap(), json!("v1"));
+    assert_eq!(
+        r.ask(&plan, "version", json!({})).await.unwrap(),
+        json!("v1")
+    );
     r.services.sync(vec![]);
     assert!(r.services.status("svc").is_null());
 }
@@ -226,7 +262,10 @@ fn small() -> Config {
 async fn a_safe_method_runs_again_when_the_service_stopped_mid_call() {
     let r = rig(small());
     let plan = r.plan("1.0.0", FLAKY, &["service"]);
-    assert_eq!(r.ask(&plan, "safe", json!({})).await.unwrap(), json!("safe ran"));
+    assert_eq!(
+        r.ask(&plan, "safe", json!({})).await.unwrap(),
+        json!("safe ran")
+    );
     assert_eq!(r.starts(), 2, "a fresh VM ran it the second time");
 }
 
@@ -237,7 +276,10 @@ async fn an_unsafe_method_is_not_run_again() {
     let refused = r.ask(&plan, "unsafe", json!({})).await.unwrap_err();
     assert_eq!(refused.reason, reason::INTERRUPTED, "{refused:?}");
     // The next call is the plugin's to make; it gets a fresh VM.
-    assert_eq!(r.ask(&plan, "unsafe", json!({})).await.unwrap(), json!("unsafe ran"));
+    assert_eq!(
+        r.ask(&plan, "unsafe", json!({})).await.unwrap(),
+        json!("unsafe ran")
+    );
 }
 
 #[tokio::test]
@@ -256,28 +298,48 @@ async fn the_plugins_own_failures_are_never_retried() {
 async fn commands_are_enforced_inside_the_service() {
     let r = rig(Config::default());
     let allowed = r.plan("1.0.0", V1, &["service", "commands"]);
-    assert_eq!(r.ask(&allowed, "echo", json!({ "word": "hi" })).await.unwrap(), json!("hi\n"));
+    assert_eq!(
+        r.ask(&allowed, "echo", json!({ "word": "hi" }))
+            .await
+            .unwrap(),
+        json!("hi\n")
+    );
     // Not named in its manifest's "commands".
     let refused = r.ask(&allowed, "ls", json!({})).await.unwrap_err();
     assert_eq!(refused.reason, reason::FAILED);
-    assert!(refused.message.contains("doesn't run \"ls\""), "{refused:?}");
+    assert!(
+        refused.message.contains("doesn't run \"ls\""),
+        "{refused:?}"
+    );
     // Named, but this device didn't allow "commands".
     let r = rig(Config::default());
     let plan = r.plan("1.0.0", V1, &["service"]);
-    let refused = r.ask(&plan, "echo", json!({ "word": "hi" })).await.unwrap_err();
-    assert!(refused.message.contains("wasn't allowed to run programs"), "{refused:?}");
+    let refused = r
+        .ask(&plan, "echo", json!({ "word": "hi" }))
+        .await
+        .unwrap_err();
+    assert!(
+        refused.message.contains("wasn't allowed to run programs"),
+        "{refused:?}"
+    );
 }
 
 #[tokio::test]
 async fn emits_and_notifications_go_through_the_host() {
     let r = rig(Config::default());
     let plan = r.plan("1.0.0", V1, &["service", "notifications"]);
-    assert_eq!(r.ask(&plan, "ping", json!({ "n": 3 })).await.unwrap(), json!("posted"));
+    assert_eq!(
+        r.ask(&plan, "ping", json!({ "n": 3 })).await.unwrap(),
+        json!("posted")
+    );
     assert_eq!(
         lock(&r.hooks.emitted).as_slice(),
         &[("svc".to_string(), "pinged".to_string(), json!({ "n": 3 }))]
     );
-    assert_eq!(lock(&r.hooks.notified).as_slice(), &["Svc: Pinged".to_string()]);
+    assert_eq!(
+        lock(&r.hooks.notified).as_slice(),
+        &["Svc: Pinged".to_string()]
+    );
     // Without "notifications", refused.
     let r = rig(Config::default());
     let plan = r.plan("1.0.0", V1, &["service"]);
@@ -350,7 +412,12 @@ async fn a_watch_tells_a_burst_of_changes_once_and_reads_are_not_changes() {
     std::fs::write(folder.path().join("src/a.rs"), "a").unwrap();
     let plan = r.plan("1.0.0", WATCHER, &["service", "files.read"]);
     let path = folder.path().display().to_string();
-    assert_eq!(r.ask(&plan, "watch", json!({ "folder": path, "quiet": 150 })).await.unwrap(), json!(true));
+    assert_eq!(
+        r.ask(&plan, "watch", json!({ "folder": path, "quiet": 150 }))
+            .await
+            .unwrap(),
+        json!(true)
+    );
     // As it goes live: anything may have changed, once.
     until("live", || told(&r).len() == 1).await;
     assert_eq!(told(&r)[0]["all"], json!(true));
@@ -361,17 +428,32 @@ async fn a_watch_tells_a_burst_of_changes_once_and_reads_are_not_changes() {
     }
     until("the burst", || told(&r).len() == 2).await;
     let paths = told(&r)[1]["paths"].clone();
-    let paths: Vec<&str> = paths.as_array().unwrap().iter().filter_map(|p| p.as_str()).collect();
-    assert!(paths.contains(&"src/a.rs") && paths.contains(&"b4.txt"), "{paths:?}");
+    let paths: Vec<&str> = paths
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|p| p.as_str())
+        .collect();
+    assert!(
+        paths.contains(&"src/a.rs") && paths.contains(&"b4.txt"),
+        "{paths:?}"
+    );
     tokio::time::sleep(Duration::from_millis(600)).await;
     assert_eq!(told(&r).len(), 2, "one burst, told once: {:?}", told(&r));
     // Reads (as `git status` reads the tree) aren't changes.
     for _ in 0..5 {
         let _ = std::fs::read_to_string(folder.path().join("src/a.rs")).unwrap();
-        let _ = std::fs::read_dir(folder.path().join("src")).unwrap().count();
+        let _ = std::fs::read_dir(folder.path().join("src"))
+            .unwrap()
+            .count();
     }
     tokio::time::sleep(Duration::from_millis(600)).await;
-    assert_eq!(told(&r).len(), 2, "reads were told as changes: {:?}", told(&r));
+    assert_eq!(
+        told(&r).len(),
+        2,
+        "reads were told as changes: {:?}",
+        told(&r)
+    );
     // Stopped: nothing more.
     r.ask(&plan, "unwatch", json!({})).await.unwrap();
     std::fs::write(folder.path().join("src/a.rs"), "after").unwrap();
@@ -385,12 +467,21 @@ async fn a_watch_needs_files_read_and_a_folder() {
     let folder = tempfile::tempdir().unwrap();
     let path = folder.path().display().to_string();
     let plan = r.plan("1.0.0", WATCHER, &["service"]);
-    let refused = r.ask(&plan, "watch", json!({ "folder": path })).await.unwrap_err();
-    assert!(refused.message.contains("wasn't allowed to read files"), "{refused:?}");
+    let refused = r
+        .ask(&plan, "watch", json!({ "folder": path }))
+        .await
+        .unwrap_err();
+    assert!(
+        refused.message.contains("wasn't allowed to read files"),
+        "{refused:?}"
+    );
     let r = rig(Config::default());
     let plan = r.plan("1.0.0", WATCHER, &["service", "files.read"]);
     let missing = folder.path().join("nope").display().to_string();
-    let refused = r.ask(&plan, "watch", json!({ "folder": missing })).await.unwrap_err();
+    let refused = r
+        .ask(&plan, "watch", json!({ "folder": missing }))
+        .await
+        .unwrap_err();
     assert!(refused.message.contains("no folder"), "{refused:?}");
 }
 
@@ -404,7 +495,10 @@ async fn a_bytecode_file_is_refused() {
         .iter()
         .find_map(|source| {
             (0..=2).find_map(|level| {
-                let bytes = mlua::chunk::Compiler::new().set_optimization_level(level).compile(source).unwrap();
+                let bytes = mlua::chunk::Compiler::new()
+                    .set_optimization_level(level)
+                    .compile(source)
+                    .unwrap();
                 String::from_utf8(bytes).ok()
             })
         })
@@ -419,12 +513,18 @@ onicode.serve("evil", function() return require("./evil") end)
         &["service"],
     );
     std::fs::write(plan.dir.join("evil.luau"), &bytecode).unwrap();
-    let refused = r.ask(&plan, "evil", json!({})).await.expect_err("bytecode ran in the service VM");
+    let refused = r
+        .ask(&plan, "evil", json!({}))
+        .await
+        .expect_err("bytecode ran in the service VM");
     assert!(refused.message.contains("binary chunk"), "{refused:?}");
 
     let r = rig(Config::default());
     let plan = r.plan("1.0.0", &bytecode, &["service"]);
-    let refused = r.ask(&plan, "anything", json!({})).await.expect_err("a bytecode entry loaded");
+    let refused = r
+        .ask(&plan, "anything", json!({}))
+        .await
+        .expect_err("a bytecode entry loaded");
     assert!(refused.message.contains("binary chunk"), "{refused:?}");
 }
 
@@ -448,8 +548,11 @@ async fn local_server(to: Option<String>) -> u16 {
                 let mut buf = [0u8; 4096];
                 let _ = socket.read(&mut buf).await;
                 let reply = match to {
-                    Some(to) => format!("HTTP/1.1 302 Found\r\nLocation: {to}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
-                    None => "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_string(),
+                    Some(to) => format!(
+                        "HTTP/1.1 302 Found\r\nLocation: {to}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    ),
+                    None => "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
+                        .to_string(),
                 };
                 let _ = socket.write_all(reply.as_bytes()).await;
             });
@@ -482,15 +585,45 @@ async fn fetch_never_reaches_this_device_or_metadata_unless_named() {
     let redirects = local_server(Some(format!("http://127.0.0.1:{port}/"))).await;
     let r = rig(Config::default());
     let mut named = r.plan("1.0.0", FETCHER, &["service", "network"]);
-    named.hosts = vec![format!("localhost:{port}"), format!("127.0.0.1:{redirects}")];
-    let ok = r.ask(&named, "get", json!({ "url": format!("http://localhost:{port}/") })).await;
+    named.hosts = vec![
+        format!("localhost:{port}"),
+        format!("127.0.0.1:{redirects}"),
+    ];
+    let ok = r
+        .ask(
+            &named,
+            "get",
+            json!({ "url": format!("http://localhost:{port}/") }),
+        )
+        .await;
     assert_eq!(ok.unwrap(), json!(200));
-    let other = r.ask(&named, "get", json!({ "url": format!("http://127.0.0.1:{port}/") })).await;
+    let other = r
+        .ask(
+            &named,
+            "get",
+            json!({ "url": format!("http://127.0.0.1:{port}/") }),
+        )
+        .await;
     assert!(other.is_err(), "a port it didn't name: {other:?}");
-    let redirected = r.ask(&named, "get", json!({ "url": format!("http://127.0.0.1:{redirects}/") })).await;
-    assert!(redirected.is_err(), "followed a redirect to a host it didn't name: {redirected:?}");
+    let redirected = r
+        .ask(
+            &named,
+            "get",
+            json!({ "url": format!("http://127.0.0.1:{redirects}/") }),
+        )
+        .await;
+    assert!(
+        redirected.is_err(),
+        "followed a redirect to a host it didn't name: {redirected:?}"
+    );
     // Never Host, and credentials only to a named host.
-    let host = r.ask(&named, "get", json!({ "url": format!("http://localhost:{port}/"), "headers": { "Host": "x" } })).await;
+    let host = r
+        .ask(
+            &named,
+            "get",
+            json!({ "url": format!("http://localhost:{port}/"), "headers": { "Host": "x" } }),
+        )
+        .await;
     assert!(host.is_err(), "{host:?}");
     let r = rig(Config::default());
     let open = r.plan("1.0.0", FETCHER, &["service", "network"]);

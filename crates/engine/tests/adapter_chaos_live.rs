@@ -519,7 +519,9 @@ fn descendants(root: u32) -> Vec<u32> {
 
 /// The answer to every question an approval or ask raises: an allowing
 /// option where one is offered, else the first.
-fn answer_all(questions: &[onicode_proto::UserInputQuestion]) -> Vec<onicode_proto::UserInputAnswer> {
+fn answer_all(
+    questions: &[onicode_proto::UserInputQuestion],
+) -> Vec<onicode_proto::UserInputAnswer> {
     questions
         .iter()
         .map(|q| {

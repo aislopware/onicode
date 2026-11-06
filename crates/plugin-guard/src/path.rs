@@ -25,7 +25,11 @@ pub const MAX_PATH: usize = 1024;
 
 /// Why `rel` can't be a package path, if it can't.
 pub fn problem(rel: &str) -> Option<String> {
-    let refuse = |why: &str| Some(format!("\"{rel}\" can't be a file's path in a package: {why}"));
+    let refuse = |why: &str| {
+        Some(format!(
+            "\"{rel}\" can't be a file's path in a package: {why}"
+        ))
+    };
     if rel.is_empty() || rel.len() > MAX_PATH {
         return refuse("a path is 1 to 1024 bytes");
     }
@@ -36,7 +40,10 @@ pub fn problem(rel: &str) -> Option<String> {
         if part.is_empty() || part == "." || part == ".." {
             return refuse("its parts are names (no empty part, \".\" or \"..\")");
         }
-        if let Some(c) = part.chars().find(|c| c.is_control() || matches!(c, '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*')) {
+        if let Some(c) = part
+            .chars()
+            .find(|c| c.is_control() || matches!(c, '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*'))
+        {
             return refuse(&format!("{c:?} isn't allowed in a name"));
         }
         if part.ends_with('.') || part.ends_with(' ') {
@@ -47,7 +54,10 @@ pub fn problem(rel: &str) -> Option<String> {
         }
     }
     // (Belt and braces: what the platform's own parser makes of it.)
-    if !Path::new(rel).components().all(|c| matches!(c, Component::Normal(_))) {
+    if !Path::new(rel)
+        .components()
+        .all(|c| matches!(c, Component::Normal(_)))
+    {
         return refuse("its parts are names");
     }
     None
@@ -63,7 +73,9 @@ pub fn is_safe(rel: &str) -> bool {
 pub fn join(base: &Path, rel: &str) -> Result<PathBuf, String> {
     match problem(rel) {
         Some(problem) => Err(problem),
-        None => Ok(rel.split('/').fold(base.to_path_buf(), |path, part| path.join(part))),
+        None => Ok(rel
+            .split('/')
+            .fold(base.to_path_buf(), |path, part| path.join(part))),
     }
 }
 
@@ -71,13 +83,24 @@ pub fn join(base: &Path, rel: &str) -> Result<PathBuf, String> {
 /// `LPT0`–`LPT9` (and their superscript-digit forms), `CONIN$`, `CONOUT$`,
 /// in any case, with anything after a dot, and with spaces before it.
 pub fn reserved_on_windows(part: &str) -> bool {
-    let stem = part.split('.').next().unwrap_or_default().trim_end_matches(' ');
+    let stem = part
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(' ');
     let upper = stem.to_ascii_uppercase();
-    if matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$") {
+    if matches!(
+        upper.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) {
         return true;
     }
     let mut chars = stem.chars();
-    let head: String = chars.by_ref().take(3).collect::<String>().to_ascii_uppercase();
+    let head: String = chars
+        .by_ref()
+        .take(3)
+        .collect::<String>()
+        .to_ascii_uppercase();
     let rest: Vec<char> = chars.collect();
     (head == "COM" || head == "LPT")
         && rest.len() == 1
@@ -112,8 +135,20 @@ mod tests {
     #[test]
     fn plain_names_join() {
         let base = Path::new("/staged");
-        assert_eq!(join(base, "ui/badge.luau").unwrap(), Path::new("/staged/ui/badge.luau"));
-        for ok in ["init.luau", "a/b/c.png", "café.png", ".hidden", "console.luau", "com10.txt", "lpt.txt", "nul-ish.luau"] {
+        assert_eq!(
+            join(base, "ui/badge.luau").unwrap(),
+            Path::new("/staged/ui/badge.luau")
+        );
+        for ok in [
+            "init.luau",
+            "a/b/c.png",
+            "café.png",
+            ".hidden",
+            "console.luau",
+            "com10.txt",
+            "lpt.txt",
+            "nul-ish.luau",
+        ] {
             assert!(is_safe(ok), "{ok}");
         }
     }

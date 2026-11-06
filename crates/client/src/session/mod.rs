@@ -16,7 +16,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock, Weak};
 
-use tokio::sync::watch;
 use onicode_doc::{
     CommandBasedOn, MessagePart, MessageRole, MessageStatus, QueueDeliveryGate, QueuedMessage,
     SessionCommandEntry, SessionCommandPayload, SessionCommandStatus, SessionDoc,
@@ -25,6 +24,7 @@ use onicode_doc::{
 use onicode_proto::{
     ChatIndicator, ContextUsage, RunRequest, SandboxLevel, UserInputAnswer, WorktreeSpec,
 };
+use tokio::sync::watch;
 
 pub use snapshot::{
     AppendHint, ComposerState, Entry, HostCapabilities, HostInfo, InputRequest, LiveStatus,
@@ -434,14 +434,15 @@ impl SessionCore {
         let now = now_ms();
         let degraded = client.chat_delivery_degraded(&self.chat_id);
         let workspace = client.workspace.snapshot();
-        let (indicator_working, working_since_ms) = workspace
-            .session(&self.chat_id)
-            .map_or((false, None), |row| {
-                (
-                    row.host_indicator == ChatIndicator::Working,
-                    row.working_since_ms,
-                )
-            });
+        let (indicator_working, working_since_ms) =
+            workspace
+                .session(&self.chat_id)
+                .map_or((false, None), |row| {
+                    (
+                        row.host_indicator == ChatIndicator::Working,
+                        row.working_since_ms,
+                    )
+                });
         // A Cloud chat whose machine isn't up yet: it is being started (or
         // woken) for the latest message.
         let cloud_booting = workspace.session(&self.chat_id).is_some_and(|row| {
@@ -867,7 +868,12 @@ fn refresh_setup_placeholder(st: &mut CoreState, cloud_booting: bool) -> bool {
             .iter()
             .rev()
             .find_map(|p| st.echoes.get(&p.message_id))
-            .or_else(|| transcript.iter().rev().find(|e| e.role() == MessageRole::User));
+            .or_else(|| {
+                transcript
+                    .iter()
+                    .rev()
+                    .find(|e| e.role() == MessageRole::User)
+            });
         latest_user.filter(|_| cloud_booting).and_then(|message| {
             let setup_id = onicode_proto::cloud_setup_entry_id(&message.id);
             // Nothing after the message in the doc, and no setup entry yet.
@@ -876,9 +882,22 @@ fn refresh_setup_placeholder(st: &mut CoreState, cloud_booting: bool) -> bool {
                     .iter()
                     .position(|e| e.id == message.id)
                     .is_some_and(|ix| ix + 1 < transcript.len());
-            let waking = transcript.iter().any(|e| e.role() == MessageRole::Assistant);
-            let name = if waking { "Waking the machine" } else { "Starting a machine" };
-            (!answered).then(|| (message.id.clone(), setup_id, name, message.message.created_at))
+            let waking = transcript
+                .iter()
+                .any(|e| e.role() == MessageRole::Assistant);
+            let name = if waking {
+                "Waking the machine"
+            } else {
+                "Starting a machine"
+            };
+            (!answered).then(|| {
+                (
+                    message.id.clone(),
+                    setup_id,
+                    name,
+                    message.message.created_at,
+                )
+            })
         })
     };
     let next = wanted.map(|(message_id, setup_id, name, created_at)| {
@@ -922,7 +941,8 @@ fn refresh_setup_placeholder(st: &mut CoreState, cloud_booting: bool) -> bool {
             append: None,
         })
     });
-    let changed = next.as_ref().map(|e| (&e.id, e.rev)) != st.setup_placeholder.as_ref().map(|e| (&e.id, e.rev));
+    let changed = next.as_ref().map(|e| (&e.id, e.rev))
+        != st.setup_placeholder.as_ref().map(|e| (&e.id, e.rev));
     st.setup_placeholder = next;
     changed
 }
@@ -1598,14 +1618,20 @@ mod setup_placeholder_tests {
                 message: Arc::new(SessionMessageEntry {
                     id: "m1".into(),
                     role: MessageRole::User,
-                    parts: vec![MessagePart::Text { id: "t0".into(), text: pending.text.clone() }],
+                    parts: vec![MessagePart::Text {
+                        id: "t0".into(),
+                        text: pending.text.clone(),
+                    }],
                     created_at: 1_000,
                     device_id: "phone".into(),
                     status: Some(MessageStatus::Complete),
                     continuation_of: None,
                     duration_ms: None,
                 }),
-                echo: Some(LocalEcho { state: pending.state, sent_at_ms: 1_000 }),
+                echo: Some(LocalEcho {
+                    state: pending.state,
+                    sent_at_ms: 1_000,
+                }),
                 append: None,
             }),
         );
@@ -1617,7 +1643,10 @@ mod setup_placeholder_tests {
     fn a_new_cloud_chat_shows_its_machine_starting_until_the_machine_is_up() {
         let mut st = state_with_pending_send();
         assert!(refresh_setup_placeholder(&mut st, true));
-        let placeholder = st.setup_placeholder.clone().expect("placeholder under the message");
+        let placeholder = st
+            .setup_placeholder
+            .clone()
+            .expect("placeholder under the message");
         assert_eq!(placeholder.id, onicode_proto::cloud_setup_entry_id("m1"));
         assert!(placeholder.is_streaming());
         assert!(matches!(
@@ -1626,7 +1655,10 @@ mod setup_placeholder_tests {
         ));
         // Unchanged: the same entry (row reuse), no change reported.
         assert!(!refresh_setup_placeholder(&mut st, true));
-        assert!(Arc::ptr_eq(&placeholder, st.setup_placeholder.as_ref().unwrap()));
+        assert!(Arc::ptr_eq(
+            &placeholder,
+            st.setup_placeholder.as_ref().unwrap()
+        ));
         // The machine is up: the placeholder goes (its own entry takes over).
         assert!(refresh_setup_placeholder(&mut st, false));
         assert!(st.setup_placeholder.is_none());

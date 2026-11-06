@@ -16,8 +16,8 @@
 //! 5. composite: bloom added, a fine depth-edge outline, tonemapped to sRGB
 //!    straight alpha, transparent wherever nothing was drawn.
 
-use wgpu::util::DeviceExt;
 use onicode_visual::{Camera, CameraFrame, Color, Scene, V3};
+use wgpu::util::DeviceExt;
 
 use crate::textures::{Loaded, Space};
 use crate::{EDGE_FADE, FORMAT, Frame, gpu};

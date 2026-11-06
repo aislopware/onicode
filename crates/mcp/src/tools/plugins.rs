@@ -10,10 +10,10 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
+use onicode_rpc::{RpcError, methods};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
-use onicode_rpc::{RpcError, methods};
 
 use super::{ToolDef, Tools, parse};
 
@@ -579,7 +579,10 @@ impl Tools {
         }
         let args: Args = parse(args)?;
         self.onicode
-            .call_rpc(methods::PLUGIN_STATUS, json!({ "id": args.id, "snapshot": args.snapshot }))
+            .call_rpc(
+                methods::PLUGIN_STATUS,
+                json!({ "id": args.id, "snapshot": args.snapshot }),
+            )
             .await
             .map_err(plain)
     }
@@ -597,12 +600,22 @@ impl Tools {
         }
         let args: Args = parse(args)?;
         let given = |s: Option<String>| s.filter(|s| !s.trim().is_empty());
-        let params = match (given(args.path), given(args.url)) {
-            (Some(path), None) => json!({ "path": path }),
-            (None, Some(url)) => json!({ "url": url, "ref": given(args.git_ref), "folder": given(args.folder) }),
-            _ => return Err("Give one of `path` (a .onicode-plugin file) or `url` (a link or repository).".into()),
-        };
-        let reply = self.onicode.call_rpc(methods::INSTALL_PLUGIN, params).await.map_err(plain)?;
+        let params =
+            match (given(args.path), given(args.url)) {
+                (Some(path), None) => json!({ "path": path }),
+                (None, Some(url)) => {
+                    json!({ "url": url, "ref": given(args.git_ref), "folder": given(args.folder) })
+                }
+                _ => return Err(
+                    "Give one of `path` (a .onicode-plugin file) or `url` (a link or repository)."
+                        .into(),
+                ),
+            };
+        let reply = self
+            .onicode
+            .call_rpc(methods::INSTALL_PLUGIN, params)
+            .await
+            .map_err(plain)?;
         Ok(installed(reply))
     }
 
@@ -695,11 +708,11 @@ async fn scaffold_files(dir: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::onicode::{Origin, Onicode};
+    use crate::onicode::{Onicode, Origin};
     use async_trait::async_trait;
     use futures::StreamExt;
-    use std::sync::{Arc, Mutex};
     use onicode_rpc::{RpcReply, RpcService, memory_client};
+    use std::sync::{Arc, Mutex};
 
     fn tools_reply(names: &[&str]) -> Value {
         json!({
@@ -777,7 +790,9 @@ mod tests {
                             "There's no template nope. list_templates names them.".into(),
                         ));
                     }
-                    _ => RpcReply::Value(json!({ "active": params["id"], "preview": params["id"] != "onicode" })),
+                    _ => RpcReply::Value(
+                        json!({ "active": params["id"], "preview": params["id"] != "onicode" }),
+                    ),
                 },
                 methods::TEMPLATE_STATUS => RpcReply::Value(json!({
                     "id": params["id"], "active": false, "file_errors": { "ds/tokens.luau": "boom" },
@@ -880,8 +895,16 @@ mod tests {
             .call(USE_TEMPLATE, json!({ "id": "midnight" }))
             .await
             .unwrap();
-        assert_eq!((used["active"].as_str(), used["preview"].as_bool()), (Some("midnight"), Some(true)));
-        assert!(used["next"].as_str().unwrap().contains("can't keep it for them"));
+        assert_eq!(
+            (used["active"].as_str(), used["preview"].as_bool()),
+            (Some("midnight"), Some(true))
+        );
+        assert!(
+            used["next"]
+                .as_str()
+                .unwrap()
+                .contains("can't keep it for them")
+        );
         assert_eq!(
             last_call(&engine),
             (
@@ -909,7 +932,10 @@ mod tests {
             .call(DELETE_TEMPLATE, json!({ "id": "midnight" }))
             .await
             .unwrap();
-        assert_eq!(deleted, json!({ "deleted": "midnight", "active": "onicode" }));
+        assert_eq!(
+            deleted,
+            json!({ "deleted": "midnight", "active": "onicode" })
+        );
         assert_eq!(
             last_call(&engine),
             (
@@ -932,35 +958,61 @@ mod tests {
         let tools = tools_for(engine.clone(), None);
 
         let exported = tools
-            .call(EXPORT_TEMPLATE, json!({ "id": "midnight", "path": "/Users/x/.ssh/x.onicode-template" }))
+            .call(
+                EXPORT_TEMPLATE,
+                json!({ "id": "midnight", "path": "/Users/x/.ssh/x.onicode-template" }),
+            )
             .await
             .unwrap();
         assert_eq!(exported["files"], 12);
         // R29: an agent never names where it goes (Onicode's exports folder).
-        assert_eq!(last_call(&engine), (methods::EXPORT_TEMPLATE.to_owned(), json!({ "id": "midnight" })));
+        assert_eq!(
+            last_call(&engine),
+            (
+                methods::EXPORT_TEMPLATE.to_owned(),
+                json!({ "id": "midnight" })
+            )
+        );
 
         // Yours: installed.
         let mine = tools
-            .call(IMPORT_TEMPLATE, json!({ "path": "/x/mine.onicode-template" }))
+            .call(
+                IMPORT_TEMPLATE,
+                json!({ "path": "/x/mine.onicode-template" }),
+            )
             .await
             .unwrap();
         assert_eq!(mine["installed"], "midnight");
         assert!(mine.get("next").is_none());
         assert_eq!(
             last_call(&engine),
-            (methods::IMPORT_TEMPLATE.to_owned(), json!({ "path": "/x/mine.onicode-template" }))
+            (
+                methods::IMPORT_TEMPLATE.to_owned(),
+                json!({ "path": "/x/mine.onicode-template" })
+            )
         );
         // Someone else's: waiting for the person, and the reply says so.
         let theirs = tools
-            .call(IMPORT_TEMPLATE, json!({ "path": "/x/theirs.onicode-template" }))
+            .call(
+                IMPORT_TEMPLATE,
+                json!({ "path": "/x/theirs.onicode-template" }),
+            )
             .await
             .unwrap();
         assert_eq!(theirs["needs_consent"], true);
-        assert!(theirs["next"].as_str().unwrap().contains("can't allow it for them"));
+        assert!(
+            theirs["next"]
+                .as_str()
+                .unwrap()
+                .contains("can't allow it for them")
+        );
         // Refused, in the engine's words.
         assert!(
             tools
-                .call(IMPORT_TEMPLATE, json!({ "path": "/x/bad.onicode-template" }))
+                .call(
+                    IMPORT_TEMPLATE,
+                    json!({ "path": "/x/bad.onicode-template" })
+                )
                 .await
                 .unwrap_err()
                 .contains("changed after it was signed")
@@ -968,23 +1020,52 @@ mod tests {
 
         // What's missing never reaches the engine.
         let before = engine.calls.lock().unwrap().len();
-        assert!(tools.call(EXPORT_TEMPLATE, json!({ "path": "/x/a.onicode-template" })).await.unwrap_err().contains("`id`"));
-        assert!(tools.call(IMPORT_TEMPLATE, json!({ "path": " " })).await.unwrap_err().contains("`path`"));
+        assert!(
+            tools
+                .call(EXPORT_TEMPLATE, json!({ "path": "/x/a.onicode-template" }))
+                .await
+                .unwrap_err()
+                .contains("`id`")
+        );
+        assert!(
+            tools
+                .call(IMPORT_TEMPLATE, json!({ "path": " " }))
+                .await
+                .unwrap_err()
+                .contains("`path`")
+        );
         assert_eq!(engine.calls.lock().unwrap().len(), before);
 
         // No tool decides for the person.
         let catalog = super::super::catalog();
-        assert!(catalog.iter().all(|d| !d.name.contains("decide") && !d.name.contains("allow")));
+        assert!(
+            catalog
+                .iter()
+                .all(|d| !d.name.contains("decide") && !d.name.contains("allow"))
+        );
         let export = catalog.iter().find(|d| d.name == EXPORT_TEMPLATE).unwrap();
         assert!(export.input_schema["properties"].get("path").is_none());
         // Importing takes a file or a link.
         let import = catalog.iter().find(|d| d.name == IMPORT_TEMPLATE).unwrap();
         for field in ["path", "url"] {
-            assert!(import.input_schema["properties"].get(field).is_some(), "{field}");
+            assert!(
+                import.input_schema["properties"].get(field).is_some(),
+                "{field}"
+            );
         }
-        assert!(tools.call(IMPORT_TEMPLATE, json!({ "path": "/x/a.onicode-template", "url": "ada/midnight" })).await.is_err());
+        assert!(
+            tools
+                .call(
+                    IMPORT_TEMPLATE,
+                    json!({ "path": "/x/a.onicode-template", "url": "ada/midnight" })
+                )
+                .await
+                .is_err()
+        );
         let before = engine.calls.lock().unwrap().len();
-        let _ = tools.call(IMPORT_TEMPLATE, json!({ "url": "ada/midnight" })).await;
+        let _ = tools
+            .call(IMPORT_TEMPLATE, json!({ "url": "ada/midnight" }))
+            .await;
         let calls = engine.calls.lock().unwrap();
         assert_eq!(calls.len(), before + 1);
         assert!(format!("{:?}", calls.last().unwrap()).contains("ada/midnight"));
@@ -1049,7 +1130,10 @@ mod tests {
             chat_id: chat.map(str::to_owned),
             ..Origin::default()
         };
-        Tools::new(Arc::new(Onicode::with_client(memory_client(engine), origin)))
+        Tools::new(Arc::new(Onicode::with_client(
+            memory_client(engine),
+            origin,
+        )))
     }
 
     #[test]
@@ -1187,11 +1271,17 @@ mod tests {
             engine.calls.lock().unwrap().last().unwrap().0,
             methods::LIST_PLUGINS
         );
-        let status = tools.call(PLUGIN_STATUS, json!({ "id": "focus", "snapshot": true })).await.unwrap();
+        let status = tools
+            .call(PLUGIN_STATUS, json!({ "id": "focus", "snapshot": true }))
+            .await
+            .unwrap();
         assert_eq!(status["placements"][0]["count"], 3);
         assert_eq!(
             last_call(&engine),
-            (methods::PLUGIN_STATUS.to_owned(), json!({ "id": "focus", "snapshot": true }))
+            (
+                methods::PLUGIN_STATUS.to_owned(),
+                json!({ "id": "focus", "snapshot": true })
+            )
         );
         let map = tools.call(DESCRIBE_ELEMENTS, json!({})).await.unwrap();
         assert_eq!(map["elements"][0]["selector"], ".session-row");
@@ -1206,31 +1296,94 @@ mod tests {
         let engine = Arc::new(Engine::default());
         let tools = tools_for(engine.clone(), None);
         let installed = tools
-            .call(INSTALL_PLUGIN, json!({ "url": "ada/focus", "ref": "v1", "folder": " " }))
+            .call(
+                INSTALL_PLUGIN,
+                json!({ "url": "ada/focus", "ref": "v1", "folder": " " }),
+            )
             .await
             .unwrap();
         assert_eq!(
             last_call(&engine),
-            (methods::INSTALL_PLUGIN.to_owned(), json!({ "url": "ada/focus", "ref": "v1", "folder": null }))
+            (
+                methods::INSTALL_PLUGIN.to_owned(),
+                json!({ "url": "ada/focus", "ref": "v1", "folder": null })
+            )
         );
-        assert_eq!((installed["status"].as_str(), installed["waiting"].as_bool()), (Some("pending"), Some(true)));
-        assert!(installed["next"].as_str().unwrap().contains("can't allow it for them"));
-        tools.call(INSTALL_PLUGIN, json!({ "path": "/x/focus.onicode-plugin" })).await.unwrap();
-        assert_eq!(last_call(&engine), (methods::INSTALL_PLUGIN.to_owned(), json!({ "path": "/x/focus.onicode-plugin" })));
-        assert!(tools.call(INSTALL_PLUGIN, json!({})).await.unwrap_err().contains("`path`"));
-        assert!(tools.call(INSTALL_PLUGIN, json!({ "path": "/a", "url": "b/c" })).await.unwrap_err().contains("one of"));
+        assert_eq!(
+            (installed["status"].as_str(), installed["waiting"].as_bool()),
+            (Some("pending"), Some(true))
+        );
+        assert!(
+            installed["next"]
+                .as_str()
+                .unwrap()
+                .contains("can't allow it for them")
+        );
+        tools
+            .call(INSTALL_PLUGIN, json!({ "path": "/x/focus.onicode-plugin" }))
+            .await
+            .unwrap();
+        assert_eq!(
+            last_call(&engine),
+            (
+                methods::INSTALL_PLUGIN.to_owned(),
+                json!({ "path": "/x/focus.onicode-plugin" })
+            )
+        );
+        assert!(
+            tools
+                .call(INSTALL_PLUGIN, json!({}))
+                .await
+                .unwrap_err()
+                .contains("`path`")
+        );
+        assert!(
+            tools
+                .call(INSTALL_PLUGIN, json!({ "path": "/a", "url": "b/c" }))
+                .await
+                .unwrap_err()
+                .contains("one of")
+        );
 
-        let checked = tools.call(UPDATE_PLUGIN, json!({ "check": true })).await.unwrap();
+        let checked = tools
+            .call(UPDATE_PLUGIN, json!({ "check": true }))
+            .await
+            .unwrap();
         assert_eq!(checked["updates"][0]["added"], json!(["github"]));
-        assert_eq!(last_call(&engine), (methods::CHECK_PLUGIN_UPDATES.to_owned(), json!({ "id": null })));
+        assert_eq!(
+            last_call(&engine),
+            (
+                methods::CHECK_PLUGIN_UPDATES.to_owned(),
+                json!({ "id": null })
+            )
+        );
         // R6: updating is the person's. The tool only checks, and says so.
-        let updated = tools.call(UPDATE_PLUGIN, json!({ "id": "focus" })).await.unwrap();
+        let updated = tools
+            .call(UPDATE_PLUGIN, json!({ "id": "focus" }))
+            .await
+            .unwrap();
         assert_eq!(updated["updates"][0]["version"], "2.0.0");
-        assert!(updated["next"].as_str().unwrap().contains("can't update it for them"));
-        assert_eq!(last_call(&engine), (methods::CHECK_PLUGIN_UPDATES.to_owned(), json!({ "id": "focus" })));
+        assert!(
+            updated["next"]
+                .as_str()
+                .unwrap()
+                .contains("can't update it for them")
+        );
+        assert_eq!(
+            last_call(&engine),
+            (
+                methods::CHECK_PLUGIN_UPDATES.to_owned(),
+                json!({ "id": "focus" })
+            )
+        );
         tools.call(UPDATE_PLUGIN, json!({})).await.unwrap();
         assert!(
-            engine.calls.lock().unwrap().iter().all(|(method, _)| method != methods::UPDATE_PLUGIN),
+            engine
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(method, _)| method != methods::UPDATE_PLUGIN),
             "the tool never installs an update"
         );
     }
@@ -1238,7 +1391,12 @@ mod tests {
     #[tokio::test]
     async fn create_plugin_lists_the_folder_it_made() {
         let dir = tempfile::tempdir().unwrap();
-        for file in ["onicode-plugin.json", "init.luau", "onicode.luau", ".hidden"] {
+        for file in [
+            "onicode-plugin.json",
+            "init.luau",
+            "onicode.luau",
+            ".hidden",
+        ] {
             std::fs::write(dir.path().join(file), "").unwrap();
         }
         std::fs::create_dir(dir.path().join("lib")).unwrap();

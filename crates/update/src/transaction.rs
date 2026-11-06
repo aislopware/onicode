@@ -135,7 +135,10 @@ pub enum Layout {
     MacBundle { bundle: PathBuf, incoming: PathBuf },
     /// `directory/onicode.exe` is installed; `incoming` is the new exe, in a folder
     /// of its own inside `directory`.
-    WindowsFolder { directory: PathBuf, incoming: PathBuf },
+    WindowsFolder {
+        directory: PathBuf,
+        incoming: PathBuf,
+    },
 }
 
 impl Layout {
@@ -143,9 +146,7 @@ impl Layout {
     fn root(&self) -> PathBuf {
         match self {
             Self::Versioned { app_root } => app_root.clone(),
-            Self::MacBundle { bundle, .. } => {
-                bundle.parent().unwrap_or(bundle).to_path_buf()
-            }
+            Self::MacBundle { bundle, .. } => bundle.parent().unwrap_or(bundle).to_path_buf(),
             Self::WindowsFolder { directory, .. } => directory.clone(),
         }
     }
@@ -183,9 +184,7 @@ impl Layout {
     fn whoami(&self, transaction: &Transaction) -> Option<Whoami> {
         let exe = std::env::current_exe().ok()?;
         let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
-        let inside = |dir: &Path| {
-            std::fs::canonicalize(dir).is_ok_and(|dir| exe.starts_with(dir))
-        };
+        let inside = |dir: &Path| std::fs::canonicalize(dir).is_ok_and(|dir| exe.starts_with(dir));
         match self {
             Self::Versioned { app_root } => {
                 let current = std::fs::read_link(app_root.join("current")).ok()?;
@@ -205,7 +204,10 @@ impl Layout {
                 };
                 Some(Whoami { me, current })
             }
-            Self::WindowsFolder { directory, incoming } => {
+            Self::WindowsFolder {
+                directory,
+                incoming,
+            } => {
                 #[cfg(windows)]
                 let recorded = crate::windows::installed_version(directory);
                 #[cfg(not(windows))]
@@ -233,9 +235,10 @@ impl Layout {
             }
             Self::MacBundle { bundle, incoming } => crate::swap_mac_bundles(incoming, bundle),
             #[cfg(windows)]
-            Self::WindowsFolder { directory, incoming } => {
-                crate::windows::commit_trial(incoming, directory, target)
-            }
+            Self::WindowsFolder {
+                directory,
+                incoming,
+            } => crate::windows::commit_trial(incoming, directory, target),
             #[cfg(not(windows))]
             Self::WindowsFolder { .. } => bail!("not supported on this platform"),
         }
@@ -338,8 +341,7 @@ impl Transaction {
 /// A crash right here, in a debug build, when the test rig asks for one. Release
 /// builds don't have the knob.
 fn crash_point(step: &str) {
-    if cfg!(debug_assertions)
-        && std::env::var("ONICODE_UPDATE_CRASH_AT").is_ok_and(|at| at == step)
+    if cfg!(debug_assertions) && std::env::var("ONICODE_UPDATE_CRASH_AT").is_ok_and(|at| at == step)
     {
         eprintln!("onicode-update: crashing at {step}, as asked");
         std::process::abort();
@@ -970,7 +972,9 @@ pub fn boot<G>(
         }
         Step::RunTrial => {
             tracing::info!(id = %transaction.id, version = %transaction.target, "running as an update trial");
-            let started = transaction.trial_started_at.unwrap_or(transaction.requested_at);
+            let started = transaction
+                .trial_started_at
+                .unwrap_or(transaction.requested_at);
             let elapsed = (crate::now_ms() - started).max(0) as u64;
             let deadline = Duration::from_secs(transaction.deadline_secs)
                 .saturating_sub(Duration::from_millis(elapsed));
@@ -1018,10 +1022,15 @@ fn still_being_tried(transaction: &Transaction) -> bool {
 }
 
 fn trial_still_running(transaction: &Transaction) -> bool {
-    let Some(pid) = transaction.trial_pid.filter(|pid| *pid != std::process::id()) else {
+    let Some(pid) = transaction
+        .trial_pid
+        .filter(|pid| *pid != std::process::id())
+    else {
         return false;
     };
-    let started = transaction.trial_started_at.unwrap_or(transaction.requested_at);
+    let started = transaction
+        .trial_started_at
+        .unwrap_or(transaction.requested_at);
     let elapsed = (crate::now_ms() - started).max(0) as u64 / 1000;
     process_running(pid) && elapsed < transaction.deadline_secs
 }
@@ -1045,7 +1054,9 @@ fn start_trial<G>(
         .file_name()
         .context("this executable has no name")?
         .to_owned();
-    let new_binary = transaction.layout.new_binary(&transaction.target, &exe_name);
+    let new_binary = transaction
+        .layout
+        .new_binary(&transaction.target, &exe_name);
     if !new_binary.is_file() {
         let why = format!(
             "Onicode {}'s files are missing, so it stayed on {}.",
@@ -1176,7 +1187,9 @@ fn roll_back(data_dir: &Path, mut transaction: Transaction) -> anyhow::Result<()
         data_dir,
         transaction,
         Phase::RolledBack,
-        Some(format!("{why} Onicode went back to {from} instead of {target}.")),
+        Some(format!(
+            "{why} Onicode went back to {from} instead of {target}."
+        )),
     )?;
     crash_point("rollback-recorded");
     discard_snapshots(data_dir);
@@ -1234,7 +1247,10 @@ fn prepare_watchdog(
         .stdin(std::process::Stdio::null())
         .status()
         .context("starting the update watchdog")?;
-    anyhow::ensure!(status.success(), "the update watchdog didn't start: {status}");
+    anyhow::ensure!(
+        status.success(),
+        "the update watchdog didn't start: {status}"
+    );
     Ok(())
 }
 
@@ -1310,7 +1326,9 @@ fn watch(data_dir: &Path, id: &str, pid: u32, engine_args: &[String], exe_name: 
             return;
         }
         if alive {
-            let started = transaction.trial_started_at.unwrap_or(transaction.requested_at);
+            let started = transaction
+                .trial_started_at
+                .unwrap_or(transaction.requested_at);
             let elapsed = (crate::now_ms() - started).max(0) as u64 / 1000;
             if elapsed >= transaction.deadline_secs {
                 let minutes = (transaction.deadline_secs / 60).max(1);
@@ -1360,7 +1378,10 @@ fn process_running(pid: u32) -> bool {
     // A zombie has stopped; only its parent hasn't noticed yet.
     #[cfg(target_os = "linux")]
     if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat"))
-        && let Some(state) = stat.rsplit(") ").next().and_then(|rest| rest.chars().next())
+        && let Some(state) = stat
+            .rsplit(") ")
+            .next()
+            .and_then(|rest| rest.chars().next())
     {
         return state != 'Z';
     }
@@ -1518,7 +1539,9 @@ mod tests {
             id: "abc".into(),
             from: "1.0.0".into(),
             target: "2.0.0".into(),
-            layout: Layout::Versioned { app_root: PathBuf::from("/nowhere") },
+            layout: Layout::Versioned {
+                app_root: PathBuf::from("/nowhere"),
+            },
             phase,
             restart: RestartMode::Relaunch,
             requested_at: 1,
@@ -1630,8 +1653,14 @@ mod tests {
         restore_snapshot(dir.path(), "abc").unwrap();
         restore_snapshot(dir.path(), "abc").unwrap();
 
-        assert_eq!(std::fs::read_to_string(profile.join("docs.sqlite3")).unwrap(), "old docs");
-        assert_eq!(std::fs::read_to_string(profile.join("docs.sqlite3-wal")).unwrap(), "old wal");
+        assert_eq!(
+            std::fs::read_to_string(profile.join("docs.sqlite3")).unwrap(),
+            "old docs"
+        );
+        assert_eq!(
+            std::fs::read_to_string(profile.join("docs.sqlite3-wal")).unwrap(),
+            "old wal"
+        );
         assert!(!profile.join("docs.sqlite3-shm").exists());
         assert!(!dir.path().join("brand-new.sqlite3").exists());
         // Files that aren't stores were never part of it.
@@ -1665,7 +1694,12 @@ mod tests {
         take_snapshot(dir.path(), "abc").unwrap();
         std::fs::write(&real, "after").unwrap();
         restore_snapshot(dir.path(), "abc").unwrap();
-        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
         assert_eq!(std::fs::read_to_string(&real).unwrap(), "before");
     }
 
@@ -1697,7 +1731,10 @@ mod tests {
             return;
         }
         assert_eq!(trial_deadline(0), BASE_DEADLINE);
-        assert_eq!(trial_deadline(5 * GIB), BASE_DEADLINE + 5 * DEADLINE_PER_GIB);
+        assert_eq!(
+            trial_deadline(5 * GIB),
+            BASE_DEADLINE + 5 * DEADLINE_PER_GIB
+        );
         assert_eq!(trial_deadline(u64::MAX), MAX_DEADLINE);
     }
 
@@ -1720,15 +1757,46 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app_root = dir.path().join("app");
         std::fs::create_dir_all(&app_root).unwrap();
-        let first = request(dir.path(), Layout::Versioned { app_root: app_root.clone() }, "1.0.0", "2.0.0", RestartMode::Relaunch).unwrap();
-        let again = request(dir.path(), Layout::Versioned { app_root: app_root.clone() }, "1.0.0", "2.0.0", RestartMode::Relaunch);
-        assert!(again.unwrap_err().to_string().contains("already in progress"));
+        let first = request(
+            dir.path(),
+            Layout::Versioned {
+                app_root: app_root.clone(),
+            },
+            "1.0.0",
+            "2.0.0",
+            RestartMode::Relaunch,
+        )
+        .unwrap();
+        let again = request(
+            dir.path(),
+            Layout::Versioned {
+                app_root: app_root.clone(),
+            },
+            "1.0.0",
+            "2.0.0",
+            RestartMode::Relaunch,
+        );
+        assert!(
+            again
+                .unwrap_err()
+                .to_string()
+                .contains("already in progress")
+        );
 
         fail_request(dir.path(), &first.id, "couldn't restart".into());
         let failed = read(dir.path()).unwrap();
         assert_eq!(failed.phase, Phase::Failed);
         assert_eq!(failed.report().state, UpdateState::Failed);
-        let next = request(dir.path(), Layout::Versioned { app_root: app_root.clone() }, "1.0.0", "2.0.0", RestartMode::Relaunch).unwrap();
+        let next = request(
+            dir.path(),
+            Layout::Versioned {
+                app_root: app_root.clone(),
+            },
+            "1.0.0",
+            "2.0.0",
+            RestartMode::Relaunch,
+        )
+        .unwrap();
         assert_ne!(next.id, first.id);
     }
 
@@ -1737,11 +1805,17 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_zombie_doesnt_count_as_running() {
-        let mut child = std::process::Command::new("/bin/sh").args(["-c", "exit 0"]).spawn().unwrap();
+        let mut child = std::process::Command::new("/bin/sh")
+            .args(["-c", "exit 0"])
+            .spawn()
+            .unwrap();
         let pid = child.id();
         let waited = std::time::Instant::now();
         while process_running(pid) {
-            assert!(waited.elapsed() < Duration::from_secs(5), "still counted as running");
+            assert!(
+                waited.elapsed() < Duration::from_secs(5),
+                "still counted as running"
+            );
             std::thread::sleep(Duration::from_millis(20));
         }
         child.wait().unwrap();

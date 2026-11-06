@@ -9,11 +9,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use onicode_proto::{
     ProjectAction, ProjectActionDraft, ProjectActionIcon, ProjectActionRun, ProjectActionsSnapshot,
 };
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{EngineError, Terminals};
 
@@ -334,8 +334,10 @@ fn launch_project_action_with_environment(
     rows: u16,
     always_include_worktree: bool,
 ) -> Result<ProjectActionRun, EngineError> {
-    let mut environment =
-        HashMap::from([("ONICODE_PROJECT_ROOT".to_string(), root_string(project_root))]);
+    let mut environment = HashMap::from([(
+        "ONICODE_PROJECT_ROOT".to_string(),
+        root_string(project_root),
+    )]);
     if always_include_worktree || cwd != project_root {
         environment.insert("ONICODE_WORKTREE_PATH".to_string(), root_string(cwd));
     }

@@ -127,10 +127,18 @@ mod tests {
         let token = reviews.mint(Kind::Plugin, "focus", "h1").unwrap();
         assert_eq!(token.len(), 64);
         assert!(reviews.redeem(Kind::Plugin, "focus", "h1", None).is_err());
-        assert!(reviews.redeem(Kind::Plugin, "focus", "h1", Some("")).is_err());
-        reviews.redeem(Kind::Plugin, "focus", "h1", Some(&token)).unwrap();
         assert!(
-            reviews.redeem(Kind::Plugin, "focus", "h1", Some(&token)).is_err(),
+            reviews
+                .redeem(Kind::Plugin, "focus", "h1", Some(""))
+                .is_err()
+        );
+        reviews
+            .redeem(Kind::Plugin, "focus", "h1", Some(&token))
+            .unwrap();
+        assert!(
+            reviews
+                .redeem(Kind::Plugin, "focus", "h1", Some(&token))
+                .is_err(),
             "used up"
         );
 
@@ -142,7 +150,11 @@ mod tests {
         ] {
             let token = reviews.mint(Kind::Plugin, "focus", "h1").unwrap();
             assert!(reviews.redeem(kind, subject, hash, Some(&token)).is_err());
-            assert!(reviews.redeem(Kind::Plugin, "focus", "h1", Some(&token)).is_err());
+            assert!(
+                reviews
+                    .redeem(Kind::Plugin, "focus", "h1", Some(&token))
+                    .is_err()
+            );
         }
     }
 
@@ -154,6 +166,10 @@ mod tests {
             reviews.mint(Kind::Plugin, &format!("p{i}"), "h").unwrap();
         }
         assert!(reviews.open.len() <= MAX);
-        assert!(reviews.redeem(Kind::Plugin, "a", "h", Some(&first)).is_err());
+        assert!(
+            reviews
+                .redeem(Kind::Plugin, "a", "h", Some(&first))
+                .is_err()
+        );
     }
 }

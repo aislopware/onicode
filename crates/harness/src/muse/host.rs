@@ -87,7 +87,8 @@ impl Host {
             }
         })?);
         let tail = crate::StderrTail::default();
-        let mut lines = crate::lossy_lines::LossyLines::new(child.stderr.take().expect("piped stderr"));
+        let mut lines =
+            crate::lossy_lines::LossyLines::new(child.stderr.take().expect("piped stderr"));
         let stderr = tail.clone();
         let stderr_task = tokio::spawn(async move {
             while let Ok(Some(line)) = lines.next_line().await {

@@ -425,7 +425,10 @@ impl HarnessRegistry {
     }
 
     /// The exclusive lease, if nothing is using this CLI right now.
-    pub fn try_update_lease(&self, id: HarnessId) -> Option<tokio::sync::OwnedRwLockWriteGuard<()>> {
+    pub fn try_update_lease(
+        &self,
+        id: HarnessId,
+    ) -> Option<tokio::sync::OwnedRwLockWriteGuard<()>> {
         self.gate(id).try_write_owned().ok()
     }
 
@@ -707,7 +710,10 @@ impl HarnessRegistry {
             descriptor,
             installed: Box::new(move || onicode_harness::acp_registry::installed(agent)),
             factory: Box::new(move || {
-                Ok(Arc::new(onicode_harness::AcpHarness::registry(agent, &name)) as Arc<dyn Harness>)
+                Ok(
+                    Arc::new(onicode_harness::AcpHarness::registry(agent, &name))
+                        as Arc<dyn Harness>,
+                )
             }),
         };
         if self.slots().insert(id, slot).is_none() {
@@ -785,7 +791,8 @@ impl HarnessRegistry {
                 if descriptor.icon.is_none()
                     && let Some(agent) = id.registry()
                 {
-                    descriptor.icon = onicode_harness::acp_registry::record(agent).and_then(|r| r.icon_svg);
+                    descriptor.icon =
+                        onicode_harness::acp_registry::record(agent).and_then(|r| r.icon_svg);
                 }
                 Some(descriptor)
             })

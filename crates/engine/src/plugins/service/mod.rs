@@ -27,8 +27,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
-use serde_json::{Value as Json, json};
 use onicode_plugin_guard::net;
+use serde_json::{Value as Json, json};
 
 pub use vm::{Described, Failure, Kind, Limits};
 use vm::{Done, Ops, Spec, Vm};
@@ -305,13 +305,20 @@ impl Services {
                 if st.plan.as_ref() == Some(&plan) {
                     false
                 } else {
-                    if st.failed.as_ref().is_some_and(|(hash, _)| *hash != plan.hash) {
+                    if st
+                        .failed
+                        .as_ref()
+                        .is_some_and(|(hash, _)| *hash != plan.hash)
+                    {
                         st.failed = None;
                     }
                     st.plan = Some(plan.clone());
                     match &st.running {
                         Some(running) => running.plan != plan,
-                        None => st.described.as_ref().is_none_or(|(hash, _)| *hash != plan.hash),
+                        None => st
+                            .described
+                            .as_ref()
+                            .is_none_or(|(hash, _)| *hash != plan.hash),
                     }
                 }
             };
@@ -355,15 +362,25 @@ impl Services {
 
     /// The running VM for `plan`, started if need be. A caller (`serve_old`)
     /// is served by the old version while a new one loads; the loader isn't.
-    async fn ensure(&self, slot: &Arc<Slot>, plan: &Plan, serve_old: bool) -> Result<Running, Refusal> {
+    async fn ensure(
+        &self,
+        slot: &Arc<Slot>,
+        plan: &Plan,
+        serve_old: bool,
+    ) -> Result<Running, Refusal> {
         let usable = |st: &SlotState, swapping_ok: bool| -> Option<Running> {
             st.running
                 .as_ref()
-                .filter(|r| !r.vm.status().ended() && (r.plan == *plan || (swapping_ok && st.swapping)))
+                .filter(|r| {
+                    !r.vm.status().ended() && (r.plan == *plan || (swapping_ok && st.swapping))
+                })
                 .cloned()
         };
         let not_loaded = |why: &str| {
-            Refusal::new(reason::NOT_LOADED, format!("{}'s service didn't load: {why}", plan.name))
+            Refusal::new(
+                reason::NOT_LOADED,
+                format!("{}'s service didn't load: {why}", plan.name),
+            )
         };
         {
             let st = lock(&slot.state);
@@ -385,7 +402,10 @@ impl Services {
             }
         }
         let Some(hooks) = self.hooks() else {
-            return Err(Refusal::new(reason::NOT_LOADED, "Plugin services aren't ready yet"));
+            return Err(Refusal::new(
+                reason::NOT_LOADED,
+                "Plugin services aren't ready yet",
+            ));
         };
         if let Err(why) = hooks.verify(plan) {
             slot.note(format!("not loaded: {why}"));
@@ -440,7 +460,10 @@ impl Services {
         };
         if !self.current(slot) || self.inner.closed.load(Ordering::SeqCst) {
             vm.stop();
-            return Err(Refusal::new(reason::OFF, format!("{} was turned off here", plan.name)));
+            return Err(Refusal::new(
+                reason::OFF,
+                format!("{} was turned off here", plan.name),
+            ));
         }
         let running = Running {
             plan: plan.clone(),
@@ -505,13 +528,18 @@ impl Services {
         self.supervise(&slot);
         let unknown = || {
             let what = if kind == Kind::Tool { "tool" } else { "method" };
-            Refusal::new(reason::UNKNOWN_METHOD, format!("{}'s service has no {what} {name}", plan.name))
+            Refusal::new(
+                reason::UNKNOWN_METHOD,
+                format!("{}'s service has no {what} {name}", plan.name),
+            )
         };
         for attempt in 0..2 {
             let running = self.ensure(&slot, plan, true).await?;
             let safe = match kind {
                 Kind::Method => *running.described.methods.get(name).ok_or_else(unknown)?,
-                Kind::Tool if !running.described.tools.iter().any(|t| t == name) => return Err(unknown()),
+                Kind::Tool if !running.described.tools.iter().any(|t| t == name) => {
+                    return Err(unknown());
+                }
                 Kind::Tool | Kind::Timer => false,
             };
             let reply = running.vm.call(kind, name, args.clone(), call.clone());
@@ -528,7 +556,9 @@ impl Services {
                         }
                     }
                     if safe && attempt == 0 {
-                        slot.note(format!("stopped during {name}; running it again (it's safe)"));
+                        slot.note(format!(
+                            "stopped during {name}; running it again (it's safe)"
+                        ));
                         continue;
                     }
                     return Err(Refusal::new(
@@ -546,7 +576,11 @@ impl Services {
                 Err(_) => {
                     return Err(Refusal::new(
                         reason::TIMEOUT,
-                        format!("{}'s service didn't answer {name} within {} s", plan.name, timeout.as_secs()),
+                        format!(
+                            "{}'s service didn't answer {name} within {} s",
+                            plan.name,
+                            timeout.as_secs()
+                        ),
                     ));
                 }
             }
@@ -566,7 +600,11 @@ impl Services {
             return;
         };
         let mut st = lock(&slot.state);
-        if st.supervisor.as_ref().is_some_and(|task| !task.is_finished()) {
+        if st
+            .supervisor
+            .as_ref()
+            .is_some_and(|task| !task.is_finished())
+        {
             return;
         }
         let (weak_slot, weak_shared) = (Arc::downgrade(slot), Arc::downgrade(&self.inner));
@@ -580,7 +618,9 @@ impl Services {
         };
         let st = lock(&slot.state);
         let running = st.running.as_ref().filter(|r| !r.vm.status().ended());
-        let described = running.map(|r| &r.described).or(st.described.as_ref().map(|(_, d)| d));
+        let described = running
+            .map(|r| &r.described)
+            .or(st.described.as_ref().map(|(_, d)| d));
         let mut out = json!({
             "running": running.is_some(),
             "starts": st.starts,
@@ -666,7 +706,8 @@ async fn supervisor(slot: Weak<Slot>, shared: Weak<Shared>) {
             for key in fire {
                 let (services, plan, slot) = (services.clone(), plan.clone(), slot.clone());
                 tokio::spawn(async move {
-                    let call = json!({ "kind": "timer", "from": services.hooks().map(|h| h.device()) });
+                    let call =
+                        json!({ "kind": "timer", "from": services.hooks().map(|h| h.device()) });
                     if let Err(refusal) = services
                         .call(&plan, Kind::Timer, &key, Json::Null, call, MAX_TIMEOUT)
                         .await
@@ -676,7 +717,9 @@ async fn supervisor(slot: Weak<Slot>, shared: Weak<Shared>) {
                 });
             }
         }
-        let wake = next.map_or(config.tick, |at| at.saturating_duration_since(now).min(config.tick));
+        let wake = next.map_or(config.tick, |at| {
+            at.saturating_duration_since(now).min(config.tick)
+        });
         drop(slot);
         drop(services);
         tokio::time::sleep(wake.max(Duration::from_millis(10))).await;
@@ -698,7 +741,9 @@ impl Ops for PluginOps {
         match kind {
             "run" => {
                 if !self.plan.allows("commands") {
-                    return done(Err(format!("{name} wasn't allowed to run programs on this device")));
+                    return done(Err(format!(
+                        "{name} wasn't allowed to run programs on this device"
+                    )));
                 }
                 let (allowed, hooks) = (self.plan.commands.clone(), self.hooks.clone());
                 self.runtime.spawn_blocking(move || {
@@ -712,10 +757,13 @@ impl Ops for PluginOps {
             }
             "fetch" => {
                 if !self.plan.allows("network") {
-                    return done(Err(format!("{name} wasn't allowed to connect to the internet")));
+                    return done(Err(format!(
+                        "{name} wasn't allowed to connect to the internet"
+                    )));
                 }
                 let (http, policy) = (self.http.clone(), self.policy());
-                self.runtime.spawn(async move { done(fetch(&http, &policy, &args).await) });
+                self.runtime
+                    .spawn(async move { done(fetch(&http, &policy, &args).await) });
             }
             "folders" => {
                 // (Where its chats are: as much as "sessions.read" says.)
@@ -723,11 +771,14 @@ impl Ops for PluginOps {
                     return done(Err(format!("{name} wasn't allowed to see your chats")));
                 }
                 let hooks = self.hooks.clone();
-                self.runtime.spawn_blocking(move || done(Ok(json!(hooks.folders()))));
+                self.runtime
+                    .spawn_blocking(move || done(Ok(json!(hooks.folders()))));
             }
             "notify" => {
                 if !self.plan.allows("notifications") {
-                    return done(Err(format!("{name} wasn't allowed to send you notifications")));
+                    return done(Err(format!(
+                        "{name} wasn't allowed to send you notifications"
+                    )));
                 }
                 let title = args["title"].as_str().unwrap_or_default().trim().to_owned();
                 if title.is_empty() {
@@ -742,22 +793,33 @@ impl Ops for PluginOps {
                     done(Ok(json!(hooks.notify(&plugin, &title, body, session))))
                 });
             }
-            other => done(Err(format!("onicode.{other} isn't something a service can do"))),
+            other => done(Err(format!(
+                "onicode.{other} isn't something a service can do"
+            ))),
         }
     }
 
     fn watch(&self, folders: Vec<PathBuf>, heard: vm::Heard) -> Result<Box<dyn Send>, String> {
         if !self.plan.allows("files.read") {
-            return Err(format!("{} wasn't allowed to read files on this device", self.plan.name));
+            return Err(format!(
+                "{} wasn't allowed to read files on this device",
+                self.plan.name
+            ));
         }
         let heard = Arc::new(heard);
         let mut handles = Vec::new();
         for (place, folder) in folders.into_iter().enumerate() {
             if !folder.is_absolute() {
-                return Err(format!("onicode.watch: \"{}\" isn't a whole path", folder.display()));
+                return Err(format!(
+                    "onicode.watch: \"{}\" isn't a whole path",
+                    folder.display()
+                ));
             }
             if !folder.is_dir() {
-                return Err(format!("onicode.watch: there's no folder at \"{}\"", folder.display()));
+                return Err(format!(
+                    "onicode.watch: there's no folder at \"{}\"",
+                    folder.display()
+                ));
             }
             // (Events name the folder as the system knows it: /private/tmp
             // for /tmp.)
@@ -776,8 +838,10 @@ impl Ops for PluginOps {
                     for path in &event.paths {
                         match path.strip_prefix(&root) {
                             Ok(rest) => {
-                                let parts: Vec<String> =
-                                    rest.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+                                let parts: Vec<String> = rest
+                                    .components()
+                                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                                    .collect();
                                 heard(vm::Seen::Path(place, parts.join("/")));
                             }
                             Err(_) => heard(vm::Seen::All(place)),
@@ -790,9 +854,13 @@ impl Ops for PluginOps {
     }
 
     fn emit(&self, event: &str, data: Json) {
-        let size = serde_json::to_vec(&data).map(|b| b.len()).unwrap_or(usize::MAX);
+        let size = serde_json::to_vec(&data)
+            .map(|b| b.len())
+            .unwrap_or(usize::MAX);
         if event.is_empty() || size > MAX_EMIT_BYTES {
-            self.log(&format!("onicode.emit(\"{event}\") dropped: an event's name, and 64 KB of data at most"));
+            self.log(&format!(
+                "onicode.emit(\"{event}\") dropped: an event's name, and 64 KB of data at most"
+            ));
             return;
         }
         // (On the VM's thread: the host sends to other devices on the runtime.)
@@ -827,7 +895,11 @@ fn check_url(policy: &net::Policy, url: &reqwest::Url) -> Result<(), String> {
     let port = url.port_or_known_default().unwrap_or(0);
     // (As the URL parser wrote it: `0x7f.1` is `127.0.0.1` by now.)
     let name = url.host_str().ok_or("That address has no host")?.to_owned();
-    let ip = name.trim_start_matches('[').trim_end_matches(']').parse::<std::net::IpAddr>().ok();
+    let ip = name
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .parse::<std::net::IpAddr>()
+        .ok();
     policy.host(&name, port)?;
     // (A name is checked as it resolves: `GuardedResolver`.)
     if let Some(ip) = ip {
@@ -848,7 +920,8 @@ impl reqwest::dns::Resolve for GuardedResolver {
         let policy = self.policy.clone();
         Box::pin(async move {
             let host = name.as_str().to_owned();
-            let found: Vec<std::net::SocketAddr> = tokio::net::lookup_host((host.as_str(), 0)).await?.collect();
+            let found: Vec<std::net::SocketAddr> =
+                tokio::net::lookup_host((host.as_str(), 0)).await?.collect();
             let mut refused = None;
             let allowed: Vec<std::net::SocketAddr> = found
                 .into_iter()
@@ -899,13 +972,22 @@ async fn fetch(http: &reqwest::Client, policy: &net::Policy, args: &Json) -> Res
     let url = args["url"].as_str().unwrap_or_default();
     let parsed = reqwest::Url::parse(url).map_err(|_| format!("\"{url}\" isn't a web address"))?;
     check_url(policy, &parsed)?;
-    let (host, port) = (parsed.host_str().unwrap_or_default().to_owned(), parsed.port_or_known_default().unwrap_or(0));
-    let method = args["method"].as_str().unwrap_or("GET").to_ascii_uppercase();
-    let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| format!("\"{method}\" isn't an HTTP method"))?;
+    let (host, port) = (
+        parsed.host_str().unwrap_or_default().to_owned(),
+        parsed.port_or_known_default().unwrap_or(0),
+    );
+    let method = args["method"]
+        .as_str()
+        .unwrap_or("GET")
+        .to_ascii_uppercase();
+    let method = reqwest::Method::from_bytes(method.as_bytes())
+        .map_err(|_| format!("\"{method}\" isn't an HTTP method"))?;
     let timeout = args["timeout"]
         .as_f64()
         .filter(|s| *s > 0.0)
-        .map_or(DEFAULT_TIMEOUT, |s| Duration::from_secs_f64(s).min(MAX_TIMEOUT));
+        .map_or(DEFAULT_TIMEOUT, |s| {
+            Duration::from_secs_f64(s).min(MAX_TIMEOUT)
+        });
     let mut request = http.request(method, parsed).timeout(timeout);
     for (key, value) in args["headers"].as_object().into_iter().flatten() {
         if let Some(value) = value.as_str() {
@@ -933,7 +1015,11 @@ async fn fetch(http: &reqwest::Client, policy: &net::Policy, args: &Json) -> Res
         .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.as_str().to_owned(), json!(v))))
         .collect();
     let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|e| format!("The response broke off: {e}"))? {
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| format!("The response broke off: {e}"))?
+    {
         if body.len() + chunk.len() > MAX_FETCH_BYTES {
             return Err("The response is over 16 MB".into());
         }

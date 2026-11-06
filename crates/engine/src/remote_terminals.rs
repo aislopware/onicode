@@ -10,10 +10,10 @@ mod tests {
     use base64::Engine as _;
     use std::sync::atomic::AtomicBool;
 
+    use onicode_term_link::remote::TerminalPath;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
-    use onicode_term_link::remote::TerminalPath;
 
     use async_trait::async_trait;
     use futures::StreamExt;

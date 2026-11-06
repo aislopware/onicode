@@ -674,7 +674,10 @@ impl Terminals {
         let session = self.session(terminal_id)?;
         let live = lock(&session);
         if live.exited {
-            return Ok(TerminalStatus { busy: false, exited: true });
+            return Ok(TerminalStatus {
+                busy: false,
+                exited: true,
+            });
         }
         #[cfg(unix)]
         let busy = match (
@@ -686,7 +689,10 @@ impl Terminals {
         };
         #[cfg(not(unix))]
         let busy = false;
-        Ok(TerminalStatus { busy, exited: false })
+        Ok(TerminalStatus {
+            busy,
+            exited: false,
+        })
     }
 
     /// Kill the shell (if still running) and drop the session + replay buffer.

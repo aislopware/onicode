@@ -29,10 +29,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-use tokio::sync::{mpsc, watch};
 use onicode_preview::mux::BoxIo;
 use onicode_proto::TerminalEvent;
 use onicode_rpc::{RpcError, methods};
+use tokio::sync::{mpsc, watch};
 
 use crate::link::{self, Link, Outgoing};
 

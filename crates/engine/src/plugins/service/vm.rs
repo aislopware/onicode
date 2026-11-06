@@ -185,7 +185,10 @@ impl Status {
 
     /// Since it last did anything.
     pub fn idle_for(&self) -> Duration {
-        self.last.lock().unwrap_or_else(|e| e.into_inner()).elapsed()
+        self.last
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .elapsed()
     }
 
     pub fn ended(&self) -> bool {
@@ -223,7 +226,10 @@ pub struct Vm {
 impl Vm {
     /// Start a VM on a thread of its own. The receiver says what it serves
     /// once its top level ran, or why it couldn't load.
-    pub fn start(spec: Spec, ops: Arc<dyn Ops>) -> (Vm, oneshot::Receiver<Result<Described, String>>) {
+    pub fn start(
+        spec: Spec,
+        ops: Arc<dyn Ops>,
+    ) -> (Vm, oneshot::Receiver<Result<Described, String>>) {
         let (tx, rx) = mpsc::channel();
         let (loaded_tx, loaded_rx) = oneshot::channel();
         let status = Arc::new(Status::new());
@@ -303,12 +309,17 @@ impl State {
     /// A change a watch heard, kept for its burst's end.
     fn heard(&self, watch: u64, seen: Seen) {
         let mut watches = self.watches.borrow_mut();
-        let Some(w) = watches.get_mut(&watch) else { return };
+        let Some(w) = watches.get_mut(&watch) else {
+            return;
+        };
         let (place, path) = match seen {
             Seen::Path(place, path) => (place, Some(path)),
             Seen::All(place) => (place, None),
         };
-        let entry = w.pending.entry(place).or_insert_with(|| Some(Default::default()));
+        let entry = w
+            .pending
+            .entry(place)
+            .or_insert_with(|| Some(Default::default()));
         match (entry.as_mut(), path) {
             (Some(paths), Some(path)) if paths.len() < MAX_WATCH_PATHS || paths.contains(&path) => {
                 paths.insert(path);
@@ -325,7 +336,12 @@ impl State {
     }
 
     /// The watches whose bursts ended, each with what it heard.
-    fn watches_due(&self) -> Vec<(u64, BTreeMap<usize, Option<std::collections::BTreeSet<String>>>)> {
+    fn watches_due(
+        &self,
+    ) -> Vec<(
+        u64,
+        BTreeMap<usize, Option<std::collections::BTreeSet<String>>>,
+    )> {
         let now = Instant::now();
         let mut out = Vec::new();
         for (id, w) in self.watches.borrow_mut().iter_mut() {
@@ -410,11 +426,21 @@ fn run(
         }
     };
     let chunk_name = format!("@{}", spec.entry);
-    if let Err(error) = enter(&|| lua.load(source.as_str()).set_name(chunk_name.as_str()).set_mode(ChunkMode::Text).exec()) {
+    if let Err(error) = enter(&|| {
+        lua.load(source.as_str())
+            .set_name(chunk_name.as_str())
+            .set_mode(ChunkMode::Text)
+            .exec()
+    }) {
         let _ = loaded.send(Err(lua_message(&error)));
         return;
     }
-    let described = match entry.describe.call::<Table>(()).map_err(|e| lua_message(&e)).and_then(|t| describe(&t)) {
+    let described = match entry
+        .describe
+        .call::<Table>(())
+        .map_err(|e| lua_message(&e))
+        .and_then(|t| describe(&t))
+    {
         Ok(described) => described,
         Err(error) => {
             let _ = loaded.send(Err(error));
@@ -468,7 +494,9 @@ fn run(
                 let result = enter(&|| {
                     let args = to_lua(&lua, &args, 0)?;
                     let call = to_lua(&lua, &call, 0)?;
-                    entry.dispatch.call::<()>((kind.as_str(), name.as_str(), args, call, id))
+                    entry
+                        .dispatch
+                        .call::<()>((kind.as_str(), name.as_str(), args, call, id))
                 });
                 // (Out of memory: left unanswered, as the VM ends.)
                 if let Err(error) = result
@@ -505,7 +533,9 @@ fn run(
                 let changed = lua.create_table()?;
                 for (place, paths) in &pending {
                     let value = match paths {
-                        Some(paths) => Value::Table(lua.create_sequence_from(paths.iter().map(String::as_str))?),
+                        Some(paths) => Value::Table(
+                            lua.create_sequence_from(paths.iter().map(String::as_str))?,
+                        ),
                         None => Value::Boolean(true),
                     };
                     changed.raw_set(place + 1, value)?;
@@ -521,7 +551,9 @@ fn run(
             let due = {
                 let mut sleepers = state.sleepers.borrow_mut();
                 match sleepers.peek() {
-                    Some(Reverse((at, _))) if *at <= Instant::now() => sleepers.pop().map(|Reverse((_, op))| op),
+                    Some(Reverse((at, _))) if *at <= Instant::now() => {
+                        sleepers.pop().map(|Reverse((_, op))| op)
+                    }
                     _ => None,
                 }
             };
@@ -534,7 +566,10 @@ fn run(
     }
     // What's left unanswered is dropped: its callers hear the VM ended.
     let left = state.replies.borrow_mut().drain().count();
-    status.in_flight.fetch_sub(left.min(status.in_flight.load(Ordering::SeqCst)), Ordering::SeqCst);
+    status.in_flight.fetch_sub(
+        left.min(status.in_flight.load(Ordering::SeqCst)),
+        Ordering::SeqCst,
+    );
     status.pending.store(0, Ordering::SeqCst);
 }
 
@@ -556,7 +591,13 @@ fn setup(
 ) -> Result<(Lua, Entry), String> {
     let fail = |e: mlua::Error| lua_message(&e);
     let lua = Lua::new_with(
-        StdLib::TABLE | StdLib::STRING | StdLib::MATH | StdLib::UTF8 | StdLib::BIT | StdLib::COROUTINE | StdLib::OS,
+        StdLib::TABLE
+            | StdLib::STRING
+            | StdLib::MATH
+            | StdLib::UTF8
+            | StdLib::BIT
+            | StdLib::COROUTINE
+            | StdLib::OS,
         LuaOptions::default(),
     )
     .map_err(fail)?;
@@ -600,8 +641,19 @@ fn setup(
     install_require(&lua, &spec.dir).map_err(fail)?;
 
     let host = natives(&lua, spec, ops, tx, state).map_err(fail)?;
-    let (service, dispatch, describe, done, stopping, heard): (Function, Function, Function, Function, Function, Function) =
-        lua.load(PRELUDE).set_name("=onicode").set_mode(ChunkMode::Text).call(host).map_err(fail)?;
+    let (service, dispatch, describe, done, stopping, heard): (
+        Function,
+        Function,
+        Function,
+        Function,
+        Function,
+        Function,
+    ) = lua
+        .load(PRELUDE)
+        .set_name("=onicode")
+        .set_mode(ChunkMode::Text)
+        .call(host)
+        .map_err(fail)?;
     globals.raw_set("onicode_service", service).map_err(fail)?;
     lua.sandbox(true).map_err(fail)?;
     Ok((
@@ -667,7 +719,8 @@ fn natives(
                     Value::Table(t) => t.get::<Option<f64>>("seconds")?.unwrap_or(0.0),
                     _ => 0.0,
                 };
-                let at = Instant::now() + Duration::from_secs_f64(seconds.clamp(0.0, 24.0 * 3600.0));
+                let at =
+                    Instant::now() + Duration::from_secs_f64(seconds.clamp(0.0, 24.0 * 3600.0));
                 op_state.sleepers.borrow_mut().push(Reverse((at, id)));
                 return Ok(id);
             }
@@ -689,7 +742,8 @@ fn natives(
         "reply",
         lua.create_function(move |_, (id, ok, value): (u64, bool, Value)| {
             let reply = if ok {
-                to_json(&value, 0).map_err(|why| Failure::Error(format!("its answer can't be sent: {why}")))
+                to_json(&value, 0)
+                    .map_err(|why| Failure::Error(format!("its answer can't be sent: {why}")))
             } else {
                 let why = display(&value);
                 if why.contains(OUT_OF_MEMORY) {
@@ -740,7 +794,8 @@ fn natives(
             let handle = watch_ops
                 .watch(folders.into_iter().map(PathBuf::from).collect(), heard)
                 .map_err(mlua::Error::runtime)?;
-            let quiet = Duration::from_secs_f64(quiet.unwrap_or(250.0).clamp(0.0, 60_000.0) / 1000.0);
+            let quiet =
+                Duration::from_secs_f64(quiet.unwrap_or(250.0).clamp(0.0, 60_000.0) / 1000.0);
             watch_state.watches.borrow_mut().insert(
                 id,
                 Watching {
@@ -780,17 +835,25 @@ fn natives(
             let value = to_json(&value, 0).map_err(mlua::Error::runtime)?;
             let mut store = set_state.store();
             let map = store.get_or_insert_with(serde_json::Map::new);
-            let was = if value.is_null() { map.remove(&key) } else { map.insert(key.clone(), value) };
+            let was = if value.is_null() {
+                map.remove(&key)
+            } else {
+                map.insert(key.clone(), value)
+            };
             let bytes = serde_json::to_vec(&*map).unwrap_or_default();
             if bytes.len() > MAX_STORE_BYTES {
                 match was {
                     Some(was) => map.insert(key, was),
                     None => map.remove(&key),
                 };
-                return Err(mlua::Error::runtime("onicode.store: that's more than 1 MB to keep"));
+                return Err(mlua::Error::runtime(
+                    "onicode.store: that's more than 1 MB to keep",
+                ));
             }
             if let Some(path) = &set_state.store_path {
-                write_replace(path, &bytes).map_err(|e| mlua::Error::runtime(format!("onicode.store: couldn't save: {e}")))?;
+                write_replace(path, &bytes).map_err(|e| {
+                    mlua::Error::runtime(format!("onicode.store: couldn't save: {e}"))
+                })?;
             }
             Ok(())
         })?,
@@ -874,7 +937,8 @@ fn resolve(from: &str, path: &str) -> Option<String> {
 fn read_source(root: &Path, rel: &str) -> Result<String, String> {
     let path = root.join(rel);
     // (A link inside the snapshot can't lead out of it.)
-    let canonical = std::fs::canonicalize(&path).map_err(|_| format!("{rel} isn't in the plugin"))?;
+    let canonical =
+        std::fs::canonicalize(&path).map_err(|_| format!("{rel} isn't in the plugin"))?;
     let root = std::fs::canonicalize(root).map_err(|_| format!("{rel} isn't in the plugin"))?;
     if !canonical.starts_with(&root) {
         return Err(format!("{rel} isn't in the plugin"));
@@ -902,9 +966,10 @@ fn describe(table: &Table) -> Result<Described, String> {
     let timers: Table = table.get("timers").map_err(fail)?;
     for timer in timers.sequence_values::<Table>() {
         let timer = timer.map_err(fail)?;
-        described
-            .timers
-            .push((timer.get("key").map_err(fail)?, timer.get("seconds").map_err(fail)?));
+        described.timers.push((
+            timer.get("key").map_err(fail)?,
+            timer.get("seconds").map_err(fail)?,
+        ));
     }
     Ok(described)
 }
@@ -938,7 +1003,9 @@ fn display(value: &Value) -> String {
             }
         }
         Value::String(s) => s.to_string_lossy(),
-        Value::Table(_) => to_json(value, 0).map(|j| j.to_string()).unwrap_or_else(|_| "table".into()),
+        Value::Table(_) => to_json(value, 0)
+            .map(|j| j.to_string())
+            .unwrap_or_else(|_| "table".into()),
         Value::Error(e) => lua_message(e),
         other => other.type_name().to_owned(),
     }
@@ -994,7 +1061,11 @@ pub fn to_json(value: &Value, depth: usize) -> Result<Json, String> {
                 Value::Number(n) if n.fract() == 0.0 && *n >= 1.0 => Some(*n as usize),
                 _ => None,
             };
-            let is_array = len > 0 && pairs.len() == len && pairs.iter().all(|(k, _)| index(k).is_some_and(|i| (1..=len).contains(&i)));
+            let is_array = len > 0
+                && pairs.len() == len
+                && pairs
+                    .iter()
+                    .all(|(k, _)| index(k).is_some_and(|i| (1..=len).contains(&i)));
             if is_array {
                 let mut items = vec![Json::Null; len];
                 for (key, item) in &pairs {
@@ -1009,7 +1080,9 @@ pub fn to_json(value: &Value, depth: usize) -> Result<Json, String> {
                     let key = match key {
                         Value::String(s) => s.to_string_lossy(),
                         Value::Integer(_) | Value::Number(_) => display(key),
-                        other => return Err(format!("a table's key can't be a {}", other.type_name())),
+                        other => {
+                            return Err(format!("a table's key can't be a {}", other.type_name()));
+                        }
                     };
                     object.insert(key, to_json(item, depth + 1)?);
                 }

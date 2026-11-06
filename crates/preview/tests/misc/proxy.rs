@@ -6,6 +6,13 @@ use hyper::{
     body::{Frame, Incoming},
 };
 use hyper_util::rt::TokioIo;
+use onicode_preview::{
+    catalog::Catalog,
+    discovery::Listener,
+    mux::{self, BoxIo, Connector},
+    peer::Peers,
+    proxy::{self, Router},
+};
 use std::{
     convert::Infallible,
     sync::{
@@ -21,13 +28,6 @@ use tokio_tungstenite::{
     tungstenite::{Message, client::IntoClientRequest, protocol::Role},
 };
 use tokio_util::sync::CancellationToken;
-use onicode_preview::{
-    catalog::Catalog,
-    discovery::Listener,
-    mux::{self, BoxIo, Connector},
-    peer::Peers,
-    proxy::{self, Router},
-};
 type Body = UnsyncBoxBody<Bytes, hyper::Error>;
 fn full(value: impl Into<Bytes>) -> Body {
     Full::new(value.into())

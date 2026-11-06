@@ -235,7 +235,10 @@ impl CustomThemeLibrary {
             bail!("a theme needs at least one variant");
         }
         self.ensure_capacity_for(family.variants.len())?;
-        let entry_id = unique_id(&family.id, self.entries.iter().map(|entry| entry.id.as_str()));
+        let entry_id = unique_id(
+            &family.id,
+            self.entries.iter().map(|entry| entry.id.as_str()),
+        );
         if entry_id != family.id {
             rekey_family(&mut family, &entry_id);
         }
@@ -243,11 +246,17 @@ impl CustomThemeLibrary {
         if !errors.is_empty() {
             bail!("theme validation failed: {}", errors.join("; "));
         }
-        let selected_variant_ids = family.variants.iter().map(|variant| variant.id.clone()).collect();
+        let selected_variant_ids = family
+            .variants
+            .iter()
+            .map(|variant| variant.id.clone())
+            .collect();
         self.entries.push(CustomThemeEntry {
             id: entry_id.clone(),
             name: family.name.clone(),
-            source: CustomThemeSource::ImportedSnapshot { imported_from: None },
+            source: CustomThemeSource::ImportedSnapshot {
+                imported_from: None,
+            },
             family,
             reports: BTreeMap::new(),
             selected_variant_ids,

@@ -10,6 +10,9 @@
 #![cfg(unix)]
 
 use futures::{SinkExt, StreamExt};
+use onicode_engine::{AgentAccounts, AgentAccountsConfig};
+use onicode_preview::{PreviewService, Scope, signaling};
+use onicode_proto::{AgentLoginStatus, HarnessId, RegistryAgent};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -17,9 +20,6 @@ use tokio::{
     sync::{Mutex, mpsc},
 };
 use tokio_tungstenite::tungstenite::Message;
-use onicode_engine::{AgentAccounts, AgentAccountsConfig};
-use onicode_preview::{PreviewService, Scope, signaling};
-use onicode_proto::{AgentLoginStatus, HarnessId, RegistryAgent};
 
 struct Token;
 #[async_trait::async_trait]
@@ -65,7 +65,9 @@ async fn coordinator() -> String {
                     }
                 });
                 while let Some(Ok(message)) = read.next().await {
-                    let Message::Text(text) = message else { continue };
+                    let Message::Text(text) = message else {
+                        continue;
+                    };
                     if text.as_str() == "ping" {
                         if let Some(me) = sockets.lock().await.get(&device) {
                             let _ = me.send("pong".into());
@@ -88,7 +90,12 @@ async fn coordinator() -> String {
 }
 
 async fn service(dir: &std::path::Path, device: &str, edge: &str) -> PreviewService {
-    let service = PreviewService::new(dir.join(format!("{device}.json")), device.into(), device.into()).unwrap();
+    let service = PreviewService::new(
+        dir.join(format!("{device}.json")),
+        device.into(),
+        device.into(),
+    )
+    .unwrap();
     service
         .start(
             Arc::new(Scope::default),
@@ -171,14 +178,24 @@ async fn sign_in(tunnel: bool) {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     let (url, port) = page.expect("the sign-in's page, with its loopback callback");
-    assert!(url.starts_with("https://auth.example.com/authorize"), "{url}");
+    assert!(
+        url.starts_with("https://auth.example.com/authorize"),
+        "{url}"
+    );
     // Published for A alone.
     assert!(host.callback_routes().is_registered(&start.login_id));
-    assert!(host.callback_routes().port_for(&start.login_id, "device-c").is_err());
+    assert!(
+        host.callback_routes()
+            .port_for(&start.login_id, "device-c")
+            .is_err()
+    );
 
     // A forwards a port of its own (the same number in production; both
     // run on this machine here) and its browser lands the redirect.
-    let published = host.callback_routes().port_for(&start.login_id, "device-a").unwrap();
+    let published = host
+        .callback_routes()
+        .port_for(&start.login_id, "device-a")
+        .unwrap();
     assert_eq!(published, port);
     let local = if tunnel {
         let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();

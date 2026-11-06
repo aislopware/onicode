@@ -79,7 +79,13 @@ pub struct KeyRow {
 pub trait KeyDirectory: Send + Sync + 'static {
     async fn lookup(&self, key: &str) -> Result<Lookup, String>;
     /// `step_up`: the ticket of the sign-in just made, which a new key needs.
-    async fn register(&self, key: &str, device_id: &str, proof: &str, step_up: Option<&str>) -> Result<(), RegisterError>;
+    async fn register(
+        &self,
+        key: &str,
+        device_id: &str,
+        proof: &str,
+        step_up: Option<&str>,
+    ) -> Result<(), RegisterError>;
     /// Revoke one of the signed-in account's keys (done when it's revoked
     /// already, or isn't the account's).
     async fn revoke(&self, key: &str) -> Result<(), String>;
@@ -146,7 +152,13 @@ impl KeyDirectory for EdgeDirectory {
         }
     }
 
-    async fn register(&self, key: &str, device_id: &str, proof: &str, step_up: Option<&str>) -> Result<(), RegisterError> {
+    async fn register(
+        &self,
+        key: &str,
+        device_id: &str,
+        proof: &str,
+        step_up: Option<&str>,
+    ) -> Result<(), RegisterError> {
         let token = self
             .token
             .token()
@@ -213,7 +225,10 @@ impl KeyDirectory for EdgeDirectory {
             .await
             .map_err(|e| e.to_string())?;
         if !response.status().is_success() {
-            return Err(format!("plugin-keys list: HTTP {}", response.status().as_u16()));
+            return Err(format!(
+                "plugin-keys list: HTTP {}",
+                response.status().as_u16()
+            ));
         }
         let reply: Reply = response.json().await.map_err(|e| e.to_string())?;
         Ok((reply.keys, reply.now))
@@ -266,7 +281,11 @@ impl CachedKey {
     /// ([`resolve_cached`]); another of your devices' keys is verified, and
     /// asked about like anyone's. A key with no username isn't verified.
     pub fn author(&self) -> Author {
-        let username = self.username.as_deref().map(str::trim).filter(|u| !u.is_empty());
+        let username = self
+            .username
+            .as_deref()
+            .map(str::trim)
+            .filter(|u| !u.is_empty());
         if self.revoked {
             Author::unknown(KEY_NOT_KNOWN)
         } else if self.verified == Some(false) || username.is_none() {
@@ -405,7 +424,10 @@ fn save_owed(data_dir: &Path, owed: &[OwedRevoke]) {
 pub fn owe_revoke(data_dir: &Path, key: &str, account: &str) {
     let mut owed = owed_revokes(data_dir);
     if !owed.iter().any(|o| o.key == key && o.account == account) {
-        owed.push(OwedRevoke { key: key.to_owned(), account: account.to_owned() });
+        owed.push(OwedRevoke {
+            key: key.to_owned(),
+            account: account.to_owned(),
+        });
         save_owed(data_dir, &owed);
     }
 }
@@ -428,12 +450,18 @@ pub async fn settle_revokes(data_dir: &Path, directory: &dyn KeyDirectory, accou
 /// when it can't be reached), its private half deleted, its registration
 /// forgotten. The next use makes a fresh key, registered at the next
 /// sign-in.
-pub async fn retire_key(data_dir: &Path, directory: Option<&dyn KeyDirectory>, account: Option<&str>) {
+pub async fn retire_key(
+    data_dir: &Path,
+    directory: Option<&dyn KeyDirectory>,
+    account: Option<&str>,
+) {
     let Some(key) = super::signing::load_key(data_dir).map(|k| k.public()) else {
         return;
     };
     let registration = Registration::load(data_dir);
-    let account = account.map(str::to_owned).or(registration.registered_for.clone());
+    let account = account
+        .map(str::to_owned)
+        .or(registration.registered_for.clone());
     if let Some(account) = &account
         && registration.registered_for.as_deref() == Some(account.as_str())
     {
@@ -492,7 +520,10 @@ pub async fn ensure_registered(
                 // Live on the account it was registered for: revoked there
                 // when that account is signed in again.
                 if error == RegisterError::Taken
-                    && let Some(other) = registration.registered_for.as_deref().filter(|a| *a != account)
+                    && let Some(other) = registration
+                        .registered_for
+                        .as_deref()
+                        .filter(|a| *a != account)
                 {
                     owe_revoke(data_dir, &key.public(), other);
                 }
@@ -537,7 +568,8 @@ pub async fn new_keys_elsewhere(
 ) -> Result<Vec<KeyRow>, String> {
     let since = watermark(data_dir, account);
     let (rows, now) = directory.keys_since(since.unwrap_or(0)).await?;
-    let since = since.unwrap_or_else(|| now.max(chrono::Utc::now().timestamp_millis()) - FIRST_LOOK_MS);
+    let since =
+        since.unwrap_or_else(|| now.max(chrono::Utc::now().timestamp_millis()) - FIRST_LOOK_MS);
     let fresh = rows
         .into_iter()
         .filter(|r| r.device_id != device_id && r.created_at > since && r.revoked_at.is_none())
@@ -569,7 +601,12 @@ pub(crate) mod tests {
 
     impl FakeDirectory {
         pub fn found(username: Option<&str>, mine: bool) -> Lookup {
-            Lookup::Found { username: username.map(str::to_owned), mine, revoked: false, verified: None }
+            Lookup::Found {
+                username: username.map(str::to_owned),
+                mine,
+                revoked: false,
+                verified: None,
+            }
         }
     }
 
@@ -595,7 +632,10 @@ pub(crate) mod tests {
             step_up: Option<&str>,
         ) -> Result<(), RegisterError> {
             self.registered.lock().unwrap().push(key.to_owned());
-            self.step_ups.lock().unwrap().push(step_up.map(str::to_owned));
+            self.step_ups
+                .lock()
+                .unwrap()
+                .push(step_up.map(str::to_owned));
             let mut answers = self.register_answers.lock().unwrap();
             if answers.is_empty() {
                 Ok(())
@@ -611,7 +651,14 @@ pub(crate) mod tests {
             Ok(())
         }
         async fn keys_since(&self, since: i64) -> Result<(Vec<KeyRow>, i64), String> {
-            let rows = self.rows.lock().unwrap().iter().filter(|r| r.created_at > since).cloned().collect();
+            let rows = self
+                .rows
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|r| r.created_at > since)
+                .cloned()
+                .collect();
             Ok((rows, self.now.load(std::sync::atomic::Ordering::SeqCst)))
         }
     }
@@ -650,11 +697,26 @@ pub(crate) mod tests {
         // Only valid for the account it was made as.
         assert!(resolve_cached(&cache, "K", None, Some("u2"), now, false).is_err());
         // Stale: still shown, but re-checked; never granted by.
-        let stale = resolve_cached(&cache, "K", None, Some("u1"), now + CACHE_TTL_SECS + 1, false);
+        let stale = resolve_cached(
+            &cache,
+            "K",
+            None,
+            Some("u1"),
+            now + CACHE_TTL_SECS + 1,
+            false,
+        );
         assert_eq!(stale, Err(Author::verified("ada")));
-        assert_eq!(for_granting(stale.clone(), false), Author::unknown(CHECKING));
+        assert_eq!(
+            for_granting(stale.clone(), false),
+            Author::unknown(CHECKING)
+        );
         assert_eq!(for_granting(stale, true), Author::unknown(COULD_NOT_CHECK));
-        let revoked = Lookup::Found { username: Some("x".into()), mine: false, revoked: true, verified: None };
+        let revoked = Lookup::Found {
+            username: Some("x".into()),
+            mine: false,
+            revoked: true,
+            verified: None,
+        };
         assert_eq!(
             CachedKey::from_lookup(&revoked, "u1", now).author(),
             Author::unknown(KEY_NOT_KNOWN)
@@ -674,7 +736,10 @@ pub(crate) mod tests {
         let mine = FakeDirectory::found(Some("me"), true);
         assert_eq!(
             CachedKey::from_lookup(&mine, "u1", 0).author(),
-            Author::Verified { username: Some("me".into()), mine: true }
+            Author::Verified {
+                username: Some("me".into()),
+                mine: true
+            }
         );
     }
 
@@ -685,12 +750,29 @@ pub(crate) mod tests {
             FakeDirectory::found(None, false),
             FakeDirectory::found(Some(" "), false),
             FakeDirectory::found(None, true),
-            Lookup::Found { username: Some("ada".into()), mine: false, revoked: false, verified: Some(false) },
+            Lookup::Found {
+                username: Some("ada".into()),
+                mine: false,
+                revoked: false,
+                verified: Some(false),
+            },
         ] {
-            assert_eq!(CachedKey::from_lookup(&lookup, "u1", 0).author(), Author::unknown(NO_USERNAME), "{lookup:?}");
+            assert_eq!(
+                CachedKey::from_lookup(&lookup, "u1", 0).author(),
+                Author::unknown(NO_USERNAME),
+                "{lookup:?}"
+            );
         }
-        let edge_says = Lookup::Found { username: Some("ada".into()), mine: false, revoked: false, verified: Some(true) };
-        assert_eq!(CachedKey::from_lookup(&edge_says, "u1", 0).author(), Author::verified("ada"));
+        let edge_says = Lookup::Found {
+            username: Some("ada".into()),
+            mine: false,
+            revoked: false,
+            verified: Some(true),
+        };
+        assert_eq!(
+            CachedKey::from_lookup(&edge_says, "u1", 0).author(),
+            Author::verified("ada")
+        );
     }
 
     #[tokio::test]
@@ -706,7 +788,10 @@ pub(crate) mod tests {
             .unwrap()
             .public();
         assert_eq!(fake.registered.lock().unwrap().clone(), vec![first.clone()]);
-        assert_eq!(fake.step_ups.lock().unwrap().clone(), vec![Some("ticket".to_string())]);
+        assert_eq!(
+            fake.step_ups.lock().unwrap().clone(),
+            vec![Some("ticket".to_string())]
+        );
         // Again: nothing to do.
         ensure_registered(dir.path(), &fake, "dev1", "u1", None)
             .await
@@ -750,9 +835,21 @@ pub(crate) mod tests {
         );
         assert!(!Registration::load(dir.path()).covers(&second, "u3"));
         // A new key without a fresh sign-in: refused, and nothing rotated.
-        fake.register_answers.lock().unwrap().push(Err(RegisterError::StepUp));
-        assert!(ensure_registered(dir.path(), &fake, "dev1", "u3", None).await.is_err());
-        assert_eq!(super::super::signing::load_key(dir.path()).unwrap().public(), second);
+        fake.register_answers
+            .lock()
+            .unwrap()
+            .push(Err(RegisterError::StepUp));
+        assert!(
+            ensure_registered(dir.path(), &fake, "dev1", "u3", None)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            super::super::signing::load_key(dir.path())
+                .unwrap()
+                .public(),
+            second
+        );
     }
 
     /// R13: keys were never revoked: a rotation left the old key registered
@@ -761,31 +858,62 @@ pub(crate) mod tests {
     async fn plugins_key_retired_on_rotation_and_sign_out() {
         let dir = tempfile::tempdir().unwrap();
         let fake = FakeDirectory::default();
-        ensure_registered(dir.path(), &fake, "dev1", "u1", Some("t")).await.unwrap();
-        let first = super::super::signing::load_key(dir.path()).unwrap().public();
+        ensure_registered(dir.path(), &fake, "dev1", "u1", Some("t"))
+            .await
+            .unwrap();
+        let first = super::super::signing::load_key(dir.path())
+            .unwrap()
+            .public();
         // Signed in as another account, the key is u1's: rotated, and the
         // old one owed a revoke on u1.
-        fake.register_answers.lock().unwrap().push(Err(RegisterError::Taken));
-        ensure_registered(dir.path(), &fake, "dev1", "u2", Some("t")).await.unwrap();
-        assert_eq!(owed_revokes(dir.path()), vec![OwedRevoke { key: first.clone(), account: "u1".into() }]);
+        fake.register_answers
+            .lock()
+            .unwrap()
+            .push(Err(RegisterError::Taken));
+        ensure_registered(dir.path(), &fake, "dev1", "u2", Some("t"))
+            .await
+            .unwrap();
+        assert_eq!(
+            owed_revokes(dir.path()),
+            vec![OwedRevoke {
+                key: first.clone(),
+                account: "u1".into()
+            }]
+        );
         settle_revokes(dir.path(), &fake, "u2").await;
-        assert!(fake.revoked.lock().unwrap().is_empty(), "only u1 can revoke it");
+        assert!(
+            fake.revoked.lock().unwrap().is_empty(),
+            "only u1 can revoke it"
+        );
         settle_revokes(dir.path(), &fake, "u1").await;
         assert_eq!(fake.revoked.lock().unwrap().clone(), vec![first]);
         assert!(owed_revokes(dir.path()).is_empty());
         // Sign-out: revoked on the edge, private key deleted.
-        let second = super::super::signing::load_key(dir.path()).unwrap().public();
+        let second = super::super::signing::load_key(dir.path())
+            .unwrap()
+            .public();
         retire_key(dir.path(), Some(&fake), Some("u2")).await;
         assert_eq!(fake.revoked.lock().unwrap().last(), Some(&second));
         assert!(super::super::signing::load_key(dir.path()).is_none());
         assert_eq!(Registration::load(dir.path()), Registration::default());
         // Offline at sign-out: deleted all the same, revoked at the next sign-in.
-        ensure_registered(dir.path(), &fake, "dev1", "u2", Some("t")).await.unwrap();
-        let third = super::super::signing::load_key(dir.path()).unwrap().public();
-        fake.unreachable.store(true, std::sync::atomic::Ordering::SeqCst);
+        ensure_registered(dir.path(), &fake, "dev1", "u2", Some("t"))
+            .await
+            .unwrap();
+        let third = super::super::signing::load_key(dir.path())
+            .unwrap()
+            .public();
+        fake.unreachable
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         retire_key(dir.path(), Some(&fake), Some("u2")).await;
         assert!(super::super::signing::load_key(dir.path()).is_none());
-        assert_eq!(owed_revokes(dir.path()), vec![OwedRevoke { key: third, account: "u2".into() }]);
+        assert_eq!(
+            owed_revokes(dir.path()),
+            vec![OwedRevoke {
+                key: third,
+                account: "u2".into()
+            }]
+        );
     }
 
     #[tokio::test]
@@ -793,16 +921,38 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         let fake = FakeDirectory::default();
         let row = |key: &str, device: &str, at: i64| KeyRow {
-            key: key.into(), fingerprint: "abcd".into(), device_id: device.into(), created_at: at, revoked_at: None,
+            key: key.into(),
+            fingerprint: "abcd".into(),
+            device_id: device.into(),
+            created_at: at,
+            revoked_at: None,
         };
         fake.rows.lock().unwrap().push(row("OLD", "dev2", 10));
         fake.now.store(100, std::sync::atomic::Ordering::SeqCst);
         // The first look only sets where to look from.
-        assert!(new_keys_elsewhere(dir.path(), &fake, "dev1", "u1").await.unwrap().is_empty());
-        fake.rows.lock().unwrap().extend([row("NEW", "dev2", 150), row("MINE", "dev1", 160)]);
+        assert!(
+            new_keys_elsewhere(dir.path(), &fake, "dev1", "u1")
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        fake.rows
+            .lock()
+            .unwrap()
+            .extend([row("NEW", "dev2", 150), row("MINE", "dev1", 160)]);
         fake.now.store(200, std::sync::atomic::Ordering::SeqCst);
-        let seen = new_keys_elsewhere(dir.path(), &fake, "dev1", "u1").await.unwrap();
-        assert_eq!(seen.iter().map(|r| r.key.as_str()).collect::<Vec<_>>(), vec!["NEW"]);
-        assert!(new_keys_elsewhere(dir.path(), &fake, "dev1", "u1").await.unwrap().is_empty());
+        let seen = new_keys_elsewhere(dir.path(), &fake, "dev1", "u1")
+            .await
+            .unwrap();
+        assert_eq!(
+            seen.iter().map(|r| r.key.as_str()).collect::<Vec<_>>(),
+            vec!["NEW"]
+        );
+        assert!(
+            new_keys_elsewhere(dir.path(), &fake, "dev1", "u1")
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }

@@ -8,7 +8,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::{StreamExt, stream::BoxStream};
-use tokio::sync::mpsc;
 use onicode_doc::{MessagePart, MessageRole};
 use onicode_engine::doc_host::{
     BeginQueueEditOutcome, FinishQueueEditAction, FinishQueueEditOutcome,
@@ -21,6 +20,7 @@ use onicode_proto::{
     SteeringMode,
 };
 use onicode_rpc::RpcService;
+use tokio::sync::mpsc;
 
 const CHAT: &str = "rich-delivery";
 const HARNESSES: [HarnessId; 9] = [

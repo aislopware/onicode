@@ -5,8 +5,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use serde_json::{Value, json};
 use onicode_rpc::{Caller, RpcError, RpcReply, methods, with_caller};
+use serde_json::{Value, json};
 
 use super::*;
 
@@ -64,7 +64,11 @@ async fn waiting(plugins: &Plugins, id: &str) -> String {
     std::fs::write(dir.join(MANIFEST_FILE), signing::pretty(&manifest)).unwrap();
     plugins.rescan().await;
     let entry = plugins.entry(id).unwrap();
-    assert_eq!(entry.item.status, Status::Pending, "{id} waits for the person");
+    assert_eq!(
+        entry.item.status,
+        Status::Pending,
+        "{id} waits for the person"
+    );
     entry.item.hash
 }
 
@@ -96,16 +100,23 @@ async fn an_ipc_token_holder_cannot_allow_a_plugin_without_the_consent_window() 
             params["review"] = json!(review);
         }
         let refused = call(&f.plugins, methods::DECIDE_PLUGIN, params).await;
-        assert!(refused.as_ref().is_err_and(|e| e.starts_with("review:")), "{refused:?}");
+        assert!(
+            refused.as_ref().is_err_and(|e| e.starts_with("review:")),
+            "{refused:?}"
+        );
         assert_eq!(status(&f.plugins, "evil").await, Status::Pending);
     }
 
     // A review for another plugin, or for another version of this one,
     // doesn't carry over.
     let other = waiting(&f.plugins, "other").await;
-    let for_other = call(&f.plugins, methods::REVIEW_PLUGIN, json!({ "id": "other", "hash": other }))
-        .await
-        .unwrap()["review"]
+    let for_other = call(
+        &f.plugins,
+        methods::REVIEW_PLUGIN,
+        json!({ "id": "other", "hash": other }),
+    )
+    .await
+    .unwrap()["review"]
         .clone();
     let refused = call(
         &f.plugins,
@@ -115,16 +126,24 @@ async fn an_ipc_token_holder_cannot_allow_a_plugin_without_the_consent_window() 
     .await;
     assert!(refused.is_err(), "{refused:?}");
     assert!(
-        call(&f.plugins, methods::REVIEW_PLUGIN, json!({ "id": "evil", "hash": "0".repeat(64) }))
-            .await
-            .is_err(),
+        call(
+            &f.plugins,
+            methods::REVIEW_PLUGIN,
+            json!({ "id": "evil", "hash": "0".repeat(64) })
+        )
+        .await
+        .is_err(),
         "a review is for the plugin as it is"
     );
 
     // The consent window's way: a review for it as shown, used once.
-    let review = call(&f.plugins, methods::REVIEW_PLUGIN, json!({ "id": "evil", "hash": hash }))
-        .await
-        .unwrap()["review"]
+    let review = call(
+        &f.plugins,
+        methods::REVIEW_PLUGIN,
+        json!({ "id": "evil", "hash": hash }),
+    )
+    .await
+    .unwrap()["review"]
         .clone();
     let allowed = call(
         &f.plugins,
@@ -137,9 +156,13 @@ async fn an_ipc_token_holder_cannot_allow_a_plugin_without_the_consent_window() 
     assert_eq!(status(&f.plugins, "evil").await, Status::On);
 
     // Declining never needs one.
-    let declined = call(&f.plugins, methods::DECIDE_PLUGIN, json!({ "id": "other", "allow": false, "hash": other }))
-        .await
-        .unwrap();
+    let declined = call(
+        &f.plugins,
+        methods::DECIDE_PLUGIN,
+        json!({ "id": "other", "allow": false, "hash": other }),
+    )
+    .await
+    .unwrap();
     assert_eq!(declined["status"], "off", "{declined}");
 }
 
@@ -148,15 +171,25 @@ async fn an_ipc_token_holder_cannot_allow_a_plugin_without_the_consent_window() 
 async fn a_review_allows_once() {
     let f = fixture();
     let hash = waiting(&f.plugins, "focus").await;
-    let review = call(&f.plugins, methods::REVIEW_PLUGIN, json!({ "id": "focus", "hash": hash }))
-        .await
-        .unwrap()["review"]
+    let review = call(
+        &f.plugins,
+        methods::REVIEW_PLUGIN,
+        json!({ "id": "focus", "hash": hash }),
+    )
+    .await
+    .unwrap()["review"]
         .clone();
     let decide = json!({ "id": "focus", "allow": true, "hash": hash, "review": review });
-    call(&f.plugins, methods::DECIDE_PLUGIN, decide.clone()).await.unwrap();
-    call(&f.plugins, methods::DECIDE_PLUGIN, json!({ "id": "focus", "allow": false, "hash": hash }))
+    call(&f.plugins, methods::DECIDE_PLUGIN, decide.clone())
         .await
         .unwrap();
+    call(
+        &f.plugins,
+        methods::DECIDE_PLUGIN,
+        json!({ "id": "focus", "allow": false, "hash": hash }),
+    )
+    .await
+    .unwrap();
     let replayed = call(&f.plugins, methods::DECIDE_PLUGIN, decide).await;
     assert!(replayed.is_err(), "{replayed:?}");
     assert_eq!(status(&f.plugins, "focus").await, Status::Off);
@@ -169,18 +202,31 @@ async fn a_review_allows_once() {
 async fn agents_and_other_devices_cannot_review_allow_or_sign() {
     let f = fixture();
     let hash = waiting(&f.plugins, "evil").await;
-    for caller in [Caller::Agent { chat: Some("chat-1".into()) }, Caller::Peer { device: None }] {
+    for caller in [
+        Caller::Agent {
+            chat: Some("chat-1".into()),
+        },
+        Caller::Peer { device: None },
+    ] {
         let minted = with_caller(
             caller.clone(),
-            call(&f.plugins, methods::REVIEW_PLUGIN, json!({ "id": "evil", "hash": hash })),
+            call(
+                &f.plugins,
+                methods::REVIEW_PLUGIN,
+                json!({ "id": "evil", "hash": hash }),
+            ),
         )
         .await;
         assert!(minted.is_err(), "{caller:?} minted a review: {minted:?}");
 
         // Even holding one (say, read off the app's connection).
-        let review = call(&f.plugins, methods::REVIEW_PLUGIN, json!({ "id": "evil", "hash": hash }))
-            .await
-            .unwrap()["review"]
+        let review = call(
+            &f.plugins,
+            methods::REVIEW_PLUGIN,
+            json!({ "id": "evil", "hash": hash }),
+        )
+        .await
+        .unwrap()["review"]
             .clone();
         let allowed = with_caller(
             caller.clone(),
@@ -193,13 +239,21 @@ async fn agents_and_other_devices_cannot_review_allow_or_sign() {
         .await;
         assert!(allowed.is_err(), "{caller:?} allowed it: {allowed:?}");
 
-        let review = call(&f.plugins, methods::REVIEW_PLUGIN, json!({ "id": "evil", "hash": hash }))
-            .await
-            .unwrap()["review"]
+        let review = call(
+            &f.plugins,
+            methods::REVIEW_PLUGIN,
+            json!({ "id": "evil", "hash": hash }),
+        )
+        .await
+        .unwrap()["review"]
             .clone();
         let signed = with_caller(
             caller.clone(),
-            call(&f.plugins, methods::SIGN_PLUGIN, json!({ "id": "evil", "review": review })),
+            call(
+                &f.plugins,
+                methods::SIGN_PLUGIN,
+                json!({ "id": "evil", "review": review }),
+            ),
         )
         .await;
         assert!(signed.is_err(), "{caller:?} signed it as yours: {signed:?}");
@@ -215,18 +269,32 @@ async fn signing_needs_the_consent_window() {
     let f = fixture();
     waiting(&f.plugins, "theirs").await;
     let refused = call(&f.plugins, methods::SIGN_PLUGIN, json!({ "id": "theirs" })).await;
-    assert!(refused.as_ref().is_err_and(|e| e.starts_with("review:")), "{refused:?}");
+    assert!(
+        refused.as_ref().is_err_and(|e| e.starts_with("review:")),
+        "{refused:?}"
+    );
     assert!(!f.plugins.entry("theirs").unwrap().item.own);
 
     let outside = tempfile::tempdir().unwrap();
     let path = outside.path().join("ext");
     std::fs::create_dir_all(&path).unwrap();
     std::fs::write(path.join("init.luau"), "return 1").unwrap();
-    let manifest = signing::pretty(&json!({ "id": "ext", "name": "ext", "version": "1.0.0", "entry": "init.luau" }));
+    let manifest = signing::pretty(
+        &json!({ "id": "ext", "name": "ext", "version": "1.0.0", "entry": "init.luau" }),
+    );
     std::fs::write(path.join(MANIFEST_FILE), &manifest).unwrap();
-    let refused = call(&f.plugins, methods::SIGN_PLUGIN, json!({ "path": path.display().to_string() })).await;
+    let refused = call(
+        &f.plugins,
+        methods::SIGN_PLUGIN,
+        json!({ "path": path.display().to_string() }),
+    )
+    .await;
     assert!(refused.is_err(), "{refused:?}");
-    assert_eq!(std::fs::read(path.join(MANIFEST_FILE)).unwrap(), manifest, "left unsigned");
+    assert_eq!(
+        std::fs::read(path.join(MANIFEST_FILE)).unwrap(),
+        manifest,
+        "left unsigned"
+    );
 }
 
 /// R6: allowing a template package needs ReviewTemplate's review, and an
@@ -239,18 +307,29 @@ async fn an_ipc_token_holder_cannot_allow_a_template_without_the_consent_window(
         json!({ "pending": "midnight-1", "allow": true, "hash": "h", "review": "ab".repeat(32) }),
     ] {
         let refused = call(&f.plugins, methods::DECIDE_TEMPLATE, params).await;
-        assert!(refused.as_ref().is_err_and(|e| e.starts_with("review:")), "{refused:?}");
+        assert!(
+            refused.as_ref().is_err_and(|e| e.starts_with("review:")),
+            "{refused:?}"
+        );
     }
     let minted = with_caller(
         Caller::Agent { chat: None },
-        call(&f.plugins, methods::REVIEW_TEMPLATE, json!({ "pending": "midnight-1", "hash": "h" })),
+        call(
+            &f.plugins,
+            methods::REVIEW_TEMPLATE,
+            json!({ "pending": "midnight-1", "hash": "h" }),
+        ),
     )
     .await;
     assert!(minted.is_err(), "{minted:?}");
     // With one, the decision reaches the package (there's none here).
-    let review = call(&f.plugins, methods::REVIEW_TEMPLATE, json!({ "pending": "midnight-1", "hash": "h" }))
-        .await
-        .unwrap()["review"]
+    let review = call(
+        &f.plugins,
+        methods::REVIEW_TEMPLATE,
+        json!({ "pending": "midnight-1", "hash": "h" }),
+    )
+    .await
+    .unwrap()["review"]
         .clone();
     let reached = call(
         &f.plugins,
@@ -277,18 +356,34 @@ async fn an_agents_use_template_is_a_preview_with_who_asked() {
     std::fs::write(mine.join(templates::MANIFEST), r#"{"name":"Agent made"}"#).unwrap();
 
     let used = with_caller(
-        Caller::Agent { chat: Some("chat-7".into()) },
-        call(&f.plugins, methods::USE_TEMPLATE, json!({ "id": "agent-made" })),
+        Caller::Agent {
+            chat: Some("chat-7".into()),
+        },
+        call(
+            &f.plugins,
+            methods::USE_TEMPLATE,
+            json!({ "id": "agent-made" }),
+        ),
     )
     .await
     .unwrap();
     assert_eq!(used["preview"], true, "{used}");
     assert_eq!(used["by"]["chat"], "chat-7", "{used}");
-    let record: Value = serde_json::from_slice(&std::fs::read(dir.join(templates::ACTIVE_BY)).unwrap()).unwrap();
-    assert_eq!((record["id"].as_str(), record["by"]["chat"].as_str()), (Some("agent-made"), Some("chat-7")));
+    let record: Value =
+        serde_json::from_slice(&std::fs::read(dir.join(templates::ACTIVE_BY)).unwrap()).unwrap();
+    assert_eq!(
+        (record["id"].as_str(), record["by"]["chat"].as_str()),
+        (Some("agent-made"), Some("chat-7"))
+    );
 
     // The app's own switch back clears the record.
-    let back = call(&f.plugins, methods::USE_TEMPLATE, json!({ "id": "onicode" })).await.unwrap();
+    let back = call(
+        &f.plugins,
+        methods::USE_TEMPLATE,
+        json!({ "id": "onicode" }),
+    )
+    .await
+    .unwrap();
     assert_eq!(back["preview"], false, "{back}");
     assert!(back.get("by").is_none());
     assert!(!dir.join(templates::ACTIVE_BY).exists());
@@ -318,29 +413,51 @@ async fn the_agent_token_cannot_allow_over_ipc() {
         tokens.clone(),
     ));
 
-    let agent = onicode_rpc::connect_ws(&url, Some(&tokens.agent)).await.unwrap();
+    let agent = onicode_rpc::connect_ws(&url, Some(&tokens.agent))
+        .await
+        .unwrap();
     for (method, params) in [
-        (methods::REVIEW_PLUGIN, json!({ "id": "evil", "hash": hash })),
-        (methods::DECIDE_PLUGIN, json!({ "id": "evil", "allow": true, "hash": hash })),
+        (
+            methods::REVIEW_PLUGIN,
+            json!({ "id": "evil", "hash": hash }),
+        ),
+        (
+            methods::DECIDE_PLUGIN,
+            json!({ "id": "evil", "allow": true, "hash": hash }),
+        ),
         (methods::SIGN_PLUGIN, json!({ "id": "evil" })),
-        (methods::DECIDE_TEMPLATE, json!({ "pending": "x", "allow": true, "hash": "h" })),
+        (
+            methods::DECIDE_TEMPLATE,
+            json!({ "pending": "x", "allow": true, "hash": "h" }),
+        ),
         (methods::UPDATE_PLUGIN, json!({ "id": "evil" })),
         (methods::ACCESS_TOKEN, json!({})),
     ] {
-        assert!(agent.call(method, params).await.is_err(), "the agent token reached {method}");
+        assert!(
+            agent.call(method, params).await.is_err(),
+            "the agent token reached {method}"
+        );
     }
     assert_eq!(status(&f.plugins, "evil").await, Status::Pending);
     // What its tools need still works.
     agent.call(methods::LIST_PLUGINS, json!({})).await.unwrap();
 
-    let app = onicode_rpc::connect_ws(&url, Some(&tokens.full)).await.unwrap();
+    let app = onicode_rpc::connect_ws(&url, Some(&tokens.full))
+        .await
+        .unwrap();
     let review = app
-        .call(methods::REVIEW_PLUGIN, json!({ "id": "evil", "hash": hash }))
+        .call(
+            methods::REVIEW_PLUGIN,
+            json!({ "id": "evil", "hash": hash }),
+        )
         .await
         .unwrap()["review"]
         .clone();
     let allowed = app
-        .call(methods::DECIDE_PLUGIN, json!({ "id": "evil", "allow": true, "hash": hash, "review": review }))
+        .call(
+            methods::DECIDE_PLUGIN,
+            json!({ "id": "evil", "allow": true, "hash": hash, "review": review }),
+        )
         .await
         .unwrap();
     assert_eq!(allowed["status"], "on", "{allowed}");
@@ -363,7 +480,12 @@ async fn an_agent_cannot_choose_where_a_template_is_exported() {
             ),
         )
         .await;
-        assert!(refused.as_ref().is_err_and(|e| e.contains("exports folder")), "{refused:?}");
+        assert!(
+            refused
+                .as_ref()
+                .is_err_and(|e| e.contains("exports folder")),
+            "{refused:?}"
+        );
     }
     assert!(!path.exists());
 }
@@ -374,13 +496,28 @@ async fn an_agent_cannot_choose_where_a_template_is_exported() {
 fn a_dial_proof_is_the_device_key_over_the_link_message() {
     use base64::Engine as _;
     let dir = tempfile::tempdir().unwrap();
-    assert!(signing::device_link_proof(dir.path(), "dev-b", "c1", 5).is_none(), "no key, no proof");
+    assert!(
+        signing::device_link_proof(dir.path(), "dev-b", "c1", 5).is_none(),
+        "no key, no proof"
+    );
     let key = signing::load_or_create_key(dir.path()).unwrap();
     let (public, signature) = signing::device_link_proof(dir.path(), "dev-b", "c1", 5).unwrap();
     assert_eq!(public, key.public());
     let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    let verifier = ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, b64.decode(&public).unwrap());
+    let verifier = ring::signature::UnparsedPublicKey::new(
+        &ring::signature::ED25519,
+        b64.decode(&public).unwrap(),
+    );
     let message = onicode_rpc::caller_proof_message("dev-b", "c1", 5);
-    verifier.verify(message.as_bytes(), &b64.decode(&signature).unwrap()).unwrap();
-    assert!(verifier.verify(b"onicode-device-link:v1:dev-c:c1:5", &b64.decode(&signature).unwrap()).is_err());
+    verifier
+        .verify(message.as_bytes(), &b64.decode(&signature).unwrap())
+        .unwrap();
+    assert!(
+        verifier
+            .verify(
+                b"onicode-device-link:v1:dev-c:c1:5",
+                &b64.decode(&signature).unwrap()
+            )
+            .is_err()
+    );
 }

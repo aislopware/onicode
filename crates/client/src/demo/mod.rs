@@ -21,12 +21,12 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use chrono::Utc;
-use tokio_util::sync::CancellationToken;
 use onicode_doc::{
     MessagePart, MessageRole, MessageStatus, QueueDeliveryGate, SegmentWriter,
     SessionCommandPayload, SessionCommandStatus, SessionDoc,
 };
 use onicode_proto::{FolderEntry, FolderListing, RepoRef, Session, SessionStatus};
+use tokio_util::sync::CancellationToken;
 
 use crate::catalog::{self, HarnessInfo, ModelInfo};
 use crate::client::ClientInner;
@@ -1230,7 +1230,10 @@ impl DemoHost {
                 progress(step as f64 / 4.0);
             }
         }
-        let path = format!("/Users/dev/.onicode/uploads/{}-{name}", &crate::new_id()[..8]);
+        let path = format!(
+            "/Users/dev/.onicode/uploads/{}-{name}",
+            &crate::new_id()[..8]
+        );
         let bytes = Arc::new(data);
         lock(&self.uploads).insert(path.clone(), bytes.clone());
         client.attachment_cache.put(device_id, &path, bytes);

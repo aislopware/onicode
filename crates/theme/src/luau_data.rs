@@ -13,7 +13,10 @@ pub fn parse(text: &str) -> Option<Json> {
     if text.len() > MAX_BYTES {
         return None;
     }
-    let mut p = Parser { s: text.as_bytes(), at: 0 };
+    let mut p = Parser {
+        s: text.as_bytes(),
+        at: 0,
+    };
     p.space();
     if !p.word("return") {
         return None;
@@ -58,7 +61,9 @@ impl Parser<'_> {
         self.space();
         let end = self.at + word.len();
         let next = self.s.get(end).copied();
-        if self.s[self.at..].starts_with(word.as_bytes()) && !next.is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_') {
+        if self.s[self.at..].starts_with(word.as_bytes())
+            && !next.is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_')
+        {
             self.at = end;
             return true;
         }
@@ -68,10 +73,14 @@ impl Parser<'_> {
     fn name(&mut self) -> Option<String> {
         self.space();
         let start = self.at;
-        while self.peek().is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_') {
+        while self
+            .peek()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_')
+        {
             self.at += 1;
         }
-        (self.at > start && !self.s[start].is_ascii_digit()).then(|| String::from_utf8_lossy(&self.s[start..self.at]).into_owned())
+        (self.at > start && !self.s[start].is_ascii_digit())
+            .then(|| String::from_utf8_lossy(&self.s[start..self.at]).into_owned())
     }
 
     fn string(&mut self) -> Option<String> {
@@ -110,7 +119,11 @@ impl Parser<'_> {
                 while self.peek().is_some_and(|c| c.is_ascii_digit() || c == b'.') {
                     self.at += 1;
                 }
-                std::str::from_utf8(&self.s[start..self.at]).ok()?.parse::<f64>().ok().and_then(|n| serde_json::Number::from_f64(n).map(Json::Number))
+                std::str::from_utf8(&self.s[start..self.at])
+                    .ok()?
+                    .parse::<f64>()
+                    .ok()
+                    .and_then(|n| serde_json::Number::from_f64(n).map(Json::Number))
             }
             _ => {
                 if self.word("true") {
@@ -151,7 +164,10 @@ impl Parser<'_> {
                 _ => {
                     let save = self.at;
                     match self.name() {
-                        Some(key) if !matches!(key.as_str(), "true" | "false" | "nil") && self.equals().is_some() => {
+                        Some(key)
+                            if !matches!(key.as_str(), "true" | "false" | "nil")
+                                && self.equals().is_some() =>
+                        {
                             map.insert(key, self.value()?);
                         }
                         _ => {

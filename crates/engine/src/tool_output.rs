@@ -172,7 +172,10 @@ mod tests {
         assert!(!last.trimmed);
         // The doc kept ten of those lines and said how many there are.
         let tail = onicode_doc::command_output_tail("cargo test", &output).unwrap();
-        assert_eq!(tail.text.lines().count(), onicode_doc::COMMAND_TAIL_MAX_LINES);
+        assert_eq!(
+            tail.text.lines().count(),
+            onicode_doc::COMMAND_TAIL_MAX_LINES
+        );
         assert_eq!(tail.lines, last.lines);
     }
 

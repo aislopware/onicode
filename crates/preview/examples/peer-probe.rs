@@ -2,13 +2,13 @@
 //! channel (for example Onicode terminal RPC); never publish SDP in release logs.
 //! `peer-probe host <localhost-port>` serves that explicit backend; `peer-probe
 //! client` requests it. Each process reads the other process's signals on stdin.
-use std::{sync::Arc, time::Duration};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-use tokio_util::sync::CancellationToken;
 use onicode_preview::{
     mux::{BoxIo, Connector},
     peer::{Peers, Signal},
 };
+use std::{sync::Arc, time::Duration};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
+use tokio_util::sync::CancellationToken;
 
 struct Backend(Option<u16>);
 #[async_trait::async_trait]

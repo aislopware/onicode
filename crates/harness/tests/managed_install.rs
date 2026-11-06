@@ -10,10 +10,10 @@
 //! Single-test binary: it mutates ONICODE_ADAPTERS_DIR process-wide.
 
 use futures::StreamExt;
-use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 use onicode_harness::{AcpHarness, Harness, RunControls};
 use onicode_proto::{AgentEvent, RunRequest};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 #[ignore = "network + npm; installs the pinned Grok CLI for real"]

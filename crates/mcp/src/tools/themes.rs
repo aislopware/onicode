@@ -4,8 +4,8 @@
 //! the person's own themes can be changed. The guide is
 //! apps/zgx/docs/themes.md, which `list_themes` links.
 
-use serde_json::{Value, json};
 use onicode_rpc::{RpcError, methods};
+use serde_json::{Value, json};
 
 use super::{ToolDef, Tools};
 
@@ -16,7 +16,14 @@ pub(super) const UPDATE_THEME: &str = "update_theme";
 pub(super) const DELETE_THEME: &str = "delete_theme";
 pub(super) const USE_THEME: &str = "use_theme";
 
-pub(super) const NAMES: [&str; 6] = [LIST_THEMES, GET_THEME, CREATE_THEME, UPDATE_THEME, DELETE_THEME, USE_THEME];
+pub(super) const NAMES: [&str; 6] = [
+    LIST_THEMES,
+    GET_THEME,
+    CREATE_THEME,
+    UPDATE_THEME,
+    DELETE_THEME,
+    USE_THEME,
+];
 
 /// A palette's fields, said once for every tool that takes one.
 macro_rules! palette_said {
@@ -24,7 +31,6 @@ macro_rules! palette_said {
         "A palette is one scheme's colours, each \"#rrggbb\" (or \"#rrggbbaa\"): background (the window), raised (chips, selected rows), text, muted, faint (three text inks), accent, danger, warning, success, and syntax: 12 code colours in this order: comment, keyword, string, number, type, function, property, variable, punctuation, tag, attribute, invalid. Optional: shell (sidebar and title bar), card, terminal (its background) and ansi (16 terminal colours). Example dark palette: {\"background\":\"#14181f\",\"raised\":\"#232a35\",\"text\":\"#d8dee9\",\"muted\":\"#a3acb9\",\"faint\":\"#7c8594\",\"accent\":\"#7aa2f7\",\"danger\":\"#f7768e\",\"warning\":\"#e0af68\",\"success\":\"#9ece6a\",\"syntax\":[\"#5c6773\",\"#c792ea\",\"#c3e88d\",\"#f78c6c\",\"#ffcb6b\",\"#82aaff\",\"#d8dee9\",\"#d8dee9\",\"#a3acb9\",\"#f7768e\",\"#ffcb6b\",\"#f7768e\"]}. The window keeps text and code readable: `adjusted` in the reply lists any colour it wears darker or lighter than given."
     };
 }
-
 
 fn palette_schema(scheme: &str) -> Value {
     json!({
@@ -110,7 +116,9 @@ pub(super) fn catalog() -> Vec<ToolDef> {
 fn plain(error: RpcError) -> String {
     match error {
         RpcError::Failed(message) => message,
-        RpcError::UnknownMethod(_) => "This Onicode doesn't have theme tools yet; update Onicode to use them.".into(),
+        RpcError::UnknownMethod(_) => {
+            "This Onicode doesn't have theme tools yet; update Onicode to use them.".into()
+        }
         other => other.to_string(),
     }
 }
@@ -142,11 +150,11 @@ impl Tools {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::onicode::{Origin, Onicode};
+    use crate::onicode::{Onicode, Origin};
     use async_trait::async_trait;
+    use onicode_rpc::{RpcReply, RpcService, memory_client};
     use std::path::PathBuf;
     use std::sync::Arc;
-    use onicode_rpc::{RpcReply, RpcService, memory_client};
 
     /// The engine's theme half, on a data dir of its own: the catalogue it
     /// answers from, as the engine does.
@@ -167,16 +175,32 @@ mod tests {
                 methods::GET_THEME => catalog::get(dir, need()?).map_err(said)?,
                 methods::CREATE_THEME => match params.get("vscode") {
                     Some(v) => catalog::create_from_vscode(dir, text("name"), v),
-                    None => catalog::create(dir, text("name").unwrap_or(""), params.get("light"), params.get("dark")),
+                    None => catalog::create(
+                        dir,
+                        text("name").unwrap_or(""),
+                        params.get("light"),
+                        params.get("dark"),
+                    ),
                 }
                 .map_err(said)?
                 .to_json(),
-                methods::UPDATE_THEME => catalog::update(dir, need()?, text("name"), params.get("light"), params.get("dark")).map_err(said)?.to_json(),
+                methods::UPDATE_THEME => catalog::update(
+                    dir,
+                    need()?,
+                    text("name"),
+                    params.get("light"),
+                    params.get("dark"),
+                )
+                .map_err(said)?
+                .to_json(),
                 methods::DELETE_THEME => {
                     catalog::delete(dir, need()?).map_err(said)?;
                     json!({ "deleted": need()? })
                 }
-                methods::USE_THEME => catalog::use_theme(dir, need()?, text("slot").unwrap_or("both")).map_err(said)?,
+                methods::USE_THEME => {
+                    catalog::use_theme(dir, need()?, text("slot").unwrap_or("both"))
+                        .map_err(said)?
+                }
                 other => return Err(RpcError::UnknownMethod(other.into())),
             };
             Ok(RpcReply::Value(reply))
@@ -184,12 +208,22 @@ mod tests {
     }
 
     fn tools(dir: &std::path::Path) -> Tools {
-        let engine = Arc::new(Engine { dir: dir.to_path_buf() });
-        Tools::new(Arc::new(Onicode::with_client(memory_client(engine), Origin::default())))
+        let engine = Arc::new(Engine {
+            dir: dir.to_path_buf(),
+        });
+        Tools::new(Arc::new(Onicode::with_client(
+            memory_client(engine),
+            Origin::default(),
+        )))
     }
 
     fn palette(seed: &str) -> Value {
-        let v = onicode_theme::builtin_registry().families.iter().flat_map(|f| &f.variants).find(|v| v.id == seed).unwrap();
+        let v = onicode_theme::builtin_registry()
+            .families
+            .iter()
+            .flat_map(|f| &f.variants)
+            .find(|v| v.id == seed)
+            .unwrap();
         onicode_theme::catalog::Palette::of(v).to_json(None)
     }
 
@@ -200,25 +234,57 @@ mod tests {
         let made = tools.call(CREATE_THEME, json!({ "name": "Ink", "light": palette("github-light"), "dark": palette("tokyo-night") })).await.unwrap();
         assert_eq!(made["id"], "custom-ink");
         assert!(made["next"].as_str().unwrap().contains("use_theme"));
-        let got = tools.call(GET_THEME, json!({ "id": "custom-ink" })).await.unwrap();
+        let got = tools
+            .call(GET_THEME, json!({ "id": "custom-ink" }))
+            .await
+            .unwrap();
         assert_eq!(got["dark"], palette("tokyo-night"), "as given");
         assert_eq!(got["editable"], true);
         // Read, changed, saved back.
         let mut dark = got["dark"].clone();
         dark["accent"] = json!("#ff3e9a");
-        let changed = tools.call(UPDATE_THEME, json!({ "id": "custom-ink", "name": "Ink Pink", "dark": dark })).await.unwrap();
+        let changed = tools
+            .call(
+                UPDATE_THEME,
+                json!({ "id": "custom-ink", "name": "Ink Pink", "dark": dark }),
+            )
+            .await
+            .unwrap();
         assert_eq!(changed["variants"]["dark"], "custom-ink-dark");
-        let again = tools.call(GET_THEME, json!({ "id": "custom-ink" })).await.unwrap();
-        assert_eq!((again["name"].as_str(), again["dark"]["accent"].as_str()), (Some("Ink Pink"), Some("#ff3e9a")));
+        let again = tools
+            .call(GET_THEME, json!({ "id": "custom-ink" }))
+            .await
+            .unwrap();
+        assert_eq!(
+            (again["name"].as_str(), again["dark"]["accent"].as_str()),
+            (Some("Ink Pink"), Some("#ff3e9a"))
+        );
         // Worn: list_themes says so.
-        let used = tools.call(USE_THEME, json!({ "id": "custom-ink" })).await.unwrap();
-        assert_eq!(used["chosen"], json!({ "light": "custom-ink-light", "dark": "custom-ink-dark" }));
+        let used = tools
+            .call(USE_THEME, json!({ "id": "custom-ink" }))
+            .await
+            .unwrap();
+        assert_eq!(
+            used["chosen"],
+            json!({ "light": "custom-ink-light", "dark": "custom-ink-dark" })
+        );
         let listed = tools.call(LIST_THEMES, json!({})).await.unwrap();
-        let ink = listed["themes"].as_array().unwrap().iter().find(|t| t["id"] == "custom-ink").unwrap();
+        let ink = listed["themes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == "custom-ink")
+            .unwrap();
         assert_eq!(ink["in_use"], json!(["light", "dark"]));
         assert_eq!(listed["wearing"]["dark"]["variant"], "custom-ink-dark");
         // Gone, and its schemes back to the default.
-        assert_eq!(tools.call(DELETE_THEME, json!({ "id": "custom-ink" })).await.unwrap(), json!({ "deleted": "custom-ink" }));
+        assert_eq!(
+            tools
+                .call(DELETE_THEME, json!({ "id": "custom-ink" }))
+                .await
+                .unwrap(),
+            json!({ "deleted": "custom-ink" })
+        );
         let listed = tools.call(LIST_THEMES, json!({})).await.unwrap();
         assert_eq!(listed["wearing"]["dark"]["variant"], "onicode-dark");
     }
@@ -227,7 +293,10 @@ mod tests {
     async fn built_in_and_template_themes_are_read_only() {
         let data = tempfile::tempdir().unwrap();
         let tools = tools(data.path());
-        let gruvbox = tools.call(GET_THEME, json!({ "id": "gruvbox" })).await.unwrap();
+        let gruvbox = tools
+            .call(GET_THEME, json!({ "id": "gruvbox" }))
+            .await
+            .unwrap();
         assert_eq!(gruvbox["editable"], false);
         assert!(gruvbox["light"].is_object() && gruvbox["dark"].is_object());
         for (tool, args) in [
@@ -235,12 +304,30 @@ mod tests {
             (DELETE_THEME, json!({ "id": "gruvbox" })),
         ] {
             let err = tools.call(tool, args).await.unwrap_err();
-            assert!(err.contains("built in") && err.contains("create_theme"), "{tool}: {err}");
+            assert!(
+                err.contains("built in") && err.contains("create_theme"),
+                "{tool}: {err}"
+            );
         }
         // A copy is yours.
-        let copy = tools.call(CREATE_THEME, json!({ "name": "My Gruvbox", "light": gruvbox["light"], "dark": gruvbox["dark"] })).await.unwrap();
-        assert_eq!(tools.call(GET_THEME, json!({ "id": copy["id"] })).await.unwrap()["editable"], true);
-        let err = tools.call(USE_THEME, json!({ "id": "dracula", "slot": "light" })).await.unwrap_err();
+        let copy = tools
+            .call(
+                CREATE_THEME,
+                json!({ "name": "My Gruvbox", "light": gruvbox["light"], "dark": gruvbox["dark"] }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            tools
+                .call(GET_THEME, json!({ "id": copy["id"] }))
+                .await
+                .unwrap()["editable"],
+            true
+        );
+        let err = tools
+            .call(USE_THEME, json!({ "id": "dracula", "slot": "light" }))
+            .await
+            .unwrap_err();
         assert!(err.contains("no light version"), "{err}");
     }
 
@@ -251,12 +338,27 @@ mod tests {
         let mut bad = palette("nord");
         bad["accent"] = json!("purple");
         bad["syntax"] = json!(["#ffffff", "#000000"]);
-        let err = tools.call(CREATE_THEME, json!({ "name": "Bad", "dark": bad })).await.unwrap_err();
-        assert!(err.contains("`dark.accent`: \"purple\" isn't a colour"), "{err}");
+        let err = tools
+            .call(CREATE_THEME, json!({ "name": "Bad", "dark": bad }))
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("`dark.accent`: \"purple\" isn't a colour"),
+            "{err}"
+        );
         assert!(err.contains("`dark.syntax` needs 12 colours"), "{err}");
-        let err = tools.call(CREATE_THEME, json!({ "name": "Empty" })).await.unwrap_err();
+        let err = tools
+            .call(CREATE_THEME, json!({ "name": "Empty" }))
+            .await
+            .unwrap_err();
         assert!(err.contains("`light`, `dark` or both"), "{err}");
-        assert!(tools.call(GET_THEME, json!({ "id": "nope" })).await.unwrap_err().contains("list_themes"));
+        assert!(
+            tools
+                .call(GET_THEME, json!({ "id": "nope" }))
+                .await
+                .unwrap_err()
+                .contains("list_themes")
+        );
         assert!(tools.call(LIST_THEMES, json!("x")).await.is_err());
     }
 
@@ -269,11 +371,20 @@ mod tests {
             "colors": { "editor.background": "#f7f3ea", "editor.foreground": "#2b2a27", "focusBorder": "#b5651d" },
             "tokenColors": [{ "scope": "keyword", "settings": { "foreground": "#8a3b12" } }],
         });
-        let made = tools.call(CREATE_THEME, json!({ "vscode": theme })).await.unwrap();
+        let made = tools
+            .call(CREATE_THEME, json!({ "vscode": theme }))
+            .await
+            .unwrap();
         assert_eq!(made["name"], "Paper Mill");
-        let got = tools.call(GET_THEME, json!({ "id": made["id"] })).await.unwrap();
+        let got = tools
+            .call(GET_THEME, json!({ "id": made["id"] }))
+            .await
+            .unwrap();
         assert_eq!(got["light"]["background"], "#f7f3ea");
-        assert_eq!(got["light"]["syntax"][1], "#8a3b12", "keywords from tokenColors");
+        assert_eq!(
+            got["light"]["syntax"][1], "#8a3b12",
+            "keywords from tokenColors"
+        );
     }
 
     #[test]
@@ -281,7 +392,12 @@ mod tests {
         let defs = catalog();
         assert_eq!(defs.iter().map(|d| d.name).collect::<Vec<_>>(), NAMES);
         for def in &defs[2..4] {
-            assert!(def.description.contains("12 code colours in this order") && def.description.contains("\"background\":\"#14181f\""), "{}", def.name);
+            assert!(
+                def.description.contains("12 code colours in this order")
+                    && def.description.contains("\"background\":\"#14181f\""),
+                "{}",
+                def.name
+            );
         }
     }
 }

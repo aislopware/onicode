@@ -582,7 +582,8 @@ mod tests {
             sha512: "test-digest",
         };
         assert!(installed_entry(&pin).is_none());
-        if std::env::var_os("HOME").is_some() || std::env::var_os("ONICODE_ADAPTERS_DIR").is_some() {
+        if std::env::var_os("HOME").is_some() || std::env::var_os("ONICODE_ADAPTERS_DIR").is_some()
+        {
             let expected = install_dir(pin.name, pin.version).unwrap().join(pin.entry);
             assert!(expected.ends_with("never-installed-acp/0.0.0-test/server"));
         }

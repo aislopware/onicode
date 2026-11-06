@@ -5,9 +5,9 @@
 //!     cargo run -p onicode-harness --example grok_subagent_probe -- /tmp/probe-dir
 
 use futures::StreamExt;
-use tokio::sync::{mpsc, oneshot};
 use onicode_harness::{AcpHarness, CancellationToken, Harness, RunControls};
 use onicode_proto::{AgentEvent, RunRequest, SandboxLevel, UserInputAnswer};
+use tokio::sync::{mpsc, oneshot};
 
 #[tokio::main]
 async fn main() {

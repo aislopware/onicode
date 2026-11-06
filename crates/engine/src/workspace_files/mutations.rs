@@ -733,12 +733,40 @@ mod tests {
         std::fs::write(root.join("src/kept.rs"), "keep").unwrap();
         let taken = create(root, "src/kept.rs", WorkspaceEntryKind::File).unwrap_err();
         assert_eq!(taken.0, Reason::DestinationExists);
-        assert_eq!(std::fs::read_to_string(root.join("src/kept.rs")).unwrap(), "keep");
-        assert_eq!(create(root, "docs", WorkspaceEntryKind::File).unwrap_err().0, Reason::DestinationExists);
-        assert_eq!(create(root, "missing/x.rs", WorkspaceEntryKind::File).unwrap_err().0, Reason::InvalidDestination);
-        assert_eq!(create(root, "../out.rs", WorkspaceEntryKind::File).unwrap_err().0, Reason::InvalidPath);
-        assert_eq!(create(root, "a//b", WorkspaceEntryKind::File).unwrap_err().0, Reason::InvalidPath);
-        assert_eq!(create(root, "x", WorkspaceEntryKind::Symlink).unwrap_err().0, Reason::Unsupported);
+        assert_eq!(
+            std::fs::read_to_string(root.join("src/kept.rs")).unwrap(),
+            "keep"
+        );
+        assert_eq!(
+            create(root, "docs", WorkspaceEntryKind::File)
+                .unwrap_err()
+                .0,
+            Reason::DestinationExists
+        );
+        assert_eq!(
+            create(root, "missing/x.rs", WorkspaceEntryKind::File)
+                .unwrap_err()
+                .0,
+            Reason::InvalidDestination
+        );
+        assert_eq!(
+            create(root, "../out.rs", WorkspaceEntryKind::File)
+                .unwrap_err()
+                .0,
+            Reason::InvalidPath
+        );
+        assert_eq!(
+            create(root, "a//b", WorkspaceEntryKind::File)
+                .unwrap_err()
+                .0,
+            Reason::InvalidPath
+        );
+        assert_eq!(
+            create(root, "x", WorkspaceEntryKind::Symlink)
+                .unwrap_err()
+                .0,
+            Reason::Unsupported
+        );
     }
     #[cfg(unix)]
     #[test]
@@ -750,7 +778,8 @@ mod tests {
         assert!(create(root, "away/escape.txt", WorkspaceEntryKind::File).is_err());
         assert!(!outside.path().join("escape.txt").exists());
         // A dangling link at the name itself is never written through.
-        std::os::unix::fs::symlink(outside.path().join("target.txt"), root.join("link.txt")).unwrap();
+        std::os::unix::fs::symlink(outside.path().join("target.txt"), root.join("link.txt"))
+            .unwrap();
         assert!(create(root, "link.txt", WorkspaceEntryKind::File).is_err());
         assert!(!outside.path().join("target.txt").exists());
     }

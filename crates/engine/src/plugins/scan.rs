@@ -287,7 +287,9 @@ pub fn entry(inspected: Inspected, author: Author, state: &State) -> Entry {
         ui: manifest.map(|m| m.ui.clone()).unwrap_or_default(),
         tools: manifest.map(|m| m.tools.clone()).unwrap_or_default(),
         commands: manifest.map(|m| m.commands.clone()).unwrap_or_default(),
-        network_hosts: manifest.map(|m| m.network_hosts.clone()).unwrap_or_default(),
+        network_hosts: manifest
+            .map(|m| m.network_hosts.clone())
+            .unwrap_or_default(),
         service: manifest.and_then(|m| m.service.clone()),
         mcp: manifest.is_some_and(|m| m.mcp.is_some()),
         error: inspected.error.clone(),
@@ -375,8 +377,14 @@ mod tests {
         let mismatch = inspect(&write_plugin(root.path(), "other", manifest("focus")), true);
         assert!(mismatch.error.unwrap().contains("doesn't match"));
 
-        let reserved = inspect(&write_plugin(root.path(), "onicode", manifest("onicode")), true);
-        assert_eq!(reserved.error.as_deref(), Some("Onicode already uses that name"));
+        let reserved = inspect(
+            &write_plugin(root.path(), "onicode", manifest("onicode")),
+            true,
+        );
+        assert_eq!(
+            reserved.error.as_deref(),
+            Some("Onicode already uses that name")
+        );
 
         let mut no_entry = manifest("noentry");
         no_entry["entry"] = serde_json::json!("main.luau");

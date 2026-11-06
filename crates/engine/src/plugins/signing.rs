@@ -96,7 +96,12 @@ pub fn payload(manifest: &serde_json::Value, key: &str, files: &FileHashes) -> V
 
 /// The bytes a signature covers in `prefix`'s domain (a plugin's, a
 /// template package's): the manifest with `signature = {key, files}`.
-pub fn payload_for(prefix: &str, manifest: &serde_json::Value, key: &str, files: &FileHashes) -> Vec<u8> {
+pub fn payload_for(
+    prefix: &str,
+    manifest: &serde_json::Value,
+    key: &str,
+    files: &FileHashes,
+) -> Vec<u8> {
     let mut value = manifest.clone();
     if let Some(object) = value.as_object_mut() {
         object.insert(
@@ -131,7 +136,13 @@ pub fn check(manifest: &Manifest, files: &FileHashes) -> SigCheck {
     if &signature.files != files {
         return SigCheck::FilesDiffer;
     }
-    verify(PAYLOAD_PREFIX, &manifest.raw, &signature.key, &signature.sig, files)
+    verify(
+        PAYLOAD_PREFIX,
+        &manifest.raw,
+        &signature.key,
+        &signature.sig,
+        files,
+    )
 }
 
 /// `check` in `prefix`'s domain, for a manifest as raw JSON (a template
@@ -162,7 +173,13 @@ pub fn check_raw(prefix: &str, manifest: &serde_json::Value, files: &FileHashes)
 }
 
 /// The ed25519 check of `sig` by `key` over `prefix`'s payload.
-fn verify(prefix: &str, manifest: &serde_json::Value, key: &str, sig: &str, files: &FileHashes) -> SigCheck {
+fn verify(
+    prefix: &str,
+    manifest: &serde_json::Value,
+    key: &str,
+    sig: &str,
+    files: &FileHashes,
+) -> SigCheck {
     let (Ok(key_bytes), Ok(sig_bytes)) = (B64URL.decode(key), B64URL.decode(sig)) else {
         return SigCheck::BadSignature;
     };
@@ -251,7 +268,12 @@ pub fn load_key(data_dir: &Path) -> Option<SigningKey> {
 /// [`onicode_rpc::caller_proof_message`], both b64url. `None` without a key
 /// (never made here: an unregistered key would prove nothing). The private
 /// key never leaves this module.
-pub fn device_link_proof(data_dir: &Path, target: &str, conn_id: &str, ts: i64) -> Option<(String, String)> {
+pub fn device_link_proof(
+    data_dir: &Path,
+    target: &str,
+    conn_id: &str,
+    ts: i64,
+) -> Option<(String, String)> {
     let key = load_key(data_dir)?;
     let message = onicode_rpc::caller_proof_message(target, conn_id, ts);
     Some((key.public(), key.sign(message.as_bytes())))
@@ -265,7 +287,9 @@ static KEY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Read the key, or make and store one (0600).
 pub fn load_or_create_key(data_dir: &Path) -> Result<SigningKey, String> {
-    let _held = KEY_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _held = KEY_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     load_or_create_locked(data_dir)
 }
 
@@ -283,7 +307,9 @@ fn load_or_create_locked(data_dir: &Path) -> Result<SigningKey, String> {
 /// `plugin-signing-key.revoked-<unix>`) and make a fresh one. A retired
 /// private key is never kept: whoever holds it can sign as it.
 pub fn rotate_key(data_dir: &Path) -> Result<SigningKey, String> {
-    let _held = KEY_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _held = KEY_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     delete_locked(data_dir)?;
     load_or_create_locked(data_dir)
 }
@@ -291,7 +317,9 @@ pub fn rotate_key(data_dir: &Path) -> Result<SigningKey, String> {
 /// Delete this device's key, and old ones set aside (the next use makes
 /// a fresh one).
 pub fn delete_key(data_dir: &Path) {
-    let _held = KEY_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _held = KEY_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Err(error) = delete_locked(data_dir) {
         tracing::warn!(%error, "plugins: couldn't delete the old signing key");
     }
@@ -300,7 +328,8 @@ pub fn delete_key(data_dir: &Path) {
 fn delete_locked(data_dir: &Path) -> Result<(), String> {
     let path = data_dir.join(KEY_FILE);
     if std::fs::symlink_metadata(&path).is_ok() {
-        std::fs::remove_file(&path).map_err(|_| "Couldn't replace this device's signing key".to_string())?;
+        std::fs::remove_file(&path)
+            .map_err(|_| "Couldn't replace this device's signing key".to_string())?;
     }
     let aside = format!("{KEY_FILE}.revoked-");
     for entry in std::fs::read_dir(data_dir).into_iter().flatten().flatten() {
@@ -347,15 +376,35 @@ mod tests {
         let raw = serde_json::json!({ "id": "x", "name": "X", "version": "1.0.0", "entry": "init.luau", "permissions": [] });
         let as_plugin = key.sign_manifest(&raw, &files());
         let as_template = key.sign_manifest_for(TEMPLATE_PAYLOAD_PREFIX, &raw, &files());
-        assert!(matches!(check(&manifest(as_plugin.clone()), &files()), SigCheck::Valid(_)));
-        assert!(matches!(check_raw(TEMPLATE_PAYLOAD_PREFIX, &as_template, &files()), SigCheck::Valid(_)));
+        assert!(matches!(
+            check(&manifest(as_plugin.clone()), &files()),
+            SigCheck::Valid(_)
+        ));
+        assert!(matches!(
+            check_raw(TEMPLATE_PAYLOAD_PREFIX, &as_template, &files()),
+            SigCheck::Valid(_)
+        ));
         // A plugin's signature isn't a template's, and the reverse.
-        assert_eq!(check_raw(TEMPLATE_PAYLOAD_PREFIX, &as_plugin, &files()), SigCheck::BadSignature);
-        assert_eq!(check(&manifest(as_template.clone()), &files()), SigCheck::BadSignature);
+        assert_eq!(
+            check_raw(TEMPLATE_PAYLOAD_PREFIX, &as_plugin, &files()),
+            SigCheck::BadSignature
+        );
+        assert_eq!(
+            check(&manifest(as_template.clone()), &files()),
+            SigCheck::BadSignature
+        );
         // Its files changed: told apart from a bad signature.
-        let other: FileHashes = [("init.luau".to_string(), sha256_hex(b"print(2)"))].into_iter().collect();
-        assert_eq!(check_raw(TEMPLATE_PAYLOAD_PREFIX, &as_template, &other), SigCheck::FilesDiffer);
-        assert_eq!(check_raw(TEMPLATE_PAYLOAD_PREFIX, &raw, &files()), SigCheck::Unsigned);
+        let other: FileHashes = [("init.luau".to_string(), sha256_hex(b"print(2)"))]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            check_raw(TEMPLATE_PAYLOAD_PREFIX, &as_template, &other),
+            SigCheck::FilesDiffer
+        );
+        assert_eq!(
+            check_raw(TEMPLATE_PAYLOAD_PREFIX, &raw, &files()),
+            SigCheck::Unsigned
+        );
     }
 
     #[test]

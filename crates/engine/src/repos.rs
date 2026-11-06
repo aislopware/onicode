@@ -1445,7 +1445,8 @@ impl Repos {
                 ADJECTIVES[(seed % ADJECTIVES.len() as u64) as usize],
                 NOUNS[((seed / 31) % NOUNS.len() as u64) as usize]
             );
-            if !base.join(&candidate).exists() && !existing.contains(&format!("onicode/{candidate}"))
+            if !base.join(&candidate).exists()
+                && !existing.contains(&format!("onicode/{candidate}"))
             {
                 name = Some(candidate);
                 break;

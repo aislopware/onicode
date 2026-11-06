@@ -4,16 +4,16 @@
 //! the steer is answered.
 //!
 //! ONICODE_TEST_HARNESS=claude cargo test -p onicode-engine --test steer_tool_live -- --ignored --nocapture
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
 use onicode_doc::{MessagePart, MessageRole, SessionCommandPayload, SessionMessageEntry};
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::{
     AcpHarness, ClaudeHarness, CodexHarness, CursorHarness, Harness, OpencodeHarness,
 };
 use onicode_proto::{ChatConfig, McpServer, RunRequest, SandboxLevel, SessionStatus};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 const CHAT: &str = "steer-tool";
 

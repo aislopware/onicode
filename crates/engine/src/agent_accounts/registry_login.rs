@@ -19,7 +19,8 @@ use onicode_proto::{AgentLoginMode, AgentLoginStart, HarnessId, RegistryAgent};
 use super::{AgentAccounts, EngineError, LoginFlow, TaskLoginState, lock, new_id};
 
 /// What a terminal sign-in's failure says before its command.
-pub(crate) const TERMINAL_PREFIX: &str = "This sign-in asks for something only a terminal can answer. Run it there: ";
+pub(crate) const TERMINAL_PREFIX: &str =
+    "This sign-in asks for something only a terminal can answer. Run it there: ";
 
 impl AgentAccounts {
     pub(super) fn start_registry_login(
@@ -30,10 +31,15 @@ impl AgentAccounts {
     ) -> Result<AgentLoginStart, EngineError> {
         let harness = HarnessId::Registry(agent);
         self.reap_spawned_flows(harness);
-        let record = onicode_harness::acp_registry::record(agent)
-            .ok_or_else(|| EngineError::Other(format!("{} isn't added on this device", agent.registry_id())))?;
+        let record = onicode_harness::acp_registry::record(agent).ok_or_else(|| {
+            EngineError::Other(format!(
+                "{} isn't added on this device",
+                agent.registry_id()
+            ))
+        })?;
         let acp = match lock(&self.inner.cli_overrides).get(&harness) {
-            Some(path) => onicode_harness::AcpHarness::registry(agent, &record.name).with_executable(path.clone()),
+            Some(path) => onicode_harness::AcpHarness::registry(agent, &record.name)
+                .with_executable(path.clone()),
             None => onicode_harness::AcpHarness::registry(agent, &record.name),
         };
         let login_id = new_id();

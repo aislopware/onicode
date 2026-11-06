@@ -10,9 +10,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, anyhow, bail};
-use serde::Deserialize;
-use serde_json::{Value, json};
-use tokio::sync::Mutex;
 use onicode_doc::{
     SessionCommandPayload, SessionMessageEntry, TranscriptFrame, apply_transcript_frame,
 };
@@ -20,6 +17,9 @@ use onicode_proto::{
     Chat, Device, HarnessId, Model, ReasoningLevel, Session, SessionStatus, Space, SteeringMode,
 };
 use onicode_rpc::{RpcClient, RpcError, RpcSubscription, connect_ipc_as_agent, methods};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use tokio::sync::Mutex;
 
 /// First-item wait for a watch snapshot. Localhost; the engine answers
 /// watch attaches in milliseconds unless it is still assembling stores.

@@ -38,7 +38,9 @@ pub fn ipc_port_from_env() -> u16 {
 
 /// [`ipc_port_from_env`] from the variable's value.
 pub fn ipc_port_from(value: Option<&str>) -> u16 {
-    value.and_then(|p| p.parse().ok()).unwrap_or(DEFAULT_IPC_PORT)
+    value
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(DEFAULT_IPC_PORT)
 }
 
 /// The production engine's IPC port.

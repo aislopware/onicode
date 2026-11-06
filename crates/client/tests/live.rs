@@ -11,7 +11,6 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use loro::{ExportMode, LoroDoc};
-use support::mock_edge::MockEdge;
 use onicode_client::events::NullListener;
 use onicode_client::{
     ChatIndicator, Client, ClientConfig, ConnectivityState, Credentials, MessageRole, SendOutcome,
@@ -23,6 +22,7 @@ use onicode_doc::{
 };
 use onicode_proto::{Chat, ChatConfig, Device, HarnessId, SandboxLevel, Space};
 use onicode_sync::RegistryClient;
+use support::mock_edge::MockEdge;
 
 const HOST: &str = "dev-mac";
 const CHAT: &str = "chat-live";
@@ -559,8 +559,8 @@ impl onicode_rpc::RpcService for HostService {
         method: &str,
         params: serde_json::Value,
     ) -> Result<onicode_rpc::RpcReply, onicode_rpc::RpcError> {
-        use serde_json::json;
         use onicode_rpc::{RpcReply, methods as m};
+        use serde_json::json;
         let value = match method {
             m::LIST_HARNESSES => json!([
                 {"id": "claude-code", "name": "Claude Code", "supportsSteering": true,
@@ -792,12 +792,11 @@ async fn host_rpcs_ride_the_device_relay() {
 
     // New project: asked of the owning host (Mutate createSpace).
     let c = client.clone();
-    let space_id =
-        onicode_client::runtime::run(
-            async move { c.create_project(HOST, "/Users/dev/new", true).await },
-        )
-        .await
-        .unwrap();
+    let space_id = onicode_client::runtime::run(async move {
+        c.create_project(HOST, "/Users/dev/new", true).await
+    })
+    .await
+    .unwrap();
     assert!(service.spaces.lock().unwrap().contains(&space_id));
     client.shutdown();
 }

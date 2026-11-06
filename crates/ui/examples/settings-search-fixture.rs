@@ -12,8 +12,8 @@ use gpui::{
     AppContext, AsyncApp, Bounds, KeyDownEvent, Keystroke, PlatformInput, WindowBounds,
     WindowOptions, point, px, size,
 };
-use std::{path::PathBuf, time::Duration};
 use onicode_ui::*;
+use std::{path::PathBuf, time::Duration};
 
 async fn pause(cx: &mut AsyncApp, ms: u64) {
     cx.background_executor()

@@ -1,13 +1,13 @@
 //! Exclusive, local, ephemeral voice ownership. Native media remains in Codex's helper.
 pub(crate) mod remote;
+use onicode_harness::codex::realtime::{RealtimeHandle, VoiceCommand};
+use onicode_proto::{SessionStatus, voice::*};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-use onicode_harness::codex::realtime::{RealtimeHandle, VoiceCommand};
-use onicode_proto::{SessionStatus, voice::*};
 
 #[derive(Clone, Default)]
 pub struct VoiceManager {

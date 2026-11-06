@@ -41,7 +41,10 @@ pub fn ensure(
 ) -> Result<PathBuf, String> {
     let target = snapshot_dir(plugins_dir, id, hash);
     // The folders above it are real ones (a link would put it anywhere).
-    for dir in [plugins_dir.join(LOADED_DIR), plugins_dir.join(LOADED_DIR).join(id)] {
+    for dir in [
+        plugins_dir.join(LOADED_DIR),
+        plugins_dir.join(LOADED_DIR).join(id),
+    ] {
         if std::fs::symlink_metadata(&dir).is_ok_and(|m| !m.is_dir()) {
             remove(&dir);
         }
@@ -100,8 +103,15 @@ pub fn ensure(
 fn walk(dir: &Path, prefix: &str, out: &mut BTreeMap<String, PathBuf>) -> Result<(), String> {
     for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
-        let name = entry.file_name().into_string().map_err(|_| "a name that isn't text".to_string())?;
-        let rel = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| "a name that isn't text".to_string())?;
+        let rel = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}/{name}")
+        };
         let kind = entry.file_type().map_err(|e| e.to_string())?;
         if name.starts_with('.') || kind.is_symlink() {
             return Err(format!("{rel} isn't part of it"));
@@ -135,7 +145,9 @@ pub fn verify(dir: &Path, manifest_bytes: &[u8], files: &FileHashes) -> Result<(
     real_dir(dir)?;
     let mut found = BTreeMap::new();
     walk(dir, "", &mut found)?;
-    let manifest = found.remove(MANIFEST_FILE).ok_or("its manifest is missing")?;
+    let manifest = found
+        .remove(MANIFEST_FILE)
+        .ok_or("its manifest is missing")?;
     if std::fs::read(&manifest).map_err(|e| e.to_string())? != manifest_bytes {
         return Err("its manifest changed".into());
     }
@@ -143,7 +155,9 @@ pub fn verify(dir: &Path, manifest_bytes: &[u8], files: &FileHashes) -> Result<(
         return Err("its files aren't the signed ones".into());
     }
     for (rel, path) in &found {
-        let expected = files.get(rel).ok_or_else(|| format!("{rel} isn't one of its signed files"))?;
+        let expected = files
+            .get(rel)
+            .ok_or_else(|| format!("{rel} isn't one of its signed files"))?;
         if &sha256_hex(&std::fs::read(path).map_err(|e| e.to_string())?) != expected {
             return Err(format!("{rel} changed"));
         }
@@ -158,11 +172,16 @@ pub fn verify_hash(dir: &Path, hash: &str) -> Result<(), String> {
     real_dir(dir)?;
     let mut found = BTreeMap::new();
     walk(dir, "", &mut found)?;
-    let manifest = found.remove(MANIFEST_FILE).ok_or("its manifest is missing")?;
+    let manifest = found
+        .remove(MANIFEST_FILE)
+        .ok_or("its manifest is missing")?;
     let manifest = Manifest::parse(&std::fs::read(&manifest).map_err(|e| e.to_string())?)?;
     let mut files = FileHashes::new();
     for (rel, path) in found {
-        files.insert(rel, sha256_hex(&std::fs::read(&path).map_err(|e| e.to_string())?));
+        files.insert(
+            rel,
+            sha256_hex(&std::fs::read(&path).map_err(|e| e.to_string())?),
+        );
     }
     if content_hash(&manifest, &files) != hash {
         return Err("its files aren't the version allowed".into());
@@ -187,7 +206,9 @@ fn read_only(dir: &Path) {
 /// Remove `path`: a link as the link (never what it points to), a folder
 /// with its read-only files.
 pub fn remove(path: &Path) {
-    let Ok(meta) = std::fs::symlink_metadata(path) else { return };
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return;
+    };
     if !meta.is_dir() {
         let _ = std::fs::remove_file(path);
         return;
@@ -197,7 +218,9 @@ pub fn remove(path: &Path) {
         // (Windows won't delete a read-only file.)
         fn writable(dir: &Path) {
             for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-                let Ok(kind) = entry.file_type() else { continue };
+                let Ok(kind) = entry.file_type() else {
+                    continue;
+                };
                 if kind.is_dir() {
                     writable(&entry.path());
                 } else if kind.is_file()
@@ -320,17 +343,43 @@ mod tests {
         .into_iter()
         .collect();
         let hash1 = "0123456789abcdef0000";
-        let snap = ensure(plugins, "focus", &plugins.join("focus"), hash1, b"{}", &files).unwrap();
+        let snap = ensure(
+            plugins,
+            "focus",
+            &plugins.join("focus"),
+            hash1,
+            b"{}",
+            &files,
+        )
+        .unwrap();
         assert_eq!(snap, plugins.join(".loaded/focus/0123456789abcdef"));
         assert_eq!(std::fs::read(snap.join("lib/x.luau")).unwrap(), b"b");
         assert_eq!(std::fs::read(snap.join(MANIFEST_FILE)).unwrap(), b"{}");
 
         // A file that changed under the copy is refused.
         std::fs::write(plugins.join("focus/init.luau"), "z").unwrap();
-        assert!(ensure(plugins, "focus", &plugins.join("focus"), "ffffffffffffffff", b"{}", &files).is_err());
+        assert!(
+            ensure(
+                plugins,
+                "focus",
+                &plugins.join("focus"),
+                "ffffffffffffffff",
+                b"{}",
+                &files
+            )
+            .is_err()
+        );
         assert!(!plugins.join(".loaded/focus/ffffffffffffffff").exists());
         std::fs::write(plugins.join("focus/init.luau"), "a").unwrap();
-        let snap2 = ensure(plugins, "focus", &plugins.join("focus"), "1111111111111111", b"{}", &files).unwrap();
+        let snap2 = ensure(
+            plugins,
+            "focus",
+            &plugins.join("focus"),
+            "1111111111111111",
+            b"{}",
+            &files,
+        )
+        .unwrap();
 
         let mut retention = Retention::default();
         let t0 = Instant::now();
@@ -341,7 +390,15 @@ mod tests {
         );
         assert!(snap.exists());
         assert!(!snap2.exists(), "unreferenced snapshot goes");
-        let snap2 = ensure(plugins, "focus", &plugins.join("focus"), "1111111111111111", b"{}", &files).unwrap();
+        let snap2 = ensure(
+            plugins,
+            "focus",
+            &plugins.join("focus"),
+            "1111111111111111",
+            b"{}",
+            &files,
+        )
+        .unwrap();
         let keeps = retention.sweep(
             plugins,
             [("focus".to_string(), "1111111111111111".to_string())].into(),
@@ -368,7 +425,12 @@ mod tests {
         std::fs::create_dir_all(plugins.join("focus/lib")).unwrap();
         std::fs::write(plugins.join("focus/init.luau"), "a").unwrap();
         std::fs::write(plugins.join("focus/lib/x.luau"), "b").unwrap();
-        [("init.luau".to_string(), sha256_hex(b"a")), ("lib/x.luau".to_string(), sha256_hex(b"b"))].into_iter().collect()
+        [
+            ("init.luau".to_string(), sha256_hex(b"a")),
+            ("lib/x.luau".to_string(), sha256_hex(b"b")),
+        ]
+        .into_iter()
+        .collect()
     }
 
     /// R11: a snapshot planted (or changed) under `.loaded` is never taken
@@ -387,21 +449,48 @@ mod tests {
         std::fs::write(target.join("lib/x.luau"), "b").unwrap();
         std::fs::write(target.join("evil.luau"), "evil").unwrap();
         std::fs::write(target.join(MANIFEST_FILE), b"{}").unwrap();
-        let snap = ensure(plugins, "focus", &plugins.join("focus"), hash, b"{}", &files).unwrap();
-        assert_eq!(std::fs::read(snap.join("init.luau")).unwrap(), b"a", "the planted code was kept");
+        let snap = ensure(
+            plugins,
+            "focus",
+            &plugins.join("focus"),
+            hash,
+            b"{}",
+            &files,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read(snap.join("init.luau")).unwrap(),
+            b"a",
+            "the planted code was kept"
+        );
         assert!(!snap.join("evil.luau").exists(), "a planted file was kept");
         assert!(verify(&snap, b"{}", &files).is_ok());
         // Read-only.
-        assert!(std::fs::metadata(snap.join("init.luau")).unwrap().permissions().readonly());
+        assert!(
+            std::fs::metadata(snap.join("init.luau"))
+                .unwrap()
+                .permissions()
+                .readonly()
+        );
 
         // Changed after: found the next time, and by a load.
-        let mut perms = std::fs::metadata(snap.join("init.luau")).unwrap().permissions();
+        let mut perms = std::fs::metadata(snap.join("init.luau"))
+            .unwrap()
+            .permissions();
         #[allow(clippy::permissions_set_readonly_false)]
         perms.set_readonly(false);
         std::fs::set_permissions(snap.join("init.luau"), perms).unwrap();
         std::fs::write(snap.join("init.luau"), "evil").unwrap();
         assert!(verify(&snap, b"{}", &files).is_err());
-        let snap = ensure(plugins, "focus", &plugins.join("focus"), hash, b"{}", &files).unwrap();
+        let snap = ensure(
+            plugins,
+            "focus",
+            &plugins.join("focus"),
+            hash,
+            b"{}",
+            &files,
+        )
+        .unwrap();
         assert_eq!(std::fs::read(snap.join("init.luau")).unwrap(), b"a");
         // A dot entry or a link inside: refused.
         std::fs::write(snap.join(".evil.luau"), "x").unwrap();
@@ -433,8 +522,21 @@ mod tests {
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
         // (Even one holding exactly the right files: a link is someone's.)
         std::os::unix::fs::symlink(&elsewhere, &target).unwrap();
-        let snap = ensure(&plugins, "focus", &plugins.join("focus"), hash, b"{}", &files).unwrap();
-        assert!(!std::fs::symlink_metadata(&snap).unwrap().file_type().is_symlink());
+        let snap = ensure(
+            &plugins,
+            "focus",
+            &plugins.join("focus"),
+            hash,
+            b"{}",
+            &files,
+        )
+        .unwrap();
+        assert!(
+            !std::fs::symlink_metadata(&snap)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
         assert!(elsewhere.join("init.luau").exists());
 
         // An id's folder that's a link: the sweep removes the link alone.
@@ -442,8 +544,15 @@ mod tests {
         std::fs::create_dir_all(victim.join("0000000000000000")).unwrap();
         std::fs::write(victim.join("0000000000000000/keep.txt"), "mine").unwrap();
         std::os::unix::fs::symlink(&victim, plugins.join(LOADED_DIR).join("other")).unwrap();
-        Retention::default().sweep(&plugins, [("focus".to_string(), hash[..16].to_string())].into(), Instant::now());
-        assert!(victim.join("0000000000000000/keep.txt").exists(), "the sweep followed a link");
+        Retention::default().sweep(
+            &plugins,
+            [("focus".to_string(), hash[..16].to_string())].into(),
+            Instant::now(),
+        );
+        assert!(
+            victim.join("0000000000000000/keep.txt").exists(),
+            "the sweep followed a link"
+        );
         assert!(std::fs::symlink_metadata(plugins.join(LOADED_DIR).join("other")).is_err());
         assert!(snap.exists());
     }
@@ -460,7 +569,9 @@ mod tests {
         let hash = content_hash(&manifest, &files);
         let snap = ensure(plugins, "focus", &plugins.join("focus"), &hash, raw, &files).unwrap();
         assert!(verify_hash(&snap, &hash).is_ok());
-        let mut perms = std::fs::metadata(snap.join("lib/x.luau")).unwrap().permissions();
+        let mut perms = std::fs::metadata(snap.join("lib/x.luau"))
+            .unwrap()
+            .permissions();
         #[allow(clippy::permissions_set_readonly_false)]
         perms.set_readonly(false);
         std::fs::set_permissions(snap.join("lib/x.luau"), perms).unwrap();

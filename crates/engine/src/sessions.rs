@@ -586,7 +586,9 @@ impl SessionsEngine {
         if !self.turn_in_flight(chat_id) {
             return None;
         }
-        lock(&self.inner.runs).get(chat_id).map(|h| h.runtime_config.harness_id)
+        lock(&self.inner.runs)
+            .get(chat_id)
+            .map(|h| h.runtime_config.harness_id)
     }
 
     /// Mark the provider-switch seam for a send about to run on `harness_id`
@@ -2275,7 +2277,11 @@ impl Inner {
     ///
     /// `side_chats_only`: the run's provider launches without its own
     /// subagents, so all delegation goes through this server.
-    fn onicode_mcp(&self, chat_id: &str, side_chats_only: bool) -> Option<onicode_proto::McpServer> {
+    fn onicode_mcp(
+        &self,
+        chat_id: &str,
+        side_chats_only: bool,
+    ) -> Option<onicode_proto::McpServer> {
         let port = self.ipc_port.load(std::sync::atomic::Ordering::Relaxed);
         if port == 0 {
             return None;
@@ -5192,7 +5198,11 @@ mod tests {
             ),
             ("a1", onicode_doc::MessageRole::Assistant, "partial output"),
             ("u2", onicode_doc::MessageRole::User, "current request"),
-            ("u3", onicode_doc::MessageRole::User, "future pending request"),
+            (
+                "u3",
+                onicode_doc::MessageRole::User,
+                "future pending request",
+            ),
         ] {
             doc.push_message(&onicode_doc::SessionMessageEntry {
                 id: id.into(),
@@ -5440,7 +5450,11 @@ mod tests {
         std::io::Write::write_all(&mut f, b"{\"seq\":3,\"event\":{\"type\":\"done\"").unwrap();
         assert_eq!(
             sessions.inner.journal_harness_session("started-only"),
-            Some(("s1".into(), "/a".into(), Some(onicode_proto::HarnessId::ClaudeCode)))
+            Some((
+                "s1".into(),
+                "/a".into(),
+                Some(onicode_proto::HarnessId::ClaudeCode)
+            ))
         );
     }
 
@@ -5563,9 +5577,12 @@ mod tests {
             .unwrap();
         let mut request = request();
         request.prompt.clear();
-        core.sessions
-            .inner
-            .remember_harness_session("idle", "old-native-thread", &request.cwd, HarnessId::Codex);
+        core.sessions.inner.remember_harness_session(
+            "idle",
+            "old-native-thread",
+            &request.cwd,
+            HarnessId::Codex,
+        );
         core.sessions.start_idle("idle", request).await.unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             loop {
@@ -5609,7 +5626,10 @@ mod tests {
                 SessionStatus::Idle
             );
             assert_eq!(
-                core.workspace.chat_harness_session("idle").unwrap().session_id,
+                core.workspace
+                    .chat_harness_session("idle")
+                    .unwrap()
+                    .session_id,
                 "new-native-thread"
             );
             let events = core.sessions.inner.journal.replay("idle", 0).unwrap();
@@ -6117,8 +6137,8 @@ mod tests {
 
     #[test]
     fn only_transient_start_failures_retry() {
-        use std::io::{Error, ErrorKind};
         use onicode_harness::HarnessError;
+        use std::io::{Error, ErrorKind};
         for kind in [
             ErrorKind::ResourceBusy,
             ErrorKind::ExecutableFileBusy,

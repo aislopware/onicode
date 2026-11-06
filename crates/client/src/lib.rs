@@ -53,6 +53,7 @@ pub use config::{
 pub use connectivity::{Connectivity, ConnectivityState, SendState};
 pub use error::ClientError;
 pub use events::{ClientEvent, ClientListener};
+pub use onicode_term_link::remote::TerminalPath;
 pub use provider_login::{LoginProvider, ProviderLoginStart};
 pub use session::{
     AppendHint, BusyPolicy, ComposerState, Entry, HostCapabilities, HostInfo, InputRequest,
@@ -66,7 +67,6 @@ pub use workspace::{
     DeviceView, FrontPage, ProjectRef, ProjectView, PullRequestGroups, SearchField, SearchHit,
     SectionView, SessionRow, WorkspaceSnapshot, project_color_index, relative_time_label,
 };
-pub use onicode_term_link::remote::TerminalPath;
 
 /// Re-exported so consumers (the layout engine) name the exact doc types the
 /// transcript carries without a direct `onicode-doc` dependency.

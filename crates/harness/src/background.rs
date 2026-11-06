@@ -13,8 +13,8 @@ use std::io::{Read as _, Seek as _, SeekFrom};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use tokio::sync::{Notify, watch};
 use onicode_proto::{BackgroundTask, BackgroundTaskOutput};
+use tokio::sync::{Notify, watch};
 
 /// Output kept per process the driver buffers itself (Codex output deltas),
 /// and read from the end of an output file at most.

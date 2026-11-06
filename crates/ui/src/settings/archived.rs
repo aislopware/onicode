@@ -191,11 +191,10 @@ impl ArchivedPage {
                 &theme,
                 "Delete all archived sessions?",
             ))
-            .child(
-                div()
-                    .mt(px(6.0))
-                    .child(popover::dialog_body(&theme, delete_all_body(count, on_cloud))),
-            )
+            .child(div().mt(px(6.0)).child(popover::dialog_body(
+                &theme,
+                delete_all_body(count, on_cloud),
+            )))
             .child(
                 div()
                     .mt(px(16.0))

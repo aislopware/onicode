@@ -2,14 +2,6 @@
 //! Faults are injected only in temporary profiles and the test relay.
 use futures::{SinkExt, StreamExt, future::BoxFuture};
 use loro::{ExportMode, LoroDoc};
-use std::collections::HashMap;
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
-};
-use std::time::Duration;
-use tokio::net::TcpListener;
-use tokio::sync::mpsc;
 use onicode_doc::{MessageRole, MessageStatus, SessionDoc};
 use onicode_engine::{
     EdgeConfig, EngineCore, EngineProfile, HarnessRegistry, chat2_host::EngineChatSink,
@@ -20,6 +12,14 @@ use onicode_sync::chat_frames::{decode, encode, frame_type};
 use onicode_sync::{
     ChatClient, ChatDocSink, CheckpointFetcher, DocsStore, SyncError, chat_client::RowImportOutcome,
 };
+use std::collections::HashMap;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::Duration;
+use tokio::net::TcpListener;
+use tokio::sync::mpsc;
 const CHAT: &str = "publication-regression";
 
 struct Fetch(Vec<u8>);

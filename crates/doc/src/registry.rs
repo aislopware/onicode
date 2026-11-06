@@ -28,7 +28,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use onicode_proto::{Chat, ChatConfig, Device, MAX_SIDEBAR_PINS, Session, SidebarPreferences, Space};
+use onicode_proto::{
+    Chat, ChatConfig, Device, MAX_SIDEBAR_PINS, Session, SidebarPreferences, Space,
+};
 
 use crate::schema::DocError;
 use crate::workspace::{DeletedSpace, WorkspaceState};
@@ -1179,12 +1181,21 @@ impl RegistryDoc {
 
     /// LWW picture set from any device, whole (emoji, image and hue in one
     /// field); `None` clears back to the default tile. `false` when no row.
-    pub fn set_space_icon(&mut self, space_id: &str, icon: Option<&onicode_proto::SpaceIcon>) -> Result<bool, DocError> {
+    pub fn set_space_icon(
+        &mut self,
+        space_id: &str,
+        icon: Option<&onicode_proto::SpaceIcon>,
+    ) -> Result<bool, DocError> {
         if !self.row_exists(KIND_SPACES, space_id) {
             return Ok(false);
         }
         let value = icon.map_or(Value::Null, |icon| json!(icon));
-        self.write(KIND_SPACES, space_id, OpKind::Update, fields([("icon", value)]));
+        self.write(
+            KIND_SPACES,
+            space_id,
+            OpKind::Update,
+            fields([("icon", value)]),
+        );
         Ok(true)
     }
 
@@ -1289,7 +1300,10 @@ impl RegistryDoc {
                 chat.room_gen.map(|g| json!(g)).unwrap_or(Value::Null),
             ),
             ("parentChatId", opt_str(chat.parent_chat_id.as_deref())),
-            ("childKind", opt_str(chat.child_kind.map(onicode_proto::ChildKind::as_str))),
+            (
+                "childKind",
+                opt_str(chat.child_kind.map(onicode_proto::ChildKind::as_str)),
+            ),
         ]);
         self.write(KIND_CHATS, &chat.id.clone(), OpKind::Upsert, set);
         Ok(())
@@ -1736,7 +1750,10 @@ impl RegistryDoc {
                     ("parentChatId", opt_str(chat.parent_chat_id.as_deref())),
                     ("lastSeenAt", opt_ms(chat.last_seen_at)),
                     ("parentChatId", opt_str(chat.parent_chat_id.as_deref())),
-                    ("childKind", opt_str(chat.child_kind.map(onicode_proto::ChildKind::as_str))),
+                    (
+                        "childKind",
+                        opt_str(chat.child_kind.map(onicode_proto::ChildKind::as_str)),
+                    ),
                 ]),
             );
         }

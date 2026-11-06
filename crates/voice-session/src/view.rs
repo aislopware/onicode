@@ -1,9 +1,9 @@
 //! What a client-media call shows: phase, live caption, levels and the orb's
 //! state, reduced from the owner stream. Renderer-agnostic so every platform
 //! presents the orchestrator the same way.
-use std::time::{Duration, Instant};
 use onicode_orb::OrbState;
 use onicode_proto::voice::*;
+use std::time::{Duration, Instant};
 
 /// The orb for a voice phase and host snapshot. Speaking wins over work and
 /// mute, so a muted user still sees the assistant answer.

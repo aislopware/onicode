@@ -22,9 +22,9 @@ impl RegistryAgent {
     pub fn new(registry_id: &str) -> Option<Self> {
         let valid = !registry_id.is_empty()
             && registry_id.len() <= 64
-            && registry_id
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'_' | b'.'))
+            && registry_id.bytes().all(|b| {
+                b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'_' | b'.')
+            })
             && registry_id.as_bytes()[0].is_ascii_alphanumeric();
         valid.then(|| Self(intern(&format!("{REGISTRY_SLUG_PREFIX}{registry_id}"))))
     }
@@ -194,18 +194,34 @@ mod registry_slug_tests {
     fn registry_agents_round_trip_as_namespaced_slugs() {
         let id = HarnessId::from_slug("acp.gemini").expect("a registry slug");
         assert_eq!(id.as_str(), "acp.gemini");
-        assert_eq!(id.registry().map(RegistryAgent::registry_id), Some("gemini"));
-        assert_eq!(serde_json::to_value(id).unwrap(), serde_json::json!("acp.gemini"));
+        assert_eq!(
+            id.registry().map(RegistryAgent::registry_id),
+            Some("gemini")
+        );
+        assert_eq!(
+            serde_json::to_value(id).unwrap(),
+            serde_json::json!("acp.gemini")
+        );
         let back: HarnessId = serde_json::from_value(serde_json::json!("acp.gemini")).unwrap();
         assert_eq!(back, id);
         // Interned: the same slug is the same id, whichever way it came.
-        assert_eq!(RegistryAgent::new("gemini").map(HarnessId::Registry), Some(id));
+        assert_eq!(
+            RegistryAgent::new("gemini").map(HarnessId::Registry),
+            Some(id)
+        );
         // A built-in's slug stays the built-in, never a registry agent.
         assert_eq!(HarnessId::from_slug("cursor"), Some(HarnessId::Cursor));
         let cursor: HarnessId = serde_json::from_value(serde_json::json!("claude-code")).unwrap();
         assert_eq!(cursor, HarnessId::ClaudeCode);
         // Not a registry id: refused, as an unknown slug always was.
-        for bad in ["acp.", "acp.Gemini", "acp.../x", "acp.-x", "gemini", "acp.a/b"] {
+        for bad in [
+            "acp.",
+            "acp.Gemini",
+            "acp.../x",
+            "acp.-x",
+            "gemini",
+            "acp.a/b",
+        ] {
             assert_eq!(HarnessId::from_slug(bad), None, "{bad}");
         }
         assert!(serde_json::from_value::<HarnessId>(serde_json::json!("nope")).is_err());

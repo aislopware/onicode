@@ -47,7 +47,8 @@ pub const REMOVED: &str = ".removed";
 /// The one dotfile an app keeps, at its root.
 const LUAURC: &str = ".luaurc";
 
-const NOT_SET_UP: &str = "Onicode hasn't set up its templates yet. Open Onicode once, then try again.";
+const NOT_SET_UP: &str =
+    "Onicode hasn't set up its templates yet. Open Onicode once, then try again.";
 
 /// The short guide `CreateTemplate` and `DescribeApp` give.
 pub const MAP: &str = "\
@@ -302,7 +303,11 @@ fn set_active(dir: &Path, id: &str) -> Result<(), String> {
 /// isn't deleted. (Whether it's this build's, byte for byte, is the app's to
 /// say before it runs it with Onicode's powers; this only keeps it listed.)
 fn official(id: &str, folder: &Path, manifest: &Manifest) -> bool {
-    let Some(mark) = manifest.builtin_template.as_deref().filter(|m| !m.is_empty()) else {
+    let Some(mark) = manifest
+        .builtin_template
+        .as_deref()
+        .filter(|m| !m.is_empty())
+    else {
         return false;
     };
     let at_its_id = id == mark
@@ -314,13 +319,7 @@ fn official(id: &str, folder: &Path, manifest: &Manifest) -> bool {
 }
 
 /// One template, as `ListTemplates` lists it.
-fn entry(
-    dir: &Path,
-    id: &str,
-    folder: &Path,
-    active: &str,
-    onicode_version: &str,
-) -> Value {
+fn entry(dir: &Path, id: &str, folder: &Path, active: &str, onicode_version: &str) -> Value {
     let manifest: Manifest = read_json(&folder.join(MANIFEST));
     let builtin = id == ONICODE || official(id, folder, &manifest);
     let made_for = manifest.onicode_version.clone().unwrap_or_default();
@@ -407,7 +406,14 @@ fn copy_file(from_root: &Path, to_root: &Path, rel: &str) -> Result<(), String> 
 
 /// Writes a new template into `tmp`: Onicode's files, then `from`'s, its
 /// manifest and its `.base.json`.
-fn fill(tmp: &Path, onicode: &Path, from: Option<&Path>, id: &str, name: &str, guide: &Path) -> Result<(), String> {
+fn fill(
+    tmp: &Path,
+    onicode: &Path,
+    from: Option<&Path>,
+    id: &str,
+    name: &str,
+    guide: &Path,
+) -> Result<(), String> {
     let onicode_manifest: Manifest = read_json(&onicode.join(MANIFEST));
     let hashes: BTreeMap<String, String> = read_json(&onicode.join(HASHES));
     let mut base = BTreeMap::new();
@@ -441,13 +447,22 @@ fn fill(tmp: &Path, onicode: &Path, from: Option<&Path>, id: &str, name: &str, g
     std::fs::write(tmp.join(BASE), pretty(&json!(base)))
         .map_err(|e| format!("Couldn't write {BASE}: {e}"))?;
     // Its README, linking the guide (never part of its app).
-    std::fs::write(tmp.join(super::guides::README), super::guides::template_readme(name, guide))
-        .map_err(|e| format!("Couldn't write {}: {e}", super::guides::README))
+    std::fs::write(
+        tmp.join(super::guides::README),
+        super::guides::template_readme(name, guide),
+    )
+    .map_err(|e| format!("Couldn't write {}: {e}", super::guides::README))
 }
 
 /// `CreateTemplate`: a full copy of Onicode's app (overlaid with `from`'s
 /// files) as a new template. `{id, dir, files, map}`.
-pub fn create(dir: &Path, id: &str, name: &str, from: Option<&str>, guide: &Path) -> Result<Value, String> {
+pub fn create(
+    dir: &Path,
+    id: &str,
+    name: &str,
+    from: Option<&str>,
+    guide: &Path,
+) -> Result<Value, String> {
     if !valid_id(id) {
         return Err(format!(
             "{id:?} can't be a template's id: use 2 to 40 lowercase letters, digits and dashes, starting with a letter or digit."
@@ -521,8 +536,10 @@ pub fn use_template(dir: &Path, id: &str, by: Option<&Value>) -> Result<Value, S
         Some(by) => write_atomic(
             dir,
             ACTIVE_BY,
-            &serde_json::to_vec(&json!({ "id": id, "by": by, "at": chrono::Utc::now().timestamp() }))
-                .unwrap_or_default(),
+            &serde_json::to_vec(
+                &json!({ "id": id, "by": by, "at": chrono::Utc::now().timestamp() }),
+            )
+            .unwrap_or_default(),
         )?,
         None => {
             let _ = std::fs::remove_file(dir.join(ACTIVE_BY));
@@ -770,7 +787,14 @@ mod tests {
         base.insert("screens/shell/sidebar.luau".into(), "s0".into());
         std::fs::write(first.join(BASE), serde_json::to_vec(&base).unwrap()).unwrap();
 
-        let made = create(&d, "second", "Second", Some("first"), Path::new("docs/templates.md")).unwrap();
+        let made = create(
+            &d,
+            "second",
+            "Second",
+            Some("first"),
+            Path::new("docs/templates.md"),
+        )
+        .unwrap();
         let t = d.join("second");
         assert!(
             made["files"]
@@ -797,9 +821,15 @@ mod tests {
         assert!(!base.contains_key("screens/extra.luau"));
 
         assert!(
-            create(&d, "third", "Third", Some("nope"), Path::new("docs/templates.md"))
-                .unwrap_err()
-                .contains("no template nope")
+            create(
+                &d,
+                "third",
+                "Third",
+                Some("nope"),
+                Path::new("docs/templates.md")
+            )
+            .unwrap_err()
+            .contains("no template nope")
         );
         assert!(!d.join("third").exists());
     }
@@ -818,9 +848,21 @@ mod tests {
             ".hidden",
             &"x".repeat(41),
         ] {
-            assert!(create(&d, bad, "Bad", None, Path::new("docs/templates.md")).is_err(), "{bad:?}");
+            assert!(
+                create(&d, bad, "Bad", None, Path::new("docs/templates.md")).is_err(),
+                "{bad:?}"
+            );
         }
-        assert!(create(&d, "onicode", "Onicode", None, Path::new("docs/templates.md")).is_err());
+        assert!(
+            create(
+                &d,
+                "onicode",
+                "Onicode",
+                None,
+                Path::new("docs/templates.md")
+            )
+            .is_err()
+        );
         assert!(valid_id("ab") && valid_id(&"x".repeat(40)) && valid_id("0-day"));
         create(&d, "mine", "Mine", None, Path::new("docs/templates.md")).unwrap();
         assert!(
@@ -856,7 +898,10 @@ mod tests {
             use_template(&bare, "onicode", None).unwrap(),
             json!({ "active": "onicode", "preview": false })
         );
-        assert_eq!(std::fs::read_to_string(bare.join(ACTIVE)).unwrap(), "onicode");
+        assert_eq!(
+            std::fs::read_to_string(bare.join(ACTIVE)).unwrap(),
+            "onicode"
+        );
         // An absent or empty .active is Onicode.
         std::fs::write(bare.join(ACTIVE), "  \n").unwrap();
         assert_eq!(active(&bare), "onicode");
@@ -1005,7 +1050,9 @@ mod tests {
         let marked = |id: &str| {
             write(
                 &d.join(id).join(MANIFEST),
-                &format!(r#"{{"id":"{id}","name":"Onicode v2","author":"Onicode","builtin_template":"onicode-v2"}}"#),
+                &format!(
+                    r#"{{"id":"{id}","name":"Onicode v2","author":"Onicode","builtin_template":"onicode-v2"}}"#
+                ),
             );
             write(&d.join(id).join("screens/shell/page.luau"), "-- v2");
         };
@@ -1013,16 +1060,29 @@ mod tests {
         marked("onicode-v2-2");
         marked("my-v2");
         marked("posing");
-        write(&d.join("posing").join(".imported.json"), r#"{"key":"k","author":{"kind":"unknown"}}"#);
+        write(
+            &d.join("posing").join(".imported.json"),
+            r#"{"key":"k","author":{"kind":"unknown"}}"#,
+        );
         let list = list(&d).unwrap();
         let builtin = |id: &str| {
-            list["templates"].as_array().unwrap().iter().find(|t| t["id"] == id).unwrap()["builtin"].clone()
+            list["templates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|t| t["id"] == id)
+                .unwrap()["builtin"]
+                .clone()
         };
         assert_eq!(builtin("onicode-v2"), true);
         assert_eq!(builtin("onicode-v2-2"), true);
         assert_eq!(builtin("my-v2"), false);
         assert_eq!(builtin("posing"), false);
-        assert!(delete(&d, "onicode-v2").unwrap_err().contains("Onicode v2 comes with Onicode and can't be deleted"));
+        assert!(
+            delete(&d, "onicode-v2")
+                .unwrap_err()
+                .contains("Onicode v2 comes with Onicode and can't be deleted")
+        );
         assert!(d.join("onicode-v2").is_dir());
         assert!(delete(&d, "my-v2").is_ok());
         assert!(delete(&d, "posing").is_ok());
@@ -1100,10 +1160,26 @@ mod tests {
         // A linked template folder isn't a template: it can't be used,
         // copied from, or deleted (which would move what it points at).
         let elsewhere = with_onicode("links-elsewhere");
-        create(&elsewhere, "real", "Real", None, Path::new("docs/templates.md")).unwrap();
+        create(
+            &elsewhere,
+            "real",
+            "Real",
+            None,
+            Path::new("docs/templates.md"),
+        )
+        .unwrap();
         symlink(elsewhere.join("real"), d.join("linked")).unwrap();
         assert!(use_template(&d, "linked", None).is_err());
-        assert!(create(&d, "copy", "Copy", Some("linked"), Path::new("docs/templates.md")).is_err());
+        assert!(
+            create(
+                &d,
+                "copy",
+                "Copy",
+                Some("linked"),
+                Path::new("docs/templates.md")
+            )
+            .is_err()
+        );
         assert!(delete(&d, "linked").is_err());
         assert!(elsewhere.join("real/app.luau").is_file());
         assert!(!ids(&list(&d).unwrap()).contains(&"linked".to_owned()));

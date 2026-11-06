@@ -430,7 +430,9 @@ fn side_chat_menu_rename_keeps_the_editor_visible_without_opening_files(cx: &mut
         assert!(shell.session_info_visible(cx));
         assert_eq!(shell.chat_rename.as_ref().unwrap().chat_id, "side");
     });
-    let field = cx.debug_bounds("session-lanes-chat-side-title-editor").unwrap();
+    let field = cx
+        .debug_bounds("session-lanes-chat-side-title-editor")
+        .unwrap();
     let card = cx.debug_bounds("session-lanes").unwrap();
     assert!(field.top() >= card.top() && field.bottom() <= card.bottom());
 }
@@ -459,7 +461,9 @@ fn side_chat_rename_leaves_takeover_to_show_its_editor(cx: &mut TestAppContext) 
     let frame = settled(&shell, cx);
     assert!(!shell.read_with(cx, |s, _| s.right_pane_expanded));
     assert!(frame.widths[3] > 0.0, "the transcript column must return");
-    let field = cx.debug_bounds("session-lanes-chat-side-title-editor").unwrap();
+    let field = cx
+        .debug_bounds("session-lanes-chat-side-title-editor")
+        .unwrap();
     let card = cx.debug_bounds("session-lanes").unwrap();
     assert!(field.top() >= card.top() && field.bottom() <= card.bottom());
 }

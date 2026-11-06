@@ -15,13 +15,13 @@ use gpui::{
     AnyWindowHandle, AppContext, AsyncApp, Bounds, MouseButton, PlatformInput, WindowBounds,
     WindowHandle, WindowOptions, px, size,
 };
+use onicode_ui::settings::PullRequestDestination;
+use onicode_ui::*;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
-use onicode_ui::settings::PullRequestDestination;
-use onicode_ui::*;
 
 const WIDTH: f32 = 1200.;
 const HEIGHT: f32 = 760.;
@@ -418,7 +418,11 @@ fn main() -> anyhow::Result<()> {
     let data = temp.path().join("ui");
     std::fs::create_dir(&data)?;
     // The viewport reads the IPC bearer from its own data directory.
-    let _ipc = runtime.block_on(onicode_engine::serve_ipc(ipc_port, &data, core.rpc_service()))?;
+    let _ipc = runtime.block_on(onicode_engine::serve_ipc(
+        ipc_port,
+        &data,
+        core.rpc_service(),
+    ))?;
     let boot = EngineBootConfig {
         data_dir: data.clone(),
         ipc_port,

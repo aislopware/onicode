@@ -2101,8 +2101,8 @@ async fn workspace_entry_mutations_are_forwarded_to_the_owning_plain_folder() {
 /// registry and the same device relay used by the routing tests above.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn mcp_standalone_session_executes_on_the_selected_device() {
+    use onicode_mcp::{Onicode, Origin, Tools};
     use serde_json::json;
-    use onicode_mcp::{Origin, Tools, Onicode};
 
     let (relay_url, relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().unwrap();
@@ -2308,7 +2308,11 @@ async fn update_status_follows_another_device_through_its_restart() {
     let dirs = tempfile::tempdir().expect("tempdir");
     let host = |version: &'static str| {
         HostRelay::spawn(
-            HostRelayConfig::new(&relay_url, "other-device", Arc::new(StaticToken("test-user".into()))),
+            HostRelayConfig::new(
+                &relay_url,
+                "other-device",
+                Arc::new(StaticToken("test-user".into())),
+            ),
             Arc::new(OneStatus(version)),
             Arc::new(|_| true),
         )
@@ -2325,10 +2329,16 @@ async fn update_status_follows_another_device_through_its_restart() {
     let params = serde_json::json!({ "targetDeviceId": "other-device" });
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     let mut updates = loop {
-        match client.subscribe_checked(methods::UPDATE_STATUS, params.clone()).await {
+        match client
+            .subscribe_checked(methods::UPDATE_STATUS, params.clone())
+            .await
+        {
             Ok(updates) => break updates,
             Err(error) => {
-                assert!(tokio::time::Instant::now() < deadline, "never reached it: {error}");
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "never reached it: {error}"
+                );
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
         }
@@ -2358,7 +2368,8 @@ async fn updating_a_device_that_cannot_be_reached_says_so_plainly() {
     let (relay_url, _relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().expect("tempdir");
     let core = assemble(&dirs.path().join("asker"), "asking-device");
-    let mut link_config = LinkCacheConfig::new(relay_url, Arc::new(StaticToken("test-user".into())));
+    let mut link_config =
+        LinkCacheConfig::new(relay_url, Arc::new(StaticToken("test-user".into())));
     link_config.probe_timeout = Duration::from_secs(2);
     core.set_links(LinkCache::new(link_config));
     let client = onicode_rpc::memory_client(core.rpc_service());

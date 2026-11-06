@@ -29,9 +29,9 @@ pub use caller::{Caller, caller, with_caller};
 pub use client::{RpcClient, RpcSubscription, connect_ipc, connect_ipc_as_agent, connect_ws};
 pub use device_room::{
     CallerProof, CallerProofFn, DeviceFrameHeader, DeviceLink, HostRelay, HostRelayConfig,
-    LinkCache, LinkCacheConfig, caller_proof_message,
-    NudgeHandler, PeerLiveness, PeerLivenessProbe, StaticToken, TokenError, TokenSource,
-    decode_device_frame, device_room_ws_url, encode_device_frame, is_liveness_probe,
+    LinkCache, LinkCacheConfig, NudgeHandler, PeerLiveness, PeerLivenessProbe, StaticToken,
+    TokenError, TokenSource, caller_proof_message, decode_device_frame, device_room_ws_url,
+    encode_device_frame, is_liveness_probe,
 };
 pub use server::{serve_connection, serve_ws_listener, serve_ws_listener_scoped};
 
@@ -668,7 +668,9 @@ pub fn peer_refused(method: &str, params: &serde_json::Value) -> bool {
         return true;
     }
     match method {
-        methods::DECIDE_PLUGIN => params.get("allow").is_none_or(|allow| allow != &serde_json::Value::Bool(false)),
+        methods::DECIDE_PLUGIN => params
+            .get("allow")
+            .is_none_or(|allow| allow != &serde_json::Value::Bool(false)),
         methods::INSTALL_PLUGIN => params.get("path").is_some_and(|path| !path.is_null()),
         _ => false,
     }
@@ -1287,8 +1289,15 @@ mod tests {
     struct WhoAsked;
     #[async_trait]
     impl RpcService for WhoAsked {
-        async fn handle(&self, _method: &str, _params: serde_json::Value) -> Result<RpcReply, RpcError> {
-            Ok(RpcReply::Value(serde_json::json!(format!("{:?}", crate::caller()))))
+        async fn handle(
+            &self,
+            _method: &str,
+            _params: serde_json::Value,
+        ) -> Result<RpcReply, RpcError> {
+            Ok(RpcReply::Value(serde_json::json!(format!(
+                "{:?}",
+                crate::caller()
+            ))))
         }
     }
 
@@ -1300,7 +1309,11 @@ mod tests {
         let tokens = ipc_auth::IpcTokens::generate().unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        tokio::spawn(serve_ws_listener_scoped(listener, Arc::new(WhoAsked), tokens.clone()));
+        tokio::spawn(serve_ws_listener_scoped(
+            listener,
+            Arc::new(WhoAsked),
+            tokens.clone(),
+        ));
         let url = format!("ws://127.0.0.1:{port}");
 
         let agent = connect_ws(&url, Some(&tokens.agent)).await.unwrap();
@@ -1333,17 +1346,33 @@ mod tests {
         ] {
             assert!(!agent_allowed(method), "{method}");
             match agent.call(method, serde_json::json!({})).await {
-                Err(RpcError::Failed(message)) => assert!(message.contains("isn't open to agents"), "{method}: {message}"),
+                Err(RpcError::Failed(message)) => assert!(
+                    message.contains("isn't open to agents"),
+                    "{method}: {message}"
+                ),
                 other => panic!("an agent reached {method}: {other:?}"),
             }
         }
-        let asked = agent.call(methods::LIST_PLUGINS, serde_json::json!({})).await.unwrap();
+        let asked = agent
+            .call(methods::LIST_PLUGINS, serde_json::json!({}))
+            .await
+            .unwrap();
         assert!(asked.as_str().unwrap().starts_with("Agent"), "{asked}");
         // The theme tools' methods, exactly: data only.
-        for method in [methods::LIST_THEMES, methods::GET_THEME, methods::CREATE_THEME, methods::UPDATE_THEME, methods::DELETE_THEME, methods::USE_THEME] {
+        for method in [
+            methods::LIST_THEMES,
+            methods::GET_THEME,
+            methods::CREATE_THEME,
+            methods::UPDATE_THEME,
+            methods::DELETE_THEME,
+            methods::USE_THEME,
+        ] {
             assert!(agent_allowed(method), "{method}");
             let asked = agent.call(method, serde_json::json!({})).await.unwrap();
-            assert!(asked.as_str().unwrap().starts_with("Agent"), "{method}: {asked}");
+            assert!(
+                asked.as_str().unwrap().starts_with("Agent"),
+                "{method}: {asked}"
+            );
         }
 
         let app = connect_ws(&url, Some(&tokens.full)).await.unwrap();
@@ -1356,14 +1385,32 @@ mod tests {
     #[test]
     fn peers_may_decline_but_never_allow() {
         let hash = "ab".repeat(32);
-        assert!(peer_refused(methods::DECIDE_PLUGIN, &serde_json::json!({"id": "x", "allow": true, "hash": hash})));
-        assert!(peer_refused(methods::DECIDE_PLUGIN, &serde_json::json!({"id": "x", "allow": "yes"})));
-        assert!(!peer_refused(methods::DECIDE_PLUGIN, &serde_json::json!({"id": "x", "allow": false})));
-        assert!(peer_refused(methods::INSTALL_PLUGIN, &serde_json::json!({"path": "/x"})));
-        assert!(!peer_refused(methods::INSTALL_PLUGIN, &serde_json::json!({"url": "https://x", "path": null})));
+        assert!(peer_refused(
+            methods::DECIDE_PLUGIN,
+            &serde_json::json!({"id": "x", "allow": true, "hash": hash})
+        ));
+        assert!(peer_refused(
+            methods::DECIDE_PLUGIN,
+            &serde_json::json!({"id": "x", "allow": "yes"})
+        ));
+        assert!(!peer_refused(
+            methods::DECIDE_PLUGIN,
+            &serde_json::json!({"id": "x", "allow": false})
+        ));
+        assert!(peer_refused(
+            methods::INSTALL_PLUGIN,
+            &serde_json::json!({"path": "/x"})
+        ));
+        assert!(!peer_refused(
+            methods::INSTALL_PLUGIN,
+            &serde_json::json!({"url": "https://x", "path": null})
+        ));
         assert!(peer_refused(methods::REVIEW_PLUGIN, &serde_json::json!({})));
         assert!(peer_refused(methods::SIGN_PLUGIN, &serde_json::json!({})));
-        assert!(peer_refused(methods::DELETE_ACCOUNT, &serde_json::json!({})));
+        assert!(peer_refused(
+            methods::DELETE_ACCOUNT,
+            &serde_json::json!({})
+        ));
     }
 
     #[tokio::test]

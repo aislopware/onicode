@@ -17,11 +17,11 @@
 //! `fork` (two captures: `fork-waiting`, `fork-failed`).
 use futures::{StreamExt, stream};
 use gpui::{AppContext, AsyncApp, Bounds, WindowBounds, WindowOptions, px, size};
-use serde_json::{Value, json};
-use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
 use onicode_proto::{ChatConnectivity, ChatSyncState, Connectivity, ConnectivityState};
 use onicode_rpc::{RpcError, RpcReply, RpcService, methods};
 use onicode_ui::*;
+use serde_json::{Value, json};
+use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
 
 const HOST: &str = "omarchy";
 const CHAT: &str = "remote-chat";

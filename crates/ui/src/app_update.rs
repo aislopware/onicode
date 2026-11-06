@@ -179,7 +179,9 @@ impl AppUpdate {
 
     /// Whether installing [`Self::available`] leaves the beta for stable.
     pub fn switching(&self) -> bool {
-        self.status.as_ref().is_some_and(|status| status.switch && status.update_available)
+        self.status
+            .as_ref()
+            .is_some_and(|status| status.switch && status.update_available)
     }
 
     /// Whether this app downloads and installs updates itself right now.

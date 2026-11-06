@@ -785,7 +785,10 @@ async fn auto_accept_edits_applies_file_changes_and_asks_before_the_rest() {
     let asked = asked.lock().unwrap();
     let headers: Vec<&str> = asked.iter().map(|q| q.header.as_str()).collect();
     assert_eq!(headers, ["Approve command", "Approve permissions"]);
-    assert_eq!(asked[0].question, "Codex wants to run `git push`. Allow it?");
+    assert_eq!(
+        asked[0].question,
+        "Codex wants to run `git push`. Allow it?"
+    );
 }
 
 #[tokio::test]
@@ -978,7 +981,10 @@ async fn resume_falls_back_to_fresh_thread() {
                  starts a new one without its context."
             )
         );
-        assert_eq!(onicode_proto::run_errors::provider_problem(notices[0]), None);
+        assert_eq!(
+            onicode_proto::run_errors::provider_problem(notices[0]),
+            None
+        );
         assert_eq!(
             events.last(),
             Some(&AgentEvent::Done {
@@ -2429,9 +2435,9 @@ async fn a_side_chats_only_thread_starts_without_agent_tools() {
 #[cfg(unix)]
 #[tokio::test]
 async fn external_voice_keeps_canonical_events_without_any_local_helper() {
-    use std::os::unix::fs::PermissionsExt;
     use onicode_harness::codex::realtime::{VoiceCommand, channel};
     use onicode_proto::voice::{VoiceEvent, remote::Sdp};
+    use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
     let binary = dir.path().join("bin/codex");
     std::fs::create_dir_all(binary.parent().unwrap()).unwrap();

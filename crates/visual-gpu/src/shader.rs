@@ -4,8 +4,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use wgpu::util::DeviceExt;
 use onicode_visual::shader::{Blend, MAX_BUFFERS, ShaderUniforms};
+use wgpu::util::DeviceExt;
 
 use crate::{EDGE_FADE, FORMAT, Frame, gpu};
 

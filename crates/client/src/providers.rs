@@ -15,11 +15,11 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
-use tokio::io::AsyncWriteExt as _;
 use onicode_proto::{
     AgentAccount, AgentAccountsSnapshot, AgentAuthKind, AgentLoginMode, AgentLoginPoll,
     AgentLoginStart, AgentLoginStatus, HarnessId,
 };
+use tokio::io::AsyncWriteExt as _;
 
 use crate::Client;
 use crate::catalog::HarnessInfo;

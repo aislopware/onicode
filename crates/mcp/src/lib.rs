@@ -17,14 +17,14 @@
 //! originating chat, and a chat can never message itself.
 
 mod jsonrpc;
+mod onicode;
 mod tools;
 mod transcript;
-mod onicode;
 
 pub use jsonrpc::serve_stdio;
+pub use onicode::{Onicode, Origin};
 pub use tools::{ListedTool, ToolDef, Tools};
 pub use transcript::{RenderOptions, RenderedMessage, render_entries};
-pub use onicode::{Origin, Onicode};
 
 /// How `onicode mcp` finds the engine and who it speaks for.
 #[derive(Debug, Clone)]

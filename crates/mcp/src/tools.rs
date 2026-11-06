@@ -11,16 +11,16 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use onicode_doc::SessionCommandPayload;
 use onicode_proto::{
-    AccessMode, Chat, ChatConfig, HarnessId, ReasoningLevel, RunRequest, SandboxLevel, Session, SessionStatus,
-    Space, UserInputAnswer,
+    AccessMode, Chat, ChatConfig, HarnessId, ReasoningLevel, RunRequest, SandboxLevel, Session,
+    SessionStatus, Space, UserInputAnswer,
 };
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
+use crate::onicode::{HarnessInfo, Onicode, TurnOutcome, session_for, short};
 use crate::transcript::{RenderOptions, RenderedMessage, render_entries};
-use crate::onicode::{HarnessInfo, TurnOutcome, Onicode, session_for, short};
 
 mod plugins;
 mod themes;
@@ -488,8 +488,8 @@ async fn read_visual_assets(
 /// Read `show_image`'s file (a path relative to the agent's working
 /// directory), bounded however the file changes (or lies about its size).
 async fn read_image(path: &str) -> anyhow::Result<Vec<u8>> {
-    use tokio::io::AsyncReadExt as _;
     use onicode_proto::IMAGE_MAX_BYTES;
+    use tokio::io::AsyncReadExt as _;
     let too_large = || anyhow::anyhow!("{path} is over {} MB", IMAGE_MAX_BYTES / (1024 * 1024));
     let metadata = tokio::fs::metadata(path)
         .await
@@ -888,7 +888,8 @@ impl Tools {
     }
 
     async fn list_projects(&self, args: DeviceArgs) -> anyhow::Result<Value> {
-        let (mut spaces, devices) = tokio::try_join!(self.onicode.spaces(), self.onicode.devices())?;
+        let (mut spaces, devices) =
+            tokio::try_join!(self.onicode.spaces(), self.onicode.devices())?;
         if let Some(device) = args.device.as_deref() {
             let device = self.onicode.resolve_device_id(Some(device)).await?;
             spaces.retain(|s| s.device_id == device);
@@ -962,7 +963,10 @@ impl Tools {
             chats.retain(|c| c.space_id.as_deref() == Some(space.id.as_str()));
         }
         if args.device.is_some() {
-            let device = self.onicode.resolve_device_id(args.device.as_deref()).await?;
+            let device = self
+                .onicode
+                .resolve_device_id(args.device.as_deref())
+                .await?;
             chats.retain(|c| c.device_id == device);
         }
         if !args.include_archived {
@@ -1029,9 +1033,14 @@ impl Tools {
             .filter(|parent| !onicode_proto::voice::is_orchestrator_chat(parent))
         };
         anyhow::ensure!(
-            !matches!(args.kind, Some(ChatKind::Side | ChatKind::Subagent)) || parent_chat_id.is_some(),
+            !matches!(args.kind, Some(ChatKind::Side | ChatKind::Subagent))
+                || parent_chat_id.is_some(),
             "kind {} requires a parent or origin chat",
-            if args.kind == Some(ChatKind::Side) { "side" } else { "subagent" }
+            if args.kind == Some(ChatKind::Side) {
+                "side"
+            } else {
+                "subagent"
+            }
         );
         // A child is a subagent unless asked for as a side chat: delegated
         // work lists under its parent's Subagents, not its side chats.
@@ -1136,13 +1145,21 @@ impl Tools {
         });
         // A Cloud machine's catalog is checked when it runs, not here; an
         // engine predating modes lists none and runs with full access.
-        if let Some(info) = harnesses.iter().find(|h| h.id == harness).filter(|_| !args.cloud) {
+        if let Some(info) = harnesses
+            .iter()
+            .find(|h| h.id == harness)
+            .filter(|_| !args.cloud)
+        {
             let modes = &info.access_modes;
             anyhow::ensure!(
                 access.is_full_access() || modes.contains(&access),
                 "{harness:?} on device {device_id} cannot run {} (accessModes: {})",
                 access.label(),
-                modes.iter().map(|m| m.label()).collect::<Vec<_>>().join(", ")
+                modes
+                    .iter()
+                    .map(|m| m.label())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
             anyhow::ensure!(
                 !args.plan || info.supports_plan,
@@ -1789,8 +1806,8 @@ mod tests {
     use crate::onicode::Origin;
     use async_trait::async_trait;
     use futures::StreamExt;
-    use std::sync::Mutex;
     use onicode_rpc::{RpcError, RpcReply, RpcService, memory_client, methods};
+    use std::sync::Mutex;
 
     /// Two devices with distinct catalogs and repeated project paths, plus
     /// two chats with a two-message transcript. Writes are recorded for assertions.
@@ -2489,10 +2506,16 @@ mod tests {
         // Asking for more is lowered to its own, silently, and said in the
         // reply: no full-access child, no wider sandbox.
         let capped = tools
-            .call("create_chat", json!({"access": "full-access", "sandbox": "danger-full-access"}))
+            .call(
+                "create_chat",
+                json!({"access": "full-access", "sandbox": "danger-full-access"}),
+            )
             .await
             .unwrap();
-        assert!(capped["accessCapped"].as_str().unwrap().contains("no more"), "{capped}");
+        assert!(
+            capped["accessCapped"].as_str().unwrap().contains("no more"),
+            "{capped}"
+        );
         let writes = world.writes.lock().unwrap();
         let created: Vec<&Value> = writes
             .iter()
@@ -2755,11 +2778,19 @@ mod tests {
             (json!({"kind":"chat"}), "chat", Value::Null),
             (json!({"kind":"chat", "parent":"  "}), "chat", Value::Null),
             (json!({"kind":"side"}), "side", json!("chat-alpha-1")),
-            (json!({"kind":"subagent"}), "subagent", json!("chat-alpha-1")),
+            (
+                json!({"kind":"subagent"}),
+                "subagent",
+                json!("chat-alpha-1"),
+            ),
             // A child of your own chat, kind omitted: a subagent.
             (json!({}), "subagent", json!("chat-alpha-1")),
             (json!({"parent":"Beta"}), "subagent", json!("chat-beta-2")),
-            (json!({"kind":"side", "parent":"Beta"}), "side", json!("chat-beta-2")),
+            (
+                json!({"kind":"side", "parent":"Beta"}),
+                "side",
+                json!("chat-beta-2"),
+            ),
         ] {
             let created = from_chat.call("create_chat", args).await.unwrap();
             assert_eq!(created["kind"], kind);
@@ -2787,7 +2818,9 @@ mod tests {
         );
         // An explicit parent from outside any chat: a subagent of it.
         assert_eq!(
-            root.call("create_chat", json!({"parent":"Alpha"})).await.unwrap()["kind"],
+            root.call("create_chat", json!({"parent":"Alpha"}))
+                .await
+                .unwrap()["kind"],
             "subagent"
         );
     }

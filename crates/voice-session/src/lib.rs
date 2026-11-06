@@ -2,14 +2,14 @@
 mod view;
 use async_trait::async_trait;
 use futures::{StreamExt, stream::BoxStream};
+use onicode_proto::voice::{remote as wire, *};
+use onicode_rpc::{RpcClient, methods};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 pub use view::{Caption, SpeakerActivity, VoiceView, orb_state};
-use onicode_proto::voice::{remote as wire, *};
-use onicode_rpc::{RpcClient, methods};
 
 #[async_trait]
 pub trait VoiceMediaEndpoint: Send + Sync {

@@ -890,7 +890,9 @@ mod tests {
         let devices: Vec<&str> = snapshot.devices.iter().map(|d| d.id.as_str()).collect();
         assert_eq!(devices, ["mac"]);
         // Unlisted, but its chats still read what it can do.
-        let machine = snapshot.device("cloud-s1").expect("a Cloud machine is still found by id");
+        let machine = snapshot
+            .device("cloud-s1")
+            .expect("a Cloud machine is still found by id");
         assert_eq!(machine.capabilities, ["cloud-session"]);
     }
 }

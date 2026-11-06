@@ -1273,7 +1273,9 @@ mod rendered_tests {
         let row = cx.debug_bounds("link-menu-open-onicode").unwrap().center();
         cx.simulate_click(row, gpui::Modifiers::default());
         let activated = activated.borrow();
-        let last = activated.last().expect("open in onicode activates the link");
+        let last = activated
+            .last()
+            .expect("open in onicode activates the link");
         assert_eq!(last.action, LinkAction::Internal);
         assert_eq!(last.target.original, "src/lib.rs");
     }
@@ -1332,7 +1334,9 @@ mod rendered_tests {
         let row = cx.debug_bounds("link-menu-open-onicode").unwrap().center();
         cx.simulate_click(row, gpui::Modifiers::default());
         let activated = activated.borrow();
-        let last = activated.last().expect("open in onicode activates the link");
+        let last = activated
+            .last()
+            .expect("open in onicode activates the link");
         assert_eq!(last.action, LinkAction::Internal);
         assert_eq!(last.target.original, "/elsewhere/team/INFORME.md");
     }

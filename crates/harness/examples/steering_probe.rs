@@ -2,13 +2,13 @@
 //! cargo run -p onicode-harness --example steering_probe -- <harness> [model|--models]
 //! Checks a running shell survives a rapid burst and every follow-up is acted on.
 use futures::StreamExt;
-use std::{sync::Arc, time::Duration};
-use tokio::sync::{mpsc, oneshot};
 use onicode_harness::{
     AcpHarness, CancellationToken, ClaudeHarness, CodexHarness, CursorHarness, Harness,
     OpencodeHarness, RunControls, SteerMessage,
 };
 use onicode_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
+use std::{sync::Arc, time::Duration};
+use tokio::sync::{mpsc, oneshot};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

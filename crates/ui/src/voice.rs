@@ -98,8 +98,10 @@ impl VoiceController {
                 .await
                 .ok()
                 .and_then(|value| {
-                    serde_json::from_value::<Vec<onicode_engine::registry::HarnessDescriptor>>(value)
-                        .ok()
+                    serde_json::from_value::<Vec<onicode_engine::registry::HarnessDescriptor>>(
+                        value,
+                    )
+                    .ok()
                 })
                 .map(|list| {
                     list.iter().any(|d| {

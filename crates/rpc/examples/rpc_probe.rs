@@ -16,7 +16,9 @@ use onicode_rpc::{connect_ws, ipc_auth};
 fn data_dir() -> Option<std::path::PathBuf> {
     std::env::var_os("ONICODE_DATA_DIR")
         .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| std::path::Path::new(&home).join(".onicode")))
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::Path::new(&home).join(".onicode"))
+        })
 }
 
 #[tokio::main]

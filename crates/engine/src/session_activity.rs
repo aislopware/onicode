@@ -217,7 +217,8 @@ mod tests {
                 .find(|row| row.chat_id == "late")
                 .map(|row| row.status)
         };
-        core.sessions.set_status("late", SessionStatus::Working, true);
+        core.sessions
+            .set_status("late", SessionStatus::Working, true);
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert_eq!(published(&core), None, "no chat row yet");
 

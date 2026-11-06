@@ -15,7 +15,7 @@ use gpui::{
     PathBuilder, Render, RenderOnce, SharedString, Styled, Window, canvas, div, point, px,
 };
 
-use crate::motion::{self, GRADIENT_SPIN, PULSE_STAGGER, SPLASH_OUT, ONICODE_PULSE};
+use crate::motion::{self, GRADIENT_SPIN, ONICODE_PULSE, PULSE_STAGGER, SPLASH_OUT};
 use crate::theme::{GlyphPalette, Theme};
 
 // Shared with the terminal viewport (`onicode_proto::motion`) so both animate the

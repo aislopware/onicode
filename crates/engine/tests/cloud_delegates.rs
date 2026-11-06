@@ -5,9 +5,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use onicode_engine::{EdgeConfig, EngineCore, HarnessId, default_registry};
 use onicode_rpc::{memory_client, methods};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 type Requests = Arc<Mutex<Vec<(String, String)>>>;
 

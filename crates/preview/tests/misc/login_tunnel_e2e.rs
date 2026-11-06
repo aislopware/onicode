@@ -4,6 +4,7 @@
 //! is full: it admits only devices joining for a sign-in, as the edge does
 //! past its device limit.
 use futures::{SinkExt, StreamExt};
+use onicode_preview::{PreviewService, Scope, signaling};
 use std::{sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -11,7 +12,6 @@ use tokio::{
     sync::{Mutex, mpsc},
 };
 use tokio_tungstenite::tungstenite::Message;
-use onicode_preview::{PreviewService, Scope, signaling};
 
 struct Token;
 #[async_trait::async_trait]

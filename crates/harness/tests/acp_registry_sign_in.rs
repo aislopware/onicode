@@ -29,10 +29,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use onicode_harness::acp::{NEEDS_TERMINAL, SignInOptions, SignInProgress};
 use onicode_harness::{AcpHarness, acp_registry as reg};
 use onicode_proto::RegistryAgent;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake-registry-signin.py")
@@ -69,13 +69,23 @@ struct Run {
 
 /// Signs `mode`'s agent in as the engine does: a recording `$BROWSER` and
 /// the file it records to. `callback`: what to do with a recorded page.
-async fn sign_in(mode: &str, on_page: impl FnOnce(String, PathBuf) + Send + 'static) -> (Run, PathBuf) {
+async fn sign_in(
+    mode: &str,
+    on_page: impl FnOnce(String, PathBuf) + Send + 'static,
+) -> (Run, PathBuf) {
     agents();
     let scratch = tempfile::tempdir().unwrap().keep();
     let url_file = scratch.join("browser-url");
     std::fs::write(&url_file, "").unwrap();
     let browser = scratch.join("browser");
-    std::fs::write(&browser, format!("#!/bin/sh\nprintf '%s\\n' \"$1\" >> '{}'\n", url_file.display())).unwrap();
+    std::fs::write(
+        &browser,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$1\" >> '{}'\n",
+            url_file.display()
+        ),
+    )
+    .unwrap();
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&browser, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -97,10 +107,12 @@ async fn sign_in(mode: &str, on_page: impl FnOnce(String, PathBuf) + Send + 'sta
     let home = scratch.clone();
     tokio::spawn(async move {
         for _ in 0..200 {
-            if let Some(url) = std::fs::read_to_string(&watch)
-                .ok()
-                .and_then(|t| t.lines().map(str::trim).find(|l| l.starts_with("http")).map(str::to_owned))
-            {
+            if let Some(url) = std::fs::read_to_string(&watch).ok().and_then(|t| {
+                t.lines()
+                    .map(str::trim)
+                    .find(|l| l.starts_with("http"))
+                    .map(str::to_owned)
+            }) {
                 on_page(url, home);
                 return;
             }
@@ -130,11 +142,17 @@ async fn a_sign_in_started_by_the_session_reports_its_code_and_page_and_finishes
     .await;
     run.outcome.expect("paired: signed in");
     assert!(
-        run.progress.iter().any(|p| matches!(p, SignInProgress::Output(l) if l.contains("Your code: WXYZ-9876"))),
+        run.progress
+            .iter()
+            .any(|p| matches!(p, SignInProgress::Output(l) if l.contains("Your code: WXYZ-9876"))),
         "its code, to show: {:?}",
         run.progress
     );
-    assert!(std::fs::read_to_string(url_file).unwrap().contains("https://auth.example.com/device?user_code=WXYZ-9876"));
+    assert!(
+        std::fs::read_to_string(url_file)
+            .unwrap()
+            .contains("https://auth.example.com/device?user_code=WXYZ-9876")
+    );
 }
 
 #[tokio::test]
@@ -147,20 +165,32 @@ async fn credentials_it_rejects_are_logged_out_and_the_sign_in_starts_over() {
     .await;
     run.outcome.expect("logged out, paired: signed in");
     assert!(
-        run.progress.iter().any(|p| matches!(p, SignInProgress::Output(l) if l.contains("Your code: WXYZ-9876"))),
+        run.progress
+            .iter()
+            .any(|p| matches!(p, SignInProgress::Output(l) if l.contains("Your code: WXYZ-9876"))),
         "{:?}",
         run.progress
     );
-    assert!(std::fs::read_to_string(url_file).unwrap().contains("user_code=WXYZ-9876"));
+    assert!(
+        std::fs::read_to_string(url_file)
+            .unwrap()
+            .contains("user_code=WXYZ-9876")
+    );
 }
 
 #[tokio::test]
 async fn an_authenticate_that_signs_nothing_in_goes_to_a_terminal_with_the_agents_own_cli() {
     let (run, _) = sign_in("droid-cli", |_, _| {}).await;
     let error = run.outcome.expect_err("not signed in");
-    let command = error.split(NEEDS_TERMINAL).nth(1).unwrap_or_else(|| panic!("a terminal: {error}"));
+    let command = error
+        .split(NEEDS_TERMINAL)
+        .nth(1)
+        .unwrap_or_else(|| panic!("a terminal: {error}"));
     assert!(command.contains("fake-registry-signin.py"), "{command}");
-    assert!(!command.contains("--acp"), "its own CLI, without the ACP arguments: {command}");
+    assert!(
+        !command.contains("--acp"),
+        "its own CLI, without the ACP arguments: {command}"
+    );
 }
 
 #[tokio::test]
@@ -168,13 +198,17 @@ async fn an_older_terminal_method_runs_its_own_command_and_reports_its_page() {
     let (run, url_file) = sign_in("kimi", |_, _| {}).await;
     run.outcome.expect("its own `login` signs in");
     assert!(
-        run.progress.iter().any(|p| matches!(p, SignInProgress::OpenBrowser(u) if u.contains("user_code=ABCD-1234"))),
+        run.progress.iter().any(
+            |p| matches!(p, SignInProgress::OpenBrowser(u) if u.contains("user_code=ABCD-1234"))
+        ),
         "{:?}",
         run.progress
     );
     // (Not `--acp login`: that would have been the ACP launch, refused.)
     assert!(
-        !run.progress.iter().any(|p| matches!(p, SignInProgress::Output(l) if l.contains("Welcome"))),
+        !run.progress
+            .iter()
+            .any(|p| matches!(p, SignInProgress::Output(l) if l.contains("Welcome"))),
         "{:?}",
         run.progress
     );
@@ -194,8 +228,13 @@ async fn a_page_opened_with_the_systems_opener_is_recorded_and_its_callback_fini
             .unwrap();
         let port = reqwest::Url::parse(&redirect).unwrap().port().unwrap();
         tokio::spawn(async move {
-            let mut socket = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-            socket.write_all(b"GET /oauth2callback?code=x HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").await.unwrap();
+            let mut socket = tokio::net::TcpStream::connect(("127.0.0.1", port))
+                .await
+                .unwrap();
+            socket
+                .write_all(b"GET /oauth2callback?code=x HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+                .await
+                .unwrap();
             let mut reply = String::new();
             let _ = socket.read_to_string(&mut reply).await;
         });
@@ -203,12 +242,18 @@ async fn a_page_opened_with_the_systems_opener_is_recorded_and_its_callback_fini
     .await;
     run.outcome.expect("its callback finishes it");
     let recorded = std::fs::read_to_string(url_file).unwrap();
-    assert!(recorded.contains("https://accounts.example.com/auth?redirect_uri="), "{recorded}");
+    assert!(
+        recorded.contains("https://accounts.example.com/auth?redirect_uri="),
+        "{recorded}"
+    );
 }
 
 fn harness(mode: &str) -> AcpHarness {
     agents();
-    AcpHarness::registry(RegistryAgent::new(&format!("fake-{mode}")).unwrap(), &format!("Fake {mode}"))
+    AcpHarness::registry(
+        RegistryAgent::new(&format!("fake-{mode}")).unwrap(),
+        &format!("Fake {mode}"),
+    )
 }
 
 #[tokio::test]
@@ -218,13 +263,18 @@ async fn an_agent_signed_in_already_says_so_and_signs_out_by_its_logout() {
     assert!(state.signed_in, "{state:?}");
     assert!(state.can_sign_out);
     assert_eq!(state.account, None, "it doesn't say who");
-    let ids: Vec<(&str, &str)> = state.methods.iter().map(|m| (m.id.as_str(), m.kind.as_str())).collect();
+    let ids: Vec<(&str, &str)> = state
+        .methods
+        .iter()
+        .map(|m| (m.id.as_str(), m.kind.as_str()))
+        .collect();
     // (Its key method says it reads FACTORY_API_KEY: a key to paste.)
     assert_eq!(ids, [("device-pairing", "agent"), ("api-key", "env_var")]);
     assert_eq!(state.methods[1].vars, ["FACTORY_API_KEY"]);
     // What the Providers row did on Nov 3: a sign-in that finds a session
     // and ends at once, no page and no code. Signed in, as it says.
-    let (run, url_file) = sign_in("droid-signed-in", |url, _| panic!("no page to open: {url}")).await;
+    let (run, url_file) =
+        sign_in("droid-signed-in", |url, _| panic!("no page to open: {url}")).await;
     run.outcome.expect("signed in already");
     assert!(std::fs::read_to_string(url_file).unwrap().trim().is_empty());
     // Signed out by its `logout`: it says so next time it's asked.
@@ -235,13 +285,19 @@ async fn an_agent_signed_in_already_says_so_and_signs_out_by_its_logout() {
 
 #[tokio::test]
 async fn a_signed_out_agent_says_so_without_starting_a_sign_in() {
-    let state = harness("droid").registry_sign_in_state().await.expect("it says");
+    let state = harness("droid")
+        .registry_sign_in_state()
+        .await
+        .expect("it says");
     assert!(!state.signed_in);
 }
 
 #[tokio::test]
 async fn who_an_agent_is_signed_in_as_is_read_from_what_it_sends() {
-    let state = harness("signed-in-email").registry_sign_in_state().await.expect("it says");
+    let state = harness("signed-in-email")
+        .registry_sign_in_state()
+        .await
+        .expect("it says");
     assert!(state.signed_in);
     assert_eq!(state.account.as_deref(), Some("ada@example.com"));
     assert!(!state.can_sign_out, "it offers no logout");

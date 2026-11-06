@@ -13,13 +13,13 @@ use std::time::Duration;
 
 use futures::future::BoxFuture;
 use loro::VersionVector;
-use tokio::sync::Notify;
-use tokio_util::sync::CancellationToken;
 use onicode_doc::SessionDoc;
 use onicode_sync::chat_client::{ChatTransport, RowImportOutcome};
 use onicode_sync::{
     ChatClient, ChatDocSink, ChatEvent, CheckpointFetcher, DocsStore, SyncError, UrlProvider,
 };
+use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 
 use super::{Bearer, JOIN_RETRY_BASE, JOIN_RETRY_CAP, urls};
 use crate::lock;

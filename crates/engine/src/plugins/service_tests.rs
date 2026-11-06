@@ -39,7 +39,12 @@ async fn call(plugins: &Plugins, method: &str, params: serde_json::Value) -> ser
 }
 
 /// Plugin `svc`'s folder at `version`, signed as yours.
-async fn write(plugins: &Plugins, version: &str, manifest: serde_json::Value, service: Option<&str>) {
+async fn write(
+    plugins: &Plugins,
+    version: &str,
+    manifest: serde_json::Value,
+    service: Option<&str>,
+) {
     let dir = plugins.plugins_dir().join("svc");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("init.luau"), "return nil").unwrap();
@@ -68,12 +73,22 @@ fn with_service(extra: &[&str]) -> serde_json::Value {
 
 async fn allow(plugins: &Plugins) {
     let item = call(plugins, methods::LIST_PLUGINS, json!({})).await["plugins"][0].clone();
-    let decided = call(plugins, methods::DECIDE_PLUGIN, json!({ "id": "svc", "allow": true, "hash": item["hash"] })).await;
+    let decided = call(
+        plugins,
+        methods::DECIDE_PLUGIN,
+        json!({ "id": "svc", "allow": true, "hash": item["hash"] }),
+    )
+    .await;
     assert_eq!(decided["status"], "on", "{decided}");
 }
 
 async fn ask(plugins: &Plugins, method: &str, args: serde_json::Value) -> serde_json::Value {
-    call(plugins, methods::CALL_PLUGIN_SERVICE, json!({ "plugin": "svc", "method": method, "args": args })).await
+    call(
+        plugins,
+        methods::CALL_PLUGIN_SERVICE,
+        json!({ "plugin": "svc", "method": method, "args": args }),
+    )
+    .await
 }
 
 fn own_key(plugins: &Plugins) -> Option<String> {
@@ -93,7 +108,12 @@ async fn serve(plugins: &Plugins, version: &str, method: &str) -> serde_json::Va
 
 #[test]
 fn a_manifest_with_a_service_asks_for_it() {
-    let parse = |v: serde_json::Value| manifest::Manifest::from_value(v).unwrap().problem().map(str::to_owned);
+    let parse = |v: serde_json::Value| {
+        manifest::Manifest::from_value(v)
+            .unwrap()
+            .problem()
+            .map(str::to_owned)
+    };
     let base = json!({ "id": "svc", "name": "Svc", "version": "1.0.0", "entry": "init.luau" });
     let with = |extra: serde_json::Value| {
         let mut m = base.clone();
@@ -102,10 +122,29 @@ fn a_manifest_with_a_service_asks_for_it() {
         }
         m
     };
-    assert_eq!(parse(with(json!({ "service": "service.luau", "permissions": ["service"] }))), None);
-    assert!(parse(with(json!({ "service": "service.luau" }))).unwrap().contains("doesn't ask for \"service\""));
-    assert!(parse(with(json!({ "permissions": ["service"] }))).unwrap().contains("has none"));
-    for bad in ["../x.luau", "/abs.luau", "service.lua", ".hidden/s.luau", "a//b.luau"] {
+    assert_eq!(
+        parse(with(
+            json!({ "service": "service.luau", "permissions": ["service"] })
+        )),
+        None
+    );
+    assert!(
+        parse(with(json!({ "service": "service.luau" })))
+            .unwrap()
+            .contains("doesn't ask for \"service\"")
+    );
+    assert!(
+        parse(with(json!({ "permissions": ["service"] })))
+            .unwrap()
+            .contains("has none")
+    );
+    for bad in [
+        "../x.luau",
+        "/abs.luau",
+        "service.lua",
+        ".hidden/s.luau",
+        "a//b.luau",
+    ] {
         assert!(
             parse(with(json!({ "service": bad, "permissions": ["service"] }))).is_some(),
             "{bad}"
@@ -123,7 +162,10 @@ async fn a_window_calls_its_service_here() {
     assert_eq!(refused["reason"], reason::NOT_APPROVED, "{refused}");
     allow(&f.plugins).await;
     let answered = ask(&f.plugins, "hello", json!({ "name": "Ada" })).await;
-    assert_eq!(answered, json!({ "ok": true, "value": { "hi": "Ada", "from": "dev-1", "device": "dev-1" } }));
+    assert_eq!(
+        answered,
+        json!({ "ok": true, "value": { "hi": "Ada", "from": "dev-1", "device": "dev-1" } })
+    );
     let status = call(&f.plugins, methods::PLUGIN_STATUS, json!({ "id": "svc" })).await;
     assert_eq!(status["service"]["running"], true, "{status}");
     assert_eq!(status["service"]["methods"]["hello"], true, "{status}");
@@ -136,7 +178,12 @@ async fn an_agents_tool_is_answered_with_no_window_open() {
     allow(&f.plugins).await;
     let tools = call(&f.plugins, methods::LIST_PLUGIN_TOOLS, json!({})).await;
     assert_eq!(tools["tools"][0]["open"], true, "{tools}");
-    let counted = call(&f.plugins, methods::CALL_PLUGIN_TOOL, json!({ "plugin": "svc", "tool": "count", "args": { "text": "four" } })).await;
+    let counted = call(
+        &f.plugins,
+        methods::CALL_PLUGIN_TOOL,
+        json!({ "plugin": "svc", "tool": "count", "args": { "text": "four" } }),
+    )
+    .await;
     assert_eq!(counted, json!({ "ok": true, "value": 4 }));
 }
 
@@ -148,7 +195,10 @@ async fn a_peer_is_refused_with_a_reason() {
     assert_eq!(refused["reason"], reason::NOT_INSTALLED, "{refused}");
     // Installed, not yet allowed here.
     write(&f.plugins, "1.0.0", with_service(&[]), Some(SERVICE)).await;
-    assert_eq!(serve(&f.plugins, "1.0.0", "hello").await["reason"], reason::NOT_APPROVED);
+    assert_eq!(
+        serve(&f.plugins, "1.0.0", "hello").await["reason"],
+        reason::NOT_APPROVED
+    );
     allow(&f.plugins).await;
     // Allowed: answered, and the caller's device is who called.
     let answered = serve(&f.plugins, "1.0.0", "hello").await;
@@ -156,14 +206,36 @@ async fn a_peer_is_refused_with_a_reason() {
     // Another version.
     let refused = serve(&f.plugins, "2.0.0", "hello").await;
     assert_eq!(refused["reason"], reason::VERSION_MISMATCH, "{refused}");
-    assert!(refused["message"].as_str().unwrap().contains("1.0.0"), "{refused}");
+    assert!(
+        refused["message"].as_str().unwrap().contains("1.0.0"),
+        "{refused}"
+    );
     // A method it doesn't serve, and one that's Onicode's.
-    assert_eq!(serve(&f.plugins, "1.0.0", "nope").await["reason"], reason::UNKNOWN_METHOD);
-    assert_eq!(serve(&f.plugins, "1.0.0", "@nope").await["reason"], reason::BAD_CALL);
+    assert_eq!(
+        serve(&f.plugins, "1.0.0", "nope").await["reason"],
+        reason::UNKNOWN_METHOD
+    );
+    assert_eq!(
+        serve(&f.plugins, "1.0.0", "@nope").await["reason"],
+        reason::BAD_CALL
+    );
     // Turned off here.
-    call(&f.plugins, methods::SET_PLUGIN_OFF, json!({ "id": "svc", "off": true })).await;
-    assert_eq!(serve(&f.plugins, "1.0.0", "hello").await["reason"], reason::OFF);
-    call(&f.plugins, methods::SET_PLUGIN_OFF, json!({ "id": "svc", "off": false })).await;
+    call(
+        &f.plugins,
+        methods::SET_PLUGIN_OFF,
+        json!({ "id": "svc", "off": true }),
+    )
+    .await;
+    assert_eq!(
+        serve(&f.plugins, "1.0.0", "hello").await["reason"],
+        reason::OFF
+    );
+    call(
+        &f.plugins,
+        methods::SET_PLUGIN_OFF,
+        json!({ "id": "svc", "off": false }),
+    )
+    .await;
     assert_eq!(serve(&f.plugins, "1.0.0", "hello").await["ok"], true);
 }
 
@@ -178,14 +250,23 @@ async fn a_version_without_a_service_says_so() {
 #[tokio::test]
 async fn an_update_adding_a_service_asks_again() {
     let f = fixture();
-    write(&f.plugins, "1.0.0", json!({ "permissions": ["tools"], "tools": [{ "name": "count" }] }), None).await;
+    write(
+        &f.plugins,
+        "1.0.0",
+        json!({ "permissions": ["tools"], "tools": [{ "name": "count" }] }),
+        None,
+    )
+    .await;
     allow(&f.plugins).await;
     write(&f.plugins, "1.1.0", with_service(&[]), Some(SERVICE)).await;
     let item = call(&f.plugins, methods::LIST_PLUGINS, json!({})).await["plugins"][0].clone();
     assert_eq!(item["status"], "pending", "{item}");
     assert_eq!(item["ask"], json!(["service"]), "{item}");
     assert_eq!(item["service"], "service.luau");
-    assert_eq!(ask(&f.plugins, "hello", json!({})).await["reason"], reason::NOT_APPROVED);
+    assert_eq!(
+        ask(&f.plugins, "hello", json!({})).await["reason"],
+        reason::NOT_APPROVED
+    );
 }
 
 #[tokio::test]
@@ -216,12 +297,22 @@ async fn a_service_event_reaches_this_devices_windows() {
     let f = fixture();
     write(&f.plugins, "1.0.0", with_service(&[]), Some(SERVICE)).await;
     allow(&f.plugins).await;
-    let mut channel = match f.plugins.dispatch(methods::WATCH_PLUGIN_CHANNEL, json!({})).await {
+    let mut channel = match f
+        .plugins
+        .dispatch(methods::WATCH_PLUGIN_CHANNEL, json!({}))
+        .await
+    {
         Ok(RpcReply::Stream(stream)) => stream,
         _ => panic!("no stream"),
     };
-    assert_eq!(ask(&f.plugins, "shout", json!({ "word": "hey" })).await["ok"], true);
-    let event = tokio::time::timeout(Duration::from_secs(5), channel.next()).await.unwrap().unwrap();
+    assert_eq!(
+        ask(&f.plugins, "shout", json!({ "word": "hey" })).await["ok"],
+        true
+    );
+    let event = tokio::time::timeout(Duration::from_secs(5), channel.next())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(event["plugin"], "svc");
     assert_eq!(event["event"], "shouted");
     assert_eq!(event["here"], true);
@@ -234,8 +325,14 @@ async fn a_service_event_reaches_this_devices_windows() {
     )
     .await;
     assert_eq!(delivered["outcome"], outcome::DELIVERED, "{delivered}");
-    let event = tokio::time::timeout(Duration::from_secs(5), channel.next()).await.unwrap().unwrap();
-    assert_eq!((event["event"].clone(), event["from"]["id"].clone()), (json!("shouted"), json!("dev-2")));
+    let event = tokio::time::timeout(Duration::from_secs(5), channel.next())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (event["event"].clone(), event["from"]["id"].clone()),
+        (json!("shouted"), json!("dev-2"))
+    );
     // A peer's @watch is kept, so this device's events go there too.
     assert_eq!(serve(&f.plugins, "1.0.0", "@watch").await["ok"], true);
     assert!(lock(&f.plugins.inner.watchers)["svc"].contains_key("dev-2"));
@@ -247,14 +344,20 @@ async fn a_service_event_reaches_this_devices_windows() {
 #[cfg(unix)]
 async fn the_checkout_status_example_answers_from_git() {
     let f = fixture();
-    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/zgx/plugins-dev/checkout-status");
+    let example =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/zgx/plugins-dev/checkout-status");
     let dir = f.plugins.plugins_dir().join("checkout-status");
     std::fs::create_dir_all(&dir).unwrap();
     for file in ["onicode-plugin.json", "init.luau", "service.luau"] {
         std::fs::copy(example.join(file), dir.join(file)).unwrap();
     }
     std::fs::write(dir.join("onicode.luau"), scaffold::SDK).unwrap();
-    let signed = call(&f.plugins, methods::SIGN_PLUGIN, json!({ "id": "checkout-status" })).await;
+    let signed = call(
+        &f.plugins,
+        methods::SIGN_PLUGIN,
+        json!({ "id": "checkout-status" }),
+    )
+    .await;
     let decided = call(
         &f.plugins,
         methods::DECIDE_PLUGIN,
@@ -265,8 +368,16 @@ async fn the_checkout_status_example_answers_from_git() {
 
     let repo = tempfile::tempdir().unwrap();
     let git = |args: &[&str]| {
-        let ran = std::process::Command::new("git").args(args).current_dir(repo.path()).output().unwrap();
-        assert!(ran.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&ran.stderr));
+        let ran = std::process::Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .output()
+            .unwrap();
+        assert!(
+            ran.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&ran.stderr)
+        );
     };
     git(&["init", "-q", "-b", "trunk"]);
     std::fs::write(repo.path().join("a.txt"), "a").unwrap();
@@ -296,5 +407,8 @@ async fn the_checkout_status_example_answers_from_git() {
     )
     .await;
     assert_eq!(refused["reason"], reason::FAILED, "{refused}");
-    assert!(refused["message"].as_str().unwrap().starts_with("git:"), "{refused}");
+    assert!(
+        refused["message"].as_str().unwrap().starts_with("git:"),
+        "{refused}"
+    );
 }

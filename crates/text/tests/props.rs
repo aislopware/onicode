@@ -4,8 +4,8 @@
 mod common;
 
 use common::*;
-use unicode_segmentation::UnicodeSegmentation;
 use onicode_text::*;
+use unicode_segmentation::UnicodeSegmentation;
 
 struct Rng(u64);
 
