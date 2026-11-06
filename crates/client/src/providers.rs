@@ -139,7 +139,7 @@ impl Client {
         }
         let client = self.clone();
         let (device_id, login_id) = (device_id.to_owned(), login_id.to_owned());
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             if let Backend::Live(live) = client.inner.backend() {
                 let _ = live
                     .hosts
@@ -179,22 +179,18 @@ impl Client {
             login_id.to_owned(),
             done_url.to_owned(),
         );
-        let task = crate::runtime::shared().spawn(async move {
+        let task = crate::runtime::spawn(async move {
             let serve = async {
                 loop {
                     let Ok((mut socket, _)) = listener.accept().await else {
                         continue;
                     };
-                    let Some(path) = read_request_target(&mut socket).await
-                    else {
+                    let Some(path) = read_request_target(&mut socket).await else {
                         continue;
                     };
                     if path.starts_with("/favicon") {
                         let _ = socket
-                            .write_all(
-                                http_response("404 Not Found", &[], "")
-                                    .as_bytes(),
-                            )
+                            .write_all(http_response("404 Not Found", &[], "").as_bytes())
                             .await;
                         continue;
                     }
@@ -220,12 +216,8 @@ impl Client {
                     if (200..400).contains(&status) {
                         let _ = socket
                             .write_all(
-                                http_response(
-                                    "302 Found",
-                                    &[("Location", &done_url)],
-                                    "",
-                                )
-                                .as_bytes(),
+                                http_response("302 Found", &[("Location", &done_url)], "")
+                                    .as_bytes(),
                             )
                             .await;
                         return;

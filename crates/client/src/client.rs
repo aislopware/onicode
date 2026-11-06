@@ -462,7 +462,7 @@ impl ClientInner {
             return;
         };
         let device = device.to_owned();
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             if let Err(error) = links.ready(&device).await {
                 tracing::debug!(%error, %device, "no link to warm");
             }
@@ -682,7 +682,7 @@ impl Client {
         }
         let ticker = Arc::downgrade(&inner);
         let cancel = inner.cancel.clone();
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             let mut interval = tokio::time::interval(TICK);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {

@@ -27,12 +27,15 @@
 //! * [`display`] is this device's key for a display a Mac makes at its size.
 //!
 //! Only the picture's decode is Apple's ([`decode`]); everything else is plain Rust, so the
-//! tests run it with a fake decoder.
+//! tests run it with a fake decoder. Every stamp the receive path takes reads tokio's clock
+//! ([`instant`]), and a fake decoder decodes in place ([`decode::VideoDecode::INLINE`]), so on a
+//! paused clock a whole session, from desktopd's capture to the glass, runs in virtual time.
 
 #![deny(unsafe_code)]
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 
 use onicode_peer::{PeerConfig, PeerEndpoint, PeerError, Sockets, SystemSockets};
 use onicode_tailnet::{Relooking, Role, Tailnet};
@@ -46,12 +49,29 @@ pub mod screen;
 pub mod session;
 pub mod sound;
 
-pub use decode::{DecodedFrame, Image, Picture};
+pub use decode::{DecodedFrame, Image, Picture, PlatformDecoder, VideoDecode};
 pub use onicode_desktop_link::broker::DesktopEndpoint;
 pub use onicode_desktop_link::{HostGrants, Pane, Seat};
 pub use router::ScreenRouter;
 pub use screen::{CursorState, Present, Presentable, ScreenHandle, ScreenStats, Stitched};
 pub use session::{DesktopSession, Join, Open, Phase, SessionState, StreamView};
+
+/// Now, on tokio's clock: the system's, or a test's paused one, so a stream's timers and its
+/// stamps agree in virtual time. Off a runtime (a platform decoder's own thread), the system's.
+#[must_use]
+pub fn instant() -> Instant {
+    tokio::time::Instant::now().into_std()
+}
+
+/// The glass's clock: [`instant`].
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RuntimeClock;
+
+impl onicode_desktop_media::Clock for RuntimeClock {
+    fn now(&self) -> Instant {
+        instant()
+    }
+}
 
 /// What reaching a desktop can fail with.
 #[derive(Debug, thiserror::Error)]
@@ -128,6 +148,16 @@ impl DesktopClient {
     /// tokio runtime.
     #[must_use]
     pub fn connect(self: &Arc<Self>, endpoint: DesktopEndpoint, join: Join) -> DesktopSession {
+        self.connect_with::<PlatformDecoder>(endpoint, join)
+    }
+
+    /// [`Self::connect`], decoding with `D`: a test's decoder.
+    #[must_use]
+    pub fn connect_with<D: VideoDecode>(
+        self: &Arc<Self>,
+        endpoint: DesktopEndpoint,
+        join: Join,
+    ) -> DesktopSession<D> {
         session::DesktopSession::start(Arc::clone(self), endpoint, join)
     }
 }

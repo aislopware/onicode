@@ -43,6 +43,8 @@ dispatch2.workspace = true
 objc2.workspace = true
 
 [dev-dependencies]
+# The client half, for the glass test: a real session against the drawn Mac.
+onicode-desktop-client.workspace = true
 onicode-desktop-testkit.workspace = true
 onicode-net-sim.workspace = true
 pretty_assertions.workspace = true

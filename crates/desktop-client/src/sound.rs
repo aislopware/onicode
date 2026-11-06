@@ -255,16 +255,17 @@ impl Task {
         report.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {
+                biased;
+                _instant = report.tick() => {
+                    if !self.report() {
+                        break;
+                    }
+                }
                 arrival = self.datagrams.recv() => {
                     let Some((at, datagram)) = arrival else { break };
                     self.ingest(&datagram, at);
                     while let Ok((at, datagram)) = self.datagrams.try_recv() {
                         self.ingest(&datagram, at);
-                    }
-                }
-                _instant = report.tick() => {
-                    if !self.report() {
-                        break;
                     }
                 }
             }

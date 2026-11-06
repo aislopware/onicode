@@ -276,7 +276,7 @@ impl LiveBackend {
         let cancel = self.cancel.clone();
         let wake = self.registry_save.clone();
         let dirty = self.registry_dirty.clone();
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             loop {
                 // Register before checking so a notify can't slip by.
                 let wait = wake.notified();
@@ -313,7 +313,7 @@ impl LiveBackend {
         let weak = Arc::downgrade(inner);
         let cancel = self.cancel.clone();
         let links_set = inner.links_wake.clone();
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             let links = loop {
                 let set = links_set.notified();
                 let Some(inner) = weak.upgrade() else { return };
@@ -355,7 +355,7 @@ impl LiveBackend {
         let cancel = self.cancel.clone();
         let kick = self.registry_kick.clone();
         let links_set = inner.links_wake.clone();
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             let state = replica.state.clone();
             let head = StreamHead::new(StreamKind::Registry, "");
             let mut retry = REGISTRY_RETRY_BASE;

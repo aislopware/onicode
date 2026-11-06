@@ -14,7 +14,7 @@ thiserror.workspace = true
 block2.workspace = true
 objc2.workspace = true
 # `AXIsProcessTrusted` (`Grants::current`).
-objc2-application-services.workspace = true
+objc2-application-services = { workspace = true, features = ["AXUIElement"] }
 objc2-core-foundation.workspace = true
 # The preflights, and System Settings' window bounds (`CGWindowListCopyWindowInfo`, readable
 # without Screen Recording).

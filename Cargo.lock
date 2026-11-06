@@ -6691,6 +6691,7 @@ dependencies = [
  "noq",
  "objc2 0.6.5",
  "onicode-desktop-capture",
+ "onicode-desktop-client",
  "onicode-desktop-codec",
  "onicode-desktop-grants",
  "onicode-desktop-input",

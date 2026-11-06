@@ -2,13 +2,16 @@
 //!
 //! - [`Drawn`], everywhere: two drawn displays whose pictures are numbers, a fake encoder that
 //!   codes each deterministically (a keyframe when asked or first, a long-term reference every
-//!   [`LTR_EVERY`] frames, the bytes a function of the picture), a tone for sound, and an injector
-//!   that records what it is handed ([`Recording`]). The pipeline and session tests run on it over
-//!   the simulated tailnet.
+//!   [`LTR_EVERY`] frames, the bytes a function of the picture, [`Coded`]), a tone for sound, and
+//!   an injector that records what it is handed ([`Recording`]). Its displays draw and its tone
+//!   plays on tokio's timers and every call into it is made on the runtime
+//!   ([`Platform::ON_RUNTIME`]), so under a paused clock a whole stream runs in virtual time. The
+//!   pipeline, session and glass tests run on it over the simulated tailnet.
 //! - `Canvas`, on a Mac: the capture crate's drawn canvas, coded by VideoToolbox, so a real client
 //!   shows a real moving picture with no Screen Recording grant; input is recorded and counted on
 //!   the canvas's strip.
 
+use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -43,6 +46,8 @@ impl Platform for Drawn {
     type Capture = Pictures;
     type Input = Recording;
     type Video = Fake;
+
+    const ON_RUNTIME: bool = true;
 
     fn displays() -> Vec<DisplayInfo> {
         DISPLAYS.to_vec()
@@ -80,15 +85,136 @@ const fn pixels(d: &DisplayInfo) -> (u32, u32) {
     ((d.w * d.scale) as u32, (d.h * d.scale) as u32)
 }
 
-/// A drawn picture: its number and size.
+/// A drawn picture: its capture, its number, when it was drawn and its size.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Picture {
-    /// Pictures drawn before it by its capture.
+    /// The capture that drew it: each started on a thread is numbered from 1 (`Desk`).
+    pub capture: u32,
+    /// Its number in its capture, from 1.
     pub seq: u64,
+    /// When it was drawn ([`now_us`]).
+    pub captured_us: u64,
     /// Its width.
     pub width: u32,
     /// Its height.
     pub height: u32,
+}
+
+/// What the fake encoder coded, as its bytes say it and its log keeps it ([`coded`]).
+///
+/// A coded frame's bytes start with [`Self::HEADER`] bytes: `K` or `D` (a keyframe or not),
+/// then the capture, the picture's number, when it was drawn, its width and its height, little
+/// endian; the rest is the number's low byte. A test's decoder reads them back ([`Self::read`]),
+/// so what reaches the glass names the capture it shows.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Coded {
+    /// The picture.
+    pub picture: Picture,
+    /// Coded to stand alone.
+    pub keyframe: bool,
+    /// The presentation timestamp it was coded with: the capture's for a fresh picture, later
+    /// for one coded again (a repair, a refresh).
+    pub pts_us: u64,
+}
+
+impl Coded {
+    /// The header's length.
+    pub const HEADER: usize = 29;
+
+    /// The frame's bytes, `len` of them.
+    fn bytes(&self, len: usize) -> Vec<u8> {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a byte of the picture's number"
+        )]
+        let fill = self.picture.seq as u8;
+        let mut data = Vec::with_capacity(len.max(Self::HEADER));
+        data.push(if self.keyframe { b'K' } else { b'D' });
+        data.extend_from_slice(&self.picture.capture.to_le_bytes());
+        data.extend_from_slice(&self.picture.seq.to_le_bytes());
+        data.extend_from_slice(&self.picture.captured_us.to_le_bytes());
+        data.extend_from_slice(&self.picture.width.to_le_bytes());
+        data.extend_from_slice(&self.picture.height.to_le_bytes());
+        data.resize(len.max(Self::HEADER), fill);
+        data
+    }
+
+    /// What a coded frame's bytes say, coded at `pts_us`; `None` for bytes the fake did not
+    /// make.
+    #[must_use]
+    pub fn read(data: &[u8], pts_us: u64) -> Option<Self> {
+        let keyframe = match data.first()? {
+            b'K' => true,
+            b'D' => false,
+            _other => return None,
+        };
+        let u32_at = |at: usize| -> Option<u32> {
+            Some(u32::from_le_bytes(
+                data.get(at..at.checked_add(4)?)?.try_into().ok()?,
+            ))
+        };
+        let u64_at = |at: usize| -> Option<u64> {
+            Some(u64::from_le_bytes(
+                data.get(at..at.checked_add(8)?)?.try_into().ok()?,
+            ))
+        };
+        Some(Self {
+            picture: Picture {
+                capture: u32_at(1)?,
+                seq: u64_at(5)?,
+                captured_us: u64_at(13)?,
+                width: u32_at(21)?,
+                height: u32_at(25)?,
+            },
+            keyframe,
+            pts_us,
+        })
+    }
+}
+
+/// The drawn Mac a thread's runtime drives: the captures it started, what its encoders coded
+/// and what its injectors were handed.
+///
+/// One a thread: a test's current-thread runtime makes every drawn call on the test's own
+/// thread ([`Platform::ON_RUNTIME`]), so each test has a Mac of its own whatever else runs in
+/// the process, and reads it from its own body ([`coded`], [`recorded`]).
+#[derive(Debug, Default)]
+struct Desk {
+    captures: u32,
+    coded: Vec<Coded>,
+    recorded: Vec<(CaptureTarget, ScreenInput)>,
+}
+
+thread_local! {
+    static DESK: RefCell<Desk> = RefCell::new(Desk::default());
+}
+
+/// What the fake encoders on this thread coded so far, in order.
+#[must_use]
+pub fn coded() -> Vec<Coded> {
+    DESK.with_borrow(|desk| desk.coded.clone())
+}
+
+/// The drawn clock: microseconds of tokio's clock since this thread first read it, so under a
+/// paused clock a capture's stamp, the encoder's and the glass's are all virtual time.
+#[must_use]
+pub fn now_us() -> u64 {
+    thread_local! {
+        static EPOCH: tokio::time::Instant = tokio::time::Instant::now();
+    }
+    let elapsed = tokio::time::Instant::now().saturating_duration_since(EPOCH.with(|e| *e));
+    u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX)
+}
+
+/// The runtime the drawn displays and tone run on: the caller's.
+fn runtime() -> Result<tokio::runtime::Handle, CaptureError> {
+    tokio::runtime::Handle::try_current()
+        .map_err(|e| CaptureError::Stopped(format!("the drawn platform runs on tokio: {e}")))
+}
+
+/// One frame period at `fps`.
+fn period(fps: u16) -> Duration {
+    Duration::from_micros(1_000_000 / u64::from(fps.max(1)))
 }
 
 /// A drawn display, resolved.
@@ -97,29 +223,36 @@ pub struct DrawnTarget {
     info: DisplayInfo,
 }
 
-/// A running drawn capture.
+/// A running drawn capture: a task drawing at the display's rate.
 #[derive(Debug)]
 pub struct DrawnStream {
     stop: Arc<AtomicBool>,
     size: Arc<Mutex<(u32, u32, u16)>>,
+    task: tokio::task::JoinHandle<()>,
 }
 
-/// A running tone.
+impl Drop for DrawnStream {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+/// A running tone: a task playing 10 ms at a time.
 #[derive(Debug)]
 pub struct DrawnSound {
     stop: Arc<AtomicBool>,
+    task: tokio::task::JoinHandle<()>,
 }
 
-static START: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
+impl Drop for DrawnSound {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+/// The Mac's one pointer, where the last move put it.
 static POINTER: Mutex<(f64, f64)> = Mutex::new((0.0, 0.0));
 static POINTER_MOVES: AtomicU32 = AtomicU32::new(0);
-/// Whether the drawn displays draw: off, every picture is the last one again (a still screen).
-static DRAWING: AtomicBool = AtomicBool::new(true);
-
-/// Make the drawn displays still (`false`) or moving.
-pub fn set_drawing(drawing: bool) {
-    DRAWING.store(drawing, Ordering::Relaxed);
-}
 
 /// The drawn capture.
 #[derive(Clone, Copy, Debug)]
@@ -178,31 +311,50 @@ impl CaptureSource for Pictures {
         )]
         let hz = target.info.hz as u16;
         let fps = if config.fps == 0 { hz } else { config.fps };
+        let runtime = runtime()?;
+        let capture = DESK.with_borrow_mut(|desk| {
+            desk.captures = desk.captures.wrapping_add(1);
+            desk.captures
+        });
         let stop = Arc::new(AtomicBool::new(false));
         let size = Arc::new(Mutex::new((config.width, config.height, fps.max(1))));
         let (stopped, drawn) = (Arc::clone(&stop), Arc::clone(&size));
-        std::thread::Builder::new()
-            .name("onicode-drawn-display".to_owned())
-            .spawn(move || {
-                let mut seq = 0_u64;
-                while !stopped.load(Ordering::Acquire) {
-                    let (width, height, fps) = *drawn.lock();
-                    if DRAWING.load(Ordering::Relaxed) {
-                        seq = seq.wrapping_add(1);
-                    }
-                    sink(CapturedFrame {
-                        image: Picture { seq, width, height },
-                        capture_ts_us: Self::now_us(),
-                        display_ts_us: None,
-                        age_us: 0,
-                        latency_us: 0,
-                    });
-                    std::thread::sleep(Duration::from_micros(1_000_000 / u64::from(fps.max(1))));
+        let task = runtime.spawn(async move {
+            let mut seq = 0_u64;
+            let mut drawing_at = fps.max(1);
+            let mut ticks = tokio::time::interval(period(drawing_at));
+            ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                ticks.tick().await;
+                if stopped.load(Ordering::Acquire) {
+                    break;
                 }
-            })
-            .map_err(|e| CaptureError::Stopped(e.to_string()))?;
+                let (width, height, fps) = *drawn.lock();
+                if fps != drawing_at {
+                    drawing_at = fps;
+                    let every = period(fps);
+                    ticks = tokio::time::interval_at(tokio::time::Instant::now() + every, every);
+                    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                }
+                seq = seq.wrapping_add(1);
+                let captured_us = now_us();
+                sink(CapturedFrame {
+                    image: Picture {
+                        capture,
+                        seq,
+                        captured_us,
+                        width,
+                        height,
+                    },
+                    capture_ts_us: captured_us,
+                    display_ts_us: None,
+                    age_us: 0,
+                    latency_us: 0,
+                });
+            }
+        });
         done(Ok(()));
-        Ok(DrawnStream { stop, size })
+        Ok(DrawnStream { stop, size, task })
     }
 
     fn start_sound(
@@ -211,33 +363,36 @@ impl CaptureSource for Pictures {
         _on_stop: impl Fn(CaptureError) + Send + Sync + 'static,
         done: impl FnOnce(Result<DrawnSound, CaptureError>) + Send + 'static,
     ) {
+        let runtime = match runtime() {
+            Ok(runtime) => runtime,
+            Err(e) => return done(Err(e)),
+        };
         let stop = Arc::new(AtomicBool::new(false));
         let stopped = Arc::clone(&stop);
-        let spawned = std::thread::Builder::new()
-            .name("onicode-drawn-tone".to_owned())
-            .spawn(move || {
-                let mut phase = 0.0_f32;
-                while !stopped.load(Ordering::Acquire) {
-                    let samples = (0..960)
-                        .map(|i| {
-                            if i % 2 == 0 {
-                                phase += 0.057;
-                            }
-                            phase.sin() * 0.25
-                        })
-                        .collect();
-                    sink(CapturedAudio {
-                        pts_us: Self::now_us(),
-                        samples,
-                    });
-                    std::thread::sleep(Duration::from_millis(10));
+        let task = runtime.spawn(async move {
+            let mut phase = 0.0_f32;
+            let mut ticks = tokio::time::interval(Duration::from_millis(10));
+            ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                ticks.tick().await;
+                if stopped.load(Ordering::Acquire) {
+                    break;
                 }
-            });
-        done(
-            spawned
-                .map(|_thread| DrawnSound { stop })
-                .map_err(|e| CaptureError::Stopped(e.to_string())),
-        );
+                let samples = (0..960)
+                    .map(|i| {
+                        if i % 2 == 0 {
+                            phase += 0.057;
+                        }
+                        phase.sin() * 0.25
+                    })
+                    .collect();
+                sink(CapturedAudio {
+                    pts_us: now_us(),
+                    samples,
+                });
+            }
+        });
+        done(Ok(DrawnSound { stop, task }));
     }
 
     fn hear(
@@ -290,7 +445,7 @@ impl CaptureSource for Pictures {
     }
 
     fn now_us() -> u64 {
-        u64::try_from(START.elapsed().as_micros()).unwrap_or(u64::MAX)
+        now_us()
     }
 
     fn target_bounds(target: CaptureTarget) -> Option<Rect> {
@@ -362,9 +517,6 @@ impl std::fmt::Debug for Fake {
     }
 }
 
-/// Encoders made, process-wide: the tests read sessions being rebuilt.
-pub static SESSIONS: AtomicU64 = AtomicU64::new(0);
-
 impl VideoEncoder for Fake {
     type Image = Picture;
 
@@ -372,7 +524,6 @@ impl VideoEncoder for Fake {
         config: EncoderConfig,
         sink: impl Fn(EncodedPacket) + Send + Sync + 'static,
     ) -> Result<Self, CodecError> {
-        SESSIONS.fetch_add(1, Ordering::Relaxed);
         Ok(Self {
             config: Mutex::new(config),
             sink: Box::new(sink),
@@ -424,13 +575,14 @@ impl VideoEncoder for Fake {
         } else {
             DELTA_BYTES
         };
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "a byte of the picture's number"
-        )]
-        let fill = image.seq as u8;
+        let made = Coded {
+            picture: *image,
+            keyframe,
+            pts_us,
+        };
+        DESK.with_borrow_mut(|desk| desk.coded.push(made));
         (self.sink)(EncodedPacket {
-            data: vec![fill; len],
+            data: made.bytes(len),
             keyframe,
             ltr_token,
             ltr_refresh: options.force_ltr_refresh && !keyframe,
@@ -486,13 +638,11 @@ impl AudioEncoder for Tally {
     }
 }
 
-/// Every input any [`Recording`] was handed, with its display, in order.
-static RECORDED: Mutex<Vec<(CaptureTarget, ScreenInput)>> = Mutex::new(Vec::new());
-
-/// What the recording injectors were handed so far.
+/// What the recording injectors on this thread were handed so far, with their displays, in
+/// order (`Desk`).
 #[must_use]
 pub fn recorded() -> Vec<(CaptureTarget, ScreenInput)> {
-    RECORDED.lock().clone()
+    DESK.with_borrow(|desk| desk.recorded.clone())
 }
 
 /// An injector that records what it is handed and puts the pointer where a move says.
@@ -523,7 +673,7 @@ impl InputSink for Recording {
     }
 
     fn inject(&mut self, input: &ScreenInput) -> Result<(), InputError> {
-        RECORDED.lock().push((self.target, input.clone()));
+        DESK.with_borrow_mut(|desk| desk.recorded.push((self.target, input.clone())));
         #[cfg(target_os = "macos")]
         let _count = onicode_desktop_capture::synthetic::take_input();
         if let ScreenInput::Move { x, y } = input {

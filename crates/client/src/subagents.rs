@@ -154,7 +154,7 @@ impl Client {
         let source = source_chat(doc_id, chat_id).to_owned();
         let device_id = self.chat_host(&source)?;
         let cancel = CancellationToken::new();
-        crate::runtime::shared().spawn(follow(
+        crate::runtime::spawn(follow(
             Arc::downgrade(&self.inner),
             device_id,
             doc_id.to_owned(),

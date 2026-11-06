@@ -77,6 +77,9 @@ pub struct PeerConfig {
     pub seed: Option<u64>,
     /// Ranges let in without the tailnet's word, besides loopback (a test bench's LAN).
     pub allow: Vec<Cidr>,
+    /// What this node's hello says it can do beyond the wire's baseline (desktopd's
+    /// `onicode_desktop_link::CAP_DESKTOP`).
+    pub caps: Vec<String>,
 }
 
 impl PeerConfig {
@@ -90,6 +93,7 @@ impl PeerConfig {
             ephemeral: false,
             seed: None,
             allow: Vec::new(),
+            caps: Vec::new(),
         }
     }
 
@@ -182,7 +186,10 @@ impl PeerEndpoint {
             endpoints,
             port: config.port,
             admission: Admission::new(Some(tailnet), config.allow),
-            hello: Hello::new(config.device_id, config.role),
+            hello: Hello {
+                caps: config.caps,
+                ..Hello::new(config.device_id, config.role)
+            },
             nodes: Mutex::default(),
         }))
     }

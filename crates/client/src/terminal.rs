@@ -90,7 +90,7 @@ impl Route {
 /// Forwards a demo terminal's writes to the demo host, in order.
 fn demo_writer(weak: Weak<ClientInner>, info: TerminalInfo) -> mpsc::UnboundedSender<Write> {
     let (tx, mut rx) = mpsc::unbounded_channel();
-    crate::runtime::shared().spawn(async move {
+    crate::runtime::spawn(async move {
         while let Some(write) = rx.recv().await {
             let Some(inner) = weak.upgrade() else { return };
             let (method, params) = match write {
@@ -192,7 +192,7 @@ impl TerminalLink {
     /// End the shell on the host. The stream reports the exit when it lands.
     pub fn close(&self) {
         let (info, weak) = (self.info.clone(), self.inner.clone());
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             let params = json!({ "terminalId": info.id });
             for attempt in 0..5u64 {
                 if attempt > 0 {
@@ -266,7 +266,7 @@ impl Client {
     ) -> TerminalLink {
         let stream = CancellationToken::new();
         self.inner.warm_link(&info.device_id);
-        crate::runtime::shared().spawn(follow(
+        crate::runtime::spawn(follow(
             Arc::downgrade(&self.inner),
             info.clone(),
             after_seq,

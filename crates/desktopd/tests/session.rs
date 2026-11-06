@@ -2,6 +2,10 @@
 //! client of another wire, and two of the owner's devices at once, one holding the controls,
 //! each with a stream of its own, where only the controller's input reaches the Mac and the
 //! other is told once that it does not hold them.
+//!
+//! The drawn platform runs on the runtime, so each test runs on a paused clock: its streams, the
+//! network and every wait are virtual time, and its drawn Mac is its own
+//! (`onicode_desktopd::synthetic::recorded`).
 
 use std::io;
 use std::net::SocketAddr;
@@ -24,7 +28,7 @@ use onicode_peer::{PeerConfig, PeerEndpoint, PeerSession, Sockets};
 use tokio::sync::watch;
 
 const USER: i64 = 2;
-/// The longest any one answer may take.
+/// The longest any one answer may take, in virtual time.
 const PATIENCE: Duration = Duration::from_secs(5);
 
 /// The simulated network's sockets.
@@ -269,7 +273,7 @@ async fn a_client_of_another_wire_is_closed() {
 /// Two of the owner's devices at once, each streaming a display of its own: the one that asked
 /// for the controls drives the Mac, the other is told once that it does not, until it takes
 /// them, when the first is told in turn.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn only_the_controller_drives_and_a_viewer_is_told_once() {
     const SEED: u64 = 73;
     let _seed = report_seed("only_the_controller_drives_and_a_viewer_is_told_once", SEED);

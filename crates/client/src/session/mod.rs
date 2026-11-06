@@ -248,7 +248,7 @@ impl SessionCore {
         // Coalesced republish for remote imports (a backfill of N rows costs
         // ~one refresh per frame, not N).
         let weak = Arc::downgrade(&core);
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             loop {
                 tokio::select! {
                     _ = tasks.cancelled() => return,
@@ -933,7 +933,7 @@ impl SessionHandle {
         let mut rx = self.subscribe();
         let cancel = tokio_util::sync::CancellationToken::new();
         let token = cancel.clone();
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             let first = rx.borrow_and_update().clone();
             f(first);
             loop {

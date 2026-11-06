@@ -24,7 +24,7 @@ use onicode_desktop_media::wire::{
 use onicode_desktop_media::{
     Action, CaptureClock, Captured, ClockEstimate, ClockSync, Config, FrameStamp, GlassStats,
     Ingest, Offer, Pacer, PacingStats, PaintRate, Reassembler, ReassemblerStats, STALL_GAP,
-    StallAttribution, SystemClock,
+    StallAttribution,
 };
 use onicode_desktop_proto::screen::{CursorShape, Stripe};
 use parking_lot::Mutex;
@@ -33,6 +33,7 @@ use tokio::task::JoinHandle;
 
 use crate::decode::{DecodedFrame, Image, Outcome, OutcomeSink, Picture, Refused, VideoDecode};
 use crate::router::{Arrival, Attached, ScreenRouter};
+use crate::{RuntimeClock, instant};
 
 /// How often a receiver report goes to desktopd.
 pub const REPORT_EVERY: Duration = Duration::from_millis(50);
@@ -534,12 +535,12 @@ pub fn spawn_screen<D: VideoDecode>(
         estimate: Mutex::new(None),
         first_decoded: Mutex::new(None),
         stitch: Mutex::new(Stitch::default()),
-        pacer: Mutex::new(Pacer::new(SystemClock)),
+        pacer: Mutex::new(Pacer::new(RuntimeClock)),
     });
     let failed = Arc::new(Notify::new());
     let rtt = (uplink.rtt)().unwrap_or(DEFAULT_RTT);
     let top = Lane::<D>::new(Stripe::media_of(stream, 0), 0, codec, &output, &failed);
-    let now = Instant::now();
+    let now = instant();
     let worker = Worker {
         stream,
         codec,
@@ -593,14 +594,14 @@ struct Output<P> {
     first_decoded: Mutex<Option<Instant>>,
     stitch: Mutex<Stitch<DecodedFrame<P>>>,
     /// What went up and what the glass said of it.
-    pacer: Mutex<Pacer>,
+    pacer: Mutex<Pacer<RuntimeClock>>,
 }
 
 impl<P: Image> Output<P> {
     /// Lane `index`'s decoder returned `frame`, which the datagram that completed it brought at
     /// `arrived`, coded as `coded` says.
     fn decoded(&self, index: usize, frame: DecodedFrame<P>, arrived: Instant, coded: Coded) {
-        let decoded = Instant::now();
+        let decoded = instant();
         self.first_decoded.lock().get_or_insert(decoded);
         let captured = self
             .estimate
@@ -907,10 +908,20 @@ struct DecodeState {
     pictures: AtomicU64,
 }
 
+/// Where a lane's frames go into its decoder.
+enum Feed {
+    /// The decode thread's queue.
+    Thread(std::sync::mpsc::SyncSender<Submit>),
+    /// The decoder itself, submitted to in place ([`VideoDecode::INLINE`]).
+    Inline(Box<dyn FnMut(Submit) + Send>),
+}
+
 /// A lane's decoder, on a thread of its own: a platform decode call can block its caller, and
-/// must never take the runtime's thread with it. Dropping it lets the thread end.
+/// must never take the runtime's thread with it. Dropping it lets the thread end. A decoder
+/// that never blocks ([`VideoDecode::INLINE`]) has no thread: the stream task submits to it in
+/// place, so its pictures come out at the instant their frame completed.
 struct DecodeThread {
-    submits: std::sync::mpsc::SyncSender<Submit>,
+    feed: Feed,
     state: Arc<DecodeState>,
 }
 
@@ -954,10 +965,30 @@ impl DecodeThread {
                 // does not enter the ring.
                 let parked = inflight.lock().decoded(frame.pts_us);
                 news.store(true, Ordering::Release);
-                let (arrived, coded) = parked.unwrap_or_else(|| (Instant::now(), Coded::default()));
+                let (arrived, coded) = parked.unwrap_or_else(|| (instant(), Coded::default()));
                 output.decoded(index, frame, arrived, coded);
             })
         };
+        if D::INLINE {
+            let mut decoder = D::start(codec, sink);
+            let (inline, outcomes) = (Arc::clone(&state), outcomes.clone());
+            let mut submissions = 0_u64;
+            let feed = Feed::Inline(Box::new(move |submit: Submit| {
+                if inline.abandoned.load(Ordering::Acquire) {
+                    return;
+                }
+                submissions = submissions.saturating_add(1);
+                let _going = decode_one(
+                    media,
+                    &mut decoder,
+                    &submit,
+                    &inline,
+                    &outcomes,
+                    submissions,
+                );
+            }));
+            return Self { feed, state };
+        }
         let (submits, queue) = std::sync::mpsc::sync_channel::<Submit>(DECODE_QUEUE);
         let thread = Arc::clone(&state);
         let outcomes = outcomes.clone();
@@ -970,13 +1001,24 @@ impl DecodeThread {
         if let Err(e) = spawned {
             tracing::warn!(stream = media.0, error = %e, "no thread to decode on");
         }
-        Self { submits, state }
+        Self {
+            feed: Feed::Thread(submits),
+            state,
+        }
     }
 
     /// Hand `submit` to the thread: the frame back when its queue is full, or the thread gone.
-    fn submit(&self, submit: Submit) -> Result<(), std::sync::mpsc::TrySendError<Submit>> {
+    /// An inline decoder takes it at once.
+    fn submit(&mut self, submit: Submit) -> Result<(), std::sync::mpsc::TrySendError<Submit>> {
+        let submits = match &mut self.feed {
+            Feed::Inline(decode) => {
+                decode(submit);
+                return Ok(());
+            }
+            Feed::Thread(submits) => submits,
+        };
         self.state.queued.fetch_add(1, Ordering::AcqRel);
-        let sent = self.submits.try_send(submit);
+        let sent = submits.try_send(submit);
         if sent.is_err() {
             self.state.queued.fetch_sub(1, Ordering::AcqRel);
         }
@@ -999,8 +1041,8 @@ impl Drop for DecodeThread {
     }
 }
 
-/// The decode thread's loop: submit each frame `queue` brings, and leave a refusal in
-/// `outcomes`. It ends once its [`DecodeThread`] is dropped or given up on.
+/// The decode thread's loop: submit each frame `queue` brings ([`decode_one`]). It ends once
+/// its [`DecodeThread`] is dropped or given up on.
 fn decode_thread<D: VideoDecode>(
     media: StreamId,
     mut decoder: D,
@@ -1015,31 +1057,47 @@ fn decode_thread<D: VideoDecode>(
             break;
         }
         submissions = submissions.saturating_add(1);
-        state.submitting.store(submissions, Ordering::Release);
-        let result = decoder.decode(&submit.data, submit.pts_us);
-        state.submitting.store(0, Ordering::Release);
-        let ready = decoder.ready();
-        state.ready.store(ready, Ordering::Release);
-        if state.abandoned.load(Ordering::Acquire) {
+        if !decode_one(media, &mut decoder, &submit, state, outcomes, submissions) {
             break;
         }
-        let Err(Refused { status }) = result else {
-            continue;
-        };
-        let refresh = refresh_after_refusal(submit.discardable, ready, submit.restarts);
-        tracing::debug!(
-            stream = media.0,
-            frame = submit.frame,
-            ?status,
-            ?refresh,
-            "decode refused"
-        );
-        outcomes
-            .inflight
-            .lock()
-            .refused(submit.pts_us, status, refresh);
-        outcomes.failed();
     }
+}
+
+/// Submit one frame, the `number`th, and leave a refusal in `outcomes`; `false` once the
+/// decoder was given up on meanwhile.
+fn decode_one<D: VideoDecode>(
+    media: StreamId,
+    decoder: &mut D,
+    submit: &Submit,
+    state: &DecodeState,
+    outcomes: &Outcomes<D::Image>,
+    number: u64,
+) -> bool {
+    state.submitting.store(number, Ordering::Release);
+    let result = decoder.decode(&submit.data, submit.pts_us);
+    state.submitting.store(0, Ordering::Release);
+    let ready = decoder.ready();
+    state.ready.store(ready, Ordering::Release);
+    if state.abandoned.load(Ordering::Acquire) {
+        return false;
+    }
+    let Err(Refused { status }) = result else {
+        return true;
+    };
+    let refresh = refresh_after_refusal(submit.discardable, ready, submit.restarts);
+    tracing::debug!(
+        stream = media.0,
+        frame = submit.frame,
+        ?status,
+        ?refresh,
+        "decode refused"
+    );
+    outcomes
+        .inflight
+        .lock()
+        .refused(submit.pts_us, status, refresh);
+    outcomes.failed();
+    true
 }
 
 /// One coded picture's way in: the whole picture, or one stripe of it, on its media stream.
@@ -1091,7 +1149,7 @@ impl<D: VideoDecode> Lane<D> {
                     tick_period: IDLE_TICK,
                     ..Config::default()
                 },
-                Instant::now(),
+                instant(),
             ),
             decoder: DecodeThread::start::<D>(media, codec, &outcomes),
             outcomes,
@@ -1177,19 +1235,20 @@ impl<D: VideoDecode> Worker<D> {
             let now = tokio::time::Instant::now();
             tick.as_mut().reset(now.checked_add(period).unwrap_or(now));
             tokio::select! {
+                biased;
+                () = &mut tick => {}
+                () = self.failed.notified() => {}
+                _instant = report.tick() => {
+                    if !self.report() {
+                        break;
+                    }
+                }
                 arrival = self.datagrams.recv() => {
                     let Some((at, datagram)) = arrival else { break };
                     self.ingest(&datagram, at);
                     // What is already queued goes in before the timers look at frame ages.
                     while let Ok((at, datagram)) = self.datagrams.try_recv() {
                         self.ingest(&datagram, at);
-                    }
-                }
-                () = &mut tick => {}
-                () = self.failed.notified() => {}
-                _instant = report.tick() => {
-                    if !self.report() {
-                        break;
                     }
                 }
             }
@@ -1218,7 +1277,7 @@ impl<D: VideoDecode> Worker<D> {
             stitch.set_stalled(0, self.top.reassembler.awaiting_refresh());
             stitch.set_stalled(1, lower);
         }
-        self.output.expire(Instant::now());
+        self.output.expire(instant());
     }
 
     /// Feed one datagram that the link handed over at `now`.
@@ -1227,7 +1286,7 @@ impl<D: VideoDecode> Worker<D> {
         let len = u64::try_from(datagram.len()).unwrap_or(u64::MAX);
         self.counters.bytes = self.counters.bytes.saturating_add(len);
         self.counters.first_datagram_at.get_or_insert(now);
-        let lag = Instant::now().saturating_duration_since(now);
+        let lag = instant().saturating_duration_since(now);
         if lag > self.counters.reader_lag_max {
             self.counters.reader_lag_max = lag;
         }
@@ -1302,7 +1361,7 @@ impl<D: VideoDecode> Worker<D> {
         if !due {
             return true;
         }
-        let sent_us = self.clock.stamp(Instant::now());
+        let sent_us = self.clock.stamp(instant());
         let probe = Feedback::Clock {
             stream: self.stream,
             sent_us,
@@ -1335,7 +1394,7 @@ impl<D: VideoDecode> Worker<D> {
             if index == 0 {
                 counters.frames = counters.frames.saturating_add(1);
             }
-            counters.first_frame_at.get_or_insert_with(Instant::now);
+            counters.first_frame_at.get_or_insert_with(instant);
             if frame.hold > counters.hold_max {
                 counters.hold_max = frame.hold;
             }
@@ -1391,7 +1450,7 @@ impl<D: VideoDecode> Worker<D> {
                         stream = lane.media.0,
                         "the decode thread is gone: a new decoder"
                     );
-                    lane.replace_decoder(Instant::now());
+                    lane.replace_decoder(instant());
                     counters.decoders_replaced = counters.decoders_replaced.saturating_add(1);
                 }
             }
@@ -1456,7 +1515,7 @@ impl<D: VideoDecode> Worker<D> {
                     keyframe,
                     "the decoder refused frames"
                 );
-                lane.reassembler.force_refresh(Instant::now(), keyframe);
+                lane.reassembler.force_refresh(instant(), keyframe);
             }
             let Some(failed) = failed else {
                 continue;
@@ -1471,7 +1530,7 @@ impl<D: VideoDecode> Worker<D> {
                 keyframe,
                 "decoder returned no picture"
             );
-            lane.reassembler.force_refresh(Instant::now(), keyframe);
+            lane.reassembler.force_refresh(instant(), keyframe);
         }
     }
 
@@ -1493,7 +1552,7 @@ impl<D: VideoDecode> Worker<D> {
                 lane.reassembler.set_source_live(hint);
             }
             let media = lane.media;
-            for action in lane.reassembler.tick(Instant::now(), rtt) {
+            for action in lane.reassembler.tick(instant(), rtt) {
                 let message = match action {
                     Action::Nack { frame, fragments } => {
                         counters.nacks = counters.nacks.saturating_add(1);
@@ -1526,7 +1585,7 @@ impl<D: VideoDecode> Worker<D> {
     fn report(&mut self) -> bool {
         self.outcomes();
         self.rtt = (self.path_rtt)().unwrap_or(DEFAULT_RTT);
-        let now = Instant::now();
+        let now = instant();
         self.unstick(now);
         let report = self.top.reassembler.take_report(now, 0);
         let stats = self.top.reassembler.stats();

@@ -323,6 +323,7 @@ pub async fn serve<F: Factory>(
             None
         };
         tokio::select! {
+            biased;
             accepted = accept(listener.as_ref()) => match accepted {
                 Ok(stream) => {
                     alone_since = None;

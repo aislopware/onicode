@@ -18,12 +18,12 @@ use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bytes::Bytes;
 use onicode_desktop_link::ctl::DesktopStatus;
 use onicode_desktop_link::order::{InputOrder, Numbered};
-use onicode_desktop_link::{Down, HostGrants, PORT, Up, WIRE, copy};
+use onicode_desktop_link::{CAP_DESKTOP, Down, HostGrants, PORT, Up, WIRE, copy};
 use onicode_desktop_media::wire::Feedback;
 use onicode_desktop_media::wire::channel::{FEEDBACK, MEDIA};
 use onicode_desktop_proto::StreamId;
@@ -49,7 +49,8 @@ pub const JOIN_WITHIN: Duration = Duration::from_secs(10);
 
 /// Bind desktopd's endpoint on this node's tailnet addresses at [`PORT`].
 ///
-/// The hello names no capability: `PeerConfig` sets none, so `CAP_DESKTOP` is not in it.
+/// Its hello carries [`CAP_DESKTOP`], which a client's dial looks for to know it reached a
+/// desktop and not an engine.
 ///
 /// # Errors
 ///
@@ -63,6 +64,7 @@ pub async fn bind(
     let config = PeerConfig {
         port: PORT,
         seed,
+        caps: vec![CAP_DESKTOP.to_owned()],
         ..PeerConfig::new(device_id, Role::Engine)
     };
     PeerEndpoint::bind(tailnet, sockets, config).await
@@ -403,6 +405,7 @@ impl<P: Platform, F: Factory> Host<P, F> {
         let mut controlled = self.seats.lock().controls(client.id);
         loop {
             let going = tokio::select! {
+                biased;
                 frame = control_rx.frame() => match frame {
                     Ok(Some(frame)) => match onicode_desktop_link::decode::<Up>(&frame) {
                         Ok(up) => self.up(&mut client, up).await,
@@ -412,13 +415,6 @@ impl<P: Platform, F: Factory> Host<P, F> {
                         }
                     },
                     Ok(None) | Err(_) => false,
-                },
-                datagram = client.link.recv_datagram() => match datagram {
-                    Ok((channel, payload)) => {
-                        self.datagram(&mut client, channel, &payload, Instant::now()).await;
-                        true
-                    }
-                    Err(_) => false,
                 },
                 moved = seat.changed() => {
                     if moved.is_err() {
@@ -449,6 +445,13 @@ impl<P: Platform, F: Factory> Host<P, F> {
                     Some(note) => self.note(&mut client, note).await,
                     None => false,
                 },
+                datagram = client.link.recv_datagram() => match datagram {
+                    Ok((channel, payload)) => {
+                        self.datagram(&mut client, channel, &payload, crate::instant()).await;
+                        true
+                    }
+                    Err(_) => false,
+                },
             };
             if !going {
                 break;
@@ -477,6 +480,7 @@ impl<P: Platform, F: Factory> Host<P, F> {
         }
         loop {
             tokio::select! {
+                biased;
                 changed = grants.changed() => {
                     if changed.is_err() {
                         return false;
@@ -698,7 +702,7 @@ impl<P: Platform, F: Factory> Host<P, F> {
         client: &mut Client<P>,
         channel: u8,
         payload: &[u8],
-        arrived: Instant,
+        arrived: std::time::Instant,
     ) {
         if channel == copy::CHANNEL {
             if let Some(numbered) = copy::decode(payload) {

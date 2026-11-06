@@ -91,7 +91,7 @@ impl EventPump {
 
     pub(crate) fn start(self: &Arc<Self>, cancel: CancellationToken) {
         let pump = self.clone();
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => return,

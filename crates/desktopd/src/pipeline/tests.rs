@@ -3,8 +3,9 @@
 //! keyframe, a full link drops captures and beats instead, reports move the rate, a switch
 //! reshapes the stream, and input lands on the streamed display.
 //!
-//! The drawn display draws on a thread of its own in real time, so these run on a real clock
-//! with bounded waits, and assert what the pipeline must do, never how fast.
+//! The drawn platform draws, codes and injects on the runtime ([`Platform::ON_RUNTIME`]), so these
+//! run on a paused clock: every wait is virtual time, and a run repeats exactly. They assert what
+//! the pipeline must do, never how fast.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
@@ -16,7 +17,7 @@ use tokio::sync::mpsc;
 use super::*;
 use crate::synthetic::{self, Drawn};
 
-/// The longest any one thing the tests wait for may take.
+/// The longest any one thing the tests wait for may take, in virtual time.
 const PATIENCE: Duration = Duration::from_secs(3);
 /// More than the largest datagram queue a frame fits behind.
 const FULL: usize = 64 << 20;
@@ -170,7 +171,7 @@ fn drain(rx: &mut mpsc::UnboundedReceiver<Bytes>) {
 
 /// The stream's first frame is a keyframe offering the first reference, and frames keep
 /// coming with the display's size and scale told in `Opened`.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_stream_opens_on_a_keyframe_and_keeps_coding() {
     let mut s = open(1).await;
     let ScreenEvent::Opened {
@@ -209,7 +210,7 @@ async fn a_stream_opens_on_a_keyframe_and_keeps_coding() {
 
 /// A refresh is answered from the reference the client acknowledged, which costs no keyframe;
 /// once the client says it lost its references, only a keyframe answers.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn an_acknowledged_reference_answers_a_refresh_and_a_lost_one_a_keyframe() {
     let mut s = open(1).await;
     let (_before, first) = until(&mut s.datagrams, Seen::starts_a_frame).await;
@@ -251,7 +252,7 @@ async fn an_acknowledged_reference_answers_a_refresh_and_a_lost_one_a_keyframe()
 
 /// While the link holds more than a frame fits behind, captures are dropped, a heartbeat fills
 /// the silence and a nack waits; once it drains, frames flow again and a nack is answered.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_full_link_drops_captures_and_beats_until_it_drains() {
     let mut s = open(1).await;
     let (_before, _first) = until(&mut s.datagrams, Seen::starts_a_frame).await;
@@ -295,7 +296,7 @@ async fn a_full_link_drops_captures_and_beats_until_it_drains() {
 
 /// Every tenth report decides the rate: a window of deep queues cuts it, and the cut is told
 /// to the client as `Rate`.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn deep_queues_cut_the_rate() {
     let mut s = open(1).await;
     let (_before, _first) = until(&mut s.datagrams, Seen::starts_a_frame).await;
@@ -336,7 +337,7 @@ async fn deep_queues_cut_the_rate() {
 
 /// Switching to another display reshapes the stream to that display's pixels, on a new
 /// keyframe.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_switch_reshapes_the_stream() {
     let mut s = open(1).await;
     let (_before, _first) = until(&mut s.datagrams, Seen::starts_a_frame).await;
@@ -369,7 +370,7 @@ async fn a_switch_reshapes_the_stream() {
 
 /// The controller's input lands on the streamed display, and the pointer it moved goes to the
 /// client as cursor datagrams.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn input_lands_on_the_streamed_display() {
     let mut s = open(1).await;
     let (_before, _first) = until(&mut s.datagrams, Seen::starts_a_frame).await;

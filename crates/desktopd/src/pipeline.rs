@@ -16,6 +16,10 @@
 //! cursor goes as its own datagrams at 120 Hz, and its shape as events.
 //!
 //! Every datagram goes to a [`DatagramSink`]: the client's link in [`crate::session`].
+//!
+//! A platform whose calls never wait ([`Platform::ON_RUNTIME`], the drawn one) codes on a task
+//! of the stream's instead of the encode thread, and makes every other call on the runtime too,
+//! so a paused tokio clock drives the whole stream and a seed repeats it.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
@@ -49,7 +53,7 @@ use tokio::task::JoinHandle;
 use crate::engines::{self, ENGINES};
 use crate::platform::Platform;
 use crate::sound::SoundClock;
-use crate::stripes;
+use crate::{instant, stripes};
 
 pub mod fit;
 pub mod lane;
@@ -206,10 +210,12 @@ impl std::fmt::Debug for Opening {
     }
 }
 
-/// The newest capture, waiting for the encode thread: a newer one replaces it.
+/// The newest capture, waiting for the encode thread (or task): a newer one replaces it.
 struct Mailbox<F> {
     slot: Mutex<Option<F>>,
     wake: Condvar,
+    /// Wakes the encode task of a platform that codes on the runtime.
+    landed: Notify,
 }
 
 impl<F> Default for Mailbox<F> {
@@ -217,6 +223,7 @@ impl<F> Default for Mailbox<F> {
         Self {
             slot: Mutex::new(None),
             wake: Condvar::new(),
+            landed: Notify::new(),
         }
     }
 }
@@ -226,7 +233,13 @@ impl<F> Mailbox<F> {
     fn post(&self, frame: F) -> Option<F> {
         let superseded = self.slot.lock().replace(frame);
         self.wake.notify_one();
+        self.landed.notify_one();
         superseded
+    }
+
+    /// The frame waiting, if one is.
+    fn try_take(&self) -> Option<F> {
+        self.slot.lock().take()
     }
 
     /// The frame waiting, waiting up to `patience` for one.
@@ -691,8 +704,13 @@ async fn answered(
 }
 
 /// Retire a session on a thread of its own: tearing one down waits for its frames in flight.
-fn retire<V: Send + Sync + 'static>(old: Option<Arc<V>>) {
+/// A platform whose calls never wait drops it in place.
+fn retire<P: Platform>(old: Option<Arc<P::Video>>) {
     let Some(old) = old else { return };
+    if P::ON_RUNTIME {
+        drop(old);
+        return;
+    }
     let spawned = std::thread::Builder::new()
         .name("onicode-retire-encoder".to_owned())
         .spawn(move || {
@@ -801,7 +819,7 @@ impl<P: Platform> Pipeline<P> {
         ENGINES.join(contender);
         let built = shared.build(true).await?;
         let capture_config = shared.coding.lock().capture;
-        start_encode_thread(&shared)?;
+        let encoder = start_encoder(&shared)?;
         let (running, started) = start_capture(&shared, &resolved, &capture_config)?;
         *shared.capture.lock() = Some(running);
         started
@@ -819,7 +837,7 @@ impl<P: Platform> Pipeline<P> {
             stripes: built,
         };
         tracing::info!(stream = %id, ?target, width = capture_config.width, height = capture_config.height, "stream opened");
-        let tasks = vec![
+        let mut tasks = vec![
             tokio::spawn(repair_loop(Arc::clone(&shared))),
             tokio::spawn(beat_loop(Arc::clone(&shared))),
             tokio::spawn(lane_loop(Arc::clone(&shared))),
@@ -828,6 +846,7 @@ impl<P: Platform> Pipeline<P> {
             tokio::spawn(source_loop(Arc::clone(&shared))),
             tokio::spawn(geometry_loop(Arc::clone(&shared))),
         ];
+        tasks.extend(encoder);
         Ok((
             Self {
                 shared,
@@ -1019,6 +1038,41 @@ fn start_capture<P: Platform>(
     Ok((running, rx))
 }
 
+/// What codes the newest capture as it lands: the stream's encode thread, or for a platform
+/// whose encoder never waits ([`Platform::ON_RUNTIME`]) a task of the stream's, returned to be
+/// ended with the others.
+fn start_encoder<P: Platform>(
+    shared: &Arc<Shared<P>>,
+) -> Result<Option<JoinHandle<()>>, ScreenError> {
+    if P::ON_RUNTIME {
+        return Ok(Some(tokio::spawn(encode_loop(Arc::clone(shared)))));
+    }
+    start_encode_thread(shared).map(|()| None)
+}
+
+/// The encode thread's loop, as a task: codes each capture the moment it lands, at the same
+/// instant of the runtime's clock.
+async fn encode_loop<P: Platform>(shared: Arc<Shared<P>>) {
+    while !shared.closed.load(Ordering::Acquire) {
+        match shared.mailbox.try_take() {
+            Some(frame) => shared.on_frame(frame),
+            None => shared.mailbox.landed.notified().await,
+        }
+    }
+}
+
+/// Run `call` on the blocking pool where the platform's calls can block, and in place where
+/// they never wait ([`Platform::ON_RUNTIME`]); `None` when the pool dropped it.
+async fn blocking<P: Platform, R: Send + 'static>(
+    call: impl FnOnce() -> R + Send + 'static,
+) -> Option<R> {
+    if P::ON_RUNTIME {
+        Some(call())
+    } else {
+        tokio::task::spawn_blocking(call).await.ok()
+    }
+}
+
 /// The stream's encode thread: codes the newest capture as it lands.
 fn start_encode_thread<P: Platform>(shared: &Arc<Shared<P>>) -> Result<(), ScreenError> {
     let weak = Arc::downgrade(shared);
@@ -1192,7 +1246,7 @@ impl<P: Platform> Shared<P> {
         drop(held);
         let sessions = std::mem::take(&mut self.coding.lock().sessions);
         for session in sessions {
-            retire(session);
+            retire::<P>(session);
         }
         self.input.lock().release_all();
         if self.focused.swap(false, Ordering::Relaxed) {
@@ -1745,7 +1799,7 @@ impl<P: Platform> Shared<P> {
         }
         let bytes = self.counters.video_bytes.load(Ordering::Relaxed);
         let target = self.counters.encoder_bps.load(Ordering::Relaxed);
-        let on = self.gate.lock().observe(Instant::now(), bytes, target);
+        let on = self.gate.lock().observe(instant(), bytes, target);
         let mut desired = self.desired.lock();
         if desired.stripes != on {
             desired.stripes = on;
@@ -1940,7 +1994,7 @@ impl<P: Platform> Shared<P> {
     }
 
     fn echo_clock(&self, sent_us: u64, arrived: Instant) {
-        let waited = arrived.elapsed();
+        let waited = instant().saturating_duration_since(arrived);
         let echoed_us = now::<P>();
         let waited_us = u64::try_from(waited.as_micros()).unwrap_or(u64::MAX);
         let received_us = echoed_us.saturating_sub(waited_us);
@@ -2008,7 +2062,7 @@ impl<P: Platform> Shared<P> {
             std::mem::replace(&mut *now, bounds) != bounds
         };
         if changed || bounds.is_some() {
-            self.input.lock().set_bounds(bounds, Instant::now());
+            self.input.lock().set_bounds(bounds, instant());
         }
         let quality = self.desired.lock().quality;
         let scale = self.coding.lock().point_scale * scale_of(&quality);
@@ -2071,7 +2125,7 @@ impl<P: Platform> Shared<P> {
         self.layers_on.store(false, Ordering::Relaxed);
         self.encoder_lost.store(0, Ordering::Relaxed);
         for session in old {
-            retire(session);
+            retire::<P>(session);
         }
         self.fps.store(encoder.fps, Ordering::Relaxed);
         self.fps_ceiling.store(encoder.fps, Ordering::Relaxed);
@@ -2098,7 +2152,7 @@ impl<P: Platform> Shared<P> {
                 .fetch_add(1, Ordering::Relaxed)
                 .wrapping_add(1),
         ];
-        let built = tokio::task::spawn_blocking(move || match layout {
+        let built = blocking::<P, _>(move || match layout {
             None => {
                 let whole = open_session::<P>(&weak, encoder, shown, numbers[0], 0, None)?;
                 Ok([Some(Arc::new(whole)), None])
@@ -2185,9 +2239,7 @@ async fn repair_loop<P: Platform>(shared: Arc<Shared<P>>) {
         }
         let period = period_us(shared.fps.load(Ordering::Relaxed));
         let repairing = Arc::clone(&shared);
-        let Ok(attempt) =
-            tokio::task::spawn_blocking(move || repairing.try_encode(None, now)).await
-        else {
+        let Some(attempt) = blocking::<P, _>(move || repairing.try_encode(None, now)).await else {
             break;
         };
         let wait = match attempt {
@@ -2265,6 +2317,7 @@ fn placed_sample(
 
 async fn cursor_event(placed: &mut PointerChanges) {
     tokio::select! {
+        biased;
         () = placed.changed() => {}
         () = tokio::time::sleep(CURSOR_BACKSTOP) => {}
     }
@@ -2293,8 +2346,7 @@ async fn cursor_loop<P: Platform>(shared: Arc<Shared<P>>) {
             let at = match seen {
                 Some((count, at)) if count == moves => at,
                 _moved_or_unread => {
-                    let Ok(at) = tokio::task::spawn_blocking(Source::<P>::pointer_location).await
-                    else {
+                    let Some(at) = blocking::<P, _>(Source::<P>::pointer_location).await else {
                         return;
                     };
                     seen = Some((moves, at));
@@ -2335,14 +2387,14 @@ async fn shape_loop<P: Platform>(shared: Arc<Shared<P>>) {
         ticks.tick().await;
         let now = Source::<P>::cursor_seed();
         // With no seed to tell a change by, the shape is read once a backstop.
-        let unseeded_recently =
-            now.is_none() && read_at.is_some_and(|at| at.elapsed() < CURSOR_BACKSTOP);
+        let unseeded_recently = now.is_none()
+            && read_at.is_some_and(|at| instant().saturating_duration_since(at) < CURSOR_BACKSTOP);
         if (seed == Some(now) && now.is_some()) || unseeded_recently {
             continue;
         }
         seed = Some(now);
-        read_at = Some(Instant::now());
-        let Ok(shape) = tokio::task::spawn_blocking(Source::<P>::cursor_shape).await else {
+        read_at = Some(instant());
+        let Some(shape) = blocking::<P, _>(Source::<P>::cursor_shape).await else {
             return;
         };
         if told.as_ref() == Some(&shape) {
@@ -2358,16 +2410,16 @@ async fn shape_loop<P: Platform>(shared: Arc<Shared<P>>) {
 
 /// The source's state, as an event each time it changes.
 async fn source_loop<P: Platform>(shared: Arc<Shared<P>>) {
-    let mut tracker = SourceTracker::new(Instant::now());
+    let mut tracker = SourceTracker::new(instant());
     let mut ticks = tokio::time::interval(SOURCE_PERIOD);
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     while !shared.sink.is_closed() && !shared.closed.load(Ordering::Acquire) {
         ticks.tick().await;
-        if let Ok(Some(console)) = tokio::task::spawn_blocking(Source::<P>::console).await {
+        if let Some(Some(console)) = blocking::<P, _>(Source::<P>::console).await {
             tracker.set_console(console);
         }
         let encoded = shared.counters.encoded.load(Ordering::Relaxed);
-        if let Some(state) = tracker.poll(encoded, Instant::now()) {
+        if let Some(state) = tracker.poll(encoded, instant()) {
             (shared.events)(StreamEvent::Screen(ScreenEvent::Source {
                 stream: shared.id,
                 state,
@@ -2383,9 +2435,10 @@ async fn geometry_loop<P: Platform>(shared: Arc<Shared<P>>) {
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     while !shared.sink.is_closed() && !shared.closed.load(Ordering::Acquire) {
         tokio::select! {
+            biased;
             _ = ticks.tick() => {
                 let follow = Arc::clone(&shared);
-                let _read = tokio::task::spawn_blocking(move || follow.follow_bounds()).await;
+                let _read = blocking::<P, _>(move || follow.follow_bounds()).await;
             }
             () = shared.rebuild.notified() => {
                 match shared.reconfigure().await {

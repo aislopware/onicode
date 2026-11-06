@@ -144,7 +144,7 @@ impl DemoHost {
         *lock(&self.cancel) = Some(cancel.clone());
         let host = Arc::downgrade(self);
         let weak = Arc::downgrade(client);
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => return,
@@ -273,7 +273,7 @@ impl DemoHost {
         let host = self.clone();
         let chat_id = chat_id.to_owned();
         let cancel = self.cancel_token();
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             tokio::select! {
                 _ = cancel.cancelled() => return,
                 _ = tokio::time::sleep(ADOPT_DELAY) => {}
@@ -326,7 +326,7 @@ impl DemoHost {
                     let chat = chat_id.to_owned();
                     let issued_by = command.issued_by.clone();
                     let core = core.clone();
-                    crate::runtime::shared().spawn(async move {
+                    crate::runtime::spawn(async move {
                         const STEPS: u32 = 24;
                         for i in 1..=STEPS {
                             core.set_transfer_progress(Some(i as f64 / STEPS as f64));
@@ -527,7 +527,7 @@ impl DemoHost {
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone();
         let host = self.clone();
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             let _serial = gate.lock().await;
             if !token.is_cancelled() {
                 host.run_turn(&chat_id, turn_id, user, steps, resume, token)
@@ -1038,7 +1038,7 @@ impl DemoHost {
                 let (tx, rx) = tokio::sync::mpsc::channel(16);
                 let cancel = self.cancel_token();
                 let started = now_ms();
-                crate::runtime::shared().spawn(async move {
+                crate::runtime::spawn(async move {
                     // A running child shows its first parts at once, then
                     // one more every couple of seconds, holding on its last
                     // (it keeps working); a finished one is whole.

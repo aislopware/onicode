@@ -56,6 +56,12 @@ pub trait VideoDecode: Send + 'static {
     /// The pictures it makes.
     type Image: Image;
 
+    /// It decodes on the submitting thread, at once, and never blocks (a test's fake): the stream
+    /// task submits to it in place with no decode thread, so on a paused tokio clock a picture
+    /// comes out at the virtual instant its frame completed. Off for a platform decoder, whose
+    /// submission can block its caller.
+    const INLINE: bool = false;
+
     /// A decoder for `codec` that hands every submitted frame's outcome to `sink`.
     fn start(codec: VideoCodec, sink: OutcomeSink<Self::Image>) -> Self;
 

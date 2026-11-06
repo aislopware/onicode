@@ -242,7 +242,7 @@ impl DemoTerminals {
         }
         if let Some(line) = run {
             let shell = shell.clone();
-            crate::runtime::shared().spawn(async move { run_command(shell, line).await });
+            crate::runtime::spawn(async move { run_command(shell, line).await });
         }
         Ok(())
     }

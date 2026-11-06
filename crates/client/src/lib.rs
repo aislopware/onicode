@@ -11,8 +11,8 @@
 //! - [`Client`] — one device's view of the user's engines (or the offline Demo mode). Owns its
 //!   links on the tailnet ([`Client::join_tailnet`], [`Client::join_engines`]), the registry
 //!   mirror, open sessions, and background tasks on the crate's shared tokio runtime
-//!   ([`runtime::shared`]). Every snapshot read is an `Arc` clone — never a network wait, never a
-//!   whole-doc decode.
+//!   ([`runtime::shared`]), or on one a test lends it ([`runtime::lend`]). Every snapshot read is
+//!   an `Arc` clone — never a network wait, never a whole-doc decode.
 //! - [`WorkspaceSnapshot`] — the derived view models (front page with pins and sections, projects,
 //!   PRs, archived, devices, search), rebuilt only when the registry, presence, or time-dependent
 //!   status actually changes.

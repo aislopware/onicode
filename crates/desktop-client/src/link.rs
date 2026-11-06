@@ -8,8 +8,6 @@
 //! Ported from slopty's client `link.rs` (MIT, same authors), reduced to what a desktop needs:
 //! no terminals, tunnels or transfers ride it.
 
-use std::time::Instant;
-
 use futures::FutureExt as _;
 use onicode_desktop_link::broker::DesktopEndpoint;
 use onicode_desktop_link::{CAP_DESKTOP, Down, MAX_FRAME, Up};
@@ -94,7 +92,7 @@ pub(crate) async fn read_datagrams(link: Link, router: ScreenRouter) {
         let Ok((first_channel, first)) = link.recv_datagram().await else {
             return;
         };
-        let now = Instant::now();
+        let now = crate::instant();
         if first_channel == channel::MEDIA {
             batch.push(first);
         }

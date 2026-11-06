@@ -43,6 +43,14 @@ pub mod stripes;
 pub mod synthetic;
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+/// Now, on tokio's clock: the system's, or a test's paused one, so a stream's timers and its
+/// clock readings agree in virtual time. Off a runtime, the system's.
+#[must_use]
+pub fn instant() -> Instant {
+    tokio::time::Instant::now().into_std()
+}
 
 /// The data directory: `$ONICODE_DATA_DIR`, else `~/.onicode`.
 #[must_use]

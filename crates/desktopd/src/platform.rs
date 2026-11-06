@@ -25,6 +25,13 @@ pub trait Platform: Send + Sync + 'static {
     /// Input into the Mac.
     type Input: InputSink;
 
+    /// Every call into this platform's capture, encoders and input is cheap and never waits, and
+    /// its capture runs on tokio's timers: a stream makes each call on its own tasks, with no
+    /// encode thread and no blocking pool, so a paused tokio clock drives the whole stream and a
+    /// seed repeats it (the drawn platform). Off where a call can block, as VideoToolbox's and
+    /// the window server's do.
+    const ON_RUNTIME: bool = false;
+
     /// The displays, as the window server lists them: never through ScreenCaptureKit, whose
     /// listing prompts for Screen Recording.
     fn displays() -> Vec<DisplayInfo>;

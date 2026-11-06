@@ -745,6 +745,7 @@ impl PeerLinks {
         });
         kick.borrow_and_update();
         tokio::select! {
+            biased;
             () = tokio::time::sleep(wait) => {}
             _ = kick.changed(), if !wrong_build => {}
         }
@@ -861,6 +862,7 @@ async fn control(links: PeerLinks, keepalive: Keepalive) {
         let interval = every(*interactive.borrow());
         let silent_at = heard + interval * SILENT_AFTER;
         tokio::select! {
+            biased;
             frame = rx.frame() => {
                 let frame = match frame {
                     Ok(Some(frame)) => frame,

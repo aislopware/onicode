@@ -78,7 +78,7 @@ impl Node {
         let cancel = inner.cancel.clone();
         let wake = inner.links_wake.clone();
         let handler: Arc<dyn StreamHandler> = Arc::new(inner.remote_terminals.clone());
-        let joining = crate::runtime::shared().spawn(async move {
+        let joining = crate::runtime::spawn(async move {
             let seed = config.seed;
             let mut retry = BIND_RETRY_BASE;
             let endpoint = loop {

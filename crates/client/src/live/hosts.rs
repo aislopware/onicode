@@ -304,7 +304,7 @@ impl Hosts {
 /// One `WatchCheckoutChangeRequest` stream, opened again 0.5s→5s whenever it ends (the last
 /// status is kept through gaps).
 fn spawn_watch(weak: Weak<ClientInner>, key: WatchKey, cancel: CancellationToken) {
-    crate::runtime::shared().spawn(async move {
+    crate::runtime::spawn(async move {
         let mut backoff = Duration::from_millis(500);
         loop {
             if cancel.is_cancelled() {

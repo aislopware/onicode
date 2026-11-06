@@ -119,7 +119,7 @@ impl Escorts {
         let weak: Weak<ClientInner> = Arc::downgrade(inner);
         let upload_id = upload_id.to_owned();
         let cancel = inner.cancel.clone();
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             run(weak.clone(), &upload_id, cancel).await;
             if let Some(inner) = weak.upgrade()
                 && let Some(live) = inner.live()

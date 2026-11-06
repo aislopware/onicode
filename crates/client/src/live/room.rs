@@ -106,7 +106,7 @@ impl Persister {
     fn start(self: &Arc<Self>, cancel: CancellationToken) {
         let weak = Arc::downgrade(self);
         let wake = self.wake.clone();
-        crate::runtime::shared().spawn(async move {
+        crate::runtime::spawn(async move {
             loop {
                 let notified = wake.notified();
                 tokio::select! {
@@ -274,7 +274,7 @@ impl Room {
             on_applied: deps.on_applied.clone(),
             on_status: deps.on_status.clone(),
         };
-        crate::runtime::shared().spawn(follow(
+        crate::runtime::spawn(follow(
             Arc::downgrade(&room),
             replica,
             deps,
@@ -548,7 +548,7 @@ impl Replica for ViewerReplica {
 /// them. Rescans when `wake` moves, the links change, or every [`RETRY_CAP`].
 pub(crate) fn spawn_owed(inner: &Arc<ClientInner>, wake: Arc<Notify>, cancel: CancellationToken) {
     let weak = Arc::downgrade(inner);
-    crate::runtime::shared().spawn(async move {
+    crate::runtime::spawn(async move {
         let mut held: HashMap<String, crate::SessionHandle> = HashMap::new();
         loop {
             let notified = wake.notified();

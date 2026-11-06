@@ -32,7 +32,7 @@ use onicode_net::redial::Redial;
 use parking_lot::Mutex;
 use tokio::sync::{mpsc, watch};
 
-use crate::decode::PlatformDecoder;
+use crate::decode::{PlatformDecoder, VideoDecode};
 use crate::router::ScreenRouter;
 use crate::screen::{self, ScreenHandle};
 use crate::sound::{self, Sound};
@@ -442,20 +442,30 @@ enum Command {
     Shutdown,
 }
 
-/// A session with a Mac's desktop. Clones share it; it ends with [`Self::shutdown`] or when
-/// the last clone is dropped.
-#[derive(Clone)]
-pub struct DesktopSession {
-    shared: Arc<Shared>,
+/// A session with a Mac's desktop, decoding with `D`. Clones share it; it ends with
+/// [`Self::shutdown`] or when the last clone is dropped.
+pub struct DesktopSession<D: VideoDecode = PlatformDecoder> {
+    shared: Arc<Shared<D>>,
 }
 
-struct Shared {
+impl<D: VideoDecode> Clone for DesktopSession<D> {
+    fn clone(&self) -> Self {
+        Self {
+            shared: Arc::clone(&self.shared),
+        }
+    }
+}
+
+/// The streams' handles, by stream.
+type Screens<D> = Arc<Mutex<HashMap<StreamId, ScreenHandle<<D as VideoDecode>::Image>>>>;
+
+struct Shared<D: VideoDecode> {
     commands: mpsc::UnboundedSender<Command>,
     state: watch::Receiver<Arc<SessionState>>,
-    screens: Arc<Mutex<HashMap<StreamId, ScreenHandle>>>,
+    screens: Screens<D>,
 }
 
-impl Drop for Shared {
+impl<D: VideoDecode> Drop for Shared<D> {
     /// The task closes the link itself on the command: aborting it would drop the link without
     /// a word to desktopd.
     fn drop(&mut self) {
@@ -463,7 +473,7 @@ impl Drop for Shared {
     }
 }
 
-impl std::fmt::Debug for DesktopSession {
+impl<D: VideoDecode> std::fmt::Debug for DesktopSession<D> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DesktopSession")
             .field("state", &*self.shared.state.borrow())
@@ -471,14 +481,14 @@ impl std::fmt::Debug for DesktopSession {
     }
 }
 
-impl DesktopSession {
+impl<D: VideoDecode> DesktopSession<D> {
     pub(crate) fn start(client: Arc<DesktopClient>, endpoint: DesktopEndpoint, join: Join) -> Self {
         let (commands, rx) = mpsc::unbounded_channel();
         let book = Book::new(&endpoint);
         let (state_tx, state) = watch::channel(Arc::new(book.state.clone()));
         let screens = Arc::new(Mutex::new(HashMap::new()));
         let runtime = tokio::runtime::Handle::current();
-        let task = Task {
+        let task = Task::<D> {
             client,
             endpoint,
             join,
@@ -563,7 +573,7 @@ impl DesktopSession {
 
     /// The stream `stream`'s pictures, while it is open.
     #[must_use]
-    pub fn screen(&self, stream: StreamId) -> Option<ScreenHandle> {
+    pub fn screen(&self, stream: StreamId) -> Option<ScreenHandle<D::Image>> {
         self.shared.screens.lock().get(&stream).cloned()
     }
 
@@ -582,14 +592,14 @@ enum Ended {
 }
 
 /// The session's task: owns the link, the router and the model.
-struct Task {
+struct Task<D: VideoDecode> {
     client: Arc<DesktopClient>,
     endpoint: DesktopEndpoint,
     join: Join,
     book: Book,
     commands: mpsc::UnboundedReceiver<Command>,
     state: watch::Sender<Arc<SessionState>>,
-    screens: Arc<Mutex<HashMap<StreamId, ScreenHandle>>>,
+    screens: Screens<D>,
     runtime: tokio::runtime::Handle,
 }
 
@@ -603,7 +613,7 @@ struct Linked {
     sound: Option<Sound>,
 }
 
-impl Task {
+impl<D: VideoDecode> Task<D> {
     async fn run(mut self) {
         if self.endpoint.wire != WIRE {
             let reason = wrong_wire(self.endpoint.wire);
@@ -631,6 +641,7 @@ impl Task {
             tokio::pin!(wait);
             loop {
                 tokio::select! {
+                    biased;
                     woke = &mut wait => {
                         if woke {
                             redial.reset();
@@ -770,19 +781,8 @@ impl Task {
         tokio::pin!(closed);
         loop {
             tokio::select! {
-                down = downs.recv() => {
-                    let Some(down) = down else { return Ended::Dropped };
-                    if let Some(ended) = self.down(linked, down) {
-                        return ended;
-                    }
-                    // Whatever else came meanwhile, before one publish.
-                    while let Ok(down) = downs.try_recv() {
-                        if let Some(ended) = self.down(linked, down) {
-                            return ended;
-                        }
-                    }
-                    self.publish();
-                }
+                biased;
+                _why = &mut closed => return Ended::Dropped,
                 command = self.commands.recv() => {
                     let Some(command) = command else {
                         return Ended::Closed("closed".into());
@@ -798,7 +798,19 @@ impl Task {
                     }
                     self.publish();
                 }
-                _why = &mut closed => return Ended::Dropped,
+                down = downs.recv() => {
+                    let Some(down) = down else { return Ended::Dropped };
+                    if let Some(ended) = self.down(linked, down) {
+                        return ended;
+                    }
+                    // Whatever else came meanwhile, before one publish.
+                    while let Ok(down) = downs.try_recv() {
+                        if let Some(ended) = self.down(linked, down) {
+                            return ended;
+                        }
+                    }
+                    self.publish();
+                }
             }
         }
     }
@@ -828,7 +840,7 @@ impl Task {
                 Effect::Spawn { stream, codec } => {
                     // The one it replaces lets go of its route before the new one takes it.
                     drop(self.screens.lock().remove(&stream));
-                    let handle = screen::spawn_screen::<PlatformDecoder>(
+                    let handle = screen::spawn_screen::<D>(
                         &self.runtime,
                         &linked.router,
                         stream,
