@@ -94,6 +94,8 @@ mod settings_search;
 mod side_chats;
 mod sidebar_pins;
 mod sidebar_sections;
+#[cfg(test)]
+mod sidebar_time_tests;
 pub(crate) mod spaces;
 mod thread_search;
 use side_chats::SideChatTab;
@@ -390,7 +392,7 @@ pub fn apply_keymap(
 ) {
     fn valid_or_default(combo: &str, fallback: &str) -> String {
         let candidate = platform_combo(combo);
-        if Keystroke::parse(&candidate).is_ok() {
+        if crate::keys::parse(&candidate).is_ok() {
             candidate
         } else {
             tracing::warn!(%combo, "unparsable shortcut combo; using default");
@@ -405,7 +407,8 @@ pub fn apply_keymap(
     // rebuilding Onicode's bindings so the file editor keymap remains active.
     gpui_base::init(cx);
     crate::composer::init(cx, composer_send_behavior);
-    cx.bind_keys([KeyBinding::new(
+    cx.bind_keys([crate::keys::binding(
+        cx,
         &valid_or_default(
             &keymap.toggle_dictation,
             ShortcutId::ToggleDictation.default_combo(),
@@ -418,42 +421,50 @@ pub fn apply_keymap(
     // key equivalents and must survive keymap re-application.
     crate::app_menus::bind_keys(cx);
     cx.bind_keys([
-        KeyBinding::new(
+        crate::keys::binding(
+            cx,
             &valid_or_default(&keymap.random_wallpaper, "mod-u"),
             RandomWallpaper,
             None,
         ),
-        KeyBinding::new(
+        crate::keys::binding(
+            cx,
             &valid_or_default(&keymap.save_file, "mod-s"),
             SaveFile,
             None,
         ),
-        KeyBinding::new(
+        crate::keys::binding(
+            cx,
             &valid_or_default(&keymap.toggle_sidebar, "mod-b"),
             ToggleSidebar,
             None,
         ),
-        KeyBinding::new(
+        crate::keys::binding(
+            cx,
             &valid_or_default(&keymap.toggle_changes, "mod-r"),
             ToggleChanges,
             None,
         ),
-        KeyBinding::new(
+        crate::keys::binding(
+            cx,
             &valid_or_default(&keymap.toggle_files, "mod-e"),
             ToggleFiles,
             None,
         ),
-        KeyBinding::new(
+        crate::keys::binding(
+            cx,
             &valid_or_default(&keymap.toggle_terminal, "mod-j"),
             ToggleTerminal,
             None,
         ),
-        KeyBinding::new(
+        crate::keys::binding(
+            cx,
             &valid_or_default(&keymap.new_session, "mod-n"),
             NewSession,
             None,
         ),
-        KeyBinding::new(
+        crate::keys::binding(
+            cx,
             &valid_or_default(
                 &keymap.next_session,
                 crate::settings::ShortcutId::NextSession.default_combo(),
@@ -461,7 +472,8 @@ pub fn apply_keymap(
             NextSession,
             None,
         ),
-        KeyBinding::new(
+        crate::keys::binding(
+            cx,
             &valid_or_default(
                 &keymap.prev_session,
                 crate::settings::ShortcutId::PrevSession.default_combo(),
@@ -469,20 +481,23 @@ pub fn apply_keymap(
             PrevSession,
             None,
         ),
-        KeyBinding::new(
+        crate::keys::binding(
+            cx,
             &valid_or_default(&keymap.archive_session, "mod-shift-a"),
             ArchiveSession,
             None,
         ),
-        KeyBinding::new(
+        crate::keys::binding(
+            cx,
             &valid_or_default(&keymap.new_project, ShortcutId::NewProject.default_combo()),
             AddSpacePalette,
             None,
         ),
         // Fixed: ⌘K summons the command palette.
         // Pressing it again dismisses.
-        KeyBinding::new(&platform_combo("mod-k"), ToggleCommandPalette, None),
-        KeyBinding::new(
+        crate::keys::binding(cx, &platform_combo("mod-k"), ToggleCommandPalette, None),
+        crate::keys::binding(
+            cx,
             &valid_or_default(&keymap.open_model_picker, "mod-/"),
             OpenModelPicker,
             None,
@@ -492,33 +507,41 @@ pub fn apply_keymap(
     // ⌘1..⌘9 open the sidebar's first nine rows. A slot left unbound (an empty
     // combo in a hand-edited file) binds nothing rather than falling back —
     // the user cleared it on purpose.
-    cx.bind_keys((0..JUMP_SLOTS).filter_map(|slot| {
-        let id = ShortcutId::JumpSession(slot);
-        let combo = keymap.get(id);
-        if combo.is_empty() {
-            return None;
-        }
-        Some(KeyBinding::new(
-            &valid_or_default(combo, id.default_combo()),
-            JumpSession(slot),
-            None,
-        ))
-    }));
+    let jump_bindings: Vec<KeyBinding> = (0..JUMP_SLOTS)
+        .filter_map(|slot| {
+            let id = ShortcutId::JumpSession(slot);
+            let combo = keymap.get(id);
+            if combo.is_empty() {
+                return None;
+            }
+            Some(crate::keys::binding(
+                cx,
+                &valid_or_default(combo, id.default_combo()),
+                JumpSession(slot),
+                None,
+            ))
+        })
+        .collect();
+    cx.bind_keys(jump_bindings);
     // Context-free bindings (the jumps above) match at the full focus depth,
     // so a palette binding must too: one for the palette's focused search
     // input, one for the card itself. Bound after the jumps, they win the tie.
     let palette_input = format!("{} > PaletteSearch", command_palette::KEY_CONTEXT);
-    cx.bind_keys((0..command_palette::Tab::ALL.len()).flat_map(|ix| {
-        let combo = platform_combo(&format!("mod-{}", ix + 1));
-        [
-            KeyBinding::new(&combo, SelectPaletteTab(ix), Some(&palette_input)),
-            KeyBinding::new(
-                &combo,
-                SelectPaletteTab(ix),
-                Some(command_palette::KEY_CONTEXT),
-            ),
-        ]
-    }));
+    let palette_bindings: Vec<KeyBinding> = (0..command_palette::Tab::ALL.len())
+        .flat_map(|ix| {
+            let combo = platform_combo(&format!("mod-{}", ix + 1));
+            [
+                crate::keys::binding(cx, &combo, SelectPaletteTab(ix), Some(&palette_input)),
+                crate::keys::binding(
+                    cx,
+                    &combo,
+                    SelectPaletteTab(ix),
+                    Some(command_palette::KEY_CONTEXT),
+                ),
+            ]
+        })
+        .collect();
+    cx.bind_keys(palette_bindings);
     localize_key_bindings(cx, &equivalents);
     crate::settings::set_bound_key_equivalents(equivalents);
 }
@@ -537,7 +560,7 @@ fn localize_key_bindings(cx: &mut App, equivalents: &crate::settings::KeyEquival
         .key_bindings()
         .borrow()
         .bindings()
-        .map(|binding| localize_binding(binding, equivalents))
+        .map(|binding| localize_binding(binding, equivalents, cx))
         .collect();
     cx.clear_key_bindings();
     cx.bind_keys(bindings);
@@ -546,6 +569,7 @@ fn localize_key_bindings(cx: &mut App, equivalents: &crate::settings::KeyEquival
 fn localize_binding(
     binding: &KeyBinding,
     equivalents: &crate::settings::KeyEquivalents,
+    cx: &App,
 ) -> KeyBinding {
     let mut moved = false;
     let source = binding
@@ -559,7 +583,7 @@ fn localize_binding(
                 key: key.into_owned(),
                 ..keystroke.clone()
             }
-            .unparse()
+            .unparse(crate::keys::HOST_OS)
         })
         .collect::<Vec<_>>()
         .join(" ");
@@ -572,7 +596,7 @@ fn localize_binding(
         binding.predicate(),
         false,
         binding.action_input(),
-        &gpui::DummyKeyboardMapper,
+        cx,
     ) {
         Ok(mut localized) => {
             if let Some(meta) = binding.meta() {
@@ -2074,6 +2098,8 @@ pub struct Shell {
     composer: Entity<Composer>,
     /// The window's voice orchestrator: independent of the selected chat.
     voice: Entity<crate::voice::VoiceController>,
+    /// The window's toast stack, its own view so toasts never rebuild the shell.
+    toaster: Entity<crate::toast::Toaster>,
     /// Sidebar footer orb (session live) and the full-window stage's orb.
     voice_footer_orb: Entity<crate::orb::Orb>,
     voice_stage_orb: Entity<crate::orb::Orb>,
@@ -2477,6 +2503,10 @@ pub struct Shell {
     /// Set by [`Shell::eval_tween`] when any tween is mid-flight this frame;
     /// render schedules the next animation frame off it.
     motion_active: std::cell::Cell<bool>,
+    /// Wakes the sidebar when a row's "2m" label next turns over.
+    sidebar_ago_tick: crate::label_clock::LabelTick,
+    /// Wakes the side-chat and subagent lanes when a row's age turns over.
+    lanes_ago_tick: crate::label_clock::LabelTick,
     /// All pane masks and chrome evaluate animation at the same frame time.
     /// A slow render must not give the native page and its titlebar different widths.
     render_time: Option<std::time::Instant>,
@@ -2522,6 +2552,7 @@ impl Shell {
         transcript.update(cx, |transcript, _| transcript.retain_for_route_exit());
         let composer = cx.new(|cx| Composer::new(state.clone(), cx));
         let voice = cx.new(|_| crate::voice::VoiceController::default());
+        let toaster = cx.new(|_| crate::toast::Toaster);
         let voice_footer_orb = cx.new(|_| {
             crate::orb::Orb::new()
                 .size(crate::orb::OrbSize::Inline)
@@ -2702,6 +2733,7 @@ impl Shell {
             transcript,
             composer,
             voice,
+            toaster,
             voice_footer_orb,
             voice_stage_orb,
             voice_composer_orb,
@@ -2922,6 +2954,8 @@ impl Shell {
             terminal_drag_anchor: None,
             reduced_motion: false,
             motion_active: std::cell::Cell::new(false),
+            sidebar_ago_tick: Default::default(),
+            lanes_ago_tick: Default::default(),
             render_time: None,
             #[cfg(test)]
             test_time: None,
@@ -4185,9 +4219,6 @@ impl Shell {
                     if this.panel_key(cx) == owner {
                         let annotation = (**annotation).clone();
                         let last = *last;
-                        if last && let Some(browser) = this.browsers.get(&id) {
-                            browser.read(cx).release_keyboard();
-                        }
                         let number = this.composer.update(cx, |composer, cx| {
                             composer.add_browser_annotation(annotation, last, window, cx)
                         });
@@ -5577,7 +5608,14 @@ impl Shell {
             .child(
                 gpui::canvas(
                     move |bounds, _, cx| {
-                        let _ = entity.update(cx, |this, _| this.chat_copy_bounds = Some(bounds));
+                        // Compare first: a write while drawing rebuilds the shell.
+                        if entity
+                            .read_with(cx, |this, _| this.chat_copy_bounds != Some(bounds))
+                            .unwrap_or(false)
+                        {
+                            let _ =
+                                entity.update(cx, |this, _| this.chat_copy_bounds = Some(bounds));
+                        }
                     },
                     |_, _, _, _| {},
                 )
@@ -6421,7 +6459,13 @@ impl Shell {
     /// pointer that has not moved since the last archive-pill click. Releasing
     /// matters as much as adopting: an archived row keeps its hover key when it
     /// lands in the Archived section, and would otherwise stay lit there.
-    fn sync_chat_row_hover(&mut self, row_id: String, hovered: bool, cx: &mut Context<Self>) {
+    fn sync_chat_row_hover(
+        &mut self,
+        row_id: String,
+        hovered: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let current = self.chat_status_hover.as_deref() == Some(row_id.as_str());
         if !self.chat_hover_resync || current == hovered {
             return;
@@ -6434,6 +6478,7 @@ impl Shell {
             self.chat_status_hover = None;
         }
         motion::set_hover(&format!("{row_id}-hover"), hovered, self.reduced_motion);
+        motion::pump_fades(window);
         cx.notify();
     }
 
@@ -8121,7 +8166,8 @@ impl Shell {
                         "toggle-sidebar",
                         !self.settings.sidebar_collapsed,
                         motion::GLYPH_STATE,
-                        self.reduced_motion,
+                        cx.entity_id(),
+                        cx,
                     ),
                     false,
                     16.0,
@@ -8602,7 +8648,7 @@ impl Shell {
                     }
                     cx.stop_propagation();
                 } else if key == "f"
-                    && modifiers.secondary()
+                    && modifiers.secondary(cx)
                     && modifiers.number_of_modifiers() == 1
                 {
                     // A dialog over the page keeps the keyboard.
@@ -9096,6 +9142,10 @@ impl Shell {
                     .text_size(crate::typography::ui_rems(10.0))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .children(subagent_pill("idle"))
+                    .debug_selector({
+                        let selector = format!("{row_id}-time-{time_ago}");
+                        move || selector
+                    })
                     .child(time_ago.clone())
                     .into_any_element(),
             }
@@ -9263,7 +9313,7 @@ impl Shell {
                     MouseButton::Left,
                     cx.listener(|this, _, _, cx| this.dismiss_session_card(cx)),
                 )
-                .on_scroll_wheel(cx.listener(|this, _, _, cx| this.dismiss_session_card(cx)))
+                .on_scroll(cx.listener(|this, _, _, cx| this.dismiss_session_card(cx)))
                 .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
                     // The palette's copy of the row only opens; the sidebar's
                     // double-click edits the title in place.
@@ -9337,10 +9387,10 @@ impl Shell {
                             if hovered == corner_hovered {
                                 return;
                             }
-                            window.defer(cx, move |_, cx| {
+                            window.defer(cx, move |window, cx| {
                                 shell
                                     .update(cx, |this, cx| {
-                                        this.sync_chat_row_hover(row_id, hovered, cx)
+                                        this.sync_chat_row_hover(row_id, hovered, window, cx)
                                     })
                                     .ok();
                             });
@@ -11623,7 +11673,7 @@ impl Shell {
                     }
                     this.finish_pane_resize(kind);
                     motion::set_hover(&release_key, false, this.reduced_motion);
-                    window.refresh();
+                    motion::pump_fades(window);
                 }),
             )
             .on_mouse_up_out(
@@ -11631,7 +11681,7 @@ impl Shell {
                 cx.listener(move |this, _, window, _| {
                     this.finish_pane_resize(kind);
                     motion::set_hover(&release_out_key, false, this.reduced_motion);
-                    window.refresh();
+                    motion::pump_fades(window);
                 }),
             )
     }
@@ -11714,16 +11764,25 @@ impl Shell {
         if dock_frame.active {
             self.motion_active.set(true);
         }
-        self.composer
-            .update(cx, |composer, cx| composer.set_dock_frame(dock_frame, cx));
+        // Updates while drawing rebuild the child, so ask before writing.
+        if self.composer.read(cx).dock_frame_differs(dock_frame) {
+            self.composer
+                .update(cx, |composer, cx| composer.set_dock_frame(dock_frame, cx));
+        }
         // The session card: docked, the transcript holds its room free on
         // the right and the composer follows the column left by half of it;
         // over a column too tight for that, it floats once opened.
         let (session_docked, session_reveal, session_reserve) =
             self.session_info_frame(has_selection, cx);
-        self.transcript.update(cx, |transcript, cx| {
-            transcript.set_right_reserve(session_reserve, cx)
-        });
+        if self
+            .transcript
+            .read(cx)
+            .right_reserve_differs(session_reserve)
+        {
+            self.transcript.update(cx, |transcript, cx| {
+                transcript.set_right_reserve(session_reserve, cx)
+            });
+        }
         // Panel open/close glides the composer width; a window resize or a
         // seam drag is direct manipulation, so the width tracks the pointer.
         let direct_width =
@@ -11737,9 +11796,15 @@ impl Shell {
             direct_width,
             frame_time,
         );
-        self.composer.update(cx, |composer, cx| {
-            composer.set_available_width(composer_width, cx)
-        });
+        if self
+            .composer
+            .read(cx)
+            .available_width_differs(composer_width)
+        {
+            self.composer.update(cx, |composer, cx| {
+                composer.set_available_width(composer_width, cx)
+            });
+        }
         let terminal_geometry =
             std::rc::Rc::new(std::cell::Cell::new(crate::terminal::dock::Geometry::new(
                 self.eval_tween(self.terminal_tween, self.terminal_target(cx)),
@@ -12250,7 +12315,7 @@ impl Shell {
                     }
                     this.finish_pane_resize(PaneResizeKind::Terminal);
                     motion::set_hover(handle_key, false, this.reduced_motion);
-                    window.refresh();
+                    motion::pump_fades(window);
                 }),
             )
             .on_mouse_up_out(
@@ -12258,7 +12323,7 @@ impl Shell {
                 cx.listener(|this, _, window, _| {
                     this.finish_pane_resize(PaneResizeKind::Terminal);
                     motion::set_hover(handle_key, false, this.reduced_motion);
-                    window.refresh();
+                    motion::pump_fades(window);
                 }),
             );
 
@@ -13773,39 +13838,15 @@ impl Render for Shell {
             // A pane the fit evicts keeps painting while it slides out.
             && (self.horizontal_fit().right || self.fit_exit_width(1).is_some())
             && (self.right_pane_open(cx) || self.tween_active(self.right_tween));
-        // Native clipping follows the animated GPUI mask. Drags only transfer
-        // pointer ownership; the browser continues rendering and reflowing.
+        // Drags only transfer pointer ownership; the page keeps rendering and reflowing.
         let browser_dragging = cx.has_active_drag();
-        #[cfg(target_os = "macos")]
-        let browser_resize_inset = if self.right_pane_open(cx)
-            && !self.right_pane_expanded
-            && !self.tween_active(self.right_tween)
-        {
-            // The browser starts inside the panel's one-point left border.
-            px(PANE_RESIZE_HITBOX_HALF_WIDTH - 1.0)
-        } else {
-            px(0.0)
-        };
-        #[cfg(target_os = "macos")]
-        let browser_overlay_width = px(if self.files_visible_width(cx) > 0.0 {
-            self.files_visible_width(cx) + PANE_RESIZE_HITBOX_HALF_WIDTH
-        } else {
-            0.0
-        });
         let selected_surface = self.resolved_right_active(cx);
         for (id, browser) in &self.browsers {
             let presentation = crate::browser::model::presentation(
                 browser_active && selected_surface == RightSurface::Browser(*id),
                 browser_dragging,
             );
-            browser.update(cx, |browser, cx| {
-                #[cfg(target_os = "macos")]
-                browser.set_resize_inset(browser_resize_inset, cx);
-                #[cfg(target_os = "macos")]
-                browser.set_right_occlusion(browser_overlay_width, cx);
-                browser.set_shortcuts(&self.settings.keymap);
-                browser.set_presentation(presentation, cx);
-            });
+            browser.update(cx, |browser, cx| browser.set_presentation(presentation, cx));
         }
 
         // Fullscreen hides the macOS traffic lights — reflow the control
@@ -14514,13 +14555,13 @@ impl Render for Shell {
             root
         };
         // Toasts float over every phase and route.
-        let root = root.children(crate::toast::render_toaster(window, cx));
+        let root = root.child(self.toaster.clone());
 
         // A manually-driven tween is mid-flight: keep frames coming (the same
-        // scheduling `with_animation` would have requested). Hover color fades
-        // ride the same clock; their once-per-frame tick lives here (this is
-        // the window's root render — it runs exactly once per frame).
-        if self.motion_active.get() | motion::hover_fades_active() | motion::state_morphs_active() {
+        // scheduling `with_animation` would have requested). Hover fades drive
+        // their own frames (`motion::pump_fades`), glyph morphs ride the pulse
+        // clock: under retention this render does not run every frame.
+        if self.motion_active.get() {
             window.request_animation_frame();
         }
 
@@ -14815,7 +14856,7 @@ mod tests {
         for id in crate::settings::ShortcutId::ALL {
             let combo = platform_combo(id.default_combo());
             assert!(
-                Keystroke::parse(&combo).is_ok(),
+                crate::keys::parse(&combo).is_ok(),
                 "{} default {combo:?} does not parse",
                 id.label()
             );
@@ -16589,7 +16630,7 @@ mod exit_regressions {
             // Render through the window's arena, as production does. Calling
             // Shell::render directly allocates modal children in the fallback
             // arena, which does not belong to this test App's lifecycle.
-            cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear())
+            cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
                 .unwrap();
             window
                 .update(cx, |shell, _, cx| {
@@ -16782,7 +16823,7 @@ mod exit_regressions {
         });
         let shell = host.read_with(cx, |host, _| host.0.clone());
         for expect_open in [true, false] {
-            cx.update(|window, cx| window.draw(cx).clear());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
             assert!(cx.debug_bounds("user-menu-label").is_some());
             let trigger = cx.debug_bounds("settings-trigger").unwrap().center();
             cx.simulate_click(trigger, gpui::Modifiers::default());
@@ -16843,7 +16884,7 @@ mod exit_regressions {
         shell.update(cx, |shell, cx| {
             shell.open_settings(SettingsSection::General, cx)
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let row = cx.debug_bounds("sidebar-footer-row").unwrap();
         let entry = cx
             .debug_bounds("open-pull-requests")
@@ -16932,9 +16973,9 @@ mod exit_regressions {
             open_pull_request(cx, number);
         }
         let redraw = |cx: &mut gpui::VisualTestContext| {
-            cx.update(|window, cx| window.draw(cx).clear());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
             cx.run_until_parked();
-            cx.update(|window, cx| window.draw(cx).clear());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
         };
         let pane = |cx: &mut gpui::VisualTestContext| {
             shell.read_with(cx, |shell, _| {
@@ -17037,7 +17078,7 @@ mod exit_regressions {
         cx.run_until_parked();
         open_pull_request(cx, 1);
         open_pull_request(cx, 2);
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
 
         // Focus a descendant that is unmounted when its PR tab is hidden,
         // rather than the pane's stable focus handle used by the other test.
@@ -17056,7 +17097,7 @@ mod exit_regressions {
         for (key, expected) in [("ctrl-tab", 0), ("ctrl-tab", 1), ("ctrl-shift-tab", 0)] {
             cx.simulate_keystrokes(key);
             cx.run_until_parked();
-            cx.update(|window, cx| window.draw(cx).clear());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
             cx.update(|window, cx| {
                 let shell = shell.read(cx);
                 assert!(matches!(shell.route, Route::PullRequests));
@@ -17077,7 +17118,7 @@ mod exit_regressions {
         );
         shell.update(cx, |shell, cx| shell.navigate_back(cx));
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.update(|window, cx| {
             let shell = shell.read(cx);
             assert_eq!(shell.pull_request_pane.active_index(), Some(1));
@@ -17100,7 +17141,7 @@ mod exit_regressions {
         cx.run_until_parked();
         open_pull_request(cx, 1);
         open_pull_request(cx, 2);
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let from = cx.debug_bounds("pull-request-tab-0").unwrap().center();
         let to = cx.debug_bounds("pull-request-tab-1").unwrap().center();
         cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::default());
@@ -17226,7 +17267,7 @@ mod exit_regressions {
             assert_eq!(shell.pull_request_pane.active_index(), Some(0));
             assert!(shell.pull_request_pane_open());
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let pane = cx.debug_bounds("pull-request-pane").unwrap();
         let board = cx.debug_bounds("pull-requests-column").unwrap();
         assert!(
@@ -17238,7 +17279,7 @@ mod exit_regressions {
         let click = |cx: &mut gpui::VisualTestContext, selector: &'static str| {
             let bounds = cx.debug_bounds(selector).unwrap();
             cx.simulate_click(bounds.center(), gpui::Modifiers::default());
-            cx.update(|window, cx| window.draw(cx).clear());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
         };
         click(cx, "expand-pull-request-pane");
         let covering = cx.debug_bounds("pull-request-pane").unwrap();
@@ -17265,7 +17306,7 @@ mod exit_regressions {
             assert!(shell.pull_request_pane.tabs.is_empty());
             assert!(!shell.pull_request_pane_open());
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         assert!(cx.debug_bounds("pull-request-pane").is_none());
 
         // The pane's tabs and the persistent controls share the titlebar even
@@ -17293,7 +17334,7 @@ mod exit_regressions {
                         if window.is_fullscreen() != fullscreen {
                             window.toggle_fullscreen();
                         }
-                        window.draw(cx).clear();
+                        window.draw(cx).clear(cx);
                     });
                     cx.run_until_parked();
                     let new_session = cx.debug_bounds("titlebar-new-session").unwrap();
@@ -17482,7 +17523,7 @@ mod exit_regressions {
                 handle
             };
             cx.update_window(terminal_window.into(), |_, window, cx| {
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
                 assert!(
                     panel.read(cx).focus_handle().is_focused(window),
                     "embedded: {embedded}"
@@ -17490,7 +17531,7 @@ mod exit_regressions {
                 // Ordinary redraws must not steal focus from another control.
                 let other_input = cx.focus_handle();
                 window.focus(&other_input, cx);
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
                 assert!(other_input.is_focused(window));
             })
             .unwrap();
@@ -17558,7 +17599,7 @@ mod exit_regressions {
                 })
                 .unwrap();
             cx.update_window(composer_window.into(), |composer, window, cx| {
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
                 // Closing a floating settings dialog restores its origin in
                 // the shell; it must not request focus in the composer.
                 assert_eq!(
@@ -17571,8 +17612,8 @@ mod exit_regressions {
                     "{destination}"
                 );
                 // Subsequent renders after a click-away must not reclaim it.
-                window.blur();
-                window.draw(cx).clear();
+                window.blur(cx);
+                window.draw(cx).clear(cx);
                 assert!(window.focused(cx).is_none(), "{destination}");
             })
             .unwrap();
@@ -18742,7 +18783,7 @@ impl Shell {
 
     pub fn fixture_blur_browser(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.route = Route::Settings(SettingsSection::Devices);
-        window.blur();
+        window.blur(cx);
         cx.notify();
     }
 
@@ -18822,7 +18863,7 @@ mod right_tab_mouse_regressions {
             }
         });
         let shell = host.read_with(cx, |host, _| host.shell.clone());
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         (shell, cx)
     }
 
@@ -18928,15 +18969,16 @@ mod right_tab_mouse_regressions {
                 shell.add_subagent_surface("parent".into(), id.into(), id.into(), false, cx);
             }
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let start = cx.debug_bounds("right-surface-tab-0").unwrap().center();
         cx.update(|window, cx| {
             window.dispatch_event(
-                gpui::PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+                gpui::PlatformInput::Scroll(gpui::ScrollEvent {
                     position: start,
                     delta: gpui::ScrollDelta::Pixels(gpui::point(px(-100.), px(0.))),
                     modifiers: gpui::Modifiers::default(),
                     touch_phase: gpui::TouchPhase::Moved,
+                    ..Default::default()
                 }),
                 cx,
             );
@@ -19041,7 +19083,7 @@ mod shortcut_focus_regressions {
                         if event.position.x < px(200.0) {
                             window.focus(&this.editor, cx);
                         } else {
-                            window.blur();
+                            window.blur(cx);
                         }
                         cx.notify();
                     }),
@@ -19063,11 +19105,11 @@ mod shortcut_focus_regressions {
             jumps: 0,
         });
         cx.run_until_parked();
-        cx.update_window(host.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(host.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         host.update(cx, |host, window, cx| {
             window.focus(&host.editor, cx);
-            window.blur();
+            window.blur(cx);
             restore_mounted_focus(&host.root, &host.editor, &host.unfocused, window, cx);
             assert!(host.unfocused.is_focused(window));
             // Subsequent renders must keep the neutral shortcut focus too.
@@ -19080,7 +19122,8 @@ mod shortcut_focus_regressions {
     #[gpui::test]
     fn shortcuts_recover_from_retained_editor_focus(cx: &mut TestAppContext) {
         cx.update(|cx| {
-            cx.bind_keys([KeyBinding::new(
+            cx.bind_keys([crate::keys::binding(
+                cx,
                 &platform_combo("mod-2"),
                 JumpSession(1),
                 None,
@@ -19102,7 +19145,7 @@ mod shortcut_focus_regressions {
             })
             .unwrap();
             cx.run_until_parked();
-            cx.update_window(host.into(), |_, window, cx| window.draw(cx).clear())
+            cx.update_window(host.into(), |_, window, cx| window.draw(cx).clear(cx))
                 .unwrap();
             host.update(cx, |host, window, cx| {
                 restore_mounted_focus(&host.root, &host.editor, &host.unfocused, window, cx);
@@ -19114,7 +19157,7 @@ mod shortcut_focus_regressions {
         }
         host.update(cx, |host, window, cx| {
             assert_eq!(host.jumps, 4);
-            window.blur();
+            window.blur(cx);
             restore_mounted_focus(&host.root, &host.editor, &host.unfocused, window, cx);
             assert!(host.unfocused.is_focused(window));
         })
@@ -19124,7 +19167,8 @@ mod shortcut_focus_regressions {
     #[gpui::test]
     fn shortcuts_work_after_mouse_focus_changes(cx: &mut TestAppContext) {
         cx.update(|cx| {
-            cx.bind_keys([KeyBinding::new(
+            cx.bind_keys([crate::keys::binding(
+                cx,
                 &platform_combo("mod-2"),
                 JumpSession(1),
                 None,
@@ -19142,7 +19186,7 @@ mod shortcut_focus_regressions {
             .enumerate()
         {
             cx.update_window(host.into(), |_, window, cx| {
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
                 window.dispatch_event(
                     gpui::PlatformInput::MouseDown(MouseDownEvent {
                         position: gpui::point(px(x), px(20.0)),
@@ -19277,7 +19321,7 @@ mod settings_modal_regressions {
             last: cx.focus_handle().tab_stop(true),
             end: cx.focus_handle(),
         });
-        cx.update_window(host.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(host.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         host.update(cx, |host, window, cx| {
             window.focus(&host.start, cx);
@@ -19579,7 +19623,7 @@ mod settings_modal_regressions {
                         let keys = binding
                             .keystrokes()
                             .iter()
-                            .map(|keystroke| keystroke.inner().unparse())
+                            .map(|keystroke| keystroke.inner().unparse(crate::keys::HOST_OS))
                             .collect::<Vec<_>>()
                             .join(" ");
                         (binding.action().name(), keys)
@@ -19713,7 +19757,7 @@ mod settings_modal_regressions {
             shell.splash = SplashPhase::Gone;
             shell.reduced_motion = true;
             shell.settings.sidebar_organization = SidebarOrganization::InOneList;
-            shell.state.update(cx, |state, _| {
+            shell.state.update(cx, |state, cx| {
                 state.workspace_scope = Some(WorkspaceScope::Local);
                 state.local_device_id = Some("local".into());
                 state.chats = ["older", "newer"]
@@ -19729,11 +19773,12 @@ mod settings_modal_regressions {
                     })
                     .collect();
                 state.selected_chat = Some("newer".into());
+                cx.notify();
             });
             shell.active_chat = "newer".into();
         });
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let row = cx.debug_bounds("chat-older").expect("sidebar row");
         let from = row.center();
         cx.simulate_mouse_down(from, MouseButton::Left, gpui::Modifiers::default());
@@ -19745,7 +19790,7 @@ mod settings_modal_regressions {
                 Some(MouseButton::Left),
                 gpui::Modifiers::default(),
             );
-            cx.update(|window, cx| window.draw(cx).clear());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
         }
         // The sidebar is a cached view, whose contents tests can't query by
         // selector; the lifted row's own window position is the check.
@@ -19766,7 +19811,7 @@ mod settings_modal_regressions {
         let drop = gpui::point(from.x + px(724.0), from.y + px(40.0));
         cx.simulate_mouse_up(drop, MouseButton::Left, gpui::Modifiers::default());
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         shell.read_with(cx, |shell, cx| {
             let text = shell.composer.read(cx).input.read(cx).text().to_owned();
             assert!(
@@ -19788,7 +19833,7 @@ mod settings_modal_regressions {
             shell.open_settings(SettingsSection::Voice, cx);
         });
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         assert!(cx.debug_bounds("voice-stage").is_none());
 
         shell.update(cx, |shell, cx| {
@@ -19797,7 +19842,7 @@ mod settings_modal_regressions {
             });
             shell.set_voice_stage_open(true, cx);
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let stage = cx
             .debug_bounds("voice-stage")
             .expect("stage renders in Settings");
@@ -19841,7 +19886,7 @@ mod settings_modal_regressions {
             shell.open_settings(SettingsSection::Cloud, cx)
         });
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let first = shell.read_with(cx, |shell, _| {
             assert_eq!(shell.route, Route::Settings(SettingsSection::Cloud));
             shell.cloud_page.clone().expect("Cloud page mounts")
@@ -19850,13 +19895,13 @@ mod settings_modal_regressions {
             shell.open_settings(SettingsSection::Devices, cx)
         });
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         shell.read_with(cx, |shell, _| assert!(shell.cloud_page.is_none()));
         shell.update(cx, |shell, cx| {
             shell.open_settings(SettingsSection::Cloud, cx)
         });
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let second = shell.read_with(cx, |shell, _| {
             let second = shell.cloud_page.clone().expect("Cloud page remounts");
             assert_ne!(first.entity_id(), second.entity_id());
@@ -19876,7 +19921,7 @@ mod settings_modal_regressions {
         drop((first, second));
         shell.update(cx, |shell, cx| shell.close_settings(cx));
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         shell.read_with(cx, |shell, _| assert!(shell.cloud_page.is_none()));
     }
 
@@ -19891,7 +19936,7 @@ mod settings_modal_regressions {
             shell.open_settings(SettingsSection::Devices, cx)
         });
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
 
         // A dialog that does not hold focus (the rename input was never
         // clicked) still closes before Settings does.
@@ -19900,7 +19945,7 @@ mod settings_modal_regressions {
             page.open_rename("device-1".into(), "Studio".into(), cx)
         });
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.simulate_keystrokes("escape");
         assert!(!devices.update(cx, |page, cx| page.dismiss_on_escape(cx)));
         shell.read_with(cx, |shell, _| {
@@ -19913,7 +19958,7 @@ mod settings_modal_regressions {
             cx.notify();
         });
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.simulate_keystrokes("escape");
         shell.read_with(cx, |shell, _| {
             assert!(!shell.user_menu.is_open());
@@ -19924,7 +19969,7 @@ mod settings_modal_regressions {
             shell.user_menu = popover::Popup::default();
             cx.notify();
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
 
         // With nothing left open, Escape leaves Settings.
         cx.simulate_keystrokes("escape");

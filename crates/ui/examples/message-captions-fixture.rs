@@ -20,7 +20,7 @@ async fn pause(cx: &mut gpui::AsyncApp, ms: u64) {
 fn capture(window: gpui::AnyWindowHandle, cx: &mut gpui::AsyncApp, dir: &Path, name: &str) {
     window
         .update(cx, |_, w, cx| {
-            w.draw(cx).clear();
+            w.draw(cx).clear(cx);
             match w.render_to_image() {
                 Ok(image) => image.save(dir.join(format!("{name}.png"))).unwrap(),
                 Err(error) => eprintln!("{name}: capture failed: {error:#}"),

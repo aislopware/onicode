@@ -475,7 +475,7 @@ impl Shell {
                 // The transcript extends under this band (it fades beneath
                 // the tab strip); a wheel over the tabs must scroll the
                 // strip, never the surface behind it.
-                .on_scroll_wheel(|_, _, cx| cx.stop_propagation());
+                .on_scroll(|_, _, cx| cx.stop_propagation());
             if right_pane_visible {
                 // The right pane's SURFACE TABS (t3 RightPanelTabs) — the diff
                 // options that used to live here moved into the pane's own
@@ -587,7 +587,8 @@ impl Shell {
                                         "toggle-changes",
                                         self.right_pane_open(cx) && fit.right,
                                         motion::GLYPH_STATE,
-                                        self.reduced_motion,
+                                        cx.entity_id(),
+                                        cx,
                                     ),
                                     true,
                                     16.0,

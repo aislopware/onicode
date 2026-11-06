@@ -83,6 +83,7 @@ onicode-visual-gpu = { path = "crates/visual-gpu" }
 # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
 onicode-net = { path = "crates/net" }
 onicode-net-sim = { path = "crates/net-sim" }
+onicode-peer = { path = "crates/peer" }
 onicode-tailnet = { path = "crates/tailnet" }
 # n0's QUIC, held to 1.4.x: noq-proto and noq-udp are the vendored, patched copies
 # (vendor/*/SLOPTY.md), and the patches are written against 1.4.0.
@@ -99,49 +100,22 @@ http-body-util = "0.1.5"
 
 # CRDT
 loro = "1.17"
-# Wire protocol for the SessionRoom DO rooms — official Rust twin of the npm
-# `loro-protocol` package the TS edge speaks (same monorepo, byte-identical
-# frames, cross-checked by its js_snapshots tests).
 
-# gpui — zeronsh/zui, extracted from wingleeio/zed e2ddcc6 with identical
-# crate sources; adds bounded blur passes and shared Gaussian weights.
-# Removes GPL tracing crates and composites deferred GPUI content above native macOS views.
-# Preserved fork history: upstream f14fea9 + commits on
-# `comet/edge-fade-horizontal` (tip of `comet/line-wrap-closing-punctuation`
-# + 5d1f83d horizontal per-pixel EdgeFade for quads/images; rebase when bumping the
-# upstream rev): a6bf17c fixes BOTH wrap-rule copies (LineWrapper +
-# line_layout's shaped-text duplicate); 14baea0 adds the EdgeFade primitive
-# (Window::with_edge_fade — per-primitive scroll-edge fades for the glass
-# sidebar); a6c1ad5 adds BackdropBlur + horizontal EdgeFade + glass fixes;
-# 9b672fa bounds renderer GPU memory (region-sized backdrop blur scratch,
-# idle release of blur/path intermediates, instance pool shrink,
-# ONICODE_GPU_STATS=1 diagnostics); b687328 adds ImageSource::evict (frees
-# sprite-atlas tiles — remove_asset alone leaked them, see
-# attachments::flush_evicted); ac135eb adds device memory to the stats line;
-# f596cde fixes destination alpha on transparent windows (Porter-Duff OVER,
-# not additive); 53518c0 merges the edge-fade line: per-edge fade bands +
-# per-pixel EdgeFade for quads/images (true fade-into-glass), and
-# object-fit Cover cropping via atlas-tile UVs so image corner radii hold;
-# 8a8954c switches the macOS blurred view to UnderWindowBackground (macOS 26
-# stopped vending CABackdropLayer for Selection — window blur went dead);
-# b68970e rasterizes BackdropBlur in the wgpu renderer (frosted floats on
-# Linux — the Metal path's snapshot/blur/composite, ported).
-# Paint-time rounded image masks (#9), bounded Windows backdrop blur and
-# translucent compositing, plus blur-aware scene batching (#10).
-# Per-pixel rounded clipping (`Window::with_rounded_clip`, 361ff20).
-# Drags need the button held and 4px of travel (0dc69aa).
-# Atlas tiles updated in place from pixels or imported dma-bufs, display-rate
-# frame callbacks in inactive windows, and Wayland frames that no longer stop
-# after a forced draw (b564a34, zeronsh/zui#18).
-gpui = { git = "https://github.com/zeronsh/zui", rev = "b564a34413bb7ef1da04121c4a287758f94993d9" }
-gpui_platform = { git = "https://github.com/zeronsh/zui", rev = "b564a34413bb7ef1da04121c4a287758f94993d9", features = [
-    "wayland",
-    "x11",
+# GPUI is aislopware/gpui-fast (retained mode, docs/onicode/decisions/rendering.md), pinned by rev at
+# its onicode/integration branch; every gpui-pre* and gpui-fast* crate is patched to the same rev below,
+# so the graph holds exactly one GPUI. Components are aislopware/gpui-kit's base crate at its
+# onicode/integration branch (upstream longbridge/gpui-kit plus the caret and gutter fixes).
+gpui = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
+gpui_platform = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185", features = [
     "font-kit",
     "runtime_shaders",
 ] }
-gpui_tokio = { git = "https://github.com/zeronsh/zui", rev = "b564a34413bb7ef1da04121c4a287758f94993d9" }
-gpui-base = { git = "https://github.com/zeronsh/gpui-component", rev = "59f89243cea79dd70eb7a619b3930c374ef6958a" }
+gpui_tokio = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
+# Tests build a text system and executor without a platform, which only the main thread may create.
+gpui_apple = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185", features = [
+    "font-kit",
+] }
+gpui-base = { git = "https://github.com/aislopware/gpui-kit.git", rev = "5e93a78759d4c416d9d5fa7b4ef9fe240952b1de" }
 
 # diffs
 similar = "2"
@@ -263,6 +237,18 @@ askama = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7
 askama_derive = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
 askama_macros = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
 askama_parser = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
+
+# gpui-kit names GPUI by the gpui-pre snapshots and GPUI Fast's crates.io release; the gpui-fast fork's
+# compat crates stand in for both at this one rev.
+gpui-pre = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
+gpui-pre-platform = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
+gpui-pre-web = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
+gpui-pre-macros = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
+gpui-pre-reqwest-client = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
+gpui-pre-sum-tree = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
+gpui-fast = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
+gpui-fast-platform = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
+gpui-fast-web = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
 
 # The QUIC stack under onicode-net: n0's noq-proto and noq-udp with slopty's and axolotty's
 # patches (vendor/noq-proto/SLOPTY.md, vendor/noq-udp/SLOPTY.md list each).

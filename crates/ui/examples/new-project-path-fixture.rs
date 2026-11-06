@@ -485,7 +485,7 @@ impl Run {
                     // Keep the overlay's fades moving between input events.
                     stage.update(cx, |_, cx| cx.notify());
                     if let Ok(Ok(image)) = window.update(cx, |_, window, cx| {
-                        window.draw(cx).clear();
+                        window.draw(cx).clear(cx);
                         window.render_to_image()
                     }) {
                         film.offer(image);
@@ -661,7 +661,7 @@ impl Run {
 
     fn capture(&self, cx: &mut AsyncApp) -> anyhow::Result<image::RgbaImage> {
         self.window.update(cx, |_, window, cx| {
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
             window.render_to_image()
         })?
     }
@@ -718,7 +718,7 @@ impl Run {
 
     fn press(&self, cx: &mut AsyncApp, keystroke: &str, shown: &'static str) -> anyhow::Result<()> {
         self.show_keys(cx, shown);
-        let keystroke = gpui::Keystroke::parse(keystroke)?;
+        let keystroke = onicode_ui::keys::parse(keystroke)?;
         self.window.update(cx, |_, window, cx| {
             window.dispatch_event(
                 PlatformInput::KeyDown(gpui::KeyDownEvent {

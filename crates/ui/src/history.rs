@@ -1359,7 +1359,9 @@ pub struct GitHistory {
     fetch_for: Option<String>,
     fetch_error: Option<SharedString>,
     fetch_task: Option<Task<()>>,
-    _observe: Subscription,
+    /// The state, and the column preferences every history view shares:
+    /// a change made in one window redraws the views in the others.
+    _observe: [Subscription; 2],
 }
 
 pub enum GitHistoryEvent {
@@ -1939,6 +1941,7 @@ impl GitHistory {
                 this.ensure_loaded(cx);
             }
         });
+        let columns = cx.observe_global::<HistoryColumnPreferences>(|_, cx| cx.notify());
         Self {
             state,
             started: false,
@@ -1992,7 +1995,7 @@ impl GitHistory {
             fetch_for: None,
             fetch_error: None,
             fetch_task: None,
-            _observe: observe,
+            _observe: [observe, columns],
         }
     }
 
@@ -2879,7 +2882,6 @@ impl GitHistory {
             )
         };
         Self::persist_column_layout(columns, widths, &order, SavePolicy::Immediate, cx);
-        cx.refresh_windows();
         cx.notify();
     }
 
@@ -2894,7 +2896,6 @@ impl GitHistory {
             preferences.order = order.clone();
         }
         Self::persist_column_layout(columns, widths, &order, SavePolicy::Immediate, cx);
-        cx.refresh_windows();
         cx.notify();
     }
 
@@ -2959,7 +2960,6 @@ impl GitHistory {
 
         cx.global_mut::<HistoryColumnPreferences>().widths = widths;
         self.schedule_column_layout_save(cx);
-        cx.refresh_windows();
         cx.notify();
     }
 
@@ -2967,7 +2967,6 @@ impl GitHistory {
         cx.global_mut::<HistoryColumnPreferences>().widths = GitHistoryColumnWidths::default();
         self.column_drag_anchor = None;
         self.schedule_column_layout_save(cx);
-        cx.refresh_windows();
         cx.notify();
     }
 
@@ -3138,7 +3137,6 @@ impl GitHistory {
         }
         cx.global_mut::<HistoryColumnPreferences>().order = reordered;
         self.schedule_column_layout_save(cx);
-        cx.refresh_windows();
         cx.notify();
     }
 
@@ -3181,7 +3179,6 @@ impl GitHistory {
         if display == GitHistoryAuthorDisplay::Avatar {
             self.resolve_loaded_avatars(cx);
         }
-        cx.refresh_windows();
         cx.notify();
     }
 

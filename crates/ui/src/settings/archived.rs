@@ -37,6 +37,8 @@ pub struct ArchivedPage {
     delete_all_task: Option<Task<()>>,
     page: usize,
     task: Option<Task<()>>,
+    /// Wakes the page when a row's "2h" label turns over.
+    ago_tick: crate::label_clock::LabelTick,
     _observe: Subscription,
 }
 
@@ -52,6 +54,7 @@ impl ArchivedPage {
             delete_all_task: None,
             page: 0,
             task: None,
+            ago_tick: Default::default(),
             _observe: observe,
         }
     }
@@ -267,6 +270,16 @@ impl Render for ArchivedPage {
                 .collect();
             (rows, names, count)
         };
+        for chat in &rows {
+            self.ago_tick.schedule(
+                cx.entity().downgrade(),
+                crate::label_clock::ago_turns_in(
+                    chat.last_message_at.unwrap_or(chat.created_at),
+                    now,
+                ),
+                cx,
+            );
+        }
         let busy = self.busy.clone();
         let page = self.page;
         let items: Vec<AnyElement> = rows

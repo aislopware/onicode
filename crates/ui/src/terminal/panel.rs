@@ -2407,7 +2407,7 @@ impl Render for TerminalPanel {
                     // tell the program the button went up.
                     .on_mouse_up_out(MouseButton::Middle, cx.listener(Self::on_mouse_up))
                     .on_mouse_up_out(MouseButton::Right, cx.listener(Self::on_mouse_up))
-                    .on_scroll_wheel(cx.listener(|this, event: &gpui::ScrollWheelEvent, _, cx| {
+                    .on_scroll(cx.listener(|this, event: &gpui::ScrollEvent, _, cx| {
                         let lines = match event.delta {
                             ScrollDelta::Lines(delta) => delta.y,
                             // Against the measured row height, not the default:
@@ -2466,7 +2466,7 @@ mod tests {
         cx.update(|window, cx| {
             let focus = panel.read(cx).focus_handle();
             window.focus(&focus, cx);
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
         });
         (panel, cx)
     }
@@ -2493,7 +2493,7 @@ mod tests {
         panel.update(cx, |panel, cx| {
             panel.with_active_tab(cx, |tab| tab.emulator.feed(b"\x1b[?1000h\x1b[?1006h"));
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let geometry = panel.read_with(cx, |panel, _| panel.geometry.unwrap());
         let at =
             geometry.origin + gpui::point(px(geometry.cell_w * 2.5), px(geometry.line_h * 1.5));
@@ -2519,8 +2519,8 @@ mod tests {
             });
         });
         cx.update(|window, cx| {
-            window.blur();
-            window.draw(cx).clear();
+            window.blur(cx);
+            window.draw(cx).clear(cx);
         });
         assert!(sent(&panel, cx).ends_with(b"\x1b[O"));
         panel.read_with(cx, |panel, cx| {
@@ -2533,14 +2533,14 @@ mod tests {
         cx.update(|window, cx| {
             let focus = panel.read(cx).focus_handle();
             window.focus(&focus, cx);
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
         });
         assert!(sent(&panel, cx).ends_with(b"\x1b[O\x1b[I"));
     }
 
     #[gpui::test]
     fn slow_trackpad_scroll_accumulates_per_terminal(cx: &mut gpui::TestAppContext) {
-        use gpui::{AppContext, Modifiers, ScrollWheelEvent, TouchPhase, point};
+        use gpui::{AppContext, Modifiers, ScrollEvent, TouchPhase, point};
 
         cx.update(|cx| {
             gpui_base::init(cx);
@@ -2562,14 +2562,15 @@ mod tests {
             }
             panel
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let geometry = panel.read_with(cx, |panel, _| panel.geometry.unwrap());
         let mut scroll = |delta, phase| {
-            cx.simulate_event(ScrollWheelEvent {
+            cx.simulate_event(ScrollEvent {
                 position: geometry.bounds.center(),
                 delta,
                 modifiers: Modifiers::default(),
                 touch_phase: phase,
+                ..Default::default()
             })
         };
         // Every event is smaller than half a row: rounding each one loses all movement.
@@ -2584,11 +2585,12 @@ mod tests {
         });
         // Signed fractions work in reverse too; mouse-wheel rows stay exact.
         let mut scroll = |delta, phase| {
-            cx.simulate_event(ScrollWheelEvent {
+            cx.simulate_event(ScrollEvent {
                 position: geometry.bounds.center(),
                 delta,
                 modifiers: Modifiers::default(),
                 touch_phase: phase,
+                ..Default::default()
             })
         };
         for _ in 0..8 {
@@ -2603,11 +2605,12 @@ mod tests {
             assert_eq!(panel.active_tab(cx).unwrap().emulator.display_offset(), 11);
         });
         // The partial row is on screen, so a fresh gesture continues from it.
-        cx.simulate_event(ScrollWheelEvent {
+        cx.simulate_event(ScrollEvent {
             position: geometry.bounds.center(),
             delta: ScrollDelta::Lines(point(0.0, 0.5)),
             modifiers: Modifiers::default(),
             touch_phase: TouchPhase::Started,
+            ..Default::default()
         });
         panel.update(cx, |panel, cx| {
             assert_eq!(panel.active_tab(cx).unwrap().emulator.display_offset(), 12);
@@ -2622,12 +2625,13 @@ mod tests {
             assert_eq!(panel.active_tab(cx).unwrap().emulator.display_offset(), 11);
             panel.select_tab_by_key(1, cx);
         });
-        cx.update(|window, cx| window.draw(cx).clear());
-        cx.simulate_event(ScrollWheelEvent {
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_event(ScrollEvent {
             position: geometry.bounds.center(),
             delta: ScrollDelta::Lines(point(0.0, 0.75)),
             modifiers: Modifiers::default(),
             touch_phase: TouchPhase::Moved,
+            ..Default::default()
         });
         panel.read_with(cx, |panel, cx| {
             assert_eq!(panel.active_tab(cx).unwrap().emulator.display_offset(), 0);

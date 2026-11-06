@@ -71,7 +71,7 @@ impl Area {
 
 fn frame(window: WindowHandle<shell::Shell>, cx: &mut AsyncApp) -> anyhow::Result<Frame> {
     any(window).update(cx, |_, w, cx| -> anyhow::Result<Frame> {
-        w.draw(cx).clear();
+        w.draw(cx).clear(cx);
         let image = w.render_to_image()?;
         let scale = image.width() as f32 / f32::from(w.viewport_size().width);
         Ok(Frame { image, scale })
@@ -174,7 +174,7 @@ async fn press(
     };
     for kind in 0..3 {
         any(window).update(cx, |_, w, cx| {
-            w.draw(cx).clear();
+            w.draw(cx).clear(cx);
             w.dispatch_event(event(kind), cx);
         })?;
         pause(cx, 100).await;
@@ -196,7 +196,7 @@ async fn key(
     key: &str,
     cx: &mut AsyncApp,
 ) -> anyhow::Result<()> {
-    let keystroke = gpui::Keystroke::parse(key)?;
+    let keystroke = onicode_ui::keys::parse(key)?;
     any(window).update(cx, |_, w, cx| {
         w.dispatch_event(
             PlatformInput::KeyDown(gpui::KeyDownEvent {

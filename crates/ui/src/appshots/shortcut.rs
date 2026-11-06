@@ -2,7 +2,6 @@
 use std::sync::{Mutex, OnceLock};
 
 use futures::channel::mpsc;
-use gpui::Keystroke;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Shortcut {
@@ -15,7 +14,7 @@ pub(crate) struct Shortcut {
 
 impl Shortcut {
     pub fn parse(combo: &str) -> Result<Self, ()> {
-        let stroke = Keystroke::parse(&crate::settings::platform_combo(combo)).map_err(|_| ())?;
+        let stroke = crate::keys::parse(&crate::settings::platform_combo(combo)).map_err(|_| ())?;
         let modifiers = stroke.modifiers;
         let key = stroke.key;
         let supported = (key.len() == 1 && key.as_bytes()[0].is_ascii_alphanumeric())

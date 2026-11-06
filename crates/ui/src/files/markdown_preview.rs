@@ -1873,7 +1873,7 @@ mod layout_tests {
             cx.update_window(window.into(), |_, window, cx| {
                 assert!(view.read(cx).preview_focus.is_focused(window));
                 window.refresh(); let _ = window.draw(cx);
-                window.dispatch_event(gpui::PlatformInput::KeyDown(gpui::KeyDownEvent { keystroke: gpui::Keystroke::parse("escape").unwrap(), is_held: false, prefer_character_input: false }), cx);
+                window.dispatch_event(gpui::PlatformInput::KeyDown(gpui::KeyDownEvent { keystroke: crate::keys::parse("escape").unwrap(), is_held: false, prefer_character_input: false }), cx);
             }).unwrap();
             assert!(view.read(cx).preview_image.is_none());
             assert!(view.read(cx).zoom_source.is_none());
@@ -1961,7 +1961,7 @@ mod layout_tests {
                 let _ = window.draw(cx);
                 window.dispatch_event(
                     gpui::PlatformInput::KeyDown(gpui::KeyDownEvent {
-                        keystroke: gpui::Keystroke::parse("escape").unwrap(),
+                        keystroke: crate::keys::parse("escape").unwrap(),
                         is_held: false,
                         prefer_character_input: false,
                     }),

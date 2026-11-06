@@ -57,7 +57,7 @@ fn capture(
     name: &str,
 ) -> anyhow::Result<()> {
     window.update(cx, |_, window, cx| {
-        window.draw(cx).clear();
+        window.draw(cx).clear(cx);
         window.render_to_image()?.save(output.join(name))?;
         Ok(())
     })?
@@ -66,7 +66,7 @@ fn capture(
 fn press(window: gpui::AnyWindowHandle, cx: &mut AsyncApp, key: &str) -> anyhow::Result<()> {
     window.update(cx, |_, window, cx| {
         assert!(
-            window.dispatch_keystroke(gpui::Keystroke::parse(key).unwrap(), cx),
+            window.dispatch_keystroke(onicode_ui::keys::parse(key).unwrap(), cx),
             "compact picker did not handle {key}"
         );
     })?;

@@ -17,7 +17,7 @@ fn capture(
     name: &str,
 ) -> anyhow::Result<()> {
     window.update(cx, |_, w, cx| {
-        w.draw(cx).clear();
+        w.draw(cx).clear(cx);
         w.render_to_image()?
             .save(directory.join(format!("{name}.png")))?;
         Ok(())
@@ -25,8 +25,8 @@ fn capture(
 }
 fn press(window: gpui::AnyWindowHandle, cx: &mut AsyncApp, key: &str) -> anyhow::Result<()> {
     window.update(cx, |_, w, cx| {
-        w.draw(cx).clear();
-        let keystroke = gpui::Keystroke::parse(key).unwrap();
+        w.draw(cx).clear(cx);
+        let keystroke = onicode_ui::keys::parse(key).unwrap();
         w.dispatch_event(
             gpui::PlatformInput::KeyDown(gpui::KeyDownEvent {
                 keystroke: keystroke.clone(),

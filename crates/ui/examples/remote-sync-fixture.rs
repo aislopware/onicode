@@ -181,7 +181,7 @@ fn capture(
     name: &str,
 ) -> anyhow::Result<()> {
     window.update(cx, |_, w, cx| {
-        w.draw(cx).clear();
+        w.draw(cx).clear(cx);
         w.render_to_image()?
             .save(directory.join(format!("{name}.png")))?;
         Ok(())

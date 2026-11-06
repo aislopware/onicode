@@ -227,7 +227,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         "scrolled" => {
                             window.dispatch_event(
-                                gpui::PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+                                gpui::PlatformInput::Scroll(gpui::ScrollEvent {
                                     position: gpui::point(px(700.), px(400.)),
                                     delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(500.))),
                                     modifiers: gpui::Modifiers::default(),
@@ -264,7 +264,7 @@ fn main() -> anyhow::Result<()> {
                         "typed" => {
                             click(window, cx, 550., 839.);
                             for key in ["c", "a", "c", "h", "e", "space", "c", "h", "e", "c", "k"] {
-                                assert!(window.dispatch_keystroke(gpui::Keystroke::parse(key).unwrap(), cx));
+                                assert!(window.dispatch_keystroke(onicode_ui::keys::parse(key).unwrap(), cx));
                             }
                         }
                         "model-menu" => click(window, cx, 1020., 839.),

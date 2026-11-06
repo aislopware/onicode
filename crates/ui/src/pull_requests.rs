@@ -363,6 +363,8 @@ pub struct PullRequestsPage {
     /// from the keyboard starts there and Tab walks its options.
     option_focus: gpui::FocusHandle,
     return_focus: Option<gpui::FocusHandle>,
+    /// Wakes the board when a row's "5m ago" next turns over.
+    date_tick: crate::label_clock::LabelTick,
     _observe: Subscription,
 }
 
@@ -628,6 +630,7 @@ impl PullRequestsPage {
             device_focus: cx.focus_handle().tab_stop(true),
             option_focus: cx.focus_handle().tab_stop(true),
             return_focus: None,
+            date_tick: Default::default(),
             _observe: observe,
         };
         page.initialize_repository(cx);
@@ -2698,7 +2701,8 @@ impl Render for PullRequestsPage {
             .then(|| self.render_load_more(&theme, cx))
             .flatten();
         let scrollbar = popover::rail(self, "pull-requests-scrollbar", &theme, cx);
-        if self.filter_fades.tick_at(Instant::now()) {
+        // This view reads its own fades on every render, so each one is a full frame for them.
+        if self.filter_fades.tick_at(Instant::now(), true) {
             window.request_animation_frame();
         }
         let results = match content {
@@ -2806,6 +2810,16 @@ impl PullRequestsPage {
                 let Some(item) = board.items.get(index) else {
                     return div().into_any_element();
                 };
+                let shown_at = if self.sort.field == PullRequestSortField::Opened {
+                    item.created_at
+                } else {
+                    item.updated_at
+                };
+                self.date_tick.schedule(
+                    cx.entity().downgrade(),
+                    crate::label_clock::ago_turns_in(shown_at, Utc::now()),
+                    cx,
+                );
                 let layout = self
                     .content_width
                     .map(table_layout)
@@ -2865,7 +2879,8 @@ impl PullRequestsPage {
             &format!("pr-group-{}-{}", cx.entity_id(), group.key()),
             !closed,
             crate::motion::GLYPH_STATE,
-            crate::motion::reduced_motion(cx),
+            cx.entity_id(),
+            cx,
         );
         div().w_full().child(
             div()
@@ -4293,7 +4308,7 @@ mod tests {
         cx.update(|window, cx| {
             window.dispatch_event(
                 gpui::PlatformInput::KeyUp(gpui::KeyUpEvent {
-                    keystroke: gpui::Keystroke::parse("enter").unwrap(),
+                    keystroke: crate::keys::parse("enter").unwrap(),
                 }),
                 cx,
             );
@@ -4318,7 +4333,7 @@ mod tests {
         cx.update(|window, cx| {
             window.dispatch_event(
                 gpui::PlatformInput::KeyUp(gpui::KeyUpEvent {
-                    keystroke: gpui::Keystroke::parse("enter").unwrap(),
+                    keystroke: crate::keys::parse("enter").unwrap(),
                 }),
                 cx,
             );
@@ -4355,7 +4370,7 @@ mod tests {
         assert!(scroll.max_offset().y > px(0.0));
         let input = cx.debug_bounds("pr-repository-load").unwrap();
         scroll.set_offset(gpui::point(px(0.0), -scroll.max_offset().y));
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         assert_eq!(
             cx.debug_bounds("pr-repository-load").unwrap(),
             input,
@@ -4929,7 +4944,7 @@ mod tests {
         );
         page.read_with(cx, |page, _| assert!(page.sort_menu.get().is_none()));
         cx.simulate_mouse_move(viewport.center(), None, gpui::Modifiers::default());
-        cx.simulate_event(gpui::ScrollWheelEvent {
+        cx.simulate_event(gpui::ScrollEvent {
             position: viewport.center(),
             delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.0), px(-800.0))),
             ..Default::default()

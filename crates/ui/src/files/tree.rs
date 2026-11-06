@@ -207,7 +207,7 @@ impl FilesSurface {
                     // deselects; a modified click there keeps the selection.
                     let modifiers = event.modifiers;
                     if !modifiers.shift
-                        && !modifiers.secondary()
+                        && !modifiers.secondary(cx)
                         && this.is_tree_empty_space(event.position)
                         && this.tree.clear_selection()
                     {
@@ -356,9 +356,9 @@ impl FilesSurface {
                             this.tree_focus.focus(window, cx);
                             let modifiers = event.modifiers();
                             if modifiers.shift {
-                                this.tree.select_range_to(&path, modifiers.secondary());
+                                this.tree.select_range_to(&path, modifiers.secondary(cx));
                                 cx.notify();
-                            } else if modifiers.secondary() {
+                            } else if modifiers.secondary(cx) {
                                 this.tree.toggle_selected(path.clone());
                                 cx.notify();
                             } else {
@@ -774,7 +774,7 @@ mod tests {
         let row = |cx: &mut gpui::VisualTestContext, selector: &'static str| {
             cx.debug_bounds(selector).unwrap().center()
         };
-        let secondary = gpui::Modifiers::secondary_key();
+        let secondary = cx.update(|_, cx| gpui::Modifiers::secondary_key(cx));
         let shift = gpui::Modifiers::shift();
 
         let a = row(cx, "tree-entry:a.txt");
@@ -833,7 +833,8 @@ mod tests {
         files.read_with(cx, |files, _| assert!(files.is_tree_empty_space(empty)));
 
         // Modified clicks on empty space keep the selection.
-        cx.simulate_click(empty, gpui::Modifiers::secondary_key());
+        let secondary = cx.update(|_, cx| gpui::Modifiers::secondary_key(cx));
+        cx.simulate_click(empty, secondary);
         cx.simulate_click(empty, gpui::Modifiers::shift());
         files.read_with(cx, |files, _| {
             assert_eq!(files.tree.selected_paths(), ["folder", "a.txt"]);

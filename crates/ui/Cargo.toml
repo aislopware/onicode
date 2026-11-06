@@ -11,10 +11,7 @@ project-palette-fixture = []
 # New project's typed path against a real engine, filmed in process.
 project-path-fixture = ["gpui_platform/test-support"]
 compact-picker-fixture = ["gpui_platform/test-support"]
-
-# Native captures explicitly present the freshly drawn scene, including when
-# a nested Wayland compositor has stopped requesting idle frames.
-browser-fixture = ["gpui/bench"]
+browser-fixture = []
 appshots-fixture = ["gpui_platform/test-support"]
 pull-request-fixture = ["gpui_platform/test-support"]
 resource-profile = ["gpui/bench", "gpui_platform/test-support"]
@@ -202,8 +199,10 @@ objc2-web-kit = { version = "0.3.2", features = [
 core-foundation = "0.10"
 core-graphics = { version = "0.24", features = ["elcapitan", "highsierra", "link"] }
 
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+gpui_apple.workspace = true
+
 [target.'cfg(target_os = "linux")'.dependencies]
-libc.workspace = true
 ashpd = { version = "0.13.13", default-features = false, features = [
     "async-io",
     "global_shortcuts",

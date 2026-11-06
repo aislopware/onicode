@@ -445,7 +445,7 @@ mod tests {
         cx.run_until_parked();
         cx.update(|window, cx| {
             window.refresh();
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
         });
     }
 
@@ -609,7 +609,7 @@ mod tests {
         // gpui clicks a focused button as Enter comes back up.
         cx.simulate_keystrokes("enter");
         cx.simulate_event(gpui::KeyUpEvent {
-            keystroke: gpui::Keystroke::parse("enter").unwrap(),
+            keystroke: crate::keys::parse("enter").unwrap(),
         });
         draw(cx);
         shell.read_with(cx, |shell, cx| {

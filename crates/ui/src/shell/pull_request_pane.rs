@@ -869,7 +869,7 @@ impl Shell {
             .flex_row()
             .items_center()
             // A wheel over the tabs must scroll the strip, never the board.
-            .on_scroll_wheel(|_, _, cx| cx.stop_propagation());
+            .on_scroll(|_, _, cx| cx.stop_propagation());
         if open {
             let tabs = self.render_pull_request_tab_strip(cx);
             controls = controls.child(
@@ -921,7 +921,8 @@ impl Shell {
                             "toggle-pull-request-pane",
                             open,
                             motion::GLYPH_STATE,
-                            self.reduced_motion,
+                            cx.entity_id(),
+                            cx,
                         ),
                         true,
                         16.0,

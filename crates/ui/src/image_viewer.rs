@@ -157,7 +157,7 @@ impl ViewState {
         self.geometry.zoom(scale, local);
     }
 
-    fn wheel(&mut self, event: &gpui::ScrollWheelEvent) -> bool {
+    fn wheel(&mut self, event: &gpui::ScrollEvent) -> bool {
         let delta = scroll_pixels(event.delta);
         if event.modifiers.control {
             let scale = self.geometry.scale * (delta.y * 0.0025).clamp(-2.0, 2.0).exp();
@@ -252,7 +252,7 @@ impl ImageView {
             .w_full()
             .relative()
             .overflow_hidden()
-            .on_scroll_wheel(move |event, window, cx| {
+            .on_scroll(move |event, window, cx| {
                 if wheel.0.borrow_mut().wheel(event) {
                     cx.stop_propagation();
                     window.prevent_default();
@@ -419,7 +419,7 @@ mod tests {
             geometry: geometry(),
             ..Default::default()
         };
-        let mut event = gpui::ScrollWheelEvent {
+        let mut event = gpui::ScrollEvent {
             position: point(px(250.0), px(150.0)),
             delta: ScrollDelta::Lines(point(0.0, 1.0)),
             ..Default::default()
@@ -543,7 +543,7 @@ mod tests {
             cx.update_window(window.into(), |_, window, cx| {
                 window.dispatch_event(gpui::PlatformInput::MouseMove(gpui::MouseMoveEvent { position, ..Default::default() }), cx);
                 window.refresh(); let _ = window.draw(cx);
-                window.dispatch_event(gpui::PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+                window.dispatch_event(gpui::PlatformInput::Scroll(gpui::ScrollEvent {
                     position, delta: ScrollDelta::Pixels(point(px(0.0), px(200.0))), modifiers: gpui::Modifiers { control: true, ..Default::default() }, ..Default::default()
                 }), cx);
             }).unwrap();
@@ -590,7 +590,7 @@ mod tests {
             harness.update(cx, |view, cx| { view.closed = false; view.preview.viewer.reset(); cx.notify(); });
             cx.update_window(window.into(), |_, window, cx| {
                 window.refresh(); let _ = window.draw(cx);
-                window.dispatch_event(gpui::PlatformInput::KeyDown(gpui::KeyDownEvent { keystroke: gpui::Keystroke::parse("escape").unwrap(), is_held: false, prefer_character_input: false }), cx);
+                window.dispatch_event(gpui::PlatformInput::KeyDown(gpui::KeyDownEvent { keystroke: crate::keys::parse("escape").unwrap(), is_held: false, prefer_character_input: false }), cx);
             }).unwrap();
             assert!(harness.read(cx).closed);
             cx.spawn(async move |cx| { cx.update(|cx| cx.quit()); }).detach();

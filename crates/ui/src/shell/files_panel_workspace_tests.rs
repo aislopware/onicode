@@ -544,7 +544,7 @@ fn files_panel_workspace_navigation_and_external_updates() {
                 handle
                     .update(cx, |_, window, cx| {
                         window.replace_root(cx, |_, _| ClosedFixture);
-                        window.blur();
+                        window.blur(cx);
                         window.refresh();
                         let _ = window.draw(cx);
                     })

@@ -466,7 +466,7 @@ fn dictation_shortcut_holds_until_its_modifier_is_released(cx: &mut TestAppConte
             })
         })
         .unwrap();
-    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
         .unwrap();
     // Key down and its auto-repeat hold the recording open.
     cx.simulate_keystrokes(handle.into(), "cmd-d cmd-d");
@@ -507,7 +507,7 @@ fn dictation_pointer_hold_finishes_on_release_even_outside_the_button(cx: &mut T
                 })
             })
             .unwrap();
-        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         let mut visual = gpui::VisualTestContext::from_window(handle.into(), cx);
         let button = visual.debug_bounds("composer-dictation").unwrap();
@@ -556,7 +556,7 @@ fn dictation_tap_explains_hold_to_talk_without_transcribing(cx: &mut TestAppCont
             fake
         })
         .unwrap();
-    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
         .unwrap();
     let mut visual = gpui::VisualTestContext::from_window(handle.into(), cx);
     let button = visual.debug_bounds("composer-dictation").unwrap();
@@ -682,7 +682,7 @@ fn dictation_pointer_stop_keeps_capture_until_final_result(cx: &mut TestAppConte
             })
         })
         .unwrap();
-    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
         .unwrap();
     let mut visual = gpui::VisualTestContext::from_window(handle.into(), cx);
     let button = visual.debug_bounds("composer-dictation").unwrap();
@@ -723,7 +723,7 @@ fn dictation_pointer_send_waits_for_final_and_submits_once(cx: &mut TestAppConte
         })
         .unwrap();
     let mut events = cx.events::<DictationInputEvent, _>(&input);
-    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
         .unwrap();
     let mut visual = gpui::VisualTestContext::from_window(handle.into(), cx);
     let button = visual.debug_bounds("composer-send").unwrap();
@@ -806,7 +806,7 @@ fn dictation_focus_within_composer_keeps_capture_but_leaving_cancels(cx: &mut Te
             })
         })
         .unwrap();
-    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
         .unwrap();
     handle
         .update(cx, |composer, window, cx| {
@@ -814,7 +814,7 @@ fn dictation_focus_within_composer_keeps_capture_but_leaving_cancels(cx: &mut Te
             window.focus(&composer.dictation_focus, cx);
         })
         .unwrap();
-    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
         .unwrap();
     cx.run_until_parked();
     assert_eq!(
@@ -829,7 +829,7 @@ fn dictation_focus_within_composer_keeps_capture_but_leaving_cancels(cx: &mut Te
             assert!(composer.input.read(cx).dictation.phase.active());
         })
         .unwrap();
-    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
         .unwrap();
     cx.run_until_parked();
     assert_eq!(fake.borrow().drops, 1);
@@ -856,7 +856,7 @@ fn dictation_cancel_control_preserves_draft_and_clears_pending_send(cx: &mut Tes
         })
         .unwrap();
     let mut events = cx.events::<DictationInputEvent, _>(&input);
-    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
         .unwrap();
     let mut visual = gpui::VisualTestContext::from_window(handle.into(), cx);
     let cancel = visual.debug_bounds("dictation-dismiss").unwrap();
@@ -887,9 +887,9 @@ fn dictation_cancel_control_is_keyboard_operable(cx: &mut TestAppContext) {
         })
         .unwrap();
     cx.update_window(handle.into(), |_, window, cx| {
-        window.draw(cx).clear();
+        window.draw(cx).clear(cx);
         window.focus_next(cx);
-        window.draw(cx).clear();
+        window.draw(cx).clear(cx);
     })
     .unwrap();
     cx.run_until_parked();
@@ -957,7 +957,7 @@ fn dictation_escape_from_composer_controls_cancels_pending_send(cx: &mut TestApp
             fake
         })
         .unwrap();
-    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+    cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
         .unwrap();
     cx.simulate_keystrokes(handle.into(), "escape");
     cx.run_until_parked();
@@ -1188,7 +1188,8 @@ fn dictation_shortcut_falls_through_while_dictation_is_off(cx: &mut TestAppConte
             ComposerSendBehavior::Enter,
         );
         // Another binding of the same chord, as a user may already have.
-        cx.bind_keys([KeyBinding::new("secondary-d", Probe, None)]);
+        let probe_binding = crate::keys::binding(cx, "secondary-d", Probe, None);
+        cx.bind_keys([probe_binding]);
         cx.on_action(move |_: &Probe, _| probe.set(true));
     });
     cx.simulate_keystrokes(handle.into(), "secondary-d");

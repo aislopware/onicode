@@ -1802,8 +1802,14 @@ impl VisualFrame {
                 },
                 move |bounds, image, window, _| {
                     if let Some(image) = image {
-                        let _ =
-                            window.paint_image(bounds, gpui::Corners::default(), image, 0, false);
+                        let _ = window.paint_image(
+                            bounds,
+                            bounds,
+                            gpui::Corners::default(),
+                            image,
+                            0,
+                            false,
+                        );
                     }
                 },
             )
@@ -2048,6 +2054,7 @@ impl VisualFrame {
                         return;
                     };
                     let _ = window.paint_image(
+                        bounds,
                         bounds,
                         gpui::Corners::default(),
                         image.image.clone(),

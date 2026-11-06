@@ -108,7 +108,7 @@ fn capture(
 ) -> anyhow::Result<()> {
     // Best effort: render_to_image may be unavailable.
     window.update(cx, |_, w, cx| {
-        w.draw(cx).clear();
+        w.draw(cx).clear(cx);
         if let Ok(image) = w.render_to_image() {
             image.save(dir.join(format!("{name}.png"))).ok();
         }

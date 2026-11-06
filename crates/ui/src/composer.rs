@@ -19,7 +19,7 @@ use gpui::{
     DispatchPhase, ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle,
     Focusable, GlobalElementId, KeyBinding, KeyDownEvent, KeyUpEvent, Keystroke, LayoutId,
     ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit,
-    PaintQuad, PathPromptOptions, Pixels, Point, Role, ScrollWheelEvent, SharedString, Style,
+    PaintQuad, PathPromptOptions, Pixels, Point, Role, ScrollEvent, SharedString, Style,
     Subscription, Task, TextRun, TextStyle, UTF16Selection, UnderlineStyle, Window, WrappedLine,
     actions, div, fill, img, point, px, quad, relative, size,
 };
@@ -1728,7 +1728,7 @@ fn enter_outcome(has_completion: bool, fallback: EnterOutcome) -> EnterOutcome {
     }
 }
 
-fn input_bindings(context: &'static str) -> Vec<KeyBinding> {
+fn input_bindings(context: &'static str, cx: &App) -> Vec<KeyBinding> {
     let ctx = Some(context);
     let mut bindings = vec![
         KeyBinding::new("tab", MentionTab, ctx),
@@ -1764,8 +1764,13 @@ fn input_bindings(context: &'static str) -> Vec<KeyBinding> {
         KeyBinding::new("cmd-delete", DeleteToLineEnd, ctx),
     ];
     for prefix in ["cmd", "ctrl"] {
-        bindings.push(KeyBinding::new(&format!("{prefix}-z"), Undo, ctx));
-        bindings.push(KeyBinding::new(&format!("shift-{prefix}-z"), Redo, ctx));
+        bindings.push(crate::keys::binding(cx, &format!("{prefix}-z"), Undo, ctx));
+        bindings.push(crate::keys::binding(
+            cx,
+            &format!("shift-{prefix}-z"),
+            Redo,
+            ctx,
+        ));
     }
     // Word-level editing: Option on macOS, Ctrl on Linux.
     let word_edit_prefix = if cfg!(target_os = "macos") {
@@ -1773,72 +1778,90 @@ fn input_bindings(context: &'static str) -> Vec<KeyBinding> {
     } else {
         "ctrl"
     };
-    bindings.push(KeyBinding::new(
+    bindings.push(crate::keys::binding(
+        cx,
         &format!("{word_edit_prefix}-backspace"),
         DeleteWordLeft,
         ctx,
     ));
-    bindings.push(KeyBinding::new(
+    bindings.push(crate::keys::binding(
+        cx,
         &format!("{word_edit_prefix}-delete"),
         DeleteWordRight,
         ctx,
     ));
-    bindings.push(KeyBinding::new(
+    bindings.push(crate::keys::binding(
+        cx,
         &format!("{word_edit_prefix}-left"),
         WordLeft,
         ctx,
     ));
-    bindings.push(KeyBinding::new(
+    bindings.push(crate::keys::binding(
+        cx,
         &format!("{word_edit_prefix}-right"),
         WordRight,
         ctx,
     ));
-    bindings.push(KeyBinding::new(
+    bindings.push(crate::keys::binding(
+        cx,
         &format!("shift-{word_edit_prefix}-left"),
         SelectWordLeft,
         ctx,
     ));
-    bindings.push(KeyBinding::new(
+    bindings.push(crate::keys::binding(
+        cx,
         &format!("shift-{word_edit_prefix}-right"),
         SelectWordRight,
         ctx,
     ));
     for prefix in ["cmd", "ctrl"] {
-        bindings.push(KeyBinding::new(&format!("{prefix}-a"), SelectAll, ctx));
-        bindings.push(KeyBinding::new(&format!("{prefix}-c"), Copy, ctx));
-        bindings.push(KeyBinding::new(&format!("{prefix}-x"), Cut, ctx));
-        bindings.push(KeyBinding::new(&format!("{prefix}-v"), Paste, ctx));
+        bindings.push(crate::keys::binding(
+            cx,
+            &format!("{prefix}-a"),
+            SelectAll,
+            ctx,
+        ));
+        bindings.push(crate::keys::binding(cx, &format!("{prefix}-c"), Copy, ctx));
+        bindings.push(crate::keys::binding(cx, &format!("{prefix}-x"), Cut, ctx));
+        bindings.push(crate::keys::binding(cx, &format!("{prefix}-v"), Paste, ctx));
     }
     bindings
 }
 
 /// Bind the composer keymap. Call once at app boot.
 pub fn init(cx: &mut App, send_behavior: ComposerSendBehavior) {
-    let mut generic_bindings = input_bindings(GENERIC_COMPOSER_CONTEXT);
+    let mut generic_bindings = input_bindings(GENERIC_COMPOSER_CONTEXT, cx);
     generic_bindings.push(KeyBinding::new(
         "enter",
         Submit,
         Some(GENERIC_COMPOSER_CONTEXT),
     ));
 
-    let mut message_bindings = input_bindings(MESSAGE_COMPOSER_CONTEXT);
+    let mut message_bindings = input_bindings(MESSAGE_COMPOSER_CONTEXT, cx);
     for binding in message_enter_bindings(send_behavior, &platform_combo("mod-enter")) {
         match binding.action {
-            MessageEnterBindingAction::Submit => message_bindings.push(KeyBinding::new(
+            MessageEnterBindingAction::Submit => message_bindings.push(crate::keys::binding(
+                cx,
                 &binding.keystroke,
                 Submit,
                 Some(MESSAGE_COMPOSER_CONTEXT),
             )),
-            MessageEnterBindingAction::ModifiedSubmit => message_bindings.push(KeyBinding::new(
-                &binding.keystroke,
-                ModifiedSubmit,
-                Some(MESSAGE_COMPOSER_CONTEXT),
-            )),
-            MessageEnterBindingAction::NewlineOrAccept => message_bindings.push(KeyBinding::new(
-                &binding.keystroke,
-                MessageNewlineOrAccept,
-                Some(MESSAGE_COMPOSER_CONTEXT),
-            )),
+            MessageEnterBindingAction::ModifiedSubmit => {
+                message_bindings.push(crate::keys::binding(
+                    cx,
+                    &binding.keystroke,
+                    ModifiedSubmit,
+                    Some(MESSAGE_COMPOSER_CONTEXT),
+                ))
+            }
+            MessageEnterBindingAction::NewlineOrAccept => {
+                message_bindings.push(crate::keys::binding(
+                    cx,
+                    &binding.keystroke,
+                    MessageNewlineOrAccept,
+                    Some(MESSAGE_COMPOSER_CONTEXT),
+                ))
+            }
         }
     }
 
@@ -1869,43 +1892,79 @@ pub fn init(cx: &mut App, send_behavior: ComposerSendBehavior) {
         KeyBinding::new("shift-cmd-right", SelectEnd, palette),
         KeyBinding::new("cmd-backspace", DeleteToLineStart, palette),
     ];
-    palette_bindings.push(KeyBinding::new(
+    palette_bindings.push(crate::keys::binding(
+        cx,
         &format!("{word_edit_prefix}-backspace"),
         DeleteWordLeft,
         palette,
     ));
-    palette_bindings.push(KeyBinding::new(
+    palette_bindings.push(crate::keys::binding(
+        cx,
         &format!("{word_edit_prefix}-delete"),
         DeleteWordRight,
         palette,
     ));
-    palette_bindings.push(KeyBinding::new(
+    palette_bindings.push(crate::keys::binding(
+        cx,
         &format!("{word_edit_prefix}-left"),
         WordLeft,
         palette,
     ));
-    palette_bindings.push(KeyBinding::new(
+    palette_bindings.push(crate::keys::binding(
+        cx,
         &format!("{word_edit_prefix}-right"),
         WordRight,
         palette,
     ));
-    palette_bindings.push(KeyBinding::new(
+    palette_bindings.push(crate::keys::binding(
+        cx,
         &format!("shift-{word_edit_prefix}-left"),
         SelectWordLeft,
         palette,
     ));
-    palette_bindings.push(KeyBinding::new(
+    palette_bindings.push(crate::keys::binding(
+        cx,
         &format!("shift-{word_edit_prefix}-right"),
         SelectWordRight,
         palette,
     ));
     for prefix in ["cmd", "ctrl"] {
-        palette_bindings.push(KeyBinding::new(&format!("{prefix}-a"), SelectAll, palette));
-        palette_bindings.push(KeyBinding::new(&format!("{prefix}-c"), Copy, palette));
-        palette_bindings.push(KeyBinding::new(&format!("{prefix}-x"), Cut, palette));
-        palette_bindings.push(KeyBinding::new(&format!("{prefix}-v"), Paste, palette));
-        palette_bindings.push(KeyBinding::new(&format!("{prefix}-z"), Undo, palette));
-        palette_bindings.push(KeyBinding::new(&format!("shift-{prefix}-z"), Redo, palette));
+        palette_bindings.push(crate::keys::binding(
+            cx,
+            &format!("{prefix}-a"),
+            SelectAll,
+            palette,
+        ));
+        palette_bindings.push(crate::keys::binding(
+            cx,
+            &format!("{prefix}-c"),
+            Copy,
+            palette,
+        ));
+        palette_bindings.push(crate::keys::binding(
+            cx,
+            &format!("{prefix}-x"),
+            Cut,
+            palette,
+        ));
+        palette_bindings.push(crate::keys::binding(
+            cx,
+            &format!("{prefix}-v"),
+            Paste,
+            palette,
+        ));
+        palette_bindings.push(crate::keys::binding(
+            cx,
+            &format!("{prefix}-z"),
+            Undo,
+            palette,
+        ));
+        palette_bindings.push(crate::keys::binding(
+            cx,
+            &format!("shift-{prefix}-z"),
+            Redo,
+            palette,
+        ));
     }
     cx.bind_keys(palette_bindings);
     cx.bind_keys(generic_bindings);
@@ -3107,7 +3166,7 @@ impl ComposerInput {
         let equivalents = crate::settings::key_equivalents(cx);
         let parse = |combo: &str| {
             let combo = crate::settings::platform_combo(combo);
-            Keystroke::parse(&crate::settings::localize_combo(&combo, &equivalents)).ok()
+            crate::keys::parse(&crate::settings::localize_combo(&combo, &equivalents)).ok()
         };
         let keystroke = parse(&crate::settings::current(cx).keymap.toggle_dictation)
             .or_else(|| parse(crate::settings::ShortcutId::ToggleDictation.default_combo()));
@@ -4339,12 +4398,7 @@ impl ComposerInput {
         true
     }
 
-    fn on_scroll_wheel(
-        &mut self,
-        event: &ScrollWheelEvent,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_scroll_wheel(&mut self, event: &ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
         let Some(bounds) = self.last_bounds else {
             return;
         };
@@ -5634,16 +5688,16 @@ impl Render for ComposerInput {
             .on_action(cx.listener(Self::redo))
             .on_key_down(cx.listener(Self::on_key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
-            .on_mouse_down_out(cx.listener(|this, event: &MouseDownEvent, window, _| {
+            .on_mouse_down_out(cx.listener(|this, event: &MouseDownEvent, window, cx| {
                 // Capture runs before the clicked control handles the press, so
                 // another input can take focus normally during bubbling.
                 if event.button == MouseButton::Left && this.focus_handle.is_focused(window) {
-                    window.blur();
+                    window.blur(cx);
                 }
             }))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
+            .on_scroll(cx.listener(Self::on_scroll_wheel))
             .w_full()
             .text_size(crate::typography::ui_rems(self.text_size))
             .line_height(crate::typography::ui_rems(self.configured_line_height))
@@ -6534,6 +6588,17 @@ impl Composer {
     /// Feed the shell's current outer width into responsive composer controls.
     /// During a route transition this is the interpolated width, including
     /// when returning from a wider conversation to the new-chat composer.
+    /// Whether [`Self::set_dock_frame`] would change anything. Parents ask
+    /// first: an update while drawing rebuilds the composer even when idle.
+    pub(crate) fn dock_frame_differs(&self, frame: crate::composer_dock::DockFrame) -> bool {
+        frame.active || self.dock_frame != Some(frame)
+    }
+
+    /// Whether [`Self::set_available_width`] would change anything.
+    pub(crate) fn available_width_differs(&self, width: f32) -> bool {
+        composer_width_changed(self.last_available_width, width.max(0.0))
+    }
+
     pub fn set_available_width(&mut self, width: f32, cx: &mut Context<Self>) {
         let composer_width = width.max(0.0);
         if composer_width_changed(self.last_available_width, composer_width) {
@@ -10364,19 +10429,21 @@ impl Composer {
         // own the editor kept a stale one-line viewport, so new lines painted
         // below the card instead of growing it. Grow up to the composer's cap.
         let answer_cap = TEXTAREA_MAX - TEXTAREA_PAD_V;
-        self.input.update(cx, |input, cx| {
-            if input.viewport_height != Some(answer_cap)
-                || input.settled_viewport_height != Some(answer_cap)
-                || input.resizing
-                || input.overflow_top_padding != 0.0
-            {
+        // Compare before updating: any update while drawing rebuilds the input.
+        let input = self.input.read(cx);
+        if input.viewport_height != Some(answer_cap)
+            || input.settled_viewport_height != Some(answer_cap)
+            || input.resizing
+            || input.overflow_top_padding != 0.0
+        {
+            self.input.update(cx, |input, cx| {
                 input.viewport_height = Some(answer_cap);
                 input.settled_viewport_height = Some(answer_cap);
                 input.resizing = false;
                 input.overflow_top_padding = 0.0;
                 cx.notify();
-            }
-        });
+            });
+        }
         let page = wizard.page;
         let last = page + 1 >= wizard.questions.len();
         let typed_empty = self.input.read(cx).is_empty();
@@ -11303,8 +11370,9 @@ impl Render for Composer {
         let mode = self.button_mode(cx);
         // Shape the current draft before sizing the pill. Waiting for the child
         // layout leaves the parent using the previous edit's height.
-        self.input.update(cx, |input, cx| {
-            if input.needs_measure && input.last_width > 0.0 {
+        let input = self.input.read(cx);
+        if input.needs_measure && input.last_width > 0.0 {
+            self.input.update(cx, |input, cx| {
                 let mut style = window.text_style();
                 style.font_family = theme.font_sans.clone();
                 style.font_size = crate::typography::ui_rems(INPUT_TEXT_SIZE).into();
@@ -11314,8 +11382,8 @@ impl Render for Composer {
                     theme.text
                 };
                 input.layout_text(px(input.last_width), &style, window, cx);
-            }
-        });
+            });
+        }
         let (text_width, has_newline, content_height, last_width, epoch) = {
             let input = self.input.read(cx);
             (
@@ -11701,37 +11769,39 @@ impl Render for Composer {
             } else {
                 0.0
             });
-        self.input.update(cx, |input, cx| {
-            let height = if expanded {
-                (textarea_height - text_pt - 4.0).max(0.0)
-            } else {
-                INPUT_LINE_HEIGHT
-            };
-            let settled_height = if expanded {
-                (base_height - PILL_BORDER_V - ACTIONS_ROW_HEIGHT - TEXTAREA_PAD_V).max(
-                    if route_to_single_line {
-                        INPUT_LINE_HEIGHT
-                    } else {
-                        0.0
-                    },
-                )
-            } else {
-                INPUT_LINE_HEIGHT
-            };
-            let resizing = self.height_morph.is_some() || self.dock_reflow.active();
-            let top_padding = if expanded { text_pt } else { 0.0 };
-            if input.viewport_height != Some(height)
-                || input.settled_viewport_height != Some(settled_height)
-                || input.resizing != resizing
-                || input.overflow_top_padding != top_padding
-            {
-                input.resizing = resizing;
+        let height = if expanded {
+            (textarea_height - text_pt - 4.0).max(0.0)
+        } else {
+            INPUT_LINE_HEIGHT
+        };
+        let settled_height = if expanded {
+            (base_height - PILL_BORDER_V - ACTIONS_ROW_HEIGHT - TEXTAREA_PAD_V).max(
+                if route_to_single_line {
+                    INPUT_LINE_HEIGHT
+                } else {
+                    0.0
+                },
+            )
+        } else {
+            INPUT_LINE_HEIGHT
+        };
+        let input_resizing = self.height_morph.is_some() || self.dock_reflow.active();
+        let top_padding = if expanded { text_pt } else { 0.0 };
+        // Compare before updating: any update while drawing rebuilds the input.
+        let input = self.input.read(cx);
+        if input.viewport_height != Some(height)
+            || input.settled_viewport_height != Some(settled_height)
+            || input.resizing != input_resizing
+            || input.overflow_top_padding != top_padding
+        {
+            self.input.update(cx, |input, cx| {
+                input.resizing = input_resizing;
                 input.overflow_top_padding = top_padding;
                 input.viewport_height = Some(height);
                 input.settled_viewport_height = Some(settled_height);
                 cx.notify();
-            }
-        });
+            });
+        }
 
         let send_button = self.render_send_button(mode, cx);
         let (voice_t, voice_frame) = self.update_voice(window, cx);
@@ -12311,7 +12381,7 @@ mod tests {
             let state = cx.new(|_| AppState::new());
             Composer::new(state, cx)
         });
-        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         (dir, window)
     }
@@ -12350,7 +12420,7 @@ mod tests {
                 window.focus(&input.focus_handle, cx);
                 input
             });
-            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
                 .unwrap();
             cx.simulate_keystrokes(handle.into(), "shift-backspace");
             handle
@@ -12423,7 +12493,7 @@ mod tests {
                             .unwrap();
                         cx.update_window(handle.into(), |_, window, cx| {
                             window.refresh();
-                            window.draw(cx).clear();
+                            window.draw(cx).clear(cx);
                         })
                         .unwrap();
                         // Inspect the first painted frame before TestAppContext
@@ -12497,7 +12567,7 @@ mod tests {
                 .unwrap();
             cx.update_window(handle.into(), |_, window, cx| {
                 window.refresh();
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
             })
             .unwrap();
             handle
@@ -12566,7 +12636,7 @@ mod tests {
                 .unwrap();
             cx.update_window(handle.into(), |_, window, cx| {
                 window.refresh();
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
             })
             .unwrap();
             handle
@@ -12610,7 +12680,7 @@ mod tests {
             .unwrap();
         let draw = |cx: &mut gpui::TestAppContext| {
             cx.update_window(handle.into(), |_, window, cx| {
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
             })
             .unwrap();
         };
@@ -12723,8 +12793,8 @@ mod tests {
             .read_with(cx, |composer, _| composer.input.clone())
             .unwrap();
         cx.update_window(handle.into(), |_, window, cx| {
-            window.blur();
-            window.draw(cx).clear();
+            window.blur(cx);
+            window.draw(cx).clear(cx);
             let bounds = input.read(cx).last_bounds.unwrap();
             // Click padding immediately left of the actual editor.
             let position = point(bounds.left() - px(4.0), bounds.center().y);
@@ -12754,7 +12824,7 @@ mod tests {
                     composer
                         .input
                         .update(cx, |input, cx| input.set_text("Keep this draft", cx));
-                    window.blur();
+                    window.blur(cx);
                     composer.open_file_picker(cx);
                 })
                 .unwrap();
@@ -12763,7 +12833,7 @@ mod tests {
             cx.simulate_path_prompt_response(move |_| accepted.then(|| vec![path]));
             cx.run_until_parked();
             cx.update_window(handle.into(), |_, window, cx| {
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
                 assert!(input.read(cx).focus_handle.is_focused(window));
                 // An attached image is mentioned at the caret.
                 assert_eq!(
@@ -12786,13 +12856,13 @@ mod tests {
         // The same staging path handles external file drops.
         handle
             .update(cx, |composer, window, cx| {
-                window.blur();
+                window.blur(cx);
                 composer.add_paths(vec![image_path], cx);
             })
             .unwrap();
         cx.run_until_parked();
         cx.update_window(handle.into(), |_, window, cx| {
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
             assert!(input.read(cx).focus_handle.is_focused(window));
         })
         .unwrap();
@@ -12843,7 +12913,7 @@ mod tests {
                 })
                 .unwrap();
             cx.update_window(handle.into(), |_, window, cx| {
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
                 assert!(!input.read(cx).focus_handle.is_focused(window));
             })
             .unwrap();
@@ -12864,7 +12934,7 @@ mod tests {
                 .unwrap();
             }
             cx.update_window(handle.into(), |_, window, cx| {
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
                 assert_eq!(input.read(cx).focus_handle.is_focused(window), escape);
             })
             .unwrap();
@@ -12891,7 +12961,7 @@ mod tests {
             ])
         });
         cx.run_until_parked();
-        cx.update_window(host.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(host.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         let inputs = host.read_with(cx, |host, _| host.0.clone()).unwrap();
         // Visit both fields and return to the first: click-away capture must
@@ -13388,7 +13458,7 @@ mod tests {
             .read_with(cx, |composer, _| composer.input.clone())
             .unwrap();
         input.update(cx, |input, cx| input.set_text(&raw, cx));
-        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         input.update(cx, |input, _| {
             assert_eq!(input.projection.mentions.len(), 3);
@@ -14524,7 +14594,7 @@ mod tests {
             .unwrap();
         input.update(cx, |input, cx| input.set_text("hello café world", cx));
         cx.update_window(handle.into(), |_, window, cx| {
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
             let position = {
                 let editor = input.read(cx);
                 let local = editor.point_for_index(8).unwrap();

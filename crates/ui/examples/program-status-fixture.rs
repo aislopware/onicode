@@ -97,7 +97,7 @@ fn main() -> anyhow::Result<()> {
                 .await;
         }
         window.update(cx, |_, window, cx| {
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
             window.present_if_needed();
         })?;
         cx.background_executor()
@@ -299,8 +299,8 @@ fn main() -> anyhow::Result<()> {
             if let Err(error) = run { eprintln!("Program status capture failed: {error:#}"); *result.lock().unwrap() = Some(format!("{error:#}")); }
             let native_window: gpui::AnyWindowHandle = window.into();
             let _ = native_window.update(cx, |_, window, cx| {
-                window.blur();
-                window.draw(cx).clear();
+                window.blur(cx);
+                window.draw(cx).clear(cx);
                 window.present_if_needed();
             });
             drop(state);

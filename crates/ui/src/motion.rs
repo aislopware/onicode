@@ -30,7 +30,7 @@
 //! transformations), so `menu-in`/`dialog-in` approximate their scale component
 //! with fade + translate; see the module report in ARCHITECTURE §4 follow-ups.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -61,11 +61,15 @@ const PULSE_TICK: Duration = Duration::from_millis(33);
 /// the view drops off, letting the clock park.
 const PULSE_LEASE: Duration = Duration::from_millis(300);
 
+/// The loaders' shared clock. Its bookkeeping sits behind cells, so the
+/// global is written once, when it is set: every loader render reads it, and
+/// a write per render would mark every reader changed on every frame.
+/// Time is the executor's, which tests advance.
 struct PulseClock {
     epoch: Instant,
-    leases: HashMap<EntityId, PulseLease>,
-    tick: u64,
-    running: bool,
+    leases: RefCell<HashMap<EntityId, PulseLease>>,
+    tick: Cell<u64>,
+    running: Cell<bool>,
 }
 
 struct PulseLease {
@@ -92,15 +96,26 @@ impl PulseLease {
 
 impl Global for PulseClock {}
 
-impl Default for PulseClock {
-    fn default() -> Self {
-        Self {
-            epoch: Instant::now(),
-            leases: HashMap::new(),
-            tick: 0,
-            running: false,
-        }
+fn pulse_clock(cx: &mut App) -> &PulseClock {
+    if !cx.has_global::<PulseClock>() {
+        let epoch = cx.background_executor().now();
+        cx.set_global(PulseClock {
+            epoch,
+            leases: RefCell::default(),
+            tick: Cell::new(0),
+            running: Cell::new(false),
+        });
     }
+    cx.global::<PulseClock>()
+}
+
+/// Seconds since the loaders' shared epoch, at the moment the frame drawn
+/// shows (the same moment a retention check redraws it at).
+fn pulse_elapsed(cx: &mut App) -> f32 {
+    let epoch = pulse_clock(cx).epoch;
+    cx.frame_time()
+        .saturating_duration_since(epoch)
+        .as_secs_f32()
 }
 
 /// Current phase `[0,1)` of a repeating spec, plus a lease that keeps the
@@ -127,8 +142,7 @@ fn pulse_delta_every(spec: &MotionSpec, view: EntityId, stride: u64, cx: &mut Ap
 }
 
 fn pulse_phase(spec: &MotionSpec, cx: &mut App) -> f32 {
-    let clock = cx.default_global::<PulseClock>();
-    (clock.epoch.elapsed().as_secs_f32() / spec.total().as_secs_f32()).fract()
+    (pulse_elapsed(cx) / spec.total().as_secs_f32()).fract()
 }
 
 /// Activity feedback uses a slow, uniform brightness pulse when the system
@@ -191,8 +205,7 @@ pub fn spin_phase(view: EntityId, period: Duration, cx: &mut App) -> Option<f32>
         return None;
     }
     schedule_pulse_every(view, 1, cx);
-    let clock = cx.default_global::<PulseClock>();
-    Some((clock.epoch.elapsed().as_secs_f32() / period.as_secs_f32()).fract())
+    Some((pulse_elapsed(cx) / period.as_secs_f32()).fract())
 }
 
 /// Schedule cosmetic animation through the same bounded clock as loaders.
@@ -210,36 +223,37 @@ fn pulse_lease_every(view: EntityId, stride: u64, cx: &mut App) {
 }
 
 fn schedule_pulse_every(view: EntityId, stride: u64, cx: &mut App) {
-    let clock = cx.default_global::<PulseClock>();
-    let now = Instant::now();
+    let now = cx.background_executor().now();
+    let clock = pulse_clock(cx);
     clock
         .leases
+        .borrow_mut()
         .entry(view)
         .or_insert(PulseLease {
             until: now + PULSE_LEASE,
             stride,
         })
         .renew(now, stride);
-    if !clock.running {
-        clock.running = true;
+    if !clock.running.replace(true) {
         cx.spawn(async move |cx| {
             loop {
                 cx.background_executor().timer(PULSE_TICK).await;
                 let parked = cx.update(|cx| {
-                    let clock = cx.default_global::<PulseClock>();
-                    let now = Instant::now();
-                    clock.leases.retain(|_, lease| lease.until > now);
-                    if clock.leases.is_empty() {
-                        clock.running = false;
+                    let now = cx.background_executor().now();
+                    let clock = pulse_clock(cx);
+                    let mut leases = clock.leases.borrow_mut();
+                    leases.retain(|_, lease| lease.until > now);
+                    if leases.is_empty() {
+                        clock.running.set(false);
                         return true;
                     }
-                    clock.tick = clock.tick.wrapping_add(1);
-                    let tick = clock.tick;
-                    let views: Vec<EntityId> = clock
-                        .leases
+                    let tick = clock.tick.get().wrapping_add(1);
+                    clock.tick.set(tick);
+                    let views: Vec<EntityId> = leases
                         .iter_mut()
                         .filter_map(|(view, lease)| lease.take_tick(tick).then_some(*view))
                         .collect();
+                    drop(leases);
                     for view in views {
                         cx.notify(view);
                     }
@@ -706,19 +720,19 @@ pub fn lerp(from: f32, to: f32, t: f32) -> f32 {
 // states FADE. This is the manual-drive tween for that (the shell `WidthTween`
 // pattern — never `with_animation`, whose element-id-keyed clock replays on
 // remount): a per-element-key hover progress, advanced from wall time on each
-// evaluation, with the render tail requesting frames while any fade is
-// mid-flight.
+// evaluation, with the fade pump ([`pump_fades`]) redrawing the window while
+// any fade is mid-flight.
 //
 // The store is a main-thread `thread_local` rather than a gpui Global so the
 // many free-function element builders (window-control buttons, popover menu
 // rows, markdown code blocks) can blend colors without threading `cx` through
 // every signature. All access happens on the UI thread (element builders,
-// mouse listeners, the render tail).
+// mouse listeners, the fade pump).
 //
 // Staleness: an element that unmounts mid-hover never gets its leave event, so
-// entries are stamped with a frame counter on every read and pruned by
-// [`hover_fades_active`] (the once-per-frame tick) when a full frame passes
-// without a read — a reopened menu never inherits a dead entry's wash.
+// entries are stamped with a frame counter on every read and pruned by the
+// fade pump ([`pump_fades`]) when a whole-window frame passes without a read —
+// a reopened menu never inherits a dead entry's wash.
 
 /// One element's hover fade: progress runs `origin → target` over
 /// [`HOVER_FADE`], re-anchored at `origin` whenever the pointer flips
@@ -887,10 +901,12 @@ impl HoverFades {
         }
     }
 
-    /// Once-per-frame bookkeeping: advance the frame counter, prune entries
-    /// that settled back to rest or went a full frame unread (unmounted), and
-    /// report whether any fade is still mid-flight (→ keep frames coming).
-    pub fn tick_at(&mut self, now: Instant) -> bool {
+    /// Per-frame bookkeeping: advance the frame counter, prune entries that
+    /// settled back to rest or — when `full_frame` says the frame drawn since
+    /// the last tick rebuilt every view — went that frame unread (unmounted),
+    /// and report whether any fade is still mid-flight (→ keep frames coming).
+    /// A retained frame re-reads nothing, so it never prunes.
+    pub fn tick_at(&mut self, now: Instant, full_frame: bool) -> bool {
         self.frame += 1;
         let frame = self.frame;
         let duration = Self::duration();
@@ -898,7 +914,7 @@ impl HoverFades {
         self.entries.retain(|_, entry| {
             // Unread through the whole previous frame: the element unmounted
             // (its leave event will never come) — drop the entry.
-            if entry.seen + 1 < frame {
+            if full_frame && entry.seen + 1 < frame {
                 return false;
             }
             let settled = entry.settled(now, duration);
@@ -938,18 +954,50 @@ pub fn hover_listener(
     let key = key.into();
     move |hovered, window, cx| {
         set_hover(&key, *hovered, reduced_motion(cx));
-        // Event-dispatch context: `request_animation_frame` is draw-phase-only
-        // (it resolves the current view) — `refresh` marks the whole window
-        // dirty, the root render re-evaluates the blend and keeps frames
-        // coming via its tail while the fade is mid-flight.
-        window.refresh();
+        pump_fades(window);
     }
 }
 
-/// Frame-drive hook: call ONCE per window frame (the shell render tail); true
-/// while any hover fade is mid-flight and frames must keep coming.
-pub fn hover_fades_active() -> bool {
-    HOVER_FADES.with(|fades| fades.borrow_mut().tick_at(Instant::now()))
+thread_local! {
+    /// Windows with a fade pump scheduled, and whether the frame drawn since
+    /// the pump last ran was a full one (it asked for it).
+    static FADE_PUMPS: RefCell<HashMap<gpui::WindowId, bool>> = RefCell::new(HashMap::new());
+}
+
+/// Redraw `window` whole, frame after frame, until every hover fade settles.
+/// Call after [`set_hover`]. The store is keyed by element, not by view, so
+/// it cannot notify the views that read a key: a fade refreshes the window,
+/// which also makes each pumped frame re-read every mounted key, so unread
+/// entries are pruned only on those frames.
+pub fn pump_fades(window: &mut Window) {
+    window.refresh();
+    let id = window.window_handle().window_id();
+    let started = FADE_PUMPS.with(|pumps| {
+        let mut pumps = pumps.borrow_mut();
+        if pumps.contains_key(&id) {
+            return false;
+        }
+        // The frame after this event is full, but the pump's first run
+        // comes before it is drawn.
+        pumps.insert(id, false);
+        true
+    });
+    if started {
+        window.on_next_frame(fade_frame);
+    }
+}
+
+fn fade_frame(window: &mut Window, _: &mut App) {
+    let id = window.window_handle().window_id();
+    let full = FADE_PUMPS.with(|pumps| pumps.borrow().get(&id).copied().unwrap_or(false));
+    let active = HOVER_FADES.with(|fades| fades.borrow_mut().tick_at(Instant::now(), full));
+    if active {
+        window.refresh();
+        FADE_PUMPS.with(|pumps| pumps.borrow_mut().insert(id, true));
+        window.on_next_frame(fade_frame);
+    } else {
+        FADE_PUMPS.with(|pumps| pumps.borrow_mut().remove(&id));
+    }
 }
 
 /// Blend two colors by `t` the way the browser transitions them: component
@@ -987,11 +1035,11 @@ pub fn hover_blend(key: &str, rest: Hsla, hover: Hsla) -> Hsla {
 // ---------------------------------------------------------------------------
 //
 // Onicode Icons morph between two states (the sidebar glyph's panel narrows when
-// the sidebar closes). Same manual clock and liveness rules as the hover
-// fades, but keyed by the element's *state* rather than pointer events: the
-// first read of a key snaps to its state (mounting never replays a morph), a
-// flip re-anchors at the current value so a mid-flight toggle reverses
-// smoothly, and an entry unread for a full frame is pruned.
+// the sidebar closes). Same manual clock as the hover fades, but keyed by the
+// element's *state* rather than pointer events: the first read of a key snaps
+// to its state (mounting never replays a morph), a flip re-anchors at the
+// current value so a mid-flight toggle reverses smoothly, and the reading view
+// rides the pulse clock until the morph lands.
 
 #[derive(Debug, Clone, Copy)]
 struct StateEntry {
@@ -999,7 +1047,6 @@ struct StateEntry {
     target: f32,
     started: Instant,
     spec: MotionSpec,
-    seen: u64,
 }
 
 impl StateEntry {
@@ -1023,11 +1070,17 @@ impl StateEntry {
 }
 
 /// Per-key state-morph store. Pure core (explicit `now`) — unit-testable.
+///
+/// Entries are kept after they settle: a retained view re-reads nothing, so
+/// "unread for a frame" no longer means unmounted, and the settled state is
+/// what tells the next read whether its state flipped.
 #[derive(Default)]
 pub struct StateMorphs {
     entries: HashMap<String, StateEntry>,
-    frame: u64,
 }
+
+/// Settled entries are dropped once the store holds this many.
+const STATE_MORPHS_KEPT: usize = 512;
 
 impl StateMorphs {
     /// Progress (0 = off, 1 = on) of `key` toward `on` at `now`; stamps
@@ -1041,8 +1094,10 @@ impl StateMorphs {
         now: Instant,
     ) -> f32 {
         let target = if on { 1.0 } else { 0.0 };
-        let frame = self.frame;
         let Some(entry) = self.entries.get_mut(key) else {
+            if self.entries.len() >= STATE_MORPHS_KEPT {
+                self.entries.retain(|_, entry| !entry.settled(now));
+            }
             self.entries.insert(
                 key.to_string(),
                 StateEntry {
@@ -1050,7 +1105,6 @@ impl StateMorphs {
                     target,
                     started: now,
                     spec,
-                    seen: frame,
                 },
             );
             return target;
@@ -1062,27 +1116,16 @@ impl StateMorphs {
                 target,
                 started: now,
                 spec,
-                seen: frame,
             };
         }
-        entry.seen = frame;
         entry.value(now)
     }
 
-    /// Once-per-frame bookkeeping: prune unmounted entries and report whether
-    /// any morph is still mid-flight (→ keep frames coming).
-    pub fn tick_at(&mut self, now: Instant) -> bool {
-        self.frame += 1;
-        let frame = self.frame;
-        let mut active = false;
-        self.entries.retain(|_, entry| {
-            if entry.seen + 1 < frame {
-                return false;
-            }
-            active |= !entry.settled(now);
-            true
-        });
-        active
+    /// Whether `key` is still mid-morph at `now`.
+    pub fn animating_at(&self, key: &str, now: Instant) -> bool {
+        self.entries
+            .get(key)
+            .is_some_and(|entry| !entry.settled(now))
     }
 }
 
@@ -1090,18 +1133,20 @@ thread_local! {
     static STATE_MORPHS: RefCell<StateMorphs> = RefCell::new(StateMorphs::default());
 }
 
-/// Morph progress (0..1) of `key` toward `on` this frame.
-pub fn state_t(key: &str, on: bool, spec: MotionSpec, reduced: bool) -> f32 {
-    STATE_MORPHS.with(|morphs| {
-        morphs
-            .borrow_mut()
-            .value_at(key, on, spec, reduced, Instant::now())
-    })
-}
-
-/// Frame-drive hook, beside [`hover_fades_active`]: call ONCE per window frame.
-pub fn state_morphs_active() -> bool {
-    STATE_MORPHS.with(|morphs| morphs.borrow_mut().tick_at(Instant::now()))
+/// Morph progress (0..1) of `key` toward `on` this frame, read by `view`,
+/// which the pulse clock redraws until the morph lands.
+pub fn state_t(key: &str, on: bool, spec: MotionSpec, view: EntityId, cx: &mut App) -> f32 {
+    let reduced = reduced_motion(cx);
+    let now = cx.frame_time();
+    let (value, animating) = STATE_MORPHS.with(|morphs| {
+        let mut morphs = morphs.borrow_mut();
+        let value = morphs.value_at(key, on, spec, reduced, now);
+        (value, morphs.animating_at(key, now))
+    });
+    if animating {
+        pulse_lease(view, cx);
+    }
+    value
 }
 
 // ---------------------------------------------------------------------------
@@ -1414,7 +1459,7 @@ mod tests {
                 let pulse = activity_pulse(view.entity_id(), cx);
                 let leased = cx
                     .try_global::<PulseClock>()
-                    .is_some_and(|clock| clock.leases.contains_key(&view.entity_id()));
+                    .is_some_and(|clock| clock.leases.borrow().contains_key(&view.entity_id()));
                 assert_eq!(
                     leased, animates,
                     "{preference:?}, system={system}, pause={pause_in_background}, active={active}"
@@ -1427,7 +1472,10 @@ mod tests {
                         0.0
                     );
                     assert!(!cx.try_global::<PulseClock>().is_some_and(|clock| {
-                        clock.leases.contains_key(&decorative_view.entity_id())
+                        clock
+                            .leases
+                            .borrow()
+                            .contains_key(&decorative_view.entity_id())
                     }));
                 }
             }
@@ -1472,25 +1520,25 @@ mod tests {
             apply(cx);
         });
         let window = cx.add_window(|_, _| Loaders);
-        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         cx.run_until_parked();
         for _ in 0..20 {
             cx.background_executor.advance_clock(PULSE_TICK);
             cx.run_until_parked();
-            cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear())
+            cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
                 .unwrap();
         }
         cx.update(|cx| {
             let clock = cx.global::<PulseClock>();
-            assert!(clock.tick >= 20);
-            assert_eq!(
-                clock.leases.len(),
-                2,
-                "transcript and cached sidebar loader"
-            );
+            assert!(clock.tick.get() >= 20);
+            let leases = clock.leases.borrow();
+            // 20 ticks outlast a lease many times over on the executor's
+            // clock: both leases are alive only because each view, its parent
+            // drawn from the last frame, was rebuilt by its own notify.
+            assert_eq!(leases.len(), 2, "transcript and cached sidebar loader");
             assert!(
-                clock.leases.values().all(|lease| lease.stride == 2),
+                leases.values().all(|lease| lease.stride == 2),
                 "both loaders renew at 15Hz"
             );
         });
@@ -1520,7 +1568,7 @@ mod tests {
             ));
             assert!(
                 cx.try_global::<PulseClock>()
-                    .is_some_and(|clock| clock.leases.contains_key(&view.entity_id())),
+                    .is_some_and(|clock| clock.leases.borrow().contains_key(&view.entity_id())),
                 "a working indicator must keep receiving ticks with system reduced motion"
             );
         });
@@ -1753,13 +1801,13 @@ mod tests {
 
         // First sight lands on the state — no replay at mount.
         assert_eq!(morph(&mut morphs, true, t0), 1.0);
-        assert!(!morphs.tick_at(t0));
+        assert!(!morphs.animating_at("glyph", t0));
 
         // Flip: starts from 1, mid-flight strictly between, lands at 0.
         assert_eq!(morph(&mut morphs, false, ms(10)), 1.0);
         let mid = morph(&mut morphs, false, ms(80));
         assert!(mid > 0.0 && mid < 1.0, "mid-flight: {mid}");
-        assert!(morphs.tick_at(ms(80)));
+        assert!(morphs.animating_at("glyph", ms(80)));
 
         // Reverse mid-flight re-anchors — no jump — then lands at 1.
         let at_flip = morph(&mut morphs, true, ms(80));
@@ -1768,7 +1816,7 @@ mod tests {
             "continuity: {mid} vs {at_flip}"
         );
         assert_eq!(morph(&mut morphs, true, ms(400)), 1.0);
-        assert!(!morphs.tick_at(ms(400)));
+        assert!(!morphs.animating_at("glyph", ms(400)));
 
         // Reduced motion snaps a flip.
         assert_eq!(
@@ -1776,10 +1824,10 @@ mod tests {
             0.0
         );
 
-        // Unread for a full frame: pruned (a remount snaps again).
-        morphs.tick_at(ms(600));
-        morphs.tick_at(ms(700));
-        assert!(morphs.entries.is_empty());
+        // Settled entries outlive frames that never read them: a retained
+        // view's next flip still animates from the state it last drew.
+        assert_eq!(morph(&mut morphs, true, ms(5_000)), 0.0);
+        assert!(morphs.animating_at("glyph", ms(5_010)));
     }
 
     #[test]
@@ -1809,20 +1857,20 @@ mod tests {
 
         fades.set_at("a", true, false, t0);
         // Mid-flight: active, frames must keep coming (read each frame).
-        assert!(fades.tick_at(ms(50)));
+        assert!(fades.tick_at(ms(50), true));
         fades.value_at("a", ms(50));
-        assert!(fades.tick_at(ms(100)));
+        assert!(fades.tick_at(ms(100), true));
         fades.value_at("a", ms(100));
         // Settled hovered (still read): no more frames needed, entry kept.
-        assert!(!fades.tick_at(ms(200)));
+        assert!(!fades.tick_at(ms(200), true));
         fades.value_at("a", ms(200));
         assert_eq!(fades.value_at("a", ms(250)), 1.0);
 
         // Leave → fades → settles at rest → entry evicted.
         fades.set_at("a", false, false, ms(250));
-        assert!(fades.tick_at(ms(300)));
+        assert!(fades.tick_at(ms(300), true));
         fades.value_at("a", ms(300));
-        assert!(!fades.tick_at(ms(500)), "settled at rest");
+        assert!(!fades.tick_at(ms(500), true), "settled at rest");
         assert!(fades.entries.is_empty(), "rest entries are pruned");
     }
 
@@ -1834,12 +1882,26 @@ mod tests {
         let t0 = Instant::now();
         let ms = |m: u64| t0 + Duration::from_millis(m);
         fades.set_at("menu-row", true, false, t0);
-        fades.tick_at(ms(16));
+        fades.tick_at(ms(16), true);
         fades.value_at("menu-row", ms(16)); // frame 1: mounted, read
-        fades.tick_at(ms(32)); // frame 2: unmounted — no read
-        fades.tick_at(ms(48)); // frame 3: a full unread frame has passed
+        fades.tick_at(ms(32), true); // frame 2: unmounted — no read
+        fades.tick_at(ms(48), true); // frame 3: a full unread frame has passed
         assert!(fades.entries.is_empty(), "unread entry evicted");
         assert_eq!(fades.value_at("menu-row", ms(64)), 0.0);
+    }
+
+    #[test]
+    fn hover_tick_keeps_entries_through_retained_frames() {
+        // A retained frame re-reads nothing: a hovered row in a view drawn
+        // from the last frame keeps its wash however many such frames pass.
+        let mut fades = HoverFades::default();
+        let t0 = Instant::now();
+        let ms = |m: u64| t0 + Duration::from_millis(m);
+        fades.set_at("row", true, false, t0);
+        for frame in 1..10 {
+            fades.tick_at(ms(16 * frame), false);
+        }
+        assert_eq!(fades.value_at("row", ms(400)), 1.0);
     }
 
     #[test]

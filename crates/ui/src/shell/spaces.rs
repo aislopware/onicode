@@ -1298,7 +1298,7 @@ mod pinned_session_tests {
             });
             cx.update(|window, cx| {
                 window.refresh();
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
             });
             let bounds = cx.debug_bounds("sidebar-pinned-section").unwrap();
             assert_eq!(
@@ -1438,7 +1438,7 @@ mod pinned_session_tests {
             });
             cx.update(|window, cx| {
                 window.refresh();
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
             });
             assert_eq!(cx.debug_bounds("archived-toggle").is_some(), visible);
             assert_eq!(cx.debug_bounds("chat-archived").is_some(), visible);
@@ -1450,7 +1450,7 @@ mod pinned_session_tests {
         });
         cx.update(|window, cx| {
             window.refresh();
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
         });
         assert!(cx.debug_bounds("archived-toggle").is_some());
         assert!(cx.debug_bounds("chat-archived").is_some());
@@ -4614,11 +4614,21 @@ impl Shell {
                     .child(
                         gpui::canvas(
                             move |bounds, _, cx| {
-                                let _ = entity.update(cx, |this, _| {
-                                    if let Some(menu) = this.sidebar_view_menu.open_mut() {
-                                        menu.submenu_bounds = Some(bounds);
-                                    }
-                                });
+                                // Compare first: a write while drawing rebuilds the shell.
+                                let stale = entity
+                                    .read_with(cx, |this, _| {
+                                        this.sidebar_view_menu
+                                            .as_open()
+                                            .is_some_and(|menu| menu.submenu_bounds != Some(bounds))
+                                    })
+                                    .unwrap_or(false);
+                                if stale {
+                                    let _ = entity.update(cx, |this, _| {
+                                        if let Some(menu) = this.sidebar_view_menu.open_mut() {
+                                            menu.submenu_bounds = Some(bounds);
+                                        }
+                                    });
+                                }
                             },
                             |_, _, _, _| {},
                         )
@@ -5516,7 +5526,7 @@ impl Shell {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> SidebarSessionRows {
-        let now = Utc::now();
+        let now = crate::label_clock::utc_now(cx);
         let filter = self.settings.space_filter.clone();
         let profile_key = self.active_sidebar_pin_profile_key(cx);
         let saved_pins = self.active_sidebar_pins(cx);
@@ -5785,8 +5795,13 @@ impl Shell {
                     change_request,
                     group: _,
                 } = row;
-                let time_ago: SharedString =
-                    format_time_ago(chat.last_message_at.unwrap_or(chat.created_at), now).into();
+                let active_at = chat.last_message_at.unwrap_or(chat.created_at);
+                let time_ago: SharedString = format_time_ago(active_at, now).into();
+                self.sidebar_ago_tick.schedule(
+                    self.sidebar_pane.downgrade(),
+                    crate::label_clock::ago_turns_in(active_at, now),
+                    cx,
+                );
                 let is_selected = selected.as_deref() == Some(chat.id.as_str());
                 let harness = self
                     .settings
@@ -6312,7 +6327,7 @@ impl Shell {
         }
         const INITIAL: usize = ARCHIVED_INITIAL_ROWS;
         const PAGE: usize = ARCHIVED_PAGE_ROWS;
-        let now = Utc::now();
+        let now = crate::label_clock::utc_now(cx);
         let rows = self.archived_sidebar_chats(cx);
         if rows.is_empty() {
             return None;
@@ -6397,6 +6412,12 @@ impl Shell {
                     .sidebar_show_harness
                     .then(|| chat.config.as_ref().map(|c| c.harness))
                     .flatten();
+                let active_at = chat.last_message_at.unwrap_or(chat.created_at);
+                self.sidebar_ago_tick.schedule(
+                    self.sidebar_pane.downgrade(),
+                    crate::label_clock::ago_turns_in(active_at, now),
+                    cx,
+                );
                 list = list.child(
                     self.render_chat_row(
                         chat.id.clone(),
@@ -6404,8 +6425,7 @@ impl Shell {
                             &chat.title.clone().unwrap_or_else(|| "New session".into()),
                         )
                         .into(),
-                        format_time_ago(chat.last_message_at.unwrap_or(chat.created_at), now)
-                            .into(),
+                        format_time_ago(active_at, now).into(),
                         row.folder.into(),
                         row.branch.map(SharedString::from),
                         row.change_request,
@@ -7852,7 +7872,7 @@ impl Shell {
     fn add_space_key(&mut self, event: &gpui::KeyDownEvent, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
         // The address-bar chord.
-        if keystroke.key == "l" && keystroke.modifiers == gpui::Modifiers::secondary_key() {
+        if keystroke.key == "l" && keystroke.modifiers == gpui::Modifiers::secondary_key(cx) {
             self.add_space_edit_path(cx);
             cx.stop_propagation();
             return;
@@ -7872,7 +7892,7 @@ impl Shell {
                 "escape" => {
                     self.add_space_cancel_path_edit(cx);
                 }
-                "enter" if keystroke.modifiers == gpui::Modifiers::secondary_key() => {
+                "enter" if keystroke.modifiers == gpui::Modifiers::secondary_key(cx) => {
                     self.add_space_open_typed_path(true, cx)
                 }
                 _ => return,
@@ -8755,7 +8775,7 @@ impl Shell {
         let shortcut = {
             let id = ShortcutId::NewProject;
             let combo = self.settings.keymap.get(id);
-            let valid = Keystroke::parse(&platform_combo(combo)).is_ok();
+            let valid = crate::keys::parse(&platform_combo(combo)).is_ok();
             crate::settings::badge_combo(if valid { combo } else { id.default_combo() })
         };
         // While the path is typed, ⌘↵ and the button add the TYPED path.
@@ -10113,7 +10133,12 @@ mod home_folder_search_tests {
         go_home(window, cx);
         engine.take(methods::SEARCH_HOME_FOLDERS, cx);
         // ⌘L: the trail becomes the open folder's path, ready to replace.
-        press(window, "l", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "l",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         assert_eq!(
             path_input(window, cx).read_with(cx, |input, _| input.text().to_owned()),
             "~/"
@@ -10184,9 +10209,19 @@ mod home_folder_search_tests {
         let (window, _dir, mut engine) = picker(cx, "remote");
         go_home(window, cx);
         engine.take(methods::SEARCH_HOME_FOLDERS, cx);
-        press(window, "l", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "l",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         type_path(window, "'~/code/My\\ App'", cx);
-        press(window, "enter", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "enter",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         let request = listing_request(&mut engine, "/home/me/code/My App", cx);
         assert_eq!(request["params"]["targetDeviceId"], "remote");
         engine.reply(
@@ -10216,7 +10251,12 @@ mod home_folder_search_tests {
                 shell.add_space_back_to(ProjectStep::Devices, cx)
             })
             .unwrap();
-        press(window, "l", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "l",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         window
             .read_with(cx, |shell, cx| {
                 let flow = shell.add_space.as_ref().unwrap();
@@ -10257,7 +10297,12 @@ mod home_folder_search_tests {
         // The next level lists the completed folder.
         listing_request(&mut engine, "/home/me/code", cx);
         // ⌘L again selects the path rather than reopening the field.
-        press(window, "l", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "l",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         assert_eq!(
             path_input(window, cx).read_with(cx, |input, _| input.text().to_owned()),
             "~/code/"
@@ -10298,7 +10343,7 @@ mod home_folder_search_tests {
     fn draw(window: gpui::WindowHandle<Shell>, cx: &mut TestAppContext) {
         cx.run_until_parked();
         // The window, not the Shell: drawing updates the Shell itself.
-        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
     }
 
@@ -10320,7 +10365,12 @@ mod home_folder_search_tests {
         connect(window, cx);
         go_home(window, cx);
         engine.take(methods::SEARCH_HOME_FOLDERS, cx);
-        press(window, "l", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "l",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         type_path(window, "/srv", cx);
         draw(window, cx);
         assert!(focused(window, &path_input(window, cx), cx));
@@ -10358,7 +10408,12 @@ mod home_folder_search_tests {
         cx.simulate_keystrokes(window.into(), "tab");
         draw(window, cx);
         assert!(focused(window, &search, cx), "⇥ in the search");
-        press(window, "l", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "l",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         let field = path_input(window, cx);
         for keys in ["tab", "shift-tab"] {
             draw(window, cx);
@@ -10373,7 +10428,12 @@ mod home_folder_search_tests {
         let (window, _dir, mut engine) = picker(cx, "local");
         go_home(window, cx);
         engine.take(methods::SEARCH_HOME_FOLDERS, cx);
-        press(window, "l", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "l",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         let input = path_input(window, cx);
         input.update(cx, |_, cx| {
             cx.emit(ComposerInputEvent::PastedPaths(vec![
@@ -10392,9 +10452,19 @@ mod home_folder_search_tests {
         let (window, _dir, mut engine) = picker(cx, "local");
         go_home(window, cx);
         engine.take(methods::SEARCH_HOME_FOLDERS, cx);
-        press(window, "l", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "l",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         type_path(window, "~/code", cx);
-        press(window, "enter", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "enter",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         // ↵ while ⌘↵'s listing is on its way.
         submit_path(window, cx);
         let requests = engine.take(methods::LIST_FOLDERS, cx);
@@ -10424,7 +10494,12 @@ mod home_folder_search_tests {
         });
         go_home(window, cx);
         engine.take(methods::SEARCH_HOME_FOLDERS, cx);
-        press(window, "l", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "l",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         let completion = |text: &str, cx: &mut TestAppContext| {
             type_path(window, text, cx);
             window
@@ -10447,7 +10522,12 @@ mod home_folder_search_tests {
                 shell.add_space_back_to(ProjectStep::Devices, cx)
             })
             .unwrap();
-        press(window, "l", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "l",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         type_path(window, "/home/me/code", cx);
         submit_path(window, cx);
         let requests = engine.take(methods::LIST_FOLDERS, cx);
@@ -10487,7 +10567,12 @@ mod home_folder_search_tests {
                 shell.load_space_folders(Some("/home/me/code".into()), cx)
             })
             .unwrap();
-        press(window, "l", gpui::Modifiers::secondary_key(), cx);
+        press(
+            window,
+            "l",
+            cx.update(|cx| gpui::Modifiers::secondary_key(cx)),
+            cx,
+        );
         assert_eq!(
             path_input(window, cx).read_with(cx, |input, _| input.text().to_owned()),
             "~/code/"

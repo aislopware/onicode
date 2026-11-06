@@ -48,7 +48,7 @@ pub async fn exercise(
     }
     anyhow::ensure!(
         BrowserContext::fixture_persistence_supported(),
-        "persistent profiles require macOS or Linux"
+        "persistent profiles require macOS"
     );
     let (id, browser) = window.update(cx, |shell, window, cx| {
         shell.fixture_open_browser(Some(url.to_owned()), window, cx)
@@ -102,7 +102,7 @@ pub async fn exercise(
             shell.fixture_open_browser(Some(empty), window, cx)
         })?;
         anyhow::ensure!(
-            !browser.read_with(cx, |b, _| b.fixture_native_visible()),
+            !window.update(cx, |_, w, cx| browser.read(cx).fixture_native_visible(w))?,
             "old profile remained visible"
         );
         loaded(&other, cx).await?;

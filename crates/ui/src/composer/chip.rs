@@ -236,7 +236,7 @@ pub(crate) fn paint_chip(
         }
         ChipIcon::FileTheme(path) => {
             if let Some(image) = crate::file_icons::raster(path, cx) {
-                let _ = window.paint_image(bounds, Default::default(), image, 0, false);
+                let _ = window.paint_image(bounds, bounds, Default::default(), image, 0, false);
             }
         }
     }

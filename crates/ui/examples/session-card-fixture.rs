@@ -169,7 +169,7 @@ fn main() -> anyhow::Result<()> {
             pause(cx, 900).await;
             let scale = window.update(cx, |_, w, _| w.scale_factor()).unwrap_or(0.0);
             window.update(cx, |_, w, cx| {
-                w.draw(cx).clear();
+                w.draw(cx).clear(cx);
                 if let Ok(image) = w.render_to_image() {
                     image.save(output.join(format!("{name}.png"))).ok();
                 }

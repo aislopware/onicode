@@ -30,7 +30,7 @@ RUN apt-get update -qq && apt-get install -y -qq \
       libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
       libx11-dev libxcb1-dev libx11-xcb-dev \
       libfontconfig1-dev libfreetype-dev libasound2-dev \
-      libvulkan-dev libwebkit2gtk-4.1-dev libjson-glib-dev libssl-dev \
+      libvulkan-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable

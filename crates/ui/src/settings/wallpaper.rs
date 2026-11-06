@@ -177,21 +177,24 @@ fn synchronize(cx: &mut App) {
         remove_orphaned_preloads(&key);
         cx.set_global(PreloadQueue::default());
     }
-    let queue = cx.global_mut::<PreloadQueue>();
-    if queue.key.as_ref() != Some(&key) {
-        queue.ready.clear();
-        queue.generation = queue.generation.wrapping_add(1);
-        queue.loading = false;
-        queue.error = None;
-        queue.key = Some(key);
+    // Read first: this runs on every shell render, and a global written
+    // while drawing rebuilds every view that read it on the next frame.
+    if cx.global::<PreloadQueue>().key.as_ref() == Some(&key) {
+        return;
     }
+    let queue = cx.global_mut::<PreloadQueue>();
+    queue.ready.clear();
+    queue.generation = queue.generation.wrapping_add(1);
+    queue.loading = false;
+    queue.error = None;
+    queue.key = Some(key);
 }
 
 /// Called on render as well as after a switch: warms on launch and invalidates
 /// when the folder, manual background, effect, or light/dark appearance changes.
 pub fn preload(cx: &mut App) {
     synchronize(cx);
-    let queue = cx.global_mut::<PreloadQueue>();
+    let queue = cx.global::<PreloadQueue>();
     let key = queue.key.as_ref().unwrap().clone();
     if key.folder.is_none()
         || queue.loading
@@ -204,8 +207,8 @@ pub fn preload(cx: &mut App) {
     for candidate in &queue.ready {
         remember(&mut history, &candidate.source);
     }
-    queue.loading = true;
     let generation = queue.generation;
+    cx.global_mut::<PreloadQueue>().loading = true;
     let worker = cx
         .background_executor()
         .spawn(async move { Candidate::load(&key, &history) });

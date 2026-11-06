@@ -29,7 +29,7 @@ async fn animate(window: gpui::AnyWindowHandle, cx: &mut AsyncApp, ms: u64) {
     for _ in 0..ms / 16 {
         let _ = window.update(cx, |_, w, cx| {
             w.refresh();
-            w.draw(cx).clear();
+            w.draw(cx).clear(cx);
         });
         pause(cx, 16).await;
     }
@@ -43,7 +43,7 @@ fn capture(
 ) -> anyhow::Result<()> {
     let path = directory.join(format!("{name}.png"));
     window.update(cx, |_, w, cx| {
-        w.draw(cx).clear();
+        w.draw(cx).clear(cx);
         w.render_to_image()?.save(&path)?;
         anyhow::Ok(())
     })??;
@@ -52,7 +52,7 @@ fn capture(
 
 /// A real key press through the window's dispatch.
 fn press(window: gpui::AnyWindowHandle, cx: &mut AsyncApp, keystroke: &str) {
-    let keystroke = Keystroke::parse(keystroke).expect("keystroke");
+    let keystroke = onicode_ui::keys::parse(keystroke).expect("keystroke");
     let _ = window.update(cx, |_, w, cx| {
         w.dispatch_event(
             PlatformInput::KeyDown(KeyDownEvent {

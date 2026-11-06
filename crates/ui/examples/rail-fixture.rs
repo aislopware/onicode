@@ -91,7 +91,7 @@ fn capture(
 ) -> Option<image::RgbaImage> {
     window
         .update(cx, |_, w, cx| {
-            w.draw(cx).clear();
+            w.draw(cx).clear(cx);
             let image = w.render_to_image().ok()?;
             image.save(dir.join(format!("{name}.png"))).ok();
             Some(image)
@@ -145,7 +145,7 @@ async fn film(
         input(
             window,
             cx,
-            gpui::PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+            gpui::PlatformInput::Scroll(gpui::ScrollEvent {
                 position: gpui::point(px(x + 2.0), px(mid)),
                 delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(60.))),
                 modifiers: Default::default(),

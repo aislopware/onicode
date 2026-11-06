@@ -33,7 +33,7 @@ fn capture(
     let path = directory.join(format!("{name}.png"));
     #[cfg(not(target_os = "linux"))]
     return window.update(cx, |_, w, cx| {
-        w.draw(cx).clear();
+        w.draw(cx).clear(cx);
         w.render_to_image()?.save(&path)?;
         Ok(())
     })?;
@@ -44,7 +44,7 @@ fn capture(
         // The frame loop can be idle: present the current scene first.
         window.update(cx, |_, w, cx| {
             w.refresh();
-            w.draw(cx).clear();
+            w.draw(cx).clear(cx);
         })?;
         std::thread::sleep(Duration::from_millis(100));
         let windows = std::process::Command::new("xdotool")

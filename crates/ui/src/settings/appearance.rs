@@ -2796,21 +2796,19 @@ impl AppearancePage {
             } else {
                 gpui::CursorStyle::OpenHand
             })
-            .on_scroll_wheel(
-                cx.listener(|this, event: &gpui::ScrollWheelEvent, window, cx| {
-                    let delta = match event.delta {
-                        ScrollDelta::Pixels(delta) => f32::from(delta.y),
-                        ScrollDelta::Lines(delta) => delta.y * 40.0,
-                    };
-                    let Some(dialog) = this.background_adjustment_dialog.as_ref() else {
-                        return;
-                    };
-                    let zoom = dialog.draft.zoom * (delta * 0.0025).clamp(-2.0, 2.0).exp();
-                    this.zoom_background_around(zoom, Some(event.position), cx);
-                    cx.stop_propagation();
-                    window.prevent_default();
-                }),
-            )
+            .on_scroll(cx.listener(|this, event: &gpui::ScrollEvent, window, cx| {
+                let delta = match event.delta {
+                    ScrollDelta::Pixels(delta) => f32::from(delta.y),
+                    ScrollDelta::Lines(delta) => delta.y * 40.0,
+                };
+                let Some(dialog) = this.background_adjustment_dialog.as_ref() else {
+                    return;
+                };
+                let zoom = dialog.draft.zoom * (delta * 0.0025).clamp(-2.0, 2.0).exp();
+                this.zoom_background_around(zoom, Some(event.position), cx);
+                cx.stop_propagation();
+                window.prevent_default();
+            }))
             .on_pinch(cx.listener(|this, event: &gpui::PinchEvent, window, cx| {
                 let Some(dialog) = this.background_adjustment_dialog.as_mut() else {
                     return;
@@ -4739,12 +4737,12 @@ mod tests {
             );
         });
         let (_page, cx) = cx.add_window_view(|_, cx| AppearancePage::new(cx));
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let trigger = cx
             .debug_bounds("appearance-surface")
             .expect("glass trigger");
         cx.simulate_click(trigger.center(), gpui::Modifiers::default());
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let frosted = cx
             .debug_bounds("appearance-surface-option-1")
             .expect("frosted option");
@@ -4834,7 +4832,7 @@ mod tests {
                 // trigger's `is_open` guard reads the just-closed menu and
                 // reopens it on the very same event.
                 let enter = KeyDownEvent {
-                    keystroke: gpui::Keystroke::parse("enter").expect("valid keystroke"),
+                    keystroke: crate::keys::parse("enter").expect("valid keystroke"),
                     is_held: false,
                     prefer_character_input: false,
                 };

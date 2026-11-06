@@ -1212,7 +1212,7 @@ mod tests {
                 cx,
             )
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         page.update(cx, |page, _| {
             assert_eq!(page.keymap.toggle_dictation, "mod-shift-v");
         });
@@ -1241,10 +1241,10 @@ mod tests {
             page.show_section(false, true);
             page
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let send = cx.debug_bounds("composer-send-behavior").unwrap();
         cx.simulate_click(send.center(), gpui::Modifiers::default());
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let option = cx.debug_bounds("composer-send-behavior-option-1").unwrap();
         cx.simulate_click(option.center(), gpui::Modifiers::default());
         page.update(cx, |page, _| assert!(!page.send_select.is_open()));
@@ -1258,7 +1258,7 @@ mod tests {
         cx.executor()
             .advance_clock(std::time::Duration::from_secs(1));
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         assert!(cx.debug_bounds("composer-send-behavior-option-1").is_none());
         let escape = cx.debug_bounds("escape-stops-active-agent-toggle").unwrap();
         cx.simulate_click(escape.center(), gpui::Modifiers::default());
@@ -1267,7 +1267,7 @@ mod tests {
             assert!(page.escape_stops_active_agent);
             page.show_section(false, false);
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         assert!(cx.debug_bounds("composer-send-behavior").is_none());
         assert!(
             cx.debug_bounds("escape-stops-active-agent-toggle")
@@ -1316,10 +1316,10 @@ mod tests {
                 PullRequestDestination::Browser,
             ),
         ] {
-            cx.update(|window, cx| window.draw(cx).clear());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
             let trigger = cx.debug_bounds("pull-request-destination").unwrap();
             cx.simulate_click(trigger.center(), gpui::Modifiers::default());
-            cx.update(|window, cx| window.draw(cx).clear());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
             let row = cx.debug_bounds(option).unwrap();
             cx.simulate_click(row.center(), gpui::Modifiers::default());
             page.update(cx, |page, cx| {
@@ -1372,13 +1372,13 @@ mod tests {
             .update(cx, |page, w, cx| w.focus(&page.focus, cx))
             .unwrap();
         cx.update_window(window.into(), |_, w, cx| {
-            w.draw(cx).clear();
+            w.draw(cx).clear(cx);
         })
         .unwrap();
         let press = |cx: &mut gpui::TestAppContext, key: &str| {
             cx.update_window(window.into(), |_, w, cx| {
-                w.draw(cx).clear();
-                let keystroke = gpui::Keystroke::parse(key).unwrap();
+                w.draw(cx).clear(cx);
+                let keystroke = crate::keys::parse(key).unwrap();
                 w.dispatch_event(
                     gpui::PlatformInput::KeyDown(gpui::KeyDownEvent {
                         keystroke: keystroke.clone(),
@@ -1452,7 +1452,8 @@ mod tests {
         cx.update(|cx| {
             gpui_base::init(cx);
             cx.set_global(Theme::default());
-            cx.bind_keys([gpui::KeyBinding::new(
+            cx.bind_keys([crate::keys::binding(
+                cx,
                 &crate::settings::platform_combo("mod-n"),
                 crate::shell::NewSession,
                 None,

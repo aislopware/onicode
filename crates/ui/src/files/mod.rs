@@ -1359,7 +1359,7 @@ mod explorer_tests {
                 }
             })
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         // The explorer header is the same band as the editor header.
         let header = cx.debug_bounds("files-explorer-header").unwrap();
         assert_eq!(header.size.height, px(crate::surface_chrome::HEADER_HEIGHT));
@@ -1389,7 +1389,7 @@ mod explorer_tests {
             assert!(files.search.read(cx).text().is_empty());
         });
         // The keystroke's redraw consumes the restore flag and moves focus.
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.update(|window, cx| {
             assert!(files.read(cx).tree_focus.is_focused(window));
         });

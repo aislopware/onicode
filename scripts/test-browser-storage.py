@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Exercise real browser storage with synthetic data across independent processes.
 
-Linux: xvfb-run -a python3 scripts/test-browser-storage.py --helper /path/to/onicode-webkit
-Native shell (Linux/macOS): python3 scripts/test-browser-storage.py --fixture /path/to/browser-fixture
+macOS: python3 scripts/test-browser-storage.py --fixture /path/to/browser-fixture
 """
 
 from __future__ import annotations
@@ -11,13 +10,10 @@ import argparse
 import http.server
 import json
 import os
-import queue
-import struct
 import subprocess
 import sys
 import tempfile
 import threading
-import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -100,119 +96,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
         """Keep the test output quiet."""
 
 
-class Helper:
-    """The onicode-webkit helper on one profile, driven over its framed stdio protocol."""
-
-    def __init__(self, binary: str, profile: Path, *, expect_error: bool = False) -> None:
-        """Start the helper; with `expect_error`, check it refuses the profile and exits."""
-        self.process = subprocess.Popen(
-            [binary, "--profile", str(profile)], stdin=subprocess.PIPE, stdout=subprocess.PIPE
-        )
-        self.events = queue.Queue()
-        self.thread = threading.Thread(target=self.receive, daemon=True)
-        self.thread.start()
-        kind, _, data = self.events.get(timeout=15)
-        if expect_error:
-            assert kind == b"E", (kind, data)
-            assert self.process.wait(timeout=5) != 0
-            self.process.stdin.close()
-            self.process.stdout.close()
-            return
-        if kind != b"R":
-            self.process.kill()
-            self.process.wait()
-            raise AssertionError(("helper startup failed", kind, data))
-
-    def receive(self) -> None:
-        """Queue each event frame until the helper exits."""
-
-        def read(length: int) -> bytes:
-            data = bytearray()
-            while len(data) < length:
-                part = self.process.stdout.read(length - len(data))
-                if not part:
-                    raise EOFError
-                data.extend(part)
-            return bytes(data)
-
-        try:
-            while True:
-                kind, page, length = struct.unpack("<cII", read(9))
-                self.events.put((kind, page, read(length)))
-        except EOFError:
-            self.events.put((b"X", 0, b"helper exited"))
-
-    def command(self, **command: object) -> None:
-        """Send one command frame."""
-        data = json.dumps(command).encode()
-        self.process.stdin.write(struct.pack("<I", len(data)) + data)
-        self.process.stdin.flush()
-
-    def page(self, page: int, url: str) -> None:
-        """Open `url` in a new page and wait for the storage check to pass."""
-        self.command(cmd="create", id=page)
-        self.command(cmd="load", id=page, url=url)
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            kind, identity, data = self.events.get(timeout=max(0.1, deadline - time.monotonic()))
-            if kind == b"X":
-                raise AssertionError(data)
-            if kind != b"S" or identity != page:
-                continue
-            state = json.loads(data)
-            assert not state.get("error"), state
-            title = state.get("title", "")
-            assert not title.startswith("storage:fail:"), title
-            if title == "storage:pass":
-                return
-        msg = "storage page timed out"
-        raise AssertionError(msg)
-
-    def close(self) -> None:
-        """Close stdin and expect a clean exit."""
-        self.process.stdin.close()  # production shutdown uses EOF, too
-        try:
-            assert self.process.wait(timeout=5) == 0
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait()
-            raise
-        finally:
-            self.thread.join(timeout=2)
-            self.process.stdout.close()
-
-
 def run(args: argparse.Namespace, root: Path, origin: str, profile: str, mode: str) -> None:
-    """Load the page for `mode` on `profile`, in the helper or the native fixture."""
-    if args.helper:
-        browser = Helper(args.helper, root / profile)
-        try:
-            browser.page(1, origin + "/" + mode)
-            if mode == "write":
-                time.sleep(2.2)  # expire the short-lived cookie
-                browser.command(cmd="close", id=1)
-                browser.page(2, origin + "/read")
-        finally:
-            browser.close()
-    else:
-        env = dict(
-            os.environ,
-            ONICODE_BROWSER_STORAGE_ROOT=str(root),
-            ONICODE_BROWSER_STORAGE_PROFILE=profile,
-            ONICODE_BROWSER_STORAGE_URL=origin + "/" + mode,
-        )
-        captures = root / f"{profile}-{mode}"
-        result_file = captures / "storage-result.json"
-        result_file.unlink(missing_ok=True)
-        command = [str(Path(args.fixture).resolve()), str(captures)]
-        if os.uname().sysname == "Darwin":
-            command[:0] = ["bash", str(Path(__file__).resolve().parent / "run-macos-browser-fixture.sh")]
-        subprocess.run(command, env=env, check=True, timeout=60)
-        assert json.loads(result_file.read_text()) == {
-            "profile": profile,
-            "url": origin + "/" + mode,
-            "status": "pass",
-        }, f"missing or invalid storage result for {profile}: {mode}"
+    """Load the page for `mode` on `profile` in the native fixture."""
+    env = dict(
+        os.environ,
+        ONICODE_BROWSER_STORAGE_ROOT=str(root),
+        ONICODE_BROWSER_STORAGE_PROFILE=profile,
+        ONICODE_BROWSER_STORAGE_URL=origin + "/" + mode,
+    )
+    captures = root / f"{profile}-{mode}"
+    result_file = captures / "storage-result.json"
+    result_file.unlink(missing_ok=True)
+    command = [
+        "bash",
+        str(Path(__file__).resolve().parent / "run-macos-browser-fixture.sh"),
+        str(Path(args.fixture).resolve()),
+        str(captures),
+    ]
+    subprocess.run(command, env=env, check=True, timeout=60)
+    assert json.loads(result_file.read_text()) == {
+        "profile": profile,
+        "url": origin + "/" + mode,
+        "status": "pass",
+    }, f"missing or invalid storage result for {profile}: {mode}"
     print(f"PASS {profile}: {mode}", flush=True)
 
 
@@ -253,11 +159,9 @@ def cleanup(fixture: str, root: Path) -> list[Exception]:
 
 
 def main() -> None:
-    """Run the storage scenarios and, for the helper, the profile locking and permission checks."""
+    """Run the storage scenarios, then clear every synthetic profile."""
     parser = argparse.ArgumentParser(description=__doc__)
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--helper", type=str)
-    group.add_argument("--fixture", type=str)
+    parser.add_argument("--fixture", type=str, required=True)
     args = parser.parse_args()
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -274,23 +178,10 @@ def main() -> None:
                 ("a", "empty"),
             ]:
                 run(args, root, origin, profile, mode)
-            if args.helper:
-                browser = Helper(args.helper, root / "a")
-                try:
-                    Helper(args.helper, root / "a", expect_error=True)
-                    other = Helper(args.helper, root / "b")
-                    other.close()
-                finally:
-                    browser.close()
-                bad = root / "not-a-directory"
-                bad.write_text("storage must fail")
-                Helper(args.helper, bad, expect_error=True)
-                assert (root / "a" / "cookies.sqlite").stat().st_mode & 0o077 == 0
-                print("PASS profile locking, independent profiles, storage errors, file permissions", flush=True)
         finally:
             # Cleanup must attempt every synthetic profile without replacing the test failure.
             primary_error = sys.exc_info()[1]
-            cleanup_errors = cleanup(args.fixture, root) if args.fixture and os.uname().sysname == "Darwin" else []
+            cleanup_errors = cleanup(args.fixture, root)
             server.shutdown()
             server.server_close()
             if cleanup_errors:

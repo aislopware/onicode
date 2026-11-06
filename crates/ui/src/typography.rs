@@ -276,22 +276,34 @@ pub(crate) fn bundled_font_faces() -> impl Iterator<Item = &'static [u8]> {
 }
 
 /// The native font backend, not TestAppContext's simulated metrics, with the
-/// bundled faces registered. Platforms can't be created concurrently, so the
-/// guard serializes the tests that use one.
+/// bundled faces registered. The guard serializes the tests that use one.
 #[cfg(test)]
 pub(crate) fn native_text_system() -> (std::sync::MutexGuard<'static, ()>, gpui::WindowTextSystem) {
     static NATIVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let guard = NATIVE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let platform = gpui_platform::current_platform(true);
-    let text_system = gpui::WindowTextSystem::new(std::sync::Arc::new(gpui::TextSystem::new(
-        platform.text_system(),
-    )));
+    // A Mac platform may only be made on the main thread, which a test is not on.
+    #[cfg(target_os = "macos")]
+    let platform: std::sync::Arc<dyn gpui::PlatformTextSystem> =
+        std::sync::Arc::new(gpui_apple::AppleTextSystem::new());
+    #[cfg(not(target_os = "macos"))]
+    let platform = gpui_platform::current_platform(true).text_system();
+    let text_system =
+        gpui::WindowTextSystem::new(std::sync::Arc::new(gpui::TextSystem::new(platform)));
     text_system
         .add_fonts(bundled_font_faces().map(Cow::Borrowed).collect())
         .unwrap();
     (guard, text_system)
+}
+
+/// The native background executor, built without a platform for the same reason.
+#[cfg(test)]
+pub(crate) fn native_executor() -> gpui::BackgroundExecutor {
+    #[cfg(target_os = "macos")]
+    return gpui::BackgroundExecutor::new(std::sync::Arc::new(gpui_apple::AppleDispatcher::new()));
+    #[cfg(not(target_os = "macos"))]
+    gpui_platform::background_executor()
 }
 
 fn register_family(cx: &App, family: &UiFontFamily, faces: &'static [&'static [u8]]) -> bool {

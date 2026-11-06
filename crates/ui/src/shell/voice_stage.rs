@@ -831,7 +831,7 @@ mod tests {
             }))
         });
         let shell = host.read_with(cx, |host, _| host.0.clone());
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let bounds = cx.debug_bounds("voice-stage").unwrap();
         let topbar = gpui::point(
             bounds.center().x,
@@ -903,7 +903,7 @@ mod tests {
         let shell = host.read_with(cx, |host, _| host.0.clone());
         let stays_open = |cx: &mut gpui::VisualTestContext| {
             for _ in 0..3 {
-                cx.update(|window, cx| window.draw(cx).clear());
+                cx.update(|window, cx| window.draw(cx).clear(cx));
                 shell.read_with(cx, |shell, cx| assert!(shell.voice.read(cx).stage_open));
                 assert!(cx.debug_bounds("voice-stage").is_some());
             }
@@ -916,7 +916,7 @@ mod tests {
                 .update(cx, |voice, _| voice.phase = VoicePhase::Active);
             shell.set_voice_stage_open(false, cx);
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         shell.update(cx, |shell, cx| shell.set_voice_stage_open(true, cx));
         stays_open(cx);
 
@@ -924,7 +924,7 @@ mod tests {
         shell.update(cx, |shell, cx| {
             shell.open_settings(SettingsSection::General, cx)
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         shell.read_with(cx, |shell, cx| {
             assert!(!shell.voice.read(cx).stage_open);
             assert!(shell.voice.read(cx).is_live());
@@ -933,12 +933,15 @@ mod tests {
         stays_open(cx);
 
         // Leaving and reentering the same settings page is navigation too.
-        shell.update(cx, |shell, _| shell.route = Route::Chat);
-        cx.update(|window, cx| window.draw(cx).clear());
+        shell.update(cx, |shell, cx| {
+            shell.route = Route::Chat;
+            cx.notify();
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         shell.update(cx, |shell, cx| {
             shell.open_settings(SettingsSection::General, cx)
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         shell.read_with(cx, |shell, cx| {
             assert!(!shell.voice.read(cx).stage_open);
             assert!(shell.voice.read(cx).is_live());
@@ -947,11 +950,12 @@ mod tests {
         shell.update(cx, |shell, cx| shell.set_voice_stage_open(true, cx));
         stays_open(cx);
         shell.update(cx, |shell, cx| {
-            shell.state.update(cx, |state, _| {
-                state.selected_chat = Some("another-chat".into())
+            shell.state.update(cx, |state, cx| {
+                state.selected_chat = Some("another-chat".into());
+                cx.notify();
             });
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         shell.read_with(cx, |shell, cx| {
             assert!(!shell.voice.read(cx).stage_open);
             assert!(shell.voice.read(cx).is_live());
@@ -998,9 +1002,10 @@ mod tests {
                     cx,
                 );
                 shell.reduced_motion = true;
-                shell
-                    .state
-                    .update(cx, |state, _| state.selected_chat = Some("current".into()));
+                shell.state.update(cx, |state, cx| {
+                    state.selected_chat = Some("current".into());
+                    cx.notify();
+                });
                 shell.voice.update(cx, |voice, cx| {
                     voice.phase = VoicePhase::Active;
                     voice.set_stage_open(true, cx);
@@ -1011,11 +1016,11 @@ mod tests {
         let shell = host.read_with(cx, |host, _| host.0.clone());
         let open_stage = |cx: &mut gpui::VisualTestContext| {
             shell.update(cx, |shell, cx| shell.set_voice_stage_open(true, cx));
-            cx.update(|window, cx| window.draw(cx).clear());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
             shell.read_with(cx, |shell, cx| assert!(shell.voice.read(cx).stage_open));
         };
         let stepped_aside = |cx: &mut gpui::VisualTestContext, selected: &str| {
-            cx.update(|window, cx| window.draw(cx).clear());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
             shell.read_with(cx, |shell, cx| {
                 assert!(!shell.voice.read(cx).stage_open);
                 assert!(shell.voice.read(cx).is_live(), "the call keeps running");
@@ -1026,7 +1031,7 @@ mod tests {
                 );
             });
         };
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
 
         // The session already under the stage: the selection doesn't change,
         // so only an explicit step-aside shows it.
@@ -1101,7 +1106,11 @@ mod tests {
                     .state
                     .update(cx, |state, _| state.selected_chat = Some(chat));
             });
-            cx.update(|window, cx| window.draw(cx).clear());
+            // Unnotified, as the state observer would end a call with no engine behind it.
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx)
+            });
         };
 
         select("another-chat", cx);

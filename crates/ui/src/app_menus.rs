@@ -229,7 +229,7 @@ pub fn app_menus() -> Vec<Menu> {
 
 #[cfg(test)]
 mod tests {
-    use gpui::{Action as _, Keystroke};
+    use gpui::Action as _;
 
     use super::*;
 
@@ -361,7 +361,7 @@ mod tests {
                         .collect::<Vec<_>>()
                 })
         };
-        let combo = |source: &str| vec![Keystroke::parse(source).unwrap()];
+        let combo = |source: &str| vec![crate::keys::parse(source).unwrap()];
         let macos = app_key_bindings(true);
         assert_eq!(
             find(&macos, shell::OpenSettings.name()),

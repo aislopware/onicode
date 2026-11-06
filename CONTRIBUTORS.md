@@ -25,7 +25,7 @@ The toolchain is pinned by [`rust-toolchain.toml`](rust-toolchain.toml)
 ```sh
 sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
   libx11-dev libxcb1-dev libx11-xcb-dev libfontconfig1-dev libfreetype-dev \
-  libasound2-dev libvulkan-dev pkg-config cmake libwebkit2gtk-4.1-dev libjson-glib-dev
+  libasound2-dev libvulkan-dev pkg-config cmake
 ```
 
 **macOS** needs Xcode.

@@ -44,7 +44,7 @@ pub(crate) fn contained_menu(
         exit,
         div()
             .occlude()
-            .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+            .on_scroll(|_, _, cx| cx.stop_propagation())
             .child(card),
     );
     div()
@@ -289,7 +289,7 @@ mod tests {
         let (_, cx) = cx.add_window_view(|_, _| MenuFixture {
             background: background.clone(),
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let trigger = cx.debug_bounds("test-menu-trigger").unwrap();
         let menu = cx.debug_bounds("contained-menu-scroll").unwrap();
         assert!(menu.size.height <= px(177.0));
@@ -300,7 +300,7 @@ mod tests {
         let list = cx.debug_bounds("settings-dropdown-list").unwrap();
         assert!(list.size.height <= menu.size.height);
         assert!(background.max_offset().y > px(0.0));
-        cx.simulate_event(gpui::ScrollWheelEvent {
+        cx.simulate_event(gpui::ScrollEvent {
             position: list.center(),
             delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(-10_000.0))),
             ..Default::default()

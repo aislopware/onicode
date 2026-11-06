@@ -73,6 +73,8 @@ pub struct DevicesPage {
     copy_task: Option<Task<()>>,
     /// One CloudStatus read per visit (kept alive, never polled).
     _cloud_task: Option<Task<()>>,
+    /// Wakes the page when a "Last seen 5m ago" turns over.
+    seen_tick: crate::label_clock::LabelTick,
     _observe: Subscription,
 }
 
@@ -105,6 +107,7 @@ impl DevicesPage {
             task: None,
             copy_task: None,
             _cloud_task: cloud_task,
+            seen_tick: Default::default(),
             _observe: observe,
         }
     }
@@ -304,6 +307,15 @@ impl Render for DevicesPage {
                 state.workspace_scope,
             )
         };
+        for (device, presence) in &devices {
+            if let Some(seen) = device.last_seen_at.filter(|_| presence.warns()) {
+                self.seen_tick.schedule(
+                    cx.entity().downgrade(),
+                    crate::label_clock::ago_turns_in(seen, now),
+                    cx,
+                );
+            }
+        }
         let copied = self.copied.clone();
         let dialog = self.render_rename_dialog(window.viewport_size(), cx);
         // Split into this device and the rest; each renders as rows in one

@@ -425,10 +425,14 @@ impl Shell {
             settings::transcript_width(cx),
             true,
         );
-        composer.update(cx, |composer, cx| {
-            composer.set_dock_frame(crate::composer_dock::DockFrame::settled(true), cx);
-            composer.set_available_width(width, cx);
-        });
+        let frame = crate::composer_dock::DockFrame::settled(true);
+        let current = composer.read(cx);
+        if current.dock_frame_differs(frame) || current.available_width_differs(width) {
+            composer.update(cx, |composer, cx| {
+                composer.set_dock_frame(frame, cx);
+                composer.set_available_width(width, cx);
+            });
+        }
         let pill = transcript.read(cx).jump_button_shown().then(|| {
             div()
                 .absolute()

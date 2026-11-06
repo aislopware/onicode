@@ -56,7 +56,7 @@ fn capture(
     name: &str,
 ) -> anyhow::Result<()> {
     window.update(cx, |_, w, cx| {
-        w.draw(cx).clear();
+        w.draw(cx).clear(cx);
         w.render_to_image()?
             .save(directory.join(format!("{name}.png")))?;
         Ok(())
@@ -65,7 +65,7 @@ fn capture(
 
 /// A real key press through the window's dispatch.
 fn press(window: gpui::AnyWindowHandle, cx: &mut gpui::AsyncApp, keystroke: &str) {
-    let keystroke = Keystroke::parse(keystroke).expect("keystroke");
+    let keystroke = onicode_ui::keys::parse(keystroke).expect("keystroke");
     let _ = window.update(cx, |_, w, cx| {
         w.dispatch_event(
             PlatformInput::KeyDown(KeyDownEvent {
@@ -294,7 +294,7 @@ async fn drive(
     // Back to the top: the older chips scrolled out above.
     window.update(cx, |_, w, cx| {
         w.dispatch_event(
-            PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+            PlatformInput::Scroll(gpui::ScrollEvent {
                 position: gpui::point(px(700.), px(300.)),
                 delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(2000.))),
                 modifiers: gpui::Modifiers::default(),

@@ -3641,17 +3641,32 @@ impl Pickers {
                         below: false,
                     };
                 }
-                entity
-                    .update(cx, |this, cx| {
-                        if kind == PickerKind::HarnessModel {
-                            this.model_trigger_bounds = Some(bounds);
-                        }
-                        if this.menu_geometry.get(&kind) != Some(&geometry) {
-                            this.menu_geometry.insert(kind, geometry);
-                            cx.notify();
-                        }
+                // Write only on change: an update while drawing rebuilds the
+                // pickers. A notify while drawing never wakes the window, so
+                // the menu's re-layout is asked for on the next frame.
+                let (trigger_moved, geometry_moved) = entity
+                    .read_with(cx, |this, _| {
+                        (
+                            kind == PickerKind::HarnessModel
+                                && this.model_trigger_bounds != Some(bounds),
+                            this.menu_geometry.get(&kind) != Some(&geometry),
+                        )
                     })
-                    .ok();
+                    .unwrap_or_default();
+                if trigger_moved || geometry_moved {
+                    entity
+                        .update(cx, |this, cx| {
+                            if trigger_moved {
+                                this.model_trigger_bounds = Some(bounds);
+                            }
+                            if geometry_moved {
+                                this.menu_geometry.insert(kind, geometry);
+                                let id = cx.entity_id();
+                                window.on_next_frame(move |_, cx| cx.notify(id));
+                            }
+                        })
+                        .ok();
+                }
             },
             |_, _, _, _| {},
         )
@@ -4338,7 +4353,7 @@ impl Pickers {
                     }
                     this.dismiss(cx);
                     if this.focus.contains_focused(window, cx) {
-                        window.blur();
+                        window.blur(cx);
                     }
                 }),
             )
@@ -4387,7 +4402,7 @@ impl Pickers {
                     }
                     this.dismiss(cx);
                     if this.focus.contains_focused(window, cx) {
-                        window.blur();
+                        window.blur(cx);
                     }
                 }),
             )
@@ -5508,7 +5523,13 @@ impl Pickers {
             .child(
                 gpui::canvas(
                     move |bounds, _, cx| {
-                        let _ = entity.update(cx, |this, _| this.config_bounds = Some(bounds));
+                        // Compare first: a write while drawing rebuilds the picker.
+                        if entity
+                            .read_with(cx, |this, _| this.config_bounds != Some(bounds))
+                            .unwrap_or(false)
+                        {
+                            let _ = entity.update(cx, |this, _| this.config_bounds = Some(bounds));
+                        }
                     },
                     |_, _, _, _| {},
                 )
@@ -6006,8 +6027,13 @@ impl Pickers {
                     .child(
                         gpui::canvas(
                             move |bounds, _, cx| {
-                                let _ =
-                                    entity.update(cx, |this, _| this.setting_bounds = Some(bounds));
+                                if entity
+                                    .read_with(cx, |this, _| this.setting_bounds != Some(bounds))
+                                    .unwrap_or(false)
+                                {
+                                    let _ = entity
+                                        .update(cx, |this, _| this.setting_bounds = Some(bounds));
+                                }
                             },
                             |_, _, _, _| {},
                         )
@@ -7644,14 +7670,14 @@ mod tests {
             }),
         });
         cx.run_until_parked();
-        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         handle
             .update(cx, |host, window, cx| window.focus(&host.editor, cx))
             .unwrap();
         cx.simulate_keystrokes(handle.into(), "cmd-/");
         cx.run_until_parked();
-        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         handle
             .update(cx, |host, window, cx| {
@@ -7699,7 +7725,7 @@ mod tests {
                 .unwrap();
             cx.simulate_keystrokes(handle.into(), "cmd-/");
             cx.run_until_parked();
-            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
                 .unwrap();
             handle
                 .update(cx, |host, window, cx| {
@@ -7778,7 +7804,7 @@ mod tests {
                     cx.notify();
                 })
                 .unwrap();
-            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
                 .unwrap();
             handle
                 .read_with(cx, |fixture, cx| {
@@ -7891,7 +7917,7 @@ mod tests {
             pickers
         });
         let draw = |cx: &mut gpui::TestAppContext| {
-            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
                 .unwrap();
             handle
                 .read_with(cx, |pickers, _| {
@@ -8021,7 +8047,7 @@ mod tests {
                         cx.notify();
                     })
                     .unwrap();
-                cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+                cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
                     .unwrap();
                 assert!(
                     (f32::from(bounds.get().size.height) - available.min(model_menu_height(2)))
@@ -8069,14 +8095,15 @@ mod tests {
         });
         let mut first_left = None;
         for width in [320.0, 680.0, 1000.0, 320.0] {
+            // Cleared first: the update's notify may already draw the frame.
+            bounds.borrow_mut().clear();
             handle
                 .update(cx, |fixture, _, cx| {
                     fixture.width = width;
                     cx.notify();
                 })
                 .unwrap();
-            bounds.borrow_mut().clear();
-            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
                 .unwrap();
             let measured = bounds.borrow();
             let pair = &measured[measured.len() - 3..];
@@ -8782,7 +8809,7 @@ mod tests {
                 window.focus(&pickers.focus, cx);
                 assert_eq!(pickers.setting_groups(cx).len(), 3);
                 let key = |key: &str| KeyDownEvent {
-                    keystroke: gpui::Keystroke::parse(key).unwrap(),
+                    keystroke: crate::keys::parse(key).unwrap(),
                     is_held: false,
                     prefer_character_input: false,
                 };
@@ -8842,7 +8869,7 @@ mod tests {
                     pickers.open_setting(SettingScope::Tray, setting, cx);
                 })
                 .unwrap();
-            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
                 .unwrap();
         }
         handle
@@ -8852,7 +8879,7 @@ mod tests {
                 window.focus(&pickers.search.read(cx).focus_handle(cx), cx);
             })
             .unwrap();
-        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         cx.simulate_keystrokes(handle.into(), "down down right");
         handle
@@ -8997,14 +9024,14 @@ mod tests {
                 pickers.open_config(1, cx);
             })
             .unwrap();
-        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         handle
             .update(cx, |pickers, _, cx| {
                 pickers.open_setting(SettingScope::Card, ModelSetting::Option("lead".into()), cx);
             })
             .unwrap();
-        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         handle
             .read_with(cx, |pickers, _| {
@@ -9108,8 +9135,8 @@ mod tests {
                 }),
                 cx,
             );
-            window.draw(cx).clear();
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
+            window.draw(cx).clear(cx);
         };
         let click = |window: &mut Window, cx: &mut App, position| {
             for input in [
@@ -9128,10 +9155,10 @@ mod tests {
             ] {
                 window.dispatch_event(input, cx);
             }
-            window.draw(cx).clear();
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
+            window.draw(cx).clear(cx);
         };
-        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         let parent = measured.get();
         // Find the Fusion row by hovering down the list.
@@ -9286,7 +9313,7 @@ mod tests {
             let pickers = handle
                 .read_with(cx, |fixture, _| fixture.pickers.clone())
                 .unwrap();
-            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+            cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
                 .unwrap();
             let parent = measured.get();
             let trigger = gpui::point(
@@ -9328,13 +9355,13 @@ mod tests {
                     }),
                     cx,
                 );
-                window.draw(cx).clear();
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
+                window.draw(cx).clear(cx);
             };
             cx.update_window(handle.into(), |_, window, cx| {
                 hover(window, cx, trigger);
-                window.draw(cx).clear();
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
+                window.draw(cx).clear(cx);
             })
             .unwrap();
             let submenu = pickers.read_with(cx, |pickers, _| {
@@ -9352,7 +9379,7 @@ mod tests {
             // Clicking the hovered trigger dismisses its child and keeps it closed.
             cx.update_window(handle.into(), |_, window, cx| {
                 click(window, cx, trigger);
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
             })
             .unwrap();
             pickers.read_with(cx, |pickers, _| {
@@ -9444,7 +9471,7 @@ mod tests {
                 hover(window, cx, trigger);
                 hover(window, cx, diagonal);
                 click(window, cx, diagonal);
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
             })
             .unwrap();
             cx.run_until_parked();
@@ -9493,7 +9520,7 @@ mod tests {
                         }),
                         cx,
                     );
-                    window.draw(cx).clear();
+                    window.draw(cx).clear(cx);
                 })
                 .unwrap();
                 cx.executor().advance_clock(Duration::from_secs(2));
@@ -9512,11 +9539,11 @@ mod tests {
             });
             // Hover switches directly between sibling triggers without clicking.
             cx.update_window(handle.into(), |_, window, cx| {
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
                 hover(window, cx, trigger);
                 hover(window, cx, trigger + gpui::point(px(0.0), px(32.0)));
-                window.draw(cx).clear();
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
+                window.draw(cx).clear(cx);
             })
             .unwrap();
             pickers.read_with(cx, |pickers, _| {
@@ -9539,10 +9566,10 @@ mod tests {
                     assert!(pickers.is_open());
                     assert!(pickers.search.read(cx).focus_handle(cx).is_focused(window));
                 });
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
                 hover(window, cx, trigger);
-                window.draw(cx).clear();
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
+                window.draw(cx).clear(cx);
             })
             .unwrap();
             pickers.read_with(cx, |pickers, _| assert!(pickers.setting_menu.is_some()));
@@ -9733,7 +9760,7 @@ mod tests {
         handle
             .update(cx, |picker, window, cx| picker.open_model_menu(window, cx))
             .unwrap();
-        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         // Down opens the list on the model after the selected one; Enter
         // picks it and lands back on the panel.
@@ -9941,7 +9968,7 @@ mod tests {
                 // F on the open panel flips it the same way.
                 pickers.open.open(PickerKind::HarnessModel);
                 let key = |key: &str| KeyDownEvent {
-                    keystroke: gpui::Keystroke::parse(key).unwrap(),
+                    keystroke: crate::keys::parse(key).unwrap(),
                     is_held: false,
                     prefer_character_input: false,
                 };
@@ -9991,7 +10018,7 @@ mod tests {
                 assert_eq!(picker.model_rows_len(cx), 1);
             })
             .unwrap();
-        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         // Only the ready model is navigable: no status rows follow it.
         cx.simulate_keystrokes(handle.into(), "down");
@@ -10239,7 +10266,7 @@ mod tests {
                 picker.focus_on_mount = true;
             })
             .unwrap();
-        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         handle
             .read_with(cx, |picker, _| assert!(picker.effort_bounds.is_some()))
@@ -10259,7 +10286,7 @@ mod tests {
                 picker.search.update(cx, |input, cx| input.set_text("", cx));
             })
             .unwrap();
-        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(handle.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
     }
 

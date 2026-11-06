@@ -3468,7 +3468,7 @@ mod tests {
         });
         cx.run_until_parked();
         cx.update(|window, cx| {
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
             window.dispatch_action(Box::new(gpui_base::input::Undo), cx);
         });
         cx.run_until_parked();
@@ -4670,7 +4670,7 @@ mod markdown_buffer_tests {
                             } else {
                                 window.dispatch_event(
                                     gpui::PlatformInput::KeyDown(gpui::KeyDownEvent {
-                                        keystroke: gpui::Keystroke::parse("escape").unwrap(),
+                                        keystroke: crate::keys::parse("escape").unwrap(),
                                         is_held: false,
                                         prefer_character_input: false,
                                     }),
@@ -4737,7 +4737,7 @@ mod markdown_buffer_tests {
                         let _ = window.draw(cx);
                         window.dispatch_event(
                             gpui::PlatformInput::KeyDown(gpui::KeyDownEvent {
-                                keystroke: gpui::Keystroke::parse("escape").unwrap(),
+                                keystroke: crate::keys::parse("escape").unwrap(),
                                 is_held: false,
                                 prefer_character_input: false,
                             }),

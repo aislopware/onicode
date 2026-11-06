@@ -1013,7 +1013,7 @@ impl Transcript {
                     // A scrolling rail keeps the wheel at its ends instead of
                     // handing it on to the transcript underneath.
                     .when(scrolls, |rail| {
-                        rail.on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                        rail.on_scroll(|_, _, cx| cx.stop_propagation())
                     })
                     .child(body),
             )

@@ -109,7 +109,7 @@ fn main() -> anyhow::Result<()> {
             cx.spawn(async move |cx| {
                 cx.background_executor().timer(std::time::Duration::from_millis(1500)).await;
                 window.update(cx, |_, w, cx| {
-                    w.draw(cx).clear();
+                    w.draw(cx).clear(cx);
                     if let Ok(image) = w.render_to_image() {
                         image.save(dir.join("sidebar.png")).ok();
                     }

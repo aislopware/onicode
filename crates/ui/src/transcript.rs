@@ -35,7 +35,7 @@ use gpui::prelude::*;
 use gpui::{
     AnyElement, Bounds, ClipboardItem, ContentMask, Context, Entity, ListAlignment, ListOffset,
     ListScrollEvent, ListState, MouseButton, MouseMoveEvent, MouseUpEvent, ObjectFit, PathBuilder,
-    Pixels, Point, ScrollDelta, ScrollWheelEvent, SharedString, StyledText, Subscription, Task,
+    Pixels, Point, ScrollDelta, ScrollEvent, SharedString, StyledText, Subscription, Task,
     TextAlign, TextRun, Window, canvas, div, img, list, point, px, size,
 };
 use onicode_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry, SubagentStatus};
@@ -3428,6 +3428,8 @@ pub struct Transcript {
     /// Last live elapsed (seconds) per assistant entry, used if `duration_ms`
     /// has not landed on the doc yet when the turn settles.
     compact_last_elapsed: HashMap<String, i64>,
+    /// Wakes the working trailer when its timer reads the next second.
+    trailer_tick: crate::label_clock::LabelTick,
     /// When a compact work group first settled this session, so "Worked for"
     /// can fade in without replaying on later paints.
     compact_worked_fade_at: HashMap<SharedString, Instant>,
@@ -3825,6 +3827,7 @@ impl Transcript {
             compact_mode: crate::settings::transcript_compact_mode(cx),
             compact_live_entries: HashSet::new(),
             compact_last_elapsed: HashMap::new(),
+            trailer_tick: Default::default(),
             compact_worked_fade_at: HashMap::new(),
             compact_fold_heights: HashMap::new(),
             compact_fold_settle: None,
@@ -3981,6 +3984,11 @@ impl Transcript {
     }
 
     // ---- rail plumbing (rendering lives in crate::rail) ----
+
+    /// Whether [`Self::set_right_reserve`] would change anything.
+    pub fn right_reserve_differs(&self, reserve: f32) -> bool {
+        (self.right_reserve - reserve.max(0.0)).abs() > 0.25
+    }
 
     /// Shell-driven width gate: the rail hides below 48rem of container width.
     /// Shell-driven: hold `reserve` px free on the right of the reading
@@ -4323,7 +4331,7 @@ impl Transcript {
     /// never saw it.
     fn on_scroll_wheel(
         &mut self,
-        event: &ScrollWheelEvent,
+        event: &ScrollEvent,
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) {
@@ -6797,7 +6805,6 @@ impl Transcript {
         // from a plain edge.
         let fade = |clip: gpui::AnyElement| {
             crate::edge_fade::edge_faded(line_height * USER_FOLD_FADE_LINES, false, true, clip)
-                .compose_vertical()
                 .into_any_element()
         };
         let body: AnyElement = if animating {
@@ -6900,12 +6907,13 @@ impl Transcript {
                 el.child(
                     canvas(
                         move |bounds, _, _| bounds.size.height,
-                        move |_, height, _, cx| {
-                            // Passive geometry cache, like the plain bubble's.
+                        move |_, height, window, _| {
+                            // Passive geometry cache, like the plain bubble's;
+                            // a paint-time notify never wakes the window.
                             let height = f32::from(height);
                             if (measured_h.get() - height).abs() > 0.5 {
                                 measured_h.set(height);
-                                cx.notify(entity_id);
+                                window.on_next_frame(move |_, cx| cx.notify(entity_id));
                             }
                         },
                     )
@@ -7942,6 +7950,15 @@ impl Transcript {
         } else {
             flavour_word(seed, elapsed_secs)
         };
+        // The timer, the rotating word and the undelivered grace all turn on
+        // whole seconds of the turn; the spinner's clock stops under reduced
+        // motion, so the trailer wakes itself.
+        let turned = (now.timestamp_millis() - turn).rem_euclid(1_000) as u64;
+        self.trailer_tick.schedule(
+            cx.entity().downgrade(),
+            std::time::Duration::from_millis(1_000 - turned),
+            cx,
+        );
         let theme = Theme::of(cx).clone();
         Some(
             div()
@@ -9793,8 +9810,9 @@ fn user_bubble_text(
                 // The first layout is the source of truth for soft wrapping.
                 // Invalidate the transcript once so the expander and clip are
                 // present even when glyph widths make a short-looking string
-                // exceed five visual lines.
-                cx.notify(entity_id);
+                // exceed five visual lines. Paint-time notifies never wake
+                // the window, so ask for the next frame explicitly.
+                window.on_next_frame(move |_, cx| cx.notify(entity_id));
             }
         },
     )
@@ -11576,7 +11594,7 @@ impl Render for Transcript {
             .on_mouse_move(cx.listener(Self::on_selection_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_selection_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_selection_mouse_up))
-            .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
+            .on_scroll(cx.listener(Self::on_scroll_wheel))
             // FIRST child ⇒ paints first: clears this transcript's slice of the
             // frame's markdown text-selection registry before any row's text
             // elements re-register (document paint order = selection order;
@@ -11679,7 +11697,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(8));
             cx.update(|window, cx| {
                 window.simulate_next_frame(cx);
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
             });
         };
         for _ in 0..30 {
@@ -11695,7 +11713,7 @@ mod tests {
         // leaves the pin alone.
         transcript.update_in(cx, |this, window, cx| {
             this.on_scroll_wheel(
-                &gpui::ScrollWheelEvent {
+                &gpui::ScrollEvent {
                     delta: gpui::ScrollDelta::Lines(gpui::point(0.0, 3.0)),
                     ..Default::default()
                 },
@@ -11706,7 +11724,7 @@ mod tests {
             // Precise input keeps the distance test it always had.
             this.list_took_input = true;
             this.on_scroll_wheel(
-                &gpui::ScrollWheelEvent {
+                &gpui::ScrollEvent {
                     delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.0), px(0.5))),
                     ..Default::default()
                 },
@@ -11721,7 +11739,7 @@ mod tests {
 
         // One 3-line notch up. Its glide starts and ends with slices well
         // under a pixel.
-        cx.simulate_event(gpui::ScrollWheelEvent {
+        cx.simulate_event(gpui::ScrollEvent {
             position: gpui::point(px(200.0), px(200.0)),
             delta: gpui::ScrollDelta::Lines(gpui::point(0.0, 3.0)),
             ..Default::default()
@@ -14921,7 +14939,7 @@ mod tests {
                 transcript: transcript.clone(),
                 row,
             });
-            window.update(|window, cx| window.draw(cx).clear());
+            window.update(|window, cx| window.draw(cx).clear(cx));
             // The fold's body is its last child, so the fold's bottom edge is
             // where the body clips.
             let fold = window.debug_bounds("spawn-fold").expect("the fold painted");
@@ -15557,7 +15575,7 @@ mod tests {
         fn wheel(window: gpui::WindowHandle<CachedTranscript>, delta: f32, cx: &mut gpui::App) {
             cx.update_window(window.into(), |_, window, cx| {
                 window.dispatch_event(
-                    gpui::PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+                    gpui::PlatformInput::Scroll(gpui::ScrollEvent {
                         position: gpui::point(px(500.0), px(400.0)),
                         delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.0), px(delta))),
                         ..Default::default()
@@ -17748,7 +17766,7 @@ mod tests {
             opener: opener.clone(),
             toggles: toggles.clone(),
         });
-        window.update(|window, cx| window.draw(cx).clear());
+        window.update(|window, cx| window.draw(cx).clear(cx));
         let badge = window
             .debug_bounds("tool-file-badge")
             .expect("a workspace file badge is clickable");
@@ -17780,7 +17798,7 @@ mod tests {
             opener: opener.clone(),
             toggles: unlinkable_toggles.clone(),
         });
-        window.update(|window, cx| window.draw(cx).clear());
+        window.update(|window, cx| window.draw(cx).clear(cx));
         assert!(
             window.debug_bounds("tool-file-badge").is_none(),
             "paths the link handler cannot open keep an inert badge"
@@ -18247,7 +18265,7 @@ mod tests {
             }
         }
         let (_pane, window) = cx.add_window_view(|_, _| Pane(transcript.clone()));
-        window.update(|window, cx| window.draw(cx).clear());
+        window.update(|window, cx| window.draw(cx).clear(cx));
         let pane = window.debug_bounds("transcript-pane").unwrap();
         let loader = window
             .debug_bounds("transcript-loader")

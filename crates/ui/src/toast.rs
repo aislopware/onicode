@@ -11,15 +11,17 @@
 //! - A toast is dismissed by swiping it off to the right.
 //!
 //! Push from anywhere with [`error`], [`success`] or [`info`] — or
-//! [`show_with_action`] for one with a button; the shell mounts
-//! [`render_toaster`] once per window.
+//! [`show_with_action`] for one with a button; the shell mounts a
+//! [`Toaster`] view once per window. The toaster is its own view so its
+//! per-frame animation and its writes to the store rebuild only it.
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, App, Global, InteractiveElement as _, IntoElement, ParentElement as _,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window, div, point, px,
+    AnyElement, App, Context, EntityId, Global, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task,
+    Window, div, point, px,
 };
 
 use crate::motion::CubicBezier;
@@ -155,6 +157,8 @@ struct ToastStore {
     expand: Option<Glide>,
     /// The single wake-up for the next expiry, replaced as deadlines move.
     wake: Option<(Instant, Task<()>)>,
+    /// Every window's toaster view, woken when the stack changes.
+    toasters: Vec<EntityId>,
 }
 
 impl Global for ToastStore {}
@@ -164,7 +168,7 @@ fn push(cx: &mut App, kind: ToastKind, message: SharedString, action: Option<Toa
     if message.is_empty() {
         return;
     }
-    let now = Instant::now();
+    let now = cx.frame_time();
     let store = cx.default_global::<ToastStore>();
     // A repeat of the live front toast restarts it instead of stacking.
     if let Some(front) = store
@@ -197,7 +201,18 @@ fn push(cx: &mut App, kind: ToastKind, message: SharedString, action: Option<Toa
             swipe_from: None,
         });
     }
-    cx.refresh_windows();
+    wake_toasters(cx);
+}
+
+/// Redraw every window's toaster: the store is shared by all of them.
+fn wake_toasters(cx: &mut App) {
+    let toasters = cx
+        .try_global::<ToastStore>()
+        .map(|store| store.toasters.clone())
+        .unwrap_or_default();
+    for toaster in toasters {
+        cx.notify(toaster);
+    }
 }
 
 /// A toast of `kind`.
@@ -267,7 +282,7 @@ pub fn messages(cx: &App) -> Vec<SharedString> {
 }
 
 fn dismiss(id: u64, cx: &mut App) {
-    let now = Instant::now();
+    let now = cx.frame_time();
     if let Some(toast) = cx
         .default_global::<ToastStore>()
         .toasts
@@ -276,11 +291,11 @@ fn dismiss(id: u64, cx: &mut App) {
     {
         toast.closing = Some(now);
     }
-    cx.refresh_windows();
+    wake_toasters(cx);
 }
 
 fn set_hovered(hovered: bool, cx: &mut App) {
-    let now = Instant::now();
+    let now = cx.frame_time();
     let store = cx.default_global::<ToastStore>();
     if store.hovered == hovered {
         return;
@@ -293,7 +308,7 @@ fn set_hovered(hovered: bool, cx: &mut App) {
             toast.resume(now);
         }
     }
-    cx.refresh_windows();
+    wake_toasters(cx);
 }
 
 /// Advance the stack: expire, remove finished exits, and pause while the
@@ -327,20 +342,20 @@ fn tick(store: &mut ToastStore, active: bool, now: Instant) -> bool {
     }) || store.expand.is_some_and(|glide| glide.moving(now))
 }
 
-/// Wake the window at the next expiry; animation frames cover the rest.
-fn schedule_wake(window: &Window, cx: &mut App) {
+/// Wake the toasters at the next expiry; animation frames cover the rest.
+fn schedule_wake(cx: &mut App) {
     let store = cx.global::<ToastStore>();
     let next = store.toasts.iter().filter_map(Toast::deadline).min();
     let scheduled = store.wake.as_ref().map(|(due, _)| *due);
     let wake = match next {
+        None if scheduled.is_none() => return,
         None => None,
         Some(at) if scheduled == Some(at) => return,
         Some(at) => {
-            let handle = window.window_handle();
-            let delay = at.saturating_duration_since(Instant::now());
+            let delay = at.saturating_duration_since(cx.background_executor().now());
             let task = cx.spawn(async move |cx| {
                 cx.background_executor().timer(delay).await;
-                let _ = handle.update(cx, |_, window, _| window.refresh());
+                cx.update(wake_toasters);
             });
             Some((at, task))
         }
@@ -361,9 +376,26 @@ fn kind_icon(kind: ToastKind, theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
+/// A window's toast stack. Mount one per window.
+pub struct Toaster;
+
+impl Render for Toaster {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity_id();
+        if !cx
+            .try_global::<ToastStore>()
+            .is_some_and(|store| store.toasters.contains(&view))
+        {
+            cx.default_global::<ToastStore>().toasters.push(view);
+        }
+        // Absolute, so an empty toaster takes no room in the root's flow.
+        render_toaster(view, window, cx).unwrap_or_else(|| div().absolute().into_any_element())
+    }
+}
+
 /// The toaster for this window, or `None` when nothing is showing.
-pub fn render_toaster(window: &mut Window, cx: &mut App) -> Option<AnyElement> {
-    let now = Instant::now();
+fn render_toaster(view: EntityId, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
+    let now = cx.frame_time();
     let reduced = cx.reduce_motion();
     let active = window.is_window_active();
     let theme = Theme::of(cx).for_popup();
@@ -538,7 +570,7 @@ pub fn render_toaster(window: &mut Window, cx: &mut App) -> Option<AnyElement> {
             .child(
                 // Measure the natural height for the stack's layout.
                 gpui::canvas(
-                    move |bounds, _, cx| {
+                    move |bounds, window, cx| {
                         let height = f32::from(bounds.size.height);
                         if let Some(store) = cx.try_global::<ToastStore>()
                             && store
@@ -555,7 +587,8 @@ pub fn render_toaster(window: &mut Window, cx: &mut App) -> Option<AnyElement> {
                             {
                                 toast.height = height;
                             }
-                            cx.refresh_windows();
+                            // A notify while drawing never wakes the window.
+                            window.on_next_frame(move |_, cx| cx.notify(view));
                         }
                     },
                     |_, _, _, _| {},
@@ -596,7 +629,7 @@ pub fn render_toaster(window: &mut Window, cx: &mut App) -> Option<AnyElement> {
                     toast.swipe_from = Some(f32::from(event.position.x));
                 }
             })
-            .on_mouse_move(move |event, window, cx| {
+            .on_mouse_move(move |event, _, cx| {
                 let Some(toast) = cx
                     .global_mut::<ToastStore>()
                     .toasts
@@ -612,15 +645,15 @@ pub fn render_toaster(window: &mut Window, cx: &mut App) -> Option<AnyElement> {
                 } else {
                     toast.swipe = (f32::from(event.position.x) - from).max(0.0);
                 }
-                window.refresh();
+                cx.notify(view);
             })
-            .on_mouse_up(gpui::MouseButton::Left, move |_, window, cx| {
+            .on_mouse_up(gpui::MouseButton::Left, move |_, _, cx| {
                 release_swipe(id, cx);
-                window.refresh();
+                cx.notify(view);
             })
-            .on_mouse_up_out(gpui::MouseButton::Left, move |_, window, cx| {
+            .on_mouse_up_out(gpui::MouseButton::Left, move |_, _, cx| {
                 release_swipe(id, cx);
-                window.refresh();
+                cx.notify(view);
             })
             .child(crate::frost::frosted(
                 crate::popover::CARD_RADIUS,
@@ -633,7 +666,7 @@ pub fn render_toaster(window: &mut Window, cx: &mut App) -> Option<AnyElement> {
     if moving {
         window.request_animation_frame();
     }
-    schedule_wake(window, cx);
+    schedule_wake(cx);
 
     let viewport = window.viewport_size();
     let width = WIDTH.min(f32::from(viewport.width) - 2.0 * OFFSET).max(0.0);
@@ -735,22 +768,74 @@ mod tests {
         assert!(store.toasts.is_empty(), "removed after its exit");
     }
 
-    struct Host;
+    struct Host {
+        toaster: gpui::Entity<Toaster>,
+        renders: usize,
+    }
+
+    impl Host {
+        fn new(cx: &mut gpui::Context<Self>) -> Self {
+            use gpui::AppContext as _;
+            Self {
+                toaster: cx.new(|_| Toaster),
+                renders: 0,
+            }
+        }
+    }
 
     impl gpui::Render for Host {
-        fn render(
-            &mut self,
-            window: &mut Window,
-            cx: &mut gpui::Context<Self>,
-        ) -> impl IntoElement {
-            div().size_full().children(render_toaster(window, cx))
+        fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+            self.renders += 1;
+            div().size_full().child(self.toaster.clone())
         }
+    }
+
+    /// Under retention the host is built again only when the toaster's layout
+    /// changes — the toast arriving, starting to close, and leaving — which a
+    /// nested view cannot lay out alone. Every frame of the countdown and the
+    /// exit in between is the toaster's own, woken by its own timers (on the
+    /// test clock).
+    #[gpui::test]
+    fn toaster_redraws_alone_under_a_retained_host(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| cx.set_global(Theme::dark()));
+        let (host, cx) = cx.add_window_view(|_, cx| Host::new(cx));
+        cx.update(|window, _| {
+            window.activate_window();
+            window.set_check_retained(Some(gpui::RetainedCheck::Panic));
+        });
+        cx.run_until_parked();
+        assert!(cx.debug_bounds("toaster").is_none());
+        let renders = |cx: &mut gpui::VisualTestContext| cx.update(|_, cx| host.read(cx).renders);
+
+        cx.update(|_, cx| error(cx, "Couldn't save"));
+        cx.run_until_parked();
+        assert!(
+            cx.debug_bounds("toaster").is_some(),
+            "the pushed toast shows"
+        );
+        let shown = renders(cx);
+
+        let frame = Duration::from_millis(16);
+        let mut elapsed = Duration::ZERO;
+        while elapsed < DURATION + EXIT + frame {
+            cx.executor().advance_clock(frame);
+            cx.run_until_parked();
+            elapsed += frame;
+        }
+        assert!(
+            cx.debug_bounds("toaster").is_none(),
+            "the expired toast leaves without anything else redrawing"
+        );
+        assert!(
+            renders(cx) - shown <= 2,
+            "only closing and leaving rebuild the host, not the frames between"
+        );
     }
 
     #[gpui::test]
     fn toaster_shows_dedupes_and_closes(cx: &mut gpui::TestAppContext) {
         cx.update(|cx| cx.set_global(Theme::dark()));
-        let (_, cx) = cx.add_window_view(|_, _| Host);
+        let (_, cx) = cx.add_window_view(|_, cx| Host::new(cx));
         cx.update(|_, cx| {
             error(cx, "Couldn't save");
             error(cx, "Couldn't save");
@@ -769,7 +854,7 @@ mod tests {
     #[gpui::test]
     fn action_runs_in_the_window_and_closes_its_toast(cx: &mut gpui::TestAppContext) {
         cx.update(|cx| cx.set_global(Theme::dark()));
-        let (_, cx) = cx.add_window_view(|_, _| Host);
+        let (_, cx) = cx.add_window_view(|_, cx| Host::new(cx));
         let clicked = Rc::new(std::cell::Cell::new(false));
         let seen = clicked.clone();
         cx.update(|_, cx| {

@@ -352,6 +352,13 @@ impl Shell {
             )
         };
         let view = cx.entity_id();
+        for row in &side_chats {
+            self.lanes_ago_tick.schedule(
+                cx.entity().downgrade(),
+                crate::label_clock::ago_turns_in(row.activity, now),
+                cx,
+            );
+        }
         // Subagents run on the session's own harness.
         let harness = chat.config.as_ref().map(|config| config.harness);
         // ── The two ways to start a side chat: rows while the lane is empty,
@@ -614,7 +621,13 @@ impl Shell {
     ) -> gpui::Stateful<gpui::Div> {
         let key = format!("session-lanes-subagent-{}", row.doc_id);
         let mark = status_mark(key.clone(), row.indicator(), view, theme, cx);
-        let time = onicode_proto::view::format_time_ago(row.spawned_at, Utc::now());
+        let now = Utc::now();
+        let time = onicode_proto::view::format_time_ago(row.spawned_at, now);
+        self.lanes_ago_tick.schedule(
+            cx.entity().downgrade(),
+            crate::label_clock::ago_turns_in(row.spawned_at, now),
+            cx,
+        );
         let title = row_title(format!("{key}-title"), row.title.clone());
         popover::picker_row(theme, false, false, key.clone())
             .id(SharedString::from(key))

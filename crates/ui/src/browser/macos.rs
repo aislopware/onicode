@@ -1,17 +1,21 @@
-//! AppKit boundary for the browser. Wry owns the native child and its UI
-//! delegate; our navigation delegate supplies browser policy and state. All
-//! callbacks enqueue events, never re-enter GPUI. No page-to-engine IPC.
+//! AppKit boundary for the browser. Wry builds the WKWebView and owns its UI
+//! delegate; our navigation delegate supplies browser policy and state. The
+//! page lives in a gpui-fast native host under GPUI's layer: GPUI places,
+//! clips, orders and focuses it every frame (`native_view` in `view.rs`), and
+//! whatever GPUI paints after it (menus, tooltips, toasts) is drawn over it.
+//! All callbacks enqueue events, never re-enter GPUI. No page-to-engine IPC.
 use std::cell::{Cell, RefCell};
 use std::mem::ManuallyDrop;
+use std::ptr::NonNull;
 use std::rc::Rc;
 
-use gpui::{Bounds, Pixels, Window};
+use gpui::composition::{NativeHost, NativeHostOptions};
+use gpui::{App, Window};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, class, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSColor, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSScreen, NSView,
-    NSWindowOrderingMode,
 };
 use objc2_foundation::{
     NSDictionary, NSError, NSKeyValueChangeKey, NSKeyValueObservingOptions, NSObject,
@@ -73,6 +77,7 @@ impl BrowserData {
     ) -> Retained<objc2_web_kit::WKWebViewConfiguration> {
         let mut data = self.0.borrow_mut();
         if data.store.is_none() {
+            // SAFETY: WebKit's data store constructors, on the main thread (`mtm`).
             data.store = Some(unsafe {
                 match &data.profile {
                     Some(profile) => {
@@ -92,11 +97,12 @@ impl BrowserData {
                 tracing::warn!(%error, "preview hostname proxy unavailable");
             }
         }
-        let configuration = unsafe { objc2_web_kit::WKWebViewConfiguration::new(mtm) };
+        // SAFETY: a fresh configuration given the live store, on the main thread.
         unsafe {
+            let configuration = objc2_web_kit::WKWebViewConfiguration::new(mtm);
             configuration.setWebsiteDataStore(data.store.as_ref().unwrap());
+            configuration
         }
-        configuration
     }
 
     pub(super) fn register_preview(&self, address: &str) {
@@ -161,6 +167,9 @@ fn configure_preview_proxy(
     use std::ffi::CString;
 
     use objc2_foundation::NSArray;
+    // SAFETY: Network.framework returns retained objects (adopted by
+    // `from_raw`) from NUL-terminated strings that outlive each call; the
+    // store takes the proxy array on the main thread.
     unsafe {
         let port = CString::new(port.to_string()).map_err(|_| "Invalid preview port")?;
         let endpoint = Retained::from_raw(nw_endpoint_create_host(
@@ -197,7 +206,6 @@ pub(super) enum NativeEvent {
     Changed,
     Finished,
     NewTab(String),
-    Key(gpui::Keystroke),
     Favicon {
         page: String,
         url: String,
@@ -229,7 +237,9 @@ define_class!(
     unsafe impl WKNavigationDelegate for Observer {
         #[unsafe(method(webView:decidePolicyForNavigationAction:decisionHandler:))]
         fn policy(&self, _view: &WKWebView, action: &WKNavigationAction, decision: &block2::Block<dyn Fn(WKNavigationActionPolicy)>) {
+            // SAFETY: the action WebKit hands its delegate, read during the call on the main thread.
             let url = unsafe { action.request().URL() }.and_then(|u| u.absoluteString()).map(|u| u.to_string()).unwrap_or_default();
+            // SAFETY: as above.
             if allowed_navigation(&url) && unsafe { action.targetFrame() }.is_some_and(|frame| unsafe { frame.isMainFrame() }) {
                 *self.ivars().requested_url.borrow_mut() = Some(url.clone());
             }
@@ -237,6 +247,7 @@ define_class!(
         }
         #[unsafe(method(webView:decidePolicyForNavigationResponse:decisionHandler:))]
         fn response(&self, _view: &WKWebView, response: &WKNavigationResponse, decision: &block2::Block<dyn Fn(WKNavigationResponsePolicy)>) {
+            // SAFETY: the response WebKit hands its delegate, read during the call.
             let displayable = unsafe { response.canShowMIMEType() };
             if !displayable { self.fail("This file can’t be previewed here. Open it in your default browser."); }
             decision.call((if displayable { WKNavigationResponsePolicy::Allow } else { WKNavigationResponsePolicy::Cancel },));
@@ -282,6 +293,7 @@ impl Observer {
             error: RefCell::new(None),
             requested_url: RefCell::new(None),
         });
+        // SAFETY: NSObject's `init` on the allocation `set_ivars` just filled.
         unsafe { msg_send![super(object), init] }
     }
 
@@ -299,58 +311,31 @@ impl Observer {
     }
 }
 
-struct ClipState {
-    dragging: Cell<bool>,
-    region: Cell<objc2_foundation::NSRect>,
-    resize_inset: Cell<f64>,
-}
-
-// Clips native content to GPUI's current paint mask. During app drags the
-// entire native subtree passes pointer events back to GPUI, without hiding it.
-define_class!(
-    #[unsafe(super(NSView))]
-    #[thread_kind = MainThreadOnly]
-    #[name = "OnicodeBrowserClipView"]
-    #[ivars = ClipState]
-    struct BrowserClipView;
-    impl BrowserClipView {
-        #[unsafe(method(hitTest:))]
-        fn hit_test(&self, point: objc2_foundation::NSPoint) -> *mut NSView {
-            let region = self.ivars().region.get();
-            if self.ivars().dragging.get()
-                || point.x < region.origin.x + self.ivars().resize_inset.get() || point.x >= region.origin.x + region.size.width
-                || point.y < region.origin.y || point.y >= region.origin.y + region.size.height
-            { std::ptr::null_mut() }
-            else { unsafe { msg_send![super(self), hitTest: point] } }
-        }
-    }
-);
-
-pub(super) struct NativePage(Rc<RefCell<Host>>);
-
-pub(super) struct Host {
+/// One tab's page. Keys need nothing here: while the page holds the keyboard,
+/// gpui-fast offers each press to GPUI's keymap first and leaves unmatched
+/// equivalents (⌘C, ⌘V, ⌘Z) to WebKit.
+pub(super) struct NativePage {
     web: WebView,
     data: BrowserData,
     view: Retained<WKWebView>,
     observer: Retained<Observer>,
-    clip: Retained<BrowserClipView>,
-    clip_mask: Retained<AnyObject>,
-    parent: Retained<NSView>,
-    visible_bounds: Option<Bounds<Pixels>>,
+    /// The page's container under GPUI's layer; it leaves the window with
+    /// the last clone, after `Drop` below.
+    host: NativeHost,
     background_color: Option<Retained<NSColor>>,
-    monitor: Option<Retained<AnyObject>>,
     wheel_monitor: Option<Retained<AnyObject>>,
     wheel: Rc<PageGlide>,
-    shortcuts: Rc<RefCell<Vec<String>>>,
-    bounds: Option<Bounds<Pixels>>,
     presentation: Presentation,
     tx: Sender,
-    #[cfg(feature = "browser-fixture")]
-    visibility_changes: Cell<u64>,
 }
 
 impl NativePage {
-    pub fn new(window: &Window, data: &BrowserData, tx: Sender) -> Result<Self, String> {
+    pub fn new(
+        window: &mut Window,
+        data: &BrowserData,
+        tx: Sender,
+        cx: &mut App,
+    ) -> Result<Self, String> {
         let mtm = MainThreadMarker::new().ok_or("Browser must be created on the main thread")?;
         let new_tab = tx.clone();
         let web = wry::WebViewBuilder::new()
@@ -364,47 +349,26 @@ impl NativePage {
                 wry::NewWindowResponse::Deny
             })
             .with_download_started_handler(|_, _| false)
-            .build_as_child(window)
+            .build_as_child(&*window)
             .map_err(|e| e.to_string())?;
         let view = Retained::into_super(web.webview());
-        window
-            .enable_scene_overlay()
+        let host = window
+            .create_native_host(
+                NativeHostOptions {
+                    opaque: true,
+                    interactive: true,
+                    label: Some("Web page".into()),
+                },
+                cx,
+            )
             .map_err(|error| error.to_string())?;
-        let parent = unsafe { view.superview() }.ok_or("Browser parent is missing")?;
-        let clip: Retained<BrowserClipView> = unsafe {
-            let object = mtm.alloc().set_ivars(ClipState {
-                dragging: Cell::new(false),
-                region: Cell::new(objc2_foundation::NSRect::ZERO),
-                resize_inset: Cell::new(0.0),
-            });
-            msg_send![super(object), initWithFrame: objc2_foundation::NSRect::ZERO]
-        };
-        clip.setWantsLayer(true);
-        clip.setAutoresizesSubviews(false);
-        let clip_mask: Retained<AnyObject> = unsafe { msg_send![class!(CALayer), new] };
-        unsafe {
-            let color = NSColor::blackColor().CGColor();
-            let _: () = msg_send![&*clip_mask, setBackgroundColor: &*color];
-            let layer: *mut AnyObject = msg_send![&*clip, layer];
-            let _: () = msg_send![layer, setMasksToBounds: true];
-            let _: () = msg_send![layer, setMask: &*clip_mask];
-        }
-        clip.setHidden(true);
-        parent.addSubview(&clip);
-        // Keep every native tab beneath the shared GPUI overlay plane.
-        for sibling in parent.subviews() {
-            if sibling.class().name() == c"GPUIOverlayView" {
-                parent.addSubview_positioned_relativeTo(
-                    &clip,
-                    NSWindowOrderingMode::Below,
-                    Some(&sibling),
-                );
-                break;
-            }
-        }
-        clip.addSubview(&view);
+        // SAFETY: `view` is the live WKWebView wry just built, on the main thread.
+        unsafe { host.attach_view(NonNull::from(&*view).cast()) }
+            .map_err(|error| error.to_string())?;
 
         let observer = Observer::new(tx.clone(), mtm);
+        // SAFETY: the delegate is weak; the page keeps the observer and clears
+        // the delegate and the observations in `Drop` before letting it go.
         unsafe {
             view.setNavigationDelegate(Some(ProtocolObject::from_ref(&*observer)));
             for key in OBSERVED {
@@ -416,93 +380,13 @@ impl NativePage {
                 );
             }
         }
-        let shortcuts = Rc::new(RefCell::new(Vec::<String>::new()));
-        let monitor_view = view.clone();
-        let monitor_tx = tx.clone();
-        let monitor_shortcuts = shortcuts.clone();
-        let callback = block2::RcBlock::new(move |event: std::ptr::NonNull<NSEvent>| {
-            let e = unsafe { event.as_ref() };
-            if monitor_view.isHidden()
-                || !has_focus(&monitor_view)
-                || e.window(mtm) != monitor_view.window()
-            {
-                return event.as_ptr();
-            }
-            let mods = e.modifierFlags();
-            // A dead key (AZERTY's ^, where ⌘[ lives) reports no characters
-            // with ⌘ down; ask for the key as typed alone, as gpui does.
-            let key = e
-                .charactersIgnoringModifiers()
-                .map(|s| s.to_string())
-                .filter(|s| !s.is_empty())
-                .or_else(|| {
-                    e.charactersByApplyingModifiers(mods & NSEventModifierFlags::Shift)
-                        .map(|s| s.to_string())
-                })
-                .unwrap_or_default()
-                .to_lowercase();
-            let mut combo = String::new();
-            if mods.contains(NSEventModifierFlags::Command) {
-                combo.push_str("cmd-");
-            }
-            if mods.contains(NSEventModifierFlags::Control) {
-                combo.push_str("ctrl-");
-            }
-            if mods.contains(NSEventModifierFlags::Option) {
-                combo.push_str("alt-");
-            }
-            if mods.contains(NSEventModifierFlags::Shift) {
-                combo.push_str("shift-");
-            }
-            combo.push_str(super::model::native_shortcut_key(&key));
-            let Ok(keystroke) = gpui::Keystroke::parse(&combo) else {
-                return event.as_ptr();
-            };
-            // Shortcuts are written in US keys and bound where the layout
-            // types them (AZERTY ⌘1 is ⌘&): match the US spelling, then
-            // forward the keystroke as typed.
-            let us = crate::settings::bound_canonical_combo(&combo);
-            let browser_key = matches!(
-                us.as_deref(),
-                Some(
-                    "cmd-l"
-                        | "cmd-t"
-                        | "cmd-w"
-                        | "cmd-["
-                        | "cmd-]"
-                        | "cmd-shift-r"
-                        | "cmd-k"
-                        | "cmd-,"
-                )
-            );
-            let app_key = us
-                .as_deref()
-                .and_then(|us| gpui::Keystroke::parse(us).ok())
-                .is_some_and(|us| {
-                    monitor_shortcuts
-                        .borrow()
-                        .iter()
-                        .any(|s| gpui::Keystroke::parse(s).is_ok_and(|s| s == us))
-                });
-            if browser_key || app_key {
-                if monitor_tx.try_send(NativeEvent::Key(keystroke)).is_ok() {
-                    std::ptr::null_mut()
-                } else {
-                    event.as_ptr()
-                }
-            } else {
-                event.as_ptr()
-            }
-        });
-        let monitor = unsafe {
-            NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &callback)
-        };
         // Wheel ticks AppKit routes to the page glide like the rest of the
         // window (`PageGlide`); a press anywhere takes over, as in GPUI.
         let wheel = Rc::new(PageGlide::default());
         let wheel_view = view.clone();
         let page_glide = wheel.clone();
-        let wheel_callback = block2::RcBlock::new(move |event: std::ptr::NonNull<NSEvent>| {
+        let wheel_callback = block2::RcBlock::new(move |event: NonNull<NSEvent>| {
+            // SAFETY: AppKit hands a local monitor a live event for the call.
             let e = unsafe { event.as_ref() };
             if e.r#type() != NSEventType::ScrollWheel {
                 page_glide.stop();
@@ -514,6 +398,8 @@ impl NativePage {
                 event.as_ptr()
             }
         });
+        // SAFETY: AppKit copies the block and keeps it until `Drop` removes
+        // the monitor; main thread.
         let wheel_monitor = unsafe {
             NSEvent::addLocalMonitorForEventsMatchingMask_handler(
                 NSEventMask::ScrollWheel
@@ -523,106 +409,103 @@ impl NativePage {
                 &wheel_callback,
             )
         };
-        Ok(Self(Rc::new(RefCell::new(Host {
-            data: data.clone(),
+        Ok(Self {
             web,
+            data: data.clone(),
             view,
             observer,
-            clip,
-            clip_mask,
-            parent,
-            visible_bounds: None,
+            host,
             background_color: None,
-            monitor,
             wheel_monitor,
             wheel,
-            shortcuts,
-            bounds: None,
             presentation: Presentation::Hidden,
-            #[cfg(feature = "browser-fixture")]
-            visibility_changes: Cell::new(0),
             tx,
-        }))))
+        })
     }
 
-    pub fn handle(&self) -> Rc<RefCell<Host>> {
-        self.0.clone()
-    }
-
-    pub fn focus_chrome(&self) {
-        self.0.borrow().focus_chrome();
-    }
-
-    pub fn set_shortcuts(&self, shortcuts: Vec<String>) {
-        *self.0.borrow().shortcuts.borrow_mut() = shortcuts;
+    /// What `native_view` places every frame the page shows.
+    pub fn host(&self) -> &NativeHost {
+        &self.host
     }
 
     pub fn present(&mut self, presentation: Presentation) {
-        self.0.borrow_mut().present(presentation);
+        self.presentation = presentation;
+        self.update_visibility();
     }
 
     pub fn load(&self, url: &str) -> Result<(), String> {
-        let host = self.0.borrow();
-        host.data.register_preview(url);
-        host.observer.ivars().error.borrow_mut().take();
-        *host.observer.ivars().requested_url.borrow_mut() = Some(url.into());
-        host.web.load_url(url).map_err(|e| e.to_string())
+        self.data.register_preview(url);
+        self.observer.ivars().error.borrow_mut().take();
+        *self.observer.ivars().requested_url.borrow_mut() = Some(url.into());
+        self.web.load_url(url).map_err(|e| e.to_string())
     }
 
     pub fn reload(&self) {
-        let host = self.0.borrow();
-        host.observer.ivars().error.borrow_mut().take();
+        self.observer.ivars().error.borrow_mut().take();
         // Retrying the requested URL also works after a failed provisional load.
-        unsafe {
-            host.view.reload();
-        }
-        host.observer.changed();
+        // SAFETY: the page's own web view, on the main thread.
+        unsafe { self.view.reload() };
+        self.observer.changed();
     }
 
     pub fn history(&self, forward: bool) {
-        let host = self.0.borrow();
+        // SAFETY: the page's own web view, on the main thread.
         unsafe {
             if forward {
-                host.view.goForward();
+                self.view.goForward();
             } else {
-                host.view.goBack();
+                self.view.goBack();
             }
         }
     }
 
     pub fn state(&self) -> PageState {
-        let host = self.0.borrow();
-        host.observer.ivars().pending.set(false);
+        let ivars = self.observer.ivars();
+        ivars.pending.set(false);
+        // SAFETY: WKWebView's getters, on the main thread.
         unsafe {
             PageState {
-                url: host
-                    .observer
-                    .ivars()
-                    .requested_url
-                    .borrow()
-                    .clone()
-                    .or_else(|| {
-                        host.view
-                            .URL()
-                            .and_then(|u| u.absoluteString())
-                            .map(|u| u.to_string())
-                    }),
-                title: host.view.title().map(|s| s.to_string()).unwrap_or_default(),
-                loading: host.view.isLoading(),
-                can_back: host.view.canGoBack(),
-                can_forward: host.view.canGoForward(),
-                error: host.observer.ivars().error.borrow().clone(),
+                url: ivars.requested_url.borrow().clone().or_else(|| {
+                    self.view
+                        .URL()
+                        .and_then(|u| u.absoluteString())
+                        .map(|u| u.to_string())
+                }),
+                title: self.view.title().map(|s| s.to_string()).unwrap_or_default(),
+                loading: self.view.isLoading(),
+                can_back: self.view.canGoBack(),
+                can_forward: self.view.canGoForward(),
+                error: ivars.error.borrow().clone(),
             }
+        }
+    }
+
+    /// Paint WebKit's backing in the page's own background, so tiles a
+    /// resize exposes before WebKit redraws match the page rather than
+    /// WebKit's controlBackgroundColor.
+    pub fn sync_background(&mut self) {
+        // SAFETY: WKWebView's getter and `isEqual:` on two live colors, on
+        // the main thread.
+        let color = unsafe { self.view.underPageBackgroundColor() };
+        let unchanged = self
+            .background_color
+            .as_ref()
+            .is_some_and(|previous| unsafe { msg_send![&**previous, isEqual: &*color] });
+        if !unchanged {
+            // SAFETY: WKWebView's private `_setBackgroundColor:` takes an
+            // NSColor and returns nothing, as Safari calls it; main thread.
+            let _: () = unsafe { msg_send![&*self.view, _setBackgroundColor: &*color] };
+            self.background_color = Some(color);
         }
     }
 
     /// Run `script` in the page; a string result arrives as
     /// [`NativeEvent::Evaluated`].
     pub fn evaluate(&self, script: &str) {
-        let host = self.0.borrow();
-        let tx = host.tx.clone();
+        let tx = self.tx.clone();
         let completion = block2::RcBlock::new(move |value: *mut AnyObject, error: *mut NSError| {
             let result = if error.is_null() {
+                // SAFETY: WebKit passes the result object, live for the call.
                 unsafe { value.as_ref() }
                     .and_then(|value| value.downcast_ref::<NSString>())
                     .map(|text| text.to_string())
@@ -631,8 +514,9 @@ impl NativePage {
             };
             let _ = tx.try_send(NativeEvent::Evaluated(result));
         });
+        // SAFETY: WebKit copies the completion block; main thread.
         unsafe {
-            host.view.evaluateJavaScript_completionHandler(
+            self.view.evaluateJavaScript_completionHandler(
                 &NSString::from_str(script),
                 Some(&completion),
             );
@@ -640,14 +524,14 @@ impl NativePage {
     }
 
     pub fn discover_favicon(&self, page: String) {
-        let host = self.0.borrow();
-        let tx = host.tx.clone();
+        let tx = self.tx.clone();
         // Our navigation delegate owns readiness, so Wry's private pending-
         // script queue is intentionally bypassed. This runs only after finish.
         let completion = block2::RcBlock::new(move |value: *mut AnyObject, error: *mut NSError| {
             if !error.is_null() {
                 return;
             }
+            // SAFETY: WebKit passes the result object, live for the call.
             if let Some(url) =
                 unsafe { value.as_ref() }.and_then(|value| value.downcast_ref::<NSString>())
             {
@@ -657,12 +541,55 @@ impl NativePage {
                 });
             }
         });
+        // SAFETY: WebKit copies the completion block; main thread.
         unsafe {
-            host.view.evaluateJavaScript_completionHandler(
+            self.view.evaluateJavaScript_completionHandler(
                 &NSString::from_str("(() => { const link = document.querySelector('link[rel~=icon]'); return link ? link.href : new URL('/favicon.ico', location.href).href; })()"),
                 Some(&completion),
             );
         }
+    }
+
+    /// Return the keyboard to GPUI if the page holds it. gpui-fast then
+    /// blurs the page's focus handle, keeping the two in step.
+    fn focus_chrome(&self) {
+        if has_focus(&self.view) {
+            let _ = self.web.focus_parent();
+        }
+    }
+
+    /// Whether the page shows at all; where is GPUI's to say, every frame.
+    /// A hidden web view also lets WebKit throttle a background tab.
+    fn update_visibility(&self) {
+        let visible = self.presentation != Presentation::Hidden
+            && self.observer.ivars().error.borrow().is_none();
+        if !visible || self.presentation == Presentation::Passthrough {
+            self.focus_chrome();
+        }
+        if self.view.isHidden() == visible {
+            let _ = self.web.set_visible(visible);
+        }
+    }
+}
+
+impl Drop for NativePage {
+    fn drop(&mut self) {
+        self.focus_chrome();
+        // SAFETY: removing the monitor and observations `new` added, while the
+        // observer lives, then clearing the delegate; main thread.
+        unsafe {
+            if let Some(monitor) = self.wheel_monitor.take() {
+                NSEvent::removeMonitor(&monitor);
+            }
+            for key in OBSERVED {
+                self.view
+                    .removeObserver_forKeyPath(&self.observer, &NSString::from_str(key));
+            }
+            self.view.setNavigationDelegate(None);
+            self.view.stopLoading();
+        }
+        self.wheel.stop();
+        self.view.removeFromSuperview();
     }
 }
 
@@ -676,11 +603,12 @@ fn has_focus(view: &NSView) -> bool {
 /// WebKit's pixels per wheel line: a 3-line tick scrolls a page 120px.
 const PAGE_PX_PER_LINE: f64 = 40.0;
 
-/// A page's mouse-wheel glide. AppKit hands the page its wheel directly, so
-/// it never reaches GPUI's root (`smooth_scroll`), and WebKit applies a tick
-/// at once. The wheel monitor holds ticks back here; a timer replays the
-/// glide as precise pixel deltas, which WebKit routes like a trackpad's: to
-/// the scroller under the pointer, clamped at its edges.
+/// A page's mouse-wheel glide. AppKit hands the page its wheel directly (the
+/// GPUI view declines hits where the page is topmost), so it never reaches
+/// GPUI's `smooth_scroll`, and WebKit applies a tick at once. The wheel
+/// monitor holds ticks back here; a timer replays the glide as precise pixel
+/// deltas, which WebKit routes like a trackpad's: to the scroller under the
+/// pointer, clamped at its edges.
 #[derive(Default)]
 struct PageGlide {
     glide: RefCell<crate::smooth_scroll::Glide>,
@@ -732,12 +660,14 @@ impl PageGlide {
         }
         let glide = Rc::downgrade(self);
         let view = view.clone();
-        let tick = block2::RcBlock::new(move |_: std::ptr::NonNull<objc2_foundation::NSTimer>| {
+        let tick = block2::RcBlock::new(move |_: NonNull<objc2_foundation::NSTimer>| {
             if let Some(glide) = glide.upgrade() {
                 glide.frame(&view);
             }
         });
         // A frame at 120Hz; the curve runs on the clock, not on ticks.
+        // SAFETY: the run loop keeps the timer and its copied block until
+        // `stop` invalidates it; the block holds the glide weakly. Main thread.
         let timer = unsafe {
             objc2_foundation::NSTimer::scheduledTimerWithTimeInterval_repeats_block(
                 1.0 / 120.0,
@@ -811,7 +741,7 @@ fn precise_wheel(
 }
 
 /// Whether AppKit routes `event` to `view`: the view under the pointer is it
-/// or inside it.
+/// or inside it. GPUI's hit map decides that (a menu over the page keeps it).
 fn receives_wheel(view: &NSView, event: &NSEvent, mtm: MainThreadMarker) -> bool {
     let Some(window) = view.window() else {
         return false;
@@ -826,181 +756,28 @@ fn receives_wheel(view: &NSView, event: &NSEvent, mtm: MainThreadMarker) -> bool
         .is_some_and(|hit| hit.isDescendantOf(view))
 }
 
-impl Host {
-    pub fn sync(
-        &mut self,
-        bounds: Bounds<Pixels>,
-        mask: Bounds<Pixels>,
-        dragging: bool,
-        resize_inset: Pixels,
-    ) {
-        // WebKit may fill newly exposed tiles a frame after a viewport change.
-        // Match its page background beneath those tiles instead of exposing
-        // the application's dark window background at the resize edge.
-        unsafe {
-            let color = self.view.underPageBackgroundColor();
-            let unchanged = self
-                .background_color
-                .as_ref()
-                .is_some_and(|previous| msg_send![&**previous, isEqual: &*color]);
-            if !unchanged {
-                // WebKit's native backing otherwise uses controlBackgroundColor,
-                // independently of the CSS page background. Exposed resize tiles
-                // must use the page color while the remote content catches up.
-                let _: () = msg_send![&*self.view, _setBackgroundColor: &*color];
-                let cg_color = color.CGColor();
-                let layer: *mut AnyObject = msg_send![&*self.clip, layer];
-                let _: () = msg_send![layer, setBackgroundColor: &*cg_color];
-                self.background_color = Some(color);
-            }
-        }
-        let visible = bounds.intersect(&mask);
-        self.clip.ivars().dragging.set(dragging);
-        self.clip
-            .ivars()
-            .resize_inset
-            .set(f64::from(f32::from(resize_inset)));
-        if self.bounds != Some(bounds) || self.visible_bounds != Some(visible) {
-            self.bounds = Some(bounds);
-            self.visible_bounds = Some(visible);
-            let x = f64::from(f32::from(visible.origin.x));
-            let y = f64::from(f32::from(visible.origin.y));
-            let width = f64::from(f32::from(visible.size.width)).max(0.);
-            let height = f64::from(f32::from(visible.size.height)).max(0.);
-            let y = if self.parent.isFlipped() {
-                y
-            } else {
-                self.parent.bounds().size.height - y - height
-            };
-            let actions_disabled: bool = unsafe {
-                let previous = msg_send![class!(CATransaction), disableActions];
-                let _: () = msg_send![class!(CATransaction), setDisableActions: true];
-                previous
-            };
-            // Keep the host stationary. Moving it while WebKit updates its
-            // remote layer tree can combine the old origin with the new size.
-            self.clip.setFrame(self.parent.bounds());
-            let region = objc2_foundation::NSRect::new(
-                objc2_foundation::NSPoint::new(x, y),
-                objc2_foundation::NSSize::new(width, height),
-            );
-            self.clip.ivars().region.set(region);
-            unsafe {
-                let _: () = msg_send![&*self.clip_mask, setFrame: region];
-            }
-            // Wry's set_bounds rounds logical origins and sizes to whole points. GPUI
-            // uses fractional points, so that leaves uncovered background
-            // strips between the WKWebView and its clip after a resize.
-            let web_height = f64::from(f32::from(bounds.size.height)).max(0.);
-            let web_y = f64::from(f32::from(bounds.origin.y));
-            let web_y = if self.parent.isFlipped() {
-                web_y
-            } else {
-                self.parent.bounds().size.height - web_y - web_height
-            };
-            self.view.setFrame(objc2_foundation::NSRect::new(
-                objc2_foundation::NSPoint::new(f64::from(f32::from(bounds.origin.x)), web_y),
-                objc2_foundation::NSSize::new(
-                    f64::from(f32::from(bounds.size.width)).max(0.),
-                    web_height,
-                ),
-            ));
-            unsafe {
-                // Leave the implicit transaction open for the matching Metal
-                // presentation. Committing here would expose native geometry early.
-                let _: () = msg_send![class!(CATransaction), setDisableActions: actions_disabled];
-            }
-            #[cfg(feature = "browser-fixture")]
-            unsafe {
-                let layer: *mut AnyObject = msg_send![&*self.clip, layer];
-                let frame: objc2_foundation::NSRect = msg_send![layer, frame];
-                let presentation: *mut AnyObject = msg_send![layer, presentationLayer];
-                let presented: objc2_foundation::NSRect = if presentation.is_null() {
-                    frame
-                } else {
-                    msg_send![presentation, frame]
-                };
-                eprintln!(
-                    "Browser geometry: bounds={bounds:?} mask={mask:?} clip={:?} layer={frame:?} presented={presented:?} web={:?} background={:?}",
-                    self.clip.frame(),
-                    self.view.frame(),
-                    self.view.underPageBackgroundColor()
-                );
-            }
-        }
-        self.update_visibility();
-    }
-
-    /// Return the keyboard to GPUI if the page holds it.
-    pub fn focus_chrome(&self) {
-        if has_focus(&self.view) {
-            let _ = self.web.focus_parent();
-        }
-    }
-
-    fn update_visibility(&self) {
-        let visible = self.presentation != Presentation::Hidden
-            && self.observer.ivars().error.borrow().is_none()
-            && self
-                .visible_bounds
-                .is_some_and(|b| f32::from(b.size.width) > 0. && f32::from(b.size.height) > 0.);
-        if !visible || self.presentation == Presentation::Passthrough {
-            self.focus_chrome();
-        }
-        if self.view.isHidden() == visible {
-            #[cfg(feature = "browser-fixture")]
-            self.visibility_changes
-                .set(self.visibility_changes.get() + 1);
-            let _ = self.web.set_visible(visible);
-        }
-        self.clip.setHidden(!visible);
-    }
-
-    fn present(&mut self, presentation: Presentation) {
-        self.presentation = presentation;
-        self.clip
-            .ivars()
-            .dragging
-            .set(presentation == Presentation::Passthrough);
-        self.update_visibility();
-    }
-}
-
-impl Drop for Host {
-    fn drop(&mut self) {
-        self.focus_chrome();
-        unsafe {
-            if let Some(monitor) = self.monitor.take() {
-                NSEvent::removeMonitor(&monitor);
-            }
-            if let Some(monitor) = self.wheel_monitor.take() {
-                NSEvent::removeMonitor(&monitor);
-            }
-            for key in OBSERVED {
-                self.view
-                    .removeObserver_forKeyPath(&self.observer, &NSString::from_str(key));
-            }
-            self.view.setNavigationDelegate(None);
-            self.view.stopLoading();
-        }
-        self.wheel.stop();
-        self.view.removeFromSuperview();
-        self.clip.removeFromSuperview();
-    }
-}
-
 #[cfg(feature = "browser-fixture")]
 impl NativePage {
+    /// GPUI's window point (top-left origin) in AppKit's window space.
+    fn fixture_window_point(
+        &self,
+        x: f64,
+        y: f64,
+    ) -> (Retained<objc2_app_kit::NSWindow>, objc2_foundation::NSPoint) {
+        let window = self.view.window().unwrap();
+        let height = window.contentView().unwrap().bounds().size.height;
+        (window, objc2_foundation::NSPoint::new(x, height - y))
+    }
+
     pub fn fixture_move_cursor(&self, x: f64, y: f64) {
         #[link(name = "CoreGraphics", kind = "framework")]
         unsafe extern "C" {
             fn CGWarpMouseCursorPosition(point: objc2_foundation::NSPoint) -> i32;
         }
-        let host = self.0.borrow();
-        let window = host.view.window().unwrap();
-        let height = host.parent.clone().bounds().size.height;
-        let p = window.convertPointToScreen(objc2_foundation::NSPoint::new(x, height - y));
-        let screen = objc2_app_kit::NSScreen::mainScreen(host.view.mtm()).unwrap();
+        let (window, point) = self.fixture_window_point(x, y);
+        let p = window.convertPointToScreen(point);
+        let screen = NSScreen::mainScreen(self.view.mtm()).unwrap();
+        // SAFETY: a plain CoreGraphics call with a point by value.
         unsafe {
             CGWarpMouseCursorPosition(objc2_foundation::NSPoint::new(
                 p.x,
@@ -1009,163 +786,62 @@ impl NativePage {
         }
     }
 
-    pub fn fixture_backdrop_layers(&self) -> String {
-        unsafe fn describe(layer: *mut AnyObject, depth: usize, out: &mut String) {
-            if layer.is_null() || depth > 8 {
-                return;
-            }
-            unsafe {
-                let desc: Retained<NSString> = msg_send![layer, description];
-                out.push_str(&format!("{}{}\n", " ".repeat(depth), desc));
-                let layers: *mut AnyObject = msg_send![layer, sublayers];
-                if !layers.is_null() {
-                    let count: usize = msg_send![layers, count];
-                    for i in 0..count.min(30) {
-                        let child: *mut AnyObject = msg_send![layers, objectAtIndex:i];
-                        describe(child, depth + 1, out);
-                    }
-                }
-            }
-        }
-        let host = self.0.borrow();
-        let mut out = String::new();
-        for view in host.parent.subviews() {
-            if view.class().name() == c"GPUIBackdropView" {
-                unsafe {
-                    let layer: *mut AnyObject = msg_send![&*view, layer];
-                    describe(layer, 0, &mut out);
-                }
-            }
-        }
-        out
-    }
-
-    pub fn fixture_page_hit(&self, x: f64, y: f64) -> bool {
-        let host = self.0.borrow();
-        let point = objc2_foundation::NSPoint::new(x, host.parent.bounds().size.height - y);
-        host.parent
-            .hitTest(point)
-            .is_some_and(|hit| hit.isDescendantOf(&host.clip))
-    }
-
-    pub fn fixture_backdrops(&self) -> Vec<(f64, f64, f64, f64)> {
-        let host = self.0.borrow();
-        host.parent
-            .subviews()
-            .iter()
-            .filter(|view| view.class().name() == c"GPUIBackdropView" && !view.isHidden())
-            .map(|view| {
-                let r = view.frame();
-                (
-                    r.origin.x,
-                    host.parent.bounds().size.height - r.origin.y - r.size.height,
-                    r.size.width,
-                    r.size.height,
-                )
-            })
-            .collect()
-    }
-
-    pub fn fixture_geometry(&self) -> (f32, f32, f32) {
-        let host = self.0.borrow();
-        (
-            host.bounds.unwrap().size.width.into(),
-            host.view.frame().size.width as f32,
-            host.visible_bounds.unwrap().size.width.into(),
-        )
-    }
-
-    pub fn fixture_origin(&self) -> (f32, f32) {
-        let b = self.0.borrow().bounds.unwrap();
-        (b.origin.x.into(), b.origin.y.into())
-    }
-
-    pub fn fixture_overlay_visible(&self) -> bool {
-        let host = self.0.borrow();
-        host.parent
-            .clone()
-            .subviews()
-            .iter()
-            .any(|v| v.class().name() == c"GPUIOverlayView" && !v.isHidden())
-    }
-
-    pub fn fixture_visibility_changes(&self) -> u64 {
-        let host = self.0.borrow();
-        host.visibility_changes.get()
-    }
-
-    pub fn fixture_focus(&self) {
-        let _ = self.0.borrow().web.focus();
-    }
-
-    pub fn fixture_focused(&self) -> bool {
-        has_focus(&self.0.borrow().view)
-    }
-
-    pub fn fixture_overlay_at(&self, x: f64, y: f64) -> bool {
-        let host = self.0.borrow();
-        let parent = host.parent.clone();
-        let point = objc2_foundation::NSPoint::new(
-            x,
-            if parent.isFlipped() {
-                y
-            } else {
-                parent.bounds().size.height - y
-            },
-        );
-        parent
-            .hitTest(point)
-            .is_some_and(|hit| hit.class().name() == c"GPUIOverlayView")
-    }
-
+    /// A real click through AppKit's routing: the hit map decides whether
+    /// the page or GPUI gets it.
     pub fn fixture_click(&self, x: f64, y: f64) {
         self.fixture_move_cursor(x, y);
-        let host = self.0.borrow();
-        let parent = host.parent.clone();
-        let window = host.view.window().unwrap();
-        let point = objc2_foundation::NSPoint::new(x, parent.bounds().size.height - y);
-        let app = objc2_app_kit::NSApplication::sharedApplication(host.view.mtm());
-        for kind in [
-            objc2_app_kit::NSEventType::LeftMouseDown,
-            objc2_app_kit::NSEventType::LeftMouseUp,
-        ] {
+        let (window, point) = self.fixture_window_point(x, y);
+        let app = objc2_app_kit::NSApplication::sharedApplication(self.view.mtm());
+        for kind in [NSEventType::LeftMouseDown, NSEventType::LeftMouseUp] {
             let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(kind, point, NSEventModifierFlags::empty(), 0., window.windowNumber(), None, 0, 1, 1.).unwrap();
             app.postEvent_atStart(&event, false);
         }
     }
 
+    pub fn fixture_focus(&self) {
+        let _ = self.web.focus();
+    }
+
+    pub fn fixture_focused(&self) -> bool {
+        has_focus(&self.view)
+    }
+
     pub fn fixture_visible(&self) -> bool {
-        !self.0.borrow().view.isHidden()
+        !self.view.isHidden()
+    }
+
+    /// The web view's own width, which WebKit lays the page out to.
+    pub fn fixture_frame_width(&self) -> f32 {
+        self.view.frame().size.width as f32
     }
 
     pub fn fixture_cookies(&self, completion: impl FnOnce(Vec<String>) + 'static) {
         use objc2_foundation::{NSArray, NSHTTPCookie};
         let completion = RefCell::new(Some(completion));
-        let block =
-            block2::RcBlock::new(move |cookies: std::ptr::NonNull<NSArray<NSHTTPCookie>>| {
-                let cookies = unsafe { cookies.as_ref() };
-                let values = cookies
-                    .iter()
-                    .map(|cookie| {
-                        format!(
-                            "{}={}; domain={}; path={}; httpOnly={}; sessionOnly={}",
-                            cookie.name(),
-                            cookie.value(),
-                            cookie.domain(),
-                            cookie.path(),
-                            cookie.isHTTPOnly(),
-                            cookie.isSessionOnly()
-                        )
-                    })
-                    .collect();
-                if let Some(completion) = completion.borrow_mut().take() {
-                    completion(values);
-                }
-            });
+        let block = block2::RcBlock::new(move |cookies: NonNull<NSArray<NSHTTPCookie>>| {
+            // SAFETY: WebKit passes a live array for the call.
+            let cookies = unsafe { cookies.as_ref() };
+            let values = cookies
+                .iter()
+                .map(|cookie| {
+                    format!(
+                        "{}={}; domain={}; path={}; httpOnly={}; sessionOnly={}",
+                        cookie.name(),
+                        cookie.value(),
+                        cookie.domain(),
+                        cookie.path(),
+                        cookie.isHTTPOnly(),
+                        cookie.isSessionOnly()
+                    )
+                })
+                .collect();
+            if let Some(completion) = completion.borrow_mut().take() {
+                completion(values);
+            }
+        });
+        // SAFETY: the page's own store; WebKit copies the block. Main thread.
         unsafe {
-            self.0
-                .borrow()
-                .view
+            self.view
                 .configuration()
                 .websiteDataStore()
                 .httpCookieStore()
@@ -1174,10 +850,9 @@ impl NativePage {
     }
 
     pub fn fixture_eval(&self, script: &str) {
+        // SAFETY: a script and no completion, on the main thread.
         unsafe {
-            self.0
-                .borrow()
-                .view
+            self.view
                 .evaluateJavaScript_completionHandler(&NSString::from_str(script), None);
         }
     }

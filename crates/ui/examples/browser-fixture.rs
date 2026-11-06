@@ -1,6 +1,3 @@
-#[cfg(target_os = "linux")]
-#[path = "browser-fixture/linux.rs"]
-mod linux;
 #[path = "browser-fixture/storage.rs"]
 mod storage;
 #[path = "browser-fixture/transcript_links.rs"]
@@ -68,32 +65,17 @@ fn capture(directory: &std::path::Path, name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-// The Linux frame loop can be idle while the fixture's async task changes
-// theme/page state. Present the current scene before reading native pixels.
-async fn capture_frame(
+/// Reads `page` with the window whose last presented frame placed it.
+fn with_page<R>(
     window: gpui::WindowHandle<shell::Shell>,
-    directory: &std::path::Path,
-    name: &str,
+    page: &gpui::Entity<browser::BrowserSurface>,
     cx: &mut AsyncApp,
-) -> anyhow::Result<()> {
-    #[cfg(target_os = "linux")]
-    {
-        linux::wait_for_visible_window(cx).await?;
-        gpui::AnyWindowHandle::from(window).update(cx, |_, w, cx| {
-            w.refresh();
-            let arena = w.draw(cx);
-            w.present_if_needed();
-            arena.clear();
-        })?;
-        // Let the nested compositor present the submitted native frame.
-        pause(cx, 50).await;
-    }
-    #[cfg(not(target_os = "linux"))]
-    let _ = (window, cx);
-    capture(directory, name)
+    read: impl FnOnce(&browser::BrowserSurface, &gpui::Window) -> R,
+) -> anyhow::Result<R> {
+    window.update(cx, |_, w, cx| read(page.read(cx), w))
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn validate_blur(
     directory: &std::path::Path,
     region: (f64, f64, f64, f64),
@@ -266,21 +248,17 @@ fn main() -> anyhow::Result<()> {
                 });
                 let (first_id, first) = window.update(cx, |shell, w, cx| shell.fixture_open_browser(None, w, cx))?;
                 pause(cx, 500).await;
-                capture_frame(window, &output, "browser-empty-dark", cx).await?;
-                #[cfg(any(target_os = "macos", target_os = "linux"))]
+                capture(&output, "browser-empty-dark")?;
+                #[cfg(target_os = "macos")]
                 {
                     window.update(cx, |_, w, cx| first.update(cx, |b, cx| b.navigate(&_origin, w, cx)))?;
                     let deadline = std::time::Instant::now() + Duration::from_secs(25);
-                    while !first.read_with(cx, |b, _| b.page.title == "Fieldnotes" && !b.page.loading && b.fixture_native_visible()) {
+                    while !(first.read_with(cx, |b, _| b.page.title == "Fieldnotes" && !b.page.loading) && with_page(window, &first, cx, |b, w| b.fixture_native_visible(w))?) {
                         anyhow::ensure!(std::time::Instant::now() < deadline, "first page did not load: {:?}", first.read_with(cx, |b, _| b.page.clone()));
                         pause(cx, 50).await;
                     }
                     pause(cx, 500).await;
-                    #[cfg(target_os = "linux")]
-                    if let Some(seconds) = std::env::var("ONICODE_BROWSER_BENCH").ok().and_then(|s| s.parse().ok()) {
-                        return linux::bench(window, first.clone(), &_origin, &output, seconds, cx).await;
-                    }
-                    capture_frame(window, &output, "browser-preview-dark", cx).await?;
+                    capture(&output, "browser-preview-dark")?;
                     // Real DOM click, native navigation and history.
                     first.read_with(cx, |b, _| b.fixture_eval("document.getElementById('details').click()"));
                     let deadline = std::time::Instant::now() + Duration::from_secs(15);
@@ -300,8 +278,8 @@ fn main() -> anyhow::Result<()> {
                 }
                 let (second_id, second) = window.update(cx, |shell, w, cx| shell.fixture_open_browser(None, w, cx))?;
                 pause(cx, 250).await;
-                anyhow::ensure!(!first.read_with(cx, |b, _| b.fixture_native_visible()), "background page stayed visible");
-                #[cfg(any(target_os = "macos", target_os = "linux"))]
+                anyhow::ensure!(!with_page(window, &first, cx, |b, w| b.fixture_native_visible(w))?, "background page stayed visible");
+                #[cfg(target_os = "macos")]
                 {
                     first.read_with(cx, |b, _| b.fixture_eval("document.cookie = 'browserfixture=shared; path=/'"));
                     window.update(cx, |_, w, cx| second.update(cx, |b, cx| b.navigate(&_origin, w, cx)))?;
@@ -320,20 +298,18 @@ fn main() -> anyhow::Result<()> {
                 pause(cx, 250).await;
                 window.update(cx, |shell, w, cx| shell.fixture_close_browser(second_id, w, cx))?;
                 drop(second);
-                #[cfg(target_os = "linux")]
-                linux::exercise(window, first.clone(), &output, cx).await?;
                 #[cfg(target_os = "macos")]
                 let mut recording;
                 #[cfg(target_os = "macos")]
                 {
                     pause(cx, 400).await;
-                    let (left, top) = first.read_with(cx, |b, _| b.fixture_origin());
+                    let (left, top) = with_page(window, &first, cx, |b, w| b.fixture_origin(w))?;
                     first.read_with(cx, |b, _| b.fixture_focus());
                     pause(cx, 100).await;
+                    anyhow::ensure!(with_page(window, &first, cx, |b, w| b.fixture_focused() && b.fixture_page_focused(w))?, "GPUI focus did not follow the page taking the keyboard");
                     first.read_with(cx, |b,_| b.fixture_eval("(() => { let live = document.createElement('div'); live.style='position:fixed;bottom:16px;right:16px;padding:8px 12px;background:#29483b;color:white;border-radius:8px;font:12px monospace;z-index:99999'; document.body.append(live); let start=performance.now(); function frame() { live.textContent='LIVE  '+((performance.now()-start)/1000).toFixed(2)+'s'; requestAnimationFrame(frame); } frame(); })()"));
                     recording = std::process::Command::new("/usr/sbin/screencapture").args(["-v","-V","24","-C","-k","-D","1"]).arg(output.join("browser-hover.mov")).spawn()?;
                     pause(cx, 1000).await;
-                    let before = first.read_with(cx, |b, _| b.fixture_visibility_changes());
                     // Actual GPUI mouse dispatch exercises tab and toolbar hover
                     // listeners and tooltip timers, including rapid cancellation.
                     for _ in 0..12 {
@@ -341,16 +317,15 @@ fn main() -> anyhow::Result<()> {
                             first.read_with(cx, |b,_| b.fixture_move_cursor(x as f64,y as f64));
                             gpui::AnyWindowHandle::from(window).update(cx, |_, w, cx| { w.dispatch_event(gpui::PlatformInput::MouseMove(gpui::MouseMoveEvent { position:gpui::point(px(x),px(y)), pressed_button:None,modifiers:Default::default() }),cx); })?;
                             pause(cx, 80).await;
-                            anyhow::ensure!(first.read_with(cx, |b,_| b.fixture_native_visible() && b.fixture_visibility_changes() == before), "hover hid the live webview");
+                            anyhow::ensure!(with_page(window, &first, cx, |b, w| b.fixture_native_visible(w))?, "hover hid the live webview");
                         }
                     }
-                    // Dwell over Reload until its real GPUI tooltip paints above
-                    // the page; the passive overlay must leave native input alone.
+                    // Dwell over Reload until its tooltip paints over the page:
+                    // painted after the page's hole, it takes neither the page's
+                    // pointer nor its keyboard.
                     pause(cx, 1000).await;
-                    anyhow::ensure!(first.read_with(cx, |b,_| b.fixture_overlay_visible()), "toolbar tooltip did not paint on the overlay plane");
-                    anyhow::ensure!(first.read_with(cx, |b,_| b.fixture_focused() && !b.fixture_overlay_at((left+100.) as f64,(top+100.) as f64)), "tooltip stole native focus or page hit testing");
-                    anyhow::ensure!(first.read_with(cx, |b,_| b.fixture_visibility_changes() == before), "tooltip hid the page");
-                    capture_frame(window, &output, "browser-tooltip-dark", cx).await?;
+                    anyhow::ensure!(with_page(window, &first, cx, |b, w| b.fixture_native_visible(w) && b.fixture_focused() && b.fixture_page_hit(w, (left+100.) as f64, (top+100.) as f64))?, "tooltip hid the page or stole its focus or hit testing");
+                    capture(&output, "browser-tooltip-dark")?;
                     // Also dwell on the tab itself: its URL tooltip is the
                     // original reported flicker case, distinct from toolbar hover.
                     for _ in 0..2 {
@@ -358,40 +333,39 @@ fn main() -> anyhow::Result<()> {
                             first.read_with(cx, |b,_| b.fixture_move_cursor(x as f64,y as f64));
                             gpui::AnyWindowHandle::from(window).update(cx, |_,w,cx| { w.dispatch_event(gpui::PlatformInput::MouseMove(gpui::MouseMoveEvent {position:gpui::point(px(x),px(y)),pressed_button:None,modifiers:Default::default()}),cx); })?;
                             pause(cx, 1000).await;
-                            anyhow::ensure!(first.read_with(cx, |b,_| b.fixture_overlay_visible() && b.fixture_native_visible() && b.fixture_focused() && b.fixture_visibility_changes() == before), "repeated tab/toolbar tooltip disrupted the live page");
+                            anyhow::ensure!(with_page(window, &first, cx, |b, w| b.fixture_native_visible(w) && b.fixture_focused())?, "repeated tab/toolbar tooltip disrupted the live page");
                         }
                     }
                     first.read_with(cx, |b,_| b.fixture_move_cursor((left-20.) as f64,150.));
                     gpui::AnyWindowHandle::from(window).update(cx, |_,w,cx| { w.dispatch_event(gpui::PlatformInput::MouseMove(gpui::MouseMoveEvent {position:gpui::point(px(left-20.),px(150.)),pressed_button:None,modifiers:Default::default()}),cx); })?;
                     pause(cx, 400).await;
-                    anyhow::ensure!(!first.read_with(cx, |b,_| b.fixture_overlay_visible()), "dismissed tooltip left stale overlay pixels");
                 }
                 window.update(cx, |shell, _, cx| shell.fixture_browser_menu(true, cx))?;
                 pause(cx, 700).await;
                 #[cfg(target_os = "macos")]
                 {
-                    let (left, top) = first.read_with(cx, |b,_| b.fixture_origin());
-                    anyhow::ensure!(first.read_with(cx, |b,_| b.fixture_native_visible()), "menu froze or hid the live page");
-                    anyhow::ensure!(first.read_with(cx, |b,_| b.fixture_overlay_at((left+100.) as f64,(top+150.) as f64)), "menu failed to intercept outside clicks above the browser");
-                    std::fs::write(output.join("backdrop-layers.txt"),first.read_with(cx,|b,_|b.fixture_backdrop_layers()))?;
-                    capture_frame(window, &output, "browser-menu-dark", cx).await?;
+                    let (left, top) = with_page(window, &first, cx, |b, w| b.fixture_origin(w))?;
+                    let (x, y) = ((left+100.) as f64, (top+150.) as f64);
+                    anyhow::ensure!(with_page(window, &first, cx, |b, w| b.fixture_native_visible(w))?, "menu froze or hid the live page");
+                    anyhow::ensure!(!with_page(window, &first, cx, |b, w| b.fixture_page_hit(w, x, y))?, "menu failed to intercept outside clicks above the browser");
+                    capture(&output, "browser-menu-dark")?;
                     first.read_with(cx, |b,_| b.fixture_eval("document.addEventListener('click', () => { document.title = 'Unexpected page click'; })"));
                     pause(cx, 100).await;
-                    first.read_with(cx, |b,_| b.fixture_click((left+100.) as f64,(top+150.) as f64));
+                    first.read_with(cx, |b,_| b.fixture_click(x, y));
                     pause(cx, 600).await;
-                    anyhow::ensure!(first.read_with(cx, |b,_| !b.fixture_overlay_at((left+100.) as f64,(top+150.) as f64) && b.page.title != "Unexpected page click"), "outside click did not dismiss the menu cleanly, or leaked into the page");
+                    anyhow::ensure!(!window.update(cx, |s,_,_| s.fixture_browser_menu_mounted())? && with_page(window, &first, cx, |b, w| b.fixture_page_hit(w, x, y) && b.page.title != "Unexpected page click")?, "outside click did not dismiss the menu cleanly, or leaked into the page");
                     // The next native click must reach the page now that the
-                    // interactive overlay is gone.
-                    first.read_with(cx, |b,_| b.fixture_click((left+100.) as f64,(top+150.) as f64));
+                    // menu's dismiss layer is gone.
+                    first.read_with(cx, |b,_| b.fixture_click(x, y));
                     let deadline = std::time::Instant::now() + Duration::from_secs(5);
                     while !first.read_with(cx, |b,_| b.page.title == "Unexpected page click") {
                         anyhow::ensure!(std::time::Instant::now() < deadline, "page mouse input was not restored after menu dismissal"); pause(cx,50).await;
                     }
-                    // That click made the page AppKit's first responder. A click on
-                    // GPUI content must take it back, or keys keep reaching the page
-                    // before the focused GPUI input.
-                    anyhow::ensure!(first.read_with(cx, |b,_| b.fixture_focused()), "page click did not take keyboard focus");
-                    first.read_with(cx, |b,_| b.fixture_click((left*0.5) as f64,(top+150.) as f64));
+                    // That click made the page AppKit's first responder and GPUI's
+                    // focus followed. A click on GPUI content must take it back, or
+                    // keys keep reaching the page before the focused GPUI input.
+                    anyhow::ensure!(with_page(window, &first, cx, |b, w| b.fixture_focused() && b.fixture_page_focused(w))?, "page click did not take keyboard focus");
+                    first.read_with(cx, |b,_| b.fixture_click((left*0.5) as f64, y));
                     let deadline = std::time::Instant::now() + Duration::from_secs(5);
                     while first.read_with(cx, |b,_| b.fixture_focused()) {
                         anyhow::ensure!(std::time::Instant::now() < deadline, "page kept keyboard focus after a click on GPUI content"); pause(cx,50).await;
@@ -400,7 +374,7 @@ fn main() -> anyhow::Result<()> {
                 }
                 #[cfg(not(target_os = "macos"))]
                 {
-                    capture_frame(window, &output, "browser-menu-dark", cx).await?;
+                    capture(&output, "browser-menu-dark")?;
                     window.update(cx, |shell, _, cx| shell.fixture_browser_menu(false, cx))?;
                 }
                 pause(cx, 500).await;
@@ -423,17 +397,16 @@ fn main() -> anyhow::Result<()> {
                     pause(cx,300).await;
                     let mut layout_video = std::process::Command::new("/usr/sbin/screencapture").args(["-v","-V","30","-C","-k","-D","1"]).arg(output.join("browser-layout.mov")).spawn()?;
                     pause(cx,800).await;
-                    let before=first.read_with(cx,|b,_|b.fixture_visibility_changes());
-                    let (left,top)=first.read_with(cx,|b,_|b.fixture_origin());
+                    let (left,top)=with_page(window,&first,cx,|b,w|b.fixture_origin(w))?;
                     // Real resize-handle drag, including crossing into the native page.
                     eprintln!("Browser fixture: starting resize drag");
                     // The 20px shell target overlaps the native browser by 9px
-                    // after its one-point panel border. That full overlap must
-                    // reach GPUI, while content beyond it stays native.
+                    // after its one-point panel border. GPUI's hit test gives that
+                    // overlap to the handle, while content beyond it stays native.
                     for offset in [-6., -2., 0., 3., 6., 8.5] {
-                        anyhow::ensure!(!first.read_with(cx,|b,_|b.fixture_page_hit((left+offset) as f64,(top+120.) as f64)),"native page stole the resize target at offset {offset}");
+                        anyhow::ensure!(!with_page(window,&first,cx,|b,w|b.fixture_page_hit(w,(left+offset) as f64,(top+120.) as f64))?,"native page stole the resize target at offset {offset}");
                     }
-                    anyhow::ensure!(first.read_with(cx,|b,_|b.fixture_page_hit((left+10.) as f64,(top+120.) as f64)),"resize target blocked adjacent page content");
+                    anyhow::ensure!(with_page(window,&first,cx,|b,w|b.fixture_page_hit(w,(left+10.) as f64,(top+120.) as f64))?,"resize target blocked adjacent page content");
                     let start=gpui::point(px(left+3.),px(top+120.));
                     gpui::AnyWindowHandle::from(window).update(cx,|_,w,cx| {w.dispatch_event(gpui::PlatformInput::MouseDown(gpui::MouseDownEvent{position:start,button:gpui::MouseButton::Left,click_count:1,..Default::default()}),cx);})?;
                     let mut widths=Vec::new();
@@ -443,35 +416,35 @@ fn main() -> anyhow::Result<()> {
                         gpui::AnyWindowHandle::from(window).update(cx,|_,w,cx| {w.dispatch_event(gpui::PlatformInput::MouseMove(gpui::MouseMoveEvent{position:pos,pressed_button:Some(gpui::MouseButton::Left),modifiers:Default::default()}),cx);})?;
                         pause(cx,100).await;
                         anyhow::ensure!(cx.update(|cx|cx.has_active_drag()),"resize did not start a real GPUI drag");
-                        let (layout,native,clip)=first.read_with(cx,|b,_|b.fixture_geometry());
+                        let (layout,native,clip)=with_page(window,&first,cx,|b,w|b.fixture_geometry(w))?;
                         widths.push(layout);
-                        let (x,y)=first.read_with(cx,|b,_|b.fixture_origin());
-                        anyhow::ensure!(!first.read_with(cx,|b,_|b.fixture_page_hit((x+100.) as f64,(y+100.) as f64)),"native page intercepted the resize drag");
+                        let (x,y)=with_page(window,&first,cx,|b,w|b.fixture_origin(w))?;
+                        anyhow::ensure!(!with_page(window,&first,cx,|b,w|b.fixture_page_hit(w,(x+100.) as f64,(y+100.) as f64))?,"native page intercepted the resize drag");
                         anyhow::ensure!((layout-native).abs()<1.1 && clip<=layout+1.,"native browser geometry diverged while resizing");
-                        anyhow::ensure!(first.read_with(cx,|b,_|b.fixture_native_visible() && b.fixture_visibility_changes()==before),"resize hid the live browser");
+                        anyhow::ensure!(with_page(window,&first,cx,|b,w|b.fixture_native_visible(w))?,"resize hid the live browser");
                     }
                     gpui::AnyWindowHandle::from(window).update(cx,|_,w,cx| {w.dispatch_event(gpui::PlatformInput::MouseUp(gpui::MouseUpEvent{position:start,button:gpui::MouseButton::Left,click_count:1,..Default::default()}),cx);})?;
                     pause(cx,250).await;
                     anyhow::ensure!(!cx.update(|cx|cx.has_active_drag()),"resize drag did not end");
                     anyhow::ensure!(widths.iter().copied().fold(f32::MIN,f32::max)-widths.iter().copied().fold(f32::MAX,f32::min)>150.,"resize did not exercise both viewport sizes");
-                    let (x,y)=first.read_with(cx,|b,_|b.fixture_origin());
-                    anyhow::ensure!(first.read_with(cx,|b,_|b.fixture_page_hit((x+100.) as f64,(y+100.) as f64)),"resize release did not restore page hit testing");
+                    let (x,y)=with_page(window,&first,cx,|b,w|b.fixture_origin(w))?;
+                    anyhow::ensure!(with_page(window,&first,cx,|b,w|b.fixture_page_hit(w,(x+100.) as f64,(y+100.) as f64))?,"resize release did not restore page hit testing");
                     // CSS viewport must follow the native frame, rather than a scaled image.
                     first.read_with(cx,|b,_|b.fixture_eval("document.title='Viewport:'+window.innerWidth"));
                     let deadline=std::time::Instant::now()+Duration::from_secs(5);
                     loop {
                         let title=first.read_with(cx,|b,_|b.page.title.clone());
                         if let Some(width)=title.strip_prefix("Viewport:").and_then(|v|v.parse::<f32>().ok()) {
-                            anyhow::ensure!((width-first.read_with(cx,|b,_|b.fixture_geometry().0)).abs()<2.,"CSS viewport did not reflow"); break;
+                            anyhow::ensure!((width-with_page(window,&first,cx,|b,w|b.fixture_geometry(w).0)?).abs()<2.,"CSS viewport did not reflow"); break;
                         }
                         anyhow::ensure!(std::time::Instant::now()<deadline,"viewport measurement timed out");pause(cx,50).await;
                     }
-                    capture_frame(window, &output, "browser-resize-dark", cx).await?;
+                    capture(&output, "browser-resize-dark")?;
                     eprintln!("Browser fixture: resize drag and CSS viewport passed");
                     // Left sidebar does not occlude the browser at any point.
                     for _ in 0..4 {
                         window.update(cx,|s,_,cx|s.fixture_toggle_sidebar(false,cx))?;
-                        for _ in 0..20 {pause(cx,16).await;anyhow::ensure!(first.read_with(cx,|b,_|b.fixture_native_visible() && b.fixture_visibility_changes()==before),"left sidebar toggle hid the browser");}
+                        for _ in 0..20 {pause(cx,16).await;anyhow::ensure!(with_page(window,&first,cx,|b,w|b.fixture_native_visible(w))?,"left sidebar toggle hid the browser");}
                     }
                     eprintln!("Browser fixture: left sidebar transitions passed");
                     // Reverse the right sidebar mid-animation. It must remain
@@ -481,44 +454,46 @@ fn main() -> anyhow::Result<()> {
                         let deadline=std::time::Instant::now()+Duration::from_secs(2);
                         loop {
                             pause(cx,1).await;
-                            let (width,_,clip)=first.read_with(cx,|b,_|b.fixture_geometry());
-                            anyhow::ensure!(first.read_with(cx,|b,_|b.fixture_native_visible()),"closing sidebar skipped intermediate live frames");
-                            if clip<width { break; }
+                            anyhow::ensure!(with_page(window,&first,cx,|b,w|b.fixture_native_visible(w))?,"closing sidebar skipped intermediate live frames");
+                            let placement=with_page(window,&first,cx,|b,w|b.fixture_placement(w))?;
+                            if placement.is_some_and(|p|p.visible.size.width<p.bounds.size.width) { break; }
                             anyhow::ensure!(std::time::Instant::now()<deadline,"closing sidebar did not clip the live browser");
                         }
                         window.update(cx,|s,_,cx|s.fixture_toggle_sidebar(true,cx))?;
                         pause(cx,350).await;
-                        anyhow::ensure!(first.read_with(cx,|b,_|b.fixture_native_visible()),"interrupted toggle lost browser visibility");
+                        anyhow::ensure!(with_page(window,&first,cx,|b,w|b.fixture_native_visible(w))?,"interrupted toggle lost browser visibility");
                     }
                     window.update(cx,|s,_,cx|s.fixture_toggle_sidebar(true,cx))?;
                     pause(cx,350).await;
-                    anyhow::ensure!(!first.read_with(cx,|b,_|b.fixture_native_visible()),"closed sidebar retained native content");
+                    anyhow::ensure!(!with_page(window,&first,cx,|b,w|b.fixture_native_visible(w))?,"closed sidebar retained native content");
                     window.update(cx,|s,_,cx|s.fixture_toggle_sidebar(true,cx))?;
                     pause(cx,350).await;
                     first.read_with(cx,|b,_|b.fixture_eval("document.title='Fieldnotes'"));
                     eprintln!("Browser fixture: right sidebar transitions passed");
-                    capture_frame(window, &output, "browser-blur-baseline-dark", cx).await?;
+                    capture(&output, "browser-blur-baseline-dark")?;
                     window.update(cx,|s,_,cx|s.fixture_browser_menu(true,cx))?;
                     pause(cx,1000).await;
-                    let regions=first.read_with(cx,|b,_|b.fixture_backdrops());
+                    // The frosted menu over the page: the presented frame blurs
+                    // the page under it (gpui-fast's native blur).
+                    let regions=with_page(window,&first,cx,|b,w|b.fixture_backdrops(w))?;
                     anyhow::ensure!(!regions.is_empty(),"menu has no native browser backdrop");
                     std::fs::write(output.join("blur-regions.json"),serde_json::to_string(&regions)?)?;
-                    capture_frame(window, &output, "browser-blur-dark", cx).await?;
+                    capture(&output, "browser-blur-dark")?;
                     cx.update(|cx|appearance::set_mode(appearance::AppearanceMode::Light,cx));
                     pause(cx,700).await;
-                    capture_frame(window, &output, "browser-blur-light", cx).await?;
+                    capture(&output, "browser-blur-light")?;
                     first.read_with(cx,|b,_|b.fixture_eval("document.getElementById('browser-blur-grid').style.background='#263d35'"));
                     pause(cx,500).await;
-                    capture_frame(window, &output, "browser-blur-solid-light", cx).await?;
+                    capture(&output, "browser-blur-solid-light")?;
                     let window_width=gpui::AnyWindowHandle::from(window).update(cx,|_,w,_|f32::from(w.viewport_size().width))?;
                     cx.update(|cx|appearance::set_surface(onicode_theme::SurfacePreference::Opaque,cx));
                     pause(cx,500).await;
-                    anyhow::ensure!(first.read_with(cx,|b,_|b.fixture_backdrops().is_empty()),"opaque appearance retained native blur");
-                    capture_frame(window, &output, "browser-menu-opaque", cx).await?;
+                    anyhow::ensure!(with_page(window,&first,cx,|b,w|b.fixture_backdrops(w).is_empty())?,"opaque appearance retained native blur");
+                    capture(&output, "browser-menu-opaque")?;
                     cx.update(|cx| {appearance::set_mode(appearance::AppearanceMode::Dark,cx);appearance::set_surface(onicode_theme::SurfacePreference::Frosted,cx);});
                     window.update(cx,|s,_,cx|s.fixture_browser_menu(false,cx))?;
                     pause(cx,500).await;
-                    anyhow::ensure!(first.read_with(cx,|b,_|b.fixture_backdrops().is_empty()),"dismissed menu retained native blur");
+                    anyhow::ensure!(with_page(window,&first,cx,|b,w|b.fixture_backdrops(w).is_empty())?,"dismissed menu retained native blur");
                     let deadline=std::time::Instant::now()+Duration::from_secs(30);
                     loop {if let Some(status)=layout_video.try_wait()? {anyhow::ensure!(status.success(),"layout recording failed");break;}anyhow::ensure!(std::time::Instant::now()<deadline,"layout recording timed out");pause(cx,100).await;}
                     anyhow::ensure!(std::fs::metadata(output.join("browser-layout.mov"))?.len()>10000,"layout recording is empty");
@@ -527,10 +502,12 @@ fn main() -> anyhow::Result<()> {
                 for width in [380.25, 640.5, 520.75] {
                     window.update(cx, |shell, _, cx| shell.fixture_resize_browser(width, cx))?;
                     pause(cx, 150).await;
+                    // WebKit lays out to the exact fractional width; the container
+                    // shows it on whole device pixels.
                     #[cfg(target_os = "macos")]
                     {
-                        let (layout,native,clip)=first.read_with(cx,|b,_|b.fixture_geometry());
-                        anyhow::ensure!((layout-native).abs()<0.01 && (clip-native).abs()<0.01,"fractional resize left a gap between the page and clip: {layout}/{native}/{clip}");
+                        let (layout,native,clip)=with_page(window,&first,cx,|b,w|b.fixture_geometry(w))?;
+                        anyhow::ensure!((layout-native).abs()<0.01 && (clip-layout).abs()<=1.,"fractional resize left a gap between the page and its container: {layout}/{native}/{clip}");
                     }
                 }
                 window.update(cx, |shell, _, cx| shell.fixture_expand_browser(cx))?;
@@ -538,10 +515,10 @@ fn main() -> anyhow::Result<()> {
                 window.update(cx, |shell, _, cx| shell.fixture_expand_browser(cx))?;
                 cx.update(|cx| appearance::set_mode(appearance::AppearanceMode::Light, cx));
                 pause(cx, 600).await;
-                capture_frame(window, &output, "browser-light", cx).await?;
-                #[cfg(any(target_os = "macos", target_os = "linux"))]
+                capture(&output, "browser-light")?;
+                #[cfg(target_os = "macos")]
                 {
-                    anyhow::ensure!(first.read_with(cx, |b, _| b.fixture_native_visible()), "page not restored after overlays/takeover");
+                    anyhow::ensure!(with_page(window, &first, cx, |b, w| b.fixture_native_visible(w))?, "page not restored after overlays/takeover");
                     // Use an ordinary closed localhost port. Port 1 is on
                     // WebKit's restricted-port list and does not exercise a
                     // failed connection to a development server.
@@ -553,7 +530,7 @@ fn main() -> anyhow::Result<()> {
                     while !first.read_with(cx, |b, _| b.page.error.is_some()) {
                         anyhow::ensure!(std::time::Instant::now() < deadline, "load failure was not reported: {:?}", first.read_with(cx, |b, _| b.page.clone())); pause(cx, 50).await;
                     }
-                    pause(cx, 300).await; capture_frame(window, &output, "browser-error-light", cx).await?;
+                    pause(cx, 300).await; capture(&output, "browser-error-light")?;
                 }
                 // Reject arbitrary schemes while preserving the existing page.
                 let before = first.read_with(cx, |b, _| b.page.url.clone());
@@ -562,13 +539,13 @@ fn main() -> anyhow::Result<()> {
                 // A local path says where files open instead of loading a made-up host.
                 window.update(cx, |_, w, cx| first.update(cx, |b, cx| b.navigate("/Users/me/Documents/mockup.html", w, cx)))?;
                 anyhow::ensure!(first.read_with(cx, |b, _| b.page.url == before), "local path navigated");
-                pause(cx, 300).await; capture_frame(window, &output, "browser-local-file-light", cx).await?;
+                pause(cx, 300).await; capture(&output, "browser-local-file-light")?;
                 cx.update(|cx| appearance::set_mode(appearance::AppearanceMode::Dark, cx));
-                pause(cx, 600).await; capture_frame(window, &output, "browser-local-file-dark", cx).await?;
+                pause(cx, 600).await; capture(&output, "browser-local-file-dark")?;
                 window.update(cx, |shell, w, cx| shell.fixture_close_browser(first_id, w, cx))?;
                 pause(cx, 200).await;
-                anyhow::ensure!(!first.read_with(cx, |b, _| b.fixture_native_visible()), "closed tab retained its native view");
-                std::fs::write(output.join("result.txt"), "PASS: real shell browser fixture; address rejection, tab switching/close, overlays, resizing, takeover and appearance. On macOS and Linux: live DOM navigation, history, same-document state, native visibility, rapid hover/tooltip focus and hit testing, overlay outside-click isolation/restoration, live resize/CSS reflow/native drag hit testing, interrupted sidebar clipping, frosted/light/opaque backdrop cleanup, and load failure.\n")?;
+                anyhow::ensure!(!with_page(window, &first, cx, |b, w| b.fixture_native_visible(w))?, "closed tab retained its native view");
+                std::fs::write(output.join("result.txt"), "PASS: real shell browser fixture; address rejection, tab switching/close, overlays, resizing, takeover and appearance. On macOS: live DOM navigation, history, same-document state, native placement, focus in step both ways, rapid hover/tooltip focus and hit testing, menu outside-click isolation/restoration, live resize/CSS reflow/drag hit testing, interrupted sidebar clipping, frosted/light/opaque native blur, and load failure.\n")?;
                 Ok(())
             }.await;
             if let Err(error) = run { eprintln!("Browser fixture failed: {error:#}"); *result.lock().unwrap() = Some(error.to_string()); }

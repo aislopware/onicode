@@ -23,7 +23,7 @@ upstream = "longbridge/gpui-fast"
 branch = "main"
 fork = "aislopware/gpui-fast"
 checkout = "forks/gpui-fast"
-base = "5bf74804b5708619e096742e3c02061997ef8527"
+base = "a10f393d8033c5f52f34821d6a25cddadc6174b4"
 base_date = "2026-11-06"
 every_minutes = 0
 
@@ -32,7 +32,7 @@ upstream = "longbridge/gpui-kit"
 branch = "main"
 fork = "aislopware/gpui-kit"
 checkout = "forks/gpui-kit"
-base = "b2aaa3e5f9a387dea74981586bfca33e7e08420d"
+base = "2c150ee566c6b3b97cbb77a6e56eba0f47cee51b"
 base_date = "2026-11-06"
 every_minutes = 0
 

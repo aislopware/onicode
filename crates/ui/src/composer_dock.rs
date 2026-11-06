@@ -1010,7 +1010,7 @@ mod tests {
         });
         let draw = |cx: &mut gpui::TestAppContext| {
             cx.update_window(handle.into(), |_, window, cx| {
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
             })
             .unwrap();
             measured.get().unwrap()
@@ -1122,7 +1122,7 @@ mod tests {
                 });
                 let draw = |cx: &mut gpui::TestAppContext| {
                     cx.update_window(handle.into(), |_, window, cx| {
-                        window.draw(cx).clear();
+                        window.draw(cx).clear(cx);
                     })
                     .unwrap();
                     measured.get().unwrap()

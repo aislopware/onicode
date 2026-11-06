@@ -38,7 +38,7 @@ use std::time::{Duration, Instant};
 use gpui::{
     AnyElement, App, Bounds, ContentMask, DispatchPhase, Element, ElementId, GlobalElementId,
     Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, ListState, Pixels, Point,
-    ScrollDelta, ScrollHandle, ScrollWheelEvent, TouchPhase, Window, point, px,
+    ScrollDelta, ScrollEvent, ScrollHandle, TouchPhase, Window, point, px,
 };
 
 /// Apple's UIScrollView coefficient: travel `x` past the end of a `d`-tall
@@ -465,7 +465,7 @@ impl Element for Overscroll {
         if let Some((band, hitbox)) = prepaint.band.clone() {
             let view = window.current_view();
             let source = self.source.clone();
-            window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+            window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
                 if phase != DispatchPhase::Capture {
                     return;
                 }
@@ -806,15 +806,16 @@ mod tests {
             scroll: scroll.clone(),
             top: top.clone(),
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let mut wheel = |y: f32, phase| {
-            cx.simulate_event(ScrollWheelEvent {
+            cx.simulate_event(ScrollEvent {
                 position: point(px(100.0), px(100.0)),
                 delta: ScrollDelta::Pixels(point(px(0.0), px(y))),
                 modifiers: Modifiers::default(),
                 touch_phase: phase,
+                ..Default::default()
             });
-            cx.update(|window, cx| window.draw(cx).clear());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
         };
         wheel(0.0, TouchPhase::Started);
         wheel(40.0, TouchPhase::Moved);

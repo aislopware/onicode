@@ -44,7 +44,7 @@ use std::time::Instant;
 use gpui::{
     AnyElement, App, Bounds, DispatchPhase, Element, ElementId, GlobalElementId,
     InspectorElementId, IntoElement, LayoutId, Modifiers, MouseDownEvent, Pixels, PlatformInput,
-    Point, ScrollDelta, ScrollWheelEvent, TouchPhase, Window, point,
+    Point, ScrollDelta, ScrollEvent, TouchPhase, Window, point,
 };
 
 /// Chrome's wheel easing control points, `(x1, y1, x2, y2)`
@@ -388,12 +388,7 @@ impl Bezier {
     }
 }
 
-fn intercept(
-    root: &Rc<RefCell<Root>>,
-    event: &ScrollWheelEvent,
-    window: &mut Window,
-    cx: &mut App,
-) {
+fn intercept(root: &Rc<RefCell<Root>>, event: &ScrollEvent, window: &mut Window, cx: &mut App) {
     let mut state = root.borrow_mut();
     if state.replaying {
         return;
@@ -442,11 +437,12 @@ fn frame(root: Rc<RefCell<Root>>, window: &mut Window, cx: &mut App) {
     };
     if slice != Point::default() {
         window.dispatch_event(
-            PlatformInput::ScrollWheel(ScrollWheelEvent {
+            PlatformInput::Scroll(ScrollEvent {
                 position: window.mouse_position(),
                 delta: ScrollDelta::Lines(slice),
                 modifiers: window.modifiers(),
                 touch_phase: TouchPhase::Moved,
+                ..Default::default()
             }),
             cx,
         );
@@ -527,7 +523,7 @@ impl Element for SmoothScroll {
             }
         });
         self.child.paint(window, cx);
-        window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+        window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
             if phase == DispatchPhase::Capture {
                 intercept(&root, event, window, cx);
             }
@@ -763,7 +759,7 @@ mod tests {
         let (_, cx) = cx.add_window_view(|_, _| Fixture {
             scroll: scroll.clone(),
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         (scroll, cx)
     }
 
@@ -777,13 +773,14 @@ mod tests {
     }
 
     fn wheel(cx: &mut VisualTestContext, delta: ScrollDelta, modifiers: Modifiers) {
-        cx.simulate_event(ScrollWheelEvent {
+        cx.simulate_event(ScrollEvent {
             position: point(px(100.0), px(100.0)),
             delta,
             modifiers,
             touch_phase: TouchPhase::Moved,
+            ..Default::default()
         });
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
     }
 
     fn notch(cx: &mut VisualTestContext) {
@@ -800,7 +797,7 @@ mod tests {
         CLOCK.set(CLOCK.get().map(|now| now + FRAME));
         cx.update(|window, cx| {
             let ran = window.simulate_next_frame(cx);
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
             ran
         })
     }
@@ -853,7 +850,7 @@ mod tests {
         let (scroll, cx) = open(cx);
         let expect_instant = |cx: &mut VisualTestContext, delta, modifiers| {
             scroll.set_offset(point(px(0.0), px(0.0)));
-            cx.update(|window, cx| window.draw(cx).clear());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
             wheel(cx, delta, modifiers);
             assert!(top(&scroll) < 0.0, "{delta:?} {modifiers:?} was held");
             assert_eq!(next_frame(cx), 0, "{delta:?} {modifiers:?} queued a glide");

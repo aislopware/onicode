@@ -843,10 +843,20 @@ pub fn set_math_size(size: u16, cx: &mut App) {
 }
 
 pub fn update(policy: SavePolicy, cx: &mut App, mutate: impl FnOnce(&mut UiSettings)) -> bool {
-    if !cx.has_global::<SettingsStore>() {
+    // Mutate a copy first: `global_mut` marks the store changed, rebuilding
+    // every view that reads settings, even when nothing moved.
+    let Some(store) = cx.try_global::<SettingsStore>() else {
+        return false;
+    };
+    let mut next = store.current.clone();
+    mutate(&mut next);
+    if next.clone().clamped() == store.current {
         return false;
     }
-    if !cx.global_mut::<SettingsStore>().update_current(mutate) {
+    if !cx
+        .global_mut::<SettingsStore>()
+        .update_current(move |current| *current = next)
+    {
         return false;
     }
     schedule(policy, cx);
@@ -2012,12 +2022,6 @@ pub fn bound_key(key: &str) -> String {
     BOUND_KEY_EQUIVALENTS.with_borrow(|equivalents| localize_key(key, equivalents).into_owned())
 }
 
-/// The stored (US-key) spelling of a chord read outside gpui's keymap, by
-/// the table the keymap is bound to (see [`canonical_combo`]).
-pub fn bound_canonical_combo(combo: &str) -> Option<String> {
-    BOUND_KEY_EQUIVALENTS.with_borrow(|equivalents| canonical_combo(combo, equivalents))
-}
-
 /// Human-readable combo for the shortcuts table ("mod-s" → "Cmd+S"/"Ctrl+S"),
 /// naming the key the active layout types for it.
 pub fn display_combo(combo: &str) -> String {
@@ -3109,6 +3113,25 @@ mod tests {
                 zoom: NewThreadBackgroundAdjustment::MAX_ZOOM,
             }
         );
+    }
+
+    /// Every view reading settings is drawn again when the store is written,
+    /// so an update that changes nothing must not write it.
+    #[gpui::test]
+    fn an_update_that_changes_nothing_leaves_the_store_unwritten(cx: &mut gpui::TestAppContext) {
+        let dir = tempfile::tempdir().unwrap();
+        let writes = std::rc::Rc::new(std::cell::Cell::new(0));
+        cx.update(|cx| init(UiSettings::default(), dir.path(), cx));
+        let _observer = cx.update(|cx| {
+            let writes = writes.clone();
+            cx.observe_global::<SettingsStore>(move |_| writes.set(writes.get() + 1))
+        });
+        let smooth = cx.update(|cx| smooth_scrolling(cx));
+        cx.update(|cx| set_smooth_scrolling(smooth, cx));
+        assert_eq!(writes.get(), 0, "a no-op update writes the store");
+        cx.update(|cx| set_smooth_scrolling(!smooth, cx));
+        assert!(writes.get() > 0, "a real change writes the store");
+        assert_eq!(cx.update(|cx| smooth_scrolling(cx)), !smooth);
     }
 
     #[gpui::test]
@@ -4292,7 +4315,7 @@ mod tests {
         assert!(conflicted_shortcuts(&KeymapConfig::default()).is_empty());
         for id in ShortcutId::ALL {
             assert!(
-                gpui::Keystroke::parse(&platform_combo(id.default_combo())).is_ok(),
+                crate::keys::parse(&platform_combo(id.default_combo())).is_ok(),
                 "{:?} default combo does not parse",
                 id
             );

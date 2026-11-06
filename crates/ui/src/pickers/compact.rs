@@ -1124,7 +1124,10 @@ impl Pickers {
                 .child(
                     gpui::canvas(
                         move |bounds, _, cx| {
-                            let _ = entity.update(cx, |this, _| this.effort_bounds = Some(bounds));
+                            // Compare first: a write while drawing rebuilds the picker.
+                            if entity.read_with(cx, |this, _| this.effort_bounds != Some(bounds)).unwrap_or(false) {
+                                let _ = entity.update(cx, |this, _| this.effort_bounds = Some(bounds));
+                            }
                         },
                         move |_, _, window, _| {
                             let release = drag_entity.clone();

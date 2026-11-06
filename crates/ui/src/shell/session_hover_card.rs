@@ -186,10 +186,15 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let view = self.session_card_view.clone();
-        view.update(cx, |view, _| {
-            view.chat_id = chat_id.to_owned();
-            view.time_ago = time_ago;
-        });
+        // Compare first: an update while drawing rebuilds the card.
+        let card = view.read(cx);
+        if card.chat_id != chat_id || card.time_ago != time_ago {
+            view.update(cx, |view, cx| {
+                view.chat_id = chat_id.to_owned();
+                view.time_ago = time_ago;
+                cx.notify();
+            });
+        }
         let shell = cx.weak_entity();
         let chat_id = chat_id.to_owned();
         gpui::canvas(
@@ -587,7 +592,7 @@ mod tests {
         // Cached frames omit debug selectors; refresh before inspecting
         // either the row's bounds or the absence of a floating card.
         cx.refresh().unwrap();
-        cx.update(|window, cx| window.draw(cx).clear());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.run_until_parked();
     }
 

@@ -106,7 +106,6 @@ jobs:
           apt-packages: >-
             libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-dev libxcb1-dev libx11-xcb-dev
             libfontconfig1-dev libfreetype-dev libasound2-dev libvulkan-dev pkg-config cmake
-            libwebkit2gtk-4.1-dev libjson-glib-dev
       - run: cargo lint
       - name: rustdoc
         env:

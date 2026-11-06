@@ -118,7 +118,7 @@ async fn pause(cx: &mut gpui::AsyncApp, ms: u64) {
 fn capture(window: gpui::AnyWindowHandle, cx: &mut gpui::AsyncApp, dir: &Path, name: &str) {
     window
         .update(cx, |_, w, cx| {
-            w.draw(cx).clear();
+            w.draw(cx).clear(cx);
             if let Ok(image) = w.render_to_image() {
                 image.save(dir.join(format!("{name}.png"))).ok();
             }

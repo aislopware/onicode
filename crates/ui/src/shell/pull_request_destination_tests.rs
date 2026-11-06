@@ -97,7 +97,7 @@ fn redraw(cx: &mut VisualTestContext) {
     cx.run_until_parked();
     // Cached frames omit debug selectors and painted text; refresh first.
     cx.refresh().unwrap();
-    cx.update(|window, cx| window.draw(cx).clear());
+    cx.update(|window, cx| window.draw(cx).clear(cx));
     cx.run_until_parked();
 }
 

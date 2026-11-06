@@ -1625,10 +1625,13 @@ fn scrollbar_thumb_colors(theme: &Theme) -> (Hsla, Hsla, Hsla) {
 
 fn sync_gpui_base_scrollbar(theme: &Theme, cx: &mut App) {
     let (normal, hover, active) = scrollbar_thumb_colors(theme);
-    gpui_base::Theme::global_mut(cx).scrollbar.styles = gpui_base::ScrollbarStyles::default()
-        .thumb(|style| style.bg(normal))
-        .thumb_hover(|style| style.bg(hover))
-        .thumb_active(|style| style.bg(active));
+    let scrollbar = &mut gpui_base::Theme::global_mut(cx).scrollbar;
+    *scrollbar = std::mem::take(scrollbar).with_styles(
+        gpui_base::ScrollbarStyles::default()
+            .thumb(|style| style.bg(normal))
+            .thumb_hover(|style| style.bg(hover))
+            .thumb_active(|style| style.bg(active)),
+    );
 }
 
 impl Default for Theme {

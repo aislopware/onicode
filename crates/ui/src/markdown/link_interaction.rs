@@ -7,7 +7,7 @@ use gpui::prelude::*;
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, ClickEvent, DispatchPhase, Element, ElementId,
     FocusHandle, GlobalElementId, InspectorElementId, LayoutId, MouseButton, Pixels, Point, Role,
-    ScrollWheelEvent, SharedString, TextLayout, Window, div, px,
+    ScrollEvent, SharedString, TextLayout, Window, div, px,
 };
 
 use super::links::*;
@@ -90,6 +90,9 @@ impl Element for LinkRanges {
         cx: &mut App,
     ) -> Self::PrepaintState {
         self.child.prepaint(window, cx);
+        // The view drawing these links: their state lives in element state,
+        // so a change to it redraws that view, not the window.
+        let view = window.current_view();
         window.with_element_state::<Interaction, _>(id.unwrap(), |previous, window| {
             let targets: Vec<_> = self.links.iter().map(|(_, t)| t.clone()).collect();
             let mut state = previous
@@ -202,11 +205,11 @@ impl Element for LinkRanges {
                                 );
                             }
                         })
-                        .on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                        .on_mouse_down(MouseButton::Right, move |event, _, cx| {
                             *menu.borrow_mut() = Some((index, event.position));
                             pointer_focus_pending.set(true);
                             cx.stop_propagation();
-                            window.refresh();
+                            cx.notify(view);
                         })
                         .on_key_down(move |event, window, cx| {
                             match event.keystroke.key.as_str() {
@@ -220,13 +223,13 @@ impl Element for LinkRanges {
                                 "f10" if event.keystroke.modifiers.shift => {
                                     *keyboard_menu.borrow_mut() = Some((index, rect.bottom_left()));
                                     menu_focus_pending.set(true);
-                                    window.refresh();
+                                    cx.notify(view);
                                 }
                                 "escape" => {
                                     keyboard_menu.borrow_mut().take();
                                     keyboard_dismissed.set(true);
                                     keyboard_epoch.set(keyboard_epoch.get().wrapping_add(1));
-                                    window.refresh();
+                                    cx.notify(view);
                                 }
                                 _ => {
                                     cx.propagate();
@@ -276,9 +279,9 @@ impl Element for LinkRanges {
                             div()
                                 .id("focused-link-destination")
                                 .occlude()
-                                .on_mouse_down_out(move |_, window, _| {
+                                .on_mouse_down_out(move |_, _, cx| {
                                     dismissed.set(true);
-                                    window.refresh();
+                                    cx.notify(view);
                                 })
                                 .child(card),
                         ),
@@ -338,7 +341,7 @@ impl Element for LinkRanges {
                             "escape" => {
                                 dismiss_menu.borrow_mut().take();
                                 window.focus(&return_focus, cx);
-                                window.refresh();
+                                cx.notify(view);
                             }
                             "tab" | "down" | "up" => {
                                 let current = cycle
@@ -362,9 +365,9 @@ impl Element for LinkRanges {
                     .w(px(260.))
                     .flex()
                     .flex_col()
-                    .on_mouse_down_out(move |_, window, _| {
+                    .on_mouse_down_out(move |_, _, cx| {
                         menu.borrow_mut().take();
-                        window.refresh();
+                        cx.notify(view);
                     });
                 // The menu's rows all share one shape: a focus slot, a
                 // fade key, a click that closes the menu. Link actions go
@@ -399,7 +402,7 @@ impl Element for LinkRanges {
                             activate_link(target.clone(), action, ui.as_ref(), window, cx);
                         }
                         menu.borrow_mut().take();
-                        window.refresh();
+                        cx.notify(view);
                     })
                 };
                 let file_row = |label: &'static str,
@@ -421,10 +424,10 @@ impl Element for LinkRanges {
                     .role(Role::Button)
                     .aria_label(label)
                     .focus_visible(|s| s.bg(crate::theme::card_selected_bg()))
-                    .on_click(move |_, window, cx| {
+                    .on_click(move |_, _, cx| {
                         act(cx);
                         menu.borrow_mut().take();
-                        window.refresh();
+                        cx.notify(view);
                     })
                 };
                 card = card.child(action_row(
@@ -518,7 +521,7 @@ impl Element for LinkRanges {
                             "Open links in Onicode, unchecked"
                         })
                         .focus_visible(|s| s.bg(crate::theme::card_selected_bg()))
-                        .on_click(move |_, window, cx| {
+                        .on_click(move |_, _, cx| {
                             crate::settings::update(
                                 crate::settings::SavePolicy::Immediate,
                                 cx,
@@ -527,8 +530,8 @@ impl Element for LinkRanges {
                                 },
                             );
                             menu.borrow_mut().take();
+                            // A preference every window's links show.
                             cx.refresh_windows();
-                            window.refresh();
                         }),
                     );
                 }
@@ -573,16 +576,22 @@ impl Element for LinkRanges {
         let epoch = paint.2.clone();
         let dismissed = paint.3.clone();
         let tooltip_bounds = paint.4.clone();
-        window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, _| {
+        let view = window.current_view();
+        window.on_mouse_event(move |event: &ScrollEvent, phase, _, cx| {
             if phase == DispatchPhase::Capture
                 && !tooltip_bounds
                     .get()
                     .is_some_and(|rect| rect.contains(&event.position))
             {
-                menu.borrow_mut().take();
+                // Every scroll event reaches every painted link run: redraw
+                // only when one had a menu, popup or tooltip up to hide.
+                let shown = menu.borrow_mut().take().is_some()
+                    | !dismissed.replace(true)
+                    | tooltip_bounds.get().is_some();
                 epoch.set(epoch.get().wrapping_add(1));
-                dismissed.set(true);
-                window.refresh();
+                if shown {
+                    cx.notify(view);
+                }
             }
         });
         self.child.paint(window, cx);
@@ -689,7 +698,7 @@ mod rendered_tests {
     fn key(window: &mut Window, key: &str, cx: &mut App) {
         window.dispatch_event(
             gpui::PlatformInput::KeyDown(gpui::KeyDownEvent {
-                keystroke: gpui::Keystroke::parse(key).unwrap(),
+                keystroke: crate::keys::parse(key).unwrap(),
                 is_held: false,
                 prefer_character_input: false,
             }),
@@ -697,7 +706,7 @@ mod rendered_tests {
         );
         window.dispatch_event(
             gpui::PlatformInput::KeyUp(gpui::KeyUpEvent {
-                keystroke: gpui::Keystroke::parse(key).unwrap(),
+                keystroke: crate::keys::parse(key).unwrap(),
             }),
             cx,
         );
@@ -1030,7 +1039,7 @@ mod rendered_tests {
                 for key in ["enter", "tab", "enter", "shift-f10"] {
                     window.dispatch_event(
                         gpui::PlatformInput::KeyDown(gpui::KeyDownEvent {
-                            keystroke: gpui::Keystroke::parse(key).unwrap(),
+                            keystroke: crate::keys::parse(key).unwrap(),
                             is_held: false,
                             prefer_character_input: false,
                         }),
@@ -1038,7 +1047,7 @@ mod rendered_tests {
                     );
                     window.dispatch_event(
                         gpui::PlatformInput::KeyUp(gpui::KeyUpEvent {
-                            keystroke: gpui::Keystroke::parse(key).unwrap(),
+                            keystroke: crate::keys::parse(key).unwrap(),
                         }),
                         cx,
                     );
@@ -1052,7 +1061,7 @@ mod rendered_tests {
                 for key in ["down", "enter"] {
                     window.dispatch_event(
                         gpui::PlatformInput::KeyDown(gpui::KeyDownEvent {
-                            keystroke: gpui::Keystroke::parse(key).unwrap(),
+                            keystroke: crate::keys::parse(key).unwrap(),
                             is_held: false,
                             prefer_character_input: false,
                         }),
@@ -1060,7 +1069,7 @@ mod rendered_tests {
                     );
                     window.dispatch_event(
                         gpui::PlatformInput::KeyUp(gpui::KeyUpEvent {
-                            keystroke: gpui::Keystroke::parse(key).unwrap(),
+                            keystroke: crate::keys::parse(key).unwrap(),
                         }),
                         cx,
                     );

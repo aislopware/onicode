@@ -424,6 +424,8 @@ pub struct PullRequestDetailPage {
     error: Option<String>,
     loading: bool,
     fetched: Option<Instant>,
+    /// Wakes the page when "Loaded 3m ago" and the activity times turn over.
+    age_tick: crate::label_clock::LabelTick,
     task: Option<Task<()>>,
     diff_task: Option<Task<()>>,
     copy_reset: Option<Task<()>>,
@@ -500,6 +502,7 @@ impl PullRequestDetailPage {
             error: None,
             loading: false,
             fetched: None,
+            age_tick: Default::default(),
             task: None,
             diff_task: None,
             copy_reset: None,
@@ -1629,6 +1632,16 @@ impl Render for PullRequestDetailPage {
             window.focus(&focus, cx);
         }
         let theme = Theme::of(cx).clone();
+        // The labels read minutes since the fetch (and since each comment,
+        // which these minute ticks also refresh).
+        if let Some(fetched) = self.fetched {
+            let age = fetched.elapsed().as_millis() as u64;
+            self.age_tick.schedule(
+                cx.entity().downgrade(),
+                std::time::Duration::from_millis(60_000 - age % 60_000),
+                cx,
+            );
+        }
         let narrow = self.page_width.is_some_and(|width| width < NARROW_PAGE);
         let empty_activity = self.tab == Tab::Activity
             && self
@@ -2493,7 +2506,7 @@ mod tests {
         cx.simulate_resize(gpui::size(px(900.0), px(1400.0)));
         cx.update(|window, cx| {
             window.refresh();
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
         });
         let prefix = page.read_with(cx, |page, _| page.selection_prefix.clone());
         let key = format!("{prefix}description-block-0:0");
@@ -2504,7 +2517,7 @@ mod tests {
         for _ in 0..3 {
             cx.update(|window, cx| {
                 window.refresh();
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
             });
         }
         assert_eq!(render::selection_test_entry_count(&prefix), 2);
@@ -3936,7 +3949,7 @@ mod tests {
             // The page reads its width a frame late.
             for _ in 0..2 {
                 cx.run_until_parked();
-                cx.update(|window, cx| window.draw(cx).clear());
+                cx.update(|window, cx| window.draw(cx).clear(cx));
             }
             let column = cx.debug_bounds("pr-content-column").unwrap();
             let card = cx.debug_bounds("pr-detail-title").unwrap();

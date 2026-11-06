@@ -8,15 +8,10 @@ fn dispatch(
     event: PlatformInput,
     cx: &mut AsyncApp,
 ) -> anyhow::Result<()> {
-    #[cfg(target_os = "linux")]
-    return super::linux::dispatch(window, event, cx);
-    #[cfg(not(target_os = "linux"))]
-    {
-        window.update(cx, |_, w, cx| {
-            w.dispatch_event(event, cx);
-        })?;
-        Ok(())
-    }
+    window.update(cx, |_, w, cx| {
+        w.dispatch_event(event, cx);
+    })?;
+    Ok(())
 }
 async fn key(
     window: WindowHandle<shell::Shell>,
@@ -26,7 +21,7 @@ async fn key(
     dispatch(
         window,
         PlatformInput::KeyDown(gpui::KeyDownEvent {
-            keystroke: gpui::Keystroke::parse(key)?,
+            keystroke: onicode_ui::keys::parse(key)?,
             is_held: false,
             prefer_character_input: false,
         }),
@@ -35,7 +30,7 @@ async fn key(
     dispatch(
         window,
         PlatformInput::KeyUp(gpui::KeyUpEvent {
-            keystroke: gpui::Keystroke::parse(key)?,
+            keystroke: onicode_ui::keys::parse(key)?,
         }),
         cx,
     )?;
@@ -55,14 +50,9 @@ async fn screenshot(
     name: &str,
     cx: &mut AsyncApp,
 ) -> anyhow::Result<()> {
-    #[cfg(target_os = "linux")]
-    return capture_frame(window, output, name, cx).await;
-    #[cfg(not(target_os = "linux"))]
-    {
-        window.update(cx, |_, w, _| w.on_next_frame(|window, _| window.refresh()))?;
-        pause(cx, 250).await;
-        capture(output, name)
-    }
+    window.update(cx, |_, w, _| w.on_next_frame(|window, _| window.refresh()))?;
+    pause(cx, 250).await;
+    capture(output, name)
 }
 
 pub(super) async fn exercise(
@@ -128,14 +118,10 @@ pub(super) async fn exercise(
             == Some(&format!("{origin}/"))),
         "wrong browser destination"
     );
-    let missing_runtime = std::env::var_os("ONICODE_LINK_FIXTURE_MISSING_RUNTIME").is_some();
     let deadline = std::time::Instant::now() + Duration::from_secs(25);
     loop {
         let state = page.read_with(cx, |p, _| p.page.clone());
-        if missing_runtime && state.error.is_some() {
-            break;
-        }
-        if !missing_runtime && state.title == "Fieldnotes" && !state.loading {
+        if state.title == "Fieldnotes" && !state.loading {
             break;
         }
         anyhow::ensure!(
@@ -144,17 +130,7 @@ pub(super) async fn exercise(
         );
         pause(cx, 50).await;
     }
-    screenshot(
-        window,
-        output,
-        if missing_runtime {
-            "transcript-link-runtime-error"
-        } else {
-            "transcript-link-browser"
-        },
-        cx,
-    )
-    .await?;
+    screenshot(window, output, "transcript-link-browser", cx).await?;
     // Focus discloses the original destination even when its label is truncated.
     let (_, focus) = markdown::render::fixture_link(&long)
         .ok_or_else(|| anyhow::anyhow!("long link was not painted"))?;
@@ -195,7 +171,7 @@ pub(super) async fn exercise(
     })?;
     pause(cx, 250).await;
     anyhow::ensure!(
-        !page.read_with(cx, |p, _| p.fixture_native_visible()),
+        !with_page(window, &page, cx, |p, w| p.fixture_native_visible(w))?,
         "closed browser remained visible"
     );
     std::fs::write(
@@ -205,7 +181,7 @@ pub(super) async fn exercise(
     std::fs::write(
         output.join("linux-results.json"),
         serde_json::to_vec_pretty(
-            &serde_json::json!({"fixture":"transcript-links", "passed":true, "missing_runtime":missing_runtime, "platform":std::env::consts::OS}),
+            &serde_json::json!({"fixture":"transcript-links", "passed":true, "platform":std::env::consts::OS}),
         )?,
     )?;
     Ok(())

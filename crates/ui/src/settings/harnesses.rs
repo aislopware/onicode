@@ -1724,7 +1724,7 @@ mod tests {
                 );
             })
             .unwrap();
-        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         window
             .update(cx, |page, _, cx| {
@@ -1740,7 +1740,7 @@ mod tests {
                 );
             })
             .unwrap();
-        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         // Antigravity signs in through the very same Accounts section.
         window
@@ -1760,7 +1760,7 @@ mod tests {
                 );
             })
             .unwrap();
-        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
     }
 
@@ -1832,7 +1832,7 @@ mod tests {
                     );
             })
             .unwrap();
-        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear())
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         window
             .update(cx, |page, _, cx| {

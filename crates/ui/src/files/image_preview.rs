@@ -226,13 +226,19 @@ impl Render for ImagePreview {
         let entity = cx.weak_entity();
         root.child(
             gpui::canvas(
-                move |bounds, _, cx| {
-                    let _ = entity.update(cx, |view, cx| {
-                        if view.bounds != bounds {
+                move |bounds, window, cx| {
+                    // Write only on change (an update while drawing rebuilds the
+                    // view) and wake the window: a notify while drawing doesn't.
+                    if entity
+                        .read_with(cx, |view, _| view.bounds != bounds)
+                        .unwrap_or(false)
+                    {
+                        let _ = entity.update(cx, |view, cx| {
                             view.bounds = bounds;
-                            cx.notify();
-                        }
-                    });
+                            let id = cx.entity_id();
+                            window.on_next_frame(move |_, cx| cx.notify(id));
+                        });
+                    }
                 },
                 |_, _, _, _| {},
             )
@@ -349,6 +355,45 @@ mod tests {
         cx.update(|_| {});
         cx.run_until_parked();
         assert!(weak.upgrade().is_none());
+    }
+    /// The preview sizes its raster to bounds it measures while drawing.
+    /// Retained drawing redraws only a notified view, and a notify raised
+    /// while drawing never wakes the window: the measurement has to ask for
+    /// the next frame itself, or the first, viewport-less raster stays.
+    #[gpui::test]
+    fn measured_bounds_ask_for_the_next_frame(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| cx.set_global(Theme::dark()));
+        let window = cx.open_window(gpui::size(px(600.0), px(400.0)), |_, cx| {
+            let context = FilesRequestContext {
+                target: onicode_proto::WorkspaceTarget {
+                    chat_id: Some("remote-chat".into()),
+                    space_id: None,
+                    checkout_path: None,
+                },
+                target_device_id: Some("remote-device".into()),
+                cwd: "/only/on/remote".into(),
+                checkout_id: Some("checkout".into()),
+            };
+            let client =
+                WorkspaceFilesClient::with_transport(Arc::new(PendingTransport), context.clone());
+            let mut view = ImagePreview::new("a.svg".into(), context, client, cx);
+            view.complete(view.generation, Ok(media()), cx);
+            view
+        });
+        // Draw once and deliver the next frame before any task runs, so
+        // nothing but the measurement can have asked for it.
+        let ran = cx
+            .update_window(window.into(), |_, window, cx| {
+                window.draw(cx).clear(cx);
+                window.simulate_next_frame(cx)
+            })
+            .unwrap();
+        assert!(ran > 0, "the measured bounds ask for a frame");
+        cx.run_until_parked();
+        let view = window.root(cx).unwrap();
+        view.read_with(cx, |view, _| {
+            assert!(view.bounds.size.width > px(100.0), "measured while drawing");
+        });
     }
     #[derive(Default)]
     struct ImageTransport {
@@ -544,7 +589,7 @@ mod tests {
                         window.refresh();
                         let _ = window.draw(cx);
                         window.dispatch_event(
-                            gpui::PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+                            gpui::PlatformInput::Scroll(gpui::ScrollEvent {
                                 position,
                                 delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(100.0))),
                                 modifiers: gpui::Modifiers {

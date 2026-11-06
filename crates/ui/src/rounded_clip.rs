@@ -54,8 +54,9 @@ impl Element for RoundedClip {
         window: &mut Window,
         cx: &mut App,
     ) {
-        // Hitboxes past the bounds are clipped like the paint.
-        window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
+        // The same clip as paint: it narrows the content mask, so hitboxes past the bounds
+        // are clipped like the paint, and retention notes the clip the child is drawn in.
+        window.with_rounded_clip(bounds, px(self.radius), |window| {
             self.child.prepaint(window, cx)
         });
     }
