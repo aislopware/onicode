@@ -236,8 +236,6 @@ async fn turn(core: &EngineCore, cwd: &std::path::Path, live: bool, second: bool
         } else {
             "Reply exactly PUBLICATION-FIRST. Do not use tools or modify files."
         }
-    } else if second {
-        "scenario:publication"
     } else {
         "scenario:publication"
     };

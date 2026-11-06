@@ -1191,7 +1191,7 @@ impl SessionHandle {
                 self.core.queue_command(
                     &device_id,
                     SessionCommandPayload::Run {
-                        request,
+                        request: Box::new(request),
                         message_id: message_id.clone(),
                     },
                 )?;

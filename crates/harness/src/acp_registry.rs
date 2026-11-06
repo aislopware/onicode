@@ -476,11 +476,12 @@ pub fn installed(agent: RegistryAgent) -> bool {
     record(agent).is_some_and(|r| r.program.is_file())
 }
 
+/// A launch: the program, its arguments and its environment.
+pub type Launch = (PathBuf, Vec<String>, Vec<(String, String)>);
+
 /// How the agent launches: the program, its arguments (an npm bin runs
 /// under Node.js) and the environment the registry gives it.
-pub fn launch(
-    agent: RegistryAgent,
-) -> Result<(PathBuf, Vec<String>, Vec<(String, String)>), HarnessError> {
+pub fn launch(agent: RegistryAgent) -> Result<Launch, HarnessError> {
     let record = record(agent).ok_or_else(|| {
         HarnessError::NotInstalled(format!(
             "{} isn't added on this device",
@@ -615,7 +616,7 @@ pub fn own_id(name: &str) -> Option<String> {
     let slug = slug.trim_end_matches('-');
     let slug: String = slug.chars().take(48).collect();
     let id = format!("{OWN_PREFIX}{}", slug.trim_end_matches('-'));
-    (slug.len() > 0 && RegistryAgent::new(&id).is_some()).then_some(id)
+    (!slug.is_empty() && RegistryAgent::new(&id).is_some()).then_some(id)
 }
 
 /// A command as a shell splits it: words, `'…'` and `"…"` kept whole, `\`

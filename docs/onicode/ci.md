@@ -4,7 +4,7 @@
 
 | Job | Where | What |
 |---|---|---|
-| `lint` | ubuntu-24.04 | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` |
+| `lint` | ubuntu-24.04 | `cargo fmt --check`, `cargo lint` (clippy on every target, warnings denied) |
 | `core` | ubuntu-24.04 | `scripts/ci/test-core.sh`: every non-UI Rust test, one build, one nextest run |
 | `ui` | ubuntu-24.04 | `onicode-ui` library tests, headless layout |
 | `ios-core` | ubuntu-24.04 | mobile core tests and the generated Swift bindings, when the mobile core changes |

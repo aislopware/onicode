@@ -151,7 +151,7 @@ async fn transcript_survives_open_racing_create_chat() {
             .queue_command(
                 CHAT,
                 SessionCommandPayload::Run {
-                    request: RunRequest {
+                    request: Box::new(RunRequest {
                         mcp: None,
                         prompt: "what's the codeword?".into(),
                         harness: None,
@@ -168,7 +168,7 @@ async fn transcript_survives_open_racing_create_chat() {
                         resume: None,
                         env: Default::default(),
                         extra_mcp: Vec::new(),
-                    },
+                    }),
                     message_id: "msg-race-1".into(),
                 },
             )

@@ -27,9 +27,8 @@ pub(crate) fn contained_menu(
     let exit = closing.map(super::exit_progress);
     // Half the usable height guarantees room on at least one side, even
     // when the trigger sits in the middle of a small dialog.
-    let max_height = ((f32::from(limits.size.height) - trigger_height) / 2.0 - 6.0)
-        .max(1.0)
-        .min(320.0);
+    let max_height =
+        ((f32::from(limits.size.height) - trigger_height) / 2.0 - 6.0).clamp(1.0, 320.0);
     let card = content
         .id(SharedString::from(format!("{id}-scroll")))
         .debug_selector(|| "contained-menu-scroll".into())

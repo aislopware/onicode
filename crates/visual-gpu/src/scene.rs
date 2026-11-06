@@ -1750,16 +1750,24 @@ mod tests {
         // the edge fade (15% of the 720 px height), and a faded frame edge.
         let (w, h) = (frame.width as usize, frame.height as usize);
         let band = 110;
-        let mut inside = frame.bgra.chunks_exact(4).enumerate().filter(|(i, _)| {
-            let (x, y) = (i % w, i / w);
-            (band..w - band).contains(&x) && (band..h - band).contains(&y)
-        });
+        let mut inside = frame
+            .bgra
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                let (x, y) = (i % w, i / w);
+                (band..w - band).contains(&x) && (band..h - band).contains(&y)
+            });
         assert!(inside.all(|(_, p)| p[3] == 255));
         assert!(frame.bgra[3] < 3, "the corner fades out");
         // The checker shows both of its colors somewhere.
         let blueish = frame
             .bgra
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .filter(|p| p[0] > 150 && p[2] < 90 && p[1] < 120)
             .count();
         assert!(blueish > 500, "{blueish}");
@@ -1793,7 +1801,13 @@ mod tests {
             crate::dump_ppm(&frame, &path);
         }
         assert_eq!((frame.width, frame.height), (1440, 720));
-        let drawn = frame.bgra.chunks_exact(4).filter(|p| p[3] > 0).count();
+        let drawn = frame
+            .bgra
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| p[3] > 0)
+            .count();
         let total = (frame.width * frame.height) as usize;
         assert!(drawn > total / 8, "geometry fills the frame: {drawn}");
         assert!(drawn < total, "and the background stays clear");
@@ -1802,7 +1816,7 @@ mod tests {
     /// The mean column of the strongly red pixels.
     fn red_center(frame: &Frame) -> f64 {
         let (mut sum, mut count) = (0.0, 0usize);
-        for (i, p) in frame.bgra.chunks_exact(4).enumerate() {
+        for (i, p) in frame.bgra.as_chunks::<4>().0.iter().enumerate() {
             if p[2] > 120 && p[2] as i32 - p[0] as i32 > 50 {
                 sum += (i % frame.width as usize) as f64;
                 count += 1;

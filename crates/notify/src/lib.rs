@@ -421,7 +421,12 @@ mod macos {
                 ORIGINAL.store(method_getImplementation(method) as usize, Ordering::Relaxed);
                 let replacement: extern "C" fn(&Object, Sel) -> *mut Object =
                     bundle_identifier_override;
-                method_setImplementation(method, std::mem::transmute::<_, Imp>(replacement));
+                method_setImplementation(
+                    method,
+                    std::mem::transmute::<extern "C" fn(&Object, Sel) -> *mut Object, Imp>(
+                        replacement,
+                    ),
+                );
                 true
             })
         }

@@ -133,12 +133,15 @@ pub enum Seen {
 /// Where a watch tells what it heard.
 pub type Heard = Box<dyn Fn(Seen) + Send + Sync>;
 
+/// Each folder's changed paths since last told (`None`: anything).
+type PendingPaths = BTreeMap<usize, Option<std::collections::BTreeSet<String>>>;
+
 /// A watch's changes, a burst at a time: told `quiet` after its last.
 struct Watching {
     _handle: Box<dyn Send>,
     quiet: Duration,
     /// Each folder's changed paths since last told (`None`: anything).
-    pending: BTreeMap<usize, Option<std::collections::BTreeSet<String>>>,
+    pending: PendingPaths,
     due: Option<Instant>,
 }
 
@@ -336,12 +339,7 @@ impl State {
     }
 
     /// The watches whose bursts ended, each with what it heard.
-    fn watches_due(
-        &self,
-    ) -> Vec<(
-        u64,
-        BTreeMap<usize, Option<std::collections::BTreeSet<String>>>,
-    )> {
+    fn watches_due(&self) -> Vec<(u64, PendingPaths)> {
         let now = Instant::now();
         let mut out = Vec::new();
         for (id, w) in self.watches.borrow_mut().iter_mut() {

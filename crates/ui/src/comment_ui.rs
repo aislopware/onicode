@@ -185,18 +185,30 @@ fn comment_accent_bar(color: gpui::Hsla) -> gpui::Div {
     div().w(px(ACCENT_BAR_WIDTH)).h_full().flex_none().bg(color)
 }
 
+/// The draft a comment card edits: where it cites and what is typed so far.
+pub(crate) struct CommentDraftCard<'a> {
+    pub path: &'a str,
+    pub line: u32,
+    pub input: Entity<ComposerInput>,
+    /// Editing an existing comment rather than writing a new one.
+    pub editing: bool,
+}
+
 /// Fixed height, so an open draft never fights the fold tween.
 pub(crate) fn render_comment_draft<T: 'static>(
-    path: &str,
-    line: u32,
-    input: Entity<ComposerInput>,
-    editing: bool,
+    draft: CommentDraftCard<'_>,
     theme: &Theme,
     cx: &Context<T>,
     cancel: fn(&mut T, &mut Context<T>),
     commit: fn(&mut T, &mut Context<T>),
     column: Option<CommentContentColumn>,
 ) -> AnyElement {
+    let CommentDraftCard {
+        path,
+        line,
+        input,
+        editing,
+    } = draft;
     div()
         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {

@@ -69,6 +69,9 @@ pub fn edge_faded(band: f32, top: bool, bottom: bool, child: impl IntoElement) -
     }
 }
 
+/// Paint-time vertical overflow, `(above, below)`, for custom scrollables.
+type OverflowProbe = Box<dyn Fn(&App) -> (bool, bool)>;
+
 pub struct EdgeFaded {
     band: f32,
     band_top: Option<f32>,
@@ -80,7 +83,7 @@ pub struct EdgeFaded {
     left: bool,
     right: bool,
     scroll_y: Option<ScrollHandle>,
-    overflow_y: Option<Box<dyn Fn(&App) -> (bool, bool)>>,
+    overflow_y: Option<OverflowProbe>,
     scroll_x: Option<ScrollHandle>,
     smooth_overflow_x: bool,
     compose_vertical: bool,
@@ -349,6 +352,14 @@ fn label_fade_outset(overflow: f32, band: f32) -> f32 {
     band * (1.0 - eased)
 }
 
+impl IntoElement for EdgeFaded {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,10 +408,11 @@ mod tests {
 
     #[gpui::test]
     fn menu_fades_follow_scroll_and_disappear_when_content_fits(cx: &mut gpui::TestAppContext) {
+        type Observed = Rc<RefCell<Vec<(bool, Option<EdgeFade>)>>>;
         struct Menu {
             rows: usize,
             scroll: ScrollHandle,
-            observed: Rc<RefCell<Vec<(bool, Option<EdgeFade>)>>>,
+            observed: Observed,
         }
         impl Render for Menu {
             fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -606,13 +618,5 @@ mod tests {
             assert!(previous - edge_alpha < 0.02);
             previous = edge_alpha;
         }
-    }
-}
-
-impl IntoElement for EdgeFaded {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
     }
 }

@@ -85,10 +85,9 @@ impl FilesSurface {
         mut frame: WorkspaceFileChanges,
         cx: &mut Context<Self>,
     ) {
-        if self.pending_mutation.is_some() {
+        if let Some(intent) = &self.pending_mutation {
             // Defer affected events; unrelated changes still flow through. Keep
             // sequence accounting on the live stream, not the deferred fragments.
-            let intent = self.pending_mutation.as_ref().unwrap();
             let (affected, independent): (Vec<_>, Vec<_>) =
                 frame.changes.into_iter().partition(|change| {
                     intent.affects(&change.path)

@@ -42,13 +42,16 @@ struct Suite {
     sleep_base: u32,
 }
 
+/// (when, status, last_completed_turn) at one observed change.
+type Observed = (Instant, SessionStatus, Option<String>);
+
 /// What one scenario did and saw.
 struct Chat<'a> {
     suite: &'a Suite,
     id: String,
     sends: Arc<Mutex<Vec<Instant>>>,
     /// (when, status, last_completed_turn) at every observed change.
-    timeline: Arc<Mutex<Vec<(Instant, SessionStatus, Option<String>)>>>,
+    timeline: Arc<Mutex<Vec<Observed>>>,
     sentinels: Vec<String>,
     /// Every message sent: each must start a steer boundary or a process.
     runs_sent: usize,
@@ -290,7 +293,7 @@ impl Chat<'_> {
             .queue_command(
                 &self.id,
                 SessionCommandPayload::Run {
-                    request,
+                    request: Box::new(request),
                     message_id: uuid::Uuid::new_v4().to_string(),
                 },
             )
@@ -1176,7 +1179,7 @@ fn send_to(core: &EngineCore, request: RunRequest) {
         .queue_command(
             RESTART_CHAT,
             SessionCommandPayload::Run {
-                request,
+                request: Box::new(request),
                 message_id: uuid::Uuid::new_v4().to_string(),
             },
         )

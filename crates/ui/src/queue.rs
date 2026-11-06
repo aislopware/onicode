@@ -543,7 +543,7 @@ impl Composer {
         };
 
         let edit_id = item.id.clone();
-        let edit = self.queue_action(
+        let edit = Self::queue_action(
             &key,
             "edit",
             "Edit",
@@ -555,7 +555,7 @@ impl Composer {
             }),
         );
         let drop_id = item.id.clone();
-        let discard = self.queue_action(
+        let discard = Self::queue_action(
             &key,
             "drop",
             if being_removed {
@@ -593,7 +593,7 @@ impl Composer {
                 this.activate_queued_primary(primary_id.clone(), primary_action, cx);
             }),
         );
-        let save = self.queue_action(
+        let save = Self::queue_action(
             &key,
             "save",
             "Save to queue",
@@ -604,7 +604,7 @@ impl Composer {
                 this.commit_queue_edit(cx);
             }),
         );
-        let cancel = self.queue_action(
+        let cancel = Self::queue_action(
             &key,
             "cancel",
             "Cancel",
@@ -1070,7 +1070,6 @@ impl Composer {
     /// A permanently-visible trailing glyph button. The queue reference keeps
     /// edit and remove present instead of revealing them only on hover.
     fn queue_action(
-        &self,
         key: &SharedString,
         slot: &str,
         label: &'static str,
@@ -2179,7 +2178,7 @@ mod tests {
         for user_text in ["inspect this", ""] {
             let body = crate::appshots::with_appshots(
                 user_text,
-                &[shot.clone()],
+                std::slice::from_ref(&shot),
                 &std::collections::HashMap::from([(shot.screenshot.id.clone(), paths[0].clone())]),
             );
             let expected = if user_text.is_empty() {

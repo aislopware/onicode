@@ -1028,7 +1028,7 @@ impl CloudPage {
         const SHOWN: usize = 6;
         let mut repos = repos;
         if let Some(repos) = repos.as_mut() {
-            repos.sort_by(|a, b| b.pushed_at.cmp(&a.pushed_at));
+            repos.sort_by_key(|repo| std::cmp::Reverse(repo.pushed_at));
         }
         let summary = match &repos {
             None => "Checking which repositories Cloud can open…".to_string(),

@@ -111,10 +111,10 @@ async fn real_pi_mock_lifecycle() {
             while let Some(event) = stream.next().await {
                 match event.unwrap() {
                     AgentEvent::SessionStarted { session_id, .. } => {
-                        if let Some(old) = &session {
-                            if prompt != "/probe-new" {
-                                assert_eq!(old, &session_id);
-                            }
+                        if let Some(old) = &session
+                            && prompt != "/probe-new"
+                        {
+                            assert_eq!(old, &session_id);
                         }
                         session = Some(session_id);
                         if prompt == "steering slow" {

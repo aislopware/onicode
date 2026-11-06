@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 /// One parsed stdout line.
 #[derive(Debug)]
 pub(crate) enum Frame {
-    System(SystemFrame),
+    System(Box<SystemFrame>),
     StreamEvent(StreamEventFrame),
     Assistant(MessageFrame),
     User(MessageFrame),

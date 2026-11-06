@@ -209,10 +209,10 @@ impl Layout {
                 incoming,
             } => {
                 #[cfg(windows)]
-                let recorded = crate::windows::installed_version(directory);
+                let current = crate::windows::installed_version(directory)
+                    .unwrap_or_else(|| transaction.from.clone());
                 #[cfg(not(windows))]
-                let recorded: Option<String> = None;
-                let current = recorded.unwrap_or_else(|| transaction.from.clone());
+                let current = transaction.from.clone();
                 let me = if inside(incoming) {
                     transaction.target.clone()
                 } else if inside(&directory.join("onicode.exe")) {

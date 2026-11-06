@@ -113,10 +113,10 @@ async fn server(stop: CancellationToken, active: Arc<AtomicUsize>) -> u16 {
                                             let _ = socket.flush().await;
                                             break;
                                         }
-                                        if message.is_text() || message.is_binary() {
-                                            if socket.send(message).await.is_err() {
-                                                break;
-                                            }
+                                        if (message.is_text() || message.is_binary())
+                                            && socket.send(message).await.is_err()
+                                        {
+                                            break;
                                         }
                                     }
                                 });

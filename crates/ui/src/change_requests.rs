@@ -128,7 +128,7 @@ pub(crate) fn pull_request_badge_with_query(
     device: Option<String>,
     theme: &Theme,
 ) -> AnyElement {
-    render_pull_request_badge(id, summary, surface, query, true, device, theme)
+    render_pull_request_badge(id, summary, surface, query, BadgeClick::Open(device), theme)
 }
 
 /// The same badge geometry without hover, tooltip, or click behavior in drag previews.
@@ -138,7 +138,15 @@ pub(crate) fn pull_request_badge_preview(
     surface: ChangeRequestBadgeSurface,
     theme: &Theme,
 ) -> AnyElement {
-    render_pull_request_badge(id, summary, surface, None, false, None, theme)
+    render_pull_request_badge(id, summary, surface, None, BadgeClick::Inert, theme)
+}
+
+/// What the badge does under the pointer.
+enum BadgeClick {
+    /// No hover, tooltip, or click behavior.
+    Inert,
+    /// Open the pull request on this device (`None`: the local one).
+    Open(Option<String>),
 }
 
 fn render_pull_request_badge(
@@ -146,21 +154,11 @@ fn render_pull_request_badge(
     summary: ChangeRequestSummary,
     surface: ChangeRequestBadgeSurface,
     query: Option<&str>,
-    interactive: bool,
-    device: Option<String>,
+    click: BadgeClick,
     theme: &Theme,
 ) -> AnyElement {
     let model = ChangeRequestBadgeModel::from_summary(&summary);
-    render_badge_model(
-        id,
-        model,
-        summary.url,
-        surface,
-        query,
-        interactive,
-        device,
-        theme,
-    )
+    render_badge_model(id, model, summary.url, surface, query, click, theme)
 }
 
 /// Listing surfaces use the exact sidebar badge renderer without inventing
@@ -176,8 +174,7 @@ pub(crate) fn pull_request_list_badge(
         item.url.clone(),
         ChangeRequestBadgeSurface::Sidebar,
         None,
-        false,
-        None,
+        BadgeClick::Inert,
         theme,
     )
 }
@@ -188,10 +185,13 @@ fn render_badge_model(
     url: String,
     surface: ChangeRequestBadgeSurface,
     query: Option<&str>,
-    interactive: bool,
-    device: Option<String>,
+    click: BadgeClick,
     theme: &Theme,
 ) -> AnyElement {
+    let (interactive, device) = match click {
+        BadgeClick::Inert => (false, None),
+        BadgeClick::Open(device) => (true, device),
+    };
     let color = model.tone.color(theme);
     let tooltip_model = model.clone();
     let composer = surface == ChangeRequestBadgeSurface::Composer;

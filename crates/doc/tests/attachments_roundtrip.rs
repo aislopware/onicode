@@ -27,7 +27,7 @@ fn run_request_attachments_survive_command_round_trip() {
     doc.queue_command(&SessionCommandEntry {
         id: "c1".into(),
         payload: SessionCommandPayload::Run {
-            request,
+            request: Box::new(request),
             message_id: "m1".into(),
         },
         issued_by: "d".into(),

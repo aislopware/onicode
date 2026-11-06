@@ -61,7 +61,7 @@ pub fn record_key(
 #[derive(Debug, Clone)]
 pub enum ShortcutsEvent {
     /// The keymap changed — persist + re-apply.
-    KeymapChanged(KeymapConfig),
+    KeymapChanged(Box<KeymapConfig>),
     /// The Escape fallback changed — persist it locally.
     EscapeStopsActiveAgentChanged(bool),
     /// The composer send behavior changed — persist + re-apply.
@@ -106,15 +106,21 @@ pub struct ShortcutsPage {
 
 impl EventEmitter<ShortcutsEvent> for ShortcutsPage {}
 
+/// The appshot preferences the page opens with.
+#[derive(Clone, Copy, Debug)]
+pub struct AppshotPrefs {
+    pub enabled: bool,
+    pub sound_enabled: bool,
+    pub destination: AppshotDestination,
+}
+
 impl ShortcutsPage {
     pub fn new(
         state: Entity<AppState>,
         keymap: KeymapConfig,
         escape_stops_active_agent: bool,
         composer_send_behavior: ComposerSendBehavior,
-        appshots_enabled: bool,
-        appshot_sound_enabled: bool,
-        appshot_destination: AppshotDestination,
+        appshots: AppshotPrefs,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.on_release(|_, _| crate::appshots::set_recording(false))
@@ -132,9 +138,9 @@ impl ShortcutsPage {
             recording_interceptor: None,
             conflict_notice: None,
             focus: cx.focus_handle(),
-            appshots_enabled,
-            appshot_sound_enabled,
-            appshot_destination,
+            appshots_enabled: appshots.enabled,
+            appshot_sound_enabled: appshots.sound_enabled,
+            appshot_destination: appshots.destination,
             appshot_capabilities: crate::appshots::capabilities(),
             send_select: widgets::SelectState::default(),
             pull_request_destination_select: widgets::SelectState::default(),
@@ -206,7 +212,7 @@ impl ShortcutsPage {
     }
 
     fn commit(&mut self, cx: &mut Context<Self>) {
-        cx.emit(ShortcutsEvent::KeymapChanged(self.keymap.clone()));
+        cx.emit(ShortcutsEvent::KeymapChanged(Box::new(self.keymap.clone())));
         cx.notify();
     }
 
@@ -656,7 +662,7 @@ fn refusal(
     id: ShortcutId,
     combo: &str,
 ) -> Option<SharedString> {
-    if id == ShortcutId::CaptureAppshot && crate::appshots::validate_shortcut(combo).is_err() {
+    if id == ShortcutId::CaptureAppshot && !crate::appshots::is_valid_shortcut(combo) {
         return Some(
             format!(
                 "Use {} with a letter, number, function key or navigation key.",
@@ -1201,9 +1207,11 @@ mod tests {
                 KeymapConfig::default(),
                 false,
                 ComposerSendBehavior::Enter,
-                false,
-                false,
-                AppshotDestination::Automatic,
+                AppshotPrefs {
+                    enabled: false,
+                    sound_enabled: false,
+                    destination: AppshotDestination::Automatic,
+                },
                 cx,
             )
         });
@@ -1226,9 +1234,11 @@ mod tests {
                 KeymapConfig::default(),
                 false,
                 ComposerSendBehavior::Enter,
-                false,
-                false,
-                AppshotDestination::Automatic,
+                AppshotPrefs {
+                    enabled: false,
+                    sound_enabled: false,
+                    destination: AppshotDestination::Automatic,
+                },
                 cx,
             );
             page.show_section(false, true);
@@ -1283,9 +1293,11 @@ mod tests {
                 KeymapConfig::default(),
                 false,
                 ComposerSendBehavior::Enter,
-                false,
-                false,
-                AppshotDestination::Automatic,
+                AppshotPrefs {
+                    enabled: false,
+                    sound_enabled: false,
+                    destination: AppshotDestination::Automatic,
+                },
                 cx,
             );
             page.show_section(false, true);
@@ -1349,9 +1361,11 @@ mod tests {
                 KeymapConfig::default(),
                 false,
                 ComposerSendBehavior::default(),
-                false,
-                false,
-                AppshotDestination::Automatic,
+                AppshotPrefs {
+                    enabled: false,
+                    sound_enabled: false,
+                    destination: AppshotDestination::Automatic,
+                },
                 cx,
             );
             page.show_appshots(true);
@@ -1454,9 +1468,11 @@ mod tests {
                 KeymapConfig::default(),
                 false,
                 ComposerSendBehavior::default(),
-                false,
-                true,
-                AppshotDestination::Automatic,
+                AppshotPrefs {
+                    enabled: false,
+                    sound_enabled: true,
+                    destination: AppshotDestination::Automatic,
+                },
                 cx,
             )
         });

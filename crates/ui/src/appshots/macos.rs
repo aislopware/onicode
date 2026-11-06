@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use block::ConcreteBlock;
+use block2::RcBlock;
 use chrono::Utc;
 use core_foundation::array::CFArray;
 use core_foundation::base::{CFRelease, CFType, CFTypeRef, TCFType};
@@ -22,9 +22,10 @@ use core_graphics::window::{
     kCGWindowListOptionIncludingWindow, kCGWindowName, kCGWindowNumber, kCGWindowOwnerPID,
 };
 use futures::channel::mpsc;
-use objc::rc::autoreleasepool;
-use objc::runtime::{Class, Object};
-use objc::{class, msg_send, sel, sel_impl};
+use objc2::encode::{Encoding, RefEncode};
+use objc2::rc::autoreleasepool;
+use objc2::runtime::{AnyClass, AnyObject};
+use objc2::{class, msg_send};
 
 use super::{
     ACCESSIBILITY_SETTINGS_URL, AccessibilitySnapshot, AppshotBackend, AppshotCapabilities,
@@ -194,11 +195,11 @@ impl AppshotBackend for MacOsBackend {
 }
 
 fn request_accessibility_permission() {
-    autoreleasepool(|| unsafe {
+    autoreleasepool(|_| unsafe {
         let prompt_value = CFBoolean::true_value();
-        let prompt: *mut Object = msg_send![class!(NSDictionary),
-            dictionaryWithObject: prompt_value.as_CFTypeRef() as *mut Object
-            forKey: kAXTrustedCheckOptionPrompt as *mut Object
+        let prompt: *mut AnyObject = msg_send![class!(NSDictionary),
+            dictionaryWithObject: prompt_value.as_CFTypeRef() as *mut AnyObject,
+            forKey: kAXTrustedCheckOptionPrompt as *mut AnyObject
         ];
         let _ = AXIsProcessTrustedWithOptions(prompt.cast());
     });
@@ -393,7 +394,7 @@ unsafe extern "C" fn appshot_hot_key_handler(
 }
 
 fn capture_frontmost_window() -> Result<CapturedAppshot, CaptureError> {
-    autoreleasepool(|| {
+    autoreleasepool(|_| {
         let started = Instant::now();
         let app = frontmost_application()?;
         if app.pid == std::process::id() as i32 {
@@ -455,15 +456,15 @@ fn capture_frontmost_window() -> Result<CapturedAppshot, CaptureError> {
 
 fn frontmost_application() -> Result<FrontmostApplication, CaptureError> {
     unsafe {
-        let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
-        let app: *mut Object = msg_send![workspace, frontmostApplication];
+        let workspace: *mut AnyObject = msg_send![class!(NSWorkspace), sharedWorkspace];
+        let app: *mut AnyObject = msg_send![workspace, frontmostApplication];
         if app.is_null() {
             return Err(CaptureError::NoEligibleWindow);
         }
         let pid: i32 = msg_send![app, processIdentifier];
-        let name_obj: *mut Object = msg_send![app, localizedName];
-        let bundle_obj: *mut Object = msg_send![app, bundleIdentifier];
-        let icon: *mut Object = msg_send![app, icon];
+        let name_obj: *mut AnyObject = msg_send![app, localizedName];
+        let bundle_obj: *mut AnyObject = msg_send![app, bundleIdentifier];
+        let icon: *mut AnyObject = msg_send![app, icon];
         let name = nsstring(name_obj).unwrap_or_else(|| "Application".into());
         Ok(FrontmostApplication {
             pid,
@@ -475,47 +476,48 @@ fn frontmost_application() -> Result<FrontmostApplication, CaptureError> {
 }
 
 pub(super) fn icon_for_bundle(bundle: &str) -> Option<Vec<u8>> {
-    autoreleasepool(|| unsafe {
-        let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
+    autoreleasepool(|_| unsafe {
+        let workspace: *mut AnyObject = msg_send![class!(NSWorkspace), sharedWorkspace];
         let bundle = CFString::new(bundle);
-        let url: *mut Object = msg_send![workspace, URLForApplicationWithBundleIdentifier: bundle.as_concrete_TypeRef()];
+        let url: *mut AnyObject = msg_send![workspace, URLForApplicationWithBundleIdentifier: bundle.as_concrete_TypeRef() as *mut AnyObject];
         if url.is_null() {
             return None;
         }
-        let path: *mut Object = msg_send![url, path];
-        let icon: *mut Object = msg_send![workspace, iconForFile: path];
+        let path: *mut AnyObject = msg_send![url, path];
+        let icon: *mut AnyObject = msg_send![workspace, iconForFile: path];
         nsimage_png(icon)
     })
 }
 
-unsafe fn nsimage_png(image: *mut Object) -> Option<Vec<u8>> {
+unsafe fn nsimage_png(image: *mut AnyObject) -> Option<Vec<u8>> {
     if image.is_null() {
         return None;
     }
-    let tiff: *mut Object = unsafe { msg_send![image, TIFFRepresentation] };
+    let tiff: *mut AnyObject = unsafe { msg_send![image, TIFFRepresentation] };
     if tiff.is_null() {
         return None;
     }
-    let rep: *mut Object = unsafe { msg_send![class!(NSBitmapImageRep), imageRepWithData: tiff] };
+    let rep: *mut AnyObject =
+        unsafe { msg_send![class!(NSBitmapImageRep), imageRepWithData: tiff] };
     if rep.is_null() {
         return None;
     }
-    let properties: *mut Object = unsafe { msg_send![class!(NSDictionary), dictionary] };
-    let data: *mut Object =
-        unsafe { msg_send![rep, representationUsingType: 4usize properties: properties] };
+    let properties: *mut AnyObject = unsafe { msg_send![class!(NSDictionary), dictionary] };
+    let data: *mut AnyObject =
+        unsafe { msg_send![rep, representationUsingType: 4usize, properties: properties] };
     unsafe { nsdata_bytes(data) }
 }
 
-unsafe fn nsdata_bytes(data: *mut Object) -> Option<Vec<u8>> {
+unsafe fn nsdata_bytes(data: *mut AnyObject) -> Option<Vec<u8>> {
     if data.is_null() {
         return None;
     }
     let len: usize = unsafe { msg_send![data, length] };
-    let bytes: *const u8 = unsafe { msg_send![data, bytes] };
+    let bytes: *const c_void = unsafe { msg_send![data, bytes] };
     if bytes.is_null() || len == 0 {
         return None;
     }
-    Some(unsafe { std::slice::from_raw_parts(bytes, len) }.to_vec())
+    Some(unsafe { std::slice::from_raw_parts(bytes.cast::<u8>(), len) }.to_vec())
 }
 
 fn frontmost_window(pid: i32) -> Result<FrontmostWindow, CaptureError> {
@@ -645,26 +647,25 @@ fn same_window_bounds(window: CGRect, focused: CGRect) -> bool {
 /// Run on the main thread, after capture has finished and the tile is staged.
 pub(super) fn foreground_after_capture() {
     unsafe {
-        let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
-        let bundle: *mut Object = msg_send![class!(NSBundle), mainBundle];
-        let url: *mut Object = msg_send![bundle, bundleURL];
-        let extension: *mut Object = msg_send![url, pathExtension];
+        let workspace: *mut AnyObject = msg_send![class!(NSWorkspace), sharedWorkspace];
+        let bundle: *mut AnyObject = msg_send![class!(NSBundle), mainBundle];
+        let url: *mut AnyObject = msg_send![bundle, bundleURL];
+        let extension: *mut AnyObject = msg_send![url, pathExtension];
         if nsstring(extension).as_deref() != Some("app") {
             // A bare `cargo run` has no launchable app bundle. GPUI's normal
             // window activation above remains the fallback for that case.
             return;
         }
-        let configuration: *mut Object =
+        let configuration: *mut AnyObject =
             msg_send![class!(NSWorkspaceOpenConfiguration), configuration];
-        let _: () = msg_send![configuration, setActivates: 1i8];
-        let _: () = msg_send![configuration, setCreatesNewApplicationInstance: 0i8];
-        let completion = ConcreteBlock::new(|_app: *mut Object, error: *mut Object| {
+        let _: () = msg_send![configuration, setActivates: true];
+        let _: () = msg_send![configuration, setCreatesNewApplicationInstance: false];
+        let completion = RcBlock::new(|_app: *mut AnyObject, error: *mut AnyObject| {
             if !error.is_null() {
                 tracing::warn!("Could not bring Onicode forward after Appshot capture");
             }
-        })
-        .copy();
-        let _: () = msg_send![workspace, openApplicationAtURL: url configuration: configuration completionHandler: &*completion];
+        });
+        let _: () = msg_send![workspace, openApplicationAtURL: url, configuration: configuration, completionHandler: &*completion];
     }
 }
 
@@ -701,19 +702,19 @@ fn capture_with_screen_capture_kit(
         return Ok(None);
     }
     let (Some(shareable_class), Some(filter_class), Some(configuration_class), Some(manager_class)) = (
-        Class::get("SCShareableContent"),
-        Class::get("SCContentFilter"),
-        Class::get("SCStreamConfiguration"),
-        Class::get("SCScreenshotManager"),
+        AnyClass::get(c"SCShareableContent"),
+        AnyClass::get(c"SCContentFilter"),
+        AnyClass::get(c"SCStreamConfiguration"),
+        AnyClass::get(c"SCScreenshotManager"),
     ) else {
         return Ok(None);
     };
 
     let (content_tx, content_rx) = std::sync::mpsc::sync_channel(1);
-    let content_block = ConcreteBlock::new(move |content: *mut Object, error: *mut Object| {
+    let content_block = RcBlock::new(move |content: *mut AnyObject, error: *mut AnyObject| {
         let result = unsafe {
             if !content.is_null() {
-                let retained: *mut Object = msg_send![content, retain];
+                let retained: *mut AnyObject = msg_send![content, retain];
                 Ok(retained as usize)
             } else {
                 Err(ns_error_message(
@@ -727,20 +728,19 @@ fn capture_with_screen_capture_kit(
         {
             unsafe { CFRelease((content as *const c_void).cast()) };
         }
-    })
-    .copy();
+    });
     unsafe {
         let _: () = msg_send![
             shareable_class,
-            getShareableContentExcludingDesktopWindows: 1i8
-            onScreenWindowsOnly: 0i8
+            getShareableContentExcludingDesktopWindows: true,
+            onScreenWindowsOnly: false,
             completionHandler: &*content_block
         ];
     }
     let content = content_rx
         .recv_timeout(SCREEN_CAPTURE_KIT_TIMEOUT)
         .map_err(|_| "Timed out while enumerating capturable windows".to_string())??
-        as *mut Object;
+        as *mut AnyObject;
 
     let selected = unsafe { select_screen_capture_kit_window(content, pid, preserved_window_id) };
     unsafe {
@@ -751,21 +751,21 @@ fn capture_with_screen_capture_kit(
     };
 
     let (pixel_width, pixel_height) = capture_dimensions(points_wide, points_high);
-    let filter: *mut Object = unsafe { msg_send![filter_class, alloc] };
-    let filter: *mut Object =
+    let filter: *mut AnyObject = unsafe { msg_send![filter_class, alloc] };
+    let filter: *mut AnyObject =
         unsafe { msg_send![filter, initWithDesktopIndependentWindow: window] };
-    let configuration: *mut Object = unsafe { msg_send![configuration_class, new] };
+    let configuration: *mut AnyObject = unsafe { msg_send![configuration_class, new] };
     unsafe {
         let _: () = msg_send![configuration, setWidth: pixel_width];
         let _: () = msg_send![configuration, setHeight: pixel_height];
-        let _: () = msg_send![configuration, setScalesToFit: 1i8];
-        let _: () = msg_send![configuration, setPreservesAspectRatio: 1i8];
-        let _: () = msg_send![configuration, setShowsCursor: 0i8];
-        let _: () = msg_send![configuration, setIgnoreShadowsSingleWindow: 1i8];
+        let _: () = msg_send![configuration, setScalesToFit: true];
+        let _: () = msg_send![configuration, setPreservesAspectRatio: true];
+        let _: () = msg_send![configuration, setShowsCursor: false];
+        let _: () = msg_send![configuration, setIgnoreShadowsSingleWindow: true];
     }
 
     let (image_tx, image_rx) = std::sync::mpsc::sync_channel(1);
-    let image_block = ConcreteBlock::new(move |image: *mut c_void, error: *mut Object| {
+    let image_block = RcBlock::new(move |image: *mut c_void, error: *mut AnyObject| {
         let result = unsafe {
             if !image.is_null() {
                 // The completion owns the image only for this call. A CGImage
@@ -782,13 +782,12 @@ fn capture_with_screen_capture_kit(
         if image_tx.send(Ok(result)).is_err() {
             unsafe { CFRelease((result as *const c_void).cast()) };
         }
-    })
-    .copy();
+    });
     unsafe {
         let _: () = msg_send![
             manager_class,
-            captureImageWithFilter: filter
-            configuration: configuration
+            captureImageWithFilter: filter,
+            configuration: configuration,
             completionHandler: &*image_block
         ];
     }
@@ -820,16 +819,16 @@ fn load_screen_capture_kit() -> bool {
 
 /// Returns a retained SCWindow plus metadata and its size in screen points.
 unsafe fn select_screen_capture_kit_window(
-    content: *mut Object,
+    content: *mut AnyObject,
     pid: i32,
     preserved_window_id: CGWindowID,
-) -> Option<(*mut Object, FrontmostWindow, f64, f64)> {
-    let windows: *mut Object = unsafe { msg_send![content, windows] };
+) -> Option<(*mut AnyObject, FrontmostWindow, f64, f64)> {
+    let windows: *mut AnyObject = unsafe { msg_send![content, windows] };
     let count: usize = unsafe { msg_send![windows, count] };
-    let mut best: Option<(u8, f64, *mut Object, FrontmostWindow, f64, f64)> = None;
+    let mut best: Option<(u8, f64, *mut AnyObject, FrontmostWindow, f64, f64)> = None;
     for index in 0..count {
-        let window: *mut Object = unsafe { msg_send![windows, objectAtIndex: index] };
-        let owner: *mut Object = unsafe { msg_send![window, owningApplication] };
+        let window: *mut AnyObject = unsafe { msg_send![windows, objectAtIndex: index] };
+        let owner: *mut AnyObject = unsafe { msg_send![window, owningApplication] };
         if owner.is_null() {
             continue;
         }
@@ -850,10 +849,10 @@ unsafe fn select_screen_capture_kit_window(
                 (width, height, width * height)
             })
             .unwrap_or((1_920.0, 1_080.0, 1.0));
-        let active: i8 = unsafe { msg_send![window, isActive] };
-        let on_screen: i8 = unsafe { msg_send![window, isOnScreen] };
-        let rank = (active != 0) as u8 * 2 + (on_screen != 0) as u8;
-        let title_obj: *mut Object = unsafe { msg_send![window, title] };
+        let active: bool = unsafe { msg_send![window, isActive] };
+        let on_screen: bool = unsafe { msg_send![window, isOnScreen] };
+        let rank = active as u8 * 2 + on_screen as u8;
+        let title_obj: *mut AnyObject = unsafe { msg_send![window, title] };
         let metadata = FrontmostWindow {
             id,
             title: unsafe { nsstring(title_obj) },
@@ -865,7 +864,7 @@ unsafe fn select_screen_capture_kit_window(
         }
     }
     best.map(|(_, _, window, metadata, width, height)| {
-        let retained: *mut Object = unsafe { msg_send![window, retain] };
+        let retained: *mut AnyObject = unsafe { msg_send![window, retain] };
         (retained, metadata, width, height)
     })
 }
@@ -887,11 +886,11 @@ fn capture_dimensions(width: f64, height: f64) -> (usize, usize) {
     )
 }
 
-unsafe fn ns_error_message(error: *mut Object, fallback: &str) -> String {
+unsafe fn ns_error_message(error: *mut AnyObject, fallback: &str) -> String {
     if error.is_null() {
         return fallback.into();
     }
-    let description: *mut Object = unsafe { msg_send![error, localizedDescription] };
+    let description: *mut AnyObject = unsafe { msg_send![error, localizedDescription] };
     unsafe { nsstring(description) }.unwrap_or_else(|| fallback.into())
 }
 
@@ -933,6 +932,17 @@ fn capture_png(window_id: CGWindowID) -> Result<Vec<u8>, CaptureError> {
     encode_png(image.as_ptr().cast()).map_err(CaptureError::CaptureFailed)
 }
 
+/// Opaque `CGImage`, typed so objc2 verifies `^{CGImage=}` method arguments.
+#[repr(C)]
+struct CGImageRef {
+    _private: [u8; 0],
+}
+
+// SAFETY: `CGImageRef` is only used behind pointers to a CoreGraphics `CGImage`.
+unsafe impl RefEncode for CGImageRef {
+    const ENCODING_REF: Encoding = Encoding::Pointer(&Encoding::Struct("CGImage", &[]));
+}
+
 fn encode_png(image: *mut c_void) -> Result<Vec<u8>, String> {
     unsafe extern "C" {
         fn CGImageGetWidth(image: *mut c_void) -> usize;
@@ -947,15 +957,15 @@ fn encode_png(image: *mut c_void) -> Result<Vec<u8>, String> {
         .map_err(|_| "Screenshot height exceeds the capture budget")?;
     super::validate_capture_dimensions(width, height).map_err(|error| error.to_string())?;
     unsafe {
-        let rep: *mut Object = msg_send![class!(NSBitmapImageRep), alloc];
-        let rep: *mut Object = msg_send![rep, initWithCGImage: image];
+        let rep: *mut AnyObject = msg_send![class!(NSBitmapImageRep), alloc];
+        let rep: *mut AnyObject = msg_send![rep, initWithCGImage: image.cast::<CGImageRef>()];
         if rep.is_null() {
             return Err("The screenshot could not be encoded.".into());
         }
-        let properties: *mut Object = msg_send![class!(NSDictionary), dictionary];
+        let properties: *mut AnyObject = msg_send![class!(NSDictionary), dictionary];
         // NSBitmapImageFileTypePNG = 4.
-        let data: *mut Object =
-            msg_send![rep, representationUsingType: 4usize properties: properties];
+        let data: *mut AnyObject =
+            msg_send![rep, representationUsingType: 4usize, properties: properties];
         let _: () = msg_send![rep, release];
         if data.is_null() {
             return Err("The screenshot could not be encoded.".into());
@@ -964,11 +974,11 @@ fn encode_png(image: *mut c_void) -> Result<Vec<u8>, String> {
         if len as u64 > crate::attachments::MAX_ATTACHMENT_BYTES {
             return Err("The captured window is larger than Onicode's 24 MB image limit.".into());
         }
-        let bytes: *const u8 = msg_send![data, bytes];
+        let bytes: *const c_void = msg_send![data, bytes];
         if bytes.is_null() || len == 0 {
             return Err("The captured window was empty.".into());
         }
-        Ok(std::slice::from_raw_parts(bytes, len).to_vec())
+        Ok(std::slice::from_raw_parts(bytes.cast::<u8>(), len).to_vec())
     }
 }
 
@@ -1159,11 +1169,11 @@ fn compact(value: &str) -> String {
     }
 }
 
-unsafe fn nsstring(value: *mut Object) -> Option<String> {
+unsafe fn nsstring(value: *mut AnyObject) -> Option<String> {
     if value.is_null() {
         return None;
     }
-    let bytes: *const std::ffi::c_char = msg_send![value, UTF8String];
+    let bytes: *const std::ffi::c_char = unsafe { msg_send![value, UTF8String] };
     (!bytes.is_null()).then(|| {
         unsafe { CStr::from_ptr(bytes) }
             .to_string_lossy()

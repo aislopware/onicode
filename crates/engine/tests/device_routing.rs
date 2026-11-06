@@ -981,7 +981,7 @@ async fn target_device_id_routes_over_the_relay() {
 
     // Unary forward with side effects: QueueCommand lands (and executes) on B.
     let command = serde_json::to_value(SessionCommandPayload::Run {
-        request: RunRequest {
+        request: Box::new(RunRequest {
             mcp: None,
             prompt: "run remotely".into(),
             harness: None,
@@ -998,7 +998,7 @@ async fn target_device_id_routes_over_the_relay() {
             resume: None,
             env: Default::default(),
             extra_mcp: Vec::new(),
-        },
+        }),
         message_id: "m-a-1".into(),
     })
     .expect("serialize command");

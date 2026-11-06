@@ -104,11 +104,7 @@ fn a_terminal_opens_on_the_chats_host_runs_commands_and_closes() {
     let gone = Arc::new(Screen::default());
     let _again = client.attach_terminal(info, 0, gone.clone());
     wait_for("gone", Duration::from_secs(5), || {
-        gone.updates
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|u| *u == TerminalUpdate::Gone)
+        gone.updates.lock().unwrap().contains(&TerminalUpdate::Gone)
     });
 }
 
@@ -270,8 +266,7 @@ fn a_close_still_reaches_the_host_when_the_link_is_dropped_at_once() {
             .updates
             .lock()
             .unwrap()
-            .iter()
-            .any(|u| *u == TerminalUpdate::Gone);
+            .contains(&TerminalUpdate::Gone);
         if ended {
             gone.updates.lock().unwrap().push(TerminalUpdate::Gone);
         }

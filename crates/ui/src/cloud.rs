@@ -14,7 +14,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use onicode_proto::{
     CloudSession, CloudSessions, CloudState, CloudStatus, Device, GithubRepo, VaultConnection,
-    VaultConnectionStatus, VaultDevice, VaultProvider, VaultStatus,
+    VaultConnectionStatus, VaultProvider, VaultStatus,
 };
 
 use crate::icons;
@@ -413,7 +413,7 @@ pub fn group_number(value: f64) -> String {
     let digits = (value.abs().round() as u64).to_string();
     let mut grouped = String::new();
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             grouped.push(',');
         }
         grouped.push(c);

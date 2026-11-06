@@ -39,7 +39,7 @@ pub enum SessionCommandStatus {
 pub enum SessionCommandPayload {
     #[serde(rename_all = "camelCase")]
     Run {
-        request: RunRequest,
+        request: Box<RunRequest>,
         /// Client-minted message id for the optimistic user entry (dedup key).
         message_id: String,
     },
@@ -318,7 +318,7 @@ mod tests {
         let r1 = entry(
             "r1",
             SessionCommandPayload::Run {
-                request: run_request(),
+                request: Box::new(run_request()),
                 message_id: "m1".into(),
             },
             1_000,
@@ -326,7 +326,7 @@ mod tests {
         let r2 = entry(
             "r2",
             SessionCommandPayload::Run {
-                request: run_request(),
+                request: Box::new(run_request()),
                 message_id: "m2".into(),
             },
             2_000,

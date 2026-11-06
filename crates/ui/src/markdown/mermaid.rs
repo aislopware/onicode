@@ -87,11 +87,13 @@ pub fn render(source: &str, palette: &Palette) -> Result<String, String> {
     }
     let _guard = RENDER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::panic::catch_unwind(|| {
-        let mut options = mermaid_rs_renderer::RenderOptions::default();
-        options.theme = if palette.dark {
-            mermaid_rs_renderer::Theme::dark()
-        } else {
-            mermaid_rs_renderer::Theme::modern()
+        let mut options = mermaid_rs_renderer::RenderOptions {
+            theme: if palette.dark {
+                mermaid_rs_renderer::Theme::dark()
+            } else {
+                mermaid_rs_renderer::Theme::modern()
+            },
+            ..Default::default()
         };
         // A denser layout than the engine's default: diagrams are scaled to the
         // reading column, so slack spacing shrinks the labels.
@@ -328,7 +330,7 @@ mod tests {
                     std::fs::write(format!("{dir}/{name}-{mode}.svg"), svg).unwrap();
                     let size = prepared_raster.size(0);
                     let mut rgba = prepared_raster.as_bytes(0).unwrap().to_vec();
-                    for pixel in rgba.chunks_exact_mut(4) {
+                    for pixel in rgba.as_chunks_mut::<4>().0 {
                         pixel.swap(0, 2);
                     }
                     image::save_buffer(

@@ -19,6 +19,7 @@ use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 
 mod caller;
+mod carrier;
 mod client;
 pub mod device_room;
 pub mod ipc_auth;
@@ -26,6 +27,7 @@ mod server;
 mod ws;
 
 pub use caller::{Caller, caller, with_caller};
+pub use carrier::{CarriedSubscription, CarrierClient, Duplex, StreamCarrier, serve_carried};
 pub use client::{RpcClient, RpcSubscription, connect_ipc, connect_ipc_as_agent, connect_ws};
 pub use device_room::{
     CallerProof, CallerProofFn, DeviceFrameHeader, DeviceLink, HostRelay, HostRelayConfig,

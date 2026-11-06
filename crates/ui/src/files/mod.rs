@@ -281,6 +281,27 @@ struct EditorContextMenu {
     availability: editor::EditorMenuAvailability,
 }
 
+/// The editor preferences a surface starts with; the setters keep them current.
+#[derive(Clone, Copy, Debug)]
+pub struct FilesEditorSettings {
+    pub autosave_enabled: bool,
+    pub autosave_delay_ms: u64,
+    pub editor_font_size: f32,
+    pub word_wrap: bool,
+    pub show_all_files: bool,
+}
+
+#[cfg(test)]
+impl FilesEditorSettings {
+    pub(crate) const TEST: Self = Self {
+        autosave_enabled: false,
+        autosave_delay_ms: 1000,
+        editor_font_size: 13.0,
+        word_wrap: false,
+        show_all_files: false,
+    };
+}
+
 pub struct FilesSurface {
     surface_id: gpui::EntityId,
     interaction_generation: u64,
@@ -540,11 +561,13 @@ impl FilesSurface {
             chat_id,
             FilesPresentation::Explorer,
             None,
-            false,
-            1000,
-            13.0,
-            false,
-            show_all_files,
+            FilesEditorSettings {
+                autosave_enabled: false,
+                autosave_delay_ms: 1000,
+                editor_font_size: 13.0,
+                word_wrap: false,
+                show_all_files,
+            },
             cx,
         )
     }
@@ -553,11 +576,7 @@ impl FilesSurface {
     pub fn new(
         state: Entity<AppState>,
         chat_id: String,
-        autosave_enabled: bool,
-        autosave_delay_ms: u64,
-        editor_font_size: f32,
-        word_wrap: bool,
-        show_all_files: bool,
+        settings: FilesEditorSettings,
         cx: &mut Context<Self>,
     ) -> Self {
         Self::new_with_presentation(
@@ -565,11 +584,7 @@ impl FilesSurface {
             chat_id,
             FilesPresentation::Editor,
             None,
-            autosave_enabled,
-            autosave_delay_ms,
-            editor_font_size,
-            word_wrap,
-            show_all_files,
+            settings,
             cx,
         )
     }
@@ -578,11 +593,7 @@ impl FilesSurface {
         state: Entity<AppState>,
         chat_id: String,
         path: String,
-        autosave_enabled: bool,
-        autosave_delay_ms: u64,
-        editor_font_size: f32,
-        word_wrap: bool,
-        show_all_files: bool,
+        settings: FilesEditorSettings,
         cx: &mut Context<Self>,
     ) -> Self {
         Self::new_with_presentation(
@@ -590,11 +601,7 @@ impl FilesSurface {
             chat_id,
             FilesPresentation::Editor,
             Some(path),
-            autosave_enabled,
-            autosave_delay_ms,
-            editor_font_size,
-            word_wrap,
-            show_all_files,
+            settings,
             cx,
         )
     }
@@ -604,13 +611,16 @@ impl FilesSurface {
         chat_id: String,
         presentation: FilesPresentation,
         editor_path: Option<String>,
-        autosave_enabled: bool,
-        autosave_delay_ms: u64,
-        editor_font_size: f32,
-        word_wrap: bool,
-        show_all_files: bool,
+        settings: FilesEditorSettings,
         cx: &mut Context<Self>,
     ) -> Self {
+        let FilesEditorSettings {
+            autosave_enabled,
+            autosave_delay_ms,
+            editor_font_size,
+            word_wrap,
+            show_all_files,
+        } = settings;
         let search = cx.new(|cx| {
             ComposerInput::new("Search files", cx)
                 .with_single_line()

@@ -625,7 +625,6 @@ impl HarnessesPage {
 
     /// Retarget the page at another device: a different device is a different
     /// install/enablement world, so drop the rows and reload through it.
-
     pub(crate) fn set_target_device(&mut self, target: Option<String>, cx: &mut Context<Self>) {
         widgets::close_select(self, |page: &mut Self| &mut page.device_select, cx);
 

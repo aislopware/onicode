@@ -105,18 +105,24 @@ pub struct RenderOptions {
     pub math: super::math::MathStyle,
 }
 
+/// Flips one task-list checkbox.
+pub type TaskToggle = Rc<dyn Fn(&super::parser::TaskMarker, &mut Window, &mut gpui::App)>;
+
 #[derive(Clone)]
 pub struct TaskUi {
-    pub toggle: Option<Rc<dyn Fn(&super::parser::TaskMarker, &mut Window, &mut gpui::App)>>,
+    pub toggle: Option<TaskToggle>,
 }
 
 /// Draws one inline image in place of its text, or declines it (`None`).
 pub type ImageUi =
     Rc<dyn Fn(&super::parser::InlineImage, SharedString, &Theme) -> Option<AnyElement>>;
 
+/// Draws one Mermaid fence from its source and frame id.
+pub type DiagramRenderer = Rc<dyn Fn(&str, SharedString, &Theme) -> DiagramView>;
+
 #[derive(Clone)]
 pub struct MediaUi {
-    pub diagram: Option<Rc<dyn Fn(&str, SharedString, &Theme) -> DiagramView>>,
+    pub diagram: Option<DiagramRenderer>,
     /// `None` keeps inline images in their ordinary text rendering; so does
     /// the closure, per image, by returning `None`.
     pub image: Option<ImageUi>,
@@ -134,15 +140,21 @@ pub enum DiagramView {
 pub struct DiagramUi {
     pub body: AnyElement,
     pub show_source: bool,
-    pub toggle_source: Rc<dyn Fn(&mut Window, &mut gpui::App)>,
+    pub toggle_source: UiAction,
 }
+
+/// A no-argument UI action, such as a toggle button's click.
+pub type UiAction = Rc<dyn Fn(&mut Window, &mut gpui::App)>;
 
 /// Copy-button wiring for one row's code blocks: the handler writes the code
 /// to the clipboard and flips a transient per-row "Copied" state owned by the
 /// transcript entity; `copied_ix` is the block currently showing feedback.
+/// Copies code block `ix`'s text and starts its "Copied" feedback.
+pub type CopyHandler = Rc<dyn Fn(usize, SharedString, &mut Window, &mut gpui::App)>;
+
 #[derive(Clone)]
 pub struct CopyUi {
-    pub handler: Rc<dyn Fn(usize, SharedString, &mut Window, &mut gpui::App)>,
+    pub handler: CopyHandler,
     pub copied_ix: Option<usize>,
 }
 
@@ -158,8 +170,11 @@ pub struct LinkUi {
     /// the linking chat's own first. `None` renders no trailing open glyph
     /// and offers no file paths — previews and web-only surfaces.
     pub(crate) file_roots: Option<Rc<Vec<crate::workspace_links::FileLinkRoot>>>,
-    pub handler: Rc<dyn Fn(&LinkActivation, &mut Window, &mut gpui::App) -> LinkOutcome>,
+    pub handler: LinkHandler,
 }
+
+/// Acts on one link activation and says what became of it.
+pub type LinkHandler = Rc<dyn Fn(&LinkActivation, &mut Window, &mut gpui::App) -> LinkOutcome>;
 
 impl LinkUi {
     /// The workspace file `target` resolves to under this surface's roots,
@@ -240,7 +255,7 @@ pub struct CodeUi {
     pub fit_content: bool,
     pub scroll: gpui::ScrollHandle,
     pub scrollbar: Option<CodeScrollbarUi>,
-    pub toggle_fit: Rc<dyn Fn(&mut Window, &mut gpui::App)>,
+    pub toggle_fit: UiAction,
     pub viewport_hover: HoverHandler,
     pub drag_move: PointerHandler,
 }
@@ -440,6 +455,9 @@ impl RenderOptions {
 /// [`RenderCache::sync_style`] drops everything when color or typography moves.
 /// Flat text also holds laid-out formulas, so [`RenderCache::sync_math`]
 /// drops it when the math style moves.
+/// One display formula's source and its layout (`None` when it failed).
+type DisplayFormula = (String, Option<std::sync::Arc<zatex::Formula>>);
+
 #[derive(Default)]
 pub struct RenderCache {
     flats: HashMap<(SharedString, usize, usize), Rc<FlatText>>,
@@ -447,8 +465,7 @@ pub struct RenderCache {
     /// Display formulas by block, with the source they were laid out from:
     /// a screenful of large ones can outgrow the shared formula cache, which
     /// would then lay every one out again each frame.
-    display:
-        HashMap<(SharedString, usize, usize), (String, Option<std::sync::Arc<zatex::Formula>>)>,
+    display: HashMap<(SharedString, usize, usize), DisplayFormula>,
     /// The [`crate::theme::style_generation`] these entries were shaped under.
     generation: u32,
     /// The math style `flats` were laid out in.
@@ -1170,8 +1187,8 @@ fn render_table(
         .into_any_element()
 }
 
-/// Flattened inline runs: one string + gpui `TextRun`s + clickable link ranges
-/// + inline-code ranges (their rounded washes are painted by a canvas UNDER
+/// Flattened inline runs: one string, gpui `TextRun`s, clickable link ranges
+/// and inline-code ranges (their rounded washes are painted by a canvas UNDER
 /// the text — `TextRun::background_color` can only paint square boxes).
 /// `text` is a `SharedString` so cached reuse across frames is an Arc clone.
 #[derive(Clone)]
@@ -2382,47 +2399,18 @@ fn render_code_block(
     theme: &Theme,
     highlight: CodeHighlight,
 ) -> AnyElement {
-    if language.is_some_and(|l| l.eq_ignore_ascii_case("mermaid")) {
-        if let Some(handler) = opts.media.as_ref().and_then(|media| media.diagram.as_ref()) {
-            let frame_id: SharedString = format!("{}-mermaid-{ix}", opts.row_key).into();
-            let diagram = match handler(code, frame_id.clone(), theme) {
-                DiagramView::Source => {
-                    return render_code_block_source(
-                        language, code, top_ix, ix, opts, theme, highlight,
-                    );
-                }
-                DiagramView::Failed(reason) => {
-                    let notice = code_notice(format!("{frame_id}-failure").into(), reason, theme);
-                    return render_code_block_source_with_actions(
-                        language,
-                        code,
-                        top_ix,
-                        ix,
-                        opts,
-                        theme,
-                        highlight,
-                        vec![notice],
-                    );
-                }
-                DiagramView::Diagram(diagram) => diagram,
-            };
-            let toggle = diagram.toggle_source.clone();
-            let toggle_action = code_icon_action(
-                format!("{frame_id}-source-toggle").into(),
-                if diagram.show_source {
-                    "Show diagram"
-                } else {
-                    "Show source"
-                },
-                if diagram.show_source {
-                    crate::icons::EYE
-                } else {
-                    crate::icons::FILE_CODE
-                },
-                Rc::new(move |window, cx| toggle(window, cx)),
-                theme,
-            );
-            if diagram.show_source {
+    if language.is_some_and(|l| l.eq_ignore_ascii_case("mermaid"))
+        && let Some(handler) = opts.media.as_ref().and_then(|media| media.diagram.as_ref())
+    {
+        let frame_id: SharedString = format!("{}-mermaid-{ix}", opts.row_key).into();
+        let diagram = match handler(code, frame_id.clone(), theme) {
+            DiagramView::Source => {
+                return render_code_block_source(
+                    language, code, top_ix, ix, opts, theme, highlight,
+                );
+            }
+            DiagramView::Failed(reason) => {
+                let notice = code_notice(format!("{frame_id}-failure").into(), reason, theme);
                 return render_code_block_source_with_actions(
                     language,
                     code,
@@ -2431,14 +2419,43 @@ fn render_code_block(
                     opts,
                     theme,
                     highlight,
-                    vec![toggle_action],
+                    vec![notice],
                 );
             }
-            let mut actions = vec![toggle_action];
-            actions.extend(code_copy_button(code, ix, opts, theme));
-            return code_block_frame(frame_id, language, actions, diagram.body, theme)
-                .into_any_element();
+            DiagramView::Diagram(diagram) => diagram,
+        };
+        let toggle = diagram.toggle_source.clone();
+        let toggle_action = code_icon_action(
+            format!("{frame_id}-source-toggle").into(),
+            if diagram.show_source {
+                "Show diagram"
+            } else {
+                "Show source"
+            },
+            if diagram.show_source {
+                crate::icons::EYE
+            } else {
+                crate::icons::FILE_CODE
+            },
+            Rc::new(move |window, cx| toggle(window, cx)),
+            theme,
+        );
+        if diagram.show_source {
+            return render_code_block_source_with_actions(
+                language,
+                code,
+                top_ix,
+                ix,
+                opts,
+                theme,
+                highlight,
+                vec![toggle_action],
+            );
         }
+        let mut actions = vec![toggle_action];
+        actions.extend(code_copy_button(code, ix, opts, theme));
+        return code_block_frame(frame_id, language, actions, diagram.body, theme)
+            .into_any_element();
     }
     render_code_block_source(language, code, top_ix, ix, opts, theme, highlight)
 }
@@ -2447,7 +2464,7 @@ fn code_icon_action(
     id: SharedString,
     label: &'static str,
     icon_path: &'static str,
-    handler: Rc<dyn Fn(&mut Window, &mut gpui::App)>,
+    handler: UiAction,
     theme: &Theme,
 ) -> AnyElement {
     let fade_key = id.to_string();
@@ -2819,7 +2836,7 @@ fn render_code_block_source_with_actions(
     };
 
     let scrollbar = (!fit_content)
-        .then(|| code_ui.as_ref())
+        .then_some(code_ui.as_ref())
         .flatten()
         .and_then(|ui| {
             let bar = ui.scrollbar.as_ref()?;

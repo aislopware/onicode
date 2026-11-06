@@ -840,10 +840,13 @@ async fn warm_side_chat_sends_owed_fork_history_once() {
     core.shutdown().await;
 }
 
+/// Each run's (prompt, resumed provider session).
+type Runs = Arc<Mutex<Vec<(String, Option<String>)>>>;
+
 /// A runtime that answers its first turn, then exits once released without
 /// reading its mailbox: sends routed into it are orphaned and re-dispatched.
 struct Dropping {
-    runs: Arc<Mutex<Vec<(String, Option<String>)>>>,
+    runs: Runs,
     release: Arc<tokio::sync::Notify>,
 }
 #[async_trait]

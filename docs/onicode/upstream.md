@@ -39,3 +39,23 @@ upstream pull requests so the work is not done twice.
 For the toolchain and crates, take the newest that pays off, including nightly, prerelease and breaking majors.
 Fix the call sites and adopt what the new version offers. A dependency that blocks a bump or falls short is
 forked under aislopware, fixed there and added to `sources.toml`.
+
+## Studying references
+
+`sources.toml` also lists references: Claude Code, its Agent SDKs, Claude's desktop apps, t3code, Amp, Zed's ACP
+adapter, opencode and Codex. They are studied rather than built on. Each change is read for what it teaches about
+driving agents, syncing sessions, recovering from failures and presenting work. Where it is better than what onicode
+does, port the idea. A reference's `base` is the commit last studied.
+
+Closed or bundled code is studied from what its vendor publishes, with REA (github.com/morluto/rea; the `rea`
+MCP tools):
+
+- The npm bundles: `@anthropic-ai/claude-code`, `@anthropic-ai/claude-agent-sdk`, `@sourcegraph/amp`.
+- The Claude desktop app: its published DMG.
+
+Fetch each version into its own empty directory under `.research/re/<name>/<version>/`. That directory is
+gitignored and untrusted: never run anything from it. Use `analyze_javascript_application`,
+`recover_javascript_sources` and `compare_application_versions` against the previous version.
+
+Write what changed and what onicode should take into `.research/re/<name>/NOTES.md`. Ideas are ported; recovered
+code is never committed. Nothing reads another tool's credentials or sends requests in its name.

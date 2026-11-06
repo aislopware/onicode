@@ -53,7 +53,7 @@ async fn quiet_acp_prompt_stays_working_until_response() {
         "first",
         SessionCommandPayload::Run {
             message_id: "first-user".into(),
-            request: RunRequest {
+            request: Box::new(RunRequest {
                 mcp: None,
                 prompt: "tools".into(),
                 harness: None,
@@ -70,7 +70,7 @@ async fn quiet_acp_prompt_stays_working_until_response() {
                 resume: None,
                 env: Default::default(),
                 extra_mcp: Vec::new(),
-            },
+            }),
         },
     );
     wait_for(|| {

@@ -1244,7 +1244,7 @@ mod pinned_session_tests {
         let (host, cx) = cx.add_window_view(|_, cx| {
             PinnedHost(cx.new(|cx| {
                 let state = cx.new(|_| AppState::new());
-                let mut shell = Shell::new(
+                let shell = Shell::new(
                     state,
                     EngineBootConfig {
                         data_dir: dir.path().into(),
@@ -2326,13 +2326,13 @@ const SIDEBAR_DISCLOSURE_SECTION_HEIGHT: f32 =
 const ARCHIVED_INITIAL_ROWS: usize = 10;
 const ARCHIVED_PAGE_ROWS: usize = 25;
 
+/// A sidebar group: its `(key, label)` header, if any, and its rows.
+type SidebarGroup<T> = (Option<(String, String)>, Vec<T>);
+
 /// Put this machine's device group first without disturbing the recency-based
 /// order of any remote groups. A targeted promotion is more truthful than a
 /// full name sort: local context leads, then the user's chosen chat sort wins.
-fn promote_local_device_group<T>(
-    groups: &mut Vec<(Option<(String, String)>, Vec<T>)>,
-    local_device_id: Option<&str>,
-) {
+fn promote_local_device_group<T>(groups: &mut Vec<SidebarGroup<T>>, local_device_id: Option<&str>) {
     let Some(local_device_id) = local_device_id else {
         return;
     };
@@ -3644,15 +3644,14 @@ impl Shell {
             self.cancel_sidebar_session_transfer(cx);
             return;
         }
-        if let SidebarSessionDrop::Section(id) = &target {
-            if !self
+        if let SidebarSessionDrop::Section(id) = &target
+            && !self
                 .active_sidebar_sections(cx)
                 .iter()
                 .any(|section| &section.id == id)
-            {
-                self.cancel_sidebar_session_transfer(cx);
-                return;
-            }
+        {
+            self.cancel_sidebar_session_transfer(cx);
+            return;
         }
         let saved = self.raw_sidebar_pins(cx);
         let next = sidebar_session_drop_pins(
@@ -4282,13 +4281,13 @@ impl Shell {
             }
         }
         self.schedule_save(cx);
-        if row.closes_submenu() {
-            if let Some(menu) = self.sidebar_view_menu.open_mut() {
-                menu.submenu = None;
-                menu.submenu_active = None;
-                menu.submenu_bounds = None;
-                menu.hover_intent.cancel();
-            }
+        if row.closes_submenu()
+            && let Some(menu) = self.sidebar_view_menu.open_mut()
+        {
+            menu.submenu = None;
+            menu.submenu_active = None;
+            menu.submenu_bounds = None;
+            menu.hover_intent.cancel();
         }
         cx.notify();
     }
@@ -4395,12 +4394,11 @@ impl Shell {
             }
             "right" | "enter" | "space" => {
                 if let Some(group) = menu.submenu {
-                    if key == "enter" {
-                        if let Some(choice) = menu.submenu_active {
-                            let row =
-                                SIDEBAR_VIEW_ROWS[SIDEBAR_VIEW_GROUPS[group].1.start + choice];
-                            self.activate_sidebar_view_row(row, cx);
-                        }
+                    if key == "enter"
+                        && let Some(choice) = menu.submenu_active
+                    {
+                        let row = SIDEBAR_VIEW_ROWS[SIDEBAR_VIEW_GROUPS[group].1.start + choice];
+                        self.activate_sidebar_view_row(row, cx);
                     }
                 } else {
                     let group = menu.active.unwrap_or(0);
@@ -4534,11 +4532,11 @@ impl Shell {
                     move |bounds, window, cx| {
                         let left = bounds.right() + px(244.0) > window.viewport_size().width;
                         let _ = entity.update(cx, |this, cx| {
-                            if let Some(menu) = this.sidebar_view_menu.open_mut() {
-                                if menu.submenu_on_left != left {
-                                    menu.submenu_on_left = left;
-                                    cx.notify();
-                                }
+                            if let Some(menu) = this.sidebar_view_menu.open_mut()
+                                && menu.submenu_on_left != left
+                            {
+                                menu.submenu_on_left = left;
+                                cx.notify();
                             }
                         });
                     },
@@ -5256,7 +5254,7 @@ impl Shell {
             })
             .collect();
         let ordered = if self.settings.sidebar_organization != SidebarOrganization::InOneList {
-            let mut groups: Vec<(Option<(String, String)>, Vec<onicode_proto::Chat>)> = Vec::new();
+            let mut groups: Vec<SidebarGroup<onicode_proto::Chat>> = Vec::new();
             for chat in chats {
                 let key = Some((
                     if self.settings.sidebar_organization == SidebarOrganization::ByProject {
@@ -5610,7 +5608,7 @@ impl Shell {
                 )
             })
             .collect();
-        let mut regular_groups: Vec<(Option<(String, String)>, Vec<ActiveChatRow>)> = Vec::new();
+        let mut regular_groups: Vec<SidebarGroup<ActiveChatRow>> = Vec::new();
         for row in regular_rows {
             if let Some(index) = custom_sections
                 .iter()
@@ -5954,27 +5952,27 @@ impl Shell {
                 }
                 continue;
             };
-            if let Some(id) = key.strip_prefix("section:") {
-                if let Some(section) = custom_sections.iter().find(|section| section.id == id) {
-                    let drag =
-                        section_order
-                            .clone()
-                            .zip(profile_key.clone())
-                            .map(|(ids, profile_key)| SidebarSectionDrag {
-                                section_id: section.id.clone(),
-                                profile_key,
-                                ids,
-                            });
-                    rendered.push(self.render_custom_sidebar_section(
-                        section.clone(),
-                        rendered_rows,
-                        drag_group,
-                        drag,
-                        theme,
-                        cx,
-                    ));
-                    continue;
-                }
+            if let Some(id) = key.strip_prefix("section:")
+                && let Some(section) = custom_sections.iter().find(|section| section.id == id)
+            {
+                let drag =
+                    section_order
+                        .clone()
+                        .zip(profile_key.clone())
+                        .map(|(ids, profile_key)| SidebarSectionDrag {
+                            section_id: section.id.clone(),
+                            profile_key,
+                            ids,
+                        });
+                rendered.push(self.render_custom_sidebar_section(
+                    section.clone(),
+                    rendered_rows,
+                    drag_group,
+                    drag,
+                    theme,
+                    cx,
+                ));
+                continue;
             }
             let collapse_key = self.sidebar_group_collapse_key(&key);
             let motion_key = format!("group:{collapse_key}");
@@ -6796,7 +6794,7 @@ impl Shell {
             .flatten()
             .cloned()
             .collect();
-        repos.sort_by(|a, b| b.pushed_at.cmp(&a.pushed_at));
+        repos.sort_by_key(|repo| std::cmp::Reverse(repo.pushed_at));
         let names: Vec<_> = repos.iter().map(|r| r.full_name.as_str()).collect();
         popover::filter_indices(flow.search.read(cx).text(), &names)
             .into_iter()
@@ -6955,7 +6953,7 @@ impl Shell {
                 .flatten()
                 .filter(|repo| repo.full_name.to_lowercase().contains(&needle))
                 .collect();
-            repos.sort_by(|a, b| b.pushed_at.cmp(&a.pushed_at));
+            repos.sort_by_key(|repo| std::cmp::Reverse(repo.pushed_at));
             repos
                 .into_iter()
                 .take(CLONE_MATCHES)
@@ -7410,7 +7408,7 @@ impl Shell {
             return;
         };
         match flow.step {
-            ProjectStep::Devices => return,
+            ProjectStep::Devices => (),
             ProjectStep::Locations | ProjectStep::Repositories => {
                 self.add_space_back_to(ProjectStep::Devices, cx)
             }

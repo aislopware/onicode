@@ -499,10 +499,10 @@ fn node_version_manager_bins_with(
     let home = home_dir_with(env, platform);
     let mut dirs = Vec::new();
 
-    if platform == Platform::Windows {
-        if let Some(active) = env_path(env, "FNM_MULTISHELL_PATH") {
-            dirs.push(active);
-        }
+    if platform == Platform::Windows
+        && let Some(active) = env_path(env, "FNM_MULTISHELL_PATH")
+    {
+        dirs.push(active);
     }
 
     let mut fnm_roots: Vec<PathBuf> = env("FNM_DIR")
@@ -510,12 +510,12 @@ fn node_version_manager_bins_with(
         .map(PathBuf::from)
         .into_iter()
         .collect();
-    if platform == Platform::Windows {
-        if let Some(roaming) = env_path(env, "APPDATA").or_else(|| {
+    if platform == Platform::Windows
+        && let Some(roaming) = env_path(env, "APPDATA").or_else(|| {
             env_path(env, "USERPROFILE").map(|profile| profile.join("AppData").join("Roaming"))
-        }) {
-            fnm_roots.push(roaming.join("fnm"));
-        }
+        })
+    {
+        fnm_roots.push(roaming.join("fnm"));
     }
     if let Some(home) = &home {
         fnm_roots.push(home.join(".local").join("share").join("fnm"));

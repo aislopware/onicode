@@ -224,11 +224,6 @@ impl VisualSlot {
         })
     }
 
-    /// The measured height (at the latest width the worker laid out).
-    pub fn height(&self) -> Option<f32> {
-        self.snapshot().1
-    }
-
     /// The epoch and the height it belongs to, read together.
     pub fn snapshot(&self) -> (u64, Option<f32>) {
         let measured = self.measured.lock().unwrap();
@@ -1442,7 +1437,7 @@ fn slider_value(min: f64, max: f64, step: f64, fraction: f32) -> f64 {
 
 /// Straight BGRA from the renderers → premultiplied for the platform.
 fn image_of(width: u32, height: u32, mut bgra: Vec<u8>) -> FrameImage {
-    for px in bgra.chunks_exact_mut(4) {
+    for px in bgra.as_chunks_mut::<4>().0 {
         let a = u16::from(px[3]);
         if a < 255 {
             for c in &mut px[..3] {

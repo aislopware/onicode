@@ -4,10 +4,10 @@ use crate::markdown::parser::{Block, BlockTree, InlineRun};
 pub(super) fn image_sources(tree: &BlockTree) -> Vec<String> {
     fn runs(runs: &[InlineRun], out: &mut Vec<String>) {
         for run in runs {
-            if let Some(image) = &run.style.image {
-                if !out.contains(&image.source) {
-                    out.push(image.source.clone());
-                }
+            if let Some(image) = &run.style.image
+                && !out.contains(&image.source)
+            {
+                out.push(image.source.clone());
             }
         }
     }

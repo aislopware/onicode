@@ -172,7 +172,6 @@ rust-embed = "=8.7.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc.workspace = true
-objc = "0.2"
 wry = { version = "0.56", default-features = false, features = ["os-webview"] }
 raw-window-handle = "0.6"
 objc2 = "0.6"
@@ -184,7 +183,6 @@ objc2-web-kit = { version = "0.3.2", features = ["WKWebView", "WKNavigationDeleg
 core-foundation = "0.10"
 core-graphics = { version = "0.24", features = ["elcapitan", "highsierra", "link"] }
 foreign-types = "0.5"
-block = "0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true

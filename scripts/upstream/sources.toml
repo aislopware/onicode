@@ -80,3 +80,111 @@ base = "04807b674cff617cbac323256416dc4779ccf7c2"
 base_date = "2026-11-06"
 every_minutes = 0
 paths = ["noq-proto/", "noq-udp/"]
+
+# Patched in Cargo.toml for the symlinked-registry path fix; drop the fork when upstream has it.
+[askama]
+upstream = "askama-rs/askama"
+branch = "main"
+fork = "aislopware/askama"
+checkout = "forks/askama"
+base = "bf7b57566a6475848e8845e9a11801f5d55f9ef5"
+base_date = "2026-11-06"
+every_minutes = 240
+paths = ["askama_derive/src/generator.rs", "askama_derive/src/generator/helpers/paths.rs"]
+
+# ---- References: peers and Claude Code itself, studied rather than built on. A change is read for what it
+# teaches (how they drive the agents, sync, render, recover) and ported to onicode where it is better; `base` is
+# the commit last studied. Agents are driven only through their published doors.
+
+# Claude Code's own changelog: new flags, stream-json fields and behaviours the harness should use.
+[claude-code]
+upstream = "anthropics/claude-code"
+branch = "main"
+base = "90380efca7f9d73e206fac453f841b6acd664f4d"
+base_date = "2026-11-06"
+every_minutes = 0
+pulls = false
+releases = true
+paths = ["CHANGELOG.md"]
+
+[claude-agent-sdk-ts]
+upstream = "anthropics/claude-agent-sdk-typescript"
+branch = "main"
+base = "040a7f855da8261c795d975e116f40bb042334f7"
+base_date = "2026-11-06"
+every_minutes = 0
+pulls = false
+releases = true
+
+[claude-agent-sdk-py]
+upstream = "anthropics/claude-agent-sdk-python"
+branch = "main"
+base = "3be907edb9c86269d30d1427a77937dd788d6419"
+base_date = "2026-11-06"
+every_minutes = 0
+pulls = false
+releases = true
+
+# Claude's desktop and mobile apps (closed source): their release notes.
+[claude-apps]
+page = "https://docs.claude.com/en/release-notes/claude-apps"
+every_minutes = 0
+
+# t3code: many clients and many servers driving Claude Code and Codex through their SDKs.
+[t3code]
+upstream = "pingdotgg/t3code"
+branch = "main"
+base = "bfb388415e8d3d39e5a7b3844fa7bc299c64f725"
+base_date = "2026-11-06"
+every_minutes = 0
+pulls = false
+releases = true
+
+# Amp (closed source): its news feed.
+[amp]
+feed = "https://ampcode.com/news.rss"
+every_minutes = 0
+
+# Zed's ACP adapter for Claude Code, on the Agent SDK.
+[claude-code-acp]
+upstream = "zed-industries/claude-code-acp"
+branch = "main"
+base = "85aec26ef984a421fe8064ce43f60138a3372384"
+base_date = "2026-11-06"
+every_minutes = 0
+pulls = false
+releases = true
+
+[opencode]
+upstream = "sst/opencode"
+branch = "dev"
+base = "2658ec02c848ce7e5bd618ee2e18256c5c0992db"
+base_date = "2026-11-06"
+every_minutes = 60
+pulls = false
+releases = true
+
+# Codex: onicode drives its app server; the protocol crate is what matters.
+[codex]
+upstream = "openai/codex"
+branch = "main"
+base = "7b54fd245de62a2d6c74257ee387abfb55731477"
+base_date = "2026-11-06"
+every_minutes = 60
+pulls = false
+releases = true
+paths = ["codex-rs/app-server-protocol/", "codex-rs/app-server/", "codex-rs/protocol/"]
+
+# Published artifacts of closed or bundled code, studied with REA when a version ships (docs/onicode/upstream.md):
+# Claude Code's CLI bundle (stream-json, hooks, permission flow), the Agent SDK's package, Amp's CLI.
+[claude-code-npm]
+npm = "@anthropic-ai/claude-code"
+every_minutes = 0
+
+[claude-agent-sdk-npm]
+npm = "@anthropic-ai/claude-agent-sdk"
+every_minutes = 0
+
+[amp-npm]
+npm = "@sourcegraph/amp"
+every_minutes = 60

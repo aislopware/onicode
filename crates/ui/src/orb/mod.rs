@@ -12,8 +12,8 @@
 //! Style flows through the environment like the rest of bezel: [`OrbTheme::Auto`]
 //! resolves ink against the installed [`theme::Appearance`] at paint time.
 
-mod orb;
 mod paint;
+mod widget;
 
 pub use onicode_orb::{ModeKey, OrbSize, OrbState, OrbTheme, Resolved, engine, resolve_preset};
-pub use orb::{DEFAULT_TARGET_FPS, Orb, orb_element};
+pub use widget::{DEFAULT_TARGET_FPS, Orb, orb_element};

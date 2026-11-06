@@ -145,14 +145,13 @@ impl PiHarness {
         run_env: &std::collections::BTreeMap<String, String>,
     ) -> Result<Process, HarnessError> {
         let exe = self.resolve_executable()?;
-        if self.executable.is_none() {
-            if let Some(version) = crate::executable::binary_version(&exe) {
-                if version < semver::Version::new(0, 85, 1) {
-                    return Err(HarnessError::Protocol(format!(
-                        "Pi {version} is unsupported; update Pi to 0.85.1 or newer"
-                    )));
-                }
-            }
+        if self.executable.is_none()
+            && let Some(version) = crate::executable::binary_version(&exe)
+            && version < semver::Version::new(0, 85, 1)
+        {
+            return Err(HarnessError::Protocol(format!(
+                "Pi {version} is unsupported; update Pi to 0.85.1 or newer"
+            )));
         }
         let mut cmd = Command::new(&exe);
         // Process group plus the same env scrubbing the ACP launch applied.
@@ -559,7 +558,6 @@ impl Runner {
     }
     fn control_command(&self, text: &str) -> Option<Value> {
         let name = text
-            .trim()
             .split_whitespace()
             .next()
             .unwrap_or("")
@@ -751,55 +749,50 @@ impl Runner {
                             | Pending::EmptyState(..)
                     )
                 })
-            {
-                if !self.queued.front().is_some_and(|s| {
+                && !self.queued.front().is_some_and(|s| {
                     (self.active && self.control_command(&s.prompt).is_some())
                         || (!self.deliveries.is_empty()
                             && s.prompt.strip_prefix('/').is_some_and(|command| {
                                 self.extension_commands
                                     .contains(command.split_whitespace().next().unwrap_or(""))
                             }))
-                }) {
-                    if let Some(steer) = self.queued.pop_front() {
-                        // A changed model or thinking level applies on the
-                        // live process before the message it was sent with.
-                        if let Some(next) = &steer.config {
-                            let mut backlog = vec![];
-                            tokio::time::timeout(
-                                CONFIGURE_TIMEOUT,
-                                self.configure(next, &mut backlog),
-                            )
-                            .await
-                            .map_err(|_| {
-                                HarnessError::Protocol(format!(
-                                    "Pi did not apply the model change within {}s",
-                                    CONFIGURE_TIMEOUT.as_secs()
-                                ))
-                            })??;
-                            self.request.model = next.model.clone();
-                            self.request.reasoning = next.reasoning;
-                            self.request.model_options = next.model_options.clone();
-                            for frame in backlog {
-                                self.frame(frame).await?;
-                            }
-                        }
-                        let opens_turn = !self.active;
-                        if opens_turn {
-                            self.norm.reset();
-                        }
-                        self.epoch += 1;
-                        self.active = true;
-                        // Atomic Pi operation: queue at a step boundary if busy, start if idle.
-                        // A separate get_state + steer pair would strand an input on the idle race.
-                        let images = load_images(&steer.attachments).await;
-                        self.submit(steer.prompt.clone(), images, true)?;
-                        self.deliveries.push_back(Delivery {
-                            epoch: self.epoch,
-                            queued: false,
-                            opens_turn,
-                        });
+                })
+                && let Some(steer) = self.queued.pop_front()
+            {
+                // A changed model or thinking level applies on the
+                // live process before the message it was sent with.
+                if let Some(next) = &steer.config {
+                    let mut backlog = vec![];
+                    tokio::time::timeout(CONFIGURE_TIMEOUT, self.configure(next, &mut backlog))
+                        .await
+                        .map_err(|_| {
+                            HarnessError::Protocol(format!(
+                                "Pi did not apply the model change within {}s",
+                                CONFIGURE_TIMEOUT.as_secs()
+                            ))
+                        })??;
+                    self.request.model = next.model.clone();
+                    self.request.reasoning = next.reasoning;
+                    self.request.model_options = next.model_options.clone();
+                    for frame in backlog {
+                        self.frame(frame).await?;
                     }
                 }
+                let opens_turn = !self.active;
+                if opens_turn {
+                    self.norm.reset();
+                }
+                self.epoch += 1;
+                self.active = true;
+                // Atomic Pi operation: queue at a step boundary if busy, start if idle.
+                // A separate get_state + steer pair would strand an input on the idle race.
+                let images = load_images(&steer.attachments).await;
+                self.submit(steer.prompt.clone(), images, true)?;
+                self.deliveries.push_back(Delivery {
+                    epoch: self.epoch,
+                    queued: false,
+                    opens_turn,
+                });
             }
             if !self.active && !open && self.queued.is_empty() {
                 return Ok(());
@@ -1131,11 +1124,10 @@ impl Runner {
         for event in self.norm.map(&frame) {
             self.emit(event).await?;
         }
-        if frame["type"] == "agent_settled" {
-            self.query_state(json!({"type":"get_state"}), Pending::Barrier(self.epoch))?;
-        } else if matches!(string(&frame, "type"), "compaction_end" | "auto_retry_end")
-            && self.active
-            && std::mem::take(&mut self.recheck_state)
+        if frame["type"] == "agent_settled"
+            || (matches!(string(&frame, "type"), "compaction_end" | "auto_retry_end")
+                && self.active
+                && std::mem::take(&mut self.recheck_state))
         {
             self.query_state(json!({"type":"get_state"}), Pending::Barrier(self.epoch))?;
         }

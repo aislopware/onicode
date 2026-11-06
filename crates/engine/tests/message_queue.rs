@@ -19,7 +19,7 @@ use onicode_doc::{
     MessagePart, MessageRole, QueueDeliveryGate, SessionCommandPayload, SessionMessageEntry,
 };
 use onicode_engine::doc_host::{
-    BeginQueueEditOutcome, FinishQueueEditAction, FinishQueueEditOutcome,
+    BeginQueueEditOutcome, FinishQueueEditAction, FinishQueueEditOutcome, QueueEditFinish,
 };
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::{Harness, HarnessError, RunControls};
@@ -1621,10 +1621,12 @@ async fn composer_edit_commits_attachments_in_place_and_cancel_preserves_them() 
                 CHAT,
                 &id,
                 &lease_id,
-                FinishQueueEditAction::Commit,
-                Some("revised"),
-                Some(&base_text_hash),
-                Some(&paths),
+                QueueEditFinish {
+                    action: FinishQueueEditAction::Commit,
+                    text: Some("revised"),
+                    expected_text_hash: Some(&base_text_hash),
+                    attachments: Some(&paths),
+                },
             )
             .await
             .unwrap(),
@@ -1650,10 +1652,12 @@ async fn composer_edit_commits_attachments_in_place_and_cancel_preserves_them() 
                 CHAT,
                 &id,
                 &lease_id,
-                FinishQueueEditAction::Cancel,
-                None,
-                None,
-                Some(&[]),
+                QueueEditFinish {
+                    action: FinishQueueEditAction::Cancel,
+                    text: None,
+                    expected_text_hash: None,
+                    attachments: Some(&[]),
+                },
             )
             .await
             .unwrap(),
@@ -1907,7 +1911,7 @@ fn run_like_the_live_turn(core: &EngineCore, message_id: &str, prompt: &str) {
             CHAT,
             SessionCommandPayload::Run {
                 message_id: message_id.into(),
-                request,
+                request: Box::new(request),
             },
         )
         .expect("queue run command");

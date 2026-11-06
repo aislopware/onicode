@@ -737,7 +737,13 @@ mod tests {
             ..camera()
         };
         let raster = s.render(zoomed, 200.0, 200.0, 1.0, Quality::Draft, &colors);
-        let drawn = raster.bgra.chunks_exact(4).filter(|p| p[3] > 0).count();
+        let drawn = raster
+            .bgra
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| p[3] > 0)
+            .count();
         assert!(drawn > 0, "the floor still shows");
     }
 
@@ -756,7 +762,13 @@ mod tests {
         assert_eq!((draft.width, draft.height), (200, 160));
         assert_eq!((fine.width, fine.height), (200, 160));
         // Supersampled edges have partial coverage; one sample cannot.
-        let partial = |r: &Raster| r.bgra.chunks_exact(4).any(|p| p[3] > 0 && p[3] < 255);
+        let partial = |r: &Raster| {
+            r.bgra
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|p| p[3] > 0 && p[3] < 255)
+        };
         assert!(!partial(&draft));
         assert!(partial(&fine));
     }

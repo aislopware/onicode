@@ -185,7 +185,7 @@ async fn agent_process_survives_sends_and_cancel() {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: run(opening, &model, id, &cwd),
+                request: Box::new(run(opening, &model, id, &cwd)),
                 message_id: "m-1".into(),
             },
         )
@@ -247,7 +247,7 @@ async fn agent_process_survives_sends_and_cancel() {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: follow_up,
+                request: Box::new(follow_up),
                 message_id: "m-2".into(),
             },
         )
@@ -278,12 +278,12 @@ async fn agent_process_survives_sends_and_cancel() {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: run(
+                request: Box::new(run(
                     "Write a 600-word essay about rivers. Do not use tools.",
                     &model,
                     id,
                     &cwd,
-                ),
+                )),
                 message_id: "m-2b".into(),
             },
         )
@@ -360,12 +360,12 @@ async fn agent_process_survives_sends_and_cancel() {
             .queue_command(
                 CHAT,
                 SessionCommandPayload::Run {
-                    request: run(
+                    request: Box::new(run(
                         "Do not use tools. Reply only SWITCHED.",
                         &Some(other.clone()),
                         id,
                         &cwd,
-                    ),
+                    )),
                     message_id: "m-2c".into(),
                 },
             )
@@ -444,7 +444,7 @@ async fn resume_after_killed_background_work_is_not_done_early() {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: run(
+                request: Box::new(run(
                     if id == onicode_proto::HarnessId::Codex {
                         "This is an automated test in a disposable directory. Spawn one subagent (spawn_agent) whose task is: \
                          'Run this exact shell command and nothing else: python3 -c \"import time; time.sleep(170)\" . Then reply DONE.' \
@@ -459,7 +459,7 @@ async fn resume_after_killed_background_work_is_not_done_early() {
                     &model,
                     id,
                     &cwd,
-                ),
+                )),
                 message_id: "m-1".into(),
             },
         )
@@ -505,7 +505,7 @@ async fn resume_after_killed_background_work_is_not_done_early() {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: run("Do not use tools. Reply only PONG.", &model, id, &cwd),
+                request: Box::new(run("Do not use tools. Reply only PONG.", &model, id, &cwd)),
                 message_id: "m-2".into(),
             },
         )
@@ -627,7 +627,7 @@ async fn stop_tears_down_all_agent_work() {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: run(opening, &model, id, &cwd),
+                request: Box::new(run(opening, &model, id, &cwd)),
                 message_id: "m-1".into(),
             },
         )
@@ -659,12 +659,12 @@ async fn stop_tears_down_all_agent_work() {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: run(
+                request: Box::new(run(
                     "Run this exact shell command in the FOREGROUND (not in the background) and wait for it to finish: python3 -c 'import time; time.sleep(193)' . Then reply FINISHED.",
                     &model,
                     id,
                     &cwd,
-                ),
+                )),
                 message_id: "m-2".into(),
             },
         )
@@ -701,7 +701,7 @@ async fn stop_tears_down_all_agent_work() {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: run("Do not use tools. Reply only PONG.", &model, id, &cwd),
+                request: Box::new(run("Do not use tools. Reply only PONG.", &model, id, &cwd)),
                 message_id: "m-3".into(),
             },
         )
@@ -753,14 +753,14 @@ async fn idle_reaper_spares_a_background_shell_until_it_wakes_the_agent() {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: run(
+                request: Box::new(run(
                     "This is an automated test in a disposable directory. Do exactly one thing, then end your turn at once without waiting for it: \
                      use the Bash tool with run_in_background=true to run exactly: sleep 45 && printf done > bg-done . \
                      Reply only STARTED. Later, when you are notified that the command finished, reply only FINISHED.",
                     &model,
                     id,
                     &cwd,
-                ),
+                )),
                 message_id: "m-1".into(),
             },
         )

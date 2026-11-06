@@ -135,7 +135,7 @@ fn ascii(s: &Source, light: bool) -> Vec<u8> {
 fn halftone(s: &Source, light: bool) -> Vec<u8> {
     let paper = if light { 255u8 } else { 0 };
     let mut out = vec![0u8; s.rgba.len()];
-    for px in out.chunks_exact_mut(4) {
+    for px in out.as_chunks_mut::<4>().0 {
         px.copy_from_slice(&[paper, paper, paper, 255]);
     }
     for y in (0..s.h).step_by(4) {
@@ -211,6 +211,17 @@ fn contrast(a: f32, b: f32) -> f32 {
     (hi + 0.05) / (lo + 0.05)
 }
 
+/// The text an artwork must stay readable behind, for
+/// [`wallpaper_safe_opacity`].
+#[derive(Debug, Clone, Copy, PartialEq, uniffi::Record)]
+pub struct WallpaperContrast {
+    pub text_rgb: u32,
+    pub background_rgb: u32,
+    pub region: f32,
+    pub min_contrast: f32,
+    pub max_opacity: f32,
+}
+
 /// The highest opacity the artwork may be drawn at over `background_rgb` so
 /// `text_rgb` keeps `min_contrast` (WCAG) against the *worst* part of the top
 /// `region` (0–1, fraction of the image height where text sits): the bright
@@ -221,12 +232,15 @@ pub fn wallpaper_safe_opacity(
     rgba: Vec<u8>,
     width: u32,
     height: u32,
-    text_rgb: u32,
-    background_rgb: u32,
-    region: f32,
-    min_contrast: f32,
-    max_opacity: f32,
+    goal: WallpaperContrast,
 ) -> f32 {
+    let WallpaperContrast {
+        text_rgb,
+        background_rgb,
+        region,
+        min_contrast,
+        max_opacity,
+    } = goal;
     if width == 0 || height == 0 || rgba.len() < (width * height * 4) as usize {
         return 0.0;
     }
@@ -317,31 +331,32 @@ mod tests {
         assert_eq!(&out[12..15], &[200, 100, 50]); // row 1 untouched
     }
 
+    fn goal(text_rgb: u32, background_rgb: u32) -> WallpaperContrast {
+        WallpaperContrast {
+            text_rgb,
+            background_rgb,
+            region: 1.0,
+            min_contrast: 4.5,
+            max_opacity: 1.0,
+        }
+    }
+
     #[test]
     fn safe_opacity_keeps_text_readable() {
         // Dark theme (light text on near-black): a white image must be faded
         // hard; a black image can show fully.
         let text = 0xE8E8EA;
         let bg = 0x060606;
-        let white =
-            wallpaper_safe_opacity(solid(8, 8, [255, 255, 255]), 8, 8, text, bg, 1.0, 4.5, 1.0);
+        let white = wallpaper_safe_opacity(solid(8, 8, [255, 255, 255]), 8, 8, goal(text, bg));
         assert!(white < 0.5, "{white}");
         let g = |v: f32| (v * 255.0 + (1.0 - v) * 6.0).round() as u32;
         let over = g(white) << 16 | g(white) << 8 | g(white);
         assert!(contrast(rel_luminance(text), rel_luminance(over)) >= 4.5 - 0.05);
-        let black = wallpaper_safe_opacity(solid(8, 8, [0, 0, 0]), 8, 8, text, bg, 1.0, 4.5, 1.0);
+        let black = wallpaper_safe_opacity(solid(8, 8, [0, 0, 0]), 8, 8, goal(text, bg));
         assert!((black - 1.0).abs() < 1e-6);
         // Light theme (dark text on white): a dark image is the threat.
-        let dark = wallpaper_safe_opacity(
-            solid(8, 8, [20, 20, 40]),
-            8,
-            8,
-            0x303035,
-            0xF3F3F5,
-            1.0,
-            4.5,
-            1.0,
-        );
+        let dark =
+            wallpaper_safe_opacity(solid(8, 8, [20, 20, 40]), 8, 8, goal(0x303035, 0xF3F3F5));
         assert!(dark < 0.75, "{dark}");
         assert!(dark > 0.2, "{dark}");
     }

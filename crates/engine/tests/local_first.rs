@@ -190,15 +190,15 @@ async fn serve_daemon_edge(
 
     let path = Arc::new(Mutex::new(String::new()));
     let captured = path.clone();
-    let Ok(ws) = tokio_tungstenite::accept_hdr_async(
-        stream,
-        move |request: &WsRequest, response: WsResponse| {
-            *captured.lock().unwrap() = request.uri().path().to_string();
-            Ok(response)
-        },
-    )
-    .await
-    else {
+    #[expect(
+        clippy::result_large_err,
+        reason = "tungstenite's handshake callback fixes its ErrorResponse type"
+    )]
+    let capture_path = move |request: &WsRequest, response: WsResponse| {
+        *captured.lock().unwrap() = request.uri().path().to_string();
+        Ok(response)
+    };
+    let Ok(ws) = tokio_tungstenite::accept_hdr_async(stream, capture_path).await else {
         return;
     };
     let path = path.lock().unwrap().clone();
@@ -236,11 +236,7 @@ async fn serve_daemon_edge(
                     "rows": [],
                     "presence": {}
                 });
-                if sink
-                    .send(WsMessage::Text(state.to_string().into()))
-                    .await
-                    .is_err()
-                {
+                if sink.send(WsMessage::Text(state.to_string())).await.is_err() {
                     return;
                 }
             }

@@ -69,12 +69,12 @@ where
 async fn send_text<S>(
     sink: &mut futures::stream::SplitSink<WebSocketStream<S>, WsMessage>,
     text: String,
-) -> Result<(), tokio_tungstenite::tungstenite::Error>
+) -> Result<(), Box<tokio_tungstenite::tungstenite::Error>>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     if text.len() <= FRAGMENT_BYTES {
-        return sink.send(WsMessage::Text(text)).await;
+        return sink.send(WsMessage::Text(text)).await.map_err(Box::new);
     }
     // A text message may split mid-codepoint: the receiver validates UTF-8
     // over the reassembled message, not per fragment.
@@ -91,5 +91,5 @@ where
         .await?;
         opcode = OpCode::Data(Data::Continue);
     }
-    sink.flush().await
+    sink.flush().await.map_err(Box::new)
 }

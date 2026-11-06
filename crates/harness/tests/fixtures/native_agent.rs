@@ -70,6 +70,10 @@ fn main() {
         return;
     }
     if args.get(1).is_some_and(|arg| arg == "--tree-child") {
+        #[expect(
+            clippy::zombie_processes,
+            reason = "the fixture leaves this process tree for the harness under test to find and kill"
+        )]
         let grandchild = tree_command().arg("--tree-leaf").spawn().unwrap();
         std::fs::write(
             &args[2],
@@ -165,6 +169,10 @@ fn spawn_tree() -> Vec<u32> {
     let path = std::env::current_dir()
         .unwrap()
         .join("descendant-pids.json");
+    #[expect(
+        clippy::zombie_processes,
+        reason = "the fixture leaves this process tree for the harness under test to find and kill"
+    )]
     let _child = tree_command()
         .arg("--tree-child")
         .arg(&path)
@@ -176,10 +184,10 @@ fn spawn_tree() -> Vec<u32> {
 fn await_tree(path: &std::path::Path) -> Vec<u32> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     loop {
-        if let Ok(bytes) = std::fs::read(&path) {
-            if let Ok(pids) = serde_json::from_slice(&bytes) {
-                return pids;
-            }
+        if let Ok(bytes) = std::fs::read(path)
+            && let Ok(pids) = serde_json::from_slice(&bytes)
+        {
+            return pids;
         }
         assert!(
             std::time::Instant::now() < deadline,

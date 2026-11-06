@@ -1321,15 +1321,27 @@ fn apply(cx: &mut App) {
 
 #[cfg(target_os = "macos")]
 fn refresh_system(cx: &mut App) {
-    use objc::runtime::{NO, Object};
-    use objc::{class, msg_send, sel, sel_impl};
-    let reduce = unsafe {
-        let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
-        let reduce: objc::runtime::BOOL =
-            msg_send![workspace, accessibilityDisplayShouldReduceMotion];
-        reduce != NO
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    let reduce: bool = unsafe {
+        let workspace: *mut AnyObject = msg_send![class!(NSWorkspace), sharedWorkspace];
+        msg_send![workspace, accessibilityDisplayShouldReduceMotion]
     };
     set_system(reduce, cx);
+}
+
+#[cfg(windows)]
+#[path = "motion/windows_pulse.rs"]
+mod windows_pulse;
+
+/// A bounded activation sheen for Fast service tier; GPUI handles reduced motion.
+pub fn fast_tier(
+    id: impl Into<ElementId>,
+    element: impl IntoElement + gpui::Styled + 'static,
+) -> impl IntoElement {
+    element.with_animation(id, Animation::new(Duration::from_millis(700)), |el, t| {
+        el.opacity(1.0 - 0.35 * (1.0 - t) * (std::f32::consts::PI * t).sin())
+    })
 }
 
 /// "Show animations in Windows" (Settings → Accessibility → Visual effects).
@@ -1963,18 +1975,4 @@ mod tests {
             assert!(!reduced_motion(cx));
         });
     }
-}
-
-#[cfg(windows)]
-#[path = "motion/windows_pulse.rs"]
-mod windows_pulse;
-
-/// A bounded activation sheen for Fast service tier; GPUI handles reduced motion.
-pub fn fast_tier(
-    id: impl Into<ElementId>,
-    element: impl IntoElement + gpui::Styled + 'static,
-) -> impl IntoElement {
-    element.with_animation(id, Animation::new(Duration::from_millis(700)), |el, t| {
-        el.opacity(1.0 - 0.35 * (1.0 - t) * (std::f32::consts::PI * t).sin())
-    })
 }

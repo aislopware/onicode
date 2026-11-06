@@ -1039,12 +1039,12 @@ fn replace(
         std::process::id(),
         super::now_secs()
     ));
-    std::fs::rename(&folder, &old).map_err(|e| {
+    std::fs::rename(folder, &old).map_err(|e| {
         let _ = std::fs::remove_dir_all(&tmp);
         format!("Couldn't update it: {e}")
     })?;
-    if let Err(error) = std::fs::rename(&tmp, &folder) {
-        let _ = std::fs::rename(&old, &folder);
+    if let Err(error) = std::fs::rename(&tmp, folder) {
+        let _ = std::fs::rename(&old, folder);
         let _ = std::fs::remove_dir_all(&tmp);
         return Err(format!("Couldn't update it: {error}"));
     }

@@ -1155,9 +1155,11 @@ fn visible_ref_count(refs: &[GitHistoryRef], available_width: f32) -> usize {
             .iter()
             .map(estimated_ref_badge_width)
             .sum::<f32>();
-        let overflow = (hidden > 0)
-            .then(|| estimated_ref_overflow_width(hidden))
-            .unwrap_or_default();
+        let overflow = if hidden > 0 {
+            estimated_ref_overflow_width(hidden)
+        } else {
+            Default::default()
+        };
         let gaps = item_count.saturating_sub(1) as f32 * HISTORY_REF_GAP;
         if badges + overflow + gaps <= available_width {
             visible = count;
@@ -3021,7 +3023,6 @@ impl GitHistory {
         column: GitHistoryColumn,
         left: HistoryDataColumn,
         index: usize,
-        drag: Option<HistoryColumnDragState>,
         widths: GitHistoryColumnWidths,
         theme: &Theme,
         cx: &mut Context<Self>,
@@ -3036,7 +3037,8 @@ impl GitHistory {
             GitHistoryColumn::Sha => "history-sha-header",
         };
         let resize = self.column_resize_handle(left, data_column, theme, cx);
-        let indicator = drag
+        let indicator = self
+            .column_drag
             .filter(|state| state.over == index && state.from != state.over)
             .map(|state| {
                 let place_after = state.from < state.over;
@@ -4175,7 +4177,6 @@ impl Render for GitHistory {
                 column,
                 previous,
                 index,
-                self.column_drag,
                 column_widths,
                 &theme,
                 cx,
@@ -4505,6 +4506,21 @@ impl Render for GitHistory {
 mod tests {
     use super::*;
 
+    /// The composer's deferred focus-lost fallback: restore a default focus
+    /// only after an in-flight handoff has had a frame to claim the window.
+    fn restore_focus_if_empty_on_next_frame<T: 'static>(
+        focus: gpui::FocusHandle,
+        window: &mut Window,
+        cx: &mut Context<T>,
+    ) {
+        window.on_next_frame(move |window, cx| {
+            if window.focused(cx).is_none() {
+                window.focus(&focus, cx);
+            }
+        });
+        cx.notify();
+    }
+
     struct HistorySearchFocusHarness {
         composer: Entity<ComposerInput>,
         search: Entity<GitHistorySearchControl>,
@@ -4518,7 +4534,7 @@ mod tests {
             let search = cx.new(|cx| GitHistorySearchControl::new(history, cx));
             let composer = cx.new(|cx| ComposerInput::new("Message", cx));
             let focus_lost = cx.on_focus_lost(window, |this, window, cx| {
-                crate::shell::restore_focus_if_empty_on_next_frame(
+                restore_focus_if_empty_on_next_frame(
                     this.composer.read(cx).focus_handle(cx),
                     window,
                     cx,

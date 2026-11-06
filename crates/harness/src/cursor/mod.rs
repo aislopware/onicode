@@ -1075,20 +1075,20 @@ fn map_shim_frame(frame: &Value, interrupted: bool) -> Vec<AgentEvent> {
                     // spawn and the subagent transcript starts the way
                     // every chat does. Top-level spawns only: nested
                     // spawns' interiors share their parent's doc.
-                    if name == "task" && parent.is_none() {
-                        if let Some(prompt) = args
+                    if name == "task"
+                        && parent.is_none()
+                        && let Some(prompt) = args
                             .get("prompt")
                             .or_else(|| args.get("description"))
                             .and_then(Value::as_str)
                             .filter(|p| !p.trim().is_empty())
-                        {
-                            events.push(AgentEvent::Subagent {
-                                parent_tool_use_id: id,
-                                event: Box::new(AgentEvent::UserMessage {
-                                    text: prompt.to_owned(),
-                                }),
-                            });
-                        }
+                    {
+                        events.push(AgentEvent::Subagent {
+                            parent_tool_use_id: id,
+                            event: Box::new(AgentEvent::UserMessage {
+                                text: prompt.to_owned(),
+                            }),
+                        });
                     }
                     events
                 }

@@ -136,7 +136,7 @@ async fn steering_never_aborts_a_running_tool() {
             CHAT,
             SessionCommandPayload::Run {
                 message_id: "call".into(),
-                request: RunRequest {
+                request: Box::new(RunRequest {
                     mcp: Some(McpServer {
                         name: "slow".into(),
                         command: "python3".into(),
@@ -162,7 +162,7 @@ async fn steering_never_aborts_a_running_tool() {
                     resume: None,
                     env: Default::default(),
                     extra_mcp: Vec::new(),
-                },
+                }),
             },
         )
         .unwrap();

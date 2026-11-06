@@ -72,7 +72,7 @@ fn start(core: &EngineCore, cwd: &std::path::Path, prompt: String) {
             CHAT,
             SessionCommandPayload::Run {
                 message_id: uuid::Uuid::new_v4().to_string(),
-                request: RunRequest {
+                request: Box::new(RunRequest {
                     mcp: None,
                     prompt,
                     harness: Some(HarnessId::Cursor),
@@ -89,7 +89,7 @@ fn start(core: &EngineCore, cwd: &std::path::Path, prompt: String) {
                     resume: None,
                     env: Default::default(),
                     extra_mcp: Vec::new(),
-                },
+                }),
             },
         )
         .unwrap();

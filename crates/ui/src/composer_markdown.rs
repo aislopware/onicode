@@ -456,36 +456,36 @@ pub fn decorations(text: &str, active: Range<usize>) -> Vec<(Range<usize>, Strin
     }
     let mut at = 0;
     for line in text.split('\n') {
-        if !is_thematic_break(line) {
-            if let Some(prefix) = list_prefix(line) {
-                let marker = at + prefix.indent;
-                let code_index = code_ranges.partition_point(|range| range.end <= marker);
-                // A single '-' can be a setext underline, not a list item.
-                // Preserve parsed heading source regardless of active line.
-                let heading_index = heading_ranges.partition_point(|range| range.end <= marker);
-                let in_heading = heading_ranges
-                    .get(heading_index)
-                    .is_some_and(|range| range.contains(&marker));
-                if !in_heading
-                    && !code_ranges
-                        .get(code_index)
-                        .is_some_and(|range| range.contains(&marker))
-                {
-                    let task_index = tasks.partition_point(|(range, _)| range.start < marker);
-                    let task = tasks
-                        .get(task_index)
-                        .filter(|(range, _)| range.end <= at + prefix.end);
-                    if let Some((range, checked)) = task {
-                        edits.push((
-                            prefix.bullet.map_or(range.start, |bullet| at + bullet)..range.end,
-                            if *checked { "☑" } else { "☐" }.into(),
-                        ));
-                    } else if let Some(bullet) = prefix.bullet {
-                        // Bullets retain a one-character source mapping, so they
-                        // stay editable without flashing back to raw markers
-                        // whenever the caret enters their line.
-                        edits.push((at + bullet..at + bullet + 1, "•".into()));
-                    }
+        if !is_thematic_break(line)
+            && let Some(prefix) = list_prefix(line)
+        {
+            let marker = at + prefix.indent;
+            let code_index = code_ranges.partition_point(|range| range.end <= marker);
+            // A single '-' can be a setext underline, not a list item.
+            // Preserve parsed heading source regardless of active line.
+            let heading_index = heading_ranges.partition_point(|range| range.end <= marker);
+            let in_heading = heading_ranges
+                .get(heading_index)
+                .is_some_and(|range| range.contains(&marker));
+            if !in_heading
+                && !code_ranges
+                    .get(code_index)
+                    .is_some_and(|range| range.contains(&marker))
+            {
+                let task_index = tasks.partition_point(|(range, _)| range.start < marker);
+                let task = tasks
+                    .get(task_index)
+                    .filter(|(range, _)| range.end <= at + prefix.end);
+                if let Some((range, checked)) = task {
+                    edits.push((
+                        prefix.bullet.map_or(range.start, |bullet| at + bullet)..range.end,
+                        if *checked { "☑" } else { "☐" }.into(),
+                    ));
+                } else if let Some(bullet) = prefix.bullet {
+                    // Bullets retain a one-character source mapping, so they
+                    // stay editable without flashing back to raw markers
+                    // whenever the caret enters their line.
+                    edits.push((at + bullet..at + bullet + 1, "•".into()));
                 }
             }
         }

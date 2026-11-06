@@ -132,7 +132,7 @@ fn send(core: &EngineCore, id: &str, prompt: &str) {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: RunRequest {
+                request: Box::new(RunRequest {
                     mcp: None,
                     prompt: prompt.into(),
                     harness: None,
@@ -149,7 +149,7 @@ fn send(core: &EngineCore, id: &str, prompt: &str) {
                     resume: None,
                     env: Default::default(),
                     extra_mcp: Vec::new(),
-                },
+                }),
                 message_id: id.into(),
             },
         )

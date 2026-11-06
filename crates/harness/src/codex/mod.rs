@@ -27,8 +27,8 @@
 //!   modes; auto-accept edits is `"untrusted"` + `workspace-write` (every
 //!   command but codex's known-safe reads is asked, even inside the
 //!   sandbox; file changes are accepted); supervised is `"untrusted"` +
-//!   `read-only`. A title run stays `"never"`
-//!   + `read-only`. `item/commandExecution/requestApproval`,
+//!   `read-only`. A title run stays `"never"` +
+//!   `read-only`. `item/commandExecution/requestApproval`,
 //!   `item/fileChange/requestApproval` and `item/permissions/requestApproval`
 //!   the mode does not cover round-trip through
 //!   [`RunControls::request_input`] as a yes/no question (a refusal
@@ -1249,12 +1249,11 @@ fn prompt_input(text: &str) -> Value {
     let mut input = vec![json!({"type": "text", "text": invocation_prompt(text)})];
     let mut seen = std::collections::HashSet::new();
     for (_, invocation) in invocation_links(text) {
-        if let Invocation::Skill { name, path, .. } = invocation {
-            if !onicode_proto::invocation::native_skill_identity(&path)
-                && seen.insert((name.clone(), path.clone()))
-            {
-                input.push(json!({"type": "skill", "name": name, "path": path}));
-            }
+        if let Invocation::Skill { name, path, .. } = invocation
+            && !onicode_proto::invocation::native_skill_identity(&path)
+            && seen.insert((name.clone(), path.clone()))
+        {
+            input.push(json!({"type": "skill", "name": name, "path": path}));
         }
     }
     Value::Array(input)

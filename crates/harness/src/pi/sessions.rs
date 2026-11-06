@@ -71,10 +71,10 @@ impl Store {
     }
     pub fn mark_submitted(&self, id: &str) -> Result<(), HarnessError> {
         let mut record = json_file(&self.key(id));
-        if let Some(map) = record.as_object_mut() {
-            if map.remove("emptyState").is_some() {
-                self.write(id, &record)?;
-            }
+        if let Some(map) = record.as_object_mut()
+            && map.remove("emptyState").is_some()
+        {
+            self.write(id, &record)?;
         }
         Ok(())
     }

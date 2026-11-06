@@ -2395,7 +2395,7 @@ impl AcpHarness {
         method: AuthMethod,
         exe: &Path,
         args: &[String],
-        command: &(dyn Fn(&[String], &[(String, String)]) -> Command + Sync),
+        command: &CommandBuilder<'_>,
         on_progress: &std::sync::Arc<dyn Fn(SignInProgress) + Send + Sync>,
     ) -> Result<(), HarnessError> {
         let display_name = self.spec.display_name;
@@ -4225,6 +4225,9 @@ fn handle_server_request(
         }
     }
 }
+
+/// Builds the sign-in command from its arguments and extra environment.
+type CommandBuilder<'a> = dyn Fn(&[String], &[(String, String)]) -> Command + Sync + 'a;
 
 type RequestInputFn = Box<
     dyn Fn(Vec<UserInputQuestion>) -> tokio::sync::oneshot::Receiver<Vec<UserInputAnswer>>

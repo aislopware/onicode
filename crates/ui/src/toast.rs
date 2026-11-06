@@ -94,8 +94,11 @@ impl Glide {
 #[derive(Clone)]
 struct ToastAction {
     label: SharedString,
-    run: Rc<dyn Fn(&mut Window, &mut App)>,
+    run: ToastRun,
 }
+
+/// What a toast button does when clicked.
+type ToastRun = Rc<dyn Fn(&mut Window, &mut App)>;
 
 struct Toast {
     id: u64,

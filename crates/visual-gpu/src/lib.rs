@@ -186,7 +186,12 @@ impl Gpu {
             for y in 0..height as usize {
                 let src = &mapped[y * row as usize..][..width as usize * 4];
                 let dst = &mut bgra[y * width as usize * 4..][..width as usize * 4];
-                for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
+                for (d, s) in dst
+                    .as_chunks_mut::<4>()
+                    .0
+                    .iter_mut()
+                    .zip(src.as_chunks::<4>().0.iter())
+                {
                     d[0] = s[2];
                     d[1] = s[1];
                     d[2] = s[0];
@@ -224,7 +229,7 @@ impl Gpu {
 #[cfg(test)]
 pub(crate) fn dump_ppm(frame: &Frame, path: &str) {
     let mut out = format!("P6\n{} {}\n255\n", frame.width, frame.height).into_bytes();
-    for p in frame.bgra.chunks_exact(4) {
+    for p in frame.bgra.as_chunks::<4>().0 {
         // Over a mid grey, so transparency reads.
         let a = f32::from(p[3]) / 255.0;
         for ch in [p[2], p[1], p[0]] {

@@ -3425,7 +3425,7 @@ async fn post_prompt(
             ),
             Protocol::V2 => (
                 format!("/api/session/{session_id}/command"),
-                command_body_v2(server.version.get(), name, &arguments, attachments),
+                command_body_v2(server.version.get(), name, arguments, attachments),
             ),
         };
         // A command's own configured agent still wins over this one.
@@ -4406,7 +4406,7 @@ fn part_snapshot_events(
     let kind = part.get("type").and_then(Value::as_str).unwrap_or_default();
     match kind {
         "text" | "reasoning" => {
-            if kind == "text" && feed.assistant_messages.get(message_id).is_none() {
+            if kind == "text" && !feed.assistant_messages.contains_key(message_id) {
                 // Role unknown: hold the part instead of guessing (dedup by
                 // part id — snapshots re-deliver).
                 if !feed
@@ -4447,14 +4447,13 @@ fn part_snapshot_events(
             }
             if feed.assistant_messages.get(message_id) != Some(&true) {
                 // Reasoning ahead of its message.updated: hold it too.
-                if kind == "reasoning" {
-                    if !feed
+                if kind == "reasoning"
+                    && !feed
                         .pending_parts
                         .iter()
                         .any(|p| p.get("id").and_then(Value::as_str) == Some(part_id))
-                    {
-                        feed.pending_parts.push(part.clone());
-                    }
+                {
+                    feed.pending_parts.push(part.clone());
                 }
                 return Vec::new();
             }

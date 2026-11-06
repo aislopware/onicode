@@ -194,12 +194,11 @@ impl Render for ImagePreview {
                 MAX_MEDIA_BYTES.saturating_sub(source.bytes),
                 self.display.as_ref(),
             );
-            if let Some(old) = self.display.replace(display.clone()) {
-                if !Arc::ptr_eq(&old.image, &display.image)
-                    && !Arc::ptr_eq(&old.image, &source.image)
-                {
-                    release_media([old], cx);
-                }
+            if let Some(old) = self.display.replace(display.clone())
+                && !Arc::ptr_eq(&old.image, &display.image)
+                && !Arc::ptr_eq(&old.image, &source.image)
+            {
+                release_media([old], cx);
             }
             root = root.child(self.viewer.render(
                 display.image,

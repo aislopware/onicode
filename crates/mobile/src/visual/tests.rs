@@ -264,7 +264,7 @@ fn a_visual_loads_measures_its_row_and_reacts_to_controls() {
             .unwrap(),
         42
     );
-    assert_eq!(open.slot.height(), Some(display.height));
+    assert_eq!(open.slot.snapshot().1, Some(display.height));
 
     let id = |kind: fn(&ControlKind) -> bool, d: &VisualDisplay| {
         d.controls.iter().find(|c| kind(&c.kind)).unwrap().id
@@ -458,11 +458,13 @@ fn scenes_and_shaders_render_premultiplied_frames_on_the_gpu() {
         assert!(
             image
                 .bgra
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .all(|p| p[0] <= p[3] && p[1] <= p[3] && p[2] <= p[3])
         );
         assert!(
-            image.bgra.chunks_exact(4).any(|p| p[3] > 0),
+            image.bgra.as_chunks::<4>().0.iter().any(|p| p[3] > 0),
             "something drew"
         );
     }

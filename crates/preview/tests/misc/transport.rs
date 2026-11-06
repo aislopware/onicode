@@ -18,10 +18,7 @@ impl Connector for Echo {
         active.fetch_add(1, Ordering::SeqCst);
         tokio::spawn(async move {
             let mut bytes = [0; 8192];
-            loop {
-                let Ok(length) = server.read(&mut bytes).await else {
-                    break;
-                };
+            while let Ok(length) = server.read(&mut bytes).await {
                 if length == 0 {
                     break;
                 }

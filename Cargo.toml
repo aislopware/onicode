@@ -35,7 +35,15 @@ members = [
     "crates/zatex",
     "crates/plugin-guard",
     "apps/onicode",
+    # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
+    "crates/net",
+    "crates/net-sim",
+    "crates/tailnet",
+    "crates/peer",
 ]
+# The vendored QUIC crates are workspace roots of their own, reached only through
+# [patch.crates-io] below.
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.1.0"
@@ -75,6 +83,24 @@ zatex = { path = "crates/zatex" }
 onicode-visual = { path = "crates/visual" }
 onicode-visual-gpu = { path = "crates/visual-gpu" }
 onicode-plugin-guard = { path = "crates/plugin-guard" }
+
+# Peer transport over the tailnet (.research/p2p-transport.md §5.1).
+onicode-net = { path = "crates/net" }
+onicode-net-sim = { path = "crates/net-sim" }
+onicode-tailnet = { path = "crates/tailnet" }
+onicode-peer = { path = "crates/peer" }
+# n0's QUIC, held to 1.4.x: noq-proto and noq-udp are the vendored, patched copies
+# (vendor/*/SLOPTY.md), and the patches are written against 1.4.0.
+noq = { version = "~1.4.0", default-features = false, features = ["runtime-tokio"] }
+noq-proto = { version = "1.4.0", default-features = false }
+bytes = "1.12"
+parking_lot = "0.12.5"
+# `all`: binding a socket to the tailnet's interface (`bind_device_by_index_v4`/`_v6`).
+socket2 = { version = "0.6.5", features = ["all"] }
+# Tailscale's LocalAPI is HTTP/1.1 over a Unix socket or loopback TCP.
+hyper = "1.11"
+hyper-util = "0.1.20"
+http-body-util = "0.1.5"
 
 # CRDT
 loro = "1.17"
@@ -232,3 +258,17 @@ inherits = "release"
 lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
+
+# askama 0.16.1 diffs canonical template paths against a non-canonical caller directory, so
+# uniffi_bindgen fails to build under a symlinked ~/.cargo/registry. aislopware/askama main
+# carries the fix (scripts/upstream/sources.toml); drop this once upstream has it.
+[patch.crates-io]
+askama = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
+askama_derive = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
+askama_macros = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
+askama_parser = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
+
+# The QUIC stack under onicode-net: n0's noq-proto and noq-udp with slopty's and axolotty's
+# patches (vendor/noq-proto/SLOPTY.md, vendor/noq-udp/SLOPTY.md list each).
+noq-proto = { path = "vendor/noq-proto" }
+noq-udp = { path = "vendor/noq-udp" }

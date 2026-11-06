@@ -85,7 +85,6 @@ impl NotificationsPage {
         desktop: bool,
         background_only: bool,
         agent_updates: bool,
-        _cx: &mut Context<Self>,
     ) -> Self {
         Self {
             scroll: widgets::PageScroll::default(),

@@ -141,17 +141,16 @@ impl MockEdge {
                                 let mut nudge_chat = None;
                                 if let Ok(body) = serde_json::from_slice::<serde_json::Value>(
                                     &request[end + 4..end + 4 + length],
-                                ) {
-                                    if let Some(chat) = body["chatId"].as_str() {
-                                        nudge_chat = Some(chat.to_owned());
-                                        let rows = shared
-                                            .rooms
-                                            .lock()
-                                            .unwrap()
-                                            .get(chat)
-                                            .map_or(0, |r| r.rows.len());
-                                        shared.nudges.lock().unwrap().push((chat.to_owned(), rows));
-                                    }
+                                ) && let Some(chat) = body["chatId"].as_str()
+                                {
+                                    nudge_chat = Some(chat.to_owned());
+                                    let rows = shared
+                                        .rooms
+                                        .lock()
+                                        .unwrap()
+                                        .get(chat)
+                                        .map_or(0, |r| r.rows.len());
+                                    shared.nudges.lock().unwrap().push((chat.to_owned(), rows));
                                 }
                                 let status = nudge_chat
                                     .as_ref()

@@ -195,6 +195,9 @@ fn is_auth_or_missing(o: &ProbeOutcome) -> bool {
         || msg.contains("no such file")
 }
 
+/// Builds a fresh harness for one survey run.
+type HarnessCtor = fn() -> Box<dyn Harness>;
+
 #[tokio::test]
 #[ignore = "runs every installed+authenticated agent CLI; costs a few small prompts each"]
 async fn real_all_harnesses_quiet_survey() {
@@ -202,7 +205,7 @@ async fn real_all_harnesses_quiet_survey() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(3);
-    let agents: Vec<(&str, fn() -> Box<dyn Harness>)> = vec![
+    let agents: Vec<(&str, HarnessCtor)> = vec![
         ("devin", || Box::new(AcpHarness::devin())),
         ("grok", || Box::new(AcpHarness::grok())),
         ("hermes", || Box::new(AcpHarness::hermes())),

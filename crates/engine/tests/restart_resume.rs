@@ -150,7 +150,7 @@ fn queue_run(core: &EngineCore, prompt: &str, cwd: &str, message_id: &str) {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: run_request(prompt, cwd),
+                request: Box::new(run_request(prompt, cwd)),
                 message_id: message_id.into(),
             },
         )
@@ -1266,9 +1266,9 @@ async fn real_claude_remembers_codeword_across_engine_restart() {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: real_request(
+                request: Box::new(real_request(
                     "Remember the codeword: PINEAPPLE. Reply with exactly: stored",
-                ),
+                )),
                 message_id: "msg-user-1".into(),
             },
         )
@@ -1292,9 +1292,9 @@ async fn real_claude_remembers_codeword_across_engine_restart() {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: real_request(
+                request: Box::new(real_request(
                     "What was the codeword I told you earlier? Reply with just the codeword.",
-                ),
+                )),
                 message_id: "msg-user-2".into(),
             },
         )

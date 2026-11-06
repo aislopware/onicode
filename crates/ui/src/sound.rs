@@ -85,9 +85,9 @@ pub fn prepare_appshot() {
 
 #[cfg(target_os = "macos")]
 mod macos_appshot {
-    use objc::rc::{StrongPtr, autoreleasepool};
-    use objc::runtime::Object;
-    use objc::{class, msg_send, sel, sel_impl};
+    use objc2::rc::{Retained, autoreleasepool};
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
     use std::sync::{OnceLock, mpsc};
 
     #[link(name = "AVFoundation", kind = "framework")]
@@ -103,18 +103,18 @@ mod macos_appshot {
                 std::thread::Builder::new()
                     .name("appshot-audio".into())
                     .spawn(move || {
-                        let player = autoreleasepool(load);
+                        let player = autoreleasepool(|_| load());
                         while rx.recv().is_ok() {
                             if std::env::var_os(super::DISABLE_ENV).is_some() {
                                 continue;
                             }
                             let started = std::time::Instant::now();
                             let played = player.as_ref().is_some_and(|player| {
-                                autoreleasepool(|| unsafe {
+                                autoreleasepool(|_| unsafe {
                                     // Pause preserves prepared audio resources; stop would discard them.
-                                    let _: () = msg_send![**player, pause];
-                                    let _: () = msg_send![**player, setCurrentTime: 0.0_f64];
-                                    let played: bool = msg_send![**player, play];
+                                    let _: () = msg_send![&**player, pause];
+                                    let _: () = msg_send![&**player, setCurrentTime: 0.0_f64];
+                                    let played: bool = msg_send![&**player, play];
                                     played
                                 })
                             });
@@ -134,9 +134,9 @@ mod macos_appshot {
             .as_ref()
     }
 
-    fn load() -> Option<StrongPtr> {
+    fn load() -> Option<Retained<AnyObject>> {
         let player = decode()?;
-        let ready: bool = unsafe { msg_send![*player, prepareToPlay] };
+        let ready: bool = unsafe { msg_send![&*player, prepareToPlay] };
         if !ready {
             tracing::warn!("Could not prepare native Appshot audio; using system player");
             return None;
@@ -144,38 +144,40 @@ mod macos_appshot {
         Some(player)
     }
 
-    fn decode() -> Option<StrongPtr> {
+    fn decode() -> Option<Retained<AnyObject>> {
         unsafe {
-            let data: *mut Object = msg_send![class!(NSData),
-                dataWithBytes: super::SOUND_APPSHOT.as_ptr()
+            let data: *mut AnyObject = msg_send![class!(NSData),
+                dataWithBytes: super::SOUND_APPSHOT.as_ptr().cast::<std::ffi::c_void>(),
                 length: super::SOUND_APPSHOT.len()];
-            let allocated: *mut Object = msg_send![class!(AVAudioPlayer), alloc];
-            let mut error: *mut Object = std::ptr::null_mut();
-            let player: *mut Object = msg_send![allocated, initWithData: data error: &mut error];
+            let allocated: *mut AnyObject = msg_send![class!(AVAudioPlayer), alloc];
+            let mut error: *mut AnyObject = std::ptr::null_mut();
+            let player: *mut AnyObject =
+                msg_send![allocated, initWithData: data, error: &mut error];
             if player.is_null() {
                 tracing::warn!("Could not decode native Appshot audio; using system player");
                 return None;
             }
-            Some(StrongPtr::new(player))
+            // `init` returned the object with +1 retain count; take ownership.
+            Retained::from_raw(player)
         }
     }
 
     #[test]
     fn embedded_appshot_decodes_natively_without_playback() {
-        autoreleasepool(|| {
+        autoreleasepool(|_| {
             let player = decode().expect("embedded Appshot should decode in AVAudioPlayer");
-            let duration: f64 = unsafe { msg_send![*player, duration] };
-            let playing: bool = unsafe { msg_send![*player, isPlaying] };
+            let duration: f64 = unsafe { msg_send![&*player, duration] };
+            let playing: bool = unsafe { msg_send![&*player, isPlaying] };
             assert!((duration - 0.67).abs() < 0.001);
             assert!(!playing);
         });
     }
 
     pub(super) fn play() -> bool {
-        match sender().map(|tx| tx.try_send(())) {
-            Some(Ok(()) | Err(mpsc::TrySendError::Full(()))) => true,
-            _ => false,
-        }
+        matches!(
+            sender().map(|tx| tx.try_send(())),
+            Some(Ok(()) | Err(mpsc::TrySendError::Full(())))
+        )
     }
 }
 

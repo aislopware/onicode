@@ -32,7 +32,7 @@ enum Incoming {
     },
     Signal {
         from: String,
-        signal: Signal,
+        signal: Box<Signal>,
     },
 }
 pub async fn run(
@@ -155,9 +155,11 @@ async fn connect(
     request
         .headers_mut()
         .insert("authorization", format!("Bearer {token}").parse()?);
-    let mut websocket_config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default();
-    websocket_config.max_message_size = Some(1024 * 1024);
-    websocket_config.max_frame_size = Some(1024 * 1024);
+    let websocket_config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
+        max_message_size: Some(1024 * 1024),
+        max_frame_size: Some(1024 * 1024),
+        ..Default::default()
+    };
     let (socket, _) = tokio::time::timeout(
         Duration::from_secs(10),
         tokio_tungstenite::connect_async_with_config(request, Some(websocket_config), false),
@@ -212,7 +214,7 @@ async fn connect(
                             Incoming::Signal { from, signal } => {
                                 anyhow::ensure!(negotiations.len() < 16, "too many concurrent preview negotiations");
                                 let peers = peers.clone();
-                                negotiations.spawn(async move { if let Err(error) = peers.signal(&from, signal).await { tracing::debug!(%error, "preview negotiation failed"); } });
+                                negotiations.spawn(async move { if let Err(error) = peers.signal(&from, *signal).await { tracing::debug!(%error, "preview negotiation failed"); } });
                             }
                         }
                     }

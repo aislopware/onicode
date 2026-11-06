@@ -37,6 +37,10 @@ async fn coordinator() -> String {
                     ErrorResponse, Request, Response,
                 };
                 let mut device = String::new();
+                #[expect(
+                    clippy::result_large_err,
+                    reason = "tungstenite's handshake Callback fixes the error type to ErrorResponse"
+                )]
                 let admit = |request: &Request, response: Response| {
                     let query = request.uri().query().unwrap_or_default();
                     let mut sign_in = false;

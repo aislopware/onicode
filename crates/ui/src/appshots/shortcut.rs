@@ -173,8 +173,12 @@ pub fn set_recording(recording: bool) {
     update(|preferences| preferences.recording = recording);
 }
 
-pub fn validate_shortcut(combo: &str) -> Result<(), ()> {
-    Shortcut::parse(combo).map(|_| ())
+pub fn is_valid_shortcut(combo: &str) -> bool {
+    Shortcut::parse(combo).is_ok()
+}
+
+pub(crate) fn capture_allowed() -> bool {
+    current().is_some()
 }
 
 #[cfg(test)]
@@ -212,8 +216,4 @@ mod tests {
             "CTRL+SHIFT+Page_Up"
         );
     }
-}
-
-pub(crate) fn capture_allowed() -> bool {
-    current().is_some()
 }

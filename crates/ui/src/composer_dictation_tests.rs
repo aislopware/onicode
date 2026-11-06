@@ -290,7 +290,7 @@ fn dictation_cancelled_native_capture_drops_pending_send(cx: &mut TestAppContext
 #[gpui::test]
 fn dictation_releasing_input_releases_microphone(cx: &mut TestAppContext) {
     let input = cx.new(|cx| ComposerInput::new("Draft", cx));
-    let fake = input.update(cx, |input, cx| start(input, cx));
+    let fake = input.update(cx, start);
     drop(input);
     cx.update(|_| {}); // Entity cleanup runs at the end of the update.
     assert_eq!(fake.borrow().drops, 1);
@@ -404,10 +404,10 @@ fn dictation_queue_save_waits_for_final_and_cancel_drops_capture(cx: &mut TestAp
         );
     });
     composer.update(cx, |composer, cx| {
-        let fake = composer.input.update(cx, |input, cx| start(input, cx));
+        let fake = composer.input.update(cx, start);
         composer.cancel_queue_edit(cx);
         assert_eq!(fake.borrow().drops, 1);
-        let fake = composer.input.update(cx, |input, cx| start(input, cx));
+        let fake = composer.input.update(cx, start);
         composer.clear_queue_edit(cx);
         assert_eq!(
             fake.borrow().drops,

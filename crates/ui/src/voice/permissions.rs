@@ -5,10 +5,10 @@ use onicode_proto::voice::VoiceRejection;
 
 pub(super) async fn microphone() -> Result<(), VoiceRejection> {
     #[cfg(target_os = "macos")]
-    if let Some(reply) = macos::request()? {
-        if !reply.await.map_err(|_| VoiceRejection::DeviceUnavailable)? {
-            return Err(VoiceRejection::MicrophonePermissionDenied);
-        }
+    if let Some(reply) = macos::request()?
+        && !reply.await.map_err(|_| VoiceRejection::DeviceUnavailable)?
+    {
+        return Err(VoiceRejection::MicrophonePermissionDenied);
     }
     Ok(())
 }

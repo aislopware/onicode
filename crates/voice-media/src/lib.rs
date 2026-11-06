@@ -372,6 +372,91 @@ pub fn verify_runtime(root: &Path) -> Result<std::path::PathBuf, VoiceRejection>
     Ok(root.join(HELPER))
 }
 
+/// Desktop implementation shared by UIs; permission belongs to the viewport.
+/// Instantiate one per call. Closing cannot wait behind a locked helper pipe.
+pub struct DesktopMedia {
+    path: std::path::PathBuf,
+    host: tokio::sync::Mutex<Option<NativeHost>>,
+    stop: tokio_util::sync::CancellationToken,
+}
+impl DesktopMedia {
+    /// See [`media_helper`]: the local standalone Codex unless a development
+    /// runtime is set explicitly.
+    pub fn for_codex(codex_executable: Option<&Path>) -> Result<Self, VoiceRejection> {
+        Ok(Self {
+            path: media_helper(codex_executable)?,
+            host: Default::default(),
+            stop: Default::default(),
+        })
+    }
+}
+#[async_trait::async_trait]
+impl onicode_voice_session::VoiceMediaEndpoint for DesktopMedia {
+    async fn prepare(&self) -> Result<(), VoiceRejection> {
+        let host = NativeHost::open(&self.path, self.stop.clone()).await?;
+        if self.stop.is_cancelled() {
+            return Err(VoiceRejection::InvalidLease);
+        }
+        *self.host.lock().await = Some(host);
+        Ok(())
+    }
+    async fn offer(&self) -> Result<onicode_proto::voice::remote::Sdp, VoiceRejection> {
+        let mut state = self.host.lock().await;
+        let host = state.as_mut().ok_or(VoiceRejection::InvalidLease)?;
+        let offer = host.exchange(json!({"type":"startTransport"}), 20).await?;
+        if offer["type"] != "offer" {
+            return Err(VoiceRejection::Protocol);
+        }
+        onicode_proto::voice::remote::Sdp::new(
+            offer["sdp"]
+                .as_str()
+                .ok_or(VoiceRejection::Protocol)?
+                .into(),
+        )
+    }
+    async fn apply_answer(
+        &self,
+        answer: onicode_proto::voice::remote::Sdp,
+    ) -> Result<(), VoiceRejection> {
+        let mut state = self.host.lock().await;
+        let host = state.as_mut().ok_or(VoiceRejection::InvalidLease)?;
+        host.expect(
+            json!({"type":"applyAnswer","sdp":answer.expose()}),
+            "transportReady",
+            20,
+        )
+        .await?;
+        host.open_devices().await?;
+        host.expect(json!({"type":"setAudioControls","controls":{"microphoneMuted":true,"speakerSuppressed":true}}),"audioControlsApplied",5).await
+    }
+    async fn set_muted(&self, muted: bool) -> Result<(), VoiceRejection> {
+        self.host
+            .lock()
+            .await
+            .as_mut()
+            .ok_or(VoiceRejection::InvalidLease)?
+            .controls(muted)
+            .await
+    }
+    async fn levels(&self) -> Result<(u16, u16), VoiceRejection> {
+        self.host
+            .lock()
+            .await
+            .as_mut()
+            .ok_or(VoiceRejection::InvalidLease)?
+            .levels()
+            .await
+    }
+    fn close(&self) {
+        self.stop.cancel();
+    }
+}
+impl Drop for DesktopMedia {
+    fn drop(&mut self) {
+        self.stop.cancel();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -577,90 +662,5 @@ mod tests {
         std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
         let result = NativeHost::open(&helper, Default::default()).await;
         assert_eq!(result.err(), Some(VoiceRejection::NativeRuntimeUnavailable));
-    }
-}
-
-/// Desktop implementation shared by UIs; permission belongs to the viewport.
-/// Instantiate one per call. Closing cannot wait behind a locked helper pipe.
-pub struct DesktopMedia {
-    path: std::path::PathBuf,
-    host: tokio::sync::Mutex<Option<NativeHost>>,
-    stop: tokio_util::sync::CancellationToken,
-}
-impl DesktopMedia {
-    /// See [`media_helper`]: the local standalone Codex unless a development
-    /// runtime is set explicitly.
-    pub fn for_codex(codex_executable: Option<&Path>) -> Result<Self, VoiceRejection> {
-        Ok(Self {
-            path: media_helper(codex_executable)?,
-            host: Default::default(),
-            stop: Default::default(),
-        })
-    }
-}
-#[async_trait::async_trait]
-impl onicode_voice_session::VoiceMediaEndpoint for DesktopMedia {
-    async fn prepare(&self) -> Result<(), VoiceRejection> {
-        let host = NativeHost::open(&self.path, self.stop.clone()).await?;
-        if self.stop.is_cancelled() {
-            return Err(VoiceRejection::InvalidLease);
-        }
-        *self.host.lock().await = Some(host);
-        Ok(())
-    }
-    async fn offer(&self) -> Result<onicode_proto::voice::remote::Sdp, VoiceRejection> {
-        let mut state = self.host.lock().await;
-        let host = state.as_mut().ok_or(VoiceRejection::InvalidLease)?;
-        let offer = host.exchange(json!({"type":"startTransport"}), 20).await?;
-        if offer["type"] != "offer" {
-            return Err(VoiceRejection::Protocol);
-        }
-        onicode_proto::voice::remote::Sdp::new(
-            offer["sdp"]
-                .as_str()
-                .ok_or(VoiceRejection::Protocol)?
-                .into(),
-        )
-    }
-    async fn apply_answer(
-        &self,
-        answer: onicode_proto::voice::remote::Sdp,
-    ) -> Result<(), VoiceRejection> {
-        let mut state = self.host.lock().await;
-        let host = state.as_mut().ok_or(VoiceRejection::InvalidLease)?;
-        host.expect(
-            json!({"type":"applyAnswer","sdp":answer.expose()}),
-            "transportReady",
-            20,
-        )
-        .await?;
-        host.open_devices().await?;
-        host.expect(json!({"type":"setAudioControls","controls":{"microphoneMuted":true,"speakerSuppressed":true}}),"audioControlsApplied",5).await
-    }
-    async fn set_muted(&self, muted: bool) -> Result<(), VoiceRejection> {
-        self.host
-            .lock()
-            .await
-            .as_mut()
-            .ok_or(VoiceRejection::InvalidLease)?
-            .controls(muted)
-            .await
-    }
-    async fn levels(&self) -> Result<(u16, u16), VoiceRejection> {
-        self.host
-            .lock()
-            .await
-            .as_mut()
-            .ok_or(VoiceRejection::InvalidLease)?
-            .levels()
-            .await
-    }
-    fn close(&self) {
-        self.stop.cancel();
-    }
-}
-impl Drop for DesktopMedia {
-    fn drop(&mut self) {
-        self.stop.cancel();
     }
 }

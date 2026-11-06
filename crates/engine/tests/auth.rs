@@ -327,7 +327,9 @@ async fn a_fresh_ticket_is_used_before_the_sign_in_is_announced() {
     let edge = StubEdge::start().await;
     let dir = tempfile::tempdir().expect("tempdir");
     let auth = Auth::new(workos_config(&edge.url(), dir.path()));
-    let seen: Arc<Mutex<Vec<(String, AuthState, Option<String>, bool)>>> = Arc::default();
+    /// (user, state, step-up ticket, bearer works) at each fresh ticket.
+    type Seen = (String, AuthState, Option<String>, bool);
+    let seen: Arc<Mutex<Vec<Seen>>> = Arc::default();
     let (record, probe) = (seen.clone(), auth.clone());
     auth.on_fresh_ticket(Arc::new(move |user: String| {
         let (record, probe) = (record.clone(), probe.clone());

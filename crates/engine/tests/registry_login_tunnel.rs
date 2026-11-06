@@ -42,6 +42,10 @@ async fn coordinator() -> String {
             tokio::spawn(async move {
                 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
                 let mut device = String::new();
+                #[expect(
+                    clippy::result_large_err,
+                    reason = "tungstenite's handshake callback fixes its ErrorResponse type"
+                )]
                 let admit = |request: &Request, response: Response| {
                     let query = request.uri().query().unwrap_or_default();
                     for (key, value) in query.split('&').filter_map(|p| p.split_once('=')) {
@@ -59,7 +63,7 @@ async fn coordinator() -> String {
                 sockets.lock().await.insert(device.clone(), tx);
                 tokio::spawn(async move {
                     while let Some(text) = rx.recv().await {
-                        if write.send(Message::Text(text.into())).await.is_err() {
+                        if write.send(Message::Text(text)).await.is_err() {
                             break;
                         }
                     }

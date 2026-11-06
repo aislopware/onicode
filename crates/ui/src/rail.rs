@@ -178,9 +178,7 @@ pub fn rail_height(n: usize) -> f32 {
 /// The rail window's height for a stack `content` tall (ticks plus their
 /// slot) in a `band`-tall space: all of it while it fits, else the cap.
 pub fn rail_window(content: f32, band: f32) -> f32 {
-    let cap = (band * RAIL_HEIGHT_SHARE)
-        .min(RAIL_MAX_HEIGHT)
-        .max(TICK_SLOT * 4.0);
+    let cap = (band * RAIL_HEIGHT_SHARE).clamp(TICK_SLOT * 4.0, RAIL_MAX_HEIGHT);
     content.min(cap)
 }
 

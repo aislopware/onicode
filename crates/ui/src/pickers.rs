@@ -3219,10 +3219,10 @@ impl Pickers {
             self.defaults.project = state.selected_space.clone();
             self.defaults.no_project = state.no_project;
         }
-        if let Some(dir) = &self.data_dir {
-            if let Err(err) = self.defaults.save(dir) {
-                tracing::warn!(error = %err, "composer-defaults save failed");
-            }
+        if let Some(dir) = &self.data_dir
+            && let Err(err) = self.defaults.save(dir)
+        {
+            tracing::warn!(error = %err, "composer-defaults save failed");
         }
     }
 
@@ -4428,9 +4428,7 @@ impl Pickers {
             // Sessions never move: read-only checkout-kind + ref labels,
             // LEFT-aligned, only when the session's project has git. The
             // target (project @ device) lives in the titlebar now.
-            let Some(space) = space.as_ref().filter(|s| s.git_detected) else {
-                return None;
-            };
+            let space = space.as_ref().filter(|s| s.git_detected)?;
             let is_worktree = chat.cwd.as_deref().is_some_and(|cwd| cwd != space.path);
             // A Cloud chat runs on its own machine's clone of the repository.
             let (icon_path, label) = if onicode_proto::is_cloud_device(&chat.device_id, "") {

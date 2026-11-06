@@ -281,7 +281,7 @@ mod tests {
         assert_eq!(rows[0].updated_at, later);
         assert_eq!(rows[0].terminal_activity.as_ref().unwrap().updated_at, now);
         assert_eq!(
-            project("device", &[native.clone()], &[], later),
+            project("device", std::slice::from_ref(&native), &[], later),
             vec![native]
         );
         let rows = project("device", &[], &[("chat".into(), activity)], later);

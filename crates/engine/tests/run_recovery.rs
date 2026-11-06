@@ -301,7 +301,7 @@ fn queue_run(core: &EngineCore, prompt: &str, message_id: &str) {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request: run_request(prompt),
+                request: Box::new(run_request(prompt)),
                 message_id: message_id.into(),
             },
         )

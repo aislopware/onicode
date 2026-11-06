@@ -133,7 +133,7 @@ fn main() -> anyhow::Result<()> {
     let mut completed_at = None;
     eprintln!("pid={} phase=replay", std::process::id());
     loop {
-        objc::rc::autoreleasepool(|| {
+        objc2::rc::autoreleasepool(|_| {
             let elapsed = start.elapsed().as_millis() as u64;
             while frames.peek().is_some_and(|f| f.at - first_at <= elapsed) {
                 let frame = frames.next().unwrap();

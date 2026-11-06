@@ -451,9 +451,9 @@ pub fn render_shader(
     let (read, write) = (state.latest, 1 - state.latest);
 
     let mut uniforms = *uniforms;
-    for channel in &mut uniforms.channels {
-        *channel = [width as f32, height as f32, 1.0, 0.0];
-    }
+    uniforms
+        .channels
+        .fill([width as f32, height as f32, 1.0, 0.0]);
     let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("shader inputs"),
         contents: uniforms.as_bytes(),
@@ -898,7 +898,13 @@ mod tests {
         };
         let frame =
             render_shader(&spec(code, &[], Blend::Alpha), &uniforms, 96, 96, &mut None).unwrap();
-        let lit = frame.bgra.chunks_exact(4).filter(|p| p[3] > 0).count();
+        let lit = frame
+            .bgra
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| p[3] > 0)
+            .count();
         assert!(lit > 96 * 96 / 10, "the fractal covers the middle: {lit}");
         assert!(lit < 96 * 96, "and the sky stays clear");
     }

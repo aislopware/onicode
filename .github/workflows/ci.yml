@@ -75,7 +75,7 @@ jobs:
             libfontconfig1-dev libfreetype-dev libasound2-dev libvulkan-dev pkg-config cmake
             libwebkit2gtk-4.1-dev libjson-glib-dev
       - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo lint --locked
 
   core:
     needs: changes

@@ -534,6 +534,17 @@ pub enum FinishQueueEditAction {
     ReleaseUnchanged,
 }
 
+/// What a finish applies to a leased queued message: the action and, for
+/// `Commit`, the revised text checked against the hash it was edited from.
+/// `attachments: None` keeps the item's attachments as they are.
+#[derive(Debug, Clone, Copy)]
+pub struct QueueEditFinish<'a> {
+    pub action: FinishQueueEditAction,
+    pub text: Option<&'a str>,
+    pub expected_text_hash: Option<&'a str>,
+    pub attachments: Option<&'a [String]>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(
     tag = "outcome",
@@ -1824,59 +1835,57 @@ impl DocHost {
         // retried: the exact "transcript frozen until restart" report.
         // Retry on the workspace host's capped, jittered backoff; a system
         // wake redials immediately; eviction/purge ends the loop via `weak`.
-        if self.inner.config.edge.is_some() {
-            if room_gen >= 2 {
-                // Subscription BEFORE the dial (review B3): every local
-                // commit lands in the client when connected, else in the
-                // pending buffer the join drains — nothing composed during
-                // (or before) the dial is lost to the room.
-                // A one-time full replay heals history stranded by older clients.
-                // Its durable marker is independent of the download cursor.
-                if !self.inner.store.chat_outbox_initialized(chat_id)? {
-                    let updates = crate::chat2_host::publication_updates(doc.doc())
-                        .map_err(EngineError::Other)?;
-                    self.inner.store.initialize_chat_outbox(chat_id, &updates)?;
-                }
-                let weak_push = Arc::downgrade(&handle);
-                let publication_store = self.inner.store.clone();
-                let publication_chat = chat_id.to_string();
-                // Concurrent commits can run their hooks out of order; this
-                // device's ops still go out in commit order (OwnOpsOrder).
-                let own_order = Mutex::new(crate::chat2_host::OwnOpsOrder::new(doc.doc()));
-                let sub = doc
-                    .doc()
-                    .subscribe_local_update(Box::new(move |bytes: &Vec<u8>| {
-                        if let Some(handle) = weak_push.upgrade() {
-                            // The buffer push happens WHILE HOLDING the client
-                            // lock (verify pass: releasing it between the None
-                            // check and the push let the join's store+drain
-                            // slip between, orphaning the update forever).
-                            let client_guard = lock(&handle.chat2);
-                            for bytes in lock(&own_order).order(handle.doc.doc(), bytes) {
-                                let batch_id = uuid::Uuid::new_v4().to_string();
-                                if let Err(err) = publication_store.enqueue_chat_update(&publication_chat, &batch_id, &bytes) {
-                                    handle.publication_failed.store(true, Ordering::Release);
-                                    lock(&handle.chat2_pending_local).push((batch_id.clone(), bytes.clone()));
-                                    tracing::error!(chat = %publication_chat, %err, "chat2: durable outbox write failed");
-                                }
-                                if let Some(client) = &*client_guard {
-                                    client.enqueue_batch(batch_id, bytes);
-                                }
+        if self.inner.config.edge.is_some() && room_gen >= 2 {
+            // Subscription BEFORE the dial (review B3): every local
+            // commit lands in the client when connected, else in the
+            // pending buffer the join drains — nothing composed during
+            // (or before) the dial is lost to the room.
+            // A one-time full replay heals history stranded by older clients.
+            // Its durable marker is independent of the download cursor.
+            if !self.inner.store.chat_outbox_initialized(chat_id)? {
+                let updates = crate::chat2_host::publication_updates(doc.doc())
+                    .map_err(EngineError::Other)?;
+                self.inner.store.initialize_chat_outbox(chat_id, &updates)?;
+            }
+            let weak_push = Arc::downgrade(&handle);
+            let publication_store = self.inner.store.clone();
+            let publication_chat = chat_id.to_string();
+            // Concurrent commits can run their hooks out of order; this
+            // device's ops still go out in commit order (OwnOpsOrder).
+            let own_order = Mutex::new(crate::chat2_host::OwnOpsOrder::new(doc.doc()));
+            let sub = doc
+                .doc()
+                .subscribe_local_update(Box::new(move |bytes: &Vec<u8>| {
+                    if let Some(handle) = weak_push.upgrade() {
+                        // The buffer push happens WHILE HOLDING the client
+                        // lock (verify pass: releasing it between the None
+                        // check and the push let the join's store+drain
+                        // slip between, orphaning the update forever).
+                        let client_guard = lock(&handle.chat2);
+                        for bytes in lock(&own_order).order(handle.doc.doc(), bytes) {
+                            let batch_id = uuid::Uuid::new_v4().to_string();
+                            if let Err(err) = publication_store.enqueue_chat_update(&publication_chat, &batch_id, &bytes) {
+                                handle.publication_failed.store(true, Ordering::Release);
+                                lock(&handle.chat2_pending_local).push((batch_id.clone(), bytes.clone()));
+                                tracing::error!(chat = %publication_chat, %err, "chat2: durable outbox write failed");
+                            }
+                            if let Some(client) = &*client_guard {
+                                client.enqueue_batch(batch_id, bytes);
                             }
                         }
-                        true
-                    }));
-                *lock(&handle.chat2_local_sub) = Some(sub);
-                // Re-queue survives the adopt: our own pending commands
-                // become fresh entries in the new lineage (the
-                // processed_commands ledger still guards double execution).
-                // Committed AFTER the local-update subscription above — a
-                // commit before it never enters the pending buffer or the
-                // client, so the requeued command would sit in the local doc
-                // and never reach the room (the host would never see it).
-                for command in &requeue_commands {
-                    let _ = doc.queue_command(command);
-                }
+                    }
+                    true
+                }));
+            *lock(&handle.chat2_local_sub) = Some(sub);
+            // Re-queue survives the adopt: our own pending commands
+            // become fresh entries in the new lineage (the
+            // processed_commands ledger still guards double execution).
+            // Committed AFTER the local-update subscription above — a
+            // commit before it never enters the pending buffer or the
+            // client, so the requeued command would sit in the local doc
+            // and never reach the room (the host would never see it).
+            for command in &requeue_commands {
+                let _ = doc.queue_command(command);
             }
         }
         // Publish only after the durable subscription and bootstrap are installed.
@@ -2022,25 +2031,22 @@ impl DocHost {
                 };
                 // Overflow reconciliation is metadata-only and resumable. Wait
                 // for registry truth before deciding the hosted set is complete.
-                if let Some(ws) = host.workspace() {
-                    if ws.sync_status().is_some_and(|s| s.synced) {
-                        if let Ok(Some((version, cursor))) =
-                            host.inner.store.reconciliation_progress()
-                        {
-                            let mut ids: Vec<_> = ws
-                                .watch_chats()
-                                .borrow()
-                                .iter()
-                                .filter(|c| {
-                                    c.device_id == host.inner.config.device_id && c.id > cursor
-                                })
-                                .map(|c| c.id.clone())
-                                .collect();
-                            ids.sort();
-                            ids.truncate(32);
-                            let _ = host.inner.store.reconcile_page(version, &ids);
-                        }
-                    }
+                if let Some(ws) = host.workspace()
+                    && ws.sync_status().is_some_and(|s| s.synced)
+                    && let Ok(Some((version, cursor))) = host.inner.store.reconciliation_progress()
+                {
+                    let mut ids: Vec<_> = ws
+                        .watch_chats()
+                        .borrow()
+                        .iter()
+                        .filter(|c| {
+                            c.device_id == host.inner.config.device_id && c.id > cursor
+                        })
+                        .map(|c| c.id.clone())
+                        .collect();
+                    ids.sort();
+                    ids.truncate(32);
+                    let _ = host.inner.store.reconcile_page(version, &ids);
                 }
                 let handles: Vec<_> = lock(&host.inner.handles).values().cloned().collect();
                 for handle in &handles {
@@ -2091,10 +2097,10 @@ impl DocHost {
                         candidates.push((id, None));
                     }
                 }
-                if let Some((id, _)) = &handoff {
-                    if !candidates.iter().any(|(chat, _)| chat == id) {
-                        candidates.push((id.clone(), handles.iter().find(|h| &h.chat_id == id).cloned()));
-                    }
+                if let Some((id, _)) = &handoff
+                    && !candidates.iter().any(|(chat, _)| chat == id)
+                {
+                    candidates.push((id.clone(), handles.iter().find(|h| &h.chat_id == id).cloned()));
                 }
                 let mut waiting = Vec::new();
                 for (id, handle) in candidates {
@@ -2208,7 +2214,7 @@ impl DocHost {
                 ));
                 // Three focus turns, then one overdue service turn. A served
                 // focus cannot immediately take its slot back after rotation.
-                let fair = oldest_waiter.is_some() && (newest_focus.is_none() || (turn + 1) % 4 == 0);
+                let fair = oldest_waiter.is_some() && (newest_focus.is_none() || (turn + 1).is_multiple_of(4));
                 let winner = if fair {
                     oldest_waiter.map(|(id, _, _)| id.clone())
                 } else {
@@ -2274,8 +2280,8 @@ impl DocHost {
                         });
                         (
                             handoff.as_ref().map(|(chat, _)| chat) != Some(id),
-                            if turn % 4 == 0 { protected } else { !protected },
-                            std::cmp::Reverse(if turn % 4 == 0 { 0 } else { focus }),
+                            if turn.is_multiple_of(4) { protected } else { !protected },
+                            std::cmp::Reverse(if turn.is_multiple_of(4) { 0 } else { focus }),
                             h.as_ref().map_or(0, |h| h.sync_last_started.load(Ordering::Acquire)),
                             id.clone(),
                         )
@@ -2896,13 +2902,13 @@ impl DocHost {
                     .sync_job_version(&chat, "recovery")
                     .ok()
                     .flatten();
-                if host.salvage_chat_transcript(&chat).await.is_ok() {
-                    if let Some(version) = version {
-                        let _ = host
-                            .inner
-                            .store
-                            .complete_sync_job(&chat, "recovery", version);
-                    }
+                if host.salvage_chat_transcript(&chat).await.is_ok()
+                    && let Some(version) = version
+                {
+                    let _ = host
+                        .inner
+                        .store
+                        .complete_sync_job(&chat, "recovery", version);
                 }
             }
         });
@@ -3920,10 +3926,12 @@ impl DocHost {
             chat_id,
             id,
             lease_id,
-            action,
-            text,
-            expected_text_hash,
-            None,
+            QueueEditFinish {
+                action,
+                text,
+                expected_text_hash,
+                attachments: None,
+            },
         )
         .await
     }
@@ -3933,11 +3941,14 @@ impl DocHost {
         chat_id: &str,
         id: &str,
         lease_id: &str,
-        action: FinishQueueEditAction,
-        text: Option<&str>,
-        expected_text_hash: Option<&str>,
-        attachments: Option<&[String]>,
+        finish: QueueEditFinish<'_>,
     ) -> Result<FinishQueueEditOutcome, EngineError> {
+        let QueueEditFinish {
+            action,
+            text,
+            expected_text_hash,
+            attachments,
+        } = finish;
         if !self.is_host(chat_id) {
             return Err(EngineError::Other(format!(
                 "device {} does not host chat {chat_id}",
@@ -4939,15 +4950,14 @@ impl DocHost {
                 CommandDisposition::Skip => Ok("duplicate"),
                 CommandDisposition::Expired => Ok("expired"),
                 CommandDisposition::Superseded => Ok("superseded"),
-                CommandDisposition::Execute => match {
+                CommandDisposition::Execute => {
                     if _prompt_guard.is_some() {
                         self.await_earlier_controls(&handle, &entry.id).await;
                     }
-                    self.execute(&sessions, &handle, &entry).await
-                } {
-                    Ok(_) => Ok("executed"),
-                    Err(err) => Err(err),
-                },
+                    self.execute(&sessions, &handle, &entry)
+                        .await
+                        .map(|_| "executed")
+                }
             },
         };
         lock(&self.inner.executing).remove(&entry.id);
@@ -5575,7 +5585,7 @@ impl DocHost {
                 request,
                 message_id,
             } => {
-                let mut request = request.clone();
+                let mut request = (**request).clone();
                 // Queued-attachment refs (`pending://`) resolve to this
                 // host's absolute paths before anything persists or
                 // dispatches — the drain already gated on the bytes being
@@ -5591,7 +5601,7 @@ impl DocHost {
                 let worktree_spec = request.worktree.take();
                 let fresh_worktree = match &worktree_spec {
                     Some(spec) => {
-                        let (cwd, fresh) = self.materialize_worktree(chat_id, &spec).await?;
+                        let (cwd, fresh) = self.materialize_worktree(chat_id, spec).await?;
                         request.cwd = cwd;
                         fresh
                     }

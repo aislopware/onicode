@@ -88,7 +88,7 @@ pub fn record(manifest: &Manifest) -> Value {
         })
         .cloned()
         .collect();
-    settings.sort_by_key(|s| signing::canonical_json(s));
+    settings.sort_by_key(signing::canonical_json);
     json!({
         "v": VERSION,
         "permissions": sorted_unique(&manifest.permissions),

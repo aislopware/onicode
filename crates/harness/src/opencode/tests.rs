@@ -39,6 +39,18 @@ impl Drop for TurnWire {
     }
 }
 
+/// How a [`TurnWire`] fixture server behaves.
+struct Fixture {
+    queued: bool,
+    v2: bool,
+    auto_approve: bool,
+    answer: Option<bool>,
+    version: &'static str,
+    overrides: Value,
+    command_failure: bool,
+    native_command_reply: Option<NativeCommandReply>,
+}
+
 impl TurnWire {
     async fn start(queued: bool) -> Self {
         Self::start_proto(queued, false).await
@@ -68,7 +80,7 @@ impl TurnWire {
         overrides: Value,
         command_failure: bool,
     ) -> Self {
-        Self::start_fixture(
+        Self::start_fixture(Fixture {
             queued,
             v2,
             auto_approve,
@@ -76,35 +88,36 @@ impl TurnWire {
             version,
             overrides,
             command_failure,
-            None,
-        )
+            native_command_reply: None,
+        })
         .await
     }
 
     async fn start_native_command(queued: bool, reply: NativeCommandReply) -> Self {
-        Self::start_fixture(
+        Self::start_fixture(Fixture {
             queued,
-            false,
-            true,
-            None,
-            "2.0.3",
-            json!({}),
-            false,
-            Some(reply),
-        )
+            v2: false,
+            auto_approve: true,
+            answer: None,
+            version: "2.0.3",
+            overrides: json!({}),
+            command_failure: false,
+            native_command_reply: Some(reply),
+        })
         .await
     }
 
-    async fn start_fixture(
-        queued: bool,
-        v2: bool,
-        auto_approve: bool,
-        answer: Option<bool>,
-        version: &'static str,
-        overrides: Value,
-        command_failure: bool,
-        native_command_reply: Option<NativeCommandReply>,
-    ) -> Self {
+    async fn start_fixture(fixture: Fixture) -> Self {
+        let Fixture {
+            queued,
+            v2,
+            auto_approve,
+            answer,
+            version,
+            overrides,
+            command_failure,
+            native_command_reply,
+        } = fixture;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
@@ -215,9 +228,9 @@ impl TurnWire {
                         return;
                     }
                     let health = json!({"version": version}).to_string();
-                    if native_command_reply.is_some() && is_post && path == "/session/fixture/command" {
+                    if let Some(reply) = native_command_reply && is_post && path == "/session/fixture/command" {
                         let _ = request_tx.send(path.clone());
-                        match native_command_reply.expect("native command fixture configured") {
+                        match reply {
                             NativeCommandReply::Disconnect => return,
                             NativeCommandReply::DelayedHttp404 => {
                                 if let Some(wait) = command_failure_wait.lock().await.take() {

@@ -132,6 +132,10 @@ fn main() {
                 }
                 #[cfg(unix)]
                 if matches!(text.as_str(), "tree" | "inherited-pipe-crash") {
+                    #[expect(
+                        clippy::zombie_processes,
+                        reason = "the fixture leaves this child for the harness under test to find and kill"
+                    )]
                     let child = std::process::Command::new("sh")
                         .args(["-c", "sleep 30"])
                         .spawn()

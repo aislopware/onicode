@@ -16,7 +16,7 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         embed_resource::compile_for(
             "../../packaging/windows/onicode.rc",
-            &["onicode"],
+            ["onicode"],
             embed_resource::NONE,
         )
         .manifest_required()

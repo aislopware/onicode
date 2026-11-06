@@ -147,7 +147,7 @@ impl Rig {
                 CHAT,
                 SessionCommandPayload::Run {
                     message_id: message_id.into(),
-                    request: self.request(prompt),
+                    request: Box::new(self.request(prompt)),
                 },
             )
             .unwrap();

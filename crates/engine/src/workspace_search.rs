@@ -696,6 +696,30 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// Whether `relative` (an index result under `root`) reaches outside the
+/// root through a symlink. fff's watcher follows links created after the
+/// first scan, so results are re-checked with ReadWorkspaceFile's rule: no
+/// symlinked folder on the way, and for contents, no symlinked file either.
+/// A path that no longer exists is treated as escaping (it can't be served).
+pub fn escapes_through_symlink(root: &Path, relative: &str, allow_final_link: bool) -> bool {
+    let components: Vec<_> = Path::new(relative).components().collect();
+    let mut current = root.to_path_buf();
+    for (index, component) in components.iter().enumerate() {
+        let std::path::Component::Normal(component) = component else {
+            return true;
+        };
+        current.push(component);
+        let Ok(metadata) = std::fs::symlink_metadata(&current) else {
+            return true;
+        };
+        let last = index + 1 == components.len();
+        if metadata.file_type().is_symlink() && !(last && allow_final_link) {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -1005,28 +1029,4 @@ mod tests {
                 .is_empty()
         );
     }
-}
-
-/// Whether `relative` (an index result under `root`) reaches outside the
-/// root through a symlink. fff's watcher follows links created after the
-/// first scan, so results are re-checked with ReadWorkspaceFile's rule: no
-/// symlinked folder on the way, and for contents, no symlinked file either.
-/// A path that no longer exists is treated as escaping (it can't be served).
-pub fn escapes_through_symlink(root: &Path, relative: &str, allow_final_link: bool) -> bool {
-    let components: Vec<_> = Path::new(relative).components().collect();
-    let mut current = root.to_path_buf();
-    for (index, component) in components.iter().enumerate() {
-        let std::path::Component::Normal(component) = component else {
-            return true;
-        };
-        current.push(component);
-        let Ok(metadata) = std::fs::symlink_metadata(&current) else {
-            return true;
-        };
-        let last = index + 1 == components.len();
-        if metadata.file_type().is_symlink() && !(last && allow_final_link) {
-            return true;
-        }
-    }
-    false
 }

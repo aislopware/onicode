@@ -13,7 +13,7 @@ use onicode_doc::{
     MessagePart, MessageRole, MessageStatus, SegmentWriter, SessionCommandEntry,
     SessionCommandPayload, SessionCommandStatus, SessionDoc, SessionMessageEntry, SubagentStatus,
 };
-use onicode_engine::{EngineCore, EngineRpc, HarnessRegistry, RunJournal};
+use onicode_engine::{EngineCore, HarnessRegistry, RunJournal};
 use onicode_harness::mock::MockHarness;
 use onicode_harness::{Harness, HarnessError, RunControls};
 use onicode_proto::{
@@ -564,7 +564,7 @@ async fn queued_run_command_executes_end_to_end() {
         handle.doc(),
         "cmd-run-1",
         SessionCommandPayload::Run {
-            request: run_request("do the thing"),
+            request: Box::new(run_request("do the thing")),
             message_id: "msg-user-1".into(),
         },
     );
@@ -674,7 +674,7 @@ async fn session_status_transitions_idle_working_idle() {
         handle.doc(),
         "cmd-run-status",
         SessionCommandPayload::Run {
-            request: run_request("go"),
+            request: Box::new(run_request("go")),
             message_id: "m-1".into(),
         },
     );
@@ -717,7 +717,7 @@ async fn interrupt_stamps_streaming_entry_aborted() {
         handle.doc(),
         "cmd-run-hang",
         SessionCommandPayload::Run {
-            request: run_request("hang"),
+            request: Box::new(run_request("hang")),
             message_id: "m-1".into(),
         },
     );
@@ -828,7 +828,7 @@ async fn interrupt_is_scoped_to_the_target_chat() {
             handle.doc(),
             command_id,
             SessionCommandPayload::Run {
-                request: run_request(prompt),
+                request: Box::new(run_request(prompt)),
                 message_id: message_id.into(),
             },
         );
@@ -909,7 +909,7 @@ async fn steer_with_no_live_run_falls_back_to_new_turn() {
         handle.doc(),
         "cmd-run-1",
         SessionCommandPayload::Run {
-            request: run_request("first"),
+            request: Box::new(run_request("first")),
             message_id: "m-1".into(),
         },
     );
@@ -1044,7 +1044,7 @@ async fn steer_into_unsteerable_live_turn_holds_instead_of_interrupting() {
         handle.doc(),
         "cmd-run-1",
         SessionCommandPayload::Run {
-            request: run_request("first"),
+            request: Box::new(run_request("first")),
             message_id: "m-1".into(),
         },
     );
@@ -1108,7 +1108,7 @@ async fn processed_commands_are_skipped_on_redelivery() {
         handle.doc(),
         "cmd-crashed",
         SessionCommandPayload::Run {
-            request: run_request("never again"),
+            request: Box::new(run_request("never again")),
             message_id: "m-x".into(),
         },
     );
@@ -1176,7 +1176,7 @@ async fn retry_reissues_a_swallowed_send() {
         handle.doc(),
         "cmd-dead",
         SessionCommandPayload::Run {
-            request: run_request("try again"),
+            request: Box::new(run_request("try again")),
             message_id: "m-retry".into(),
         },
     );
@@ -1538,7 +1538,7 @@ async fn rpc_surface_over_in_memory_transport() {
 
     // QueueCommand (as this device's composer would over IPC).
     let command = serde_json::to_value(SessionCommandPayload::Run {
-        request: run_request("via rpc"),
+        request: Box::new(run_request("via rpc")),
         message_id: "m-rpc-1".into(),
     })
     .unwrap();
@@ -1671,7 +1671,7 @@ async fn closing_a_question_unanswered_declines_and_records_it() {
         handle.doc(),
         "cmd-run-close",
         SessionCommandPayload::Run {
-            request: run_request("ask me"),
+            request: Box::new(run_request("ask me")),
             message_id: "m-1".into(),
         },
     );
@@ -1814,7 +1814,7 @@ async fn respond_input_resolves_pending_question() {
         handle.doc(),
         "cmd-run-ask",
         SessionCommandPayload::Run {
-            request: run_request("ask me"),
+            request: Box::new(run_request("ask me")),
             message_id: "m-1".into(),
         },
     );
@@ -1971,7 +1971,7 @@ async fn wrong_id_respond_is_rejected_and_correct_answer_still_resumes() {
         handle.doc(),
         "cmd-run-wrong",
         SessionCommandPayload::Run {
-            request: run_request("ask me"),
+            request: Box::new(run_request("ask me")),
             message_id: "m-1".into(),
         },
     );
@@ -2156,7 +2156,7 @@ async fn interrupt_unblocks_a_run_awaiting_input() {
         handle.doc(),
         "cmd-run-block",
         SessionCommandPayload::Run {
-            request: run_request("ask and block"),
+            request: Box::new(run_request("ask and block")),
             message_id: "m-1".into(),
         },
     );
@@ -2221,7 +2221,7 @@ async fn interrupt_unblocks_a_run_awaiting_input() {
         handle.doc(),
         "cmd-run-second",
         SessionCommandPayload::Run {
-            request: run_request("second run"),
+            request: Box::new(run_request("second run")),
             message_id: "m-2".into(),
         },
     );
@@ -2322,7 +2322,7 @@ async fn harness_emitted_input_twin_is_dropped_and_answer_resumes() {
         handle.doc(),
         "cmd-run-twin",
         SessionCommandPayload::Run {
-            request: run_request("ask me twice"),
+            request: Box::new(run_request("ask me twice")),
             message_id: "m-1".into(),
         },
     );
@@ -2526,7 +2526,7 @@ async fn attachment_upload_then_run_threads_refs_and_paths() {
         handle.doc(),
         "cmd-att-1",
         SessionCommandPayload::Run {
-            request,
+            request: Box::new(request),
             message_id: "msg-att-1".into(),
         },
     );
@@ -2658,7 +2658,7 @@ async fn real_claude_sees_uploaded_image_inline() {
         .queue_command(
             CHAT,
             SessionCommandPayload::Run {
-                request,
+                request: Box::new(request),
                 message_id: "msg-img-1".into(),
             },
         )
@@ -2747,7 +2747,7 @@ async fn empty_reasoning_deltas_are_heartbeats_not_journal_noise() {
         handle.doc(),
         "cmd-hb-1",
         SessionCommandPayload::Run {
-            request: run_request("hb"),
+            request: Box::new(run_request("hb")),
             message_id: "msg-hb-1".into(),
         },
     );
@@ -2805,7 +2805,7 @@ async fn parked_session_ignores_trailing_frames_and_stays_idle() {
         handle.doc(),
         "cmd-run-parked",
         SessionCommandPayload::Run {
-            request: run_request("go"),
+            request: Box::new(run_request("go")),
             message_id: "m-parked".into(),
         },
     );
@@ -2902,7 +2902,7 @@ async fn stale_tool_echo_after_steer_boundary_does_not_split_text() {
         handle.doc(),
         "cmd-run-echo",
         SessionCommandPayload::Run {
-            request: run_request("go"),
+            request: Box::new(run_request("go")),
             message_id: "m-echo".into(),
         },
     );
@@ -3004,7 +3004,7 @@ async fn parked_steer_restamps_started_at_and_idle_clears_it() {
         handle.doc(),
         "cmd-run-park-timer",
         SessionCommandPayload::Run {
-            request: run_request("first"),
+            request: Box::new(run_request("first")),
             message_id: "m-1".into(),
         },
     );
@@ -3084,7 +3084,7 @@ async fn context_usage_settles_after_done_without_reopening_the_turn() {
         handle.doc(),
         "context-run",
         SessionCommandPayload::Run {
-            request: run_request("measure context"),
+            request: Box::new(run_request("measure context")),
             message_id: "context-user".into(),
         },
     );
@@ -3170,7 +3170,7 @@ async fn pending_steer_handoff_does_not_publish_a_completion() {
             handle.doc(),
             "cmd-completion",
             SessionCommandPayload::Run {
-                request: run_request("opening"),
+                request: Box::new(run_request("opening")),
                 message_id: "user-opening".into(),
             },
         );
@@ -3493,7 +3493,7 @@ async fn start_failure_lands_in_the_transcript() {
         handle.doc(),
         "cmd-run-fails",
         SessionCommandPayload::Run {
-            request: run_request("hello"),
+            request: Box::new(run_request("hello")),
             message_id: "m-1".into(),
         },
     );
@@ -3564,7 +3564,7 @@ async fn session_row_counts_running_subagents_until_the_run_ends() {
         handle.doc(),
         "subagents-run",
         SessionCommandPayload::Run {
-            request: run_request("fan out"),
+            request: Box::new(run_request("fan out")),
             message_id: "subagents-user".into(),
         },
     );
@@ -3994,7 +3994,7 @@ async fn a_commands_whole_output_is_read_from_its_hosts_journal() {
         handle.doc(),
         "cmd-run-output",
         SessionCommandPayload::Run {
-            request: run_request("test"),
+            request: Box::new(run_request("test")),
             message_id: "m-1".into(),
         },
     );

@@ -289,6 +289,15 @@ pub(crate) fn star_button(url: &str, theme: &Theme, cx: &gpui::App) -> gpui::Sta
         })
 }
 
+/// A cached list keyed by (target device, repository, filter): its items,
+/// when they loaded, and how far it was paged.
+type ListSnapshot = (
+    (Option<String>, String, ChangeRequestFilter),
+    Vec<ChangeRequestListItem>,
+    Instant,
+    Paging,
+);
+
 /// Repository-scoped dashboard with lazy, cached relationship filters.
 pub struct PullRequestsPage {
     state: Entity<AppState>,
@@ -305,12 +314,7 @@ pub struct PullRequestsPage {
     /// project follows that project; an explicit choice stands until then.
     seen_context: Option<ProjectRef>,
     _repository_events: Subscription,
-    snapshots: Vec<(
-        (Option<String>, String, ChangeRequestFilter),
-        Vec<ChangeRequestListItem>,
-        Instant,
-        Paging,
-    )>,
+    snapshots: Vec<ListSnapshot>,
     paging: Paging,
     /// The next page, while it loads; `None` when idle.
     more_task: Option<Task<()>>,
@@ -1407,9 +1411,9 @@ impl PullRequestsPage {
             let menu = popover::popover_card(theme)
                 .id("pr-repository-card")
                 .debug_selector(|| "pr-repository-card".into())
-                .w(px((f32::from(window.viewport_size().width) - 16.0)
-                    .min(320.0)
-                    .max(240.0)))
+                .w(px(
+                    (f32::from(window.viewport_size().width) - 16.0).clamp(240.0, 320.0)
+                ))
                 .flex()
                 .flex_col()
                 .on_mouse_down_out(cx.listener(|page, _, _, cx| page.close_repository_menu(cx)))
@@ -1643,7 +1647,7 @@ impl PullRequestsPage {
             return;
         };
 
-        let target_name = selected_device_name(&self.state.read(cx), self.target_device.as_deref());
+        let target_name = selected_device_name(self.state.read(cx), self.target_device.as_deref());
         if let Some(target) = self.target_device.as_deref()
             && !self.state.read(cx).device_online(target, Utc::now())
         {
@@ -1783,7 +1787,7 @@ impl PullRequestsPage {
             cx.notify();
             return;
         };
-        let target_name = selected_device_name(&self.state.read(cx), self.target_device.as_deref());
+        let target_name = selected_device_name(self.state.read(cx), self.target_device.as_deref());
         let generation = self.generation;
         let mut params = params_for_target(self.target_device.as_deref());
         params["repository"] = self.repository.clone().unwrap().into();
@@ -2282,13 +2286,14 @@ impl Render for PullRequestsPage {
             !self.items.is_empty() && matches!(self.load_state, PullRequestsLoadState::Failed(_));
         // A failed refresh keeps the last results on screen and says so
         // once, as a toast.
-        if refresh_error && !self.refresh_error_shown {
-            if let PullRequestsLoadState::Failed(error) = &self.load_state {
-                let error = error.clone();
-                cx.defer(move |cx| {
-                    toast_page_error(&error, Some("Showing the last loaded results."), cx)
-                });
-            }
+        if refresh_error
+            && !self.refresh_error_shown
+            && let PullRequestsLoadState::Failed(error) = &self.load_state
+        {
+            let error = error.clone();
+            cx.defer(move |cx| {
+                toast_page_error(&error, Some("Showing the last loaded results."), cx)
+            });
         }
         self.refresh_error_shown = refresh_error;
         let count = (!initial_loading
@@ -2807,13 +2812,16 @@ impl PullRequestsPage {
                     .when(last, |el| el.rounded_b(px(12.0)))
                     .child(render_table_row(
                         item,
-                        layout,
-                        self.content_width
-                            .is_some_and(|width| width < PR_TIGHT_ROW_WIDTH),
-                        self.sort.field,
-                        first,
-                        last,
-                        self.selected_url.as_deref() == Some(item.url.as_str()),
+                        TableRowLook {
+                            layout,
+                            tight: self
+                                .content_width
+                                .is_some_and(|width| width < PR_TIGHT_ROW_WIDTH),
+                            sort_field: self.sort.field,
+                            first,
+                            last,
+                            selected: self.selected_url.as_deref() == Some(item.url.as_str()),
+                        },
                         &theme,
                         cx,
                     ))
@@ -2918,8 +2926,7 @@ fn table_layout(width: f32) -> PullRequestTableLayout {
 
 fn table_content_width(container_width: f32) -> f32 {
     (container_width - PR_PAGE_HORIZONTAL_PADDING * 2.0)
-        .max(0.0)
-        .min(PR_PAGE_MAX_WIDTH - PR_PAGE_HORIZONTAL_PADDING * 2.0)
+        .clamp(0.0, PR_PAGE_MAX_WIDTH - PR_PAGE_HORIZONTAL_PADDING * 2.0)
 }
 
 fn sort_pull_requests(items: &mut [ChangeRequestListItem], sort: PullRequestSort) {
@@ -2971,17 +2978,32 @@ pub(crate) fn table_row_shell(
         })
 }
 
-fn render_table_row(
-    item: &ChangeRequestListItem,
+/// How one table row presents: the table's layout and density, the sort
+/// column it dates by, and where it sits in its group.
+#[derive(Clone, Copy)]
+struct TableRowLook {
     layout: PullRequestTableLayout,
     tight: bool,
     sort_field: PullRequestSortField,
     first: bool,
     last: bool,
     selected: bool,
+}
+
+fn render_table_row(
+    item: &ChangeRequestListItem,
+    look: TableRowLook,
     theme: &Theme,
     cx: &gpui::App,
 ) -> AnyElement {
+    let TableRowLook {
+        layout,
+        tight,
+        sort_field,
+        first,
+        last,
+        selected,
+    } = look;
     let star = star_button(&item.url, theme, cx);
     let url = item.url.clone();
     let row = table_row_shell(layout, first, last, theme)
@@ -3220,26 +3242,23 @@ fn render_pr_identity(item: &ChangeRequestListItem, tight: bool, theme: &Theme) 
                             _ => theme.text_muted,
                         })
                         .tooltip(widgets::text_tooltip(format!(
-                            "{} · Commit: {}\n{}",
+                            "{} · Commit: {}\n{}\nNext: {}",
                             item.ci.state.label(),
                             if item.head_ref_oid.is_empty() {
                                 "unavailable"
                             } else {
                                 &item.head_ref_oid
                             },
-                            format!(
-                                "{}\nNext: {}",
-                                assessment
-                                    .missing
-                                    .iter()
-                                    .map(|missing| missing.label())
-                                    .collect::<Vec<_>>()
-                                    .join(" · "),
-                                assessment
-                                    .actions
-                                    .first()
-                                    .map_or("No action suggested", |action| action.label())
-                            )
+                            assessment
+                                .missing
+                                .iter()
+                                .map(|missing| missing.label())
+                                .collect::<Vec<_>>()
+                                .join(" · "),
+                            assessment
+                                .actions
+                                .first()
+                                .map_or("No action suggested", |action| action.label())
                         )))
                         .child(row_ci_label(item, tight)),
                 )
@@ -3418,7 +3437,7 @@ fn recent_git_projects(state: &AppState, local: &str) -> Vec<ProjectRef> {
             )
         })
         .collect();
-    projects.sort_by(|a, b| (a.0, a.1, a.2).cmp(&(b.0, b.1, b.2)));
+    projects.sort_by_key(|a| (a.0, a.1, a.2));
     let mut seen = HashSet::new();
     let (primary, alternatives): (Vec<_>, Vec<_>) = projects
         .into_iter()
@@ -3579,14 +3598,14 @@ fn format_compact_count(value: u64) -> String {
         value.to_string()
     } else if value < 1_000_000 {
         let tenths = value / 100;
-        if tenths % 10 == 0 {
+        if tenths.is_multiple_of(10) {
             format!("{}k", value / 1_000)
         } else {
             format!("{}.{:01}k", value / 1_000, tenths % 10)
         }
     } else {
         let tenths = value / 100_000;
-        if tenths % 10 == 0 {
+        if tenths.is_multiple_of(10) {
             format!("{}m", value / 1_000_000)
         } else {
             format!("{}.{:01}m", value / 1_000_000, tenths % 10)
@@ -3681,12 +3700,14 @@ mod tests {
             let width = f32::from(window.viewport_size().width);
             div().w_full().child(render_table_row(
                 &self.item,
-                table_layout(width),
-                width < PR_TIGHT_ROW_WIDTH,
-                PullRequestSortField::Updated,
-                true,
-                true,
-                false,
+                TableRowLook {
+                    layout: table_layout(width),
+                    tight: width < PR_TIGHT_ROW_WIDTH,
+                    sort_field: PullRequestSortField::Updated,
+                    first: true,
+                    last: true,
+                    selected: false,
+                },
                 Theme::of(cx),
                 cx,
             ))
@@ -5215,10 +5236,23 @@ mod tests {
         assert_eq!(single_line(&"a".repeat(200)), "a".repeat(200));
     }
 
+    /// Each paged request's cursor and `refresh` flag, in order.
+    type PagedCalls = std::sync::Arc<std::sync::Mutex<Vec<(Option<String>, bool)>>>;
+
+    /// A paged page's view, its window, the recorded calls, the `reviewing`
+    /// release and the scripted RPC behind it.
+    type PagedPage<'a> = (
+        Entity<PullRequestsPage>,
+        &'a mut gpui::VisualTestContext,
+        PagedCalls,
+        std::sync::Arc<tokio::sync::Notify>,
+        std::sync::Arc<ScriptedRpc>,
+    );
+
     /// Serves two pages and records each request's cursor and `refresh` flag.
     /// The `reviewing` filter never answers until `release` fires.
     fn paged_rpc(
-        calls: std::sync::Arc<std::sync::Mutex<Vec<(Option<String>, bool)>>>,
+        calls: PagedCalls,
         release: std::sync::Arc<tokio::sync::Notify>,
     ) -> std::sync::Arc<ScriptedRpc> {
         ScriptedRpc::new(move |method, params| {
@@ -5264,15 +5298,7 @@ mod tests {
         })
     }
 
-    fn paged_page(
-        cx: &mut gpui::TestAppContext,
-    ) -> (
-        Entity<PullRequestsPage>,
-        &mut gpui::VisualTestContext,
-        std::sync::Arc<std::sync::Mutex<Vec<(Option<String>, bool)>>>,
-        std::sync::Arc<tokio::sync::Notify>,
-        std::sync::Arc<ScriptedRpc>,
-    ) {
+    fn paged_page(cx: &mut gpui::TestAppContext) -> PagedPage<'_> {
         fixture::init(cx);
         let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let release = std::sync::Arc::new(tokio::sync::Notify::new());

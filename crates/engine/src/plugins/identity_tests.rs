@@ -842,7 +842,7 @@ async fn r13_settings_lists_and_revokes_keys() {
 /// and what it allowed stops.
 #[tokio::test]
 async fn r13_a_key_revoked_elsewhere_stops_counting_within_the_ttl() {
-    assert!(keys::CACHE_TTL_SECS <= 60 * 60);
+    const { assert!(keys::CACHE_TTL_SECS <= 60 * 60) };
     let f = fixture();
     let fake = Arc::new(FakeDirectory::default());
     let ada = known(&f, &fake, Some("ada"), false);

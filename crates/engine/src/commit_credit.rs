@@ -233,7 +233,7 @@ mod tests {
     use std::process::Command;
 
     fn git(dir: &Path, env: &BTreeMap<String, String>, args: &[&str]) -> std::process::Output {
-        let out = Command::new("git")
+        Command::new("git")
             .current_dir(dir)
             .envs(env)
             .env("GIT_AUTHOR_NAME", "T")
@@ -244,8 +244,7 @@ mod tests {
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .args(args)
             .output()
-            .unwrap();
-        out
+            .unwrap()
     }
 
     fn message(dir: &Path) -> String {

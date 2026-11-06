@@ -1647,7 +1647,7 @@ impl Tools {
                     .queue_command(
                         &chat.id,
                         &SessionCommandPayload::Run {
-                            request,
+                            request: Box::new(request),
                             message_id: uuid::Uuid::new_v4().to_string(),
                         },
                     )
@@ -2516,18 +2516,19 @@ mod tests {
             capped["accessCapped"].as_str().unwrap().contains("no more"),
             "{capped}"
         );
-        let writes = world.writes.lock().unwrap();
-        let created: Vec<&Value> = writes
-            .iter()
-            .filter(|(_, w)| w["op"] == "createChat")
-            .map(|(_, w)| w)
-            .collect();
-        assert_eq!(created.len(), 3);
-        assert_eq!(created[0]["config"]["access"], "supervised", "inherited");
-        assert_eq!(created[1]["config"]["plan"], true);
-        assert_eq!(created[2]["config"]["access"], "supervised", "capped");
-        assert_eq!(created[2]["config"]["sandbox"], "workspace-write", "capped");
-        drop(writes);
+        {
+            let writes = world.writes.lock().unwrap();
+            let created: Vec<&Value> = writes
+                .iter()
+                .filter(|(_, w)| w["op"] == "createChat")
+                .map(|(_, w)| w)
+                .collect();
+            assert_eq!(created.len(), 3);
+            assert_eq!(created[0]["config"]["access"], "supervised", "inherited");
+            assert_eq!(created[1]["config"]["plan"], true);
+            assert_eq!(created[2]["config"]["access"], "supervised", "capped");
+            assert_eq!(created[2]["config"]["sandbox"], "workspace-write", "capped");
+        }
         // A top-level chat with no mode of its own runs with full access,
         // which its chats inherit (the field is omitted on the wire).
         tools_from(&world, "chat-alpha-1")

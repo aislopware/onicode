@@ -72,7 +72,7 @@ pub enum BrowserEvent {
     Close,
     /// An element the user picked; `last` ends the pick (focus the composer).
     Annotation {
-        annotation: onicode_proto::annotation::BrowserAnnotation,
+        annotation: Box<onicode_proto::annotation::BrowserAnnotation>,
         /// The page's marker for the element, labelled once numbered.
         marker: u32,
         last: bool,
@@ -384,8 +384,7 @@ impl BrowserSurface {
                     while let Some(value) = updates.recv().await {
                         if let Ok(snapshot) =
                             serde_json::from_value::<onicode_proto::PreviewSnapshot>(value)
-                        {
-                            if this
+                            && this
                                 .update(cx, |this, cx| {
                                     #[cfg(target_os = "macos")]
                                     for service in &snapshot.services {
@@ -398,9 +397,8 @@ impl BrowserSurface {
                                     cx.notify();
                                 })
                                 .is_err()
-                            {
-                                return;
-                            }
+                        {
+                            return;
                         }
                     }
                 }
@@ -647,7 +645,7 @@ impl BrowserSurface {
         let count = picks.len();
         for (index, pick) in picks.into_iter().enumerate() {
             cx.emit(BrowserEvent::Annotation {
-                annotation: pick.annotation.bounded(),
+                annotation: Box::new(pick.annotation.bounded()),
                 marker: pick.marker,
                 last: finished && index + 1 == count,
             });
@@ -775,11 +773,11 @@ impl BrowserSurface {
                     self.favicon_task = None;
                 }
                 if !self.address.focus_handle(cx).is_focused(window) {
-                    if let Some(url) = &page.url {
-                        if self.address.read(cx).text() != url {
-                            self.address
-                                .update(cx, |input, cx| input.set_text(url.clone(), cx));
-                        }
+                    if let Some(url) = &page.url
+                        && self.address.read(cx).text() != url
+                    {
+                        self.address
+                            .update(cx, |input, cx| input.set_text(url.clone(), cx));
                     }
                     self.address_edited = false;
                 }

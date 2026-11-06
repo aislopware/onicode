@@ -474,10 +474,10 @@ fn result_block(ctx: &mut Ctx, st: &Styles, part: &MessagePart) -> Option<Detail
     else {
         return None;
     };
-    if let Some(diff) = diff {
-        if let Some(b) = diff_block(ctx, st, diff) {
-            return Some(b);
-        }
+    if let Some(diff) = diff
+        && let Some(b) = diff_block(ctx, st, diff)
+    {
+        return Some(b);
     }
     if let Some(stats) = diff_stats.as_ref().filter(|s| !s.is_empty()) {
         return Some(DetailBlock::Stats(
@@ -1423,10 +1423,10 @@ fn place_line_header(line: &ToolLine, px: Px, x: f32, ry: f32, cw: f32, o: &mut 
                 o,
             );
         }
-    } else if let Some(detail) = &line.detail {
-        if avail > 1.0 {
-            place_text_lines(detail, dx, ry + (row_h - detail.lh) / 2.0, avail, 1, px, o);
-        }
+    } else if let Some(detail) = &line.detail
+        && avail > 1.0
+    {
+        place_text_lines(detail, dx, ry + (row_h - detail.lh) / 2.0, avail, 1, px, o);
     }
     o.widget(
         WidgetKind::ToolToggle {
@@ -1664,11 +1664,11 @@ fn place_agents(
     x: f32,
     y: f32,
     cw: f32,
-    mut out: Option<&mut DisplayBuilder>,
+    out: Option<&mut DisplayBuilder>,
 ) -> f32 {
     let row = d(px, AGENT_ROW);
     let h = row * t.lines.len() as f32;
-    let Some(o) = out.as_deref_mut() else {
+    let Some(o) = out else {
         return h;
     };
     for (i, line) in t.lines.iter().enumerate() {

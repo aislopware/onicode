@@ -435,22 +435,24 @@ impl DockState {
             self.panel_departure = !reduced && docked && self.pane.progress.is_some();
         }
         let target = if docked { 1.0 } else { 0.0 };
-        if reduced || self.last_frame.is_none() || self.position.is_none() {
-            self.phase = Glide::new(target);
-            self.choreography = None;
-        } else {
-            // A click after an idle window is the START of the new motion,
-            // not elapsed animation time. Keep the last painted velocity.
-            let dt = if docked != self.frame.docked {
-                0.0
-            } else {
-                now.saturating_duration_since(self.last_frame.unwrap())
-                    .as_secs_f32()
-            };
-            self.phase.advance(target, dt, duration(docked));
-            if self.route_changed {
-                // Capture the exact previous visual state on interruption.
-                self.choreography = Some((now, self.frame.visuals));
+        match self.last_frame {
+            Some(last_frame) if !reduced && self.position.is_some() => {
+                // A click after an idle window is the START of the new motion,
+                // not elapsed animation time. Keep the last painted velocity.
+                let dt = if docked != self.frame.docked {
+                    0.0
+                } else {
+                    now.saturating_duration_since(last_frame).as_secs_f32()
+                };
+                self.phase.advance(target, dt, duration(docked));
+                if self.route_changed {
+                    // Capture the exact previous visual state on interruption.
+                    self.choreography = Some((now, self.frame.visuals));
+                }
+            }
+            _ => {
+                self.phase = Glide::new(target);
+                self.choreography = None;
             }
         }
         self.last_frame = Some(now);

@@ -145,22 +145,6 @@ actions!(
     ]
 );
 
-/// Restore a default focus only after an in-flight handoff has had a frame to
-/// claim the window. A synchronous focus-lost fallback can otherwise steal
-/// focus from controls that are mounting in response to the same input event.
-pub(crate) fn restore_focus_if_empty_on_next_frame<T: 'static>(
-    focus: FocusHandle,
-    window: &mut Window,
-    cx: &mut Context<T>,
-) {
-    window.on_next_frame(move |window, cx| {
-        if window.focused(cx).is_none() {
-            window.focus(&focus, cx);
-        }
-    });
-    cx.notify();
-}
-
 /// Check the completed dispatch tree, not just the lifetime of the focused
 /// handle: a hidden editor can stay alive after its element has unmounted.
 pub(crate) fn restore_mounted_focus(
@@ -1055,6 +1039,11 @@ impl NavHistory {
 
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    /// Never true in practice: the stack always holds its initial entry.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 }
 
@@ -2089,6 +2078,10 @@ enum PendingExit {
     InstallUpdate(PathBuf),
 }
 
+/// A tracked frame: its chat, the window fit, and per column the width
+/// painted and the width its content laid out at.
+type PaintedColumns = (String, HorizontalPanelFit, [(f32, f32); 3]);
+
 pub struct Shell {
     state: Entity<AppState>,
     sidebar_pane: Entity<SidebarPane>,
@@ -2423,7 +2416,7 @@ pub struct Shell {
     /// The last tracked frame: its chat, the window fit, and for each of
     /// `[sidebar, surface host, Files]` the width painted and the width its
     /// content laid out at.
-    painted_columns: Option<(String, HorizontalPanelFit, [(f32, f32); 3])>,
+    painted_columns: Option<PaintedColumns>,
     /// Columns the fit just hid while still open, easing out from the width
     /// they last painted with their content held at its layout width (same
     /// order).
@@ -3343,14 +3336,14 @@ impl Shell {
                 // own last pick stands (`last_space_id` also follows opened
                 // chats, so it is only the fallback), unless opted out.
                 let exists = |id: &String| state.read(cx).space_row(id).is_some();
-                let filter = self.settings.space_filter.clone().filter(&exists);
+                let filter = self.settings.space_filter.clone().filter(exists);
                 let target = match filter {
                     Some(filter) => Some(filter),
                     None if !state.read(cx).no_project => {
                         crate::settings::composer::ComposerDefaults::load(&self.data_dir)
                             .project
-                            .filter(&exists)
-                            .or_else(|| self.settings.last_space_id.clone().filter(&exists))
+                            .filter(exists)
+                            .or_else(|| self.settings.last_space_id.clone().filter(exists))
                     }
                     None => None,
                 };
@@ -4206,7 +4199,7 @@ impl Shell {
                 } => {
                     // Only the session that owns this tab receives its picks.
                     if this.panel_key(cx) == owner {
-                        let annotation = annotation.clone();
+                        let annotation = (**annotation).clone();
                         let last = *last;
                         if last && let Some(browser) = this.browsers.get(&id) {
                             browser.read(cx).release_keyboard();
@@ -4310,11 +4303,13 @@ impl Shell {
                 owner_state.clone(),
                 owner_chat.clone(),
                 path.clone(),
-                self.settings.files_autosave_enabled,
-                self.settings.files_autosave_delay_ms,
-                crate::typography::code_font_size(cx),
-                self.settings.files_word_wrap,
-                self.settings.files_show_all,
+                crate::files::FilesEditorSettings {
+                    autosave_enabled: self.settings.files_autosave_enabled,
+                    autosave_delay_ms: self.settings.files_autosave_delay_ms,
+                    editor_font_size: crate::typography::code_font_size(cx),
+                    word_wrap: self.settings.files_word_wrap,
+                    show_all_files: self.settings.files_show_all,
+                },
                 cx,
             )
         });
@@ -4324,7 +4319,7 @@ impl Shell {
             window,
             move |this: &mut Self, source, event, window, cx| {
                 if matches!(event, FilesEvent::OpenFile(_) | FilesEvent::RevealFile(_))
-                    && !this.accepts_file_navigation(&event_panel_key, &source, cx)
+                    && !this.accepts_file_navigation(&event_panel_key, source, cx)
                 {
                     return;
                 }
@@ -5311,16 +5306,18 @@ impl Shell {
         }
         let was_pull_requests = matches!(self.route, Route::PullRequests);
         let will_show_pull_requests = matches!(route, Route::PullRequests);
-        if was_pull_requests && !will_show_pull_requests {
-            if let Some(page) = self.pull_requests_page.as_ref().cloned() {
-                page.update(cx, |page, _| page.on_hidden());
-            }
+        if was_pull_requests
+            && !will_show_pull_requests
+            && let Some(page) = self.pull_requests_page.as_ref().cloned()
+        {
+            page.update(cx, |page, _| page.on_hidden());
         }
         self.route = route;
-        if !was_pull_requests && will_show_pull_requests {
-            if let Some(page) = self.pull_requests_page.as_ref().cloned() {
-                page.update(cx, |page, cx| page.on_visible(cx));
-            }
+        if !was_pull_requests
+            && will_show_pull_requests
+            && let Some(page) = self.pull_requests_page.as_ref().cloned()
+        {
+            page.update(cx, |page, cx| page.on_visible(cx));
         }
     }
 
@@ -6077,7 +6074,7 @@ impl Shell {
             }
             SettingsSection::Notifications => {
                 if self.notifications_page.is_none() {
-                    let page = cx.new(|cx| {
+                    let page = cx.new(|_| {
                         NotificationsPage::new(
                             self.settings.sound_enabled,
                             self.settings.sound_completion_enabled,
@@ -6086,7 +6083,6 @@ impl Shell {
                             self.settings.notifications_enabled,
                             self.settings.notifications_background_only,
                             self.settings.agent_update_notifications,
-                            cx,
                         )
                     });
                     // Persist the flags whenever the page flips one.
@@ -6167,9 +6163,11 @@ impl Shell {
                             keymap,
                             escape_stops_active_agent,
                             composer_send_behavior,
-                            appshots_enabled,
-                            appshot_sound_enabled,
-                            appshot_destination,
+                            crate::settings::shortcuts::AppshotPrefs {
+                                enabled: appshots_enabled,
+                                sound_enabled: appshot_sound_enabled,
+                                destination: appshot_destination,
+                            },
                             cx,
                         )
                     });
@@ -6179,7 +6177,7 @@ impl Shell {
                         |this: &mut Shell, _, event: &ShortcutsEvent, cx| {
                             match event {
                                 ShortcutsEvent::KeymapChanged(keymap) => {
-                                    this.settings.keymap = keymap.clone();
+                                    this.settings.keymap = (**keymap).clone();
                                 }
                                 ShortcutsEvent::EscapeStopsActiveAgentChanged(enabled) => {
                                     this.settings.escape_stops_active_agent = *enabled;
@@ -6475,7 +6473,6 @@ impl Shell {
             if changed {
                 self.schedule_save(cx);
             }
-            return;
         }
         // Remote pins come exclusively from per-pin registry records.
     }
@@ -16401,11 +16398,7 @@ mod exit_regressions {
                     FilesSurface::new(
                         shell.state.clone(),
                         "preview".into(),
-                        false,
-                        1000,
-                        13.0,
-                        false,
-                        false,
+                        crate::files::FilesEditorSettings::TEST,
                         cx,
                     )
                 });
@@ -17115,7 +17108,7 @@ mod exit_regressions {
         back(cx, false);
         assert_eq!(pane(cx), (true, Some(0), 3));
         back(cx, false);
-        assert_eq!(pane(cx).0, false);
+        assert!(!pane(cx).0);
         assert_eq!(pane(cx).2, 3);
         back(cx, true);
         assert_eq!(pane(cx), (true, Some(0), 3));
@@ -17621,8 +17614,8 @@ mod exit_regressions {
                     panel
                 })
                 .unwrap();
-            let terminal_window = if !embedded && drawer_window.is_some() {
-                drawer_window.unwrap()
+            let terminal_window = if !embedded && let Some(handle) = drawer_window {
+                handle
             } else {
                 let handle = cx.update(|cx| {
                     cx.open_window(gpui::WindowOptions::default(), |_, _| panel.clone())
@@ -18788,11 +18781,7 @@ mod exit_regressions {
                         let mut files = FilesSurface::new(
                             state,
                             "test".into(),
-                            false,
-                            1000,
-                            13.0,
-                            false,
-                            false,
+                            crate::files::FilesEditorSettings::TEST,
                             cx,
                         );
                         files.seed_pending_exit_test_document(failed);

@@ -55,7 +55,7 @@ mod imp {
                 return;
             }
             let handler = RcBlock::new(|path: *mut c_void| {
-                let status = unsafe { nw_path_get_status(path) };
+                let status = nw_path_get_status(path);
                 let online = status != NW_PATH_STATUS_UNSATISFIED;
                 crate::wake::set_path_online(online);
                 if online {

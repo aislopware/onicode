@@ -25,10 +25,10 @@ impl TokenSink for DescriptionHtml {
         match token {
             Token::TagToken(tag) => {
                 let name = tag.name.as_ref();
-                if let Some(hidden) = self.hidden.borrow().as_ref() {
-                    if tag.kind != TagKind::EndTag || name != hidden {
-                        return TokenSinkResult::Continue;
-                    }
+                if let Some(hidden) = self.hidden.borrow().as_ref()
+                    && (tag.kind != TagKind::EndTag || name != hidden)
+                {
+                    return TokenSinkResult::Continue;
                 }
                 if matches!(name, "script" | "style" | "iframe") {
                     *self.hidden.borrow_mut() =
@@ -334,10 +334,10 @@ impl gpui::Element for PreviewImage {
     }
 }
 
-pub(super) fn media(
-    pr_url: &str,
-    open: Rc<dyn Fn(&str, &mut gpui::Window, &mut gpui::App)>,
-) -> MediaUi {
+/// Opens a link from the description in the browser.
+pub(super) type OpenLink = Rc<dyn Fn(&str, &mut gpui::Window, &mut gpui::App)>;
+
+pub(super) fn media(pr_url: &str, open: OpenLink) -> MediaUi {
     let pr_url = pr_url.to_owned();
     MediaUi {
         diagram: None,

@@ -490,7 +490,7 @@ mod tests {
     fn an_advertised_service_carries_no_argument_but_its_script() {
         let temp = tempfile::tempdir().unwrap();
         let catalog = Catalog::open(
-            &temp.path().join("previews.json"),
+            temp.path().join("previews.json"),
             "device-id".into(),
             "MacBook".into(),
         )

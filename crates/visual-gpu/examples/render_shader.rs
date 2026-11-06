@@ -62,7 +62,7 @@ fn main() {
     };
     let frame = render_shader(&spec, &uniforms, w, h, &mut None).expect("render");
     let mut ppm = format!("P6\n{w} {h}\n255\n").into_bytes();
-    for p in frame.bgra.chunks_exact(4) {
+    for p in frame.bgra.as_chunks::<4>().0 {
         let a = f32::from(p[3]) / 255.0;
         for (ch, bg) in [p[2], p[1], p[0]].into_iter().zip(background) {
             ppm.push((f32::from(ch) * a + bg * 255.0 * (1.0 - a)) as u8);

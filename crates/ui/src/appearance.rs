@@ -311,8 +311,8 @@ fn model_appearance(appearance: Appearance) -> onicode_theme::Appearance {
 /// until our own notification round-trip repainted it.
 #[cfg(target_os = "macos")]
 fn sync_ns_appearance(mode: AppearanceMode) {
-    use objc::runtime::Object;
-    use objc::{class, msg_send, sel, sel_impl};
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
     // NSAppearanceName constants are NSStrings whose value equals the
     // constant's own name (AppKit documents them as stable identifiers), so
     // building them from literals avoids linking the extern statics.
@@ -322,15 +322,15 @@ fn sync_ns_appearance(mode: AppearanceMode) {
         AppearanceMode::Dark => Some(c"NSAppearanceNameDarkAqua"),
     };
     unsafe {
-        let appearance: *mut Object = match name {
+        let appearance: *mut AnyObject = match name {
             None => std::ptr::null_mut(),
             Some(name) => {
-                let name: *mut Object =
+                let name: *mut AnyObject =
                     msg_send![class!(NSString), stringWithUTF8String: name.as_ptr()];
                 msg_send![class!(NSAppearance), appearanceNamed: name]
             }
         };
-        let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+        let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
         let _: () = msg_send![app, setAppearance: appearance];
     }
 }

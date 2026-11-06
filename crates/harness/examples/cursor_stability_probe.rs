@@ -195,17 +195,16 @@ async fn parked(harness: &CursorHarness, count: usize) {
                     assert!(text.contains(&nonce),"lost parked context: {text}");
                     text.clear(); completed+=1;
                     println!("parked_turn={completed} checkpoint_recall=true");
-                    if completed==2 {
-                        if let Some(before)=auth_exchanges_before {
+                    if completed==2
+                        && let Some(before)=auth_exchanges_before {
                             let control=std::env::var("ONICODE_CURSOR_AUTH_CLOCK").unwrap();
                             let after=std::fs::read_to_string(format!("{control}.exchanges")).unwrap().lines().count();
                             assert!(after>before,"SDK reused its near-expiry auth token: exchanges remained {before}");
                             println!("auth_refresh_verified=true additional_exchanges={}",after-before);
                         }
-                    }
                     if completed==count {break;}
-                    if completed==1 {
-                        if let Ok(control)=std::env::var("ONICODE_CURSOR_AUTH_CLOCK") {
+                    if completed==1
+                        && let Ok(control)=std::env::var("ONICODE_CURSOR_AUTH_CLOCK") {
                             let exchanges=std::fs::read_to_string(format!("{control}.exchanges")).unwrap();
                             auth_exchanges_before=Some(exchanges.lines().count());
                             let last:serde_json::Value=serde_json::from_str(exchanges.lines().last().unwrap()).unwrap();
@@ -215,7 +214,6 @@ async fn parked(harness: &CursorHarness, count: usize) {
                             std::fs::write(&control,serde_json::json!({"offsetMs":offset}).to_string()).unwrap();
                             println!("auth_clock_advanced_ms={offset} exchanges_before={}",exchanges.lines().count());
                         }
-                    }
                     tx.send(onicode_harness::SteerMessage{prompt:"Repeat the exact PARKED-STABILITY token from earlier. Reply only the token. Do not use tools or files.".into(),message_id:None, attachments: Vec::new(), config: None}).await.unwrap();
                 }
                 _=>{}

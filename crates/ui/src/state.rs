@@ -1260,9 +1260,7 @@ impl AppState {
     /// [`Self::terminal_open_cwd`] for a specific panel key (the tab being
     /// opened, which matches the selected session).
     pub fn terminal_open_cwd_for(&self, session_key: &str) -> Option<String> {
-        let Some(space_id) = session_key.strip_prefix(CANVAS_PANEL_PREFIX) else {
-            return None;
-        };
+        let space_id = session_key.strip_prefix(CANVAS_PANEL_PREFIX)?;
         if space_id.is_empty() || self.no_project {
             return Some("~".to_string());
         }
@@ -3760,7 +3758,7 @@ impl AppState {
         tracing::warn!(?delay, ?reason, "lost the engine connection; reconnecting");
         self.reconnect_task = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(delay).await;
-            let _ = cx.update(|cx| {
+            cx.update(|cx| {
                 let Some(state) = this.upgrade() else {
                     return;
                 };
@@ -4969,6 +4967,36 @@ fn spawn_subagent_watch(
             cx.background_executor().timer(RETRY_DELAY).await;
         }
     })
+}
+
+#[cfg(any(
+    feature = "appshots-fixture",
+    feature = "pull-request-fixture",
+    feature = "project-path-fixture"
+))]
+impl AppState {
+    /// Keep fixture documents deterministic while using the real attachment RPC.
+    pub fn fixture_attachment_engine(&mut self, engine: EngineHandle) {
+        self.engine = Some(engine);
+    }
+}
+
+#[cfg(any(test, feature = "project-palette-fixture"))]
+impl AppState {
+    /// Seed provider metadata for the isolated native sidebar review fixture
+    /// and for tests that click a sidebar badge.
+    pub fn fixture_sidebar_change_request(
+        &mut self,
+        snapshot: onicode_proto::CheckoutChangeRequestStatus,
+    ) {
+        let key = crate::change_requests::ChangeRequestWatchKey {
+            device_id: snapshot.device_id.clone(),
+            cwd: snapshot.cwd.clone(),
+            branch: snapshot.branch.clone(),
+            checkout_id: Some(snapshot.checkout_id.clone()),
+        };
+        self.change_requests.store(key, snapshot);
+    }
 }
 
 #[cfg(test)]
@@ -8207,7 +8235,10 @@ mod tests {
         expected.line = 9;
         expected.body = "Revised".into();
         assert_eq!(state.review_comments("chat-1"), &[expected]);
-        assert_eq!(state.review_comments("chat-2"), &[original.clone()]);
+        assert_eq!(
+            state.review_comments("chat-2"),
+            std::slice::from_ref(&original)
+        );
         assert!(state.review_comment_flush_pending("chat-1"));
         state.remove_review_comment("chat-1", &original.id);
         state.update_review_comment_body("chat-1", &original.id, "Stale".into());
@@ -8265,29 +8296,31 @@ mod tests {
 
     #[test]
     fn explicit_capabilities_distinguish_same_version_builds() {
-        let mut state = AppState::default();
-        state.devices = vec![
-            Device {
-                id: "personal".into(),
-                name: "personal".into(),
-                platform: "macos".into(),
-                last_seen_at: None,
-                created_at: None,
-                version: Some("0.2.31".into()),
-                cursor_sdk_version: None,
-                capabilities: vec![onicode_proto::capabilities::MESSAGE_QUEUE_V1.into()],
-            },
-            Device {
-                id: "upstream".into(),
-                name: "upstream".into(),
-                platform: "macos".into(),
-                last_seen_at: None,
-                created_at: None,
-                version: Some("0.2.31".into()),
-                cursor_sdk_version: None,
-                capabilities: Vec::new(),
-            },
-        ];
+        let state = AppState {
+            devices: vec![
+                Device {
+                    id: "personal".into(),
+                    name: "personal".into(),
+                    platform: "macos".into(),
+                    last_seen_at: None,
+                    created_at: None,
+                    version: Some("0.2.31".into()),
+                    cursor_sdk_version: None,
+                    capabilities: vec![onicode_proto::capabilities::MESSAGE_QUEUE_V1.into()],
+                },
+                Device {
+                    id: "upstream".into(),
+                    name: "upstream".into(),
+                    platform: "macos".into(),
+                    last_seen_at: None,
+                    created_at: None,
+                    version: Some("0.2.31".into()),
+                    cursor_sdk_version: None,
+                    capabilities: Vec::new(),
+                },
+            ],
+            ..AppState::default()
+        };
 
         assert!(state.device_supports("personal", onicode_proto::capabilities::MESSAGE_QUEUE_V1));
         assert!(!state.device_supports("upstream", onicode_proto::capabilities::MESSAGE_QUEUE_V1));
@@ -8297,8 +8330,10 @@ mod tests {
     fn delivery_degradation_and_queued_sends_tell_the_truth() {
         use onicode_proto::{ChatConnectivity, ConnectivityState};
         let now = Utc::now();
-        let mut s = AppState::default();
-        s.local_device_id = Some("local".into());
+        let mut s = AppState {
+            local_device_id: Some("local".into()),
+            ..AppState::default()
+        };
         let mut remote = chat("c-remote", 0, None);
         remote.device_id = "remote".into();
         let mut local = chat("c-local", 0, None);
@@ -8432,8 +8467,10 @@ mod tests {
     }
 
     fn remote_chat_state(now: DateTime<Utc>) -> AppState {
-        let mut s = AppState::default();
-        s.local_device_id = Some("local".into());
+        let mut s = AppState {
+            local_device_id: Some("local".into()),
+            ..AppState::default()
+        };
         let mut remote = chat("c-remote", 0, None);
         remote.device_id = "remote".into();
         let mut local = chat("c-local", 0, None);
@@ -8840,35 +8877,5 @@ mod tests {
         assert_eq!(s.transcript_loading(t0), Some(TranscriptLoading::Opening));
         s.unsaved_side_chat = true;
         assert_eq!(s.transcript_loading(t0), None);
-    }
-}
-
-#[cfg(any(
-    feature = "appshots-fixture",
-    feature = "pull-request-fixture",
-    feature = "project-path-fixture"
-))]
-impl AppState {
-    /// Keep fixture documents deterministic while using the real attachment RPC.
-    pub fn fixture_attachment_engine(&mut self, engine: EngineHandle) {
-        self.engine = Some(engine);
-    }
-}
-
-#[cfg(any(test, feature = "project-palette-fixture"))]
-impl AppState {
-    /// Seed provider metadata for the isolated native sidebar review fixture
-    /// and for tests that click a sidebar badge.
-    pub fn fixture_sidebar_change_request(
-        &mut self,
-        snapshot: onicode_proto::CheckoutChangeRequestStatus,
-    ) {
-        let key = crate::change_requests::ChangeRequestWatchKey {
-            device_id: snapshot.device_id.clone(),
-            cwd: snapshot.cwd.clone(),
-            branch: snapshot.branch.clone(),
-            checkout_id: Some(snapshot.checkout_id.clone()),
-        };
-        self.change_requests.store(key, snapshot);
     }
 }

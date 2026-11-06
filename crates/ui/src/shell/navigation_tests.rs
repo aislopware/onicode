@@ -209,9 +209,11 @@ fn side_chat_to_diff_retains_right_focus_and_custom_bindings(cx: &mut TestAppCon
                 .focus_handle(cx)
                 .is_focused(window)
         );
-        let mut keymap = KeymapConfig::default();
-        keymap.next_session = "alt-down".into();
-        keymap.prev_session = "alt-up".into();
+        let keymap = KeymapConfig {
+            next_session: "alt-down".into(),
+            prev_session: "alt-up".into(),
+            ..KeymapConfig::default()
+        };
         apply_keymap(cx, &keymap, ComposerSendBehavior::default());
     });
     cx.simulate_keystrokes("alt-down");

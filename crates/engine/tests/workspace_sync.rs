@@ -191,7 +191,7 @@ fn queue_run_with(
         .queue_command(&SessionCommandEntry {
             id: command_id.into(),
             payload: SessionCommandPayload::Run {
-                request,
+                request: Box::new(request),
                 message_id: message_id.into(),
             },
             issued_by: VIEWER.into(),
@@ -436,7 +436,7 @@ async fn projectless_claim_syncs_after_offline_creation_and_survives_viewer_rest
         .queue_command(
             "projectless-offline",
             SessionCommandPayload::Run {
-                request,
+                request: Box::new(request),
                 message_id: "projectless-msg".into(),
             },
         )

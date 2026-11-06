@@ -217,7 +217,7 @@ mod tests {
             id: "old".into(),
             text: "histórico".into(),
         };
-        writer.sync(&[old.clone()]).unwrap();
+        writer.sync(std::slice::from_ref(&old)).unwrap();
         doc.doc()
             .import_with(&source.export_snapshot().unwrap(), REPLAY_ORIGIN)
             .unwrap();

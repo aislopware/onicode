@@ -14,11 +14,13 @@ A native control plane for coding agents: many clients drive many servers peer t
 ## Architecture rules
 
 - No relay, cloud service or app-layer crypto: peers speak plaintext QUIC over the tailnet and admit by tailscale whois.
-- Remote desktop streams whole displays; per-window remoting is not built.
+- Remote desktop streams whole displays from a Mac host to Mac and iOS clients; per-window remoting and other
+  platforms are not built.
 
 ## Checks
 
-- Build the app: `cargo build -p onicode --bins`.
+- `scripts/dev/check.sh` runs fmt, clippy and the tests; `build`, `lint` or `test '<nextest filter>'` run one part.
+  It keeps one warm target dir on the internal SSD (`scripts/dev/env.sh`); select tests with a filter, not `-p`.
 - Subagents edit a whole batch without building or testing; the lead runs the checks once per batch.
 
 ## Tests

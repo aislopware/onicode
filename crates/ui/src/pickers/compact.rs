@@ -1413,6 +1413,21 @@ fn effort_index(x: f32, width: f32, count: usize) -> Option<usize> {
         .then(|| (effort_fraction(x, width) * count.saturating_sub(1) as f32).round() as usize)
 }
 
+pub(super) struct PickerHint(pub(super) SharedString);
+impl Render for PickerHint {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = Theme::of(cx).for_popup();
+        let card = popover::popover_card(&theme)
+            .max_w(px(320.0))
+            .p(px(8.0))
+            .text_size(crate::typography::ui_rems(12.0))
+            .line_height(px(17.0))
+            .text_color(theme.text)
+            .child(self.0.clone());
+        crate::frost::frosted(popover::CARD_RADIUS, crate::frost::MENU_BLUR, card)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1463,20 +1478,5 @@ mod tests {
         assert_eq!(effort_index(-20.0, 200.0, 5), Some(0));
         assert_eq!(effort_index(100.0, 200.0, 5), Some(2));
         assert_eq!(effort_index(250.0, 200.0, 5), Some(4));
-    }
-}
-
-pub(super) struct PickerHint(pub(super) SharedString);
-impl Render for PickerHint {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::of(cx).for_popup();
-        let card = popover::popover_card(&theme)
-            .max_w(px(320.0))
-            .p(px(8.0))
-            .text_size(crate::typography::ui_rems(12.0))
-            .line_height(px(17.0))
-            .text_color(theme.text)
-            .child(self.0.clone());
-        crate::frost::frosted(popover::CARD_RADIUS, crate::frost::MENU_BLUR, card)
     }
 }

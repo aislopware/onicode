@@ -6,7 +6,10 @@
     watch.py status [NAME]    per source: commits past `base` that touch its paths, and their files
     watch.py deps             toolchain and crate updates (rustup, cargo upgrade --incompatible)
 
-Sources and their `base` are in sources.toml beside this file. A head move is named only when
+Sources and their `base` are in sources.toml beside this file: what onicode builds on, and the
+references it studies (peers that drive coding agents, Claude Code and its SDKs). References may
+also report GitHub releases (`releases`), RSS items (`feed`), release-notes headings (`page`) or
+npm versions (`npm`), whose published artifacts are studied with REA (docs/onicode/upstream.md). A head move is named only when
 the commits since the last look touch the source's `paths`, a pull request only when its files
 do. Nothing is applied: changes are read and ported by intent (docs/onicode/upstream.md), and
 `base` moves in the adopting commit. What a round saw is kept in
@@ -17,6 +20,9 @@ for a source only records. An upstream that does not answer is skipped for the r
 from __future__ import annotations
 
 import argparse
+import html
+import re
+import urllib.request
 import json
 import os
 import subprocess
@@ -79,6 +85,62 @@ def pulls(src: dict) -> dict[str, dict] | None:
             for p in data if relevant([f["path"] for f in p.get("files") or []], paths)}
 
 
+def releases(src: dict) -> list[str] | None:
+    if not src.get("releases"):
+        return []
+    data = gh_json("release", "list", "-R", src["upstream"], "--limit", "10", "--json", "tagName")
+    return None if data is None else [r["tagName"] for r in data]
+
+
+def fetch(url: str) -> str | None:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (onicode upstream watch)"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read().decode(errors="replace")
+    except OSError:
+        return None
+
+
+def npm_versions(package: str) -> list[str] | None:
+    """The package's published versions, newest first (the registry lists them oldest first)."""
+    text = fetch(f"https://registry.npmjs.org/{package}")
+    if text is None:
+        return None
+    times = json.loads(text).get("time", {})
+    return [v for v, _ in sorted(((v, t) for v, t in times.items() if v not in ("created", "modified")),
+                                 key=lambda vt: vt[1], reverse=True)][:20]
+
+
+def entries(src: dict) -> list[str] | None:
+    """The titles a feed (`feed`, RSS or Atom) or a release-notes page (`page`, its h2/h3) lists, newest first."""
+    if "npm" in src:
+        return npm_versions(src["npm"])
+    text = fetch(src.get("feed") or src["page"])
+    if text is None:
+        return None
+    pattern = r"<item>.*?<title>(.*?)</title>|<entry>.*?<title[^>]*>(.*?)</title>" if "feed" in src \
+        else r"<h[23][^>]*>(.*?)</h[23]>"
+    found = []
+    for match in re.finditer(pattern, text, re.S):
+        raw = next(g for g in match.groups() if g is not None)
+        title = html.unescape(re.sub(r"<!\[CDATA\[|\]\]>|<[^>]+>", "", raw)).strip()
+        if title and title not in found:
+            found.append(title)
+    return found
+
+
+def watch_entries(name: str, src: dict, seen: dict, now: float) -> list[str]:
+    current = entries(src)
+    if current is None:
+        return []
+    lines = []
+    if "entries" in seen:
+        url = src.get("feed") or src.get("page") or f"https://www.npmjs.com/package/{src.get('npm')}"
+        lines = [f"{name}: new: {title} ({url})" for title in current if title not in seen["entries"]]
+    seen.update(entries=current, at=now)
+    return lines
+
+
 def load_state() -> dict:
     try:
         return json.loads(STATE.read_text())
@@ -100,10 +162,17 @@ def one_round(state: dict, now: float) -> list[str]:
         every = src.get("every_minutes", 0) * 60
         if every and now - seen.get("at", 0) < every:
             continue
+        if "feed" in src or "page" in src or "npm" in src:
+            lines += watch_entries(name, src, seen, now)
+            continue
         new = head(src)
         prs = pulls(src)
-        if new is None or prs is None:
+        tags = releases(src)
+        if new is None or prs is None or tags is None:
             continue
+        if "releases" in seen:
+            lines += [f"{name}: release {tag} (https://github.com/{src['upstream']}/releases/tag/{tag})"
+                      for tag in tags if tag not in seen["releases"]]
         old = seen.get("head")
         if old and old != new:
             diff = compare(src, old, new)
@@ -127,7 +196,7 @@ def one_round(state: dict, now: float) -> list[str]:
                     continue
                 lines.append(f"{name}: #{number} {what}: {pr['title']} "
                              f"(https://github.com/{src['upstream']}/pull/{number})")
-        seen.update(head=new, pulls=prs, at=now)
+        seen.update(head=new, pulls=prs, releases=tags, at=now)
     return lines
 
 
@@ -149,6 +218,10 @@ def cmd_loop(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     for name, src in sources().items():
         if args.name and name != args.name:
+            continue
+        if "feed" in src or "page" in src or "npm" in src:
+            current = entries(src) or []
+            print(f"{name}: latest: {current[0] if current else '(no answer)'}")
             continue
         new = head(src)
         if new is None:

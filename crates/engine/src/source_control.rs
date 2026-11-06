@@ -346,6 +346,9 @@ impl CheckoutChangeRequestLookup for ChangeRequestResolver {
     }
 }
 
+/// When the active `gh` account was read, and its login (`None`: signed out).
+type AccountRead = (Instant, Option<String>);
+
 /// GitHub provider backed by the host's existing `gh` installation and auth.
 #[derive(Clone)]
 pub struct GitHubCli {
@@ -355,7 +358,7 @@ pub struct GitHubCli {
     /// (tests, and engines without a data directory).
     store: Option<crate::change_request_store::ChangeRequestStore>,
     /// The active `gh` account and when it was read, keying the store.
-    account: Arc<tokio::sync::Mutex<Option<(Instant, Option<String>)>>>,
+    account: Arc<tokio::sync::Mutex<Option<AccountRead>>>,
 }
 
 impl GitHubCli {
@@ -2726,8 +2729,7 @@ mod tests {
                 "data": {
                     "repository": {"nameWithOwner": "acme/onicode"},
                     "search": {
-                        "nodes": [search_pull_request("acme/onicode", number, "Add dashboard", "OPEN", "MERGEABLE",
-                            "2026-08-10T09:30:00Z", "2026-08-19T12:00:00Z", false, Some("CHANGES_REQUESTED"))],
+                        "nodes": [search_pull_request("acme/onicode", number, "Add dashboard", "MERGEABLE", ("2026-08-10T09:30:00Z", "2026-08-19T12:00:00Z"), false, Some("CHANGES_REQUESTED"))],
                         "issueCount": 2,
                         "pageInfo": {"hasNextPage": cursor.is_some(), "endCursor": cursor}
                     }
@@ -3377,14 +3379,13 @@ mod tests {
         })
     }
 
+    /// An open pull request as the search returns it, dated `(created_at, updated_at)`.
     fn search_pull_request(
         repository: &str,
         number: u64,
         title: &str,
-        state: &str,
         mergeable: &str,
-        created_at: &str,
-        updated_at: &str,
+        (created_at, updated_at): (&str, &str),
         is_draft: bool,
         review_decision: Option<&str>,
     ) -> serde_json::Value {
@@ -3393,7 +3394,7 @@ mod tests {
             "author": { "login": "octocat" },
             "title": title,
             "url": format!("https://github.com/{repository}/pull/{number}"),
-            "state": state,
+            "state": "OPEN",
             "mergeable": mergeable,
             "repository": {
                 "nameWithOwner": repository,
@@ -3419,8 +3420,7 @@ mod tests {
         use onicode_proto::change_request_assessment::{CiState, Facts, MissingInformation};
         let head = "a".repeat(40);
         let nodes = (1..=50).map(|number| {
-            let mut node = search_pull_request("acme/onicode", number, "A PR", "OPEN", "MERGEABLE",
-                "2026-08-10T09:30:00Z", "2026-08-19T12:00:00Z", false, Some("REVIEW_REQUIRED"));
+            let mut node = search_pull_request("acme/onicode", number, "A PR", "MERGEABLE", ("2026-08-10T09:30:00Z", "2026-08-19T12:00:00Z"), false, Some("REVIEW_REQUIRED"));
             node["headRefOid"] = head.clone().into();
             node["viewerDidAuthor"] = false.into();
             node["viewerLatestReviewRequest"] = serde_json::json!({"id": "latest"});
@@ -3602,10 +3602,8 @@ mod tests {
             "acme/new-name",
             1,
             "PR",
-            "OPEN",
             "UNKNOWN",
-            "2026-08-10T09:30:00Z",
-            "2026-08-19T12:00:00Z",
+            ("2026-08-10T09:30:00Z", "2026-08-19T12:00:00Z"),
             false,
             None,
         )]);
@@ -3628,10 +3626,8 @@ mod tests {
                 "acme/onicode",
                 number,
                 "PR",
-                "OPEN",
                 "UNKNOWN",
-                "2026-08-10T09:30:00Z",
-                "2026-08-19T12:00:00Z",
+                ("2026-08-10T09:30:00Z", "2026-08-19T12:00:00Z"),
                 false,
                 None,
             )
@@ -3693,10 +3689,8 @@ mod tests {
                 "acme/onicode",
                 1,
                 title,
-                "OPEN",
                 "UNKNOWN",
-                "2026-08-10T09:30:00Z",
-                "2026-08-19T12:00:00Z",
+                ("2026-08-10T09:30:00Z", "2026-08-19T12:00:00Z"),
                 false,
                 None,
             )]))
@@ -3768,10 +3762,8 @@ mod tests {
             "acme/new-name",
             1,
             "PR",
-            "OPEN",
             "UNKNOWN",
-            "2026-08-10T09:30:00Z",
-            "2026-08-19T12:00:00Z",
+            ("2026-08-10T09:30:00Z", "2026-08-19T12:00:00Z"),
             false,
             None,
         )]);
@@ -4024,10 +4016,8 @@ mod tests {
             "acme/onicode",
             123,
             "Dashboard",
-            "OPEN",
             "CONFLICTING",
-            "2026-08-10T09:30:00Z",
-            "2026-08-19T12:00:00Z",
+            ("2026-08-10T09:30:00Z", "2026-08-19T12:00:00Z"),
             true,
             Some("CHANGES_REQUESTED"),
         )]);
@@ -4086,10 +4076,8 @@ mod tests {
                 "acme/onicode",
                 8,
                 "  A title\nwith\tspacing  ",
-                "OPEN",
                 "MERGEABLE",
-                "2026-08-01T08:00:00Z",
-                "2026-08-19T11:00:00Z",
+                ("2026-08-01T08:00:00Z", "2026-08-19T11:00:00Z"),
                 false,
                 Some("APPROVED"),
             ),
@@ -4097,10 +4085,8 @@ mod tests {
                 "acme/onicode",
                 4,
                 "Alpha",
-                "OPEN",
                 "UNKNOWN",
-                "2026-08-02T08:00:00Z",
-                "2026-08-19T12:00:00Z",
+                ("2026-08-02T08:00:00Z", "2026-08-19T12:00:00Z"),
                 true,
                 Some("REVIEW_REQUIRED"),
             ),
@@ -4108,10 +4094,8 @@ mod tests {
                 "acme/onicode",
                 2,
                 "Earlier number",
-                "OPEN",
                 "MERGEABLE",
-                "2026-08-03T08:00:00Z",
-                "2026-08-19T12:00:00Z",
+                ("2026-08-03T08:00:00Z", "2026-08-19T12:00:00Z"),
                 false,
                 None,
             ),
@@ -4140,10 +4124,8 @@ mod tests {
             "acme/onicode",
             1,
             "Valid",
-            "OPEN",
             "MERGEABLE",
-            "2026-08-01T08:00:00Z",
-            "2026-08-19T12:00:00Z",
+            ("2026-08-01T08:00:00Z", "2026-08-19T12:00:00Z"),
             false,
             None,
         );
@@ -4173,17 +4155,7 @@ mod tests {
     async fn github_search_skips_results_the_viewer_cannot_read() {
         let json = serde_json::to_vec(&serde_json::json!({"data": {"search": {"nodes": [
             null,
-            search_pull_request(
-                "acme/onicode",
-                3,
-                "Readable",
-                "OPEN",
-                "MERGEABLE",
-                "2026-08-01T08:00:00Z",
-                "2026-08-19T12:00:00Z",
-                false,
-                None,
-            ),
+            search_pull_request("acme/onicode", 3, "Readable", "MERGEABLE", ("2026-08-01T08:00:00Z", "2026-08-19T12:00:00Z"), false, None),
         ]}}}))
         .unwrap();
         let (result, _) = list_with(command_success(json)).await;
@@ -4198,10 +4170,8 @@ mod tests {
             "acme/onicode",
             3,
             "Readable",
-            "OPEN",
             "MERGEABLE",
-            "2026-08-01T08:00:00Z",
-            "2026-08-19T12:00:00Z",
+            ("2026-08-01T08:00:00Z", "2026-08-19T12:00:00Z"),
             false,
             None,
         );

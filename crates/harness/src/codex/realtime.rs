@@ -71,10 +71,10 @@ impl RealtimeHandle {
     }
     /// Immediately closes native capture even if the control actor is waiting on I/O.
     pub fn abort_voice(&self, generation: u64) {
-        if let Some((current, cancel)) = self.audio_abort.lock().unwrap().as_ref() {
-            if *current == generation {
-                cancel.cancel();
-            }
+        if let Some((current, cancel)) = self.audio_abort.lock().unwrap().as_ref()
+            && *current == generation
+        {
+            cancel.cancel();
         }
     }
 
@@ -225,7 +225,8 @@ pub(super) fn attach(
                         let (answer,answer_rx)=oneshot::channel();let (accepted,accepted_rx)=oneshot::channel();
                         answer_tx=Some(answer);accepted_tx=Some(accepted);expected_session=session_id.clone();
                         starting=Some(Box::pin({let client=client.clone();let thread=thread.clone();let executable=executable.clone();let context=context.clone();let server_live=server_live.clone();async move {
-                            start(client,thread,executable,context,voice,session_id,accepted_rx,answer_rx,abort,server_live).await.map(Started::Local)
+                            let request=StartRequest{client,thread,context,voice,session_id,accepted:accepted_rx,answer:answer_rx,server_live};
+                            start(request,executable,abort).await.map(Started::Local)
                         }}));
                         start_reply=Some(reply);
                     },
@@ -241,7 +242,7 @@ pub(super) fn attach(
                         starting=Some(Box::pin(async move {
                             tokio::select!{biased;
                                 _=abort.cancelled()=>Err(VoiceRejection::InvalidLease),
-                                answer=start_external(client,thread,context,voice,session_id,offer,accepted_rx,answer_rx,server_live)=>answer.map(Started::External),
+                                answer=start_external(StartRequest{client,thread,context,voice,session_id,accepted:accepted_rx,answer:answer_rx,server_live},offer)=>answer.map(Started::External),
                             }
                         }));
                         external_reply=Some(reply);
@@ -291,22 +292,35 @@ pub(super) fn attach(
                 notification=wire.recv()=>match notification {
                     Some(Incoming::Notification{method,params})=>{
                         if method=="thread/realtime/closed" && params["threadId"]==thread {server_live.store(false,Ordering::Release);}
-                        if method=="account/updated" {native=None;starting=None;external_active=false;if let Some(reply)=external_reply.take(){let _=reply.send(Err(VoiceRejection::ChatgptRequired));}if let Some(reply)=start_reply.take(){let _=reply.send(Err(VoiceRejection::ChatgptRequired));}let _=events.send(VoiceEvent::Closed{generation,reason:Some(VoiceRejection::ChatgptRequired)});continue;}
+                        if method=="account/updated" {
+                            native=None;starting=None;external_active=false;
+                            if let Some(reply)=external_reply.take(){let _=reply.send(Err(VoiceRejection::ChatgptRequired));}
+                            if let Some(reply)=start_reply.take(){let _=reply.send(Err(VoiceRejection::ChatgptRequired));}
+                            let _=events.send(VoiceEvent::Closed{generation,reason:Some(VoiceRejection::ChatgptRequired)});continue;
+                        }
                         if params["threadId"]==thread && starting.is_some() {
                             if method=="thread/realtime/started" {
                                 if params["version"]=="v3" && params["realtimeSessionId"]==expected_session {if let Some(tx)=accepted_tx.take(){let _=tx.send(());}}
-                                else {starting=None;if let Some(reply)=external_reply.take(){let _=reply.send(Err(VoiceRejection::Unsupported));}if let Some(reply)=start_reply.take(){let _=reply.send(Err(VoiceRejection::Unsupported));}let _=events.send(VoiceEvent::Closed{generation,reason:Some(VoiceRejection::Unsupported)});}
+                                else {
+                                    starting=None;
+                                    if let Some(reply)=external_reply.take(){let _=reply.send(Err(VoiceRejection::Unsupported));}
+                                    if let Some(reply)=start_reply.take(){let _=reply.send(Err(VoiceRejection::Unsupported));}
+                                    let _=events.send(VoiceEvent::Closed{generation,reason:Some(VoiceRejection::Unsupported)});
+                                }
                                 continue;
                             }
                             if method=="thread/realtime/sdp" {
-                                if let Some(sdp)=params["sdp"].as_str().filter(|s|!s.is_empty()&&s.len()<=64*1024) {if let Some(tx)=answer_tx.take(){let _=tx.send(sdp.to_owned());}}
+                                if let Some(sdp)=params["sdp"].as_str().filter(|s|!s.is_empty()&&s.len()<=64*1024) && let Some(tx)=answer_tx.take() {let _=tx.send(sdp.to_owned());}
                                 continue;
                             }
                         }
-                        if external_active || native.is_some() || starting.is_some() {
-                            if let Some(event)=normalize(&thread,generation,&mut sequence,&method,&params) {
-                                let terminal=matches!(event,VoiceEvent::Closed{..}); let _=events.send(event);
-                                if terminal {native=None;starting=None;external_active=false;if let Some(reply)=external_reply.take(){let _=reply.send(Err(VoiceRejection::Protocol));}if let Some(reply)=start_reply.take(){let _=reply.send(Err(VoiceRejection::Protocol));}}
+                        if (external_active || native.is_some() || starting.is_some())
+                            && let Some(event)=normalize(&thread,generation,&mut sequence,&method,&params) {
+                            let terminal=matches!(event,VoiceEvent::Closed{..}); let _=events.send(event);
+                            if terminal {
+                                native=None;starting=None;external_active=false;
+                                if let Some(reply)=external_reply.take(){let _=reply.send(Err(VoiceRejection::Protocol));}
+                                if let Some(reply)=start_reply.take(){let _=reply.send(Err(VoiceRejection::Protocol));}
                             }
                         }
                     },Some(_)=>{},None=>break,
@@ -421,18 +435,32 @@ async fn probe_details(
         voices,
     })
 }
-async fn start(
+/// What both realtime start paths hand to `thread/realtime/start` and wait on.
+struct StartRequest {
     client: RpcClient,
     thread: String,
-    executable: PathBuf,
     context: ThreadContext,
     voice: Option<String>,
     session_id: String,
     accepted: oneshot::Receiver<()>,
     answer: oneshot::Receiver<String>,
-    abort: CancellationToken,
     server_live: Arc<std::sync::atomic::AtomicBool>,
+}
+async fn start(
+    request: StartRequest,
+    executable: PathBuf,
+    abort: CancellationToken,
 ) -> Result<host::NativeHost, VoiceRejection> {
+    let StartRequest {
+        client,
+        thread,
+        context,
+        voice,
+        session_id,
+        accepted,
+        answer,
+        server_live,
+    } = request;
     let eligible = probe(&client, &executable, &context).await?;
     if voice.as_ref().is_some_and(|v| !eligible.voices.contains(v)) {
         return Err(VoiceRejection::Unsupported);
@@ -481,16 +509,19 @@ async fn start(
     Ok(host)
 }
 async fn start_external(
-    client: RpcClient,
-    thread: String,
-    context: ThreadContext,
-    voice: Option<String>,
-    session_id: String,
+    request: StartRequest,
     offer: remote::Sdp,
-    accepted: oneshot::Receiver<()>,
-    answer: oneshot::Receiver<String>,
-    server_live: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<remote::Sdp, VoiceRejection> {
+    let StartRequest {
+        client,
+        thread,
+        context,
+        voice,
+        session_id,
+        accepted,
+        answer,
+        server_live,
+    } = request;
     let eligible = tokio::time::timeout(Duration::from_secs(15), probe_details(&client, &context))
         .await
         .map_err(|_| VoiceRejection::Protocol)??;

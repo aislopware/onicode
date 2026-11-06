@@ -615,7 +615,7 @@ impl Terminals {
             .as_mut()
             .ok_or_else(|| EngineError::Other("Terminal has exited".into()))?;
         writer
-            .write_all(&bytes)
+            .write_all(bytes)
             .and_then(|_| writer.flush())
             .map_err(|e| EngineError::Other(format!("Terminal write failed: {e}")))
     }

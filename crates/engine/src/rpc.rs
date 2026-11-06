@@ -3417,10 +3417,12 @@ impl RpcService for EngineRpc {
                         &p.chat_id,
                         &p.id,
                         &p.lease_id,
-                        action,
-                        p.text.as_deref(),
-                        p.expected_text_hash.as_deref(),
-                        p.attachments.as_deref(),
+                        crate::doc_host::QueueEditFinish {
+                            action,
+                            text: p.text.as_deref(),
+                            expected_text_hash: p.expected_text_hash.as_deref(),
+                            attachments: p.attachments.as_deref(),
+                        },
                     )
                     .await
                     .map_err(|e| RpcError::Failed(e.to_string()))?;
@@ -6367,7 +6369,7 @@ mod context_usage_tests {
             text: value.into(),
         };
         let cached = text("body", "café histórico");
-        writer.sync(&[cached.clone()]).unwrap();
+        writer.sync(std::slice::from_ref(&cached)).unwrap();
         sink.apply_checkpoint(&source.export_snapshot().unwrap(), 0)
             .unwrap();
         // Cached content exists before the first watcher and never enters
@@ -6381,7 +6383,7 @@ mod context_usage_tests {
         );
 
         let live = text("body", "café histórico y nuevo");
-        writer.sync(&[live.clone()]).unwrap();
+        writer.sync(std::slice::from_ref(&live)).unwrap();
         sink.apply_row(&source.export_snapshot().unwrap(), 1);
         let update: onicode_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), first.next())

@@ -213,16 +213,16 @@ async fn prepare_checkout_with(
         Some(broker) => broker.ensure_git_credentials().await.err(),
         None => None,
     };
-    if let Some(parent) = path.parent() {
-        if let Err(err) = std::fs::create_dir_all(parent) {
-            finish_step(
-                clone_step,
-                format!("Couldn't clone {full_name}"),
-                Some(err.to_string()),
-                false,
-            );
-            return Err(err.into());
-        }
+    if let Some(parent) = path.parent()
+        && let Err(err) = std::fs::create_dir_all(parent)
+    {
+        finish_step(
+            clone_step,
+            format!("Couldn't clone {full_name}"),
+            Some(err.to_string()),
+            false,
+        );
+        return Err(err.into());
     }
     let mut delay = retry_base;
     let mut last = String::new();
@@ -1241,7 +1241,8 @@ mod tests {
             ),
         ];
         let parts = setup_parts("m1", &steps, Some(Duration::from_secs(72)));
-        let summary: Vec<(String, String, Option<String>, bool, bool, Option<String>)> = parts
+        type StepSummary = (String, String, Option<String>, bool, bool, Option<String>);
+        let summary: Vec<StepSummary> = parts
             .iter()
             .map(|part| match part {
                 onicode_doc::MessagePart::Tool {

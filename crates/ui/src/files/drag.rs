@@ -4,9 +4,12 @@ use gpui::{AnyElement, Bounds, CursorStyle, DragMoveEvent};
 use onicode_proto::WorkspaceEntryKind;
 use std::{cell::RefCell, rc::Rc};
 
+/// Each painted tree row's bounds and drop target, keyed by row path.
+type DropRows = Rc<RefCell<HashMap<String, (Bounds<Pixels>, Option<String>)>>>;
+
 #[derive(Default)]
 pub(super) struct TreeDrag {
-    rows: Rc<RefCell<HashMap<String, (Bounds<Pixels>, Option<String>)>>>,
+    rows: DropRows,
     pub payload: Option<WorkspacePathDrag>,
     pub destination: Option<String>,
     pub pointer: Point<Pixels>,
@@ -323,18 +326,18 @@ impl FilesSurface {
             .is_some_and(|since| now.saturating_duration_since(since) >= Duration::from_millis(650))
         {
             self.tree_drag.hover_since = None;
-            if let Some(directory) = self.tree_drag.destination.clone().filter(|p| !p.is_empty()) {
-                if self.tree.expand(&directory) {
-                    self.sync_tree_list();
-                    let needs_load = self
-                        .tree
-                        .node(&directory)
-                        .is_some_and(|node| node.stale || !node.has_loaded);
-                    if needs_load {
-                        self.load_directory(directory, None, cx);
-                    }
-                    cx.notify();
+            if let Some(directory) = self.tree_drag.destination.clone().filter(|p| !p.is_empty())
+                && self.tree.expand(&directory)
+            {
+                self.sync_tree_list();
+                let needs_load = self
+                    .tree
+                    .node(&directory)
+                    .is_some_and(|node| node.stale || !node.has_loaded);
+                if needs_load {
+                    self.load_directory(directory, None, cx);
                 }
+                cx.notify();
             }
         }
         true

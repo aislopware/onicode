@@ -3431,10 +3431,12 @@ impl Changes {
                     // Header cites the same path the staged card and the
                     // prompt bullet will.
                     Some(draft) => crate::comment_ui::render_comment_draft(
-                        draft_cite_path(draft),
-                        draft.line,
-                        draft.input.clone(),
-                        draft.editing_id.is_some(),
+                        crate::comment_ui::CommentDraftCard {
+                            path: draft_cite_path(draft),
+                            line: draft.line,
+                            input: draft.input.clone(),
+                            editing: draft.editing_id.is_some(),
+                        },
                         &theme,
                         cx,
                         Self::cancel_draft,
@@ -5253,7 +5255,7 @@ mod tests {
                     changes.cancel_draft(cx);
                     assert_eq!(
                         changes.state.read(cx).review_comments(""),
-                        &[original.clone()]
+                        std::slice::from_ref(&original)
                     );
 
                     changes.edit_comment(&original.id, window, cx);

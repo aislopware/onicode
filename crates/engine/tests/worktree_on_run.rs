@@ -107,7 +107,7 @@ fn complete_assistant_count(core: &EngineCore) -> usize {
 
 fn run_payload(message_id: &str, repo_path: &str, space_id: Option<&str>) -> SessionCommandPayload {
     SessionCommandPayload::Run {
-        request: RunRequest {
+        request: Box::new(RunRequest {
             mcp: None,
             prompt: "isolated please".into(),
             harness: None,
@@ -129,7 +129,7 @@ fn run_payload(message_id: &str, repo_path: &str, space_id: Option<&str>) -> Ses
             }),
             env: Default::default(),
             extra_mcp: Vec::new(),
-        },
+        }),
         message_id: message_id.into(),
     }
 }

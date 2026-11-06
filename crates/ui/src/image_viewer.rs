@@ -102,7 +102,7 @@ impl Geometry {
             return false;
         }
         let before = self.pan;
-        self.pan = self.pan + delta;
+        self.pan += delta;
         self.clamp_pan();
         self.pan != before
     }
@@ -189,7 +189,7 @@ impl ImageView {
         state.dragged = false;
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "linux"))]
     pub fn test_scale(&self) -> f32 {
         self.0.borrow().geometry.scale
     }

@@ -323,9 +323,8 @@ impl Mux {
             tokio::spawn(async move {
                 let cancel = stream.cancel.clone();
                 tokio::select! { _ = cancel.cancelled() => {}, _ = async {
-                    if let Ok(Ok(mut socket)) = tokio::time::timeout(std::time::Duration::from_secs(5), connector.connect(&service)).await {
-                        if mux.send(Frame::new(READY, id, Vec::new())).await.is_ok() { let _ = tokio::io::copy_bidirectional(&mut stream, &mut socket).await; }
-                    }
+                    if let Ok(Ok(mut socket)) = tokio::time::timeout(std::time::Duration::from_secs(5), connector.connect(&service)).await
+                        && mux.send(Frame::new(READY, id, Vec::new())).await.is_ok() { let _ = tokio::io::copy_bidirectional(&mut stream, &mut socket).await; }
                 } => {} }
             });
             return Ok(());
@@ -365,7 +364,7 @@ impl Mux {
                         !frame.data.is_empty()
                             && slot
                                 .receive_credit
-                                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n
+                                .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n
                                     .checked_sub(frame.data.len()))
                                 .is_ok(),
                         "preview receive window exceeded"

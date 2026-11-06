@@ -124,9 +124,8 @@ pub fn dropdown_list_height(
     // Height alone matters here, and the pane's does not depend on the
     // section column's width.
     let limits = pane_bounds(viewport, 0.0);
-    let card_height = ((f32::from(limits.size.height) - 16.0 - trigger_height) / 2.0 - 6.0)
-        .max(1.0)
-        .min(320.0);
+    let card_height =
+        ((f32::from(limits.size.height) - 16.0 - trigger_height) / 2.0 - 6.0).clamp(1.0, 320.0);
     (card_height - chrome_height).max(1.0)
 }
 
