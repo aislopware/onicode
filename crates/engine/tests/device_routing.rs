@@ -1732,15 +1732,14 @@ async fn queue_watch_and_single_consumption_route_to_the_remote_chat_host() {
             .expect("B queue")
             .is_empty()
     );
+    // A's replica fills with B's transcript as the doc syncs, so its entries say nothing about who
+    // ran the prompt. A session status is recorded on the engine that runs a chat and never
+    // dropped, so its absence on A is the proof.
     assert!(
         core_a
-            .doc_host
-            .open("chat-queue-remote")
-            .expect("A chat")
-            .doc()
-            .read_entries()
-            .expect("A transcript")
-            .is_empty(),
+            .sessions
+            .session_status("chat-queue-remote")
+            .is_none(),
         "the forwarding engine must not execute the queued prompt"
     );
 

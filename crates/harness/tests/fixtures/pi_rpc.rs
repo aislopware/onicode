@@ -173,6 +173,14 @@ fn main() {
                 std::thread::spawn(move || {
                     let mut text = text;
                     loop {
+                        // Held model steps end when the test says, never on
+                        // a clock: `burst-start` at the `release-burst` file
+                        // or an abort, `held` only at an abort.
+                        if text == "held" {
+                            while !abort.load(Ordering::SeqCst) {
+                                std::thread::sleep(Duration::from_millis(5));
+                            }
+                        }
                         if text == "burst-start" {
                             emit(json!({"type":"message_start","message":{"role":"assistant"}}));
                             emit(
@@ -189,7 +197,7 @@ fn main() {
                                 json!({"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"tree ready"}}),
                             );
                         }
-                        if text == "slow" || text == "tree" {
+                        if text == "tree" {
                             for _ in 0..100 {
                                 if abort.load(Ordering::SeqCst) {
                                     break;

@@ -214,17 +214,21 @@ async fn steers_confirm_on_consumption_and_interrupt_is_terminal_once() {
     let (c, tx, token) = controls();
     let mut stream = harness()
         .with_session_store(dir.path().join("index"))
-        .run(request(dir.path(), "slow"), c)
+        .run(request(dir.path(), "burst-start"), c)
         .await
         .unwrap();
+    // The steer queues while the first step is held, then opens a step only
+    // the interrupt ends: the turn cannot settle first on any machine.
     tx.send(SteerMessage {
-        prompt: "redirect".into(),
+        prompt: "held".into(),
         message_id: Some("user-id".into()),
         attachments: Vec::new(),
         config: None,
     })
     .await
     .unwrap();
+    wait_for_queued_steers(dir.path(), &["held".into()]).await;
+    std::fs::write(dir.path().join("release-burst"), "").unwrap();
     let mut confirmed = 0;
     let mut done = vec![];
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -892,17 +896,22 @@ async fn a_rejected_steer_reports_and_the_turn_goes_on() {
     let (c, tx, _) = controls();
     let mut stream = harness()
         .with_session_store(dir.path().join("index"))
-        .run(request(dir.path(), "slow"), c)
+        .run(request(dir.path(), "burst-start"), c)
         .await
         .unwrap();
+    // The step is held until the rejection is in, so the steer always lands
+    // mid-turn.
+    tx.send(SteerMessage::text("reject")).await.unwrap();
     let mut events = vec![];
     while let Some(event) = tokio::time::timeout(Duration::from_secs(5), stream.next())
         .await
         .unwrap()
     {
         let event = event.unwrap();
-        if matches!(&event, AgentEvent::SessionStarted { .. }) {
-            tx.send(SteerMessage::text("reject")).await.unwrap();
+        let rejected = matches!(&event, AgentEvent::Error { message }
+            if message.contains("preflight rejected"));
+        if rejected {
+            std::fs::write(dir.path().join("release-burst"), "").unwrap();
         }
         let done = matches!(event, AgentEvent::Done { .. });
         events.push(event);

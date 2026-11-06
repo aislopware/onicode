@@ -124,9 +124,10 @@ const VACUUM_MIN_FREE_BYTES: i64 = 32 * 1024 * 1024;
 /// `freelist_count / page_count` above which reclaiming is worth a rewrite.
 const VACUUM_MIN_FREE_DENOMINATOR: i64 = 4;
 
-/// Maintenance is skipped (and logged) rather than waited on when another
-/// connection holds a lock.
-const MAINTENANCE_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
+/// Maintenance takes a lock only if it is free, and otherwise skips (and logs).
+/// Zero, not a short wait: SQLite counts a busy timeout in planned sleeps, not
+/// elapsed time, so on a loaded machine three 250 ms waits took over 3 s.
+const MAINTENANCE_BUSY_TIMEOUT: Duration = Duration::ZERO;
 
 /// SQLite-backed store under a data directory (`{data_dir}/docs.sqlite3`).
 ///
@@ -493,7 +494,7 @@ impl DocsStore {
     }
 
     /// Reclaim free space: WAL truncate, then a VACUUM only past the
-    /// free-page thresholds, under a short busy timeout. Cheap when there is
+    /// free-page thresholds, never waiting on a lock. Cheap when there is
     /// nothing to reclaim. Blocking and holds the store for the VACUUM (it
     /// rewrites the live database) — run it off any latency-sensitive path;
     /// best-effort — problems are logged, never returned.
@@ -962,6 +963,8 @@ mod maintenance_tests {
             let started = Instant::now();
             let store = DocsStore::open(dir.path()).expect("maintenance never fails open");
             store.reclaim_free_space();
+            // Maintenance never sleeps on a lock, so this measures CPU work
+            // only; it fails only if a step waits on the 5 s store timeout.
             assert!(
                 started.elapsed() < Duration::from_secs(3),
                 "{lock}: maintenance waited on the store busy timeout"
