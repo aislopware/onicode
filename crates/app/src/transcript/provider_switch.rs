@@ -71,6 +71,7 @@ mod tests {
             text: text.into(),
             first: true,
             sent_at: None,
+            id: None,
         }
     }
     fn answered_by(provider: &str) -> onicode_core::agent::TurnInfo {

@@ -39,7 +39,7 @@ use onicode_core::agent::{AccessMode, Approval, Control, Decision, Settings};
 use onicode_core::catalog::{self, Model};
 use onicode_core::provider::Kind;
 use onicode_core::store::Session;
-use onicode_engine::turn::{Database, locked, run_turn};
+use onicode_engine::turn::{Database, locked};
 
 use crate::composer_motion::ComposerMotion;
 use crate::git_picker::{GitPicker, Mode as GitMode, Picked as GitPicked};
@@ -193,7 +193,7 @@ pub(crate) struct Conversation {
     questions:
         std::collections::VecDeque<(Entity<crate::questions::QuestionCard>, Vec<Subscription>)>,
     question_overlay: crate::questions::Overlay,
-    controls: Option<std::sync::mpsc::Sender<Control>>,
+    controls: Option<crate::engine_client::TurnControls>,
     branch: Option<String>,
     git: Option<onicode_core::git::Snapshot>,
     git_picker: Option<Entity<GitPicker>>,
@@ -1153,11 +1153,8 @@ impl Conversation {
         if self.settings.handoff.take().is_some() {
             self.save_settings(cx);
         }
-        let (controls, control_rx) = std::sync::mpsc::channel();
-        self.controls = Some(controls);
         self.approvals.clear();
         self.questions.clear();
-        let (tx, rx) = async_channel::bounded(8);
         let mut turn_model_id = settings
             .turn_model
             .as_ref()
@@ -1167,21 +1164,33 @@ impl Conversation {
             .is_remote()
             .then(|| self.remote_state.client.clone())
             .flatten();
-        cx.background_executor()
-            .spawn(async move {
-                if let Some(client) = remote_client {
-                    crate::runtime::remote::run_with_client(
-                        client, summary, prompt, settings, control_rx, store, cancel, tx,
-                    );
-                } else if summary.cwd.starts_with("remote://") {
-                    crate::runtime::remote::run(
-                        summary, prompt, settings, control_rx, store, cancel, tx,
-                    );
-                } else {
-                    run_turn(summary, prompt, settings, control_rx, store, cancel, tx);
-                }
-            })
-            .detach();
+        let rx = if remote_client.is_some() || summary.cwd.starts_with("remote://") {
+            let (controls, control_rx) = std::sync::mpsc::channel();
+            self.controls = Some(controls.into());
+            let (tx, rx) = async_channel::bounded(8);
+            cx.background_executor()
+                .spawn(async move {
+                    if let Some(client) = remote_client {
+                        crate::runtime::remote::run_with_client(
+                            client, summary, prompt, settings, control_rx, store, cancel, tx,
+                        );
+                    } else {
+                        crate::runtime::remote::run(
+                            summary, prompt, settings, control_rx, store, cancel, tx,
+                        );
+                    }
+                })
+                .detach();
+            rx
+        } else {
+            // The engine runs the turn. A one-slot channel: while the view waits for its beat,
+            // what arrives folds into the next update instead of queueing behind it.
+            let (tx, rx) = async_channel::bounded(1);
+            self.controls = Some(crate::engine_client::start_turn(
+                &store, summary, prompt, settings, cancel, tx, cx,
+            ));
+            rx
+        };
         cx.spawn(async move |this, cx| {
             while let Ok(update) = rx.recv().await {
                 // Land each update on the spinners' 30Hz beat: the reply then
@@ -4224,12 +4233,14 @@ mod menu_tests {
                                 text: "Review the footer".into(),
                                 first: true,
                                 sent_at: None,
+                                id: None,
                             },
                             onicode_core::transcript::Row {
                                 role: "assistant".into(),
                                 text: "The footer is ready.".into(),
                                 first: true,
                                 sent_at: None,
+                                id: None,
                             },
                         ],
                         cx,

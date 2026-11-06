@@ -348,6 +348,7 @@ fn row(role: &str, text: &str) -> Row {
         text: text.into(),
         first: true,
         sent_at: None,
+        id: None,
     }
 }
 

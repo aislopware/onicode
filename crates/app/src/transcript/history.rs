@@ -222,12 +222,14 @@ mod tests {
                 text: "Find the needle".into(),
                 first: true,
                 sent_at: Some(7),
+                id: None,
             },
             Row {
                 role: "assistant".into(),
                 text: "needle answer\n\nsecond paragraph".into(),
                 first: true,
                 sent_at: Some(8),
+                id: None,
             },
         ]
     }

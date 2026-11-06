@@ -4633,6 +4633,7 @@ dependencies = [
  "base64 0.22.1",
  "block2 0.6.2",
  "chrono",
+ "futures",
  "gpui-pre",
  "gpui-pre-apple",
  "gpui-pre-platform",
@@ -4648,6 +4649,8 @@ dependencies = [
  "objc2-user-notifications",
  "onicode-core",
  "onicode-engine",
+ "onicode-protocol",
+ "onicode-rpc",
  "onicode-update",
  "parking_lot",
  "pulldown-cmark",
@@ -4910,8 +4913,17 @@ name = "onicode-engine"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "async-trait",
+ "futures",
  "onicode-core",
+ "onicode-protocol",
+ "onicode-rpc",
+ "proptest",
+ "serde",
  "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

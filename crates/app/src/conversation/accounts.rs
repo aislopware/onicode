@@ -609,6 +609,7 @@ mod tests {
                 text: text.into(),
                 first: true,
                 sent_at: None,
+                id: None,
             };
             for role in ["error", "system"] {
                 view.transcript.update(cx, |v, cx| {

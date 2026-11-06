@@ -1284,6 +1284,7 @@ mod tests {
                     text: "saved needle message".into(),
                     first: true,
                     sent_at: None,
+                    id: None,
                 }],
             )
             .unwrap();

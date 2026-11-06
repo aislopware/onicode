@@ -396,6 +396,7 @@ mod tests {
                                     text: format!("Saved answer {i}"),
                                     first: true,
                                     sent_at: None,
+                                    id: None,
                                 }],
                             )
                             .unwrap();

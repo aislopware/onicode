@@ -171,6 +171,7 @@ fn metadata_row(role: &str, value: &Value) -> Row {
         text: value.to_string(),
         first: true,
         sent_at: None,
+        id: None,
     }
 }
 fn project_block(block: &Value) -> Result<Vec<Row>, String> {
@@ -534,6 +535,7 @@ mod panel_tests {
             text: serde_json::to_string(call).unwrap(),
             first: true,
             sent_at: Some(123),
+            id: None,
         }
     }
     #[test]
@@ -679,6 +681,7 @@ mod tool_presentation_tests {
             text: serde_json::to_string(&call).unwrap(),
             first: true,
             sent_at: None,
+            id: None,
         };
         let saved = merge(&[source], 0, &[row]).unwrap();
         assert_eq!(saved[0]["tool"]["nativeInput"], raw);

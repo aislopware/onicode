@@ -80,6 +80,7 @@ impl Transcript {
                 text: files.to_string(),
                 first: true,
                 sent_at: None,
+                id: None,
             });
         }
     }

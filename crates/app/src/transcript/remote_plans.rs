@@ -115,9 +115,9 @@ mod tests {
             let view=cx.new(|cx| {
                 let mut view=TranscriptView::new();
                 view.patch(0,vec![
-                    Row{role:"user".into(),text:"Make a plan".into(),first:true,sent_at:None},
-                    Row{role:"remote-plan".into(),text:serde_json::json!({"id":"host-plan","text":"# Plan\n\n- Step","status":"ready","streaming":false}).to_string(),first:true,sent_at:None},
-                    Row{role:"assistant".into(),text:"Ready for review".into(),first:true,sent_at:None}
+                    Row{role:"user".into(),text:"Make a plan".into(),first:true,sent_at:None,id:None},
+                    Row{role:"remote-plan".into(),text:serde_json::json!({"id":"host-plan","text":"# Plan\n\n- Step","status":"ready","streaming":false}).to_string(),first:true,sent_at:None,id:None},
+                    Row{role:"assistant".into(),text:"Ready for review".into(),first:true,sent_at:None,id:None}
                 ],cx);
                 view
             });

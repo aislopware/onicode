@@ -48,6 +48,7 @@ onicode-core = { path = "crates/core" }
 onicode-rpc = { path = "crates/rpc" }
 # The engine and the protocol its viewers speak (docs/onicode/decisions/engine.md).
 onicode-engine = { path = "crates/engine" }
+onicode-protocol = { path = "crates/protocol" }
 
 # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
 onicode-net = { path = "crates/net" }

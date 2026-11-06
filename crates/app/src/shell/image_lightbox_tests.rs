@@ -75,8 +75,8 @@ fn image_lightbox_opens_from_composer_and_sent_images_and_restores_focus(cx: &mu
         });
         let transcript = shell.sessions[&active].read(cx).transcript.clone();
         transcript.update(cx, |view, cx| view.patch(0, vec![
-            onicode_core::transcript::Row { role: "user".into(), text: "Look at this".into(), first: true, sent_at: None },
-            onicode_core::transcript::Row { role: onicode_core::transcript::attachments::ROLE.into(), text: serde_json::json!([{"kind":"image", "name":"Persisted image", "mimeType":"image/svg+xml", "data":data}]).to_string(), first: true, sent_at: None },
+            onicode_core::transcript::Row { role: "user".into(), text: "Look at this".into(), first: true, sent_at: None, id: None },
+            onicode_core::transcript::Row { role: onicode_core::transcript::attachments::ROLE.into(), text: serde_json::json!([{"kind":"image", "name":"Persisted image", "mimeType":"image/svg+xml", "data":data}]).to_string(), first: true, sent_at: None, id: None },
         ], cx));
     }).unwrap();
     visual.refresh().unwrap();

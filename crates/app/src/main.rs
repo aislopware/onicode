@@ -22,6 +22,7 @@ mod diff_view;
 mod editor_analysis;
 mod editor_scrollbar;
 mod editor_syntax;
+mod engine_client;
 mod explorer;
 mod file_editor;
 mod file_icons;
@@ -587,6 +588,7 @@ mod native_tests {
                             text: "Changed streaming tail".into(),
                             first: true,
                             sent_at: None,
+                            id: None,
                         }],
                         cx,
                     );

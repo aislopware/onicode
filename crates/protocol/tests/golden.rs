@@ -21,6 +21,7 @@ use onicode_protocol::session::{
     ReadTranscript, Rewind, Send, SendNow, Steer, SteerNow, Stop, SwitchProvider, Verdict,
     WatchSession,
 };
+use onicode_protocol::transcript::Row;
 use onicode_protocol::{
     Call, Cursor, Item, METHODS, MessageId, Method, MethodKind, OpId, PROTOCOL, Rejection, Routed,
     SessionId, TerminalId, Watch,
@@ -52,6 +53,16 @@ impl Shapes {
         tracer
             .trace_value(&mut samples, &TerminalId::new())
             .unwrap();
+        // A row's echo id is a bare Uuid, so the row itself is the sample, every field set so none
+        // is skipped.
+        let row = Row {
+            role: "user".into(),
+            text: String::new(),
+            first: true,
+            sent_at: Some(1),
+            id: Some(uuid::Uuid::now_v7()),
+        };
+        tracer.trace_value(&mut samples, &row).unwrap();
         Self {
             tracer,
             samples,
@@ -132,13 +143,31 @@ fn digest(format: &Format, registry: &Registry) -> String {
     let format = serde_json::to_value(format).unwrap();
     let mut reached = BTreeMap::new();
     reach(&format, registry, &mut reached);
-    let text = serde_json::to_string(&(format, reached)).unwrap();
+    let text = serde_json::to_string(&sorted(&serde_json::json!([format, reached]))).unwrap();
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     for byte in text.bytes() {
         hash ^= u64::from(byte);
         hash = hash.wrapping_mul(0x0100_0000_01b3);
     }
     format!("{hash:016x}")
+}
+
+/// `value` with every object's keys in order, whether or not serde_json keeps insertion order
+/// (its `preserve_order` feature, which other crates of the workspace turn on).
+fn sorted(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<_> = map.keys().collect();
+            keys.sort_unstable();
+            Value::Object(
+                keys.into_iter()
+                    .map(|key| (key.clone(), sorted(&map[key])))
+                    .collect(),
+            )
+        }
+        Value::Array(items) => Value::Array(items.iter().map(sorted).collect()),
+        other => other.clone(),
+    }
 }
 
 /// Collects the containers `value` names (`{"TYPENAME": name}`), and the ones they name.

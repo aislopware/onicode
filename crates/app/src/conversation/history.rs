@@ -193,6 +193,7 @@ mod tests {
                         text: "Saved answer".into(),
                         first: true,
                         sent_at: None,
+                        id: None,
                     }],
                     cx,
                 );
@@ -290,6 +291,7 @@ mod tests {
                         text: "Restored history".into(),
                         first: true,
                         sent_at: None,
+                        id: None,
                     }],
                     cx,
                 )

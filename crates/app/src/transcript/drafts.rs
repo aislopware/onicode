@@ -406,6 +406,7 @@ mod tests {
             text: text.into(),
             first: true,
             sent_at: None,
+            id: None,
         };
         view.update(cx, |view, cx| {
             view.patch(

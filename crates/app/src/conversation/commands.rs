@@ -150,6 +150,7 @@ impl Conversation {
             text: serde_json::to_string(&compact_tool).unwrap(),
             first: true,
             sent_at: Some(onicode_core::time::now_ms()),
+            id: None,
         };
         self.transcript.update(cx, |view, cx| {
             view.patch(compact_start, vec![compact_row.clone()], cx);

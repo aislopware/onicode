@@ -10,6 +10,7 @@ fn row(role: &str, text: &str, first: bool) -> Row {
         text: text.into(),
         first,
         sent_at: None,
+        id: None,
     }
 }
 

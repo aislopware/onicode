@@ -11611,6 +11611,7 @@ mod tests {
                     text: "Existing desktop history".into(),
                     first: true,
                     sent_at: Some(123),
+                    id: None,
                 }],
             )
             .unwrap();
@@ -11771,6 +11772,7 @@ mod tests {
                     text: "History loaded when the adjacent tab becomes active".into(),
                     first: true,
                     sent_at: None,
+                    id: None,
                 }],
             )
             .unwrap();
@@ -13045,6 +13047,7 @@ mod tests {
                                 text: "Streaming output".into(),
                                 first: true,
                                 sent_at: None,
+                                id: None,
                             }],
                             cx,
                         )

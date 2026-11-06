@@ -497,6 +497,7 @@ mod tests {
             text,
             first: true,
             sent_at: None,
+            id: None,
         };
         store
             .write_rows(
@@ -657,6 +658,7 @@ mod tests {
             text: text.into(),
             first: true,
             sent_at: None,
+            id: None,
         };
         store
             .write_rows(

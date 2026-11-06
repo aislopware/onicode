@@ -786,7 +786,7 @@ mod tests {
         window
             .update(cx, |view, _, cx| {
                 view.busy = true;
-                view.controls = Some(controls);
+                view.controls = Some(controls.into());
                 view.input
                     .update(cx, |i, cx| i.set_text("first".into(), cx));
                 view.attachments.push("/tmp/image.png".into());
@@ -859,7 +859,7 @@ mod tests {
         window
             .update(cx, |view, _, cx| {
                 view.busy = true;
-                view.controls = Some(controls);
+                view.controls = Some(controls.into());
                 view.input
                     .update(cx, |input, cx| input.set_text("keep this".into(), cx));
                 view.send(cx);
@@ -890,7 +890,7 @@ mod tests {
         window
             .update(cx, |view, _, cx| {
                 view.busy = true;
-                view.controls = Some(controls);
+                view.controls = Some(controls.into());
                 view.follow_ups.ready = true;
                 view.input
                     .update(cx, |input, cx| input.set_text("keep this".into(), cx));
@@ -983,7 +983,7 @@ mod tests {
         window
             .update(cx, |view, _, cx| {
                 view.busy = true;
-                view.controls = Some(controls);
+                view.controls = Some(controls.into());
                 view.follow_ups.ready = true;
                 view.input
                     .update(cx, |input, cx| input.set_text("queued".into(), cx));
@@ -1021,7 +1021,7 @@ mod tests {
         window
             .update(cx, |view, _, cx| {
                 view.busy = true;
-                view.controls = Some(controls);
+                view.controls = Some(controls.into());
                 view.follow_ups.ready = true;
                 view.input
                     .update(cx, |input, cx| input.set_text("queued".into(), cx));
@@ -1165,7 +1165,7 @@ mod tests {
                 view.send(cx);
                 view.busy = true;
                 view.follow_ups.ready = true;
-                view.controls = Some(controls);
+                view.controls = Some(controls.into());
                 view.input
                     .update(cx, |i, cx| i.set_text("keep typing".into(), cx));
                 view.attachments.push("/tmp/new-file.txt".into());

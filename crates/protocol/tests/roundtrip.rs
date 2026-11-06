@@ -87,14 +87,20 @@ fn outcome() -> impl Strategy<Value = Outcome> {
 }
 
 fn row() -> impl Strategy<Value = Row> {
-    (text(), text(), any::<bool>(), option::of(any::<u64>())).prop_map(
-        |(role, text, first, sent_at)| Row {
+    (
+        text(),
+        text(),
+        any::<bool>(),
+        option::of(any::<u64>()),
+        option::of(any::<u128>()),
+    )
+        .prop_map(|(role, text, first, sent_at, id)| Row {
             role,
             text,
             first,
             sent_at,
-        },
-    )
+            id: id.map(Uuid::from_u128),
+        })
 }
 
 fn approval() -> impl Strategy<Value = Approval> {
@@ -551,8 +557,13 @@ fn session_state() -> impl Strategy<Value = SessionState> {
 fn item() -> impl Strategy<Value = Item<SessionState, SessionEvent>> {
     prop_oneof![
         (cursor(), session_state()).prop_map(|(at, state)| Item::Snapshot { at, state }),
-        (any::<u64>(), vec(session_event(), 0..4))
-            .prop_map(|(first, events)| Item::Events { first, events }),
+        (any::<u64>(), any::<u64>(), vec(session_event(), 0..4)).prop_map(
+            |(first, last, events)| Item::Events {
+                first,
+                last,
+                events
+            }
+        ),
         Just(Item::Resync),
     ]
 }

@@ -19,7 +19,7 @@ pub use ids::{EngineId, MessageId, OpId, SessionId, TerminalId};
 /// The protocol's version. Peers with different values answer each other only the calls whose
 /// shapes are frozen: [`engine::Hello`], [`engine::EngineInfo`] and [`engine::UpdateEngine`].
 /// Separate from net's `WIRE`, so a mismatch can still say "Needs update".
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 
 /// One request and its reply.
 pub trait Call {
@@ -53,8 +53,15 @@ pub struct Cursor {
 pub enum Item<S, E> {
     /// The whole state as of `at`.
     Snapshot { at: Cursor, state: S },
-    /// The events numbered from `first` on, in order.
-    Events { first: u64, events: Vec<E> },
+    /// The events numbered `first` to `last`, in order. A slow watcher's queue merges what it
+    /// holds (engine.md "Backpressure"), so there can be fewer events than numbers; the watcher's
+    /// cursor moves to `last`. An `Events` with `last == first - 1` and no events says the
+    /// watcher missed nothing.
+    Events {
+        first: u64,
+        last: u64,
+        events: Vec<E>,
+    },
     /// The watcher fell behind or its cursor is gone: resubscribe with the last cursor it holds.
     Resync,
 }

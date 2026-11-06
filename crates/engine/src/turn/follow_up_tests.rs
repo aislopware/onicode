@@ -75,7 +75,7 @@ for line in sys.stdin:
         .unwrap();
     let store = Arc::new(Mutex::new(store));
     let worker_store = store.clone();
-    let (updates, receive) = async_channel::bounded(64);
+    let (updates, receive) = async_channel::unbounded();
     let (controls, control_rx) = std::sync::mpsc::channel();
     let worker = std::thread::spawn(move || {
         run_turn_using(

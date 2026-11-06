@@ -616,6 +616,7 @@ mod tests {
             text: text.into(),
             first: true,
             sent_at: None,
+            id: None,
         }
     }
     fn sent(role: &str, text: &str, at: u64) -> Row {

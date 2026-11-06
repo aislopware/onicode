@@ -38,11 +38,11 @@ presentation) are re-exported from `onicode-core` until step 6. Then they move i
 `crates/app` stops depending on core.
 
 ```rust
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 pub trait Call  { const NAME: &'static str; const AGENT: bool = false; type Params; type Reply; }
 pub trait Watch { const NAME: &'static str; type Params; type State; type Event; }
 pub struct Cursor { pub epoch: u64, pub seq: u64 }
-pub enum Item<S, E> { Snapshot { at: Cursor, state: S }, Events { first: u64, events: Vec<E> }, Resync }
+pub enum Item<S, E> { Snapshot { at: Cursor, state: S }, Events { first: u64, last: u64, events: Vec<E> }, Resync }
 pub struct Routed<T> { pub engine: Option<EngineId>, pub op: Option<OpId>, pub body: T }
 pub enum Outcome { Applied, Rejected(Rejection) } // Rejection: AlreadyResolved, StaleRev, Gone, Denied(String)
 
@@ -98,7 +98,18 @@ engine of its own and dials every engine directly through `EngineList`.
 and that goes. Each watcher has a bounded queue (256 batches or 4 MiB). Within the queue, an `Append` merges
 into the pending `Append` for the same row, and a `Rows` patch absorbs older patches of the rows it covers. A
 watcher that still overflows is dropped to `Resync` and comes back with its cursor. QUIC stream flow control
-(16 MiB per stream) bounds the wire.
+(16 MiB per stream) bounds the wire. Merged events cover more numbers than they are, so `Item::Events` carries
+`first` and `last` and the watcher's cursor moves to `last`; a `Status` also folds into a pending `Status`
+unless a finished turn sits between them.
+
+**Step 3 as built.** `Row.id` holds the prompt's `MessageId` only while the engine holds the session live; the
+store does not keep it, so rows read back carry none. The protocol does not carry `Settings`' transport-only
+fields (the prepared prompt, the turn's model identity, the environment, the queued message's id) or the stop
+flag, so until the composer, catalog and queue move into the engine the app stages them in process
+(`SessionHub::stage`) under the call's `MessageId`. The conversation still merges `turn::Update`s: a `Viewer`
+mirrors the session from its watch and folds what arrived into one `Update` per beat. The follow-up queue stays
+app-owned, its steers sent as `Steer` with the queued message staged whole; `SendNow`, `SteerNow`,
+`EditLastTurn`, `Rewind`, `Fork`, `Btw` and `SwitchProvider` answer "not served yet" until step 4.
 
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,

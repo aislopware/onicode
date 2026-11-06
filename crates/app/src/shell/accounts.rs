@@ -182,12 +182,14 @@ mod tests {
                         text: "Finish the integration".into(),
                         first: true,
                         sent_at: None,
+                        id: None,
                     },
                     Row {
                         role: "assistant".into(),
                         text: "The integration is partly implemented".into(),
                         first: true,
                         sent_at: None,
+                        id: None,
                     },
                 ];
                 if limited {
@@ -198,6 +200,7 @@ mod tests {
                         text: "rate_limit".into(),
                         first: true,
                         sent_at: None,
+                        id: None,
                     });
                 }
                 {

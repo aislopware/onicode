@@ -1942,6 +1942,7 @@ mod tests {
             text: text.into(),
             first,
             sent_at: None,
+            id: None,
         }
     }
     #[test]

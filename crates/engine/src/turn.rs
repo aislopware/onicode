@@ -3,7 +3,6 @@
 //! `runtime.rs` (`docs/onicode/decisions/engine.md`, migration step 2).
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use onicode_core::agent::{Approval, Control, Settings};
 use onicode_core::provider::{self, Event, Kind, Request};
@@ -20,11 +19,14 @@ mod visual_discovery;
 mod visual_tests;
 use persistence::PendingSave;
 pub type Database = Arc<Mutex<Store>>;
-struct TurnInput {
-    summary: Session,
-    prompt: String,
-    settings: Settings,
+pub(crate) struct TurnInput {
+    pub(crate) summary: Session,
+    pub(crate) prompt: String,
+    pub(crate) settings: Settings,
 }
+/// What a turn published: the transcript rows from `start` on and whatever else changed. The
+/// session hub splits it into `SessionEvent`s, one variant per field (`crate::session`).
+#[derive(Clone, Debug, Default)]
 pub struct Update {
     pub worktree_cwd: Option<String>,
     pub commands: Option<Vec<provider::NativeCommand>>,
@@ -54,22 +56,21 @@ pub struct Update {
     pub status: String,
     pub finished: bool,
 }
+/// Hands `update` on without waiting: a turn never waits on a viewer (engine.md
+/// "Backpressure"). The receiver is unbounded, the session hub drains it into its ring and its
+/// watchers' bounded queues, and a watcher that falls behind is dropped to `Resync` instead.
 fn publish(
     tx: &async_channel::Sender<Update>,
     cancel: &AtomicBool,
-    mut update: Update,
+    update: Update,
 ) -> Result<(), String> {
-    loop {
-        if cancel.load(Ordering::Relaxed) {
-            return Err("Stopped".into());
-        }
-        match tx.try_send(update) {
-            Ok(()) => return Ok(()),
-            Err(async_channel::TrySendError::Closed(_)) => return Err("Window closed".into()),
-            Err(async_channel::TrySendError::Full(value)) => update = value,
-        }
-        std::thread::sleep(Duration::from_millis(4));
+    if cancel.load(Ordering::Relaxed) {
+        return Err("Stopped".into());
     }
+    tx.try_send(update).map_err(|error| match error {
+        async_channel::TrySendError::Closed(_) => "Session closed".into(),
+        async_channel::TrySendError::Full(_) => "The session's update channel is bounded".into(),
+    })
 }
 pub fn locked(store: &Database) -> Result<std::sync::MutexGuard<'_, Store>, String> {
     store
@@ -77,8 +78,9 @@ pub fn locked(store: &Database) -> Result<std::sync::MutexGuard<'_, Store>, Stri
         .map_err(|_| "Native session store unavailable".into())
 }
 
-/// Runs a local turn to its end on the calling thread. `remote://` sessions run in the app's
-/// `runtime::remote` until the engine reaches them over peers.
+/// Runs a local turn to its end on the calling thread, publishing into `tx`, which must be
+/// unbounded. `remote://` sessions run in the app's `runtime::remote` until the engine reaches
+/// them over peers.
 pub fn run_turn(
     summary: Session,
     prompt: String,
@@ -102,7 +104,9 @@ pub fn run_turn(
     );
 }
 
-fn run_turn_using(
+/// [`run_turn`] with the provider binary resolved by `resolve_binary`: tests hand it a scripted
+/// fake provider.
+pub(crate) fn run_turn_using(
     input: TurnInput,
     controls: std::sync::mpsc::Receiver<Control>,
     store: Database,
@@ -1090,6 +1094,7 @@ mod edited_paths_tests {
                 text: serde_json::to_string(&tool).unwrap(),
                 first: true,
                 sent_at: None,
+                id: None,
             }
         };
         let rows = vec![
@@ -1118,6 +1123,7 @@ mod edited_paths_tests {
                 text: "A plain question".into(),
                 first: true,
                 sent_at: None,
+                id: None,
             },
             row(
                 "fileChange",

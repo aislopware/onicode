@@ -259,7 +259,7 @@ mod tests {
         let (send, receive) = std::sync::mpsc::channel();
         window
             .update(cx, |view, _, cx| {
-                view.controls = Some(send);
+                view.controls = Some(send.into());
                 view.approvals.extend([
                     request("once", true),
                     request("session", true),
