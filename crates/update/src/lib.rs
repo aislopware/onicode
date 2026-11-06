@@ -511,7 +511,9 @@ fn release_base(edge_url: &str) -> anyhow::Result<String> {
     if let Some(url) = windows::release_url()? {
         return Ok(url.trim_end_matches('/').to_owned());
     }
-    Ok(format!("{}/releases", edge_url.trim_end_matches('/')))
+    let edge = edge_url.trim_end_matches('/');
+    anyhow::ensure!(!edge.is_empty(), "no release feed is configured");
+    Ok(format!("{edge}/releases"))
 }
 
 // ---------------------------------------------------------------------------

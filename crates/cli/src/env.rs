@@ -1,8 +1,9 @@
 //! The edge and sign-in client `onicode` resolves from its environment.
 
-/// Production edge (Cloudflare Worker + Durable Objects on the zeron.sh zone).
-/// `ONICODE_EDGE_URL` overrides (local dev / self-hosting).
-pub const DEFAULT_EDGE_URL: &str = "https://edge.zeron.sh";
+/// No edge by default: Onicode runs no cloud of its own, so sync, sign-in and
+/// the update feed stay off until peers replace them. `ONICODE_EDGE_URL` sets
+/// one for development.
+pub const DEFAULT_EDGE_URL: &str = "";
 
 /// Production WorkOS AuthKit client id — public knowledge (it appears in every
 /// authorize URL), so baking it in is safe. Overridden by `ONICODE_WORKOS_CLIENT_ID`;

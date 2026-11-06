@@ -1,0 +1,19 @@
+{
+  "projectId": "59625ece-aea5-49b4-8978-1f045f907d92",
+  "build": {
+    "production": {
+      "channel": "production",
+      "environment": "production",
+      "macos": {
+        "artifact": "zip",
+        "entitlements": "dist/macos/Onicode.entitlements"
+      },
+      "custom": {
+        "macos": {
+          "command": "scripts/bundle-macos.sh",
+          "artifactPath": "target/package/Onicode.app"
+        }
+      }
+    }
+  }
+}

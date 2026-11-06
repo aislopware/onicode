@@ -6949,7 +6949,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "onicode"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -6973,7 +6973,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-audio"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "cpal 0.18.2",
@@ -6985,7 +6985,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-cli"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -7001,7 +7001,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-client"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7032,7 +7032,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-doc"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "chrono",
  "loro",
@@ -7046,7 +7046,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-engine"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -7103,7 +7103,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-harness"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7137,7 +7137,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-launch"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "libc",
  "tempfile",
@@ -7146,14 +7146,14 @@ dependencies = [
 
 [[package]]
 name = "onicode-markdown"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "pulldown-cmark",
 ]
 
 [[package]]
 name = "onicode-mcp"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7175,7 +7175,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-mobile"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "onicode-client",
@@ -7202,14 +7202,14 @@ dependencies = [
 
 [[package]]
 name = "onicode-mobile-bindgen"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "uniffi",
 ]
 
 [[package]]
 name = "onicode-notify"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "objc",
  "sha2",
@@ -7218,11 +7218,11 @@ dependencies = [
 
 [[package]]
 name = "onicode-orb"
-version = "0.2.136"
+version = "0.1.0"
 
 [[package]]
 name = "onicode-plugin-guard"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "serde_json",
  "tempfile",
@@ -7230,7 +7230,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-preview"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7260,11 +7260,11 @@ dependencies = [
 
 [[package]]
 name = "onicode-preview-label"
-version = "0.2.136"
+version = "0.1.0"
 
 [[package]]
 name = "onicode-proto"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "chrono",
  "pulldown-cmark",
@@ -7275,7 +7275,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-rpc"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7296,7 +7296,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-sync"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "block2 0.6.2",
  "chrono",
@@ -7319,7 +7319,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-syntax"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "thiserror 2.0.20",
  "tree-sitter",
@@ -7354,14 +7354,14 @@ dependencies = [
 
 [[package]]
 name = "onicode-term"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
 ]
 
 [[package]]
 name = "onicode-term-link"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7378,7 +7378,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-text"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "core-foundation 0.10.1",
  "core-graphics 0.24.0",
@@ -7395,7 +7395,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-theme"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -7410,7 +7410,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-ui"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -7493,7 +7493,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-update"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -7510,11 +7510,11 @@ dependencies = [
 
 [[package]]
 name = "onicode-veil"
-version = "0.2.136"
+version = "0.1.0"
 
 [[package]]
 name = "onicode-visual"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "gltf",
@@ -7526,7 +7526,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-visual-gpu"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "image",
  "onicode-visual",
@@ -7537,7 +7537,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-voice"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "cpal 0.17.3",
@@ -7554,7 +7554,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-voice-media"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "onicode-proto",
@@ -7569,7 +7569,7 @@ dependencies = [
 
 [[package]]
 name = "onicode-voice-session"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "futures",
@@ -13976,7 +13976,7 @@ dependencies = [
 
 [[package]]
 name = "zatex"
-version = "0.2.136"
+version = "0.1.0"
 dependencies = [
  "tiny-skia",
  "ttf-parser",
