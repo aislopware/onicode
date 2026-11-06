@@ -29,5 +29,7 @@ A native control plane for coding agents: many clients drive many servers peer t
 ## Conventions
 
 - No backward compatibility before release: replace and delete the old. Lints are never loosened.
+- Toolchains, libraries and tools are the newest that measurably pay off: nightly, alpha, beta, RC or a pinned git
+  commit are fine, pinned exactly, with the reason in the commit.
 - Agents are driven only through their published doors; never send requests in Claude Code's name or read its credentials.
 - A decision worth a paragraph goes in `docs/onicode/decisions/` in the same change.
