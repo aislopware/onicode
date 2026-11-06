@@ -21,7 +21,7 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use zeron_proto::BackgroundTask;
+use onicode_proto::BackgroundTask;
 
 use super::wire::{Frame, MessageFrame, SystemFrame};
 

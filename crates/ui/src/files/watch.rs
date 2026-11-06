@@ -1,7 +1,7 @@
 use std::{collections::HashSet, time::Duration};
 
 use gpui::Context;
-use zeron_proto::{WorkspaceFileChangeKind, WorkspaceFileChanges};
+use onicode_proto::{WorkspaceFileChangeKind, WorkspaceFileChanges};
 
 use super::{FilesEvent, FilesSurface, client::WorkspaceFilesClient, model::parent_path};
 
@@ -224,7 +224,7 @@ mod tests {
         let (out, mut requests) = tokio::sync::mpsc::channel(16);
         let (replies, inbound) = tokio::sync::mpsc::channel(16);
         let engine =
-            crate::state::EngineHandle::from_test_client(zeron_rpc::RpcClient::new(out, inbound));
+            crate::state::EngineHandle::from_test_client(onicode_rpc::RpcClient::new(out, inbound));
         let state = cx.new(|_| {
             let mut state = super::super::test_support::state();
             state.set_test_engine(engine);
@@ -243,7 +243,7 @@ mod tests {
                 WorkspaceFileChanges {
                     sequence: 1,
                     resync_required: false,
-                    changes: vec![zeron_proto::WorkspaceFileChange {
+                    changes: vec![onicode_proto::WorkspaceFileChange {
                         operation_id: None,
                         kind: WorkspaceFileChangeKind::Modified,
                         path: "a.txt".into(),
@@ -262,11 +262,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             request["method"],
-            zeron_rpc::methods::LIST_WORKSPACE_DIRECTORY
+            onicode_rpc::methods::LIST_WORKSPACE_DIRECTORY
         );
         assert_eq!(request["params"]["directory"], "");
         let mut entry =
-            super::super::test_support::entry("a.txt", zeron_proto::WorkspaceEntryKind::File);
+            super::super::test_support::entry("a.txt", onicode_proto::WorkspaceEntryKind::File);
         entry.mutation_revision = Some("after-save".into());
         runtime.block_on(async {
             replies

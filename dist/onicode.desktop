@@ -1,14 +1,14 @@
 [Desktop Entry]
 Type=Application
-Name=Zeron
+Name=Onicode
 GenericName=Coding Agent Controller
 Comment=Multi-device controller for coding agents
-Exec=zeron %u
-TryExec=zeron
-Icon=zeron
+Exec=onicode %u
+TryExec=onicode
+Icon=onicode
 Terminal=false
 StartupNotify=true
 Categories=Development;Utility;
 Keywords=agent;claude;codex;ai;coding;
-StartupWMClass=zeron
-MimeType=x-scheme-handler/zeron;
+StartupWMClass=onicode
+MimeType=x-scheme-handler/onicode;

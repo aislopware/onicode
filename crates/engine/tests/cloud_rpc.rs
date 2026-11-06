@@ -6,9 +6,9 @@
 use std::sync::{Arc, Mutex};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use zeron_engine::{EdgeConfig, EngineCore, HarnessId, default_registry};
-use zeron_proto::{CloudState, CloudStatus, CloudUsage, VaultStatus};
-use zeron_rpc::{memory_client, methods};
+use onicode_engine::{EdgeConfig, EngineCore, HarnessId, default_registry};
+use onicode_proto::{CloudState, CloudStatus, CloudUsage, VaultStatus};
+use onicode_rpc::{memory_client, methods};
 
 /// Request lines (`METHOD /path`) + their Authorization headers.
 type Seen = Arc<Mutex<Vec<(String, Option<String>)>>>;
@@ -304,9 +304,9 @@ fn cloud_edge(request: &str, body: &str) -> (u16, String) {
 
 /// `Mutate createChat` with `body`'s fields.
 async fn create(
-    client: &zeron_rpc::RpcClient,
+    client: &onicode_rpc::RpcClient,
     body: serde_json::Value,
-) -> Result<serde_json::Value, zeron_rpc::RpcError> {
+) -> Result<serde_json::Value, onicode_rpc::RpcError> {
     let mut op = serde_json::json!({ "op": "createChat" });
     op.as_object_mut()
         .unwrap()
@@ -320,7 +320,7 @@ async fn create(
 /// would), optionally with a GitHub origin.
 async fn local_project(
     core: &EngineCore,
-    client: &zeron_rpc::RpcClient,
+    client: &onicode_rpc::RpcClient,
     dir: &std::path::Path,
     space_id: &str,
     github_repo: Option<&str>,
@@ -486,7 +486,7 @@ async fn cloud_branches_are_github_branches_default_first() {
     )
     .unwrap();
     let client = memory_client(core.rpc_service());
-    let refs: Vec<zeron_proto::RepoRef> = client
+    let refs: Vec<onicode_proto::RepoRef> = client
         .call_as(
             methods::LIST_CLOUD_BRANCHES,
             serde_json::json!({ "repo": "acme/app", "defaultBranch": "main" }),
@@ -518,7 +518,7 @@ async fn catalogs_for_cloud_devices_are_answered_here() {
         Some(EdgeConfig::with_static_token(edge_url, "dev-user")),
     )
     .unwrap();
-    core.workspace.upsert_device_row(&zeron_proto::Device {
+    core.workspace.upsert_device_row(&onicode_proto::Device {
         id: "cloud-acct".into(),
         name: "Cloud".into(),
         platform: "cloud".into(),
@@ -526,7 +526,7 @@ async fn catalogs_for_cloud_devices_are_answered_here() {
         created_at: None,
         version: None,
         cursor_sdk_version: None,
-        capabilities: vec![zeron_proto::CLOUD_ACCOUNT_CAPABILITY.into()],
+        capabilities: vec![onicode_proto::CLOUD_ACCOUNT_CAPABILITY.into()],
     });
     let client = memory_client(core.rpc_service());
 
@@ -671,7 +671,7 @@ async fn provider_switch_is_refused_for_a_host_that_cannot_switch() {
         )
     };
     let refused = switch("old-host-chat", "codex").await.unwrap_err().to_string();
-    assert!(refused.contains("newer Zeron"), "{refused}");
+    assert!(refused.contains("newer Onicode"), "{refused}");
     // The same provider (a model or effort change) still goes through.
     switch("old-host-chat", "claude-code").await.unwrap();
     // This engine hosts its own chats and switches them.

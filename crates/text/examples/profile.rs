@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use std::hint::black_box;
-use zeron_text::*;
+use onicode_text::*;
 
 struct Fallback;
 
@@ -96,7 +96,7 @@ const CODE: &[&str] = &[
     "line_count",
     "Vec<Line>",
     "crates/text/src/layout.rs",
-    "cargo test -p zeron-text",
+    "cargo test -p onicode-text",
     "Arc<FontBook>",
     "&mut WidthCache",
     "u32::MAX",

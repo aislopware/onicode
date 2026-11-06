@@ -36,7 +36,7 @@ fn folder(files: &[(&str, &str)]) -> tempfile::TempDir {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, text).unwrap();
     }
-    std::fs::write(dir.path().join("zeron.luau"), crate::plugins::scaffold::SDK).unwrap();
+    std::fs::write(dir.path().join("onicode.luau"), crate::plugins::scaffold::SDK).unwrap();
     dir
 }
 
@@ -66,47 +66,47 @@ async fn ask(vm: &Vm, name: &str, args: Json) -> Result<Reply, &'static str> {
 }
 
 const SERVICE: &str = r#"
-local zeron = require("./zeron")("svc")
+local onicode = require("./onicode")("svc")
 local util = require("./lib/util")
 
-zeron.serve("add", function(args)
-	return { sum = args.a + args.b, device = zeron.device.name }
+onicode.serve("add", function(args)
+	return { sum = args.a + args.b, device = onicode.device.name }
 end, { safe = true })
 
-zeron.serve("run", function(args)
-	local ran = zeron.run("echo", { args.word }):await()
-	zeron.emit("ran", { word = args.word })
+onicode.serve("run", function(args)
+	local ran = onicode.run("echo", { args.word }):await()
+	onicode.emit("ran", { word = args.word })
 	return ran
 end)
 
-zeron.serve("refused", function()
-	return zeron.run("refused"):await()
+onicode.serve("refused", function()
+	return onicode.run("refused"):await()
 end)
 
-zeron.serve("nap", function()
-	zeron.sleep(0.05):await()
+onicode.serve("nap", function()
+	onicode.sleep(0.05):await()
 	return util.twice("nap")
 end)
 
-zeron.serve("keep", function(args)
-	local box = zeron.store("n", 0)
+onicode.serve("keep", function(args)
+	local box = onicode.store("n", 0)
 	box:set(box:get() + args.by)
 	return box:get()
 end)
 
-zeron.serve("spin", function()
+onicode.serve("spin", function()
 	while true do end
 end)
 
-zeron.serve("hog", function()
+onicode.serve("hog", function()
 	local t = {}
 	for i = 1, 1e9 do t[i] = string.rep("x", 1024) .. i end
 end)
 
-zeron.serve("boom", function() error("it broke", 0) end)
+onicode.serve("boom", function() error("it broke", 0) end)
 
-zeron.tool { name = "count", run = function(args) return #args.text end }
-zeron.every(60, function() end)
+onicode.tool { name = "count", run = function(args) return #args.text end }
+onicode.every(60, function() end)
 "#;
 
 const UTIL: &str = r#"
@@ -219,12 +219,12 @@ async fn the_sandbox_reads_only_the_plugins_own_files() {
     std::fs::write(outside.path().join("secret.luau"), "return 'secret'").unwrap();
     let escape = format!(
         r#"
-local zeron = require("./zeron")("svc")
-zeron.serve("try", function(args)
+local onicode = require("./onicode")("svc")
+onicode.serve("try", function(args)
 	local ok, why = pcall(require, args.path)
 	return {{ ok = ok, why = tostring(why) }}
 end)
-zeron.serve("globals", function()
+onicode.serve("globals", function()
 	return {{ io = io == nil, loadstring = loadstring == nil, debug = debug == nil, getfenv_g = pcall(function() _G.x = 1 end) }}
 end)
 local _ = "{}"
@@ -263,9 +263,9 @@ async fn a_broken_service_says_why_it_didnt_load() {
 
 #[test]
 fn paths_resolve_inside_the_plugin() {
-    assert_eq!(resolve("service.luau", "./zeron").as_deref(), Some("zeron.luau"));
+    assert_eq!(resolve("service.luau", "./onicode").as_deref(), Some("onicode.luau"));
     assert_eq!(resolve("lib/a.luau", "./b").as_deref(), Some("lib/b.luau"));
-    assert_eq!(resolve("lib/a.luau", "../zeron").as_deref(), Some("zeron.luau"));
+    assert_eq!(resolve("lib/a.luau", "../onicode").as_deref(), Some("onicode.luau"));
     assert_eq!(resolve("service.luau", "../x"), None);
     assert_eq!(resolve("service.luau", "x"), None);
     assert_eq!(resolve("service.luau", "/etc/x"), None);

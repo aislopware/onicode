@@ -12,10 +12,10 @@ use futures::StreamExt;
 use futures::stream::BoxStream;
 use tokio::sync::Notify;
 
-use zeron_doc::{MessageRole, MessageStatus, SessionCommandPayload};
-use zeron_engine::{EngineCore, HarnessRegistry};
-use zeron_harness::{Harness, HarnessError, RunControls};
-use zeron_proto::{
+use onicode_doc::{MessageRole, MessageStatus, SessionCommandPayload};
+use onicode_engine::{EngineCore, HarnessRegistry};
+use onicode_harness::{Harness, HarnessError, RunControls};
+use onicode_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SteeringMode,
 };
@@ -112,7 +112,7 @@ fn answered(core: &EngineCore, prompt: &str) -> bool {
             e.role == MessageRole::Assistant
                 && e.status == Some(MessageStatus::Complete)
                 && e.parts.iter().any(
-                    |p| matches!(p, zeron_doc::MessagePart::Text { text: t, .. } if t == &text),
+                    |p| matches!(p, onicode_doc::MessagePart::Text { text: t, .. } if t == &text),
                 )
         })
 }
@@ -157,10 +157,10 @@ fn send(core: &EngineCore, id: &str, prompt: &str) {
 }
 
 async fn create_chat(core: &EngineCore) {
-    let client = zeron_rpc::memory_client(core.rpc_service());
+    let client = onicode_rpc::memory_client(core.rpc_service());
     client
         .call(
-            zeron_rpc::methods::MUTATE,
+            onicode_rpc::methods::MUTATE,
             serde_json::json!({ "op": "createChat", "chatId": CHAT, "deviceId": core.device_id }),
         )
         .await

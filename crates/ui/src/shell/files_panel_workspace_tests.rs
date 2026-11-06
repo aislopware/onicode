@@ -1,5 +1,5 @@
 //! Exercise the explorer and editors against an isolated real workspace/RPC.
-//! Set ZERON_FILES_CAPTURES to a directory to run on X11 and capture the fixture.
+//! Set ONICODE_FILES_CAPTURES to a directory to run on X11 and capture the fixture.
 use super::*;
 use crate::settings::{FILES_PANEL_DEFAULT, RIGHT_PANE_DEFAULT};
 use gpui::{AppContext, AsyncApp, WindowHandle};
@@ -110,10 +110,10 @@ fn files_panel_workspace_navigation_and_external_updates() {
     std::fs::write(project.join("src/new.rs"), "// new file\n").unwrap();
     let core = runtime
         .block_on(async {
-            zeron_engine::EngineCore::assemble(
+            onicode_engine::EngineCore::assemble(
                 &directory.path().join("engine"),
-                Arc::new(zeron_engine::default_registry()),
-                zeron_proto::HarnessId::Mock,
+                Arc::new(onicode_engine::default_registry()),
+                onicode_proto::HarnessId::Mock,
                 None,
             )
         })
@@ -146,13 +146,13 @@ fn files_panel_workspace_navigation_and_external_updates() {
     drop(listener);
     // The viewport below attaches with the bearer published in its data dir.
     let _ipc = runtime
-        .block_on(zeron_engine::serve_ipc(
+        .block_on(onicode_engine::serve_ipc(
             port,
             &directory.path().join("ui"),
             core.rpc_service(),
         ))
         .unwrap();
-    let output = std::env::var_os("ZERON_FILES_CAPTURES").map(PathBuf::from);
+    let output = std::env::var_os("ONICODE_FILES_CAPTURES").map(PathBuf::from);
     let application = if output.is_some() {
         gpui_platform::application()
     } else {
@@ -202,7 +202,7 @@ fn files_panel_workspace_navigation_and_external_updates() {
                 edge_token: None,
                 org_id: None,
                 workos_client_id: None,
-                default_harness: zeron_proto::HarnessId::Mock,
+                default_harness: onicode_proto::HarnessId::Mock,
             };
             let state = cx.new(|_| AppState::new());
             let window = cx

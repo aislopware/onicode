@@ -1,9 +1,9 @@
-//! The subcommands that run the engine's own code ([`zeron_cli::EngineCommand`]),
-//! in a binary that links it: `zeron` itself, and `zeron-engine`, the helper
+//! The subcommands that run the engine's own code ([`onicode_cli::EngineCommand`]),
+//! in a binary that links it: `onicode` itself, and `onicode-engine`, the helper
 //! an interface without the engine hands them to. Logging is set up by
-//! [`zeron_cli::run`] before these run.
+//! [`onicode_cli::run`] before these run.
 
-use zeron_cli::EngineCommand;
+use onicode_cli::EngineCommand;
 
 use crate::{auth_cli, engine_config_from_env, ipc_cli, plugin_cli};
 
@@ -12,7 +12,7 @@ pub fn run_engine_command(command: EngineCommand) -> anyhow::Result<()> {
         EngineCommand::Headless => {
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(async {
-                let engine = zeron_engine::Engine::new(engine_config_from_env());
+                let engine = onicode_engine::Engine::new(engine_config_from_env());
                 engine.run().await
             })
         }

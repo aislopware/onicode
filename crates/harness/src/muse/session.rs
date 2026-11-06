@@ -1,5 +1,5 @@
 //! One Muse session over one host: open (or resume) it, run its turns, and
-//! carry Zeron's steering, stops and answers in.
+//! carry Onicode's steering, stops and answers in.
 //!
 //! - TURNS. A fresh turn's id is its `turn/start` command id, so the run
 //!   knows it before the ack and owns every frame naming it. Its end is the
@@ -36,7 +36,7 @@ use tokio::{
     sync::{mpsc, oneshot},
     task::{AbortHandle, JoinSet},
 };
-use zeron_proto::{
+use onicode_proto::{
     AgentEvent, DoneStatus, HarnessId, RunRequest, UserInputAnswer, UserInputQuestion,
 };
 
@@ -197,7 +197,7 @@ impl Runner {
         }
     }
 
-    /// Zeron's MCP server, as a session-scoped stdio server. `optional`: a
+    /// Onicode's MCP server, as a session-scoped stdio server. `optional`: a
     /// server that cannot start must not fail the whole turn.
     /// The plugins' native servers ([`RunRequest::extra_mcp`]) ride beside it.
     fn config(&self) -> Option<Value> {
@@ -362,7 +362,7 @@ impl Runner {
             "ifBusy": if_busy,
         });
         // A resumed session keeps the root it was created with; pin it to
-        // this run's checkout so edits land where Zeron tracks them. The root
+        // this run's checkout so edits land where Onicode tracks them. The root
         // is sticky (it binds at this turn and persists), and Muse refuses it
         // on a steer, which may launch no turn to bind it to: the run's first
         // prompt carries it, later ones inherit it.
@@ -510,7 +510,7 @@ impl Runner {
                 self.emit(AgentEvent::Error { message }).await?;
             }
             (Pending::Other(method), Err(failure)) => {
-                tracing::warn!(target: "zeron_harness::muse", %method, kind = %failure.kind, "{}", failure.message);
+                tracing::warn!(target: "onicode_harness::muse", %method, kind = %failure.kind, "{}", failure.message);
                 if method == "session/setModel" {
                     self.emit(AgentEvent::Error {
                         message: format!("Muse kept its model: {}", failure.message),
@@ -718,7 +718,7 @@ impl Runner {
             let approval = approval.clone();
             move |choice: Option<Value>| {
                 let Some(choice) = choice else {
-                    tracing::warn!(target: "zeron_harness::muse", "Muse offered no usable approval choice");
+                    tracing::warn!(target: "onicode_harness::muse", "Muse offered no usable approval choice");
                     return Ok(None);
                 };
                 client
@@ -1024,12 +1024,12 @@ mod tests {
     }
 }
 
-/// `mcpServers` for a session: Zeron's own server and the plugins' native
+/// `mcpServers` for a session: Onicode's own server and the plugins' native
 /// ones, each optional. `None` when there are none, or when the build can't
 /// take session servers (`granted` lacks `sessionMcp`).
 fn session_mcp_config(
-    mcp: Option<&zeron_proto::McpServer>,
-    extras: &[zeron_proto::McpServer],
+    mcp: Option<&onicode_proto::McpServer>,
+    extras: &[onicode_proto::McpServer],
     session_mcp: bool,
 ) -> Option<Value> {
     if mcp.is_none() && extras.is_empty() {
@@ -1037,8 +1037,8 @@ fn session_mcp_config(
     }
     if !session_mcp {
         tracing::warn!(
-            target: "zeron_harness::muse",
-            "this Muse Code build cannot take session MCP servers; running without Zeron's"
+            target: "onicode_harness::muse",
+            "this Muse Code build cannot take session MCP servers; running without Onicode's"
         );
         return None;
     }
@@ -1063,14 +1063,14 @@ mod session_mcp_tests {
     use super::*;
 
     #[test]
-    fn session_mcp_config_adds_plugin_servers_beside_zeron() {
-        let zeron = zeron_proto::McpServer {
-            name: "zeron".into(),
-            command: "/opt/zeron/zeron".into(),
+    fn session_mcp_config_adds_plugin_servers_beside_onicode() {
+        let onicode = onicode_proto::McpServer {
+            name: "onicode".into(),
+            command: "/opt/onicode/onicode".into(),
             args: vec!["mcp".into()],
             env: Default::default(),
         };
-        let extra = zeron_proto::McpServer {
+        let extra = onicode_proto::McpServer {
             name: "plugin-focus".into(),
             command: "/data/plugins/.loaded/focus/0123/bin/server".into(),
             args: vec![],
@@ -1078,11 +1078,11 @@ mod session_mcp_tests {
         };
         assert_eq!(session_mcp_config(None, &[], true), None);
         assert_eq!(
-            session_mcp_config(Some(&zeron), std::slice::from_ref(&extra), false),
+            session_mcp_config(Some(&onicode), std::slice::from_ref(&extra), false),
             None
         );
-        let config = session_mcp_config(Some(&zeron), std::slice::from_ref(&extra), true).unwrap();
-        assert_eq!(config["mcpServers"]["zeron"]["command"], "/opt/zeron/zeron");
+        let config = session_mcp_config(Some(&onicode), std::slice::from_ref(&extra), true).unwrap();
+        assert_eq!(config["mcpServers"]["onicode"]["command"], "/opt/onicode/onicode");
         assert_eq!(
             config["mcpServers"]["plugin-focus"],
             json!({

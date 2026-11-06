@@ -8,10 +8,10 @@ use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use tokio_util::sync::CancellationToken;
-use zeron_engine::Terminals;
-use zeron_engine::terminals::link::{self, Outgoing};
-use zeron_preview::peer::Peers;
-use zeron_proto::TerminalEvent;
+use onicode_engine::Terminals;
+use onicode_engine::terminals::link::{self, Outgoing};
+use onicode_preview::peer::Peers;
+use onicode_proto::TerminalEvent;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn keystroke_echo_over_a_webrtc_link_is_transport_bound() {

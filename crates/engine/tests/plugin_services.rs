@@ -20,8 +20,8 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::tungstenite::handshake::server::{Request as WsRequest, Response as WsResponse};
 
-use zeron_engine::{EngineCore, HarnessId, HarnessRegistry};
-use zeron_rpc::{
+use onicode_engine::{EngineCore, HarnessId, HarnessRegistry};
+use onicode_rpc::{
     DeviceFrameHeader, LinkCache, LinkCacheConfig, RpcClient, StaticToken, decode_device_frame,
     encode_device_frame, methods,
 };
@@ -108,7 +108,7 @@ async fn device_rooms() -> String {
 struct Engine {
     core: EngineCore,
     client: RpcClient,
-    _host: zeron_rpc::HostRelay,
+    _host: onicode_rpc::HostRelay,
 }
 
 fn engine(dir: &Path, device: &str, rooms: &str) -> Engine {
@@ -122,23 +122,23 @@ fn engine(dir: &Path, device: &str, rooms: &str) -> Engine {
     // Each dial says which device it is (the edge verifies the proof).
     let me = device.to_owned();
     links.caller_proof = Some(Arc::new(move |_: &str, _: &str, _: i64| {
-        Some(zeron_rpc::CallerProof { device: me.clone(), key: "test-key".into(), signature: "test-sig".into() })
+        Some(onicode_rpc::CallerProof { device: me.clone(), key: "test-key".into(), signature: "test-sig".into() })
     }));
     core.set_links(LinkCache::new(links));
-    let client = zeron_rpc::memory_client(core.rpc_service());
+    let client = onicode_rpc::memory_client(core.rpc_service());
     Engine { core, client, _host: host }
 }
 
 const SERVICE: &str = r#"
-local zeron = require("./zeron")("hello-devices")
+local onicode = require("./onicode")("hello-devices")
 
-zeron.serve("where", function(args, call)
-	local ran = zeron.run("echo", { zeron.device.id }):await()
-	return { device = zeron.device.id, from = call.from.id, echoed = ran.stdout }
+onicode.serve("where", function(args, call)
+	local ran = onicode.run("echo", { onicode.device.id }):await()
+	return { device = onicode.device.id, from = call.from.id, echoed = ran.stdout }
 end, { safe = true })
 
-zeron.serve("shout", function(args)
-	zeron.emit("shouted", { word = args.word, at = zeron.device.id })
+onicode.serve("shout", function(args)
+	onicode.emit("shouted", { word = args.word, at = onicode.device.id })
 	return true
 end)
 "#;
@@ -152,15 +152,15 @@ async fn install(e: &Engine, dir: &Path, version: &str) {
     std::fs::create_dir_all(&folder).unwrap();
     std::fs::write(folder.join("init.luau"), "return nil").unwrap();
     std::fs::write(folder.join("service.luau"), SERVICE).unwrap();
-    std::fs::write(folder.join("zeron.luau"), zeron_engine::plugins::scaffold::SDK).unwrap();
+    std::fs::write(folder.join("onicode.luau"), onicode_engine::plugins::scaffold::SDK).unwrap();
     std::fs::write(folder.join("icon.svg"), ICON).unwrap();
     let manifest = json!({
         "id": "hello-devices", "name": "Hello devices", "version": version, "entry": "init.luau",
         "service": "service.luau", "permissions": ["service", "commands"], "commands": ["echo"],
         "icon": "icon.svg",
     });
-    std::fs::write(folder.join("zeron-plugin.json"), serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
-    // As Zeron's consent window signs: with a review for it as listed.
+    std::fs::write(folder.join("onicode-plugin.json"), serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    // As Onicode's consent window signs: with a review for it as listed.
     let review = review(e, "hello-devices").await;
     let signed = e
         .client
@@ -233,10 +233,10 @@ async fn a_window_on_one_device_calls_its_service_on_another() {
     // One person's two devices: the same plugin key (the same author).
     std::fs::create_dir_all(&dir_a).unwrap();
     std::fs::create_dir_all(&dir_b).unwrap();
-    zeron_engine::plugins::signing::load_or_create_key(&dir_a).unwrap();
+    onicode_engine::plugins::signing::load_or_create_key(&dir_a).unwrap();
     std::fs::copy(
-        dir_a.join(zeron_engine::plugins::signing::KEY_FILE),
-        dir_b.join(zeron_engine::plugins::signing::KEY_FILE),
+        dir_a.join(onicode_engine::plugins::signing::KEY_FILE),
+        dir_b.join(onicode_engine::plugins::signing::KEY_FILE),
     )
     .unwrap();
     let a = engine(&dir_a, "device-a", &rooms);
@@ -286,7 +286,7 @@ async fn a_window_on_one_device_calls_its_service_on_another() {
     // (A file here can't be installed there.)
     let refused = a
         .client
-        .call(methods::INSTALL_PLUGIN, json!({ "targetDeviceId": "device-b", "path": "/tmp/x.zeron-plugin" }))
+        .call(methods::INSTALL_PLUGIN, json!({ "targetDeviceId": "device-b", "path": "/tmp/x.onicode-plugin" }))
         .await;
     assert!(refused.is_err(), "{refused:?}");
     let answered = ask(&a, "device-b", "where", json!({})).await;

@@ -6948,6 +6948,642 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "onicode"
+version = "0.2.136"
+dependencies = [
+ "anyhow",
+ "clap",
+ "embed-resource",
+ "libc",
+ "mimalloc",
+ "onicode-cli",
+ "onicode-engine",
+ "onicode-mcp",
+ "onicode-notify",
+ "onicode-rpc",
+ "onicode-ui",
+ "onicode-update",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "onicode-audio"
+version = "0.2.136"
+dependencies = [
+ "base64 0.22.1",
+ "cpal 0.18.2",
+ "crossbeam-queue",
+ "onicode-proto",
+ "thiserror 2.0.20",
+ "webrtc-audio-processing",
+]
+
+[[package]]
+name = "onicode-cli"
+version = "0.2.136"
+dependencies = [
+ "anyhow",
+ "clap",
+ "libc",
+ "onicode-launch",
+ "onicode-update",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "onicode-client"
+version = "0.2.136"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "futures",
+ "loro",
+ "onicode-doc",
+ "onicode-preview",
+ "onicode-proto",
+ "onicode-rpc",
+ "onicode-sync",
+ "onicode-term-link",
+ "onicode-visual",
+ "onicode-voice-session",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "onicode-doc"
+version = "0.2.136"
+dependencies = [
+ "chrono",
+ "loro",
+ "onicode-proto",
+ "serde",
+ "serde_json",
+ "similar",
+ "thiserror 2.0.20",
+ "tracing",
+]
+
+[[package]]
+name = "onicode-engine"
+version = "0.2.136"
+dependencies = [
+ "alacritty_terminal",
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "dunce",
+ "fff-search",
+ "flate2",
+ "futures",
+ "gethostname",
+ "ignore",
+ "image",
+ "libc",
+ "loro",
+ "mlua",
+ "notify 7.0.0",
+ "onicode-doc",
+ "onicode-harness",
+ "onicode-launch",
+ "onicode-mcp",
+ "onicode-notify",
+ "onicode-plugin-guard",
+ "onicode-preview",
+ "onicode-proto",
+ "onicode-rpc",
+ "onicode-sync",
+ "onicode-term-link",
+ "onicode-theme",
+ "onicode-update",
+ "onicode-visual",
+ "portable-pty",
+ "reqwest",
+ "ring",
+ "rusqlite",
+ "same-file",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "windows-sys 0.61.2",
+ "zip",
+]
+
+[[package]]
+name = "onicode-harness"
+version = "0.2.136"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "bzip2",
+ "chrono",
+ "deser-hjson",
+ "filetime",
+ "flate2",
+ "futures",
+ "libc",
+ "onicode-doc",
+ "onicode-proto",
+ "onicode-voice-media",
+ "reqwest",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "sha2",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+ "windows-sys 0.61.2",
+ "zip",
+]
+
+[[package]]
+name = "onicode-launch"
+version = "0.2.136"
+dependencies = [
+ "libc",
+ "tempfile",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "onicode-markdown"
+version = "0.2.136"
+dependencies = [
+ "pulldown-cmark",
+]
+
+[[package]]
+name = "onicode-mcp"
+version = "0.2.136"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "futures",
+ "onicode-doc",
+ "onicode-proto",
+ "onicode-rpc",
+ "onicode-theme",
+ "onicode-visual",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "onicode-mobile"
+version = "0.2.136"
+dependencies = [
+ "async-trait",
+ "onicode-client",
+ "onicode-doc",
+ "onicode-markdown",
+ "onicode-orb",
+ "onicode-proto",
+ "onicode-syntax",
+ "onicode-term",
+ "onicode-text",
+ "onicode-veil",
+ "onicode-visual",
+ "onicode-visual-gpu",
+ "onicode-voice-session",
+ "serde",
+ "serde_json",
+ "similar",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "uniffi",
+ "zatex",
+]
+
+[[package]]
+name = "onicode-mobile-bindgen"
+version = "0.2.136"
+dependencies = [
+ "uniffi",
+]
+
+[[package]]
+name = "onicode-notify"
+version = "0.2.136"
+dependencies = [
+ "objc",
+ "sha2",
+ "tracing",
+]
+
+[[package]]
+name = "onicode-orb"
+version = "0.2.136"
+
+[[package]]
+name = "onicode-plugin-guard"
+version = "0.2.136"
+dependencies = [
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "onicode-preview"
+version = "0.2.136"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "libc",
+ "onicode-preview-label",
+ "onicode-proto",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "webrtc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "onicode-preview-label"
+version = "0.2.136"
+
+[[package]]
+name = "onicode-proto"
+version = "0.2.136"
+dependencies = [
+ "chrono",
+ "pulldown-cmark",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "onicode-rpc"
+version = "0.2.136"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "getrandom 0.4.3",
+ "onicode-doc",
+ "onicode-proto",
+ "onicode-sync",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "onicode-sync"
+version = "0.2.136"
+dependencies = [
+ "block2 0.6.2",
+ "chrono",
+ "futures",
+ "loro",
+ "loro-protocol",
+ "onicode-doc",
+ "onicode-proto",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "onicode-syntax"
+version = "0.2.136"
+dependencies = [
+ "thiserror 2.0.20",
+ "tree-sitter",
+ "tree-sitter-bash",
+ "tree-sitter-c",
+ "tree-sitter-c-sharp",
+ "tree-sitter-containerfile",
+ "tree-sitter-cpp",
+ "tree-sitter-css",
+ "tree-sitter-go",
+ "tree-sitter-highlight",
+ "tree-sitter-html",
+ "tree-sitter-java",
+ "tree-sitter-javascript",
+ "tree-sitter-json",
+ "tree-sitter-kotlin-ng",
+ "tree-sitter-lua",
+ "tree-sitter-luau",
+ "tree-sitter-make",
+ "tree-sitter-md",
+ "tree-sitter-nix",
+ "tree-sitter-php",
+ "tree-sitter-python",
+ "tree-sitter-ruby",
+ "tree-sitter-rust",
+ "tree-sitter-sequel",
+ "tree-sitter-swift",
+ "tree-sitter-toml-ng",
+ "tree-sitter-typescript",
+ "tree-sitter-yaml",
+]
+
+[[package]]
+name = "onicode-term"
+version = "0.2.136"
+dependencies = [
+ "alacritty_terminal",
+]
+
+[[package]]
+name = "onicode-term-link"
+version = "0.2.136"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "futures",
+ "onicode-preview",
+ "onicode-proto",
+ "onicode-rpc",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "onicode-text"
+version = "0.2.136"
+dependencies = [
+ "core-foundation 0.10.1",
+ "core-graphics 0.24.0",
+ "core-text",
+ "criterion",
+ "hashbrown 0.15.5",
+ "icu_properties",
+ "icu_segmenter",
+ "rustc-hash 2.1.3",
+ "rustybuzz",
+ "unicode-bidi",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "onicode-theme"
+version = "0.2.136"
+dependencies = [
+ "anyhow",
+ "clap",
+ "json5 0.4.1",
+ "plist",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "onicode-ui"
+version = "0.2.136"
+dependencies = [
+ "alacritty_terminal",
+ "anyhow",
+ "ashpd",
+ "async-io",
+ "async-trait",
+ "atspi 0.30.0",
+ "base64 0.22.1",
+ "block",
+ "block2 0.6.2",
+ "chrono",
+ "core-foundation 0.10.1",
+ "core-graphics 0.24.0",
+ "fontdb",
+ "foreign-types 0.5.0",
+ "futures",
+ "gpui",
+ "gpui-base",
+ "gpui_platform",
+ "gpui_tokio",
+ "html5ever",
+ "image",
+ "libc",
+ "mermaid-rs-renderer",
+ "mimalloc",
+ "objc",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
+ "objc2-web-kit",
+ "onicode-doc",
+ "onicode-engine",
+ "onicode-harness",
+ "onicode-markdown",
+ "onicode-notify",
+ "onicode-orb",
+ "onicode-proto",
+ "onicode-rpc",
+ "onicode-syntax",
+ "onicode-term",
+ "onicode-theme",
+ "onicode-update",
+ "onicode-veil",
+ "onicode-visual",
+ "onicode-visual-gpu",
+ "onicode-voice",
+ "onicode-voice-media",
+ "onicode-voice-session",
+ "png 0.18.1",
+ "pulldown-cmark",
+ "raw-window-handle",
+ "reqwest",
+ "roxmltree 0.21.1",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "sha2",
+ "similar",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "ttf-parser",
+ "unicode-segmentation",
+ "unicode-width",
+ "url",
+ "usvg",
+ "uuid",
+ "webview2-com",
+ "windows 0.61.3",
+ "windows-core 0.61.2",
+ "windows-sys 0.61.2",
+ "wry",
+ "x11rb 0.14.0",
+ "zatex",
+]
+
+[[package]]
+name = "onicode-update"
+version = "0.2.136"
+dependencies = [
+ "anyhow",
+ "futures",
+ "libc",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "onicode-veil"
+version = "0.2.136"
+
+[[package]]
+name = "onicode-visual"
+version = "0.2.136"
+dependencies = [
+ "base64 0.22.1",
+ "gltf",
+ "image",
+ "mlua",
+ "naga",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "onicode-visual-gpu"
+version = "0.2.136"
+dependencies = [
+ "image",
+ "onicode-visual",
+ "pollster 0.4.0",
+ "tracing",
+ "wgpu",
+]
+
+[[package]]
+name = "onicode-voice"
+version = "0.2.136"
+dependencies = [
+ "anyhow",
+ "cpal 0.17.3",
+ "hound",
+ "parakeet-rs",
+ "reqwest",
+ "rubato",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "onicode-voice-media"
+version = "0.2.136"
+dependencies = [
+ "async-trait",
+ "onicode-proto",
+ "onicode-voice-session",
+ "semver",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "onicode-voice-session"
+version = "0.2.136"
+dependencies = [
+ "async-trait",
+ "futures",
+ "onicode-orb",
+ "onicode-proto",
+ "onicode-rpc",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "onig"
 version = "6.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13587,642 +14223,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "zeron"
-version = "0.2.136"
-dependencies = [
- "anyhow",
- "clap",
- "embed-resource",
- "libc",
- "mimalloc",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "windows-sys 0.61.2",
- "zeron-cli",
- "zeron-engine",
- "zeron-mcp",
- "zeron-notify",
- "zeron-rpc",
- "zeron-ui",
- "zeron-update",
-]
-
-[[package]]
-name = "zeron-audio"
-version = "0.2.136"
-dependencies = [
- "base64 0.22.1",
- "cpal 0.18.2",
- "crossbeam-queue",
- "thiserror 2.0.20",
- "webrtc-audio-processing",
- "zeron-proto",
-]
-
-[[package]]
-name = "zeron-cli"
-version = "0.2.136"
-dependencies = [
- "anyhow",
- "clap",
- "libc",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "windows-sys 0.61.2",
- "zeron-launch",
- "zeron-update",
-]
-
-[[package]]
-name = "zeron-client"
-version = "0.2.136"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "futures",
- "loro",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
- "tracing",
- "uuid",
- "zeron-doc",
- "zeron-preview",
- "zeron-proto",
- "zeron-rpc",
- "zeron-sync",
- "zeron-term-link",
- "zeron-visual",
- "zeron-voice-session",
-]
-
-[[package]]
-name = "zeron-doc"
-version = "0.2.136"
-dependencies = [
- "chrono",
- "loro",
- "serde",
- "serde_json",
- "similar",
- "thiserror 2.0.20",
- "tracing",
- "zeron-proto",
-]
-
-[[package]]
-name = "zeron-engine"
-version = "0.2.136"
-dependencies = [
- "alacritty_terminal",
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "dunce",
- "fff-search",
- "flate2",
- "futures",
- "gethostname",
- "ignore",
- "image",
- "libc",
- "loro",
- "mlua",
- "notify 7.0.0",
- "portable-pty",
- "reqwest",
- "ring",
- "rusqlite",
- "same-file",
- "semver",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
- "toml 0.8.23",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "windows-sys 0.61.2",
- "zeron-doc",
- "zeron-harness",
- "zeron-launch",
- "zeron-mcp",
- "zeron-notify",
- "zeron-plugin-guard",
- "zeron-preview",
- "zeron-proto",
- "zeron-rpc",
- "zeron-sync",
- "zeron-term-link",
- "zeron-theme",
- "zeron-update",
- "zeron-visual",
- "zip",
-]
-
-[[package]]
-name = "zeron-harness"
-version = "0.2.136"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "bzip2",
- "chrono",
- "deser-hjson",
- "filetime",
- "flate2",
- "futures",
- "libc",
- "reqwest",
- "semver",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "sha2",
- "tar",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-util",
- "tracing",
- "uuid",
- "windows-sys 0.61.2",
- "zeron-doc",
- "zeron-proto",
- "zeron-voice-media",
- "zip",
-]
-
-[[package]]
-name = "zeron-launch"
-version = "0.2.136"
-dependencies = [
- "libc",
- "tempfile",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "zeron-markdown"
-version = "0.2.136"
-dependencies = [
- "pulldown-cmark",
-]
-
-[[package]]
-name = "zeron-mcp"
-version = "0.2.136"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "futures",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "uuid",
- "zeron-doc",
- "zeron-proto",
- "zeron-rpc",
- "zeron-theme",
- "zeron-visual",
-]
-
-[[package]]
-name = "zeron-mobile"
-version = "0.2.136"
-dependencies = [
- "async-trait",
- "serde",
- "serde_json",
- "similar",
- "thiserror 2.0.20",
- "tokio",
- "tokio-util",
- "uniffi",
- "zatex",
- "zeron-client",
- "zeron-doc",
- "zeron-markdown",
- "zeron-orb",
- "zeron-proto",
- "zeron-syntax",
- "zeron-term",
- "zeron-text",
- "zeron-veil",
- "zeron-visual",
- "zeron-visual-gpu",
- "zeron-voice-session",
-]
-
-[[package]]
-name = "zeron-mobile-bindgen"
-version = "0.2.136"
-dependencies = [
- "uniffi",
-]
-
-[[package]]
-name = "zeron-notify"
-version = "0.2.136"
-dependencies = [
- "objc",
- "sha2",
- "tracing",
-]
-
-[[package]]
-name = "zeron-orb"
-version = "0.2.136"
-
-[[package]]
-name = "zeron-plugin-guard"
-version = "0.2.136"
-dependencies = [
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "zeron-preview"
-version = "0.2.136"
-dependencies = [
- "anyhow",
- "async-trait",
- "bytes",
- "chrono",
- "futures",
- "http-body-util",
- "hyper",
- "hyper-util",
- "libc",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "webrtc",
- "windows-sys 0.61.2",
- "zeron-preview-label",
- "zeron-proto",
-]
-
-[[package]]
-name = "zeron-preview-label"
-version = "0.2.136"
-
-[[package]]
-name = "zeron-proto"
-version = "0.2.136"
-dependencies = [
- "chrono",
- "pulldown-cmark",
- "serde",
- "serde_json",
- "uuid",
-]
-
-[[package]]
-name = "zeron-rpc"
-version = "0.2.136"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "getrandom 0.4.3",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
- "tracing",
- "uuid",
- "zeron-doc",
- "zeron-proto",
- "zeron-sync",
-]
-
-[[package]]
-name = "zeron-sync"
-version = "0.2.136"
-dependencies = [
- "block2 0.6.2",
- "chrono",
- "futures",
- "loro",
- "loro-protocol",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
- "tracing",
- "uuid",
- "zeron-doc",
- "zeron-proto",
-]
-
-[[package]]
-name = "zeron-syntax"
-version = "0.2.136"
-dependencies = [
- "thiserror 2.0.20",
- "tree-sitter",
- "tree-sitter-bash",
- "tree-sitter-c",
- "tree-sitter-c-sharp",
- "tree-sitter-containerfile",
- "tree-sitter-cpp",
- "tree-sitter-css",
- "tree-sitter-go",
- "tree-sitter-highlight",
- "tree-sitter-html",
- "tree-sitter-java",
- "tree-sitter-javascript",
- "tree-sitter-json",
- "tree-sitter-kotlin-ng",
- "tree-sitter-lua",
- "tree-sitter-luau",
- "tree-sitter-make",
- "tree-sitter-md",
- "tree-sitter-nix",
- "tree-sitter-php",
- "tree-sitter-python",
- "tree-sitter-ruby",
- "tree-sitter-rust",
- "tree-sitter-sequel",
- "tree-sitter-swift",
- "tree-sitter-toml-ng",
- "tree-sitter-typescript",
- "tree-sitter-yaml",
-]
-
-[[package]]
-name = "zeron-term"
-version = "0.2.136"
-dependencies = [
- "alacritty_terminal",
-]
-
-[[package]]
-name = "zeron-term-link"
-version = "0.2.136"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "futures",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
- "zeron-preview",
- "zeron-proto",
- "zeron-rpc",
-]
-
-[[package]]
-name = "zeron-text"
-version = "0.2.136"
-dependencies = [
- "core-foundation 0.10.1",
- "core-graphics 0.24.0",
- "core-text",
- "criterion",
- "hashbrown 0.15.5",
- "icu_properties",
- "icu_segmenter",
- "rustc-hash 2.1.3",
- "rustybuzz",
- "unicode-bidi",
- "unicode-segmentation",
-]
-
-[[package]]
-name = "zeron-theme"
-version = "0.2.136"
-dependencies = [
- "anyhow",
- "clap",
- "json5 0.4.1",
- "plist",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "zeron-ui"
-version = "0.2.136"
-dependencies = [
- "alacritty_terminal",
- "anyhow",
- "ashpd",
- "async-io",
- "async-trait",
- "atspi 0.30.0",
- "base64 0.22.1",
- "block",
- "block2 0.6.2",
- "chrono",
- "core-foundation 0.10.1",
- "core-graphics 0.24.0",
- "fontdb",
- "foreign-types 0.5.0",
- "futures",
- "gpui",
- "gpui-base",
- "gpui_platform",
- "gpui_tokio",
- "html5ever",
- "image",
- "libc",
- "mermaid-rs-renderer",
- "mimalloc",
- "objc",
- "objc2 0.6.4",
- "objc2-app-kit 0.3.2",
- "objc2-core-graphics",
- "objc2-foundation 0.3.2",
- "objc2-web-kit",
- "png 0.18.1",
- "pulldown-cmark",
- "raw-window-handle",
- "reqwest",
- "roxmltree 0.21.1",
- "rust-embed",
- "serde",
- "serde_json",
- "sha2",
- "similar",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "ttf-parser",
- "unicode-segmentation",
- "unicode-width",
- "url",
- "usvg",
- "uuid",
- "webview2-com",
- "windows 0.61.3",
- "windows-core 0.61.2",
- "windows-sys 0.61.2",
- "wry",
- "x11rb 0.14.0",
- "zatex",
- "zeron-doc",
- "zeron-engine",
- "zeron-harness",
- "zeron-markdown",
- "zeron-notify",
- "zeron-orb",
- "zeron-proto",
- "zeron-rpc",
- "zeron-syntax",
- "zeron-term",
- "zeron-theme",
- "zeron-update",
- "zeron-veil",
- "zeron-visual",
- "zeron-visual-gpu",
- "zeron-voice",
- "zeron-voice-media",
- "zeron-voice-session",
-]
-
-[[package]]
-name = "zeron-update"
-version = "0.2.136"
-dependencies = [
- "anyhow",
- "futures",
- "libc",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
- "tracing",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "zeron-veil"
-version = "0.2.136"
-
-[[package]]
-name = "zeron-visual"
-version = "0.2.136"
-dependencies = [
- "base64 0.22.1",
- "gltf",
- "image",
- "mlua",
- "naga",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "zeron-visual-gpu"
-version = "0.2.136"
-dependencies = [
- "image",
- "pollster 0.4.0",
- "tracing",
- "wgpu",
- "zeron-visual",
-]
-
-[[package]]
-name = "zeron-voice"
-version = "0.2.136"
-dependencies = [
- "anyhow",
- "cpal 0.17.3",
- "hound",
- "parakeet-rs",
- "reqwest",
- "rubato",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "zeron-voice-media"
-version = "0.2.136"
-dependencies = [
- "async-trait",
- "semver",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
- "tokio-util",
- "zeron-proto",
- "zeron-voice-session",
-]
-
-[[package]]
-name = "zeron-voice-session"
-version = "0.2.136"
-dependencies = [
- "async-trait",
- "futures",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "tracing",
- "zeron-orb",
- "zeron-proto",
- "zeron-rpc",
 ]
 
 [[package]]

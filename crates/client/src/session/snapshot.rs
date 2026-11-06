@@ -5,8 +5,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use zeron_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
-use zeron_proto::{ChatIndicator, ContextUsage, UserInputQuestion};
+use onicode_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
+use onicode_proto::{ChatIndicator, ContextUsage, UserInputQuestion};
 
 use crate::connectivity::SendState;
 

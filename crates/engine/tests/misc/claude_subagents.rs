@@ -6,10 +6,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use zeron_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry, SubagentStatus};
-use zeron_engine::{EngineCore, EngineProfile, HarnessRegistry, SteerOutcome};
-use zeron_harness::ClaudeHarness;
-use zeron_proto::{HarnessId, RunRequest, SandboxLevel, SessionStatus};
+use onicode_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry, SubagentStatus};
+use onicode_engine::{EngineCore, EngineProfile, HarnessRegistry, SteerOutcome};
+use onicode_harness::ClaudeHarness;
+use onicode_proto::{HarnessId, RunRequest, SandboxLevel, SessionStatus};
 
 const CHAT: &str = "claude-subagents";
 /// The typed fork's chip, named after the command and the fork's task.

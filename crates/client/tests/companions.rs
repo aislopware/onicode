@@ -6,8 +6,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use zeron_client::events::NullListener;
-use zeron_client::{
+use onicode_client::events::NullListener;
+use onicode_client::{
     Client, ClientConfig, Credentials, DemoOptions, MessageRole, MessageStatus,
     SessionMessageEntry, StreamSpeed, SubagentSink, SubagentState, TerminalSink, TerminalUpdate,
 };
@@ -131,7 +131,7 @@ fn subagents_list_off_the_transcript_and_open_live_or_frozen() {
     wait_for("hydrated", Duration::from_secs(5), || {
         session.snapshot().hydrated
     });
-    let agents = zeron_client::subagents::subagents(&session.snapshot().transcript_messages());
+    let agents = onicode_client::subagents::subagents(&session.snapshot().transcript_messages());
     let titles: Vec<(&str, SubagentState)> =
         agents.iter().map(|a| (a.title.as_str(), a.state)).collect();
     assert_eq!(

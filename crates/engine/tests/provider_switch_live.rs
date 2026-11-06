@@ -3,14 +3,14 @@
 //! tiny turns of real usage and needs both CLIs logged in):
 //!
 //! ```text
-//! cargo test -p zeron-engine --test provider_switch_live -- --ignored --nocapture
+//! cargo test -p onicode-engine --test provider_switch_live -- --ignored --nocapture
 //! ```
 
 use std::time::{Duration, Instant};
 
-use zeron_doc::{MessagePart, MessageRole};
-use zeron_engine::{EngineCore, default_registry};
-use zeron_proto::{HarnessId, RunRequest, SandboxLevel, SessionStatus};
+use onicode_doc::{MessagePart, MessageRole};
+use onicode_engine::{EngineCore, default_registry};
+use onicode_proto::{HarnessId, RunRequest, SandboxLevel, SessionStatus};
 
 const CHAT: &str = "live-switch";
 const CODEWORD: &str = "TANGERINE-4417";

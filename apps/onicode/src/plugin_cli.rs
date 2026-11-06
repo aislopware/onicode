@@ -1,24 +1,24 @@
-//! `zeron plugin …`: make, sign, check and list plugins through the running
-//! Zeron (the same local connection `zeron mcp` uses). `zeron template …`
-//! does the same for templates (whole replacements of Zeron's interface).
+//! `onicode plugin …`: make, sign, check and list plugins through the running
+//! Onicode (the same local connection `onicode mcp` uses). `onicode template …`
+//! does the same for templates (whole replacements of Onicode's interface).
 
 use serde_json::{Value, json};
-use zeron_cli::{PluginCommand, TemplateCommand};
-use zeron_rpc::methods;
+use onicode_cli::{PluginCommand, TemplateCommand};
+use onicode_rpc::methods;
 
 async fn connect(
     ipc_port: u16,
     data_dir: &std::path::Path,
-) -> anyhow::Result<zeron_rpc::RpcClient> {
-    zeron_rpc::connect_ipc(ipc_port, Some(data_dir))
+) -> anyhow::Result<onicode_rpc::RpcClient> {
+    onicode_rpc::connect_ipc(ipc_port, Some(data_dir))
         .await
         .map_err(|_| {
-            anyhow::anyhow!("Zeron isn't running here. Open it, or start it with `zeron headless`.")
+            anyhow::anyhow!("Onicode isn't running here. Open it, or start it with `onicode headless`.")
         })
 }
 
 async fn call(
-    client: &zeron_rpc::RpcClient,
+    client: &onicode_rpc::RpcClient,
     method: &'static str,
     params: Value,
 ) -> anyhow::Result<Value> {
@@ -33,16 +33,16 @@ pub async fn run_template(
     ipc_port: u16,
     data_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
-    use zeron_engine::plugins::{TEMPLATES_DIR, templates};
-    // The escape hatch: putting Zeron's own back needs no running Zeron and
+    use onicode_engine::plugins::{TEMPLATES_DIR, templates};
+    // The escape hatch: putting Onicode's own back needs no running Onicode and
     // nothing set up; the app picks up `.active` when it next starts.
     let client = match connect(ipc_port, data_dir).await {
         Ok(client) => client,
-        Err(_) if matches!(&command, TemplateCommand::Use { id } if id.trim() == templates::ZERON) =>
+        Err(_) if matches!(&command, TemplateCommand::Use { id } if id.trim() == templates::ONICODE) =>
         {
-            templates::use_template(&data_dir.join(TEMPLATES_DIR), templates::ZERON, None)
+            templates::use_template(&data_dir.join(TEMPLATES_DIR), templates::ONICODE, None)
                 .map_err(anyhow::Error::msg)?;
-            println!("Using Zeron's own interface.");
+            println!("Using Onicode's own interface.");
             return Ok(());
         }
         Err(error) => return Err(error),
@@ -58,7 +58,7 @@ pub async fn run_template(
         TemplateCommand::Use { id } => {
             let reply = call(&client, methods::USE_TEMPLATE, json!({ "id": id })).await?;
             match str_of(&reply, "active") {
-                templates::ZERON => println!("Using Zeron's own interface."),
+                templates::ONICODE => println!("Using Onicode's own interface."),
                 active => println!("Using {active}."),
             }
         }
@@ -75,14 +75,14 @@ pub async fn run_template(
                 str_of(&reply, "dir"),
                 if files == 1 { "" } else { "s" }
             );
-            println!("Use it with `zeron template use {}`.", str_of(&reply, "id"));
+            println!("Use it with `onicode template use {}`.", str_of(&reply, "id"));
         }
         TemplateCommand::Status { id } => {
             let reply = call(&client, methods::TEMPLATE_STATUS, json!({ "id": id })).await?;
             let files = reply["files"].as_u64().unwrap_or(0);
             let inherits = reply["inherits"].as_u64().unwrap_or(0);
             println!(
-                "{}{}: {files} file{}, {inherits} inherited from Zeron.",
+                "{}{}: {files} file{}, {inherits} inherited from Onicode.",
                 str_of(&reply, "id"),
                 if reply["active"] == true {
                     " (in use)"
@@ -97,14 +97,14 @@ pub async fn run_template(
             if let Some(errors) = reply["file_errors"].as_object() {
                 for (rel, error) in errors {
                     println!(
-                        "Error in {rel} (Zeron's own shows instead): {}",
+                        "Error in {rel} (Onicode's own shows instead): {}",
                         error.as_str().unwrap_or("")
                     );
                 }
             }
             for rel in reply["out_of_date"].as_array().cloned().unwrap_or_default() {
                 println!(
-                    "Out of date: {} (Zeron's own has changed since it was copied)",
+                    "Out of date: {} (Onicode's own has changed since it was copied)",
                     rel.as_str().unwrap_or("")
                 );
             }
@@ -112,8 +112,8 @@ pub async fn run_template(
         TemplateCommand::Delete { id } => {
             let reply = call(&client, methods::DELETE_TEMPLATE, json!({ "id": id })).await?;
             println!("Deleted {}.", str_of(&reply, "deleted"));
-            if str_of(&reply, "active") == templates::ZERON {
-                println!("Using Zeron's own interface.");
+            if str_of(&reply, "active") == templates::ONICODE {
+                println!("Using Onicode's own interface.");
             }
         }
     }
@@ -212,7 +212,7 @@ pub async fn run(
             let list = call(methods::LIST_PLUGINS, json!({})).await?;
             let plugins = list["plugins"].as_array().cloned().unwrap_or_default();
             if plugins.is_empty() {
-                println!("No plugins yet. Make one with `zeron plugin new <id>`.");
+                println!("No plugins yet. Make one with `onicode plugin new <id>`.");
             }
             for item in &plugins {
                 println!("{}", line(item));
@@ -273,11 +273,11 @@ fn line(item: &Value) -> String {
 }
 
 /// The engine's message, without transport wrapping.
-fn plain(error: zeron_rpc::RpcError) -> String {
+fn plain(error: onicode_rpc::RpcError) -> String {
     match error {
-        zeron_rpc::RpcError::Failed(message) => message,
-        zeron_rpc::RpcError::UnknownMethod(_) => {
-            "This Zeron is too old for plugins. Update it first.".into()
+        onicode_rpc::RpcError::Failed(message) => message,
+        onicode_rpc::RpcError::UnknownMethod(_) => {
+            "This Onicode is too old for plugins. Update it first.".into()
         }
         other => other.to_string(),
     }

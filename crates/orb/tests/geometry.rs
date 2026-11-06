@@ -1,7 +1,7 @@
 // MIT: extracted with the orb; see THIRD_PARTY_NOTICES.md.
-//! Smoke tests for the mode painters (moved from zeron-ui, which re-exports this crate).
+//! Smoke tests for the mode painters (moved from onicode-ui, which re-exports this crate).
 
-use zeron_orb::{
+use onicode_orb::{
     ModeKey, OrbSize, OrbState,
     engine::{MAX_ICON_D, MAX_MORPH_DOTS, MAX_NODE_N, ModeOpts, draw_mode, sanitize_mode_opts},
     resolve_preset,

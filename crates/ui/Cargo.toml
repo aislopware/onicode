@@ -1,5 +1,5 @@
 [package]
-name = "zeron-ui"
+name = "onicode-ui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -117,24 +117,24 @@ name = "session-card-fixture"
 required-features = ["appshots-fixture"]
 
 [dependencies]
-zeron-voice-media.workspace = true
-zeron-voice-session.workspace = true
-zeron-orb.workspace = true
-zeron-veil.workspace = true
-zeron-voice = { path = "../voice" }
+onicode-voice-media.workspace = true
+onicode-voice-session.workspace = true
+onicode-orb.workspace = true
+onicode-veil.workspace = true
+onicode-voice = { path = "../voice" }
 url = "2"
-zeron-proto.workspace = true
+onicode-proto.workspace = true
 similar.workspace = true
-zeron-doc.workspace = true
-zeron-engine.workspace = true
-zeron-harness.workspace = true
-zeron-rpc.workspace = true
-zeron-update.workspace = true
-zeron-notify.workspace = true
-zeron-syntax.workspace = true
-zeron-theme.workspace = true
-zeron-visual.workspace = true
-zeron-visual-gpu.workspace = true
+onicode-doc.workspace = true
+onicode-engine.workspace = true
+onicode-harness.workspace = true
+onicode-rpc.workspace = true
+onicode-update.workspace = true
+onicode-notify.workspace = true
+onicode-syntax.workspace = true
+onicode-theme.workspace = true
+onicode-visual.workspace = true
+onicode-visual-gpu.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
 gpui_tokio.workspace = true
@@ -147,11 +147,11 @@ async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 pulldown-cmark.workspace = true
-zeron-markdown.workspace = true
+onicode-markdown.workspace = true
 zatex = { workspace = true, features = ["bundled"] }
 html5ever = "0.39"
 alacritty_terminal.workspace = true
-zeron-term.workspace = true
+onicode-term.workspace = true
 base64 = "0.22"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff", "ico"] }
 usvg = "0.46"

@@ -65,7 +65,7 @@ SUITE_INPUTS: dict[str, list[str]] = {
     "cursor": [".github/workflows/cursor-compatibility.yml", "scripts/*cursor-sdk*", "crates/harness/src/cursor/**"],
     "edge": [".github/workflows/preview-tests.yml", "edge/**"],
     "installer": [".github/workflows/linux-installer.yml", "edge/src/install.sh", "scripts/package-linux.sh",
-                  "scripts/test-linux-desktop-entry.sh", "dist/zeron.desktop", "dist/zeron.png",
+                  "scripts/test-linux-desktop-entry.sh", "dist/onicode.desktop", "dist/onicode.png",
                   "scripts/ci/apt-install.sh"],
     "voice": [".github/workflows/voice-tests.yml", "dist/voice/**", "scripts/package-voice-runtime.py",
               "scripts/codex-voice-remote-smoke.py", "scripts/tests/*voice*"] + LINUX_SETUP + NEXTEST,
@@ -76,21 +76,21 @@ SUITE_INPUTS: dict[str, list[str]] = {
     "frame_source": [".github/workflows/macos.yml"],
     "ios": [".github/workflows/macos.yml", "apps/ios/**", "scripts/ios/**"],
     "android": [".github/workflows/android.yml", "apps/android/**", "scripts/android/**",
-                "apps/ios/Zeron/Fonts/**", "apps/ios/Zeron/Assets.xcassets/**"],
+                "apps/ios/Onicode/Fonts/**", "apps/ios/Onicode/Assets.xcassets/**"],
 }
 
 # The workspace packages each suite builds and tests (their dependencies are added).
 SUITE_PACKAGES: dict[str, list[str]] = {
-    "core": ["zeron-harness", "zeron-engine", "zeron-sync", "zeron-update", "zeron-doc", "zeron-preview",
-             "zeron-mcp", "zeron-proto", "zeron-rpc", "zeron-orb", "zeron-voice-session", "zeron-voice-media",
-             "zeron-cli", "zeron-launch", "zeron-notify"],
-    "ui": ["zeron-ui"],
-    "voice": ["zeron-audio", "zeron-voice-media"],
-    "windows": ["zeron-ui", "zeron-harness", "zeron", "zeron-update", "zeron-proto", "zeron-engine",
-                "zeron-voice-media"],
-    "macos": ["zeron-update", "zeron-preview", "zeron-ui", "zeron-text", "zeron"],
-    "ios": ["zeron-mobile", "zeron-text", "zeron-markdown", "zeron-client"],
-    "android": ["zeron-mobile"],
+    "core": ["onicode-harness", "onicode-engine", "onicode-sync", "onicode-update", "onicode-doc", "onicode-preview",
+             "onicode-mcp", "onicode-proto", "onicode-rpc", "onicode-orb", "onicode-voice-session", "onicode-voice-media",
+             "onicode-cli", "onicode-launch", "onicode-notify"],
+    "ui": ["onicode-ui"],
+    "voice": ["onicode-audio", "onicode-voice-media"],
+    "windows": ["onicode-ui", "onicode-harness", "onicode", "onicode-update", "onicode-proto", "onicode-engine",
+                "onicode-voice-media"],
+    "macos": ["onicode-update", "onicode-preview", "onicode-ui", "onicode-text", "onicode"],
+    "ios": ["onicode-mobile", "onicode-text", "onicode-markdown", "onicode-client"],
+    "android": ["onicode-mobile"],
 }
 
 # A ../ path that names something (a bare "../.." names no file); "/../x" as in
@@ -292,7 +292,7 @@ def covered(path: str, inputs: dict[str, tuple[list[str], set[str]]]) -> bool:
 
 # Changed files here that no fingerprint covers mean the inputs are not understood:
 # nothing is reused (fail closed).
-BUILD_PATHS = ["crates/**", "apps/zeron/**", "Cargo.toml", "Cargo.lock", ".cargo/**", "rust-toolchain.toml"]
+BUILD_PATHS = ["crates/**", "apps/onicode/**", "Cargo.toml", "Cargo.lock", ".cargo/**", "rust-toolchain.toml"]
 
 
 def passed_jobs(api, repo: str, key: str, trusted_refs: set[str]) -> set[str]:

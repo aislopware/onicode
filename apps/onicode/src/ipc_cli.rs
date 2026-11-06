@@ -1,19 +1,19 @@
-//! `zeron sync` and `zeron quiesce`: the running engine's sync state and the
+//! `onicode sync` and `onicode quiesce`: the running engine's sync state and the
 //! Cloud sleep handshake, over its local IPC.
 
-/// `zeron sync`: dial the running engine's IPC and print per-room sync state.
+/// `onicode sync`: dial the running engine's IPC and print per-room sync state.
 /// The introspection surface every 2026-08 incident was missing — "is this
 /// device's workspace room actually receiving?" as a one-liner.
-/// `zeron quiesce`'s exit status when the engine is busy (EX_TEMPFAIL); the
+/// `onicode quiesce`'s exit status when the engine is busy (EX_TEMPFAIL); the
 /// edge's sleep workflow reads it (`QUIESCE_BUSY_EXIT`).
 const QUIESCE_BUSY_EXIT: i32 = 75;
 
 pub async fn quiesce_cli(ipc_port: u16, data_dir: &std::path::Path) -> anyhow::Result<()> {
-    let client = zeron_rpc::connect_ipc(ipc_port, Some(data_dir))
+    let client = onicode_rpc::connect_ipc(ipc_port, Some(data_dir))
         .await
         .map_err(|e| anyhow::anyhow!("no engine listening on 127.0.0.1:{ipc_port} ({e})"))?;
     let reply = client
-        .call(zeron_rpc::methods::QUIESCE_FOR_SLEEP, serde_json::json!({}))
+        .call(onicode_rpc::methods::QUIESCE_FOR_SLEEP, serde_json::json!({}))
         .await
         .map_err(|e| anyhow::anyhow!("QuiesceForSleep failed: {e}"))?;
     if reply["quiesced"].as_bool() == Some(true) {
@@ -28,13 +28,13 @@ pub async fn quiesce_cli(ipc_port: u16, data_dir: &std::path::Path) -> anyhow::R
 }
 
 pub async fn sync_cli(ipc_port: u16, data_dir: &std::path::Path) -> anyhow::Result<()> {
-    let client = zeron_rpc::connect_ipc(ipc_port, Some(data_dir))
+    let client = onicode_rpc::connect_ipc(ipc_port, Some(data_dir))
         .await
         .map_err(|e| {
-            anyhow::anyhow!("no engine listening on 127.0.0.1:{ipc_port} ({e}) — is zeron running?")
+            anyhow::anyhow!("no engine listening on 127.0.0.1:{ipc_port} ({e}) — is onicode running?")
         })?;
     let status = client
-        .call(zeron_rpc::methods::SYNC_STATUS, serde_json::json!({}))
+        .call(onicode_rpc::methods::SYNC_STATUS, serde_json::json!({}))
         .await
         .map_err(|e| anyhow::anyhow!("SyncStatus failed: {e}"))?;
     let now = status.get("nowMs").and_then(|v| v.as_i64()).unwrap_or(0);

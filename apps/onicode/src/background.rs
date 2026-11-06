@@ -1,8 +1,8 @@
-//! The desktop app's background engine process (`zeron-engine`, or
-//! `zeron engine` where no separate executable ships): the app starts it
+//! The desktop app's background engine process (`onicode-engine`, or
+//! `onicode engine` where no separate executable ships): the app starts it
 //! when nothing serves its port and attaches to it; it keeps running —
 //! sessions, desktop banners — with the app closed
-//! ([`zeron_engine::managed`]).
+//! ([`onicode_engine::managed`]).
 
 use std::path::{Path, PathBuf};
 
@@ -11,21 +11,21 @@ pub fn run() -> anyhow::Result<()> {
     crate::init_logging(true, "engine", false);
     crate::long_running_setup();
     let config = crate::engine_config_from_env();
-    zeron_engine::desktop_notify::enable();
-    let app = std::env::var_os(zeron_engine::managed::APP_ENV).map(PathBuf::from);
+    onicode_engine::desktop_notify::enable();
+    let app = std::env::var_os(onicode_engine::managed::APP_ENV).map(PathBuf::from);
     // Banners carry the app's name and icon (the development bundle's for
     // the development app), and a click opens the app on the banner's chat.
-    if let Some(id) = app.as_deref().and_then(zeron_notify::bundle_id_of) {
-        zeron_notify::set_app_bundle_id(&id);
+    if let Some(id) = app.as_deref().and_then(onicode_notify::bundle_id_of) {
+        onicode_notify::set_app_bundle_id(&id);
     }
-    zeron_notify::on_click(move |target| open_in_app(app.as_deref(), &target));
+    onicode_notify::on_click(move |target| open_in_app(app.as_deref(), &target));
     run_engine(config)
 }
 
 /// A clicked banner: bring the app up on its target. The app may not be
 /// running — opening its link launches it.
 fn open_in_app(app: Option<&Path>, target: &str) {
-    let link = zeron_notify::link(target);
+    let link = onicode_notify::link(target);
     #[cfg(target_os = "macos")]
     {
         let mut command = std::process::Command::new("/usr/bin/open");
@@ -45,23 +45,23 @@ fn open_in_app(app: Option<&Path>, target: &str) {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn run_engine(config: zeron_engine::EngineConfig) -> anyhow::Result<()> {
+fn run_engine(config: onicode_engine::EngineConfig) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(zeron_engine::Engine::new(config).run_managed())
+    runtime.block_on(onicode_engine::Engine::new(config).run_managed())
 }
 
 /// macOS: the engine runs on Tokio threads while the main thread runs a
 /// CoreFoundation run loop, which services the main dispatch queue banners
 /// are posted on and delivers their clicks.
 #[cfg(target_os = "macos")]
-fn run_engine(config: zeron_engine::EngineConfig) -> anyhow::Result<()> {
+fn run_engine(config: onicode_engine::EngineConfig) -> anyhow::Result<()> {
     let worker = std::thread::Builder::new()
         .name("engine".into())
         .spawn(move || {
             let result = tokio::runtime::Runtime::new()
                 .map_err(anyhow::Error::from)
                 .and_then(|runtime| {
-                    runtime.block_on(zeron_engine::Engine::new(config).run_managed())
+                    runtime.block_on(onicode_engine::Engine::new(config).run_managed())
                 });
             main_loop::finish();
             result

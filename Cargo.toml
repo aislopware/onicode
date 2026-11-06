@@ -34,7 +34,7 @@ members = [
     "crates/visual-gpu",
     "crates/zatex",
     "crates/plugin-guard",
-    "apps/zeron",
+    "apps/onicode",
 ]
 
 [workspace.package]
@@ -44,37 +44,37 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
-zeron-voice-session = { path = "crates/voice-session" }
-zeron-orb = { path = "crates/orb" }
-zeron-veil = { path = "crates/veil" }
-zeron-term = { path = "crates/term" }
-zeron-term-link = { path = "crates/term-link" }
-zeron-voice-media = { path = "crates/voice-media" }
-zeron-audio = { path = "crates/audio" }
-zeron-proto = { path = "crates/proto" }
-zeron-preview = { path = "crates/preview" }
-zeron-preview-label = { path = "crates/preview-label" }
-zeron-doc = { path = "crates/doc" }
-zeron-sync = { path = "crates/sync" }
-zeron-harness = { path = "crates/harness" }
-zeron-engine = { path = "crates/engine" }
-zeron-rpc = { path = "crates/rpc" }
-zeron-update = { path = "crates/update" }
-zeron-cli = { path = "crates/cli" }
-zeron-launch = { path = "crates/launch" }
-zeron-ui = { path = "crates/ui" }
-zeron-notify = { path = "crates/notify" }
-zeron-syntax = { path = "crates/syntax" }
-zeron-markdown = { path = "crates/markdown" }
-zeron-mobile = { path = "crates/mobile" }
-zeron-client = { path = "crates/client" }
-zeron-theme = { path = "crates/theme" }
-zeron-mcp = { path = "crates/mcp" }
-zeron-text = { path = "crates/text" }
+onicode-voice-session = { path = "crates/voice-session" }
+onicode-orb = { path = "crates/orb" }
+onicode-veil = { path = "crates/veil" }
+onicode-term = { path = "crates/term" }
+onicode-term-link = { path = "crates/term-link" }
+onicode-voice-media = { path = "crates/voice-media" }
+onicode-audio = { path = "crates/audio" }
+onicode-proto = { path = "crates/proto" }
+onicode-preview = { path = "crates/preview" }
+onicode-preview-label = { path = "crates/preview-label" }
+onicode-doc = { path = "crates/doc" }
+onicode-sync = { path = "crates/sync" }
+onicode-harness = { path = "crates/harness" }
+onicode-engine = { path = "crates/engine" }
+onicode-rpc = { path = "crates/rpc" }
+onicode-update = { path = "crates/update" }
+onicode-cli = { path = "crates/cli" }
+onicode-launch = { path = "crates/launch" }
+onicode-ui = { path = "crates/ui" }
+onicode-notify = { path = "crates/notify" }
+onicode-syntax = { path = "crates/syntax" }
+onicode-markdown = { path = "crates/markdown" }
+onicode-mobile = { path = "crates/mobile" }
+onicode-client = { path = "crates/client" }
+onicode-theme = { path = "crates/theme" }
+onicode-mcp = { path = "crates/mcp" }
+onicode-text = { path = "crates/text" }
 zatex = { path = "crates/zatex" }
-zeron-visual = { path = "crates/visual" }
-zeron-visual-gpu = { path = "crates/visual-gpu" }
-zeron-plugin-guard = { path = "crates/plugin-guard" }
+onicode-visual = { path = "crates/visual" }
+onicode-visual-gpu = { path = "crates/visual-gpu" }
+onicode-plugin-guard = { path = "crates/plugin-guard" }
 
 # CRDT
 loro = "1.17"
@@ -95,7 +95,7 @@ loro-protocol = "0.3"
 # sidebar); a6c1ad5 adds BackdropBlur + horizontal EdgeFade + glass fixes;
 # 9b672fa bounds renderer GPU memory (region-sized backdrop blur scratch,
 # idle release of blur/path intermediates, instance pool shrink,
-# ZERON_GPU_STATS=1 diagnostics); b687328 adds ImageSource::evict (frees
+# ONICODE_GPU_STATS=1 diagnostics); b687328 adds ImageSource::evict (frees
 # sprite-atlas tiles — remove_asset alone leaked them, see
 # attachments::flush_evicted); ac135eb adds device memory to the stats line;
 # f596cde fixes destination alpha on transparent windows (Porter-Duff OVER,
@@ -210,10 +210,10 @@ debug = true
 debug = true
 
 # Scenes rasterize in software every frame the camera moves.
-[profile.dev.package.zeron-visual]
+[profile.dev.package.onicode-visual]
 opt-level = 3
 
-[profile.dev.package.zeron-visual-gpu]
+[profile.dev.package.onicode-visual-gpu]
 opt-level = 3
 
 # Mobile core (scripts/ios/build-core.sh). Always optimized — layout and sync

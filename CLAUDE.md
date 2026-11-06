@@ -4,10 +4,10 @@ A native control plane for coding agents: many clients drive many servers peer t
 
 ## Upstream
 
-- `upstream` is zeronsh/zeron. Crate, module and `ZERON_*` names stay as upstream has them, so its commits
-  cherry-pick cleanly; only user-visible text, the bundle id, the data dir and the IPC port are Onicode's.
-- Changes from upstream and from the forks (gpui-fast, ghostty, libghostty-rs, noq) are adopted commit by commit
-  after review, never by a blind merge.
+- `upstream` is zeronsh/zeron. Onicode owns its code outright: rename, restructure or delete anything that
+  makes it better.
+- Changes from upstream and from the forks (gpui-fast, ghostty, libghostty-rs, noq) are ported by intent: an agent
+  reads each change, judges it, and re-implements what helps. Never a git merge or rebase.
 
 ## Architecture rules
 
@@ -16,7 +16,7 @@ A native control plane for coding agents: many clients drive many servers peer t
 
 ## Checks
 
-- Build the app: `cargo build -p zeron --bins`.
+- Build the app: `cargo build -p onicode --bins`.
 - Subagents edit a whole batch without building or testing; the lead runs the checks once per batch.
 
 ## Tests

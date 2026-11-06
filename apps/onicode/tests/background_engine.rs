@@ -17,15 +17,15 @@ fn free_port() -> u16 {
 fn background_engine_serves_its_port_and_stops_on_request() {
     let dir = tempfile::tempdir().unwrap();
     let port = free_port();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_zeron-engine"))
-        .env("ZERON_DATA_DIR", dir.path())
-        .env("ZERON_IPC_PORT", port.to_string())
+    let mut child = Command::new(env!("CARGO_BIN_EXE_onicode-engine"))
+        .env("ONICODE_DATA_DIR", dir.path())
+        .env("ONICODE_IPC_PORT", port.to_string())
         // Development auth with no bearer: an offline runtime.
-        .env("ZERON_WORKOS_CLIENT_ID", "")
-        .env_remove("ZERON_EDGE_TOKEN")
-        .env("ZERON_EDGE_URL", "http://127.0.0.1:1")
-        .env("ZERON_DISABLE_NOTIFICATIONS", "1")
-        .env("ZERON_AUTO_UPDATE", "0")
+        .env("ONICODE_WORKOS_CLIENT_ID", "")
+        .env_remove("ONICODE_EDGE_TOKEN")
+        .env("ONICODE_EDGE_URL", "http://127.0.0.1:1")
+        .env("ONICODE_DISABLE_NOTIFICATIONS", "1")
+        .env("ONICODE_AUTO_UPDATE", "0")
         .spawn()
         .expect("start the background engine");
 
@@ -33,7 +33,7 @@ fn background_engine_serves_its_port_and_stops_on_request() {
     let served = runtime.block_on(async {
         let deadline = Instant::now() + Duration::from_secs(60);
         let client = loop {
-            match zeron_rpc::connect_ipc(port, Some(dir.path())).await {
+            match onicode_rpc::connect_ipc(port, Some(dir.path())).await {
                 Ok(client) => break client,
                 Err(err) if Instant::now() >= deadline => {
                     return Err(format!("never served its port: {err}"));
@@ -42,7 +42,7 @@ fn background_engine_serves_its_port_and_stops_on_request() {
             }
         };
         let info = client
-            .call(zeron_rpc::methods::ENGINE_INFO, serde_json::json!({}))
+            .call(onicode_rpc::methods::ENGINE_INFO, serde_json::json!({}))
             .await
             .map_err(|err| format!("EngineInfo: {err}"))?;
         let capabilities: Vec<&str> = info["capabilities"]
@@ -53,18 +53,18 @@ fn background_engine_serves_its_port_and_stops_on_request() {
             return Err(format!("no banner capability in {capabilities:?}"));
         }
         client
-            .call(zeron_rpc::methods::ENGINE_READY, serde_json::json!({}))
+            .call(onicode_rpc::methods::ENGINE_READY, serde_json::json!({}))
             .await
             .map_err(|err| format!("EngineReady: {err}"))?;
         client
             .call(
-                zeron_rpc::methods::SET_VIEWPORT_FOCUS,
+                onicode_rpc::methods::SET_VIEWPORT_FOCUS,
                 serde_json::json!({ "viewportId": "test", "focused": true }),
             )
             .await
             .map_err(|err| format!("SetViewportFocus: {err}"))?;
         client
-            .call(zeron_rpc::methods::STOP_ENGINE, serde_json::json!({}))
+            .call(onicode_rpc::methods::STOP_ENGINE, serde_json::json!({}))
             .await
             .map_err(|err| format!("StopEngine: {err}"))?;
         Ok(())

@@ -12,7 +12,7 @@ pub fn builtin_registry() -> &'static ThemeRegistry {
     static REGISTRY: OnceLock<ThemeRegistry> = OnceLock::new();
     REGISTRY.get_or_init(|| ThemeRegistry {
         families: vec![
-            family("zeron", "Zeron", vec![zeron_light(), zeron_dark()]),
+            family("onicode", "Onicode", vec![onicode_light(), onicode_dark()]),
             family(
                 "vscode-default",
                 "VS Code Default",
@@ -236,11 +236,11 @@ const ANSI_LIGHT: [&str; 16] = [
     "#71717a", "#b91c1c", "#15803d", "#92400e", "#1d4ed8", "#7e22ce", "#155e75", "#18181b",
 ];
 
-fn zeron_dark() -> ThemeVariant {
+fn onicode_dark() -> ThemeVariant {
     variant(Seeds {
-        id: "zeron-dark",
-        family_id: "zeron",
-        name: "Zeron Dark",
+        id: "onicode-dark",
+        family_id: "onicode",
+        name: "Onicode Dark",
         appearance: Appearance::Dark,
         treatment: SurfaceTreatment::Frosted,
         background: "#060606",
@@ -261,7 +261,7 @@ fn zeron_dark() -> ThemeVariant {
             "#a1a1aa", "#f472b6", "#22d3ee", "#f87171",
         ],
         source: source(
-            "zeron-dark",
+            "onicode-dark",
             "native",
             "https://github.com/zeronsh/comet",
             "d138049",
@@ -270,11 +270,11 @@ fn zeron_dark() -> ThemeVariant {
     })
 }
 
-fn zeron_light() -> ThemeVariant {
+fn onicode_light() -> ThemeVariant {
     variant(Seeds {
-        id: "zeron-light",
-        family_id: "zeron",
-        name: "Zeron Light",
+        id: "onicode-light",
+        family_id: "onicode",
+        name: "Onicode Light",
         appearance: Appearance::Light,
         treatment: SurfaceTreatment::Frosted,
         background: "#ffffff",
@@ -295,7 +295,7 @@ fn zeron_light() -> ThemeVariant {
             "#52525b", "#be185d", "#0e7490", "#b91c1c",
         ],
         source: source(
-            "zeron-light",
+            "onicode-light",
             "native",
             "https://github.com/zeronsh/comet",
             "d138049",

@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use zeron_proto::{
+use onicode_proto::{
     BillingLink, BillingStatus, CloudSession, CloudSessions, CloudStatus, CloudUsage,
     GithubConnectProgress, GithubDeviceFlow, GithubRepo, HarnessId, VaultAccount,
     VaultAccountProfile, VaultProvider, VaultStatus,
@@ -29,7 +29,7 @@ struct AccountList {
     #[serde(default)]
     accounts: Vec<VaultAccount>,
 }
-use zeron_rpc::{RpcError, RpcReply, TokenError, TokenSource, methods, parse_params};
+use onicode_rpc::{RpcError, RpcReply, TokenError, TokenSource, methods, parse_params};
 
 use crate::EngineError;
 use crate::agent_accounts::{AgentAccounts, CaptureSink};
@@ -41,7 +41,7 @@ const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Shown when a mutation is attempted on a runtime that can't use Cloud.
 pub(crate) const UNAVAILABLE: &str =
-    "Cloud needs a signed-in Zeron account with sync on. Sign in from Settings → Account.";
+    "Cloud needs a signed-in Onicode account with sync on. Sign in from Settings → Account.";
 
 fn http() -> reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
@@ -303,7 +303,7 @@ impl CloudClient {
         chat_id: &str,
         parent_chat_id: &str,
         branch: Option<&str>,
-        config: Option<&zeron_proto::ChatConfig>,
+        config: Option<&onicode_proto::ChatConfig>,
     ) -> Result<CloudSession, EngineError> {
         require_id(chat_id, "chatId")?;
         require_id(parent_chat_id, "parentChatId")?;
@@ -1108,7 +1108,7 @@ impl Target {
         let bytes = self.call_raw(method, segments, query, body, what).await?;
         serde_json::from_slice::<T>(&bytes).map_err(|e| {
             Failure::Error(EngineError::Other(format!(
-                "{what}: unexpected reply from Zeron's servers ({e})"
+                "{what}: unexpected reply from Onicode's servers ({e})"
             )))
         })
     }
@@ -1131,7 +1131,7 @@ impl Target {
         }
         let response = request.send().await.map_err(|e| {
             EngineError::Other(format!(
-                "Couldn't reach Zeron's servers: {}",
+                "Couldn't reach Onicode's servers: {}",
                 describe_http_error(e)
             ))
         })?;
@@ -1172,7 +1172,7 @@ fn is_day(day: &str) -> bool {
 fn token_error(error: TokenError) -> Failure {
     Failure::Error(EngineError::Other(match error {
         TokenError::SignedOut => UNAVAILABLE.to_string(),
-        other => format!("Couldn't refresh your Zeron session: {other}"),
+        other => format!("Couldn't refresh your Onicode session: {other}"),
     }))
 }
 
@@ -1206,14 +1206,14 @@ fn edge_error(status: u16, body: &[u8], what: &str) -> EngineError {
         (Some("not_authorized"), _) => "That device isn't allowed to use this credential.".into(),
         (Some("upstream"), _) => "The provider didn't answer — try again in a moment.".into(),
         (_, 400) => format!("{what}: the request was rejected."),
-        (_, 401) => "Your Zeron session expired — sign in again.".into(),
+        (_, 401) => "Your Onicode session expired — sign in again.".into(),
         (_, 403) => "This account can't manage Cloud for this workspace.".into(),
         (_, 404) => format!("{what}: not found."),
         (_, 409) => "Cloud is busy with another change — try again in a moment.".into(),
         (_, 429) => "Too many requests — try again in a moment.".into(),
-        (_, 501 | 503) => "Cloud isn't available on this Zeron server yet.".into(),
+        (_, 501 | 503) => "Cloud isn't available on this Onicode server yet.".into(),
         (_, status) if status >= 500 => {
-            format!("{what} failed on Zeron's servers ({status}) — try again.")
+            format!("{what} failed on Onicode's servers ({status}) — try again.")
         }
         (_, status) => format!("{what} failed ({status})."),
     });
@@ -1226,7 +1226,7 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use zeron_proto::{CloudState, GithubConnectState, VaultConnectionStatus};
+    use onicode_proto::{CloudState, GithubConnectState, VaultConnectionStatus};
 
     #[derive(Debug, Clone)]
     struct Recorded {
@@ -1321,7 +1321,7 @@ mod tests {
             CloudClient::new(
                 self.url.clone(),
                 org,
-                Arc::new(zeron_rpc::StaticToken("user-bearer".into())),
+                Arc::new(onicode_rpc::StaticToken("user-bearer".into())),
             )
         }
 
@@ -1733,7 +1733,7 @@ mod tests {
             CloudClient::new(
                 edge.url.clone(),
                 "  ",
-                Arc::new(zeron_rpc::StaticToken("t".into())),
+                Arc::new(onicode_rpc::StaticToken("t".into())),
             ),
         ] {
             assert!(!client.is_available());

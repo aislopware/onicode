@@ -1,5 +1,5 @@
 [package]
-name = "zeron-client"
+name = "onicode-client"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,13 +12,13 @@ publish.workspace = true
 # frontend (iOS, Android, tests, CLIs).
 
 [dependencies]
-zeron-voice-session.workspace = true
-zeron-proto.workspace = true
-zeron-doc.workspace = true
-zeron-sync.workspace = true
-zeron-rpc.workspace = true
-zeron-preview.workspace = true
-zeron-term-link.workspace = true
+onicode-voice-session.workspace = true
+onicode-proto.workspace = true
+onicode-doc.workspace = true
+onicode-sync.workspace = true
+onicode-rpc.workspace = true
+onicode-preview.workspace = true
+onicode-term-link.workspace = true
 anyhow.workspace = true
 loro.workspace = true
 tokio.workspace = true
@@ -37,8 +37,8 @@ async-trait.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
-zeron-visual.workspace = true
-zeron-sync = { workspace = true, features = ["mock-server"] }
+onicode-visual.workspace = true
+onicode-sync = { workspace = true, features = ["mock-server"] }
 tokio-tungstenite.workspace = true
 async-trait.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

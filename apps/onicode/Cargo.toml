@@ -1,32 +1,32 @@
 [package]
-name = "zeron"
+name = "onicode"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
-# Shared by both binaries; the UI is referenced only by `zeron`, so the
+# Shared by both binaries; the UI is referenced only by `onicode`, so the
 # background engine links without it.
 [lib]
-name = "zeron_app"
+name = "onicode_app"
 path = "src/lib.rs"
 
 [[bin]]
-name = "zeron"
+name = "onicode"
 path = "src/main.rs"
 
 [[bin]]
-name = "zeron-engine"
-path = "src/bin/zeron-engine.rs"
+name = "onicode-engine"
+path = "src/bin/onicode-engine.rs"
 
 [dependencies]
-zeron-engine.workspace = true
-zeron-rpc.workspace = true
-zeron-ui.workspace = true
-zeron-update.workspace = true
-zeron-cli.workspace = true
-zeron-mcp.workspace = true
-zeron-notify.workspace = true
+onicode-engine.workspace = true
+onicode-rpc.workspace = true
+onicode-ui.workspace = true
+onicode-update.workspace = true
+onicode-cli.workspace = true
+onicode-mcp.workspace = true
+onicode-notify.workspace = true
 tokio.workspace = true
 clap.workspace = true
 anyhow.workspace = true

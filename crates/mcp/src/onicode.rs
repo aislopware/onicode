@@ -1,4 +1,4 @@
-//! The engine client: a thin, reconnecting wrapper over `zeron_rpc` with the
+//! The engine client: a thin, reconnecting wrapper over `onicode_rpc` with the
 //! snapshot/resolve helpers the tools share.
 //!
 //! Watch streams are the engine's only read surface for chats, devices,
@@ -13,13 +13,13 @@ use anyhow::{Context, anyhow, bail};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
-use zeron_doc::{
+use onicode_doc::{
     SessionCommandPayload, SessionMessageEntry, TranscriptFrame, apply_transcript_frame,
 };
-use zeron_proto::{
+use onicode_proto::{
     Chat, Device, HarnessId, Model, ReasoningLevel, Session, SessionStatus, Space, SteeringMode,
 };
-use zeron_rpc::{RpcClient, RpcError, RpcSubscription, connect_ipc_as_agent, methods};
+use onicode_rpc::{RpcClient, RpcError, RpcSubscription, connect_ipc_as_agent, methods};
 
 /// First-item wait for a watch snapshot. Localhost; the engine answers
 /// watch attaches in milliseconds unless it is still assembling stores.
@@ -29,13 +29,13 @@ const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(15);
 const RESUBSCRIBE_DELAY: Duration = Duration::from_millis(300);
 
 /// Which chat this server speaks for, when the engine injected it into a
-/// harness. Unset when a human runs `zeron mcp` from a terminal.
+/// harness. Unset when a human runs `onicode mcp` from a terminal.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Origin {
     pub chat_id: Option<String>,
     pub device_id: Option<String>,
     /// The host launched the agent without its own subagent tools
-    /// ([`zeron_proto::McpServer::SIDE_CHATS_ONLY_ENV`]).
+    /// ([`onicode_proto::McpServer::SIDE_CHATS_ONLY_ENV`]).
     pub side_chats_only: bool,
 }
 
@@ -48,9 +48,9 @@ impl Origin {
                 .filter(|v| !v.is_empty())
         };
         Self {
-            chat_id: read("ZERON_CHAT_ID"),
-            device_id: read("ZERON_DEVICE_ID"),
-            side_chats_only: read(zeron_proto::McpServer::SIDE_CHATS_ONLY_ENV).as_deref()
+            chat_id: read("ONICODE_CHAT_ID"),
+            device_id: read("ONICODE_DEVICE_ID"),
+            side_chats_only: read(onicode_proto::McpServer::SIDE_CHATS_ONLY_ENV).as_deref()
                 == Some("1"),
         }
     }
@@ -79,7 +79,7 @@ pub struct HarnessInfo {
     #[serde(default)]
     pub enabled: Option<bool>,
     #[serde(default)]
-    pub access_modes: Vec<zeron_proto::AccessMode>,
+    pub access_modes: Vec<onicode_proto::AccessMode>,
     #[serde(default)]
     pub supports_plan: bool,
     /// Whether a login for this harness is present on the device, from
@@ -132,7 +132,7 @@ pub enum TurnOutcome {
     TimedOut,
 }
 
-pub struct Zeron {
+pub struct Onicode {
     /// Engine IPC port; `None` = wrapped client only (no redial).
     port: Option<u16>,
     /// Data dir whose `ipc-token` authenticates each (re)dial.
@@ -141,8 +141,8 @@ pub struct Zeron {
     rpc: Mutex<Option<Arc<RpcClient>>>,
 }
 
-impl Zeron {
-    /// Lazy dialer: nothing connects until the first tool call, so `zeron
+impl Onicode {
+    /// Lazy dialer: nothing connects until the first tool call, so `onicode
     /// mcp` starts (and answers `initialize`) even before the engine is up.
     /// Every (re)dial re-reads the engine's agent-scoped IPC token
     /// ([`connect_ipc_as_agent`]).
@@ -182,7 +182,7 @@ impl Zeron {
             .await
             .map_err(|e| {
                 anyhow!(
-                    "no Zeron engine reachable at ws://127.0.0.1:{port} ({e}) — is Zeron running?"
+                    "no Onicode engine reachable at ws://127.0.0.1:{port} ({e}) — is Onicode running?"
                 )
             })?;
         let client = Arc::new(client);
@@ -340,7 +340,7 @@ impl Zeron {
             .call(methods::LIST_AGENT_ACCOUNTS, params)
             .await
             .ok()
-            .and_then(|v| serde_json::from_value::<zeron_proto::AgentAccountsSnapshot>(v).ok());
+            .and_then(|v| serde_json::from_value::<onicode_proto::AgentAccountsSnapshot>(v).ok());
         if let Some(snapshot) = accounts {
             for harness in &mut harnesses {
                 harness.signed_in = Some(
@@ -614,7 +614,7 @@ impl Zeron {
                 });
                 // Liveness expiry is not a completion edge. Keep waiting for
                 // fresh evidence (or the deadline), just like the sidebar.
-                if zeron_proto::view::session_stale(&session, chrono::Utc::now()) {
+                if onicode_proto::view::session_stale(&session, chrono::Utc::now()) {
                     last = Some(session);
                     continue;
                 }
@@ -634,7 +634,7 @@ impl Zeron {
                     SessionStatus::Idle => {
                         if session
                             .last_turn_outcome
-                            .is_some_and(|o| o.status == zeron_proto::DoneStatus::Interrupted)
+                            .is_some_and(|o| o.status == onicode_proto::DoneStatus::Interrupted)
                             && (!expect_turn
                                 || saw_working
                                 || advanced
@@ -781,9 +781,9 @@ mod tests {
         use futures::StreamExt;
         struct Service(Session);
         #[async_trait::async_trait]
-        impl zeron_rpc::RpcService for Service {
-            async fn handle(&self, _: &str, _: Value) -> Result<zeron_rpc::RpcReply, RpcError> {
-                Ok(zeron_rpc::RpcReply::Stream(
+        impl onicode_rpc::RpcService for Service {
+            async fn handle(&self, _: &str, _: Value) -> Result<onicode_rpc::RpcReply, RpcError> {
+                Ok(onicode_rpc::RpcReply::Stream(
                     futures::stream::iter([json!([self.0])])
                         .chain(futures::stream::pending())
                         .boxed(),
@@ -803,8 +803,8 @@ mod tests {
             if native_finished {
                 current.last_turn_outcome.as_mut().unwrap().finished_at = now;
             }
-            let rpc = zeron_rpc::memory_client(Arc::new(Service(current)));
-            let client = Zeron::with_client(rpc, Origin::default());
+            let rpc = onicode_rpc::memory_client(Arc::new(Service(current)));
+            let client = Onicode::with_client(rpc, Origin::default());
             let (outcome, _) = client
                 .wait_for_turn(
                     &chat("chat", None),
@@ -830,19 +830,19 @@ mod tests {
         use futures::StreamExt;
         struct Service(tokio::sync::watch::Sender<()>);
         #[async_trait::async_trait]
-        impl zeron_rpc::RpcService for Service {
+        impl onicode_rpc::RpcService for Service {
             async fn handle(
                 &self,
                 method: &str,
                 _: Value,
-            ) -> Result<zeron_rpc::RpcReply, RpcError> {
+            ) -> Result<onicode_rpc::RpcReply, RpcError> {
                 let first = if method == methods::WATCH_DOC_MESSAGES {
                     json!({"reset":[]})
                 } else {
                     json!([])
                 };
                 let rx = self.0.subscribe();
-                Ok(zeron_rpc::RpcReply::Stream(
+                Ok(onicode_rpc::RpcReply::Stream(
                     futures::stream::unfold((Some(first), rx), |(first, mut rx)| async move {
                         if let Some(item) = first {
                             return Some((item, (None, rx)));
@@ -855,8 +855,8 @@ mod tests {
             }
         }
         let (watched, _) = tokio::sync::watch::channel(());
-        let rpc = zeron_rpc::memory_client(Arc::new(Service(watched.clone())));
-        let client = Zeron::with_client(rpc, Origin::default());
+        let rpc = onicode_rpc::memory_client(Arc::new(Service(watched.clone())));
+        let client = Onicode::with_client(rpc, Origin::default());
         for _ in 0..16 {
             assert!(client.transcript("quiet").await.unwrap().is_empty());
             client
