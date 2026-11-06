@@ -230,12 +230,14 @@ async fn stress_100_interrupted_sessions_recover_without_losing_history_or_repla
     );
     assert_eq!(frame(&mut lines).await["status"], "finished");
     finish(&mut child, stdin).await;
-    // Pull request CI runs two cycles of the seven failure modes
-    // (ONICODE_STRESS_ROUNDS=14); the nightly run and local runs do 100.
+    // The `ci` nextest profile (pull requests, the dev check, mutants) runs two
+    // cycles of the seven failure modes; the nightly `default` profile does 100.
+    // ONICODE_STRESS_ROUNDS overrides either.
+    let ci = std::env::var("NEXTEST_PROFILE").is_ok_and(|p| p == "ci");
     let rounds: usize = std::env::var("ONICODE_STRESS_ROUNDS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(100);
+        .unwrap_or(if ci { 14 } else { 100 });
     for round in 0..rounds {
         let mode = round % 7;
         let prompt = match mode {

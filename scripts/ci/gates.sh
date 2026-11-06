@@ -41,7 +41,11 @@ case "${1:?usage: gates.sh coverage|mutants-diff|mutants-shard|miri|hack|fuzz}" 
       echo "gates.sh: no Rust changes since main; no mutants"
       exit 0
     fi
-    NEXTEST_PROFILE=ci cargo mutants --in-place --in-diff target/branch.diff --output target
+    # No baseline: mac.sh pr has just passed the same suite on this tree, and cargo-mutants' baseline would
+    # test only the mutated packages with `-p`, which fails when one lacks the harness feature. Without a
+    # baseline the timeout is not derived from one: a missed mutant runs the whole suite (~5 min).
+    NEXTEST_PROFILE=ci cargo mutants --in-place --in-diff target/branch.diff --output target \
+      --baseline=skip --timeout 900
     ;;
   mutants-shard)
     tool cargo-mutants "$CARGO_MUTANTS"

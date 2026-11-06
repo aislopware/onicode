@@ -7,8 +7,9 @@
 #   check.sh deps       cargo-deny and cargo-shear: read Cargo.lock and the sources, build nothing
 #   check.sh lint *     fmt and clippy (warnings denied)
 #   check.sh doc *      rustdoc over the workspace, warnings denied
-#   check.sh build *    the workspace binaries
-#   check.sh test EXPR * tests matching a nextest filter, e.g. 'rdeps(onicode-proto)'
+#   check.sh build *    the workspace binaries, in `cargo t`'s feature set (the `bins` alias)
+#   check.sh test EXPR * tests matching a nextest filter, e.g. 'rdeps(onicode-proto)', under the pull-request
+#                       profile `ci` (no soak tests); NEXTEST_PROFILE=default runs the nightly set
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . scripts/dev/env.sh
@@ -82,7 +83,13 @@ lint() {
 doc() {
   RUSTDOCFLAGS="-D warnings" run cargo doc --locked --no-deps --document-private-items --workspace --features onicode-harness/native-fixture
 }
-tests() { run cargo t --locked --config-file scripts/ci/nextest.toml ${1:+-E "$1"}; }
+# NEXTEST_PROFILE also reaches the tests: the cursor_shim stress test runs 14 rounds under `ci`.
+# ONICODE_NO_LOGIN_SHELL: every test process would otherwise run the developer's `$SHELL -lic` once
+# (crates/harness/src/shell_env.rs) before its first agent child; the tests of that probe unset it.
+tests() {
+  NEXTEST_PROFILE="${NEXTEST_PROFILE:-ci}" ONICODE_NO_LOGIN_SHELL="${ONICODE_NO_LOGIN_SHELL-1}" \
+    run cargo t --locked --config-file scripts/ci/nextest.toml ${1:+-E "$1"}
+}
 
 stage="${1:-all}"
 case "$stage" in
@@ -93,17 +100,27 @@ case "$stage" in
   static) static ;;
   fmt) fmt ;;
   deps) deps ;;
-  build) run cargo build --locked --workspace --bins --features onicode-harness/native-fixture ;;
+  build) run cargo bins ;;
   lint) lint ;;
   doc) doc ;;
   test) tests "${2:-}" ;;
   all)
-    static
-    fmt
-    deps
+    # The checks that build nothing run beside the ones that compile; their report follows the tests.
+    quick=$(mktemp)
+    (
+      static
+      fmt
+      deps
+    ) >"$quick" 2>&1 &
+    quick_pid=$!
+    trap 'kill "$quick_pid" 2>/dev/null || true; /bin/rm -f "$quick"' EXIT
     run cargo lint
     doc
     tests
+    quick_rc=0
+    wait "$quick_pid" || quick_rc=$?
+    cat "$quick"
+    exit "$quick_rc"
     ;;
   *)
     echo "usage: $0 [static|fmt|deps|build|lint|doc|test EXPR|all]" >&2

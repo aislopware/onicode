@@ -56,12 +56,21 @@ checkers and rustfmt on the staged files only, in parallel; pre-push runs `check
 
 The two office Mac runners on gitlab.jmango360.com (`office-mac-runner-02`, then `office-mac-runner`) run tart guests
 with a persistent `/Volumes/CICache`. The GitLab project `cong.tran/onicode-ci` holds only
-`scripts/ci/office-mac.gitlab-ci.yml`, as its `.gitlab-ci.yml`. The `mac` and `ios` jobs call
-`scripts/ci/gitlab-bridge.py` with SUITE `pr`/`nightly` and `ios-pr`/`ios-nightly`, so each is its own pipeline and
-the two can run on both Macs at once. The bridge triggers that pipeline for the commit and mirrors the result. If the
-first Mac does not start within 2 minutes, it moves to the second, then waits up to an hour on the first. There is no
-hosted fallback: onicode needs macOS 27.2, which hosted runners do not have. A run without the secrets (a fork pull
-request) skips both jobs with a notice.
+`scripts/ci/office-mac.gitlab-ci.yml`, as its `.gitlab-ci.yml`.
+
+GitLab refuses authenticated API calls from outside the office network, so GitHub's hosted runners cannot start
+these jobs (both tokens answer 404/401 from GitHub and work from the office). The lanes are driven from inside
+instead: `scripts/ci/office_mac.py serve`, a launch agent on an office-network Mac (`office_mac.py install`), polls
+GitHub every 15 s. For main's head and each open pull request from aislopware/onicode itself, it claims each lane
+with a pending `office-mac/<lane>` commit status, triggers the pipeline with SUITE `pr` (lane `mac`) or `ios-pr`
+(lane `ios`), and posts the result with the GitLab job as the status link. A lane whose paths the change does not
+touch passes at once, by the split ci.yml's `changes` job used. Once a day after 02:00 it runs `nightly` and
+`ios-nightly` for main's head. If the first Mac does not start a job within 2 minutes it moves to the second, then
+waits on the first. Fork pull requests are never run, so untrusted code never reaches CICache, and nothing from
+GitHub runs on the polling Mac. Its credentials are `gh auth token` and two keychain items,
+`onicode-ci-gitlab-trigger` (the trigger token) and `onicode-ci-gitlab-read` (the `office-mac-poller` project
+access token, `api`); its log is `~/Library/Logs/onicode-ci.log`. `office_mac.py run SHA LANE` runs one lane by
+hand. Require `CI result`, `office-mac/mac` and `office-mac/ios` on main.
 
 The guests run `zot.jmango360.dev/onicode/macos-27-ci`, pinned by digest, from Zot on office-1 (the office LAN's
 registry; the runners read it as `onicode-runners`, from the masked project variables `ONICODE_ZOT_USER` and
@@ -78,10 +87,6 @@ share one set of artifacts. CICache is shared with other projects, so onicode's 
 wiping it: `cargo sweep` drops what an older toolchain built, then the least recently used units down to 45 GB.
 Fork pull requests get no secrets, so untrusted code never reaches CICache.
 
-Secrets, in the `office-mac` environment of aislopware/onicode:
-- `GITLAB_TRIGGER_TOKEN`: the project's pipeline trigger token.
-- `GITLAB_READ_TOKEN`: a Developer project access token with `api`, which reads jobs and cancels the pipeline
-  that lost the race.
 
 ## Caches
 

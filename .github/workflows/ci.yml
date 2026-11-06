@@ -5,14 +5,12 @@ name: CI
 #
 #   static    every checker that builds nothing (scripts/dev/check.sh static, fmt, deps)
 #   lint      clippy for Linux, so cfg(linux) code still compiles, and rustdoc, warnings denied
-#   mac       scripts/ci/mac.sh on a GitLab office Mac (macOS 27.2 guest, warm, incremental): clippy for macOS,
-#             every test, and diff-scoped mutants; nightly adds coverage, Miri, a mutants shard, cargo-hack
-#             and the fuzz targets
-#   ios       scripts/ci/ios.sh on an office Mac: the mobile core, binding drift, OnicodeTests on a simulator
-#   result    "CI result", the one check to require
+#   result    "CI result", the GitHub-side check to require
 #
-# Hosted macOS runners cannot run onicode (macOS 27.2 and later only). Fork pull requests get no secrets,
-# so mac and ios skip with a notice and untrusted code never reaches the shared CICache.
+# The macOS and iOS lanes are not GitHub jobs: hosted macOS runners cannot run onicode (macOS 27.2 and later
+# only), and GitLab refuses authenticated calls from outside the office network. scripts/ci/office_mac.py polls
+# GitHub from an office-network Mac, runs scripts/ci/mac.sh and ios.sh on the GitLab office Macs, and posts the
+# `office-mac/mac`, `office-mac/ios` and nightly statuses (docs/onicode/ci.md).
 
 on:
   pull_request:
@@ -39,7 +37,6 @@ jobs:
     timeout-minutes: 3
     outputs:
       rust: ${{ steps.diff.outputs.rust }}
-      ios: ${{ steps.diff.outputs.ios }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,17 +48,12 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           if { [ "$EVENT" != pull_request ] && [ "$EVENT" != push ]; } || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            echo "rust=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "rust=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           files=$(git diff --name-only "$BASE" HEAD)
           echo "$files"
           if echo "$files" | grep -qvE '^(docs/|.*\.md$|LICENSE|\.research/)'; then rust=true; else rust=false; fi
-          # The iOS lane: the app, the crates the mobile core links (every crate but the desktop-only ones),
-          # the toolchain and the CI scripts.
-          desktop='^crates/(ui|engine|harness|preview|preview-label|cli|launch|notify|update|audio|mcp|rpc)/|^apps/onicode/'
-          ios_paths='^(apps/ios/|crates/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|scripts/ios/|scripts/ci/|\.github/)'
-          if echo "$files" | grep -vE "$desktop" | grep -qE "$ios_paths"; then ios=true; else ios=false; fi
-          echo "rust=$rust" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
 
   static:
     name: static
@@ -121,51 +113,9 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --locked --no-deps --document-private-items --workspace --features onicode-harness/native-fixture
 
-  # The office Macs only take trusted code: fork pull requests get no secrets, so they never touch the shared
-  # CICache. Both lanes move their secrets into the office-mac environment.
-  mac:
-    name: mac
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-24.04
-    environment: office-mac
-    timeout-minutes: ${{ github.event_name == 'schedule' && 260 || 90 }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - env:
-          GITLAB_TRIGGER_TOKEN: ${{ secrets.GITLAB_TRIGGER_TOKEN }}
-          GITLAB_READ_TOKEN: ${{ secrets.GITLAB_READ_TOKEN }}
-          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SUITE: ${{ github.event_name == 'schedule' && 'nightly' || 'pr' }}
-        run: |
-          if [ -z "$GITLAB_TRIGGER_TOKEN" ]; then echo "::notice::no office Mac secrets (fork pull request): macOS lane skipped"; exit 0; fi
-          python3 scripts/ci/gitlab-bridge.py "$SHA" "$SUITE"
-
-  ios:
-    name: ios
-    needs: changes
-    if: needs.changes.outputs.ios == 'true'
-    runs-on: ubuntu-24.04
-    environment: office-mac
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - env:
-          GITLAB_TRIGGER_TOKEN: ${{ secrets.GITLAB_TRIGGER_TOKEN }}
-          GITLAB_READ_TOKEN: ${{ secrets.GITLAB_READ_TOKEN }}
-          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SUITE: ${{ github.event_name == 'schedule' && 'ios-nightly' || 'ios-pr' }}
-        run: |
-          if [ -z "$GITLAB_TRIGGER_TOKEN" ]; then echo "::notice::no office Mac secrets (fork pull request): iOS lane skipped"; exit 0; fi
-          python3 scripts/ci/gitlab-bridge.py "$SHA" "$SUITE"
-
   result:
     name: CI result
-    needs: [changes, static, lint, mac, ios]
+    needs: [changes, static, lint]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 3

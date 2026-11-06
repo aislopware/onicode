@@ -3,7 +3,13 @@
 test_tool = "nextest"
 test_workspace = true
 features = ["onicode-harness/native-fixture"]
-additional_cargo_test_args = ["--config-file", "scripts/ci/nextest.toml"]
+# Every phase: the build phase (`nextest run --no-run`) needs the config file too, or NEXTEST_PROFILE=ci is
+# "profile not found"; `--lib --bins --tests` is `cargo t`'s target set (without it the build also links
+# every example, 41 binaries, for each mutant).
+additional_cargo_args = ["--config-file", "scripts/ci/nextest.toml", "--lib", "--bins", "--tests"]
+# One failing test catches the mutant: stop there instead of running the rest of the suite (the profiles
+# set fail-fast = false, and cargo-mutants passes no fail-fast flag of its own).
+additional_cargo_test_args = ["--max-fail=1:immediate"]
 # Test code, fixtures, examples and generated code are not mutated.
 exclude_globs = [
     "**/tests/**",

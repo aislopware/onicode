@@ -1,5 +1,5 @@
 # The .gitlab-ci.yml of the GitLab project cong.tran/onicode-ci, kept here so it is reviewed with
-# the code; copy it there when it changes. scripts/ci/gitlab-bridge.py triggers it with SHA, SUITE
+# the code; copy it there when it changes. scripts/ci/office_mac.py triggers it with SHA, SUITE
 # and MAC_TAG; without a SHA the job only brings the image onto the Mac and prints its versions.
 # The source, toolchain, registry and target live on the Mac's persistent /Volumes/CICache at the
 # same path every run, so cargo stays warm and incremental; the job itself is scripts/ci/mac.sh at
@@ -18,8 +18,7 @@ mac:
   # digest; rebuilt only when a pin changes (docs/onicode/ci.md).
   image: zot.jmango360.dev/onicode/macos-27-ci@sha256:baed0cbe5eebf89f538bfe683f3c47251fd8f43987396716dd8d32b78ccc4e8d
   interruptible: true
-  # The nightly suite (coverage, Miri, a mutants shard, cargo-hack); pull requests finish well inside the
-  # GitHub job's 90 minutes.
+  # Room for the nightly suite (coverage, Miri, a mutants shard, cargo-hack).
   timeout: 4h
   resource_group: onicode-$MAC_TAG
   variables:

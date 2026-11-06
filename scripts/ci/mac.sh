@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The main test lane, on a GitLab office Mac (scripts/ci/gitlab-bridge.py) in the onicode/macos-27-ci guest,
+# The main test lane, on a GitLab office Mac (scripts/ci/office_mac.py) in the onicode/macos-27-ci guest,
 # with a warm target on /Volumes/CICache (scripts/ci/office-mac.gitlab-ci.yml). macOS and iOS are the
 # platforms tested thoroughly; Linux gets only the static and clippy jobs.
 #
@@ -46,11 +46,11 @@ fi
 
 export CARGO_PROFILE_DEV_DEBUG=0
 # Every build here has the shape of `cargo t` (.cargo/config.toml): the whole workspace with one
-# feature set, so the app build, the tests and clippy share one set of artifacts in the warm target
-# (a `-p` or another feature set re-resolves features and rebuilds dependencies). Tests are picked
-# with filters, never with `-p`.
+# feature set, so the app build (`cargo bins`), the tests and clippy share one set of artifacts in the
+# warm target (a `-p` or another feature set re-resolves features and rebuilds dependencies). Tests are
+# picked with filters, never with `-p`.
 cargo lint
-cargo build --locked --workspace --bins --features onicode-harness/native-fixture
+cargo bins
 
 if [[ "$suite" = pr ]]; then
   NEXTEST_PROFILE=ci cargo t --locked --config-file scripts/ci/nextest.toml

@@ -32,8 +32,8 @@ upstream = "longbridge/gpui-kit"
 branch = "main"
 fork = "aislopware/gpui-kit"
 checkout = "forks/gpui-kit"
-base = "944803984cf0ba3111861d6e1aa9d6265c109ff9"
-base_date = "2026-10-29"
+base = "b2aaa3e5f9a387dea74981586bfca33e7e08420d"
+base_date = "2026-11-06"
 every_minutes = 0
 
 # gpui-fast imports zed through its vendor procedure; zed merges hundreds of PRs a week, so only
