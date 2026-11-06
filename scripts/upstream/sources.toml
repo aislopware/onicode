@@ -202,7 +202,7 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "ddd1812a51f4aded35c3ec5446672474d5cb546b"
+base = "b1a0dff15854d5f62a9c0931431d70f6148da9e6"
 base_date = "2026-11-06"
 every_minutes = 60
 pulls = false
