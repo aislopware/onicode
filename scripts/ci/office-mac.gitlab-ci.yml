@@ -1,0 +1,28 @@
+# The .gitlab-ci.yml of the GitLab project cong.tran/onicode-ci, kept here so it is reviewed with
+# the code; copy it there when it changes. scripts/ci/gitlab-bridge.py triggers it with SHA, SUITE
+# and MAC_TAG. The source, toolchain and target live on the Mac's persistent /Volumes/CICache at
+# the same path every run, so cargo stays warm and incremental; the job itself is
+# scripts/ci/mac.sh at that commit.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "trigger"'
+
+mac:
+  tags: [$MAC_TAG]
+  image: ghcr.io/cirruslabs/macos-tahoe-xcode:26.5
+  interruptible: true
+  timeout: 30m
+  resource_group: onicode-$MAC_TAG
+  variables:
+    GIT_STRATEGY: none
+    TART_EXECUTOR_ALWAYS_PULL: "false"
+  script:
+    - export C=/Volumes/CICache/onicode
+    - export CARGO_HOME=$C/cargo RUSTUP_HOME=$C/rustup CARGO_TARGET_DIR=$C/target CARGO_INCREMENTAL=1
+    - export PATH=$C/cargo/bin:$PATH
+    - test -x $C/cargo/bin/rustup || (curl -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain none)
+    - test -d $C/src/.git || git clone --filter=blob:none https://github.com/aislopware/onicode $C/src
+    - git -C $C/src fetch --no-tags origin "$SHA" && git -C $C/src checkout -qf --detach "$SHA" && git -C $C/src clean -ffdq
+    # CICache is shared with other projects: keep onicode's target under 60 GB.
+    - du -sg $C/target 2>/dev/null | awk '$1 > 60 { exit 1 }' || rm -rf $C/target
+    - cd $C/src && scripts/ci/mac.sh "$SUITE"
