@@ -17,7 +17,7 @@
 //!   control, no reordering, infinite GOP with long-term references, length-prefixed units out.
 //! * `Decoder` (macOS, iOS) — a `VTDecompressionSession` fed the units as they arrive; it rebuilds
 //!   its format description from the parameter sets in front of each keyframe.
-//! * [`audio`] — Opus through `AudioConverter` (encode on the host, decode anywhere) and a player
+//! * `audio` — Opus through `AudioConverter` (encode on the host, decode anywhere) and a player
 //!   that renders from its jitter ring on the output unit's I/O thread.
 //!
 //! Output is delivered on VideoToolbox's own threads through the sink closure given at

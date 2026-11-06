@@ -3,10 +3,10 @@
 //! regions, and the accessibility window watch, are gone.
 //!
 //! [`CaptureSource`] is the host's capture seam and compiles everywhere ([`source`]). On
-//! macOS, [`ScreenCaptureKit`] implements it with ScreenCaptureKit and CoreGraphics, streaming
+//! macOS, `ScreenCaptureKit` implements it with ScreenCaptureKit and CoreGraphics, streaming
 //! `IOSurface`-backed pixel buffers.
 //!
-//! [`synthetic::Canvas`] implements it too, drawing its own pictures instead of capturing: the
+//! `synthetic::Canvas` implements it too, drawing its own pictures instead of capturing: the
 //! stand-in the frame-path measurements stream from where no Screen Recording grant exists.
 //!
 //! Everything is callback driven and thread-agnostic. ScreenCaptureKit runs its own queues;

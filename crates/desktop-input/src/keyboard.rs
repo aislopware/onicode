@@ -8,7 +8,7 @@
 //! the keys without ⌘ or ⌃ off `-[NSApplication sendEvent:]`, ahead of the window and the input
 //! method, and queues them for the view ([`Taken`]). A chord with ⌘ or ⌃ goes on to GPUI, whose
 //! key bindings (⌃Tab out of the tile, the workspace's ⌘ chords) come first; the view reads its
-//! position off the event being handled ([`current`]). The decision is pure ([`Taking`]).
+//! position off the event being handled (`current`). The decision is pure ([`Taking`]).
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -95,7 +95,7 @@ impl std::fmt::Debug for Taken {
 }
 
 impl Taken {
-    /// A queue no monitor feeds: what [`take_keys`] hands out, before it is registered, and a
+    /// A queue no monitor feeds: what `take_keys` hands out, before it is registered, and a
     /// stand-in for tests, which [`Self::offer`] feeds as the monitor would. `wake` is called
     /// after each key taken.
     #[must_use]

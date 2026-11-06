@@ -6,9 +6,9 @@
 //!
 //! - [`layout`]: where the seam falls and which rows each stripe codes and shows. The worker and
 //!   the client both call it, so they agree without the wire saying more than the height.
-//! - [`StripeCopy`] (macOS): a stripe's coded rows copied out of the capture into a picture of its
+//! - `StripeCopy` (macOS): a stripe's coded rows copied out of the capture into a picture of its
 //!   own, `IOSurface`-backed so the session codes it inside the submit.
-//! - [`side_by_side`] (macOS): whether this Mac's engines code the two stripes at once, the gate
+//! - `side_by_side` (macOS): whether this Mac's engines code the two stripes at once, the gate
 //!   before a stream is striped.
 
 /// Rows each stripe codes past the seam, one HEVC coding tree unit.
@@ -72,7 +72,7 @@ pub const fn layout(height: u32) -> Option<[Stripe; 2]> {
     ])
 }
 
-/// What [`side_by_side`] timed: a capture coded whole, and as two stripes submitted at once.
+/// What `side_by_side` timed: a capture coded whole, and as two stripes submitted at once.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SideBySide {
     /// The whole picture's median encode.

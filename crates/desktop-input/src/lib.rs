@@ -1,30 +1,30 @@
 //! Remote-desktop input on the host: turn a client's [`ScreenInput`] into `CGEvent`s.
 //!
-//! One [`Injector`] per display stream. It knows the stream's display and its pixels-per-point
+//! One `Injector` per display stream. It knows the stream's display and its pixels-per-point
 //! scale, maps stream pixels back to global display points, and posts each event through the
 //! HID event tap: the whole display is the target, so the real pointer follows. Posting itself
-//! is a [`Backend`]: [`System`] for the host, [`Recorder`] for tests, so every decision here is
+//! is a `Backend`: `System` for the host, `Recorder` for tests, so every decision here is
 //! unit-tested without Accessibility access and without a real event. Posting needs the host
-//! process to be granted *Accessibility* (post-event access); [`can_post`] and [`request_post`]
+//! process to be granted *Accessibility* (post-event access); `can_post` and `request_post`
 //! wrap the preflight and prompt.
 //!
 //! Keys go by position and carry no text: the host's layout makes the character, the client's
 //! own once the host has taken the client's input source ([`sources`]). Text the client
-//! composed itself goes as its own event, in pieces a key event can carry ([`text`]). Caps Lock
+//! composed itself goes as its own event, in pieces a key event can carry (`text`). Caps Lock
 //! is set as a lock, and media keys go to the system as system-defined events. Trackpad
 //! gestures (a pinch, a rotation, smart zoom, a swipe, and, while the view sends its gestures,
 //! the gesture a trackpad scroll comes with) have no public `CGEvent` constructor: they are
-//! built as the trackpad's are, from a blank event and the fields AppKit reads ([`backend`]). A
+//! built as the trackpad's are, from a blank event and the fields AppKit reads (`backend`). A
 //! press, its drags and its release carry one event number, as AppKit follows a drag by it.
 //!
-//! [`InputSink`] is the host's input seam, compiled on every target; [`CgEvents`] is the macOS
-//! implementation: the stream's [`Injector`] on an [`InputThread`], so no window-server call is
+//! [`InputSink`] is the host's input seam, compiled on every target; `CgEvents` is the macOS
+//! implementation: the stream's `Injector` on an `InputThread`, so no window-server call is
 //! made on the stream's task. The display's bounds come from the stream's geometry probe
 //! ([`InputSink::set_bounds`]), and where the input put the pointer goes back to the stream's
 //! cursor samples ([`PointerWatch`]). [`pasteboard::Board`] is the clipboard seam.
 //!
 //! The keyboard pieces both ends share live here too: the host's input source by its TIS id
-//! ([`input_source`], macOS), and the client's raw keys taken ahead of its text system with
+//! (`input_source`, macOS), and the client's raw keys taken ahead of its text system with
 //! the modifier and media-key constants both ends read and write ([`keyboard`]).
 //!
 //! Ported from slopty's `slopty-input` and the keyboard half of `slopty-platform` (MIT, same

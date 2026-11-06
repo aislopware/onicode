@@ -3,8 +3,8 @@
 //! [`Board`] is the clipboard seam, compiled on every target: the little clipboard sync needs
 //! from a pasteboard. That is its `changeCount` (macOS has no change notification, so it is
 //! polled), the types of each item it holds, one representation's bytes when asked, and a way to
-//! replace the contents with bytes and promises. [`MacBoard`] is `NSPasteboard`, either the
-//! general one or a named one; tests use a named one ([`MacBoard::unique`]) and release it, so no
+//! replace the contents with bytes and promises. `MacBoard` is `NSPasteboard`, either the
+//! general one or a named one; tests use a named one (`MacBoard::unique`) and release it, so no
 //! test ever touches the user's clipboard. [`Held`] is a clipboard the host keeps itself, on
 //! Linux.
 

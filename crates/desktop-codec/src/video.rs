@@ -117,7 +117,7 @@ pub trait VideoEncoder: Send + Sync + Sized + 'static {
     }
 
     /// Whether this machine codes a `width` × `height` picture carrying `chroma` faster as two
-    /// stripes at once than whole, timed now ([`crate::stripes::side_by_side`]): a few hundred
+    /// stripes at once than whole, timed now (`crate::stripes::side_by_side`): a few hundred
     /// milliseconds of the encode engines, once per size. `None` for an encoder that codes no
     /// stripes (the default), or a picture too short to split.
     ///

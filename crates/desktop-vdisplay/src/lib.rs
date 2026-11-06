@@ -7,8 +7,8 @@
 //! and on a macOS without them, it is [`DisplayError::Unavailable`] and the caller streams a
 //! physical display instead. [`available()`] says which, creating nothing.
 //!
-//! On macOS the owner also serves the main thread ([`park_main`]) and enforces again on every
-//! display reconfiguration ([`on_reconfiguration`]).
+//! On macOS the owner also serves the main thread (`park_main`) and enforces again on every
+//! display reconfiguration (`on_reconfiguration`).
 
 #![warn(unreachable_pub)]
 #![allow(

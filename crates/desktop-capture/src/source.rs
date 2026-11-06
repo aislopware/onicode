@@ -25,7 +25,7 @@ pub enum CaptureError {
     /// The stream stopped on its own (display unplugged, permission revoked).
     #[error("stream stopped: {0}")]
     Stopped(String),
-    /// A window this process leaves out of every display capture ([`crate::leave_out`]; the
+    /// A window this process leaves out of every display capture (`crate::leave_out`; the
     /// curtain's shield, once the curtain is ported) is not in the enumeration a display was
     /// resolved against: one taken before the window was made. Enumerate again rather than show it.
     #[error("window {0}, left out of every display capture, is not in this enumeration")]
