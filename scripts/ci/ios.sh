@@ -24,8 +24,16 @@ pick() {
   python3 -I -c '
 import json, subprocess, sys
 def version(identifier):
+    # com.apple.CoreSimulator.SimRuntime.iOS-27-2, sometimes with a non-numeric suffix after the version.
     parts = identifier.rsplit(".", 1)[-1].split("-")
-    return tuple(int(p) for p in parts[1:]) if parts[0] == "iOS" else ()
+    if parts[0] != "iOS":
+        return ()
+    numbers = []
+    for part in parts[1:]:
+        if not part.isdigit():
+            break
+        numbers.append(int(part))
+    return tuple(numbers)
 devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "--json", "devices", "available"]))
 for runtime, entries in sorted(devices["devices"].items(), key=lambda kv: version(kv[0]), reverse=True):
     if version(runtime) >= (27, 2):
