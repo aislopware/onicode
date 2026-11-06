@@ -20,10 +20,12 @@ allowance, red over it), the drawn images and per-scene stats (max channel delta
 
 The ten dark images were recorded again on the monocode stack (7152d2bd) with those two fixes, since the first
 recording held the update toast; the light ones came out byte-identical. On gpui-fast (FORK.md "Onicode",
-`onicode-parity-3`) the plain scenes match exactly: labels, the title reveal and all eight project backgrounds. The
-others differ by at most 1 level, mostly the corner ring, plus 1-level text edges over the light composer's shadow
-(about 31 pixels a light scene), except `ui-scale-125`: an activity tile's pencil sits one device pixel lower. Its
-transcript row lies 0.2 pt lower than on monocode's taffy 0.13, so at the scale factor of 2.5 the icon's top rounds
-from 698.5 to 699 rather than to 698. The project background spans the view's width at the image's aspect from the
-top, which is what monocode's taffy 0.13 made of `img().size_full()` (taffy 0.15 resolves the height to the view's and
-centres the cover), so the app now lays that out explicitly.
+`onicode-parity-3`) the plain scenes match exactly: labels, the title reveal and all eight project backgrounds. Every
+other scene differs by at most 1 level and still fails `check`: mostly the ring along rounded corners and their
+clipped fills and borders, whose low-contrast steps the 16-level edge test does not count, plus 1-level glyph
+interiors in light text over the composer's shadow (about 31 pixels a light scene, 115 in `ui-scale-125-light`).
+`ui-scale-125`'s activity tile icons sit where monocode drew them since a cached view lays out from its snapped
+bounds again, as monocode's did (it had placed them a device pixel lower, at the half pixel the tile lies at in
+place). The project background spans the view's width at the image's aspect from the top, which is what monocode's
+taffy 0.13 made of `img().size_full()` (taffy 0.15 resolves the height to the view's and centres the cover), so the
+app now lays that out explicitly.
