@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{App, Context, Entity, EventEmitter, Global, Role, div, px};
+use onicode_engine::turn::{Database, locked};
 use onicode_update::{Channel, Manifest, Offer, channel, desktop};
 
-use crate::runtime::{Database, locked};
 use crate::theme::*;
 
 /// Where an install records the version it put in place, for the

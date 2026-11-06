@@ -14,9 +14,9 @@ use gpui::{
 use onicode_core::search::{self, Hit, Scope, Target};
 use onicode_core::store::Session;
 use onicode_core::transcript::Row;
+use onicode_engine::turn::{Database, locked};
 
 use crate::input::{self, Input};
-use crate::runtime::{Database, locked};
 use crate::theme::*;
 
 pub(crate) enum Event {

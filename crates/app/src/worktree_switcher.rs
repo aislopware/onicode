@@ -10,8 +10,8 @@ use gpui::{
 };
 use onicode_core::files::path_key;
 use onicode_core::git::{self, Snapshot};
+use onicode_engine::turn::{Database, locked};
 
-use crate::runtime::{Database, locked};
 use crate::theme::*;
 use crate::{input, popover};
 

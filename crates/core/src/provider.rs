@@ -114,7 +114,7 @@ pub enum Event {
 }
 
 /// A command or subagent left running after the provider yielded its answer.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BackgroundTask {
     pub id: String,
     pub description: String,

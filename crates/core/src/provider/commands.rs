@@ -1,7 +1,7 @@
 //! Provider-owned commands. Local composer commands never become ordinary prompts.
 use super::*;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeCommand {
     pub name: String,
     pub description: String,
@@ -12,7 +12,7 @@ pub struct NativeCommand {
     pub input_hint: Option<String>,
     pub subcommands: Vec<NativeSubcommand>,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeSubcommand {
     pub name: String,
     pub description: Option<String>,

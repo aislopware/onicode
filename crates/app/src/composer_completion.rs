@@ -68,7 +68,7 @@ impl Choice {
 }
 pub(crate) struct Completion {
     input: Entity<input::Input>,
-    store: Option<crate::runtime::Database>,
+    store: Option<onicode_engine::turn::Database>,
     notes: Vec<onicode_core::notes::Note>,
     cwd: String,
     token: Option<Token>,
@@ -181,7 +181,7 @@ impl Completion {
         }
     }
 
-    pub(crate) fn with_store(mut self, store: crate::runtime::Database) -> Self {
+    pub(crate) fn with_store(mut self, store: onicode_engine::turn::Database) -> Self {
         self.store = Some(store);
         self
     }
@@ -321,7 +321,7 @@ impl Completion {
         let text = self
             .store
             .as_ref()
-            .and_then(|store| crate::runtime::locked(store).ok())
+            .and_then(|store| onicode_engine::turn::locked(store).ok())
             .and_then(|store| store.apply_notes_to_turn(&text).ok())
             .unwrap_or(text);
         let servers = self
@@ -516,7 +516,7 @@ impl Completion {
         let work = cx.background_executor().spawn(async move {
             let notes = store
                 .and_then(|s| {
-                    crate::runtime::locked(&s)
+                    onicode_engine::turn::locked(&s)
                         .ok()
                         .and_then(|s| s.list_notes().ok())
                 })

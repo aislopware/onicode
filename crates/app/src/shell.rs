@@ -64,6 +64,7 @@ use gpui::{
 };
 use onicode_core::provider::Kind;
 use onicode_core::store::Session;
+use onicode_engine::turn::{Database, locked};
 use session_groups::local_reminder_label;
 
 use crate::conversation::{Conversation, SessionChanged};
@@ -79,7 +80,6 @@ use crate::popover::{
 use crate::resource_pressure::{ResourceMonitor, StopSession};
 use crate::response_actions::Transfer;
 use crate::right_panel::{PanelEvent, RightPanel};
-use crate::runtime::{Database, locked};
 use crate::session_mark::{SessionMark, State as MarkState};
 use crate::tab_tile::{Face, NARROW_TAB, TAB_TILE, TAB_TILE_GAP, mark_tile};
 use crate::terminal::{Terminal, TerminalEvent};

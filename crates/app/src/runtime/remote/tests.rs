@@ -6,6 +6,7 @@ use std::thread;
 use std::time::Instant;
 
 use onicode_core::remote::{Connections, Machine};
+use onicode_core::store::Store;
 
 use super::*;
 
@@ -770,10 +771,10 @@ fn ambiguous_legacy_requests_block_direct_send_and_retry_before_transport() {
 #[test]
 fn host_context_and_latest_turn_metrics_use_actual_session_fields() {
     let value = json!({"session":{"context":{"used":1200,"window":128000},"blocks":[
-        {"role":"user","turnMetrics":{"inputTokens":1}},
-        {"role":"user","turnMetrics":{"inputTokens":100,"outputTokens":25,"cacheReadTokens":80,"cacheWriteTokens":10,"cacheHitPercent":80.0}},
-        {"role":"assistant","turnMetrics":{"inputTokens":999}},
-        {"role":"user","draft":true,"turnMetrics":{"inputTokens":999}}
+        {"role":"user","turnMetrics":{"input_tokens":1}},
+        {"role":"user","turnMetrics":{"input_tokens":100,"output_tokens":25,"cache_read_tokens":80,"cache_write_tokens":10,"cache_hit_percent":80.0}},
+        {"role":"assistant","turnMetrics":{"input_tokens":999}},
+        {"role":"user","draft":true,"turnMetrics":{"input_tokens":999}}
     ]}});
     let (context, metrics) = accounting(&value);
     assert_eq!(

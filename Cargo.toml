@@ -4,6 +4,9 @@ members = [
     # The app and its core, from monocode native 0.16.0-preview.14 (docs/onicode/decisions/monocode-base.md).
     "crates/app",
     "crates/core",
+    # The engine and the protocol its viewers speak (docs/onicode/decisions/engine.md).
+    "crates/engine",
+    "crates/protocol",
     # Temporary: monocode's phone link, replaced by the tailnet engine protocol (M4, M10).
     "crates/mobile-link",
     "crates/rpc",
@@ -41,7 +44,10 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+onicode-core = { path = "crates/core" }
 onicode-rpc = { path = "crates/rpc" }
+# The engine and the protocol its viewers speak (docs/onicode/decisions/engine.md).
+onicode-engine = { path = "crates/engine" }
 
 # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
 onicode-net = { path = "crates/net" }
@@ -226,6 +232,10 @@ proptest = "1.12"
 pretty_assertions = "1.4.1"
 # Structured fuzz inputs; desktop-media's tests replay its fuzz corpora through them.
 arbitrary = { version = "1.5.0", features = ["derive"] }
+# The protocol's golden table (onicode-protocol's tests): the serde shape of every call and watch,
+# traced through the real Serialize/Deserialize impls, so a change no hand-written description
+# mentions still fails until PROTOCOL is bumped. Newest on crates.io (2026-05-26); test-only.
+serde-reflection = "=0.6.0"
 
 # diffs
 similar = "2"

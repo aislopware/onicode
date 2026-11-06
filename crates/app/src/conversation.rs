@@ -39,6 +39,7 @@ use onicode_core::agent::{AccessMode, Approval, Control, Decision, Settings};
 use onicode_core::catalog::{self, Model};
 use onicode_core::provider::Kind;
 use onicode_core::store::Session;
+use onicode_engine::turn::{Database, locked, run_turn};
 
 use crate::composer_motion::ComposerMotion;
 use crate::git_picker::{GitPicker, Mode as GitMode, Picked as GitPicked};
@@ -51,7 +52,6 @@ use crate::popover::{
     menu_popover, popover,
 };
 use crate::response_actions::{Request as ResponseRequest, Transfer};
-use crate::runtime::{Database, locked, run_turn};
 use crate::theme::*;
 use crate::transcript::TranscriptView;
 // Keep empty and docked composers aligned with the transcript column. Below
@@ -731,7 +731,7 @@ impl Conversation {
             let settings = locked(&store).and_then(|s| s.agent_settings(id));
             (
                 locked(&store).and_then(|s| s.load(id)).map(|history| {
-                    let edits = crate::runtime::edited_paths(&history.rows);
+                    let edits = onicode_engine::turn::edited_paths(&history.rows);
                     (crate::transcript::PreparedHistory::new(history.rows), edits)
                 }),
                 settings,
@@ -1172,6 +1172,10 @@ impl Conversation {
                 if let Some(client) = remote_client {
                     crate::runtime::remote::run_with_client(
                         client, summary, prompt, settings, control_rx, store, cancel, tx,
+                    );
+                } else if summary.cwd.starts_with("remote://") {
+                    crate::runtime::remote::run(
+                        summary, prompt, settings, control_rx, store, cancel, tx,
                     );
                 } else {
                     run_turn(summary, prompt, settings, control_rx, store, cancel, tx);

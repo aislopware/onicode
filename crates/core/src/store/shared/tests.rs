@@ -44,7 +44,7 @@ fn saved_turn_metrics_reload_with_the_same_revision() {
     let blocks = [95.12525746447635, 99.55200675204587, 98.15813953488373]
         .map(|percent| {
             json!({"id":percent.to_string(),"role":"assistant","text":"Done",
-            "turnMetrics":{"cacheHitPercent":percent}})
+            "turnMetrics":{"cache_hit_percent":percent}})
         })
         .to_vec();
     store.shared_store_blocks(id, &blocks).unwrap();
@@ -660,7 +660,7 @@ fn desktop_turn_receipts_restore_exact_model_timing_metrics_and_projected_offset
         {"id":"first","role":"user","text":"Saved prompt","sentAt":90,"startedAt":100,
          "durationMs":9500,"providerTurnId":"provider-turn",
          "turnModel":{"harness":"claude","id":"claude:old-model","name":"Saved Model","future":true},
-         "turnMetrics":{"inputTokens":100,"outputTokens":20,"cacheReadTokens":40,"cacheHitPercent":40,"future":1},
+         "turnMetrics":{"input_tokens":100,"output_tokens":20,"cache_read_tokens":40,"cache_hit_percent":40,"future":1},
          "attachments":[{"id":"context","path":"/context.md","future":true}]},
         {"id":"answer","role":"assistant","text":"Saved answer"},
         {"id":"second","role":"user","text":"Completion","internal":true,"startedAt":20000,"durationMs":0,
@@ -783,7 +783,7 @@ fn fresh_native_turn_receipts_persist_source_fields_without_changing_saved_prove
     );
     assert_eq!(source[0]["providerTurnId"], "provider-turn");
     assert_eq!(source[0]["durationMs"], 5000);
-    assert_eq!(source[0]["turnMetrics"]["outputTokens"], 10);
+    assert_eq!(source[0]["turnMetrics"]["output_tokens"], 10);
     let restored = store.agent_settings(session.id).unwrap().unwrap();
     assert_eq!(restored.turns[&turn].completed_at, Some(5100));
     assert_eq!(store.load(session.id).unwrap().rows, transcript.rows);

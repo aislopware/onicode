@@ -1,5 +1,7 @@
 //! Provider identity is shared by discovery, persistence, pickers and transports.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// On the wire as its [`Kind::id`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Kind {
     Codex,
     Claude,

@@ -14,9 +14,9 @@ use gpui::{App, Context, Entity, EventEmitter, Focusable, Global, Subscription, 
 use onicode_core::accounts::{self, Account, AuthAction, Book, Profile};
 use onicode_core::provider::Kind;
 use onicode_core::usage::{self, FetchError, Snapshot};
+use onicode_engine::turn::{Database, locked};
 
 use crate::input::{self, Input};
-use crate::runtime::{Database, locked};
 
 pub(crate) struct Shared(pub Entity<Accounts>);
 impl Global for Shared {}

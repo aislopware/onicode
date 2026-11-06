@@ -1,0 +1,19 @@
+[package]
+name = "onicode-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "The calls and watches onicode's viewers speak to engines: plain serde types, no IO (docs/onicode/decisions/engine.md)"
+
+[dependencies]
+# The data types the UI renders, re-exported until step 6 of the engine plan moves them here.
+onicode-core.workspace = true
+serde.workspace = true
+# `v7`: ids minted by whoever creates the thing sort by when they were minted.
+uuid = { workspace = true, features = ["v7"] }
+
+[dev-dependencies]
+proptest.workspace = true
+serde-reflection.workspace = true
+serde_json.workspace = true

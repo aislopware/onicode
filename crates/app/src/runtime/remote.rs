@@ -1,14 +1,18 @@
 //! The host owns agent execution. Desktop disconnection never cancels it.
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use onicode_core::agent::{Decision, Question, QuestionItem, QuestionOption};
-use onicode_core::store::{RemoteSession, RemoteUpload};
+use onicode_core::agent::{
+    Approval, Control, Decision, Question, QuestionItem, QuestionOption, Settings,
+};
+use onicode_core::store::{RemoteSession, RemoteUpload, Session};
+use onicode_engine::turn::{Database, Update, locked};
 use serde_json::{Value, json};
-
-use super::*;
 
 fn update(status: impl Into<String>, finished: bool) -> Update {
     Update {

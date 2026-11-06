@@ -16,12 +16,12 @@ use onicode_core::inbox::{
     self as model, Checks, Details, Diff, Item, Service, Snapshot, Thread, ViewState,
 };
 use onicode_core::store::Session;
+use onicode_engine::turn::{Database, locked};
 pub(crate) use ui::relative_time;
 
 use crate::diff_view::{DiffEvent, DiffView};
 use crate::input::{self, Input};
 use crate::popover::AnchorSlot;
-use crate::runtime::{Database, locked};
 use crate::theme::*;
 
 pub(crate) enum Event {

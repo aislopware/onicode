@@ -186,15 +186,10 @@ pub struct Handoff {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TurnMetrics {
-    #[serde(alias = "inputTokens")]
     pub input_tokens: u64,
-    #[serde(alias = "outputTokens")]
     pub output_tokens: u64,
-    #[serde(alias = "cacheReadTokens")]
     pub cache_read_tokens: u64,
-    #[serde(alias = "cacheWriteTokens")]
     pub cache_write_tokens: u64,
-    #[serde(alias = "cacheHitPercent")]
     pub cache_hit_percent: Option<f64>,
 }
 impl TurnMetrics {
@@ -206,7 +201,7 @@ impl TurnMetrics {
             || self.cache_hit_percent.is_some()
     }
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Approval {
     pub id: String,
     pub title: String,
@@ -222,13 +217,13 @@ pub enum Decision {
     Answer(Vec<Vec<String>>),
     KeepOpen,
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct QuestionOption {
     pub id: String,
     pub label: String,
     pub description: String,
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct QuestionItem {
     pub id: String,
     pub prompt: String,
@@ -236,7 +231,7 @@ pub struct QuestionItem {
     pub allow_custom: bool,
     pub options: Vec<QuestionOption>,
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Question {
     pub id: String,
     pub title: String,

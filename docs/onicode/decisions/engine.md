@@ -60,7 +60,7 @@ pub enum SessionEvent {
 }
 ```
 
-`SessionEvent` is `runtime::Update` (`crates/app/src/runtime.rs:26-54`) split into one variant per field, so the
+`SessionEvent` is `turn::Update` (`crates/engine/src/turn.rs:28-56`) split into one variant per field, so the
 first port is a translation, not a redesign.
 
 | Group | Watches | Calls |
@@ -94,7 +94,7 @@ itself or forwards it over `PeerLinks` (`topology.md`). Forwarded watches ride `
 resubscribes on the kept link with the viewer's cursor, so resuming works end to end. The iPhone has no
 engine of its own and dials every engine directly through `EngineList`.
 
-**Backpressure.** A turn never waits on a viewer: today's `publish` spin-waits on the window (`runtime.rs:55`),
+**Backpressure.** A turn never waits on a viewer: today's `publish` spin-waits on the window (`turn.rs:57`),
 and that goes. Each watcher has a bounded queue (256 batches or 4 MiB). Within the queue, an `Append` merges
 into the pending `Append` for the same row, and a `Rows` patch absorbs older patches of the rows it covers. A
 watcher that still overflows is dropped to `Resync` and comes back with its cursor. QUIC stream flow control

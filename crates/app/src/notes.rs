@@ -11,11 +11,11 @@ use gpui::{
     FocusHandle, Focusable, FontWeight, MouseButton, Role, Subscription, Task, Window, div, px,
 };
 use onicode_core::notes::{self, Note};
+use onicode_engine::turn::{Database, locked};
 
 use crate::explorer::DraggedFile;
 use crate::input::{self, Input};
 use crate::popover::{Anchor, AnchorSlot, popover};
-use crate::runtime::{Database, locked};
 use crate::theme::*;
 
 pub(crate) enum Event {

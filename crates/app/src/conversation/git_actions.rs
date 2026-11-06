@@ -150,7 +150,7 @@ impl Conversation {
     }
 
     pub(super) fn collect_session_edits(&mut self, cx: &mut Context<Self>) {
-        let paths = crate::runtime::edited_paths(self.transcript.read(cx).source_rows());
+        let paths = onicode_engine::turn::edited_paths(self.transcript.read(cx).source_rows());
         self.remember_session_edits(paths);
         if self.review.read(cx).session().1 != self.execution_cwd() {
             self.session_git = Default::default();
