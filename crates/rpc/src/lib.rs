@@ -91,10 +91,14 @@ pub mod methods {
     /// Explicit user navigation, `{chatId}`. Opens the chat and follows its
     /// host now; automatic subscriptions and retries must not call it.
     pub const FOCUS_CHAT: &str = "FocusChat";
-    /// `{viewportId, focused}`: an app window gained or lost focus (desktop
-    /// banners hold back while one is focused). Focused viewports repeat it;
-    /// a report goes stale after 45 s.
+    /// `{viewportId, focused, chatId?, presents}`: where the owner is in an app
+    /// window (alerts hold back for the chat on screen) and whether the app
+    /// presents agent alerts itself. Viewports repeat it; a report goes stale
+    /// after 45 s. `focused` and `presents` both false is the viewport leaving.
     pub const SET_VIEWPORT_FOCUS: &str = "SetViewportFocus";
+    /// The agent alerts that should show now (`onicode_proto::alerts::AgentAlert[]`),
+    /// whole on every change. Desktop engines only; IPC-only.
+    pub const WATCH_ALERTS: &str = "WatchAlerts";
     /// Messages typed while the agent was busy, held on the chat doc so every
     /// device sees the same queue. `{ chatId }` → `{ items: QueuedMessage[] }`.
     pub const WATCH_QUEUE: &str = "WatchQueue";

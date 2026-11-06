@@ -788,6 +788,8 @@ pub struct EngineRpc {
     harness_updates: Option<crate::harness_updates::HarnessUpdateCoordinator>,
     /// Viewports' window focus, for desktop banners.
     viewport_focus: crate::desktop_notify::ViewportFocus,
+    /// The agent alerts that should show (`WatchAlerts`).
+    alerts: crate::desktop_notify::AlertFeed,
     engine_info: EngineInfo,
     /// Files between peers (`crate::transfers`).
     transfers: Option<crate::transfers::EngineTransfers>,
@@ -847,6 +849,7 @@ impl EngineRpc {
             updater: None,
             harness_updates: None,
             viewport_focus: Default::default(),
+            alerts: Default::default(),
             engine_info,
             transfers: None,
             clipboard: None,
@@ -897,6 +900,12 @@ impl EngineRpc {
     /// Share the core's viewport focus (`SetViewportFocus` writes it).
     pub fn with_viewport_focus(mut self, focus: crate::desktop_notify::ViewportFocus) -> Self {
         self.viewport_focus = focus;
+        self
+    }
+
+    /// Share the core's agent alerts (`WatchAlerts` reads them).
+    pub fn with_alerts(mut self, alerts: crate::desktop_notify::AlertFeed) -> Self {
+        self.alerts = alerts;
         self
     }
 
@@ -2493,11 +2502,19 @@ impl RpcService for EngineRpc {
                 struct Params {
                     viewport_id: String,
                     focused: bool,
+                    /// The chat the viewport shows.
+                    #[serde(default)]
+                    chat_id: Option<String>,
+                    /// The viewport's app presents agent alerts itself.
+                    #[serde(default)]
+                    presents: bool,
                 }
                 let p: Params = parse_params(params)?;
-                self.viewport_focus.set(&p.viewport_id, p.focused);
+                self.viewport_focus
+                    .report(&p.viewport_id, p.focused, p.chat_id, p.presents);
                 RpcReply::value(&serde_json::json!({}))
             }
+            methods::WATCH_ALERTS => Ok(RpcReply::Stream(watch_stream(self.alerts.watch()))),
             methods::FOCUS_CHAT => {
                 let p: ChatParams = parse_params(params)?;
                 self.doc_host

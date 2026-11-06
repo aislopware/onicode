@@ -21,10 +21,11 @@ pub mod capabilities {
     /// The host accepts `SidebarSectionChange::Move` and orders sections by
     /// their placed key; older hosts reject the action outright.
     pub const SIDEBAR_SECTION_ORDER_V1: &str = "sidebar-section-order-v1";
-    /// The engine posts the desktop banners (finished runs, questions,
-    /// failures, connection loss, agent updates) and takes viewport focus
-    /// through `SetViewportFocus`; a viewport attached to it posts none of
-    /// its own. Advertised only by desktop engines, so not in [`CURRENT`].
+    /// The engine decides the desktop banners and agent alerts, takes viewport
+    /// focus through `SetViewportFocus`, and publishes the alerts on
+    /// `WatchAlerts` for an attached app to present with actions; while no app
+    /// presents, it posts them as plain banners itself. Advertised only by
+    /// desktop engines, so not in [`CURRENT`].
     pub const DESKTOP_NOTIFICATIONS_V1: &str = "desktop-notifications-v1";
     /// The host runs a chat on whichever provider its config names, resuming
     /// each provider's own session and marking the switch in the transcript.
