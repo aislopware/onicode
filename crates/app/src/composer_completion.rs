@@ -12,11 +12,12 @@ use gpui::{
 use onicode_core::composer::{self, Token, Trigger};
 use onicode_core::files::ProjectFile;
 use onicode_core::skills::DiscoveredSkill;
+use onicode_protocol::files::SearchPaths;
 
 use crate::conversation::git_actions::GitAction;
-use crate::input;
 use crate::popover::{Anchor, AnchorSlot, Side, popover};
 use crate::theme::*;
+use crate::{engine_client, input};
 
 actions!(completion, [Accept, Dismiss]);
 pub(crate) fn bind(cx: &mut App) {
@@ -95,6 +96,9 @@ pub(crate) struct Completion {
     error: Option<String>,
     generation: usize,
     cancel: Arc<AtomicBool>,
+    /// The engine stops this composer's last file listing when the next one
+    /// starts.
+    search_id: String,
     anchor: AnchorSlot,
     composer_anchor: AnchorSlot,
     container_anchor: AnchorSlot,
@@ -173,6 +177,7 @@ impl Completion {
             error: None,
             generation: 0,
             cancel: Arc::new(AtomicBool::new(false)),
+            search_id: onicode_core::new_id(),
             anchor: AnchorSlot::default(),
             composer_anchor: AnchorSlot::default(),
             container_anchor: AnchorSlot::default(),
@@ -508,11 +513,17 @@ impl Completion {
         self.error = None;
         self.cancel = Arc::new(AtomicBool::new(false));
         self.load_native(cx);
-        let cancel = self.cancel.clone();
         let cwd = self.cwd.clone();
         let generation = self.generation;
         let disabled = self.disabled_paths.clone();
         let store = self.store.clone();
+        let listing = engine_client::local(cx).call::<SearchPaths>(
+            None,
+            SearchPaths {
+                root: cwd.clone(),
+                search: self.search_id.clone(),
+            },
+        );
         let work = cx.background_executor().spawn(async move {
             let notes = store
                 .and_then(|s| {
@@ -523,8 +534,7 @@ impl Completion {
                 .unwrap_or_default();
             let skills =
                 onicode_core::skills::list_skills(cwd.clone(), Some(disabled)).unwrap_or_default();
-            let files =
-                onicode_core::files::list_project_files_sync_cancellable(&cwd, Some(&cancel));
+            let files = listing.await.map(|listed| listed.files);
             let mcp = onicode_core::mcp::mcp_discover(cwd).unwrap_or_default();
             (skills, files, notes, mcp)
         });

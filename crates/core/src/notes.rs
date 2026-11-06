@@ -325,7 +325,7 @@ pub fn slugs_in_text(text: &str) -> Vec<String> {
     result
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NoteImageAsset {
     pub name: String,
     pub markdown_path: String,

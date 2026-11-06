@@ -174,11 +174,11 @@ impl FileEditor {
         let lines = input.editor_line_count();
         let document = self.document.as_ref();
         let ending = match document {
-            Some(document) if document.crlf => "CRLF",
-            Some(document) if document.cr => "CR",
+            Some(document) if document.encoding.crlf => "CRLF",
+            Some(document) if document.encoding.cr => "CR",
             _ => "LF",
         };
-        let encoding = if document.is_some_and(|document| document.bom) {
+        let encoding = if document.is_some_and(|document| document.encoding.bom) {
             "UTF-8 BOM"
         } else {
             "UTF-8"

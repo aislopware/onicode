@@ -1,3 +1,5 @@
+use onicode_protocol::git::{Stage, StageTarget};
+
 use super::*;
 impl FileEditor {
     pub(super) fn diff_toolbar(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -101,9 +103,9 @@ impl FileEditor {
         let cursor = at;
         let line_ending = if original.is_empty() {
             self.document.as_ref().map_or("\n", |d| {
-                if d.crlf {
+                if d.encoding.crlf {
                     "\r\n"
-                } else if d.cr {
+                } else if d.encoding.cr {
                     "\r"
                 } else {
                     "\n"
@@ -112,9 +114,9 @@ impl FileEditor {
         } else {
             self.git_line_ending
         };
-        let cwd = PathBuf::from(&self.cwd);
+        let checkout = self.cwd.clone();
         let Ok(relative) = PathBuf::from(&self.path)
-            .strip_prefix(&cwd)
+            .strip_prefix(&checkout)
             .map(|p| p.to_string_lossy().into_owned())
         else {
             return;
@@ -134,12 +136,23 @@ impl FileEditor {
                 if line_ending != "\n" {
                     text = text.replace('\n', line_ending);
                 }
-                let result = cx
-                    .background_executor()
-                    .spawn(async move {
-                        onicode_core::scm::stage_contents(&cwd, &relative, text.as_bytes())
-                    })
-                    .await;
+                // A staged hunk leaves the file on both sides: no echo stands
+                // for it, so Changes shows it once the engine's status does.
+                let Ok(call) = this.update(cx, |_, cx| {
+                    engine_client::local(cx).call::<Stage>(
+                        Some(OpId::new()),
+                        Stage {
+                            checkout,
+                            target: StageTarget::Contents {
+                                path: relative,
+                                contents: text,
+                            },
+                        },
+                    )
+                }) else {
+                    return;
+                };
+                let result = call.await;
                 let _ = this.update(cx, |this, cx| {
                     if let Err(error) = result {
                         this.error = Some(error);

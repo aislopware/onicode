@@ -1,8 +1,9 @@
-//! Native FileEditor/FilePane previews. Disk work and syntax parsing stay off
-//! the UI thread; drafts, selections and scrolling belong to each live tab.
+//! Native FileEditor/FilePane previews. The file is read, saved and diffed
+//! through the app's engine (`Read`, `Write`, `FileDiff`); syntax parsing stays
+//! off the UI thread; drafts, selections and scrolling belong to each live tab.
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 use gpui::prelude::*;
 use gpui::{
@@ -10,8 +11,12 @@ use gpui::{
     ImageFormat, ImageSource, KeyBinding, ObjectFit, PromptLevel, RenderImage, Role, SharedString,
     Subscription, Task, Window, actions, div, img, px, rgb,
 };
-use onicode_core::files::document::{self, Document, TextDocument};
+use onicode_core::files::document;
+use onicode_protocol::OpId;
+use onicode_protocol::files::{FileContents, Read, TextFile, Write};
+use onicode_protocol::git::{ChangeSet, FileDiff, FileSides};
 
+use crate::engine_client;
 use crate::git_status::{GitChanged, ProjectGit};
 use crate::input::{self, Input};
 use crate::right_panel::{icon_action, stroke};
@@ -158,7 +163,10 @@ pub(crate) struct FileEditor {
     pub show_diff: bool,
     change_index: usize,
     match_index: usize,
-    document: Option<TextDocument>,
+    document: Option<TextFile>,
+    /// The digest of the text or image shown: a poll gets the file back only
+    /// once it changed.
+    digest: Option<u64>,
     image: Option<Arc<Image>>,
     media: Option<Entity<media::MediaPreview>>,
     media_events: Option<Subscription>,
@@ -304,6 +312,7 @@ impl FileEditor {
             matches: Vec::new(),
             match_index: 0,
             document: None,
+            digest: None,
             image: None,
             media: None,
             media_events: None,
@@ -391,21 +400,34 @@ impl FileEditor {
             return;
         }
         self.loading = true;
-        let path = PathBuf::from(&self.path);
-        let work = cx
-            .background_executor()
-            .spawn(async move { document::read_document(&path).and_then(media::prepare_document) });
+        let read = engine_client::local(cx).call::<Read>(
+            None,
+            Read {
+                path: self.path.clone(),
+                unless: self.digest.filter(|_| !force),
+            },
+        );
         cx.spawn(async move |this, cx| {
-            let result = work.await;
+            let result = match read.await {
+                Ok(FileContents::Image(image)) => {
+                    let prepared = cx
+                        .background_executor()
+                        .spawn(async move { media::prepare_image(image) })
+                        .await;
+                    prepared.map(FileContents::Image)
+                }
+                other => other,
+            };
             let _ = this.update(cx, |this, cx| {
                 this.loading = false;
                 match result {
-                    Ok(Document::Text(doc)) => {
+                    Ok(FileContents::Unchanged) => return,
+                    Ok(FileContents::Text(doc)) => {
                         if !force
                             && this
                                 .document
                                 .as_ref()
-                                .is_some_and(|old| old.disk == doc.disk)
+                                .is_some_and(|old| old.digest == doc.digest)
                         {
                             return;
                         }
@@ -421,6 +443,7 @@ impl FileEditor {
                         this.unsupported = None;
                         let first = this.document.is_none();
                         let text = doc.text.clone();
+                        this.digest = Some(doc.digest);
                         this.document = Some(doc);
                         this.input.update(cx, |input, cx| {
                             input.reload_file(text, !first && !force, cx);
@@ -436,21 +459,19 @@ impl FileEditor {
                         this.schedule_analysis(cx);
                         cx.emit(FileEvent::Dirty);
                     }
-                    Ok(Document::Image {
-                        bytes,
-                        format,
-                        width,
-                        height,
-                        original_size,
-                    }) => {
+                    Ok(FileContents::Image(mut file)) => {
                         if this.dirty && !force {
                             this.disk_changed = true;
                             cx.notify();
                             return;
                         }
-                        let byte_size = original_size;
-                        let file_format = if format == "tiff" { "avif" } else { format };
-                        let format = match format {
+                        let byte_size = file.original_size as usize;
+                        let file_format = if file.format == "tiff" {
+                            "avif"
+                        } else {
+                            file.format.as_str()
+                        };
+                        let format = match file.format.as_str() {
                             "jpeg" => ImageFormat::Jpeg,
                             "webp" => ImageFormat::Webp,
                             "gif" => ImageFormat::Gif,
@@ -459,7 +480,9 @@ impl FileEditor {
                             "tiff" => ImageFormat::Tiff,
                             _ => ImageFormat::Png,
                         };
+                        let bytes = std::mem::take(&mut file.bytes.0);
                         let image = Arc::new(Image::from_bytes(format, bytes));
+                        this.digest = Some(file.digest);
                         if this
                             .image
                             .as_ref()
@@ -471,8 +494,8 @@ impl FileEditor {
                             media::MediaPreview::image(
                                 this.path.clone(),
                                 image.clone(),
-                                width,
-                                height,
+                                file.width,
+                                file.height,
                                 byte_size,
                                 file_format,
                                 cx,
@@ -486,38 +509,21 @@ impl FileEditor {
                         this.unsupported = None;
                         this.error = None;
                     }
-                    Ok(Document::Video {
-                        size,
-                        modified,
-                        source,
-                    }) => {
+                    Ok(FileContents::Video { size, modified_ms }) => {
                         if this.dirty && !force {
                             this.disk_changed = true;
                             cx.notify();
                             return;
                         }
+                        let modified = modified_ms.map(|ms| UNIX_EPOCH + Duration::from_millis(ms));
                         let same = this
                             .media
                             .as_ref()
                             .is_some_and(|m| m.read(cx).same_video(size, modified));
                         if !same || force {
-                            this.media = Some(cx.new(|cx| {
-                                media::MediaPreview::video(
-                                    this.path.clone(),
-                                    size,
-                                    modified,
-                                    source,
-                                    cx,
-                                )
-                            }));
+                            this.play(size, modified, cx);
                         }
-                        if let Some(media) = &this.media {
-                            media.update(cx, |m, _| m.set_visible(this.visible));
-                            this.media_events =
-                                Some(cx.subscribe(media, |this, _, _: &media::MediaEvent, cx| {
-                                    this.load(true, cx)
-                                }));
-                        }
+                        this.digest = None;
                         this.document = None;
                         this.image = None;
                         this.unsupported = None;
@@ -526,7 +532,7 @@ impl FileEditor {
                         this.disk_changed = false;
                         cx.emit(FileEvent::Dirty);
                     }
-                    Ok(Document::Unsupported(reason)) => {
+                    Ok(FileContents::Unsupported(reason)) => {
                         if this.dirty && !force {
                             this.disk_changed = true;
                             cx.notify();
@@ -535,6 +541,7 @@ impl FileEditor {
                         this.media = None;
                         this.unsupported = Some(reason);
                         this.disk_changed = false;
+                        this.digest = None;
                         this.document = None;
                         this.image = None;
                         this.error = None;
@@ -549,6 +556,43 @@ impl FileEditor {
             });
         })
         .detach();
+    }
+
+    /// Plays the video at the path. A legacy remote one plays from a local
+    /// download, which this machine makes as before the engine.
+    fn play(&mut self, size: u64, modified: Option<std::time::SystemTime>, cx: &mut Context<Self>) {
+        if onicode_core::files::remote::is_remote(std::path::Path::new(&self.path)) {
+            let path = PathBuf::from(&self.path);
+            let work = cx
+                .background_executor()
+                .spawn(async move { document::read_document(&path) });
+            cx.spawn(async move |this, cx| {
+                if let Ok(document::Document::Video { source, .. }) = work.await {
+                    let _ = this.update(cx, |this, cx| this.show_video(size, modified, source, cx));
+                }
+            })
+            .detach();
+            return;
+        }
+        self.show_video(size, modified, None, cx);
+    }
+
+    fn show_video(
+        &mut self,
+        size: u64,
+        modified: Option<std::time::SystemTime>,
+        source: Option<Arc<document::TemporaryMedia>>,
+        cx: &mut Context<Self>,
+    ) {
+        let media =
+            cx.new(|cx| media::MediaPreview::video(self.path.clone(), size, modified, source, cx));
+        let visible = self.visible;
+        media.update(cx, |m, _| m.set_visible(visible));
+        self.media_events = Some(cx.subscribe(&media, |this, _, _: &media::MediaEvent, cx| {
+            this.load(true, cx)
+        }));
+        self.media = Some(media);
+        cx.notify();
     }
 
     fn edited(&mut self, cx: &mut Context<Self>) {
@@ -579,30 +623,34 @@ impl FileEditor {
         else {
             return;
         };
-        let work = cx.background_executor().spawn(async move {
-            let files = onicode_core::scm::diff_files(&cwd).ok()?;
-            let staged = files
-                .files
-                .iter()
-                .find(|f| f.relative == relative)
-                .is_some_and(|f| f.staged && !f.unstaged);
-            let diff = onicode_core::scm::file_diff(&cwd, &relative, staged).ok()?;
-            (!diff.binary && !diff.too_large).then(|| {
-                (
-                    diff.original.replace("\r\n", "\n").replace('\r', "\n"),
-                    staged,
-                    if diff.original.contains("\r\n") {
+        let diff = engine_client::local(cx).call::<FileDiff>(
+            None,
+            FileDiff {
+                checkout: self.cwd.clone(),
+                path: relative,
+                changes: ChangeSet::WorkingTree,
+                staged: None,
+            },
+        );
+        self.git_task = Some(cx.spawn(async move |this, cx| {
+            let result = diff
+                .await
+                .ok()
+                .filter(|sides| !sides.diff.binary && !sides.diff.too_large)
+                .map(|FileSides { staged, diff }| {
+                    let line_ending = if diff.original.contains("\r\n") {
                         "\r\n"
                     } else if diff.original.contains('\r') {
                         "\r"
                     } else {
                         "\n"
-                    },
-                )
-            })
-        });
-        self.git_task = Some(cx.spawn(async move |this, cx| {
-            let result = work.await;
+                    };
+                    (
+                        diff.original.replace("\r\n", "\n").replace('\r', "\n"),
+                        staged,
+                        line_ending,
+                    )
+                });
             let _ = this.update(cx, |this, cx| {
                 let original = result.map(|(original, staged, line_ending)| {
                     this.git_staged = staged;
@@ -755,34 +803,38 @@ impl FileEditor {
                     }
                 });
             }
-            let Ok(Some((path, doc, saved))) = this.update(cx, |this, cx| {
+            let Ok(Some((write, saved))) = this.update(cx, |this, cx| {
                 if this.input.read(cx).is_composing() {
                     this.saving = false;
                     this.schedule_autosave(cx);
                     cx.emit(FileEvent::SaveFailed);
                     return None;
                 }
+                let doc = this.document.as_ref()?;
+                let saved = this.input.read(cx).content.to_string();
+                let body = Write {
+                    path: this.path.clone(),
+                    text: saved.clone(),
+                    encoding: doc.encoding,
+                    expected: doc.digest,
+                };
                 Some((
-                    PathBuf::from(&this.path),
-                    this.document.clone()?,
-                    this.input.read(cx).content.to_string(),
+                    engine_client::local(cx).call::<Write>(Some(OpId::new()), body),
+                    saved,
                 ))
             }) else {
                 return;
             };
-            let text = saved.clone();
-            let result = cx
-                .background_executor()
-                .spawn(async move { document::save_document(&path, &doc, &text) })
-                .await;
+            let result = write.await;
             let _ = this.update(cx, |this, cx| {
                 this.saving = false;
                 match result {
-                    Ok(disk) => {
+                    Ok(written) => {
                         if let Some(doc) = &mut this.document {
-                            doc.disk = disk;
+                            doc.digest = written.digest;
                             doc.text = saved;
                         }
+                        this.digest = Some(written.digest);
                         this.disk_changed = false;
                         this.edited(cx);
                         this.git.update(cx, |git, cx| git.changed(cx));

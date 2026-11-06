@@ -6,24 +6,25 @@ pub mod report;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Branch {
     pub name: String,
     pub remote: Option<String>,
 }
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Worktree {
     pub path: String,
     pub branch: Option<String>,
     pub head: String,
-    #[serde(alias = "isMain")]
     pub main: bool,
     pub missing: bool,
 }
-#[derive(Clone, Debug, Default)]
+/// Named `GitSnapshot` on the wire: the protocol's items have snapshots of their own.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename = "GitSnapshot")]
 pub struct Snapshot {
     pub current: Option<String>,
     pub detached: bool,
@@ -50,7 +51,7 @@ pub(crate) fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {
     String::from_utf8(out.stdout).map_err(|e| e.to_string())
 }
 /// Where a session's own paths stand against `HEAD`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionChanges {
     /// Some of the changes are in the index.
     pub staged: bool,

@@ -18,7 +18,7 @@ use crate::scm::{MAX_TEXT_FILE_BYTES, expand_home, path_to_js};
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckpointFile {
     pub path: String,
@@ -32,7 +32,7 @@ pub struct CheckpointFile {
     pub undoable: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckpointStatus {
     pub files: Vec<CheckpointFile>,

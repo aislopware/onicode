@@ -1,10 +1,11 @@
 //! Last successful checkout metadata shared by conversations and Git pickers.
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
+use gpui::{App, Task};
 use onicode_core::files::path_key;
-use onicode_core::git::{self, Snapshot};
+use onicode_core::git::Snapshot;
+use onicode_protocol::git::Refs;
 
 const LIMIT: usize = 24;
 #[derive(Default)]
@@ -64,11 +65,21 @@ pub(crate) fn remember(cwd: &str, state: &Snapshot) {
         memory.remember(cwd, state);
     }
 }
-pub(crate) fn load(cwd: &Path) -> Result<Snapshot, String> {
-    let state = git::snapshot(cwd)?;
-    // Failure leaves the last successful list intact.
-    remember(&cwd.to_string_lossy(), &state);
-    Ok(state)
+/// The checkout's branches and worktrees from the app's engine, remembered
+/// for the next menu that opens on it. A failure leaves the last successful
+/// list intact.
+pub(crate) fn load(cwd: String, cx: &mut App) -> Task<Result<Snapshot, String>> {
+    let refs = crate::engine_client::local(cx).call::<Refs>(
+        None,
+        Refs {
+            checkout: cwd.clone(),
+        },
+    );
+    cx.background_executor().spawn(async move {
+        let state = refs.await?;
+        remember(&cwd, &state);
+        Ok(state)
+    })
 }
 
 #[cfg(test)]

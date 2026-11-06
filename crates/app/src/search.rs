@@ -15,7 +15,9 @@ use onicode_core::search::{self, Hit, Scope, Target};
 use onicode_core::store::Session;
 use onicode_core::transcript::Row;
 use onicode_engine::turn::{Database, locked};
+use onicode_protocol::files::{SearchContent, SearchPaths};
 
+use crate::engine_client;
 use crate::input::{self, Input};
 use crate::theme::*;
 
@@ -63,7 +65,9 @@ pub(crate) struct SearchView {
     truncated: (bool, bool),
     error: Option<String>,
     cancel: Arc<AtomicBool>,
-    listing_cancel: Arc<AtomicBool>,
+    /// The engine stops this view's running content search when the next one
+    /// starts.
+    search_id: String,
     debounce: Option<Task<()>>,
     _changed: Subscription,
 }
@@ -76,7 +80,6 @@ impl Focusable for SearchView {
 impl Drop for SearchView {
     fn drop(&mut self) {
         self.cancel.store(true, Ordering::Release);
-        self.listing_cancel.store(true, Ordering::Release);
     }
 }
 impl SearchView {
@@ -98,17 +101,18 @@ impl SearchView {
             this.active = 0;
             this.refresh(cx);
         });
-        let listing_cancel = Arc::new(AtomicBool::new(false));
-        let flag = listing_cancel.clone();
-        let root = cwd.clone();
-        let work = cx.background_executor().spawn(async move {
-            onicode_core::files::list_project_files_sync_cancellable(&root, Some(&flag))
-        });
+        let listing = engine_client::local(cx).call::<SearchPaths>(
+            None,
+            SearchPaths {
+                root: cwd.clone(),
+                search: String::new(),
+            },
+        );
         cx.spawn(async move |this, cx| {
-            let result = work.await;
+            let result = listing.await;
             let _ = this.update(cx, |this, cx| {
-                if let Ok(files) = result {
-                    this.files = files;
+                if let Ok(listed) = result {
+                    this.files = listed.files;
                     this.rank(cx);
                 }
             });
@@ -143,7 +147,7 @@ impl SearchView {
             truncated: (false, false),
             error: None,
             cancel: Arc::new(AtomicBool::new(false)),
-            listing_cancel,
+            search_id: onicode_core::new_id(),
             debounce: None,
             _changed: changed,
         };
@@ -351,26 +355,27 @@ impl SearchView {
             .detach();
         }
         if self.scope.files() {
-            let cwd = self.cwd.clone();
             let query = self.query.clone();
-            let flag = self.cancel.clone();
-            let check = flag.clone();
-            let work = cx.background_executor().spawn(async move {
-                search::project::search_project(
-                    &std::path::PathBuf::from(&cwd),
-                    &search::project::SearchOptions {
-                        cwd: cwd.clone(),
+            let check = self.cancel.clone();
+            let found = engine_client::local(cx).call::<SearchContent>(
+                None,
+                SearchContent {
+                    options: search::project::SearchOptions {
+                        cwd: self.cwd.clone(),
                         query: query.clone(),
                         case_sensitive: false,
                         whole_word: false,
                         regex: false,
                         include: None,
                         exclude: None,
-                        search_id: String::new(),
+                        search_id: self.search_id.clone(),
                     },
-                    &flag,
-                )
-                .map(|r| (search::content(r.matches, &query), r.truncated))
+                },
+            );
+            let work = cx.background_executor().spawn(async move {
+                found
+                    .await
+                    .map(|r| (search::content(r.matches, &query), r.truncated))
             });
             cx.spawn(async move |this, cx| {
                 let result = work.await;

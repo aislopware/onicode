@@ -1,5 +1,7 @@
 //! React Settings forms and their asynchronous actions.
 use onicode_core::provider::Kind;
+use onicode_protocol::OpId;
+use onicode_protocol::git::{CreateWorktree, NewWorktree};
 
 use super::widgets::{note, secondary_button};
 use super::*;
@@ -240,22 +242,31 @@ impl SettingsView {
             return;
         }
         let generation = self.management_generation;
-        let work = cx.background_executor().spawn(async move {
-            match target {
-                Target::Mcp => onicode_core::mcp::mcp_add(cwd, provider, scope, name, body),
-                Target::Skill => {
-                    onicode_core::skills::create_blank(&cwd, &name, scope == "user").map(|_| ())
+        let work = if matches!(target, Target::Worktree) {
+            let create = crate::engine_client::local(cx).call::<CreateWorktree>(
+                Some(OpId::new()),
+                CreateWorktree {
+                    checkout: cwd,
+                    worktree: NewWorktree::Project {
+                        branch: name,
+                        base: Some(base),
+                        existing,
+                    },
+                },
+            );
+            cx.background_executor()
+                .spawn(async move { create.await.map(|_| ()) })
+        } else {
+            cx.background_executor().spawn(async move {
+                match target {
+                    Target::Mcp => onicode_core::mcp::mcp_add(cwd, provider, scope, name, body),
+                    Target::Skill => {
+                        onicode_core::skills::create_blank(&cwd, &name, scope == "user").map(|_| ())
+                    }
+                    _ => Ok(()),
                 }
-                Target::Worktree => onicode_core::git::create_project_worktree(
-                    std::path::Path::new(&cwd),
-                    &name,
-                    Some(&base),
-                    existing,
-                )
-                .map(|_| ()),
-                _ => Ok(()),
-            }
-        });
+            })
+        };
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {

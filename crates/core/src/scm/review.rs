@@ -13,8 +13,9 @@ use super::*;
 /// fs.rs `MAX_TEXT_FILE_BYTES`: larger sides show as too large to diff.
 pub const MAX_TEXT_FILE_BYTES: u64 = 8 * 1024 * 1024;
 
+/// Named `DiffSides` on the wire, beside the protocol's `FileDiff` call.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename = "DiffSides", rename_all = "camelCase")]
 pub struct FileDiff {
     pub path: String,
     pub relative: String,
@@ -101,14 +102,14 @@ pub fn review_index(cwd: &Path, previous: Option<&DiffIndex>) -> Result<DiffInde
 /// The inputs to one diff, without reading its contents. Index object IDs
 /// invalidate only the affected paths; disk metadata also catches edits that
 /// leave Git's status and line counts unchanged.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileDiffVersion {
     index: String,
     head: Option<String>,
     disk: Option<DiskVersion>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct DiskVersion {
     len: u64,
     modified: Option<SystemTime>,

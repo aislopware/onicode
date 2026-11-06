@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use onicode_protocol::files::{Bytes, NewAttachment, SaveAttachments};
+
 use super::*;
 pub(crate) struct StartOrchestration(pub onicode_core::orchestration::Plan);
 pub(crate) struct StopOrchestration;
@@ -213,36 +215,31 @@ impl Conversation {
             return true;
         }
         self.attaching = true;
-        let store = self.store.clone();
-        let id = self.summary.id;
-        let mut all = self.attachments.clone();
-        let existing = all.len();
-        let work = cx.background_executor().spawn(async move {
-            if all.len() + images.len() > onicode_core::composer::MAX_ATTACHMENTS
-                || images.iter().map(|i| i.bytes().len() as u64).sum::<u64>()
-                    > onicode_core::composer::MAX_EMBED_BYTES
-            {
-                return Err("Attach up to 20 files totalling 20 MB.".to_owned());
-            }
-            // Kept with the conversation so deleting it removes them.
-            let root = locked(&store)?
-                .thread_attachments_dir(id)?
-                .unwrap_or_else(|| std::env::temp_dir().join("onicode-attachments"));
-            std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
-            for image in images {
-                let path = root.join(format!(
-                    "pasted-{}.{}",
-                    onicode_core::new_id(),
-                    image.format().extension()
-                ));
-                std::fs::write(&path, image.bytes()).map_err(|e| e.to_string())?;
-                all.push(path);
-            }
-            onicode_core::composer::validate_attachments(&all)?;
-            Ok(all.split_off(existing))
-        });
+        // The engine keeps them with the conversation, so deleting it removes them.
+        let save = crate::engine_client::call::<SaveAttachments>(
+            &self.store,
+            Some(OpId::new()),
+            SaveAttachments {
+                session: Some(self.summary.id),
+                kept: self
+                    .attachments
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect(),
+                images: images
+                    .iter()
+                    .map(|image| NewAttachment {
+                        bytes: Bytes(image.bytes().to_vec()),
+                        extension: image.format().extension().to_owned(),
+                    })
+                    .collect(),
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
-            let result = work.await;
+            let result = save
+                .await
+                .map(|saved| saved.into_iter().map(PathBuf::from).collect());
             let _ = this.update(cx, |this, cx| {
                 this.finish_attachment_read(result, cx);
             });

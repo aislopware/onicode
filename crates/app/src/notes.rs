@@ -11,7 +11,8 @@ use gpui::{
     FocusHandle, Focusable, FontWeight, MouseButton, Role, Subscription, Task, Window, div, px,
 };
 use onicode_core::notes::{self, Note, NoteUpsert};
-use onicode_engine::turn::{Database, locked};
+use onicode_engine::turn::Database;
+use onicode_protocol::files::SaveNoteImages;
 use onicode_protocol::workspace::{CreateNote, DeleteNote, ListNotes, UpsertNote};
 use onicode_protocol::{Call, OpId, Outcome, Rejection};
 
@@ -710,33 +711,26 @@ impl Notes {
             let length = self.body.read(cx).content.len();
             length..length
         };
-        let store = self.store.clone();
         self.image_busy = true;
         self.image_drag = false;
-        let work = cx.background_executor().spawn(async move {
-            // Note images are files: they stay app-side until files move into the engine.
-            let store = locked(&store)?;
-            let mut images = Vec::new();
-            let mut failure = None;
-            for path in paths {
-                match store.save_note_image(&id, &path) {
-                    Ok(image) => images.push(image),
-                    Err(error) => failure = Some(error),
-                }
-            }
-            if images.is_empty() {
-                return Err(
-                    failure.unwrap_or_else(|| "Drop a PNG, JPG, GIF, WebP, or SVG image.".into())
-                );
-            }
-            Ok((id, images))
-        });
+        let save = engine_client::call::<SaveNoteImages>(
+            &self.store,
+            Some(OpId::new()),
+            SaveNoteImages {
+                note: id.clone(),
+                paths: paths
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect(),
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
-            let result = work.await;
+            let result = save.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.image_busy = false;
                 match result {
-                    Ok((id, images)) => {
+                    Ok(images) => {
                         let block = images
                             .iter()
                             .map(notes::image_markdown)
@@ -1399,6 +1393,7 @@ mod tests {
 
     use gpui::{TestAppContext, WindowHandle};
     use onicode_core::store::Store;
+    use onicode_engine::turn::locked;
 
     use super::*;
 

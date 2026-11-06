@@ -4,7 +4,10 @@
 //! arrives back into one `turn::Update` per beat. SSH and legacy remote turns keep their own
 //! runners. The sidebar, history and workspace views read the engine's `WatchWorkspace` through
 //! [`watch_workspace`] and change it with [`call`]; the engine's own clock drives its reminder and
-//! automation schedulers.
+//! automation schedulers. The explorer, editor, Changes, review, history and worktree views read
+//! and change files and checkouts through the app's own engine ([`local`]): its calls, and its
+//! `WatchDir` and `WatchGit` watches through [`Engine::watch`].
+use std::future::Future;
 use std::pin::pin;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError, mpsc};
@@ -16,6 +19,8 @@ use gpui::{App, BackgroundExecutor, Global, Task};
 use onicode_core::agent::{Control, Decision, Settings};
 use onicode_core::store::Session;
 use onicode_engine::EngineService;
+use onicode_engine::files::{FilesHub, FilesService};
+use onicode_engine::git::{CheckoutHub, GitService};
 use onicode_engine::session::{
     Expect, SessionHub, SessionService, Spawn, Staged, StagedTurn, Viewer,
 };
@@ -45,6 +50,11 @@ static RUNTIME: LazyLock<Option<tokio::runtime::Runtime>> = LazyLock::new(|| {
 struct Engines(Vec<Arc<EngineClient>>);
 
 impl Global for Engines {}
+
+/// The store of the app's own engine: the one the shell opened.
+struct LocalStore(Database);
+
+impl Global for LocalStore {}
 
 /// Turns run on gpui's background threads, where the app ran them before the engine.
 struct GpuiSpawn(BackgroundExecutor);
@@ -107,6 +117,9 @@ pub(crate) struct EngineClient {
     store: Database,
     hub: Arc<SessionHub>,
     workspace: Arc<WorkspaceHub>,
+    /// Held for the engine's lifetime: the Files and Git groups' hubs, served through `link`.
+    _files: Arc<FilesHub>,
+    _git: Arc<CheckoutHub>,
     link: Link,
     executor: BackgroundExecutor,
     /// Every call made, by name with its routed params, for a test to assert on.
@@ -151,16 +164,31 @@ impl EngineClient {
         }
         let executor = cx.background_executor().clone();
         let hub = SessionHub::new(store.clone(), Arc::new(GpuiSpawn(executor.clone())));
-        let spawn = Arc::new(GpuiSpawn(executor.clone()));
+        let spawn: Arc<dyn Spawn> = Arc::new(GpuiSpawn(executor.clone()));
         // Tests answer the chores in place: no provider CLI, `gh` or network.
         #[cfg(test)]
-        let workspace = WorkspaceHub::with_chores(store.clone(), spawn, Arc::new(TestChores));
+        let workspace =
+            WorkspaceHub::with_chores(store.clone(), spawn.clone(), Arc::new(TestChores));
         #[cfg(not(test))]
-        let workspace = WorkspaceHub::new(store.clone(), spawn);
+        let workspace = WorkspaceHub::new(store.clone(), spawn.clone());
         hub.attach(workspace.clone());
+        // Tests watch no disk: a listing or a status changes only through the engine's calls.
+        #[cfg(test)]
+        let (files, git) = (
+            FilesHub::quiet(store.clone(), spawn.clone()),
+            CheckoutHub::quiet(store.clone(), spawn),
+        );
+        #[cfg(not(test))]
+        let (files, git) = (
+            FilesHub::new(store.clone(), spawn.clone()),
+            CheckoutHub::new(store.clone(), spawn),
+        );
+        git.attach(workspace.clone());
         let service = Arc::new(EngineService::new(
             SessionService::new(hub.clone()),
             WorkspaceService::new(workspace.clone()),
+            FilesService::new(files.clone()),
+            GitService::new(git.clone()),
         ));
         let runtime = if cfg!(test) { None } else { RUNTIME.as_ref() };
         let link = match runtime {
@@ -190,6 +218,8 @@ impl EngineClient {
             store: store.clone(),
             hub,
             workspace,
+            _files: files,
+            _git: git,
             link,
             executor,
             #[cfg(test)]
@@ -615,7 +645,7 @@ where
 }
 
 /// The engine serving a store, held by a view for the calls it makes where no `App` is at hand:
-/// its `Drop`.
+/// its `Drop`, or a task it spawns.
 #[derive(Clone)]
 pub(crate) struct Engine(Arc<EngineClient>);
 
@@ -624,7 +654,91 @@ pub(crate) fn engine(store: &Database, cx: &mut App) -> Engine {
     Engine(EngineClient::get(store, cx))
 }
 
+/// Names `store` as the app's own engine's: the shell's store, which [`local`] serves.
+pub(crate) fn set_local(store: &Database, cx: &mut App) {
+    cx.set_global(LocalStore(store.clone()));
+}
+
+/// The app's own engine: the one this machine's files and checkouts are read and changed
+/// through. A view made before any shell (a test's) gets an engine over an in-memory store.
+pub(crate) fn local(cx: &mut App) -> Engine {
+    let store = match cx.try_global::<LocalStore>() {
+        Some(local) => local.0.clone(),
+        None => {
+            let opened = onicode_core::store::Store::open(std::path::Path::new(":memory:"))
+                .map(|store| Arc::new(Mutex::new(store)));
+            match opened {
+                Ok(store) => {
+                    set_local(&store, cx);
+                    store
+                }
+                // An in-memory store that cannot open leaves the first engine there is.
+                Err(error) => match cx
+                    .try_global::<Engines>()
+                    .and_then(|engines| engines.0.first().cloned())
+                {
+                    Some(engine) => return Engine(engine),
+                    None => panic!("no engine can start: {error}"),
+                },
+            }
+        }
+    };
+    Engine(EngineClient::get(&store, cx))
+}
+
+/// What a watcher receives: the whole state, or what changed since.
+pub(crate) enum WatchUpdate<S, E> {
+    Snapshot(Box<S>),
+    Events(Vec<E>),
+}
+
+/// A watch the app holds: its updates, until it is dropped, which lets the engine's watch go.
+pub(crate) struct Watching<S, E> {
+    pub(crate) updates: async_channel::Receiver<WatchUpdate<S, E>>,
+    _task: Task<()>,
+}
+
 impl Engine {
+    /// Makes a call, as a future the caller awaits wherever it likes (a view's task, or the
+    /// background executor). A mutating call carries the viewer's `op`: the caller echoes its
+    /// effect in the same frame and settles the echo with the reply, and a retry under the same
+    /// op gets the first reply.
+    pub(crate) fn call<C: Call + 'static>(
+        &self,
+        op: Option<OpId>,
+        body: C::Params,
+    ) -> impl Future<Output = Result<C::Reply, String>> + Send + 'static + use<C>
+    where
+        C::Params: Send + 'static,
+        C::Reply: Send + 'static,
+    {
+        let engine = self.0.clone();
+        async move { engine.call::<C>(op, body).await }
+    }
+
+    /// Watches `W` from the params `params` makes for a cursor: a snapshot, then every batch of
+    /// events, resuming with its cursor whenever the engine drops it behind. Ends when the
+    /// returned [`Watching`] is dropped, or when the engine stops serving the watch.
+    pub(crate) fn watch<W: Watch + 'static>(
+        &self,
+        params: impl Fn(Option<Cursor>) -> W::Params + Send + 'static,
+    ) -> Watching<W::State, W::Event>
+    where
+        W::Params: Send + 'static,
+        W::State: Send + 'static,
+        W::Event: Send + 'static,
+    {
+        let (updates, received) = async_channel::unbounded();
+        let task = self
+            .0
+            .executor
+            .spawn(resume::<W>(self.0.clone(), params, updates));
+        Watching {
+            updates: received,
+            _task: task,
+        }
+    }
+
     /// Makes a call naming the session stored at `row`, off the main thread, and lets it go:
     /// what it came to reaches the views through the watches.
     pub(crate) fn session_send<C: Call + 'static>(
@@ -723,9 +837,53 @@ pub(crate) fn session_events(
 }
 
 /// What a workspace watcher receives: the whole workspace, or what changed since.
-pub(crate) enum WorkspaceUpdate {
-    Snapshot(Box<WorkspaceState>),
-    Events(Vec<WorkspaceEvent>),
+pub(crate) type WorkspaceUpdate = WatchUpdate<WorkspaceState, WorkspaceEvent>;
+
+/// Feeds `updates` from the watch `params` names for a cursor: a snapshot, then every non-empty
+/// batch of events, resubscribing with the last cursor after `Resync`. Ends when the receiver goes
+/// or a stream ends without `Resync` (the engine stopped serving it).
+async fn resume<W: Watch>(
+    engine: Arc<EngineClient>,
+    params: impl Fn(Option<Cursor>) -> W::Params,
+    updates: async_channel::Sender<WatchUpdate<W::State, W::Event>>,
+) where
+    W::State: Send + 'static,
+    W::Event: Send + 'static,
+{
+    let mut cursor: Option<Cursor> = None;
+    loop {
+        let Ok(mut items) = engine.watch::<W>(params(cursor)).await else {
+            return;
+        };
+        let mut resync = false;
+        while let Some(item) = items.next().await {
+            let update = match item {
+                Item::Snapshot { at, state } => {
+                    cursor = Some(at);
+                    WatchUpdate::Snapshot(Box::new(state))
+                }
+                Item::Events { last, events, .. } => {
+                    if let Some(cursor) = cursor.as_mut() {
+                        cursor.seq = last;
+                    }
+                    if events.is_empty() {
+                        continue;
+                    }
+                    WatchUpdate::Events(events)
+                }
+                Item::Resync => {
+                    resync = true;
+                    break;
+                }
+            };
+            if updates.send(update).await.is_err() {
+                return;
+            }
+        }
+        if !resync {
+            return;
+        }
+    }
 }
 
 /// Watches the workspace of the engine serving `store`: a snapshot, then every batch of events,
@@ -739,46 +897,11 @@ pub(crate) fn watch_workspace(
     engine
         .executor
         .clone()
-        .spawn(async move {
-            let mut cursor: Option<Cursor> = None;
-            loop {
-                let Ok(mut items) = engine
-                    .watch::<WatchWorkspace>(WatchWorkspace { since: cursor })
-                    .await
-                else {
-                    return;
-                };
-                // A stream that ends without `Resync` means the engine stopped serving it.
-                let mut resync = false;
-                while let Some(item) = items.next().await {
-                    let update = match item {
-                        Item::Snapshot { at, state } => {
-                            cursor = Some(at);
-                            WorkspaceUpdate::Snapshot(Box::new(state))
-                        }
-                        Item::Events { last, events, .. } => {
-                            if let Some(cursor) = cursor.as_mut() {
-                                cursor.seq = last;
-                            }
-                            if events.is_empty() {
-                                continue;
-                            }
-                            WorkspaceUpdate::Events(events)
-                        }
-                        Item::Resync => {
-                            resync = true;
-                            break;
-                        }
-                    };
-                    if updates.send(update).await.is_err() {
-                        return;
-                    }
-                }
-                if !resync {
-                    return;
-                }
-            }
-        })
+        .spawn(resume::<WatchWorkspace>(
+            engine,
+            |since| WatchWorkspace { since },
+            updates,
+        ))
         .detach();
     received
 }

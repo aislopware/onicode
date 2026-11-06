@@ -869,6 +869,9 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Self {
         crate::accounts::install(store.clone(), cx);
+        // The views read and change this machine's files and checkouts through this store's
+        // engine.
+        crate::engine_client::set_local(&store, cx);
         let remote_dir = locked(&store)
             .ok()
             .and_then(|store| store.data_dir().map(std::path::Path::to_path_buf))

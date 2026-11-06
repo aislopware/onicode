@@ -1176,3 +1176,205 @@ proptest! {
         round_trips(&ClaimInboxEvents::default())?;
     }
 }
+
+fn dir_entry() -> impl Strategy<Value = onicode_protocol::files::DirEntry> {
+    (text(), text(), any::<bool>(), any::<bool>()).prop_map(|(name, path, is_dir, ignored)| {
+        onicode_protocol::files::DirEntry {
+            name,
+            path,
+            is_dir,
+            ignored,
+        }
+    })
+}
+
+fn entries() -> impl Strategy<Value = onicode_protocol::files::Entries> {
+    use onicode_protocol::files::Entries;
+    prop_oneof![
+        vec(dir_entry(), 0..4).prop_map(Entries::Read),
+        text().prop_map(Entries::Failed),
+    ]
+}
+
+fn encoding() -> impl Strategy<Value = onicode_protocol::files::TextEncoding> {
+    (any::<bool>(), any::<bool>(), any::<bool>())
+        .prop_map(|(crlf, cr, bom)| onicode_protocol::files::TextEncoding { crlf, cr, bom })
+}
+
+fn contents() -> impl Strategy<Value = onicode_protocol::files::FileContents> {
+    use onicode_protocol::files::{Bytes, FileContents, ImageFile, TextFile};
+    prop_oneof![
+        Just(FileContents::Unchanged),
+        (text(), encoding(), any::<u64>()).prop_map(|(text, encoding, digest)| {
+            FileContents::Text(TextFile {
+                text,
+                encoding,
+                digest,
+            })
+        }),
+        (
+            vec(any::<u8>(), 0..64),
+            text(),
+            any::<(u32, u32, u64, u64)>()
+        )
+            .prop_map(|(bytes, format, (width, height, original_size, digest))| {
+                FileContents::Image(ImageFile {
+                    bytes: Bytes(bytes),
+                    format,
+                    width,
+                    height,
+                    original_size,
+                    digest,
+                })
+            }),
+        (any::<u64>(), option::of(any::<u64>()))
+            .prop_map(|(size, modified_ms)| FileContents::Video { size, modified_ms }),
+        text().prop_map(FileContents::Unsupported),
+    ]
+}
+
+fn changed_file() -> impl Strategy<Value = onicode_protocol::git::ChangedFile> {
+    (text(), text(), any::<(i64, i64, bool, bool)>()).prop_map(
+        |(path, relative, (additions, deletions, staged, unstaged))| {
+            onicode_protocol::git::ChangedFile {
+                path,
+                relative,
+                status: "M".into(),
+                additions,
+                deletions,
+                staged,
+                unstaged,
+            }
+        },
+    )
+}
+
+fn git_status() -> impl Strategy<Value = onicode_protocol::git::GitStatus> {
+    use onicode_protocol::git::{DiffIndex, GitStatus};
+    (
+        any::<u64>(),
+        option::of((
+            option::of(text()),
+            vec(changed_file(), 0..3),
+            any::<(i64, i64, bool)>(),
+        )),
+    )
+        .prop_map(|(scan, index)| GitStatus {
+            scan,
+            index: index.map(|(branch, files, (ahead, behind, head_pushed))| DiffIndex {
+                branch,
+                files,
+                ahead,
+                behind,
+                head_pushed,
+                ..DiffIndex::default()
+            }),
+            versions: std::collections::BTreeMap::new(),
+        })
+}
+
+proptest! {
+    #[test]
+    fn dir_watches(
+        at in cursor(),
+        scan in any::<u64>(),
+        listed in entries(),
+        root in text(),
+        path in text(),
+        since in option::of(cursor()),
+    ) {
+        use onicode_protocol::files::{DirEvent, Listing, WatchDir};
+        let listing = Listing { scan, entries: listed };
+        round_trips(&WatchDir { root, path, since })?;
+        round_trips(&Item::<Listing, DirEvent>::Snapshot { at, state: listing.clone() })?;
+        round_trips(&Item::<Listing, DirEvent>::Events {
+            first: 1,
+            last: 2,
+            events: vec![DirEvent::Listing(listing)],
+        })?;
+    }
+
+    #[test]
+    fn file_reads_and_writes(
+        read in contents(),
+        path in text(),
+        text_body in text(),
+        encoding in encoding(),
+        expected in any::<u64>(),
+        bytes in vec(any::<u8>(), 0..64),
+        op in op_id(),
+    ) {
+        use onicode_protocol::files::{Bytes, NewAttachment, SaveAttachments, Write};
+        round_trips(&read)?;
+        let write = Write { path, text: text_body, encoding, expected };
+        round_trips(&Routed { engine: None, op: Some(op), body: write })?;
+        let attachments = SaveAttachments {
+            session: Some(7),
+            kept: Vec::new(),
+            images: vec![NewAttachment { bytes: Bytes(bytes.clone()), extension: "png".into() }],
+        };
+        round_trips(&attachments)?;
+        // Bytes travel as one base64 string, never an array of numbers.
+        let wire = serde_json::to_value(Bytes(bytes)).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert!(wire.is_string());
+    }
+
+    #[test]
+    fn file_moves(from in text(), to in text(), pick in 0..3_u8) {
+        use onicode_protocol::files::{Destination, Move};
+        let to = match pick {
+            0 => Destination::Rename(to),
+            1 => Destination::Into(to),
+            _ => Destination::CopyInto(to),
+        };
+        round_trips(&Move { from, to })?;
+    }
+
+    #[test]
+    fn git_watches(at in cursor(), status in git_status(), checkout in text(), since in option::of(cursor())) {
+        use onicode_protocol::git::{GitEvent, GitStatus, WatchGit};
+        round_trips(&WatchGit { checkout, since })?;
+        round_trips(&Item::<GitStatus, GitEvent>::Snapshot { at, state: status.clone() })?;
+        round_trips(&Item::<GitStatus, GitEvent>::Events {
+            first: 4,
+            last: 9,
+            events: vec![GitEvent::Status(Box::new(status))],
+        })?;
+    }
+
+    #[test]
+    fn git_calls(
+        checkout in text(),
+        path in text(),
+        branch in text(),
+        sha in text(),
+        session in any::<i64>(),
+        pick in 0..3_u8,
+        existing in any::<bool>(),
+    ) {
+        use onicode_protocol::git::{
+            ChangeSet, CreateWorktree, Diff, NewWorktree, Restore, RestoreCheckpoint, Stage,
+            StageTarget,
+        };
+        let changes = match pick {
+            0 => ChangeSet::WorkingTree,
+            1 => ChangeSet::Commit { sha },
+            _ => ChangeSet::Checkpoint { session },
+        };
+        round_trips(&Diff { checkout: checkout.clone(), changes })?;
+        let target = match pick {
+            0 => StageTarget::All,
+            1 => StageTarget::Path(path.clone()),
+            _ => StageTarget::Contents { path: path.clone(), contents: branch.clone() },
+        };
+        round_trips(&Stage { checkout: checkout.clone(), target })?;
+        let worktree = match pick {
+            0 => NewWorktree::Named { branch },
+            1 => NewWorktree::Project { branch, base: Some(path.clone()), existing },
+            _ => NewWorktree::Session { base: branch, session },
+        };
+        round_trips(&CreateWorktree { checkout: checkout.clone(), worktree })?;
+        let restore = if existing { Restore::Keep } else { Restore::Undo };
+        round_trips(&RestoreCheckpoint { session, cwd: checkout, restore, path: Some(path) })?;
+    }
+}

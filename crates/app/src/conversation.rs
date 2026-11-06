@@ -40,6 +40,7 @@ use onicode_core::catalog::{self, Model};
 use onicode_core::provider::Kind;
 use onicode_core::store::Session;
 use onicode_engine::turn::{Database, locked};
+use onicode_protocol::git::{CreateWorktree, NewWorktree};
 use onicode_protocol::session::{Configure, ReadSession, ReadTranscript};
 use onicode_protocol::workspace::{Rename, SaveResponseNote};
 use onicode_protocol::{Call, OpId, Outcome, Rejection, SessionId};
@@ -1786,12 +1787,9 @@ impl Conversation {
 
     fn load_git(&mut self, cx: &mut Context<Self>) {
         let cwd = self.execution_cwd().to_owned();
-        let work_cwd = cwd.clone();
-        let work = cx
-            .background_executor()
-            .spawn(async move { crate::git_cache::load(Path::new(&work_cwd)).ok() });
+        let work = crate::git_cache::load(cwd.clone(), cx);
         cx.spawn(async move |this, cx| {
-            let git = work.await;
+            let git = work.await.ok();
             let _ = this.update(cx, |this, cx| {
                 if this.execution_cwd() == cwd {
                     this.branch = git.as_ref().and_then(|s| s.current.clone());
@@ -1813,17 +1811,21 @@ impl Conversation {
             .clone()
             .or(self.branch.clone())
             .unwrap_or_else(|| "HEAD".into());
-        let id = self.summary.id;
-        let work = cx
-            .background_executor()
-            .spawn(async move { onicode_core::git::create_worktree(Path::new(&cwd), &base, id) });
+        let session = self.summary.id;
+        let work = crate::engine_client::local(cx).call::<CreateWorktree>(
+            Some(OpId::new()),
+            CreateWorktree {
+                checkout: cwd,
+                worktree: NewWorktree::Session { base, session },
+            },
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
                 this.preparing_worktree = false;
                 match result {
-                    Ok(path) => {
-                        this.settings.worktree_cwd = Some(path.to_string_lossy().into_owned());
+                    Ok(tree) => {
+                        this.settings.worktree_cwd = Some(tree.path);
                         this.settings.new_worktree = false;
                         this.save_settings(cx);
                         this.refresh_git(cx);

@@ -68,8 +68,8 @@ first port is a translation, not a redesign.
 | Engine | `WatchMachines` (local engine only: directory, link path, versions, live-agent counts) | `Hello`, `EngineInfo`, `UpdateEngine`, `StopEngine` |
 | Workspace | `WatchWorkspace` (session summaries with marks, projects, folders and groups, reminders, unread) | `CreateSession`, `Rename`, `Archive`, `Pin`, `Delete`, `SetWorkItem`, `SetReminder`, `SaveGroups`, `SearchSessions`, notes |
 | Session | `WatchSession {session, since, window_turns}` | `Send`, `Steer`, `Stop`, `Decide {approval, answer}`, `Answer`, `KeepQuestionOpen`, `QueueEdit {id, base_rev, edit}`, `SendNow`, `SteerNow`, `Configure`, `EditLastTurn`, `Rewind`, `Fork`, `Btw`, `SwitchProvider`, `ReadTranscript {before_turn, turns}` |
-| Files | `WatchDir {root, path}` (listings with a scan id) | `ListDir`, `Stat`, `Read`, `Write`, `Create`, `Move`, `Delete`, `SearchPaths`, `SearchContent`, `ListDrives`, `SearchHomeFolders` |
-| Git | `WatchGit {checkout}` (status and branch, from the engine's fs watch) | `Diff`, `FileDiff`, `Branches`, `Refs`, `History`, `Switch`, `CreateBranch`, `Stage`, `Unstage`, `Discard`, `Commit`, `Push`, `Pull`, `CreatePr`, `Worktrees`, `CreateWorktree`, `RemoveWorktree`, `RestoreCheckpoint` |
+| Files | `WatchDir {root, path}` (listings with a scan id) | `ListDir`, `Stat`, `Read`, `Write`, `Create`, `Move`, `DeletePath`, `SearchPaths`, `SearchContent`, `ListDrives`, `SearchHomeFolders`, `SaveAttachments`, `SaveNoteImages` |
+| Git | `WatchGit {checkout}` (status and branch, from the engine's fs watch) | `ReadStatus`, `Diff`, `FileDiff`, `Branches`, `Refs`, `History`, `Switch`, `CreateBranch`, `Stage`, `Unstage`, `Discard`, `Commit`, `Push`, `Pull`, `Sync`, `HeadMessage`, `CommitContext`, `PrContext`, `PrStatus`, `CreatePr`, `Worktrees`, `CreateWorktree`, `RemoveWorktree`, `ReadCheckpoint`, `RestoreCheckpoint`, `ReadSessionChanges` |
 | Terminal | a `StreamKind::Terminal` stream per attach (`terminal.md`, `topology.md`) | `OpenTerminal {cwd, size}`, `ListTerminals`, `Resize`, `CloseTerminal` |
 | Agents | `WatchAccounts` (accounts with usage from the streams) | `Catalog`, `Skills`, `Commands`, `AddAccount`, `Login`, `Logout`, `SetProviderEnabled`, MCP servers, `HarnessUpdates` |
 | Engine settings | `WatchEngineSettings` | `SetEngineSetting` (typed keys: keep-awake, worktree defaults, title generation, hooks) |
@@ -144,6 +144,37 @@ the Automations view edits definitions, and the app bridge (`sessions.create`, `
 receipts) uses the store, until settings move (step 6); the layout and seen markers are preferences (step 6); note
 images, attachments, worktree removal and session search are files and search (step 5). `PROTOCOL` is 4; the golden
 file is re-recorded with `ONICODE_GOLDEN=record`.
+
+**Step 5 as built.** The engine's `FilesHub` and `CheckoutHub` serve `WatchDir` and `WatchGit` with the
+session's numbering and backpressure (one generic `Topic`: ring of 2048 events or 4 MiB, a queue of 256 batches
+or 4 MiB, a pending listing or status replaced by the next, `Resync` past that; a watcher that comes back with a
+backlog bigger than its queue gets a snapshot instead). Both events are whole states, so a viewer replaces what it
+holds. Each watched root or checkout has one platform watch (`notify`, FSEvents) and a pump thread: reports are
+renamed from the resolved root (`/private/var`) to the root the viewer named, filtered (build output, Git's object
+store and lock files never move a status), and coalesced in virtual time: a burst settles 300 ms after its first
+change, more than 4096 paths or a dropped report rereads everything, and a repair read runs every 30 s (a poll every
+2 s where no platform watch starts). A rescan never blocks a turn: it runs on the pump thread, listings on the
+hub's spawner, and only a listing or status that changed is published. Calls that change a directory relist it
+before they reply, and Git calls that change a checkout reread its status in the same lane slot, so a viewer
+holds the covering listing or status before the receipt; a status read older than one already offered is
+dropped. Git runs in two lanes the caller picks: a foreground lane of 8 slots for what a person waits on (calls and
+the watch's burst reads) and a background lane of 2 for pull-request discovery and repair reads, so a background
+flood never holds a foreground slot. Mutating calls (`Write`, `Create`, `Move`, `DeletePath`, `SaveAttachments`,
+`SaveNoteImages`, and every Git call that changes a checkout, a branch, a worktree or a checkpoint) run once per
+`OpId` through a ledger over the store's `ops` table; a failure is not recorded, so its retry runs again. Reads
+come back whole in one reply: `Read` carries the file's FNV-1a digest, answers `Unchanged` when the viewer's
+digest still matches (the editor's 2 s poll then moves no bytes), returns images as base64 and refuses files the
+editor cannot show with the reason; `Write` takes the digest it was read at and refuses to overwrite a file that
+changed since. A newer `SearchContent` or `SearchPaths` under the same search id stops the older one.
+The app's `ProjectGit` mirrors `WatchGit` for the current project and shows stage, unstage and discard in the
+frame they are made (`GitEcho`) until their reply; the explorer watches every loaded folder with `WatchDir` and
+echoes create, move and delete the same way. Editor buffers stay in the app until save. `git_cache` holds `Refs`
+replies for the branch and worktree pickers. `fs_watch.rs` left the app, and with it the app's `notify`.
+App-side for now: revealing in Finder and screenshots (they act on the viewer's own Mac); the commit message and
+pull-request text prompts, which run the viewer's provider until accounts move (step 6), and the phone bridge's
+Git, which goes with `mobile/` (step 11); the Settings → Worktrees page data (locked, dirty and unpushed marks)
+and a session's worktree membership, which are store and settings reads (step 6); `.git/HEAD` read for the
+project menu's branch label; session search. `PROTOCOL` is 5.
 
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,

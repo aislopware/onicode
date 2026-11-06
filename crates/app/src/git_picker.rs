@@ -1,12 +1,15 @@
 //! The composer's searchable BranchPicker and existing-worktree list.
 use std::path::PathBuf;
 
+use futures::FutureExt;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Context, Entity, EventEmitter, FocusHandle, Focusable, Role, Subscription, Window,
     div, px,
 };
 use onicode_core::git::{self, Snapshot};
+use onicode_protocol::git::{CreateBranch, Switch};
+use onicode_protocol::{OpId, Outcome};
 
 use crate::theme::*;
 use crate::{input, popover};
@@ -135,10 +138,7 @@ impl GitPicker {
             cx.notify();
         });
         let state = crate::git_cache::get(&cwd.to_string_lossy());
-        let load_cwd = cwd.clone();
-        let work = cx
-            .background_executor()
-            .spawn(async move { crate::git_cache::load(&load_cwd) });
+        let work = crate::git_cache::load(cwd.to_string_lossy().into_owned(), cx);
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -262,18 +262,24 @@ impl GitPicker {
                 cx.emit(Picked::Dismissed)
             }
             choice => {
+                let checkout = self.cwd.to_string_lossy().into_owned();
+                let engine = crate::engine_client::local(cx);
+                let work = match choice {
+                    Choice::Branch(branch) => engine
+                        .call::<Switch>(Some(OpId::new()), Switch { checkout, branch })
+                        .boxed(),
+                    Choice::Create(name) => engine
+                        .call::<CreateBranch>(Some(OpId::new()), CreateBranch { checkout, name })
+                        .boxed(),
+                    Choice::Worktree(_) => return,
+                };
                 self.busy = true;
                 self.error = None;
-                let cwd = self.cwd.clone();
-                let work = cx.background_executor().spawn(async move {
-                    match choice {
-                        Choice::Branch(branch) => git::checkout(&cwd, &branch),
-                        Choice::Create(name) => git::create_branch(&cwd, &name),
-                        _ => unreachable!(),
-                    }
-                });
                 cx.spawn(async move |this, cx| {
-                    let result = work.await;
+                    let result = work.await.and_then(|outcome| match outcome {
+                        Outcome::Applied => Ok(()),
+                        Outcome::Rejected(rejection) => Err(format!("Not applied: {rejection:?}")),
+                    });
                     let _ = this.update(cx, |this, cx| {
                         this.busy = false;
                         match result {
@@ -326,9 +332,8 @@ impl gpui::Render for GitPicker {
                                     == onicode_core::files::path_key(&tree.path)
                             })
                         } else {
-                            std::fs::canonicalize(&tree.path).ok().is_some_and(|path| {
-                                Some(path) == std::fs::canonicalize(&self.cwd).ok()
-                            })
+                            onicode_core::files::path_key(&tree.path)
+                                == onicode_core::files::path_key(&self.cwd.to_string_lossy())
                         };
                         (
                             tree.branch.unwrap_or_else(|| {

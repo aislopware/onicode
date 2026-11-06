@@ -1,7 +1,9 @@
 //! FileTree.tsx: the Explorer header, project root row and lazily listed
 //! tree with Git colours, inline create/rename, clipboard, context menu,
-//! dropped files and VS Code-style keyboard navigation. Directory reads and
-//! every file operation run off the UI thread.
+//! dropped files and VS Code-style keyboard navigation. Every folder shown
+//! is fed by the engine's `WatchDir`, and every file operation is an engine
+//! call whose effect shows in the frame it is made, as an echo over the
+//! listings until the listing that follows its reply.
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -11,10 +13,15 @@ use gpui::{
     AnyElement, App, ClipboardEntry, ClipboardItem, Context, Entity, EventEmitter, ExternalPaths,
     FocusHandle, Focusable, FontWeight, Hsla, KeyBinding, KeyDownEvent, ListAlignment, ListState,
     MouseButton, MouseDownEvent, Point, PromptLevel, Role, SharedString, StyleRefinement,
-    Subscription, Window, actions, div, list, px, rgb,
+    Subscription, Task, Window, actions, div, list, px, rgb,
 };
 use onicode_core::files::{self, DirEntry, NameIssueKind, Severity};
+use onicode_protocol::OpId;
+use onicode_protocol::files::{
+    Create, DeletePath, Destination, DirEvent, Entries, Listing, Move, NewPath, WatchDir,
+};
 
+use crate::engine_client::{self, WatchUpdate, Watching};
 use crate::file_icons::file_type_icon;
 use crate::git_status::{GitChanged, ProjectGit};
 use crate::input::{self, Input};
@@ -183,6 +190,57 @@ struct Saved {
     selected: Option<String>,
 }
 
+/// A file change made here, shown in its folder before the engine's listing
+/// shows it.
+#[derive(Clone, Debug, PartialEq)]
+enum Echo {
+    Add(DirEntry),
+    Remove(String),
+}
+
+impl Echo {
+    fn folder(&self) -> String {
+        match self {
+            Self::Add(entry) => parent_of(&entry.path),
+            Self::Remove(path) => parent_of(path),
+        }
+    }
+
+    /// Whether `entries` show this change already.
+    fn shown(&self, entries: &[DirEntry]) -> bool {
+        match self {
+            Self::Add(entry) => entries.iter().any(|e| e.name == entry.name),
+            Self::Remove(path) => entries.iter().all(|e| &e.path != path),
+        }
+    }
+
+    /// `entries` as they read once this change is made, in `files::list_dir`'s
+    /// order.
+    fn apply(&self, entries: &mut Vec<DirEntry>) {
+        match self {
+            Self::Add(entry) => {
+                if !self.shown(entries) {
+                    let at = entries.partition_point(|e| {
+                        entry
+                            .is_dir
+                            .cmp(&e.is_dir)
+                            .then_with(|| files::compare_natural_names(&e.name, &entry.name))
+                            .is_lt()
+                    });
+                    entries.insert(at, entry.clone());
+                }
+            }
+            Self::Remove(path) => entries.retain(|e| &e.path != path),
+        }
+    }
+}
+
+/// An echo and the call it stands for.
+struct Pending {
+    op: OpId,
+    echo: Echo,
+}
+
 pub(crate) struct Explorer {
     git: Entity<ProjectGit>,
     cwd: String,
@@ -192,9 +250,17 @@ pub(crate) struct Explorer {
     selected: Option<String>,
     /// loadExpanded / loadSelected: remembered per project for the session.
     saved: HashMap<String, Saved>,
-    /// listCachedDir: the last listing of each folder, or its error.
+    /// listCachedDir: what each folder shows, its listing with the echoes
+    /// over it, or its error.
     dirs: HashMap<String, Result<Vec<DirEntry>, String>>,
-    reading: HashSet<String>,
+    /// The engine's last listing of each folder, kept after its watch goes.
+    listed: HashMap<String, Result<Vec<DirEntry>, String>>,
+    /// The engine's watch of every folder the tree shows, while Files is.
+    watches: HashMap<String, (Watching<Listing, DirEvent>, Task<()>)>,
+    /// Calls not replied to yet, oldest first.
+    echoes: Vec<Pending>,
+    /// Echoes of applied calls, until their folder's next listing.
+    settled: Vec<Echo>,
     naming: Option<NameMode>,
     name_input: Entity<Input>,
     name_attempted: bool,
@@ -286,7 +352,10 @@ impl Explorer {
             selected: None,
             saved: HashMap::new(),
             dirs: HashMap::new(),
-            reading: HashSet::new(),
+            listed: HashMap::new(),
+            watches: HashMap::new(),
+            echoes: Vec::new(),
+            settled: Vec::new(),
             naming: None,
             name_input,
             name_attempted: false,
@@ -319,10 +388,11 @@ impl Explorer {
         let was = self.enabled;
         self.enabled = enabled;
         if enabled {
-            self.sync_project(cx);
-            if !was {
-                self.refresh_loaded(cx);
+            if !self.sync_project(cx) && !was {
+                self.rebuild(cx);
             }
+        } else {
+            self.watches.clear();
         }
         if let Some(search) = &self.search {
             search.update(cx, |search, cx| search.set_active(enabled, cx));
@@ -371,20 +441,18 @@ impl Explorer {
         true
     }
 
-    /// notifyDirsChanged on window focus.
+    /// notifyDirsChanged on window focus: the engine keeps every watched
+    /// folder current, so this only makes sure each shown folder is watched.
     pub(crate) fn resume(&mut self, cx: &mut Context<Self>) {
         if self.enabled {
-            self.refresh_loaded(cx);
+            self.sync_watches(cx);
         }
     }
 
+    /// A hidden tree stays intact; it follows the project when Files is shown.
     fn git_changed(&mut self, cx: &mut Context<Self>) {
         if self.enabled {
-            if !self.sync_project(cx) {
-                self.refresh_loaded(cx);
-            }
-        } else if self.git.read(cx).root != self.cwd {
-            // Keep the hidden tree intact; rebuild it when Files is shown.
+            self.sync_project(cx);
         }
     }
 
@@ -417,7 +485,8 @@ impl Explorer {
         self.menu = None;
         self.set_operation_error(None, cx);
         self.list.scroll_to(gpui::ListOffset::default());
-        self.read_dir(root, cx);
+        // The new project's folders are watched under its own root.
+        self.watches.clear();
         self.rebuild(cx);
         true
     }
@@ -426,47 +495,145 @@ impl Explorer {
         !self.cwd.is_empty() && self.cwd != "~"
     }
 
-    fn read_dir(&mut self, path: String, cx: &mut Context<Self>) {
-        if !self.reading.insert(path.clone()) {
+    /// Watches every folder the tree shows and lets the rest go: their last
+    /// listings stay, as monocode's cache did.
+    fn sync_watches(&mut self, cx: &mut Context<Self>) {
+        if !self.enabled || !self.available() {
+            self.watches.clear();
             return;
         }
-        let dir = PathBuf::from(&path);
-        let work = cx
-            .background_executor()
-            .spawn(async move { files::list_dir(&dir) });
-        cx.spawn(async move |this, cx| {
-            let result = work.await;
-            let _ = this.update(cx, |this, cx| {
-                this.reading.remove(&path);
-                if this.dirs.get(&path) != Some(&result) {
-                    this.dirs.insert(path, result);
-                    this.rebuild(cx);
-                }
-            });
-        })
-        .detach();
+        let shown = self.shown_dirs();
+        self.watches.retain(|path, _| shown.contains(path));
+        for path in shown {
+            if !self.watches.contains_key(&path) {
+                self.watch_dir(path, cx);
+            }
+        }
     }
 
-    /// Rereads every folder shown, keeping the current rows meanwhile.
-    fn refresh_loaded(&mut self, cx: &mut Context<Self>) {
-        let mut shown: Vec<String> = self
+    /// The root and every expanded folder whose parents are all expanded.
+    fn shown_dirs(&self) -> HashSet<String> {
+        let mut shown = HashSet::from([self.cwd.clone()]);
+        let mut expanded: Vec<&String> = self
             .expanded
             .iter()
-            .filter(|p| *p == &self.cwd || self.dirs.contains_key(&parent_of(p)))
-            .cloned()
+            .filter(|p| *p != &self.cwd && files::is_equal_or_inside(p, &self.cwd))
             .collect();
-        if !shown.contains(&self.cwd) {
-            shown.push(self.cwd.clone());
+        // Parents first: a folder's path is longer than its parent's.
+        expanded.sort_by_key(|p| p.len());
+        for path in expanded {
+            if shown.contains(&parent_of(path)) {
+                shown.insert(path.clone());
+            }
         }
-        for path in shown {
-            self.read_dir(path, cx);
+        shown
+    }
+
+    fn watch_dir(&mut self, path: String, cx: &mut Context<Self>) {
+        let root = self.cwd.clone();
+        let watched = path.clone();
+        let watching = engine_client::local(cx).watch::<WatchDir>(move |since| WatchDir {
+            root: root.clone(),
+            path: watched.clone(),
+            since,
+        });
+        let updates = watching.updates.clone();
+        let dir = path.clone();
+        let task = cx.spawn(async move |this, cx| {
+            while let Ok(update) = updates.recv().await {
+                let listing = match update {
+                    WatchUpdate::Snapshot(listing) => *listing,
+                    WatchUpdate::Events(events) => match events.into_iter().last() {
+                        Some(DirEvent::Listing(listing)) => listing,
+                        None => continue,
+                    },
+                };
+                if this
+                    .update(cx, |this, cx| this.listed(&dir, listing.entries, cx))
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        });
+        self.watches.insert(path, (watching, task));
+    }
+
+    /// The engine's listing of `dir`. It was read after every call that
+    /// replied before it, so their echoes over `dir` give way to it.
+    fn listed(&mut self, dir: &str, entries: Entries, cx: &mut Context<Self>) {
+        let entries = match entries {
+            Entries::Read(entries) => Ok(entries),
+            Entries::Failed(error) => Err(error),
+        };
+        self.settled.retain(|echo| echo.folder() != dir);
+        self.listed.insert(dir.to_owned(), entries);
+        self.refold(dir);
+        self.rebuild(cx);
+    }
+
+    /// What `dir` shows: its listing with every echo over it.
+    fn refold(&mut self, dir: &str) {
+        let Some(listed) = self.listed.get(dir) else {
+            return;
+        };
+        let mut shown = listed.clone();
+        if let Ok(entries) = &mut shown {
+            let echoes = self.echoes.iter().map(|p| &p.echo).chain(&self.settled);
+            for echo in echoes.filter(|echo| echo.folder() == dir) {
+                echo.apply(entries);
+            }
         }
+        self.dirs.insert(dir.to_owned(), shown);
+    }
+
+    /// Shows `echoes` now, until the call made under `op` replies.
+    fn echo(&mut self, op: OpId, echoes: Vec<Echo>, cx: &mut Context<Self>) {
+        let folders: HashSet<String> = echoes.iter().map(Echo::folder).collect();
+        self.echoes
+            .extend(echoes.into_iter().map(|echo| Pending { op, echo }));
+        for folder in &folders {
+            self.refold(folder);
+        }
+        self.rebuild(cx);
+    }
+
+    /// The call made under `op` replied. A failed call's echoes go now. An
+    /// applied call's stay until their folder's next listing, which the
+    /// engine read before replying, unless the folder shows them already or
+    /// is no longer watched.
+    fn settle(&mut self, op: OpId, applied: bool, cx: &mut Context<Self>) {
+        let mut folders = HashSet::new();
+        let mut kept = Vec::new();
+        self.echoes.retain(|pending| {
+            if pending.op != op {
+                return true;
+            }
+            let folder = pending.echo.folder();
+            let waiting = self.watches.contains_key(&folder)
+                && self
+                    .listed
+                    .get(&folder)
+                    .is_some_and(|l| l.as_ref().is_ok_and(|e| !pending.echo.shown(e)));
+            if applied && waiting {
+                kept.push(pending.echo.clone());
+            }
+            folders.insert(folder);
+            false
+        });
+        self.settled.extend(kept);
+        for folder in &folders {
+            self.refold(folder);
+        }
+        self.rebuild(cx);
     }
 
     fn forget(&mut self, path: &str) {
         let prefix = format!("{path}/");
-        self.dirs
-            .retain(|k, _| k != path && !k.starts_with(&prefix));
+        let gone = |k: &String| k == path || k.starts_with(&prefix);
+        self.dirs.retain(|k, _| !gone(k));
+        self.listed.retain(|k, _| !gone(k));
+        self.watches.retain(|k, _| !gone(k));
     }
 
     fn is_dir_at(&self, path: &str) -> bool {
@@ -508,6 +675,7 @@ impl Explorer {
     }
 
     fn rebuild(&mut self, cx: &mut Context<Self>) {
+        self.sync_watches(cx);
         let mut lines = Vec::new();
         if self.available() && self.expanded.contains(&self.cwd) {
             self.push_children(&self.cwd.clone(), 0, &mut lines, cx);
@@ -524,10 +692,11 @@ impl Explorer {
 
     fn push_children(&self, parent: &str, depth: usize, lines: &mut Vec<Line>, cx: &App) {
         let listing = self.dirs.get(parent);
+        // A name being created shows as its echo until the call replies.
         let creating = match &self.naming {
             Some(NameMode::Create {
                 parent: p, is_dir, ..
-            }) if p == parent => Some(*is_dir),
+            }) if p == parent && !self.name_busy => Some(*is_dir),
             _ => None,
         };
         if let Some(Err(error)) = listing {
@@ -644,19 +813,13 @@ impl Explorer {
     fn toggle(&mut self, path: &str, cx: &mut Context<Self>) {
         if !self.expanded.remove(path) {
             self.expanded.insert(path.to_owned());
-            if !self.dirs.contains_key(path) {
-                self.read_dir(path.to_owned(), cx);
-            }
         }
         self.rebuild(cx);
     }
 
-    fn expand(&mut self, dirs: &[String], cx: &mut Context<Self>) {
-        for dir in dirs {
-            if self.expanded.insert(dir.clone()) && !self.dirs.contains_key(dir) {
-                self.read_dir(dir.clone(), cx);
-            }
-        }
+    /// The folders are watched from the next rebuild.
+    fn expand(&mut self, dirs: &[String]) {
+        self.expanded.extend(dirs.iter().cloned());
     }
 
     fn collapse_all(&mut self, cx: &mut Context<Self>) {
@@ -674,7 +837,7 @@ impl Explorer {
     ) {
         let parent = self.create_parent(at.as_deref().or(self.selected.as_deref()));
         self.next_id += 1;
-        self.expand(&[self.cwd.clone(), parent.clone()], cx);
+        self.expand(&[self.cwd.clone(), parent.clone()]);
         self.begin_name(
             NameMode::Create {
                 id: self.next_id,
@@ -757,7 +920,7 @@ impl Explorer {
         }
         let raw = self.name_input.read(cx).content.to_string();
         let name = files::well_formed_file_name(&raw);
-        let cwd = self.cwd.clone();
+        let nested = name.contains(['/', '\\']);
         match mode {
             NameMode::Rename { path, is_dir } => {
                 if name.is_empty() || (name == basename(&path) && !raw.contains(['/', '\\'])) {
@@ -765,29 +928,42 @@ impl Explorer {
                     return;
                 }
                 self.name_busy = true;
-                let from = path.clone();
-                let work = cx.background_executor().spawn({
-                    let name = name.clone();
-                    async move { files::rename_path(Path::new(&from), &name) }
-                });
+                let parent = parent_of(&path);
+                let mut echoes = vec![Echo::Remove(path.clone())];
+                if !nested {
+                    echoes.push(Echo::Add(DirEntry {
+                        name: name.clone(),
+                        path: files::join_path(&parent, &name),
+                        is_dir,
+                        ignored: false,
+                    }));
+                }
+                let op = OpId::new();
+                let call = engine_client::local(cx).call::<Move>(
+                    Some(op),
+                    Move {
+                        from: path.clone(),
+                        to: Destination::Rename(name.clone()),
+                    },
+                );
+                self.echo(op, echoes, cx);
                 cx.spawn_in(window, async move |this, cx| {
-                    let result = work.await;
-                    let _ = this.update_in(cx, |this, window, cx| match result {
-                        Ok(next) => {
-                            let parent = parent_of(&path);
-                            if is_dir {
-                                this.forget(&path);
+                    let result = call.await;
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        this.settle(op, result.is_ok(), cx);
+                        match result {
+                            Ok(NewPath { path: next }) => {
+                                if is_dir {
+                                    this.forget(&path);
+                                }
+                                let touched = files::dirs_touched_by_create(&parent, &name);
+                                this.naming = None;
+                                this.expand(&touched);
+                                this.remap(&path, &next);
+                                this.after_op(window, cx);
                             }
-                            let touched = files::dirs_touched_by_create(&parent, &name);
-                            for dir in touched.iter().chain([&parent]) {
-                                this.read_dir(dir.clone(), cx);
-                            }
-                            this.naming = None;
-                            this.expand(&touched, cx);
-                            this.remap(&path, &next);
-                            this.after_op(window, cx);
+                            Err(error) => this.name_failed(error, cx),
                         }
-                        Err(error) => this.name_failed(error, cx),
                     });
                 })
                 .detach();
@@ -795,28 +971,46 @@ impl Explorer {
             NameMode::Create { id, parent, is_dir } => {
                 let as_folder = is_dir || raw.ends_with(['/', '\\']);
                 self.name_busy = true;
-                let at = parent.clone();
-                let work = cx.background_executor().spawn({
-                    let name = name.clone();
-                    async move { files::create_path(Path::new(&at), &name, as_folder) }
-                });
+                // Only the first new name shows: the folders under it are not listed yet.
+                let echoes: Vec<Echo> = name
+                    .split(['/', '\\'])
+                    .find(|segment| !segment.is_empty())
+                    .map(|first| {
+                        Echo::Add(DirEntry {
+                            name: first.to_owned(),
+                            path: files::join_path(&parent, first),
+                            is_dir: as_folder || nested,
+                            ignored: false,
+                        })
+                    })
+                    .into_iter()
+                    .collect();
+                let op = OpId::new();
+                let call = engine_client::local(cx).call::<Create>(
+                    Some(op),
+                    Create {
+                        parent: parent.clone(),
+                        name: name.clone(),
+                        dir: as_folder,
+                    },
+                );
+                self.echo(op, echoes, cx);
                 cx.spawn_in(window, async move |this, cx| {
-                    let result = work.await;
-                    let _ = this.update_in(cx, |this, window, cx| match result {
-                        Ok(created) => {
-                            let touched = files::dirs_touched_by_create(&parent, &name);
-                            for dir in &touched {
-                                this.read_dir(dir.clone(), cx);
+                    let result = call.await;
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        this.settle(op, result.is_ok(), cx);
+                        match result {
+                            Ok(NewPath { path: created }) => {
+                                let touched = files::dirs_touched_by_create(&parent, &name);
+                                if matches!(&this.naming, Some(NameMode::Create { id: i, .. }) if *i == id) {
+                                    this.naming = None;
+                                }
+                                this.expand(&touched);
+                                this.selected = Some(created);
+                                this.after_op(window, cx);
                             }
-                            if matches!(&this.naming, Some(NameMode::Create { id: i, .. }) if *i == id) {
-                                this.naming = None;
-                            }
-                            this.expand(&touched, cx);
-                            this.selected = Some(created);
-                            let _ = cwd;
-                            this.after_op(window, cx);
+                            Err(error) => this.name_failed(error, cx),
                         }
-                        Err(error) => this.name_failed(error, cx),
                     });
                 })
                 .detach();
@@ -863,34 +1057,42 @@ impl Explorer {
         self.rebuild(cx);
     }
 
-    /// `run`: operation errors route to the shared toast until the next action.
+    /// `run`: `work` replies with the path it made, if any, while `echo`
+    /// shows its effect. Operation errors route to the shared toast until the
+    /// next action.
     fn run(
         &mut self,
-        work: impl FnOnce() -> Result<Option<String>, String> + Send + 'static,
+        echo: Option<(OpId, Vec<Echo>)>,
+        work: impl Future<Output = Result<Option<String>, String>> + 'static,
         touched: Vec<String>,
         forget: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.set_operation_error(None, cx);
-        let task = cx.background_executor().spawn(async move { work() });
+        let op = echo.map(|(op, echoes)| {
+            self.echo(op, echoes, cx);
+            op
+        });
         cx.spawn_in(window, async move |this, cx| {
-            let result = task.await;
-            let _ = this.update_in(cx, |this, window, cx| match result {
-                Ok(created) => {
-                    if let Some(path) = &forget {
-                        this.forget(path);
-                    }
-                    for dir in &touched {
-                        this.read_dir(dir.clone(), cx);
-                    }
-                    this.expand(&touched, cx);
-                    if let Some(created) = created {
-                        this.selected = Some(created);
-                    }
-                    this.after_op(window, cx);
+            let result = work.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if let Some(op) = op {
+                    this.settle(op, result.is_ok(), cx);
                 }
-                Err(error) => this.fail(error, cx),
+                match result {
+                    Ok(created) => {
+                        if let Some(path) = &forget {
+                            this.forget(path);
+                        }
+                        this.expand(&touched);
+                        if let Some(created) = created {
+                            this.selected = Some(created);
+                        }
+                        this.after_op(window, cx);
+                    }
+                    Err(error) => this.fail(error, cx),
+                }
             });
         })
         .detach();
@@ -919,7 +1121,6 @@ impl Explorer {
             }
             let _ = this.update_in(cx, |this, window, cx| {
                 let parent = parent_of(&path);
-                let target = path.clone();
                 this.selected = match &this.selected {
                     Some(s) if s == &path || s.starts_with(&format!("{path}/")) => {
                         Some(parent.clone())
@@ -933,8 +1134,12 @@ impl Explorer {
                 {
                     this.clip = None;
                 }
+                let op = OpId::new();
+                let call = engine_client::local(cx)
+                    .call::<DeletePath>(Some(op), DeletePath { path: path.clone() });
                 this.run(
-                    move || files::delete_path(Path::new(&target)).map(|_| None),
+                    Some((op, vec![Echo::Remove(path.clone())])),
+                    async move { call.await.map(|_| None) },
                     vec![parent],
                     is_dir.then_some(path),
                     window,
@@ -943,6 +1148,21 @@ impl Explorer {
             });
         })
         .detach();
+    }
+
+    /// The entry a copy or move of `from` into `dest` adds, unless its name is
+    /// taken there (a copy is then renamed as Finder does, once it is made).
+    fn arriving(&self, from: &str, is_dir: bool, dest: &str) -> Vec<Echo> {
+        let name = basename(from).to_owned();
+        if self.siblings(dest, None).contains(&name) {
+            return Vec::new();
+        }
+        vec![Echo::Add(DirEntry {
+            path: files::join_path(dest, &name),
+            name,
+            is_dir,
+            ignored: false,
+        })]
     }
 
     fn paste(&mut self, at: String, window: &mut Window, cx: &mut Context<Self>) {
@@ -970,36 +1190,53 @@ impl Explorer {
             return;
         }
         let from = clip.path.clone();
+        let op = OpId::new();
         if clip.cut {
-            let to_parent = dest.clone();
-            let task = cx
-                .background_executor()
-                .spawn(async move { files::move_path(Path::new(&from), Path::new(&to_parent)) });
-            let from = clip.path.clone();
+            let mut echoes = Vec::new();
+            if parent_of(&from) != dest {
+                echoes.push(Echo::Remove(from.clone()));
+                echoes.extend(self.arriving(&from, clip.is_dir, &dest));
+            }
+            let call = engine_client::local(cx).call::<Move>(
+                Some(op),
+                Move {
+                    from: from.clone(),
+                    to: Destination::Into(dest.clone()),
+                },
+            );
+            self.echo(op, echoes, cx);
             cx.spawn_in(window, async move |this, cx| {
-                let result = task.await;
-                let _ = this.update_in(cx, |this, window, cx| match result {
-                    Ok(created) => {
-                        if clip.is_dir {
-                            this.forget(&from);
+                let result = call.await;
+                let _ = this.update_in(cx, |this, window, cx| {
+                    this.settle(op, result.is_ok(), cx);
+                    match result {
+                        Ok(NewPath { path: created }) => {
+                            if clip.is_dir {
+                                this.forget(&from);
+                            }
+                            this.remap(&from, &created);
+                            this.clip = None;
+                            this.expand(std::slice::from_ref(&dest));
+                            this.selected = Some(created);
+                            this.after_op(window, cx);
                         }
-                        for dir in files::dirs_touched_by_move(&from, &created) {
-                            this.read_dir(dir, cx);
-                        }
-                        this.remap(&from, &created);
-                        this.clip = None;
-                        this.expand(std::slice::from_ref(&dest), cx);
-                        this.selected = Some(created);
-                        this.after_op(window, cx);
+                        Err(error) => this.fail(error, cx),
                     }
-                    Err(error) => this.fail(error, cx),
                 });
             })
             .detach();
         } else {
-            let to = dest.clone();
+            let echoes = self.arriving(&from, clip.is_dir, &dest);
+            let call = engine_client::local(cx).call::<Move>(
+                Some(op),
+                Move {
+                    from,
+                    to: Destination::CopyInto(dest.clone()),
+                },
+            );
             self.run(
-                move || files::copy_path(Path::new(&from), Path::new(&to)).map(Some),
+                Some((op, echoes)),
+                async move { call.await.map(|moved| Some(moved.path)) },
                 vec![dest],
                 None,
                 window,
@@ -1008,6 +1245,8 @@ impl Explorer {
         }
     }
 
+    /// Copies files from outside the tree (Finder) into `dest`, one after
+    /// another until one fails.
     fn copy_external(
         &mut self,
         paths: Vec<PathBuf>,
@@ -1018,20 +1257,25 @@ impl Explorer {
         if paths.is_empty() {
             return;
         }
+        let engine = engine_client::local(cx);
         let to = dest.clone();
-        self.run(
-            move || {
-                let mut created = None;
-                for from in &paths {
-                    created = Some(files::copy_path(from, Path::new(&to))?);
-                }
-                Ok(created)
-            },
-            vec![dest],
-            None,
-            window,
-            cx,
-        );
+        let work = async move {
+            let mut created = None;
+            for from in paths {
+                let moved = engine
+                    .call::<Move>(
+                        Some(OpId::new()),
+                        Move {
+                            from: from.to_string_lossy().into_owned(),
+                            to: Destination::CopyInto(to.clone()),
+                        },
+                    )
+                    .await?;
+                created = Some(moved.path);
+            }
+            Ok::<_, String>(created)
+        };
+        self.run(None, work, vec![dest], None, window, cx);
     }
 
     fn duplicate(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
@@ -1039,9 +1283,17 @@ impl Explorer {
             return;
         }
         let parent = parent_of(&path);
-        let to = parent.clone();
+        let call = engine_client::local(cx).call::<Move>(
+            Some(OpId::new()),
+            Move {
+                from: path,
+                to: Destination::CopyInto(parent.clone()),
+            },
+        );
+        // The copy's name is only known once it is made: nothing to echo.
         self.run(
-            move || files::copy_path(Path::new(&path), Path::new(&to)).map(Some),
+            None,
+            async move { call.await.map(|moved| Some(moved.path)) },
             vec![parent],
             None,
             window,
@@ -1049,14 +1301,12 @@ impl Explorer {
         );
     }
 
+    /// Revealing opens Finder on this machine, not on an engine.
     fn reveal(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.run(
-            move || files::reveal_path(Path::new(&path)).map(|_| None),
-            Vec::new(),
-            None,
-            window,
-            cx,
-        );
+        let work = cx
+            .background_executor()
+            .spawn(async move { files::reveal_path(Path::new(&path)).map(|()| None::<String>) });
+        self.run(None, work, Vec::new(), None, window, cx);
     }
 
     fn open_menu(

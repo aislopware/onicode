@@ -15,6 +15,17 @@ use std::path::PathBuf;
 
 use onicode_protocol::agent::AccessMode;
 use onicode_protocol::engine::{EngineInfo, Hello, StopEngine, UpdateEngine};
+use onicode_protocol::files::{
+    Create, DeletePath, Destination, Entries, ListDir, ListDrives, Move, PathKind, Read,
+    SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths, Stat, WatchDir,
+    Write,
+};
+use onicode_protocol::git::{
+    Branches, ChangeSet, Commit, CommitContext, CreateBranch, CreatePr, CreateWorktree, Diff,
+    Discard, FileDiff, HeadMessage, History, NewWorktree, PrContext, PrStatus, Pull, Push,
+    ReadCheckpoint, ReadSessionChanges, ReadStatus, Refs, RemoveWorktree, Restore,
+    RestoreCheckpoint, Stage, StageTarget, Switch, Sync, Unstage, WatchGit, Worktrees,
+};
 use onicode_protocol::provider::Kind;
 use onicode_protocol::search::Target;
 use onicode_protocol::session::{
@@ -259,6 +270,49 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<PrepareAutomationRun>();
     shapes.call::<FinishAutomationRun>();
     shapes.call::<ClaimInboxEvents>();
+    // Files.
+    shapes.watch::<WatchDir>();
+    shapes.call::<ListDir>();
+    shapes.call::<Stat>();
+    shapes.call::<Read>();
+    shapes.call::<Write>();
+    shapes.call::<Create>();
+    shapes.call::<Move>();
+    shapes.call::<DeletePath>();
+    shapes.call::<SearchPaths>();
+    shapes.call::<SearchContent>();
+    shapes.call::<ListDrives>();
+    shapes.call::<SearchHomeFolders>();
+    shapes.call::<SaveAttachments>();
+    shapes.call::<SaveNoteImages>();
+    // Git.
+    shapes.watch::<WatchGit>();
+    shapes.call::<ReadStatus>();
+    shapes.call::<Diff>();
+    shapes.call::<FileDiff>();
+    shapes.call::<Branches>();
+    shapes.call::<Refs>();
+    shapes.call::<History>();
+    shapes.call::<Switch>();
+    shapes.call::<CreateBranch>();
+    shapes.call::<Stage>();
+    shapes.call::<Unstage>();
+    shapes.call::<Discard>();
+    shapes.call::<Commit>();
+    shapes.call::<Push>();
+    shapes.call::<Pull>();
+    shapes.call::<Sync>();
+    shapes.call::<HeadMessage>();
+    shapes.call::<CommitContext>();
+    shapes.call::<PrContext>();
+    shapes.call::<PrStatus>();
+    shapes.call::<CreatePr>();
+    shapes.call::<Worktrees>();
+    shapes.call::<CreateWorktree>();
+    shapes.call::<RemoveWorktree>();
+    shapes.call::<ReadCheckpoint>();
+    shapes.call::<RestoreCheckpoint>();
+    shapes.call::<ReadSessionChanges>();
     // What every call and watch travels in.
     shapes.envelope::<Cursor>("Cursor");
     shapes.envelope::<Item<(), ()>>("Item");
@@ -271,6 +325,13 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.variants::<NewSession>();
     shapes.variants::<ReminderChange>();
     shapes.variants::<Target>();
+    shapes.variants::<Entries>();
+    shapes.variants::<PathKind>();
+    shapes.variants::<Destination>();
+    shapes.variants::<ChangeSet>();
+    shapes.variants::<StageTarget>();
+    shapes.variants::<NewWorktree>();
+    shapes.variants::<Restore>();
     shapes.table()
 }
 

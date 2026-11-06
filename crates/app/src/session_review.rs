@@ -1,8 +1,12 @@
 //! SessionReview.tsx: the latest turn's recorded workspace changes, under its
-//! reply, with Undo, Keep and Review. The checkpoint runs off the UI thread.
+//! reply, with Undo, Keep and Review. The app's engine reads and restores the
+//! recorded turn.
 use gpui::prelude::*;
 use gpui::{Context, EventEmitter, FontWeight, Role, SharedString, Task, Window, div, px, rgb};
-use onicode_core::checkpoint::{CheckpointFile, CheckpointStatus};
+use onicode_protocol::OpId;
+use onicode_protocol::git::{
+    CheckpointFile, CheckpointStatus, ReadCheckpoint, Restore, RestoreCheckpoint,
+};
 
 use crate::file_icons::file_type_icon;
 use crate::right_panel::{DIFF_ADD, DIFF_DEL, format_integer, tabular};
@@ -105,15 +109,16 @@ impl SessionReview {
         if !self.valid() || self.busy {
             return;
         }
-        let Some(store) = onicode_core::checkpoint::store() else {
-            return;
-        };
         self.generation += 1;
         let generation = self.generation;
-        let (session, cwd) = (self.session.to_string(), self.cwd.clone());
-        let work = cx
-            .background_executor()
-            .spawn(async move { store.exclusive(|s| s.status(&session, &cwd)) });
+        let read = crate::engine_client::local(cx).call::<ReadCheckpoint>(
+            None,
+            ReadCheckpoint {
+                session: self.session,
+                cwd: self.cwd.clone(),
+            },
+        );
+        let work = cx.background_executor().spawn(read);
         self._load = Some(cx.spawn(async move |this, cx| {
             let status = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -143,20 +148,22 @@ impl SessionReview {
         if self.acting.is_some() {
             return;
         }
-        let Some(store) = onicode_core::checkpoint::store() else {
-            return;
-        };
         self.acting = Some(action);
         cx.notify();
         self.generation += 1;
         let generation = self.generation;
-        let (session, cwd) = (self.session.to_string(), self.cwd.clone());
-        let work = cx.background_executor().spawn(async move {
-            store.exclusive(|s| match action {
-                Action::Keep => s.keep(&session, &cwd, None),
-                Action::Undo => s.undo(&session, &cwd, None),
-            })
-        });
+        let restore = RestoreCheckpoint {
+            session: self.session,
+            cwd: self.cwd.clone(),
+            restore: match action {
+                Action::Keep => Restore::Keep,
+                Action::Undo => Restore::Undo,
+            },
+            path: None,
+        };
+        let work =
+            crate::engine_client::local(cx).call::<RestoreCheckpoint>(Some(OpId::new()), restore);
+        let work = cx.background_executor().spawn(work);
         self._load = Some(cx.spawn(async move |this, cx| {
             let status = work.await;
             let _ = this.update(cx, |this, cx| {

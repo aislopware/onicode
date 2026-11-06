@@ -11,6 +11,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 pub mod engine;
+pub mod files;
+pub mod git;
 mod ids;
 pub mod session;
 pub mod workspace;
@@ -20,7 +22,7 @@ pub use ids::{EngineId, MessageId, OpId, SessionId, TerminalId};
 /// The protocol's version. Peers with different values answer each other only the calls whose
 /// shapes are frozen: [`engine::Hello`], [`engine::EngineInfo`] and [`engine::UpdateEngine`].
 /// Separate from net's `WIRE`, so a mismatch can still say "Needs update".
-pub const PROTOCOL: u32 = 4;
+pub const PROTOCOL: u32 = 5;
 
 /// One request and its reply.
 pub trait Call {
@@ -184,6 +186,49 @@ pub const METHODS: &[Method] = &[
     call::<workspace::PrepareAutomationRun>(),
     call::<workspace::FinishAutomationRun>(),
     call::<workspace::ClaimInboxEvents>(),
+    // Files.
+    watch::<files::WatchDir>(),
+    call::<files::ListDir>(),
+    call::<files::Stat>(),
+    call::<files::Read>(),
+    call::<files::Write>(),
+    call::<files::Create>(),
+    call::<files::Move>(),
+    call::<files::DeletePath>(),
+    call::<files::SearchPaths>(),
+    call::<files::SearchContent>(),
+    call::<files::ListDrives>(),
+    call::<files::SearchHomeFolders>(),
+    call::<files::SaveAttachments>(),
+    call::<files::SaveNoteImages>(),
+    // Git.
+    watch::<git::WatchGit>(),
+    call::<git::ReadStatus>(),
+    call::<git::Diff>(),
+    call::<git::FileDiff>(),
+    call::<git::Branches>(),
+    call::<git::Refs>(),
+    call::<git::History>(),
+    call::<git::Switch>(),
+    call::<git::CreateBranch>(),
+    call::<git::Stage>(),
+    call::<git::Unstage>(),
+    call::<git::Discard>(),
+    call::<git::Commit>(),
+    call::<git::Push>(),
+    call::<git::Pull>(),
+    call::<git::Sync>(),
+    call::<git::HeadMessage>(),
+    call::<git::CommitContext>(),
+    call::<git::PrContext>(),
+    call::<git::PrStatus>(),
+    call::<git::CreatePr>(),
+    call::<git::Worktrees>(),
+    call::<git::CreateWorktree>(),
+    call::<git::RemoveWorktree>(),
+    call::<git::ReadCheckpoint>(),
+    call::<git::RestoreCheckpoint>(),
+    call::<git::ReadSessionChanges>(),
 ];
 
 /// The row of [`METHODS`] named `name`.

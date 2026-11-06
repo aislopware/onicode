@@ -29,7 +29,6 @@ mod file_icons;
 mod fixtures;
 mod fonts;
 mod frame_log;
-mod fs_watch;
 mod git_cache;
 mod git_graph;
 mod git_picker;

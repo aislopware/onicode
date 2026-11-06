@@ -12,6 +12,8 @@ async-channel = "2"
 async-trait.workspace = true
 # The hub's spawned work and its watch streams; `executor` drives `ThreadSpawn`.
 futures.workspace = true
+# The Files and Git watches' platform file watch (FSEvents on macOS).
+notify = "8.2"
 onicode-core.workspace = true
 onicode-protocol.workspace = true
 onicode-rpc.workspace = true

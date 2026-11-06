@@ -14,7 +14,10 @@ use onicode_core::agent::AccessMode;
 use onicode_core::git::Snapshot;
 use onicode_core::project_appearance::ProjectAppearance;
 use onicode_core::provider::Kind;
+use onicode_protocol::OpId;
+use onicode_protocol::files::{Bytes, NewAttachment, SaveAttachments};
 
+use crate::engine_client;
 use crate::git_picker::{GitPicker, Mode as GitMode, Picked as GitPicked};
 use crate::input::{self, Command, Input};
 use crate::pickers::{ModelList, ModelPicked, model_display_name, model_name};
@@ -404,9 +407,7 @@ impl QuickComposer {
             self.git_settled = true;
             return;
         }
-        let work = cx
-            .background_executor()
-            .spawn(async move { crate::git_cache::load(std::path::Path::new(&cwd)) });
+        let work = crate::git_cache::load(cwd, cx);
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -768,24 +769,43 @@ impl QuickComposer {
         if !self.attachments_supported() {
             return false;
         }
-        for image in images {
-            let dir = paste_staging_dir();
-            let path = dir.join(format!(
-                "pasted-{}.{}",
-                onicode_core::new_id(),
-                image.format().extension()
-            ));
-            match std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, image.bytes())) {
-                Ok(()) => {
-                    self.staged_attachments.push(path.clone());
-                    paths.push(path);
-                }
-                Err(error) => self.error = Some(format!("Could not paste the image: {error}")),
-            }
-        }
         self.add_attachments(paths, cx);
-        self.staged_attachments
-            .retain(|path| self.attachments.contains(path));
+        if images.is_empty() {
+            return true;
+        }
+        // The engine writes them to `paste_staging_dir`, where they wait for
+        // the launch to create their conversation.
+        let save = engine_client::local(cx).call::<SaveAttachments>(
+            Some(OpId::new()),
+            SaveAttachments {
+                session: None,
+                kept: Vec::new(),
+                images: images
+                    .iter()
+                    .map(|image| NewAttachment {
+                        bytes: Bytes(image.bytes().to_vec()),
+                        extension: image.format().extension().to_owned(),
+                    })
+                    .collect(),
+            },
+        );
+        cx.spawn(async move |this, cx| {
+            let result = save.await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(saved) => {
+                    let saved: Vec<PathBuf> = saved.into_iter().map(PathBuf::from).collect();
+                    this.staged_attachments.extend(saved.iter().cloned());
+                    this.add_attachments(saved, cx);
+                    this.staged_attachments
+                        .retain(|path| this.attachments.contains(path));
+                }
+                Err(error) => {
+                    this.error = Some(format!("Could not paste the image: {error}"));
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
         true
     }
 

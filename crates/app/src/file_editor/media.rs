@@ -4,6 +4,7 @@ use gpui::{
     Bounds, ClipboardEntry, ClipboardItem, ExternalPaths, ImageSource, MouseButton, Point,
     RenderImage, ScrollHandle, ScrollWheelEvent, canvas, fill, point, size,
 };
+use onicode_protocol::files::{Bytes, ImageFile};
 
 use super::*;
 use crate::popover::{Anchor, AnchorSlot, Menu, MenuAction, MenuEvent, menu_popover};
@@ -12,33 +13,29 @@ use crate::popover::{Anchor, AnchorSlot, Menu, MenuAction, MenuEvent, menu_popov
 #[path = "video.rs"]
 mod video;
 
-pub(super) fn prepare_document(doc: Document) -> Result<Document, String> {
+/// The engine's image as GPUI can draw it: AVIF, which GPUI cannot decode, is
+/// redrawn as TIFF through AppKit.
+pub(super) fn prepare_image(image: ImageFile) -> Result<ImageFile, String> {
     #[cfg(target_os = "macos")]
-    if let Document::Image {
-        ref bytes,
-        format: "avif",
-        original_size,
-        ..
-    } = doc
-    {
+    if image.format == "avif" {
         use objc2::AnyThread;
         use objc2_app_kit::NSImage;
-        let data = objc2_foundation::NSData::with_bytes(bytes);
-        let image =
+        let data = objc2_foundation::NSData::with_bytes(&image.bytes.0);
+        let decoded =
             NSImage::initWithData(NSImage::alloc(), &data).ok_or("Couldn’t decode this image")?;
-        let dimensions = image.size();
-        let data = image
+        let dimensions = decoded.size();
+        let data = decoded
             .TIFFRepresentation()
             .ok_or("Couldn’t decode this image")?;
-        return Ok(Document::Image {
-            bytes: data.to_vec(),
-            format: "tiff",
-            original_size,
+        return Ok(ImageFile {
+            bytes: Bytes(data.to_vec()),
+            format: "tiff".into(),
             width: dimensions.width as u32,
             height: dimensions.height as u32,
+            ..image
         });
     }
-    Ok(doc)
+    Ok(image)
 }
 
 pub(super) enum MediaEvent {

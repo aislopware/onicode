@@ -1,6 +1,7 @@
 //! The settings surface replaces the rail body and the workspace, preserving
 //! open conversations. Its breadcrumb/actions occupy the inset title bar.
-use std::path::Path;
+use onicode_protocol::OpId;
+use onicode_protocol::git::RemoveWorktree;
 
 use super::*;
 use crate::settings::{ArchivedSession, Section, SettingsContext, SettingsEvent, SettingsView};
@@ -411,6 +412,8 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         use onicode_core::files::is_equal_or_inside;
+        const IN_USE: &str =
+            "This worktree is now in use. Close its terminals and stop its sessions first.";
         if self
             .terminals
             .values()
@@ -439,31 +442,79 @@ impl Shell {
             );
             return;
         }
-        let check_cwd = cwd.clone();
-        let check_path = path.clone();
-        let work = cx.background_executor().spawn(async move {
-            onicode_core::worktree_management::check(Path::new(&check_cwd), Path::new(&check_path))
-        });
-        cx.spawn(async move|this,cx|{
-            let result=work.await;
-            if let Err(e)=result {let _=this.update(cx,|this,cx|this.finish_worktree_action(Err(e),cx));return;}
-            let pending=match this.update_in(cx,|this,window,cx| {
+        let engine = crate::engine_client::local(cx);
+        let preflight = engine.call::<RemoveWorktree>(
+            Some(OpId::new()),
+            RemoveWorktree {
+                checkout: cwd.clone(),
+                path: path.clone(),
+                preflight: true,
+                delete_sessions,
+            },
+        );
+        cx.spawn(async move |this, cx| {
+            if let Err(error) = preflight.await {
+                let _ = this.update(cx, |this, cx| this.finish_worktree_action(Err(error), cx));
+                return;
+            }
+            let pending = match this.update_in(cx, |this, window, cx| {
                 // Recheck before deleting any conversations after the preflight worker.
-                if this.terminals.values().flatten().any(|t|is_equal_or_inside(&t.read(cx).cwd,&path))||ids.iter().any(|id|this.sessions.get(id).is_some_and(|s|s.read(cx).busy)) {return Err("This worktree is now in use. Close its terminals and stop its sessions first.".to_owned());}
-                if delete_sessions {for id in &ids{this.delete_session(*id,window,cx);}}
-                Ok((this.group_writes.take(),this.store.clone()))
-            }) {Ok(Ok(v))=>v,Ok(Err(e))=>{let _=this.update(cx,|this,cx|this.finish_worktree_action(Err(e),cx));return;},Err(_)=>return};
-            if let Some(task)=pending.0 {task.await;}
-            let worker_cwd=cwd.clone();let worker_path=path.clone();let store=pending.1;
-            let work=cx.background_executor().spawn(async move{
-                if delete_sessions {let store=locked(&store)?;let paths=store.session_worktrees()?;if store.sessions()?.iter().any(|s|is_equal_or_inside(paths.get(&s.id).and_then(|p|p.as_deref()).unwrap_or(&s.cwd),&worker_path)){return Err("Some sessions could not be deleted, so the worktree was kept.".into());}}
-                let snapshot=onicode_core::git::snapshot(Path::new(&worker_cwd))?;
-                let main=snapshot.worktrees.first().ok_or("No main working copy found")?;
-                onicode_core::worktree_management::remove(Path::new(&main.path),Path::new(&worker_path))?;
-                locked(&store)?.detach_worktree(&worker_path,&main.path)
-            });let result=work.await;
-            let _=this.update(cx,|this,cx|{let result=result.map(|detached|{for(summary,settings)in detached{this.session_summaries.insert(summary.id, summary.clone());this.session_worktrees.insert(summary.id,settings.worktree_cwd.clone());if let Some(view)=this.sessions.get(&summary.id){view.update(cx,|v,cx|v.worktree_deleted(summary,settings,cx));}}this.worktree_focus.retain(|_,focus|!is_equal_or_inside(&focus.path,&path));});this.finish_worktree_action(result,cx);});
-        }).detach();
+                if this
+                    .terminals
+                    .values()
+                    .flatten()
+                    .any(|t| is_equal_or_inside(&t.read(cx).cwd, &path))
+                    || ids
+                        .iter()
+                        .any(|id| this.sessions.get(id).is_some_and(|s| s.read(cx).busy))
+                {
+                    return Err(IN_USE.to_owned());
+                }
+                if delete_sessions {
+                    for id in &ids {
+                        this.delete_session(*id, window, cx);
+                    }
+                }
+                Ok(this.group_writes.take())
+            }) {
+                Ok(Ok(pending)) => pending,
+                Ok(Err(error)) => {
+                    let _ = this.update(cx, |this, cx| this.finish_worktree_action(Err(error), cx));
+                    return;
+                }
+                Err(_) => return,
+            };
+            if let Some(task) = pending {
+                task.await;
+            }
+            let result = engine
+                .call::<RemoveWorktree>(
+                    Some(OpId::new()),
+                    RemoveWorktree {
+                        checkout: cwd,
+                        path: path.clone(),
+                        preflight: false,
+                        delete_sessions,
+                    },
+                )
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                let result = result.map(|removed| {
+                    for (summary, settings) in removed.detached {
+                        this.session_summaries.insert(summary.id, summary.clone());
+                        this.session_worktrees
+                            .insert(summary.id, settings.worktree_cwd.clone());
+                        if let Some(view) = this.sessions.get(&summary.id) {
+                            view.update(cx, |v, cx| v.worktree_deleted(summary, settings, cx));
+                        }
+                    }
+                    this.worktree_focus
+                        .retain(|_, focus| !is_equal_or_inside(&focus.path, &path));
+                });
+                this.finish_worktree_action(result, cx);
+            });
+        })
+        .detach();
         let _ = window;
     }
 

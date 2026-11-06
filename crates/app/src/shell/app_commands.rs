@@ -2,6 +2,8 @@
 use onicode_core::agent::Settings;
 use onicode_core::app_access as app;
 use onicode_core::app_access::bridge::{Call, Server};
+use onicode_protocol::OpId;
+use onicode_protocol::git::{CreateWorktree, NewWorktree, Refs};
 use serde_json::{Value, json};
 
 use super::*;
@@ -606,31 +608,36 @@ impl Shell {
                 }
             },
             "worktrees.list" | "worktrees.create" => {
-                self.app_background(
-                    call,
-                    move |_| {
-                        let root = std::path::Path::new(&project);
-                        let value = if action == "worktrees.list" {
-                            let snapshot = onicode_core::git::snapshot(root)?;
-                            json!({"worktrees":snapshot.worktrees.iter().map(worktree_json).collect::<Vec<_>>(),"branches":snapshot.branches.iter().map(|b|json!({"name":b.name,"remote":b.remote})).collect::<Vec<_>>()})
-                        } else {
-                            let branch = app::text(&input, "branch", 400)?;
-                            let base = app::optional_text(&input, "base", 400)?;
-                            let existing = input["existing"].as_bool().unwrap_or(false);
-                            if existing && base.is_some() {
-                                return Err("base cannot be set for an existing branch".into());
-                            }
-                            worktree_json(&onicode_core::git::create_project_worktree(
-                                root,
-                                &branch,
-                                base.as_deref(),
-                                existing
-                            )?)
-                        };
-                        Ok((value, Effect::None))
-                    },
-                    cx,
-                );
+                let engine = crate::engine_client::local(cx);
+                let work = cx.background_executor().spawn(async move {
+                    let value = if action == "worktrees.list" {
+                        let snapshot = engine.call::<Refs>(None, Refs { checkout: project }).await?;
+                        json!({"worktrees":snapshot.worktrees.iter().map(worktree_json).collect::<Vec<_>>(),"branches":snapshot.branches.iter().map(|b|json!({"name":b.name,"remote":b.remote})).collect::<Vec<_>>()})
+                    } else {
+                        let branch = app::text(&input, "branch", 400)?;
+                        let base = app::optional_text(&input, "base", 400)?;
+                        let existing = input["existing"].as_bool().unwrap_or(false);
+                        if existing && base.is_some() {
+                            return Err("base cannot be set for an existing branch".into());
+                        }
+                        let tree = engine
+                            .call::<CreateWorktree>(
+                                Some(OpId::new()),
+                                CreateWorktree {
+                                    checkout: project,
+                                    worktree: NewWorktree::Project {
+                                        branch,
+                                        base,
+                                        existing,
+                                    },
+                                },
+                            )
+                            .await?;
+                        worktree_json(&tree)
+                    };
+                    Ok((value, Effect::None))
+                });
+                self.app_settle(call, work, cx);
                 return;
             }
             _ => Err("Unknown Operator action".into()),

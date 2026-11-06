@@ -4642,7 +4642,6 @@ dependencies = [
  "log",
  "mermaid-rs-renderer",
  "mimalloc",
- "notify",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
@@ -4915,6 +4914,7 @@ dependencies = [
  "async-channel",
  "async-trait",
  "futures",
+ "notify",
  "onicode-core",
  "onicode-protocol",
  "onicode-rpc",
@@ -5045,6 +5045,7 @@ dependencies = [
 name = "onicode-protocol"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "onicode-core",
  "proptest",
  "serde",
