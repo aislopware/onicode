@@ -1,10 +1,11 @@
 # Base: monocode native instead of zeron
 
 Onicode's app and core are now monocode's native preview (hardbeat920/monocode at 1de99e7b, MIT):
-`crates/app` is its GPUI app (`monocode-gpui`), `crates/core` its core (`monocode-core`), and `vendor/gpui-pre*` its
-patched GPUI snapshot. zeron's engine, harness, UI, sync, proto and client are deleted. The owner judges monocode's
-interface the best of its kind. It is kept exactly: layout, motion, colours and every icon. Everything under it is
-Onicode's to optimise. UI and UX changes come from monocode upstream only (`scripts/upstream/sources.toml`).
+`crates/app` is its GPUI app (`monocode-gpui`) and `crates/core` its core (`monocode-core`); its patched GPUI
+snapshot was replaced by aislopware/gpui-fast (`rendering.md`). zeron's engine, harness, UI, sync, proto and client
+are deleted. The owner judges monocode's interface the best of its kind. It is kept exactly: layout, motion,
+colours and every icon. Everything under it is Onicode's to optimise. UI and UX changes come from monocode upstream
+only (`scripts/upstream/sources.toml`).
 
 The study behind this is in `.research/monocode/` (ui.md, core.md, carry-over.md; not committed).
 
