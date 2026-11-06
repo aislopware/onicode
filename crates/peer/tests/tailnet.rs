@@ -456,7 +456,8 @@ async fn a_link_is_redialled_by_its_dialer_after_the_peer_sleeps() {
     }
 }
 
-/// Answers `Who` with the caller it was given, and streams `Count`'s numbers.
+/// Answers `Who` with the caller it was given, streams `Count`'s numbers, and `Tick`s once a
+/// second for as long as it is watched.
 struct Service;
 
 #[async_trait]
@@ -470,6 +471,13 @@ impl RpcService for Service {
                     (0..n).map(serde_json::Value::from),
                 ))))
             }
+            "Tick" => Ok(RpcReply::Stream(Box::pin(futures::stream::unfold(
+                0_u64,
+                |n| async move {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    Some((serde_json::Value::from(n), n + 1))
+                },
+            )))),
             other => Err(RpcError::UnknownMethod(other.to_owned())),
         }
     }
@@ -529,5 +537,75 @@ async fn rpc_runs_over_the_link_as_the_calling_peer() {
         mac_engine.links.links().len(),
         1,
         "every call on the one link"
+    );
+}
+
+/// A subscription over a link that loses to a duplicate (the other end dialled too, and both keep
+/// the smaller id's dial) keeps ticking on the loser while it drains, then carries on over the
+/// kept link instead of ending.
+#[tokio::test(start_paused = true)]
+async fn a_subscription_outlives_the_duplicate_link_it_rode() {
+    const SEED: u64 = 43;
+    let _seed = report_seed("a_subscription_outlives_the_duplicate_link_it_rode", SEED);
+    let tailnet = SimTailnet::new(Faults::CLEAR, SEED);
+    let mac = tailnet.add(NodeSpec::owned("mac", USER));
+    let laptop = tailnet.add(NodeSpec::owned("laptop", USER));
+    let serving = || LinksConfig {
+        service: Some(Arc::new(Service)),
+        ..LinksConfig::default()
+    };
+    let a = engine_with(&tailnet, tailnet.local_api(mac), "dev-a", SEED, serving()).await;
+    let b = engine_with(
+        &tailnet,
+        tailnet.local_api(laptop),
+        "dev-b",
+        SEED + 1,
+        serving(),
+    )
+    .await;
+    a.directory.refresh().await.unwrap();
+    b.directory.refresh().await.unwrap();
+
+    // dev-b dials and subscribes over its own link.
+    let mut ticks = b
+        .links
+        .subscribe("dev-a", "Tick", serde_json::Value::Null)
+        .await
+        .unwrap();
+    assert_eq!(ticks.recv().await, Some(serde_json::json!(0)));
+    let rode = b.links.links()[0].id;
+    assert!(b.links.links()[0].dialed);
+
+    // dev-a dials too: both ends keep dev-a's dial and close dev-b's.
+    let session = a.endpoint.dial(at(laptop)).await.unwrap();
+    a.links.adopt(session);
+    let kept = |e: &Engine| matches!(e.links.links().as_slice(), [one] if !one.dialed);
+    assert!(
+        until(&b, Duration::from_secs(10), kept).await,
+        "dev-b keeps dev-a's dial"
+    );
+    assert_ne!(b.links.links()[0].id, rode);
+
+    // Ticks keep coming through the grace, then the watch starts again on the kept link (its
+    // whole state first, so 0) and keeps ticking.
+    let mut after = Vec::new();
+    while after.len() < 30 {
+        let tick = tokio::time::timeout(Duration::from_secs(5), ticks.recv())
+            .await
+            .expect("ticks keep coming");
+        after.push(tick.expect("the subscription carries on"));
+    }
+    let restart = after
+        .iter()
+        .position(|tick| *tick == serde_json::json!(0))
+        .expect("a fresh start on the kept link once the duplicate closes");
+    assert!(
+        restart > 0,
+        "the duplicate drains before it closes: {after:?}"
+    );
+    assert_eq!(
+        after.get(restart + 1),
+        Some(&serde_json::json!(1)),
+        "the kept link ticks on"
     );
 }

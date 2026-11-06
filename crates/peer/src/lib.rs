@@ -31,7 +31,9 @@ pub use carrier::PeerCarrier;
 pub use directory::{Peer, PeerDirectory};
 pub use endpoint::{PeerConfig, PeerEndpoint, PeerSession, Sockets, SystemSockets};
 pub use engine_list::EngineList;
-pub use links::{LinkInfo, LinkState, LinksConfig, PathReport, PeerLinks, StreamHandler};
+pub use links::{
+    LinkInfo, LinkState, LinksConfig, PathReport, PeerLinks, PeerSubscription, StreamHandler,
+};
 use onicode_net::NetError;
 use onicode_tailnet::LocalApiError;
 

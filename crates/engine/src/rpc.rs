@@ -1363,64 +1363,26 @@ impl EngineRpc {
                 "cannot reach device {target}: remote routing unavailable (offline)"
             )));
         };
-        let client = links.client(target).await?;
         if is_stream_method(method) {
-            // Streams are unbounded by design (a quiet WATCH_* is healthy);
-            // only unary calls below get the reply deadline.
-            if matches!(
-                method,
-                methods::OWN_VOICE_V2
-                    | methods::WATCH_CHECKOUT_CHANGE_REQUEST
-                    | methods::WATCH_WORKSPACE_GIT_STATUS
-                    | methods::WATCH_HARNESS_UPDATES
-            ) {
-                let rx = match client.subscribe(method, params).await {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        if should_invalidate_link(&err) {
-                            links.invalidate(target);
-                        }
-                        return Err(err);
-                    }
-                };
-                let stream = futures::stream::unfold((rx, client), |(mut rx, client)| async move {
-                    rx.recv().await.map(|item| (item, (rx, client)))
-                });
-                return Ok(RpcReply::Stream(stream.boxed()));
-            }
-            let rx = match client.subscribe(method, params).await {
-                Ok(rx) => rx,
-                Err(err) => {
-                    if should_invalidate_link(&err) {
-                        links.invalidate(target);
-                    }
-                    return Err(err);
-                }
-            };
-            // Pipe remote items; the held client keeps the link's RpcClient alive for
-            // the stream's lifetime. A remote error just ends the stream (the relay
-            // link-down path fails pending calls; stream receivers close).
-            let stream = futures::stream::unfold((rx, client), |(mut rx, client)| async move {
-                rx.recv().await.map(|item| (item, (rx, client)))
+            // Streams are unbounded by design (a quiet WATCH_* is healthy); only unary calls
+            // below get the reply deadline. A remote error just ends the stream.
+            // A failed link frees its own slot (`PeerLinks` watches each one close), so an error
+            // here never invalidates: that could close a link that already replaced it.
+            let sub = links.subscribe(target, method, params).await?;
+            let stream = futures::stream::unfold(sub, |mut sub| async move {
+                sub.recv().await.map(|item| (item, sub))
             });
             return Ok(RpcReply::Stream(stream.boxed()));
         }
+        let client = links.client(target).await?;
         let deadline = forward_deadline(method);
         match tokio::time::timeout(deadline, client.call(method, params)).await {
             Ok(Ok(value)) => Ok(RpcReply::Value(value)),
-            Ok(Err(err)) => {
-                if should_invalidate_link(&err) {
-                    links.invalidate(target);
-                }
-                Err(err)
-            }
+            Ok(Err(err)) => Err(err),
             Err(_) => {
-                // No reply inside the deadline. The link may be a zombie — the
-                // relay's auto-pong keeps a dead host socket looking alive
-                // (ws3 auto-pong incident) — so drop it; the next call re-dials.
-                // NOTE: the remote may still complete the forwarded work; the
-                // caller sees a retryable failure instead of hanging forever
-                // (the "Sending…" wedge, 2026-08-18).
+                // No reply inside the deadline: drop the link so the next call dials afresh. The
+                // remote may still finish the work; the caller sees a retryable failure instead
+                // of waiting forever.
                 links.invalidate(target);
                 Err(RpcError::Transport(format!(
                     "no reply from device {target} for {method} within {}s",
@@ -1698,10 +1660,6 @@ impl EngineRpc {
 
 /// An RPC rejection is scoped to the requested capability. Only a broken
 /// transport means the shared device link itself cannot carry other calls.
-fn should_invalidate_link(error: &RpcError) -> bool {
-    matches!(error, RpcError::Closed | RpcError::Transport(_))
-}
-
 fn change_request_rpc_error(error: ChangeRequestError) -> RpcError {
     let code = match error {
         ChangeRequestError::CliUnavailable => capability_errors::PULL_REQUESTS_CLI_UNAVAILABLE,

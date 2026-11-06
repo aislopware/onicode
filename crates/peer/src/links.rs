@@ -366,6 +366,8 @@ impl PeerLinks {
     }
 
     /// Subscribes to `method` on `device` over a stream that lives as long as the subscription.
+    /// It survives the link it rode being closed as a duplicate (both ends dialled at once) by
+    /// subscribing again on the link that was kept; see [`PeerSubscription`].
     ///
     /// # Errors
     ///
@@ -375,11 +377,19 @@ impl PeerLinks {
         device: &str,
         method: &str,
         params: serde_json::Value,
-    ) -> Result<CarriedSubscription, PeerError> {
+    ) -> Result<PeerSubscription, PeerError> {
         let link = self.ready(device).await?;
-        Ok(CarrierClient::new(Arc::new(PeerCarrier::new(link)))
-            .subscribe(method, params)
-            .await?)
+        let inner = CarrierClient::new(Arc::new(PeerCarrier::new(link.clone())))
+            .subscribe(method, params.clone())
+            .await?;
+        Ok(PeerSubscription {
+            links: self.clone(),
+            device: device.to_owned(),
+            method: method.to_owned(),
+            params,
+            link,
+            inner: Some(inner),
+        })
     }
 
     /// Opens a stream to `device` with `head`.
@@ -548,13 +558,16 @@ impl PeerLinks {
             .or_insert_with(|| self.0.entry(Slot::Idle));
         if let Slot::Live(old) = &entry.slot
             && !old.link.is_closed()
+            && !self.0.keeps_new(old.dialed, session.dialed, &device)
         {
-            if !self.0.keeps_new(old.dialed, session.dialed, &device) {
-                tracing::debug!(%device, "duplicate link closed");
-                session.link.close(close::DUPLICATE, b"duplicate link");
-                return;
-            }
-            old.link.close(close::DUPLICATE, b"duplicate link");
+            drop(entries);
+            tracing::debug!(%device, "duplicate link retired");
+            // The other end may have taken this link already: serve what it sends meanwhile.
+            let link = session.link.clone();
+            tokio::spawn(serve_streams(self.clone(), link.clone(), device.clone()));
+            tokio::spawn(serve_datagrams(self.clone(), link.clone(), device));
+            retire(self.clone(), link, (session.control_tx, session.control_rx));
+            return;
         }
         let epoch = self.0.next_epoch();
         entry.epoch = epoch;
@@ -581,19 +594,28 @@ impl PeerLinks {
             tokio::spawn(serve_datagrams(self.clone(), link.clone(), device.clone()))
                 .abort_handle(),
         ];
-        entry.slot = Slot::Live(Box::new(Live {
-            link: link.clone(),
-            peer: session.peer,
-            admitted,
-            remote: session.remote,
-            dialed: session.dialed,
-            since: Instant::now(),
-            interactive,
-            peer_path,
-            tasks,
-        }));
+        let previous = std::mem::replace(
+            &mut entry.slot,
+            Slot::Live(Box::new(Live {
+                link: link.clone(),
+                peer: session.peer,
+                admitted,
+                remote: session.remote,
+                dialed: session.dialed,
+                since: Instant::now(),
+                interactive,
+                peer_path,
+                tasks,
+            })),
+        );
         drop(entries);
         self.0.changed();
+        if let Slot::Live(old) = previous
+            && !old.link.is_closed()
+        {
+            tracing::debug!(%device, "duplicate link retired");
+            retire(self.clone(), old.link.clone(), old);
+        }
         tokio::spawn(self.clone().watch_closed(device, epoch, link, silent));
     }
 
@@ -821,6 +843,104 @@ impl Inner {
         }
     }
 }
+
+/// How long a duplicate link stays open after it loses to the kept one. Each end picks the same
+/// link on its own, so for a moment the other end may still send on the loser; calls in flight on
+/// it finish, and subscriptions move to the kept link when it closes.
+const DUPLICATE_GRACE: Duration = Duration::from_secs(15);
+
+/// Closes `link` as the duplicate once [`DUPLICATE_GRACE`] passes or `links` shuts down, holding
+/// `keep` (its tasks or control stream) until then.
+fn retire(links: PeerLinks, link: Link, keep: impl Send + 'static) {
+    tokio::spawn(async move {
+        let mut changes = links.subscribe_changes();
+        let shut = async {
+            while !links.0.shut.load(Ordering::Relaxed) {
+                if changes.changed().await.is_err() {
+                    break;
+                }
+            }
+        };
+        tokio::select! {
+            () = tokio::time::sleep(DUPLICATE_GRACE) => {}
+            _ = link.closed() => {}
+            () = shut => {}
+        }
+        link.close(close::DUPLICATE, b"duplicate link");
+        drop(keep);
+    });
+}
+
+/// A subscription over [`PeerLinks`]. When two engines dial each other at once, both keep the
+/// link the smaller device id dialled and close the other; a subscription on the closed one
+/// subscribes again on the kept one rather than ending. Watched methods send their whole state
+/// first, so the consumer sees a fresh start, as after any resubscribe. Any other end is final.
+pub struct PeerSubscription {
+    links: PeerLinks,
+    device: String,
+    method: String,
+    params: serde_json::Value,
+    link: Link,
+    inner: Option<CarriedSubscription>,
+}
+
+impl PeerSubscription {
+    /// The next item; `None` once the stream ends for good.
+    pub async fn recv(&mut self) -> Option<serde_json::Value> {
+        loop {
+            if let Some(inner) = &mut self.inner
+                && let Some(item) = inner.recv().await
+            {
+                return Some(item);
+            }
+            self.inner = None;
+            if !self.link.is_closed() {
+                return None;
+            }
+            self.link = self.replacement().await?;
+            self.inner = CarrierClient::new(Arc::new(PeerCarrier::new(self.link.clone())))
+                .subscribe(&self.method, self.params.clone())
+                .await
+                .ok();
+            // A failed subscribe on a link that closed meanwhile goes round again.
+            if self.inner.is_none() && !self.link.is_closed() {
+                return None;
+            }
+        }
+    }
+
+    /// The link that replaced the closed one: already live when this end closed it for a link it
+    /// keeps, or on its way when the other end closed it as the duplicate. `None` for any other
+    /// end, or when no replacement comes within [`REPLACEMENT`].
+    async fn replacement(&self) -> Option<Link> {
+        let mut changes = self.links.subscribe_changes();
+        let fresh = |links: &PeerLinks| {
+            links
+                .live(&self.device)
+                .filter(|live| live.id() != self.link.id() && !live.is_closed())
+        };
+        if let Some(live) = fresh(&self.links) {
+            return Some(live);
+        }
+        if !matches!(self.link.closed().await, Some(NetError::Duplicate)) {
+            return None;
+        }
+        tokio::time::timeout(REPLACEMENT, async {
+            loop {
+                if let Some(live) = fresh(&self.links) {
+                    return Some(live);
+                }
+                changes.changed().await.ok()?;
+            }
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+}
+
+/// How long a subscription on a duplicate link waits for the link that replaces it.
+const REPLACEMENT: Duration = Duration::from_secs(10);
 
 /// What a link's control task holds.
 struct Keepalive {

@@ -6,11 +6,11 @@
 //!   [`Progress`], the [`Install`] check, the helper's [`Grants`] and their probe line, the
 //!   helper's command line ([`helper`]), the bundle layout ([`bundle`]), and the drag guide's state
 //!   machine and geometry ([`guide::Guide`], [`guide::place`]).
-//! - **macOS:** [`access`] reads the app's own rows without a prompt and asks them on a click;
-//!   [`probe_helper`] and [`request_in_helper`] do the same for the helper's rows by running the
-//!   helper through Launch Services; [`agent`] registers the helper as a login item;
+//! - **macOS:** `access` reads the app's own rows without a prompt and asks them on a click;
+//!   `probe_helper` and `request_in_helper` do the same for the helper's rows by running the
+//!   helper through Launch Services; `agent` registers the helper as a login item;
 //!   `restart_when_granted` restarts desktopd once a new process sees Screen Recording;
-//!   `guide::show` puts the drag panel beside System Settings; [`microphone`] and [`paste`] are
+//!   `guide::show` puts the drag panel beside System Settings; `microphone` and [`paste`] are
 //!   shared with voice and clipboard sync.
 //!
 //! Nothing prompts unasked: every request runs from the person's click in the checklist (or in

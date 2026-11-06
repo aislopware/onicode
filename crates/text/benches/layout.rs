@@ -1,11 +1,12 @@
 //! prepare (cold / warm) and layout (line_count / stats / lines) over a chat-like corpus:
 //! prose, inline code chips, paths, URLs, bold runs, some CJK and emoji.
 
+use std::hint::black_box;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use onicode_text::*;
 
 struct Fallback;
