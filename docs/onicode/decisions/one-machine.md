@@ -7,10 +7,11 @@ in daily work. It skips polish that saves a click a week. Ranked by benefit:
    from Finder, on a transfer engine fast enough that a copy across the tailnet feels like a local one.
 2. **A clipboard that follows you.** Copy on one Mac and paste on another, with no button: lazy, private,
    and loop-free.
-3. **Agent alerts on every device,** with actions: approve, steer or stop from the notification.
+3. **Agent alerts on every device,** with actions: approve, steer or stop from the notification
+   (`alerts.md`).
 4. **A localhost bridge.** A remote agent's or terminal's `open URL` opens on the device in use. Its listening
    ports are forwarded to the same local port, so OAuth loopback redirects and dev servers just work.
-5. **Server Macs stay awake** while an agent runs on them.
+5. **Server Macs stay awake** while an agent runs on them (`keep-awake.md`).
 
 Handoff, cross-machine search, a shared keyboard and mouse (Universal Control already covers nearby Macs), a
 File Provider sidebar domain and a mirror-and-edit-locally sync are not built now. The sources and the
