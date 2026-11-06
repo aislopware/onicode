@@ -416,7 +416,7 @@ fn proc_address(value: &str, ipv6: bool) -> Option<SocketAddr> {
             return None;
         }
         let mut bytes = [0; 16];
-        for (i, chunk) in host.as_bytes().chunks_exact(8).enumerate() {
+        for (i, chunk) in host.as_bytes().as_chunks::<8>().0.iter().enumerate() {
             bytes[i * 4..i * 4 + 4].copy_from_slice(
                 &u32::from_str_radix(std::str::from_utf8(chunk).ok()?, 16)
                     .ok()?
