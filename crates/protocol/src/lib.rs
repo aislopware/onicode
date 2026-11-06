@@ -13,13 +13,14 @@ use serde::{Deserialize, Serialize};
 pub mod engine;
 mod ids;
 pub mod session;
+pub mod workspace;
 
 pub use ids::{EngineId, MessageId, OpId, SessionId, TerminalId};
 
 /// The protocol's version. Peers with different values answer each other only the calls whose
 /// shapes are frozen: [`engine::Hello`], [`engine::EngineInfo`] and [`engine::UpdateEngine`].
 /// Separate from net's `WIRE`, so a mismatch can still say "Needs update".
-pub const PROTOCOL: u32 = 2;
+pub const PROTOCOL: u32 = 3;
 
 /// One request and its reply.
 pub trait Call {
@@ -153,6 +154,36 @@ pub const METHODS: &[Method] = &[
     call::<session::Btw>(),
     call::<session::SwitchProvider>(),
     call::<session::ReadTranscript>(),
+    call::<session::ReadSession>(),
+    call::<session::SaveQueue>(),
+    call::<session::RecallLastTurn>(),
+    call::<session::ReadBtw>(),
+    call::<session::SaveBtw>(),
+    call::<session::StopBtw>(),
+    // Workspace.
+    watch::<workspace::WatchWorkspace>(),
+    call::<workspace::CreateSession>(),
+    call::<workspace::Rename>(),
+    call::<workspace::Archive>(),
+    call::<workspace::Pin>(),
+    call::<workspace::Delete>(),
+    call::<workspace::SetWorkItem>(),
+    call::<workspace::SetReminder>(),
+    call::<workspace::SaveGroups>(),
+    call::<workspace::SearchSessions>(),
+    call::<workspace::PreviewSession>(),
+    call::<workspace::MarkSeen>(),
+    call::<workspace::SaveOrchestration>(),
+    call::<workspace::GenerateTitle>(),
+    call::<workspace::NameWorktree>(),
+    call::<workspace::ListNotes>(),
+    call::<workspace::CreateNote>(),
+    call::<workspace::UpsertNote>(),
+    call::<workspace::DeleteNote>(),
+    call::<workspace::SaveResponseNote>(),
+    call::<workspace::PrepareAutomationRun>(),
+    call::<workspace::FinishAutomationRun>(),
+    call::<workspace::ClaimInboxEvents>(),
 ];
 
 /// The row of [`METHODS`] named `name`.
@@ -170,6 +201,18 @@ pub mod agent {
     };
 }
 
+/// The account a session or a background chore runs on.
+pub mod accounts {
+    pub use onicode_core::accounts::Profile;
+}
+
+/// Scheduled and event-triggered runs.
+pub mod automations {
+    pub use onicode_core::automations::{
+        Automation, AutomationRun, AutomationTrigger, DueAutomationRun,
+    };
+}
+
 /// The context window's use, as the UI shows it.
 pub mod context {
     pub use onicode_core::context::Usage;
@@ -180,9 +223,34 @@ pub mod follow_up {
     pub use onicode_core::follow_up::{Message, State};
 }
 
+/// An issue, pull request or work item a tracker lists.
+pub mod inbox {
+    pub use onicode_core::inbox::{Item, Label, Person};
+}
+
+/// Notes, and a response kept as one.
+pub mod notes {
+    pub use onicode_core::notes::{Note, NoteUpsert};
+    pub use onicode_core::response::ResponseNote;
+}
+
 /// What the provider offers and leaves running.
 pub mod provider {
     pub use onicode_core::provider::{BackgroundTask, Kind, NativeCommand, NativeSubcommand};
+}
+
+/// A search over saved conversations.
+pub mod search {
+    pub use onicode_core::search::{Hit, Target};
+}
+
+/// What the sidebar shows of a session: its stored summary, folders, reminders, linked work
+/// item and orchestration, and the model background chores such as titles run on.
+pub mod sessions {
+    pub use onicode_core::orchestration::{Summary as Orchestration, SummaryTask};
+    pub use onicode_core::session_groups::{Folder, Groups, WorkItem};
+    pub use onicode_core::session_title::TextModel;
+    pub use onicode_core::store::{Reminder, Session};
 }
 
 /// A transcript's rows.

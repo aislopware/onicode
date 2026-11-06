@@ -91,33 +91,10 @@ impl Shell {
     }
 }
 
-/// Preserve remembered source controls when they refer to the selected model.
-/// A deliberate native model override starts with fresh model-specific controls.
-pub(super) fn new_session_settings(
-    source: Option<onicode_core::agent::Settings>,
-    model: Option<String>,
-) -> onicode_core::agent::Settings {
-    let mut settings = source.unwrap_or_default();
-    if let Some(model) = model {
-        if settings
-            .model
-            .as_ref()
-            .is_some_and(|source| source != &model)
-        {
-            settings.effort = None;
-            settings.fast = false;
-            settings.thinking = None;
-            settings.service_tier = None;
-            settings.model_settings.clear();
-        }
-        settings.model = Some(model);
-    }
-    settings
-}
-
 /// The user's defaults for a new session: provider, model, access, effort and
-/// account. Read on the UI thread, applied with the store in the background,
-/// so every way of starting a session (new tab, split) begins the same way.
+/// account. Read on the UI thread and applied by the engine over the project's
+/// saved defaults, so every way of starting a session (new tab, split) begins the
+/// same way.
 pub(super) struct NewSessionDefaults {
     kind: Kind,
     model: Option<String>,
@@ -140,13 +117,11 @@ impl NewSessionDefaults {
         }
     }
 
-    /// Create the session and save its starting settings.
-    pub(super) fn create(
+    /// The provider and the start of a session made with these defaults in `worktree_cwd`.
+    pub(super) fn start(
         self,
-        store: &onicode_core::store::Store,
-        cwd: &str,
         worktree_cwd: Option<String>,
-    ) -> Result<(Session, onicode_core::agent::Settings), String> {
+    ) -> (&'static str, onicode_protocol::workspace::NewSession) {
         let Self {
             kind,
             model,
@@ -154,35 +129,18 @@ impl NewSessionDefaults {
             access,
             effort,
         } = self;
-        let summary = store.create(kind.id(), cwd)?;
-        let mut settings = new_session_settings(
-            store
-                .desktop_preferences()
-                .and_then(|preferences| preferences.session_defaults(kind.id(), cwd)),
-            model,
-        );
-        settings.access = access;
-        if let Some(effort) = effort {
-            settings.model_settings.retain(|key, _| {
-                !matches!(
-                    key.as_str(),
-                    "effort" | "reasoning" | "reasoningEffort" | "reasoning_effort"
-                )
-            });
-            settings.effort = Some(effort);
-        }
-        settings.account = account;
-        settings.worktree_cwd = worktree_cwd;
-        if settings.model.is_some()
-            || settings.effort.is_some()
-            || !settings.model_settings.is_empty()
-            || settings.worktree_cwd.is_some()
-            || settings.account.id != onicode_core::accounts::DEFAULT
-            || access != Default::default()
-        {
-            store.save_agent_settings(summary.id, &settings)?;
-        }
-        Ok((summary, settings))
+        (
+            kind.id(),
+            onicode_protocol::workspace::NewSession::Defaults(
+                onicode_protocol::workspace::SessionDefaults {
+                    model,
+                    account,
+                    access,
+                    effort,
+                    worktree_cwd,
+                },
+            ),
+        )
     }
 }
 
@@ -289,29 +247,6 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
-    fn remembered_controls_survive_the_mapped_native_model_default() {
-        let remembered = Settings {
-            model: Some("model-a".into()),
-            effort: Some("high".into()),
-            model_settings: [("reasoningEffort".into(), "high".into())].into(),
-            ..Default::default()
-        };
-        let selected = new_session_settings(Some(remembered.clone()), Some("model-a".into()));
-        assert_eq!(selected.effort.as_deref(), Some("high"));
-        assert_eq!(
-            selected
-                .model_settings
-                .get("reasoningEffort")
-                .map(String::as_str),
-            Some("high")
-        );
-        let changed = new_session_settings(Some(remembered), Some("model-b".into()));
-        assert_eq!(changed.model.as_deref(), Some("model-b"));
-        assert!(changed.effort.is_none());
-        assert!(changed.model_settings.is_empty());
-    }
-
     #[gpui::test]
     fn restoring_large_history_materializes_only_visible_chats(cx: &mut TestAppContext) {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
@@ -379,30 +314,30 @@ mod tests {
     fn inactive_history_cache_has_a_count_bound_and_reopens_evicted_history(
         cx: &mut TestAppContext,
     ) {
-        let (window, _, active) = super::super::tests::window(cx);
+        // Their transcripts are saved before the shell and its engine open the store.
+        let (window, _, active, summaries) = super::super::tests::seeded_window(cx, |store| {
+            let mut summaries = Vec::new();
+            for i in 0..12 {
+                let summary = store.create("codex", "/work/cache").unwrap();
+                store
+                    .write_rows(
+                        summary.id,
+                        0,
+                        &[onicode_core::transcript::Row {
+                            role: "assistant".into(),
+                            text: format!("Saved answer {i}"),
+                            first: true,
+                            sent_at: None,
+                            id: None,
+                        }],
+                    )
+                    .unwrap();
+                summaries.push(summary);
+            }
+            summaries
+        });
         let ids = window
             .update(cx, |shell, _, cx| {
-                let mut summaries = Vec::new();
-                {
-                    let mut store = locked(&shell.store).unwrap();
-                    for i in 0..12 {
-                        let summary = store.create("codex", "/work/cache").unwrap();
-                        store
-                            .write_rows(
-                                summary.id,
-                                0,
-                                &[onicode_core::transcript::Row {
-                                    role: "assistant".into(),
-                                    text: format!("Saved answer {i}"),
-                                    first: true,
-                                    sent_at: None,
-                                    id: None,
-                                }],
-                            )
-                            .unwrap();
-                        summaries.push(summary);
-                    }
-                }
                 let ids = summaries.iter().map(|s| s.id).collect::<Vec<_>>();
                 for summary in summaries {
                     let id = summary.id;

@@ -489,7 +489,10 @@ impl Store {
         Ok(crate::notes::inject_prompt(text, &picked))
     }
 
-    pub(super) fn save_response_note(&self, note: &crate::response::Note) -> Result<(), String> {
+    pub(super) fn save_response_note(
+        &self,
+        note: &crate::response::ResponseNote,
+    ) -> Result<(), String> {
         if note.body.len() > MAX_BODY {
             return Err("Content is too large".into());
         }
@@ -758,7 +761,7 @@ mod tests {
     fn response_note_facade_and_legacy_settings_share_one_saved_identity() {
         let store = store();
         let session = store.create("codex", "/project").unwrap();
-        let mut response = crate::response::Note {
+        let mut response = crate::response::ResponseNote {
             id: 123,
             title: "Response".into(),
             body: "Saved response".into(),

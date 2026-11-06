@@ -120,17 +120,20 @@ impl Conversation {
             return;
         }
         self.loading = true;
-        let id = self.summary.id;
-        let store = self.store.clone();
+        let transcript = self.session_call::<ReadTranscript>(
+            None,
+            |session| ReadTranscript {
+                session,
+                before_turn: None,
+                turns: usize::MAX,
+            },
+            cx,
+        );
+        let record = self.session_call::<ReadSession>(None, |session| ReadSession { session }, cx);
         let work = cx.background_executor().spawn(async move {
-            let (history, turns) = {
-                let store = locked(&store)?;
-                (
-                    store.load(id)?,
-                    store.agent_settings(id)?.unwrap_or_default().turns,
-                )
-            };
-            Ok::<_, String>((crate::transcript::PreparedHistory::new(history.rows), turns))
+            let page = transcript.await?;
+            let turns = record.await?.settings.unwrap_or_default().turns;
+            Ok::<_, String>((crate::transcript::PreparedHistory::new(page.rows), turns))
         });
         cx.spawn(async move |this, cx| {
             let result = work.await;

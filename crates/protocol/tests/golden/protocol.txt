@@ -1,9 +1,9 @@
-protocol 2
+protocol 3
 call Hello agent params=e9de24ac3b14849e reply=e9de24ac3b14849e
 call EngineInfo agent params=fa64ac005d4e6ec1 reply=ea30e297db7e7c2b
 call UpdateEngine params=76bcbe41f03a0f3d reply=caf76c905cccc628
 call StopEngine params=39c80f9e7eb7e6d1 reply=5b317dbd01f7735e
-watch WatchSession params=b3a91d6f3c8fee85 state=4a6ef87ab7d0ff3c event=8f3f799cd482ca11
+watch WatchSession params=b3a91d6f3c8fee85 state=4a6ef87ab7d0ff3c event=7023dc32b6d88016
 call Send agent params=1ca9fe7fc8323ff4 reply=5b317dbd01f7735e
 call Steer agent params=4ab5d5aa86f9dc18 reply=5b317dbd01f7735e
 call Stop params=9a1019327819ca0c reply=5b317dbd01f7735e
@@ -13,13 +13,42 @@ call KeepQuestionOpen params=64402ca7289086d7 reply=5b317dbd01f7735e
 call QueueEdit params=7485cd0b2d47119b reply=5b317dbd01f7735e
 call SendNow params=7e53ec49ae28c640 reply=5b317dbd01f7735e
 call SteerNow params=8bae251fda546d20 reply=5b317dbd01f7735e
-call Configure params=c478845b8f2294b7 reply=5b317dbd01f7735e
-call EditLastTurn params=594449fbceedcaae reply=5b317dbd01f7735e
+call Configure params=d2c8c0463b07c85d reply=5b317dbd01f7735e
+call EditLastTurn params=4180e5d276d57b2d reply=4fa8a78e2af5e9db
 call Rewind params=1be70895da08fcce reply=5b317dbd01f7735e
 call Fork params=56f21af28ec04cce reply=5b317dbd01f7735e
-call Btw params=d4716fe64fdbddf6 reply=5b317dbd01f7735e
+call Btw params=eadb71278b764fe0 reply=5b9fc2ef7ef73925
 call SwitchProvider params=72f16152dc52ddcf reply=5b317dbd01f7735e
 call ReadTranscript agent params=3bc9aae1e3ab77e8 reply=1e8999586d637174
+call ReadSession params=af2132e843624742 reply=c01818c38965b4ef
+call SaveQueue params=f3d9873e50e65fa2 reply=79bb5ba4cc377662
+call RecallLastTurn params=0038a465956549e7 reply=8abdb0ba6963df02
+call ReadBtw params=742e993e5ca4058a reply=d1449d67460a9515
+call SaveBtw params=987fe0b09c3674d5 reply=5b317dbd01f7735e
+call StopBtw params=2252445fc3b3bd33 reply=5b317dbd01f7735e
+watch WatchWorkspace params=48cbed38d368cb66 state=0a5ea79ae655e0a4 event=6df64b2a66d5da5a
+call CreateSession agent params=c5b01069dd390a40 reply=1d25c12b7df2d9cf
+call Rename agent params=7bba4bc956ecf4e7 reply=5b317dbd01f7735e
+call Archive agent params=5cb71f328d098dd0 reply=5b317dbd01f7735e
+call Pin params=80763b4950eb053a reply=5b317dbd01f7735e
+call Delete params=5221703aa502801c reply=5b317dbd01f7735e
+call SetWorkItem agent params=0f2f53dda1b55c2a reply=5b317dbd01f7735e
+call SetReminder params=e4dbb790bba1ac3a reply=5b317dbd01f7735e
+call SaveGroups agent params=2cb32215e702d6eb reply=5b317dbd01f7735e
+call SearchSessions agent params=a32f9959231b507a reply=7bcaa35a8013bee6
+call PreviewSession params=c14d4fb3cd8c0856 reply=6705d3fc00641cab
+call MarkSeen params=475096cc3f51af52 reply=5b317dbd01f7735e
+call SaveOrchestration params=7a86210ed34f8ea4 reply=5b317dbd01f7735e
+call GenerateTitle params=b91104aaaff39752 reply=5b317dbd01f7735e
+call NameWorktree params=4375da78efe56695 reply=4cbd7508da5ece7f
+call ListNotes agent params=6d3b1e52bc0b3aa9 reply=da15ebcd9427db1d
+call CreateNote params=c249cc8b56958f35 reply=f2fd39f08d78c26c
+call UpsertNote agent params=92d6f357c77e471c reply=f2fd39f08d78c26c
+call DeleteNote params=764ff086d1d5edd7 reply=5b317dbd01f7735e
+call SaveResponseNote params=de91897051238b62 reply=5b317dbd01f7735e
+call PrepareAutomationRun params=13e09faaecf43c45 reply=1d25c12b7df2d9cf
+call FinishAutomationRun params=296073f9f2c86a60 reply=5b317dbd01f7735e
+call ClaimInboxEvents params=1b1a7bde23c62d75 reply=5b317dbd01f7735e
 envelope Cursor shape=1779699f12cb9b5d
 envelope Item shape=49c3115eb783b829
 envelope Routed shape=4c28ec420f287c74

@@ -40,6 +40,9 @@ use onicode_core::catalog::{self, Model};
 use onicode_core::provider::Kind;
 use onicode_core::store::Session;
 use onicode_engine::turn::{Database, locked};
+use onicode_protocol::session::{Configure, ReadSession, ReadTranscript};
+use onicode_protocol::workspace::{Rename, SaveResponseNote};
+use onicode_protocol::{Call, OpId, Outcome, Rejection, SessionId};
 
 use crate::composer_motion::ComposerMotion;
 use crate::git_picker::{GitPicker, Mode as GitMode, Picked as GitPicked};
@@ -231,23 +234,32 @@ pub(crate) struct Conversation {
     ink: Option<Entity<crate::ink_field::InkField>>,
     runner: Option<Entity<crate::composer_runner::Runner>>,
     cancel: Arc<AtomicBool>,
-    title_cancel: Option<Arc<AtomicBool>>,
-    worktree_name_cancel: Option<Arc<AtomicBool>>,
+    /// The engine is naming this session's new checkout.
+    naming_worktree: bool,
+    /// Why the session takes no more turns, as loaded: an edit left the provider's context
+    /// changed and the transcript could not follow.
+    edit_recovery: Option<String>,
     _submission: Subscription,
     _alternate_submission: Subscription,
     response_events: Option<Subscription>,
     response_menu: Option<ResponseMenu>,
     response_request: Option<(usize, onicode_core::response::TransferKind, Instant)>,
 }
+/// What a mutating call came to, as the views report it.
+pub(super) fn applied(reply: Result<Outcome, String>) -> Result<(), String> {
+    match reply? {
+        Outcome::Applied => Ok(()),
+        Outcome::Rejected(Rejection::Denied(reason)) => Err(reason),
+        Outcome::Rejected(Rejection::Gone) => Err("Session no longer exists".into()),
+        Outcome::Rejected(rejection) => Err(format!("Not applied: {rejection:?}")),
+    }
+}
+
 impl Drop for Conversation {
     fn drop(&mut self) {
-        if let Some(cancel) = self.worktree_name_cancel.take() {
-            cancel.store(true, Ordering::Relaxed);
-        }
         if !self.summary.cwd.starts_with("remote://") {
             self.cancel.store(true, Ordering::Relaxed);
         }
-        self.cancel_title_generation();
     }
 }
 impl Conversation {
@@ -688,8 +700,8 @@ impl Conversation {
             ink: None,
             runner: None,
             cancel: Arc::new(AtomicBool::new(false)),
-            title_cancel: None,
-            worktree_name_cancel: None,
+            naming_worktree: false,
+            edit_recovery: None,
             _submission: submission,
             _alternate_submission: alternate_submission,
             response_events: None,
@@ -725,25 +737,35 @@ impl Conversation {
         }
         self.loading = true;
         self.refresh_catalog(cx);
-        let store = self.store.clone();
-        let id = self.summary.id;
+        let transcript = self.session_call::<ReadTranscript>(
+            None,
+            |session| ReadTranscript {
+                session,
+                before_turn: None,
+                turns: usize::MAX,
+            },
+            cx,
+        );
+        let record = self.session_call::<ReadSession>(None, |session| ReadSession { session }, cx);
         let work = cx.background_executor().spawn(async move {
-            let settings = locked(&store).and_then(|s| s.agent_settings(id));
-            (
-                locked(&store).and_then(|s| s.load(id)).map(|history| {
-                    let edits = onicode_engine::turn::edited_paths(&history.rows);
-                    (crate::transcript::PreparedHistory::new(history.rows), edits)
-                }),
-                settings,
-                locked(&store).and_then(|s| s.context_usage(id)),
-                locked(&store).and_then(|s| s.follow_ups(id)),
-            )
+            let history = transcript.await.map(|page| {
+                let edits = onicode_engine::turn::edited_paths(&page.rows);
+                (crate::transcript::PreparedHistory::new(page.rows), edits)
+            });
+            (history, record.await)
         });
         cx.spawn(async move |this, cx| {
-            let (result, settings, context, follow_ups) = work.await;
+            let (result, record) = work.await;
             let _ = this.update(cx, |this, cx| {
                 this.loading = false;
-                this.context = context.ok().flatten();
+                let (settings, context, follow_ups) = match record {
+                    Ok(record) => {
+                        this.edit_recovery = record.edit_recovery;
+                        (record.settings, record.context, Ok(record.queue))
+                    }
+                    Err(error) => (None, None, Err(error)),
+                };
+                this.context = context;
                 match follow_ups {
                     Ok(state) => {
                         this.follow_ups.persisted = state.revision;
@@ -763,12 +785,12 @@ impl Conversation {
                 }
                 // The composer may have a newer revision while history loads;
                 // historical turn provenance still belongs to the loaded rows.
-                if let Ok(Some(settings)) = &settings {
+                if let Some(settings) = &settings {
                     this.transcript
                         .update(cx, |view, _| view.set_turns(settings.turns.clone()));
                     this.settings.turns = settings.turns.clone();
                 }
-                if let Ok(Some(mut settings)) = settings
+                if let Some(mut settings) = settings.map(|settings| *settings)
                     && settings.revision >= this.settings.revision
                 {
                     if !this.summary.has_messages
@@ -1613,7 +1635,7 @@ impl Conversation {
                 selection,
             } => {
                 let turn = *turn;
-                let note = onicode_core::response::Note {
+                let note = onicode_core::response::ResponseNote {
                     id: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
@@ -1631,12 +1653,14 @@ impl Conversation {
                     source_session: self.summary.id,
                     source_cwd: self.summary.cwd.clone(),
                 };
-                let store = self.store.clone();
-                let work = cx
-                    .background_executor()
-                    .spawn(async move { locked(&store)?.save_note(&note) });
+                let saved = crate::engine_client::call::<SaveResponseNote>(
+                    &self.store,
+                    Some(OpId::new()),
+                    SaveResponseNote { note },
+                    cx,
+                );
                 cx.spawn(async move |this, cx| {
-                    let result = work.await;
+                    let result = applied(saved.await);
                     let _ = this.update(cx, |this, cx| {
                         this.transcript
                             .update(cx, |view, cx| view.note_result(turn, result, cx))
@@ -1965,28 +1989,63 @@ impl Conversation {
             .as_nanos() as u64;
         let mut settings = self.settings.clone();
         settings.model = self.model.clone();
-        let store = self.store.clone();
-        let id = self.summary.id;
         let provider = self.summary.provider.clone();
-        let remote = self.is_remote();
-        let title = (!self.summary.has_messages).then(|| self.summary.title.clone());
-        cx.background_executor()
-            .spawn(async move {
-                let saved = locked(&store).and_then(|s| {
-                    s.configure_agent(id, &provider, &settings)?;
-                    if let Some(title) = title
-                        && s.agent_settings(id)?
-                            .is_some_and(|saved| saved.revision == settings.revision)
-                    {
-                        s.title(id, &title)?;
-                    }
-                    Ok(())
-                });
-                if saved.is_ok() && remote {
-                    let _ = crate::runtime::remote::configure_saved(store, id);
+        // A blank session's placeholder follows its provider; any other title is the
+        // workspace's.
+        let title = (!self.summary.has_messages
+            && self.summary.title == format!("New {} session", Kind::from_id(&provider).label()))
+        .then(|| self.summary.title.clone());
+        let configured = self.session_call::<Configure>(
+            Some(OpId::new()),
+            move |session| Configure {
+                session,
+                provider,
+                settings,
+            },
+            cx,
+        );
+        cx.spawn(async move |this, cx| {
+            // A newer save already landed when this one is stale.
+            if !matches!(configured.await, Ok(Outcome::Applied)) {
+                return;
+            }
+            let _ = this.update(cx, |this, cx| {
+                let id = this.summary.id;
+                if let Some(title) = title {
+                    let body = Rename {
+                        session: id,
+                        title,
+                        expected: None,
+                    };
+                    crate::engine_client::call::<Rename>(&this.store, Some(OpId::new()), body, cx)
+                        .detach();
                 }
-            })
-            .detach();
+                if this.is_remote() {
+                    let store = this.store.clone();
+                    cx.background_executor()
+                        .spawn(async move {
+                            let _ = crate::runtime::remote::configure_saved(store, id);
+                        })
+                        .detach();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Makes a session call for this conversation's session, its engine id looked up off the
+    /// main thread. A mutating call carries a new `op`.
+    pub(super) fn session_call<C: Call + 'static>(
+        &self,
+        op: Option<OpId>,
+        body: impl FnOnce(SessionId) -> C::Params + Send + 'static,
+        cx: &mut gpui::App,
+    ) -> gpui::Task<Result<C::Reply, String>>
+    where
+        C::Params: Send + 'static,
+        C::Reply: Send + 'static,
+    {
+        crate::engine_client::session_call::<C>(&self.store, self.summary.id, op, body, cx)
     }
 
     fn menu_choice(&mut self, id: &str, cx: &mut Context<Self>) {

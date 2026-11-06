@@ -419,10 +419,12 @@ mod tests {
     use crate::shell::tests::window;
 
     fn add_session(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) -> i64 {
-        let summary = locked(&shell.store)
-            .unwrap()
-            .create("codex", &shell.workspace.project)
-            .unwrap();
+        let summary = crate::engine_client::create_for_test(
+            &shell.store,
+            "codex",
+            &shell.workspace.project,
+            cx,
+        );
         let id = summary.id;
         shell.add(summary, cx);
         let focus = shell.worktree_focus.get(&shell.workspace.project).cloned();
@@ -455,10 +457,12 @@ mod tests {
                 shell.run_menu(MenuTarget::Tab(second), "unpin", None, w, cx);
                 assert_eq!(shell.workspace.pinned_tabs, std::slice::from_ref(&c));
                 assert_eq!(shell.strip_tabs(cx), [b.clone(), a.clone()]);
-                let db = locked(&shell.store).unwrap();
+                let sessions = shell.mirror.state().sessions.iter();
                 (
                     shell.store.clone(),
-                    db.sessions().unwrap(),
+                    sessions
+                        .map(|summary| summary.session.clone())
+                        .collect::<Vec<_>>(),
                     serde_json::to_string(&shell.workspace).unwrap(),
                 )
             })

@@ -25,7 +25,7 @@ pub use side_threads::DesktopSideThread;
 
 use crate::transcript::{Row, Transcript};
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Session {
     pub id: i64,
     pub title: String,
@@ -41,7 +41,7 @@ pub struct Session {
 }
 
 /// A session's pending or delivered reminder.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Reminder {
     pub session_id: i64,
     /// Unix milliseconds.
@@ -337,11 +337,11 @@ impl Store {
         Ok(())
     }
 
-    pub fn save_note(&self, note: &crate::response::Note) -> Result<(), String> {
+    pub fn save_note(&self, note: &crate::response::ResponseNote) -> Result<(), String> {
         self.save_response_note(note)
     }
 
-    pub fn notes(&self) -> Result<Vec<crate::response::Note>, String> {
+    pub fn notes(&self) -> Result<Vec<crate::response::ResponseNote>, String> {
         Ok(self
             .list_notes()?
             .into_iter()
@@ -355,7 +355,7 @@ impl Store {
                             .flatten()
                     })
                     .unwrap_or(0);
-                crate::response::Note {
+                crate::response::ResponseNote {
                     id: note
                         .id
                         .strip_prefix("gpui-note-")
@@ -373,7 +373,7 @@ impl Store {
 
     /// Read-only fallback for early native settings; list_notes owns merging it
     /// with the desktop table, so this must never call the notes facade.
-    fn legacy_notes(&self) -> Result<Vec<crate::response::Note>, String> {
+    fn legacy_notes(&self) -> Result<Vec<crate::response::ResponseNote>, String> {
         let mut query = self
             .conn
             .prepare("SELECT value FROM native_settings WHERE key LIKE 'note:%' ORDER BY key DESC")

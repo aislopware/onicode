@@ -177,13 +177,15 @@ mod tests {
                         .word_wrap(),
                     "new files inherit the setting"
                 );
-                let store = locked(&shell.store).unwrap();
-                let saved = store.ui_state().unwrap();
+                let saved = locked(&shell.store).unwrap().ui_state().unwrap();
                 let persisted: Workspace = serde_json::from_str(saved.as_ref().unwrap()).unwrap();
                 assert!(!persisted.preferences.file_word_wrap);
+                let sessions = shell.mirror.state().sessions.iter();
                 (
                     shell.store.clone(),
-                    store.sessions().unwrap(),
+                    sessions
+                        .map(|summary| summary.session.clone())
+                        .collect::<Vec<_>>(),
                     saved,
                     shell.workspace.project.clone(),
                 )

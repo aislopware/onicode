@@ -1030,10 +1030,12 @@ mod tests {
             .update(cx, |shell, _, cx| {
                 let mut ids = Vec::new();
                 for _ in 0..3 {
-                    let summary = locked(&shell.store)
-                        .unwrap()
-                        .create("codex", &shell.workspace.project)
-                        .unwrap();
+                    let summary = crate::engine_client::create_for_test(
+                        &shell.store,
+                        "codex",
+                        &shell.workspace.project,
+                        cx,
+                    );
                     ids.push(summary.id);
                     shell.add(summary, cx);
                 }

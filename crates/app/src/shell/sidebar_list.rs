@@ -892,6 +892,17 @@ mod tests {
     use super::super::*;
     use super::age_label;
 
+    /// A reply saved in a session's transcript, so the store lists it with messages.
+    fn saved_answer() -> onicode_core::transcript::Row {
+        onicode_core::transcript::Row {
+            role: "assistant".into(),
+            text: "A saved answer".into(),
+            first: true,
+            sent_at: None,
+            id: None,
+        }
+    }
+
     #[gpui::test]
     fn focused_navigation_trailing_items_share_the_filter_axis(cx: &mut TestAppContext) {
         let (window, _, _) = super::super::tests::window(cx);
@@ -982,17 +993,16 @@ mod tests {
     fn sidebar_options_switch_card_heights_and_persist_without_loading_history(
         cx: &mut TestAppContext,
     ) {
-        let (window, _, _) = super::super::tests::window(cx);
-        let (id, loaded) = window
+        // The engine lists it with its messages and title; no conversation is loaded for it.
+        let (window, _, _, id) = super::super::tests::seeded_window(cx, |store| {
+            let id = store.create("codex", "/work/monocode").unwrap().id;
+            let title = "A detailed session with a long title that must stay inside its card";
+            store.title(id, title).unwrap();
+            store.write_rows(id, 0, &[saved_answer()]).unwrap();
+            id
+        });
+        let loaded = window
             .update(cx, |shell, _, cx| {
-                let mut summary = locked(&shell.store)
-                    .unwrap()
-                    .create("codex", "/work/monocode")
-                    .unwrap();
-                summary.has_messages = true;
-                summary.title =
-                    "A detailed session with a long title that must stay inside its card".into();
-                let id = summary.id;
                 shell.session_details.insert(
                     id,
                     onicode_core::store::MobileSessionMetadata {
@@ -1001,10 +1011,8 @@ mod tests {
                         ..Default::default()
                     },
                 );
-                shell.session_summaries.insert(id, summary);
-                shell.order.insert(0, id);
                 shell.notify_sidebar(cx);
-                (id, shell.sessions.len())
+                shell.sessions.len()
             })
             .unwrap();
         let visual = &mut gpui::VisualTestContext::from_window(window.into(), cx);
@@ -1272,30 +1280,23 @@ mod tests {
 
     #[gpui::test]
     fn large_project_only_lays_out_nearby_session_cards(cx: &mut TestAppContext) {
-        let (window, _, _) = super::super::tests::window(cx);
         let started = std::time::Instant::now();
-        let (first, last) = window
+        // The engine lists them with their messages and titles; none is loaded.
+        let (window, _, _, (first, last)) = super::super::tests::seeded_window(cx, |store| {
+            let mut ids = Vec::new();
+            for i in 0..1000 {
+                let id = store.create("codex", "/work/many-sessions").unwrap().id;
+                let title = format!("Session {i}: {}", "A long conversation title 🙂 ".repeat(4));
+                store.title(id, &title).unwrap();
+                store.write_rows(id, 0, &[saved_answer()]).unwrap();
+                ids.push(id);
+            }
+            (*ids.last().unwrap(), ids[0])
+        });
+        window
             .update(cx, |shell, window, cx| {
-                let mut summaries = Vec::new();
-                {
-                    let store = locked(&shell.store).unwrap();
-                    for i in 0..1000 {
-                        let mut summary = store.create("codex", "/work/many-sessions").unwrap();
-                        summary.title =
-                            format!("Session {i}: {}", "A long conversation title 🙂 ".repeat(4));
-                        summary.has_messages = true;
-                        summaries.push(summary);
-                    }
-                }
-                let first = summaries.last().unwrap().id;
-                let last = summaries[0].id;
-                for summary in summaries {
-                    shell.order.push(summary.id);
-                    shell.session_summaries.insert(summary.id, summary);
-                }
                 shell.workspace.open(first);
                 shell.select_project("/work/many-sessions".into(), window, cx);
-                (first, last)
             })
             .unwrap();
         cx.refresh().unwrap();
@@ -1337,7 +1338,8 @@ mod tests {
                     "the oldest conversation is reachable"
                 );
                 let members = shell.sidebar_session_ids(cx);
-                shell.groups.insert(
+                shell.save_groups(
+                    "save folders",
                     "/work/many-sessions".into(),
                     onicode_core::session_groups::Groups {
                         folders: vec![onicode_core::session_groups::Folder {
@@ -1348,6 +1350,7 @@ mod tests {
                         }],
                         ..Default::default()
                     },
+                    cx,
                 );
                 shell.notify_sidebar(cx);
             })

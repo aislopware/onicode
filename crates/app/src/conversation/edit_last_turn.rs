@@ -2,15 +2,16 @@
 use std::path::PathBuf;
 
 use onicode_core::provider;
-use onicode_core::store::EditSnapshot;
 use onicode_core::transcript::Row;
+use onicode_protocol::session::{EditLastTurn, EditedTurn, RecallLastTurn, RecalledTurn};
 
 use super::*;
 
 #[derive(Default)]
 pub(super) struct State {
     active: bool,
-    prepared: Option<EditSnapshot>,
+    /// The turn the engine recalled and holds for the edit.
+    prepared: Option<RecalledTurn>,
     /// A confirmed provider mutation followed by a storage conflict requires a
     /// history reload, rather than silently appending to inconsistent context.
     blocked: bool,
@@ -115,12 +116,15 @@ impl Conversation {
         self.editing_last_turn.active = true;
         self.status = "Preparing edit…".into();
         self.response_menu = None;
-        let store = self.store.clone();
-        let id = self.summary.id;
         let binding = self.summary.provider_id.clone();
-        let work = cx.background_executor().spawn(async move {
-            locked(&store)?.prepare_edit_last_turn(id, &rows, exact.as_deref())
-        });
+        let work = self.session_call::<RecallLastTurn>(
+            None,
+            move |session| RecallLastTurn {
+                session,
+                turn: exact,
+            },
+            cx,
+        );
         window.focus(&self.input.focus_handle(cx), cx);
         cx.spawn(async move |this, cx| {
             let result = work.await;
@@ -129,7 +133,8 @@ impl Conversation {
                 match result {
                     Ok(edit)
                         if this.summary.provider_id == binding
-                            && edit.matches(this.transcript.read(cx).source_rows())
+                            && edit.rows == rows
+                            && edit.rows == this.transcript.read(cx).source_rows()
                             && this.input.read(cx).content.is_empty()
                             && this.attachments.is_empty()
                             && !this.busy
@@ -163,23 +168,11 @@ impl Conversation {
         if self.editing_last_turn.active || self.editing_last_turn.blocked {
             return true;
         }
-        let recovery =
-            locked(&self.store).and_then(|store| store.edit_recovery_reason(self.summary.id));
-        match recovery {
-            Ok(Some(reason)) => {
-                self.editing_last_turn.blocked = true;
-                self.status = reason;
-                cx.notify();
-                return true;
-            }
-            Err(error) => {
-                self.status = format!(
-                    "Could not verify conversation history: {error}. Your draft is preserved."
-                );
-                cx.notify();
-                return true;
-            }
-            Ok(None) => {}
+        if let Some(reason) = self.edit_recovery.clone() {
+            self.editing_last_turn.blocked = true;
+            self.status = reason;
+            cx.notify();
+            return true;
         }
         let Some(edit) = self.editing_last_turn.prepared.clone() else {
             return false;
@@ -220,9 +213,9 @@ impl Conversation {
             || self.follow_ups.edit.is_some()
             || self.follow_ups.sending.is_some()
             || self.follow_ups.state.revision != self.follow_ups.persisted
-            || !edit.matches(self.transcript.read(cx).source_rows())
+            || edit.rows != self.transcript.read(cx).source_rows()
             || self.summary.provider_id.as_deref() != Some(edit.provider_id.as_str())
-            || self.summary.provider != edit.provider()
+            || self.summary.provider != edit.provider
             || self.settings.account.id != edit.account_id
             || self.execution_cwd() != edit.cwd
         {
@@ -231,78 +224,77 @@ impl Conversation {
             return true;
         }
         let kind = Kind::from_id(&self.summary.provider);
-        let Some(binary) = provider::resolve(kind) else {
+        if provider::resolve(kind).is_none() {
             self.status = format!(
                 "{} executable was not found; edited prompt preserved",
                 kind.label()
             );
             cx.notify();
             return true;
-        };
+        }
         self.attach_account(cx);
-        let mut settings = self.settings.clone();
-        settings.environment.extend(self.app_environment.clone());
-        let request = provider::Request {
-            kind,
-            binary,
-            cwd: PathBuf::from(self.execution_cwd()),
-            prompt: String::new(),
-            provider_id: Some(edit.provider_id.clone()),
-            model: self.model.clone(),
-            settings,
-        };
         let prompt = self.input.read(cx).content.to_string();
         let attachments = self.attachments.clone();
         let checked_attachments = attachments.clone();
+        let model = self.model.clone();
         self.editing_last_turn.active = true;
         // Keep the visible draft in place until confirmation, including on a
-        // rejected RPC. IME composition was checked before making it read-only.
+        // rejected call. IME composition was checked before making it read-only.
         self.input.update(cx, |input, _| input.set_read_only(true));
         self.status = "Rewinding last turn…".into();
-        let store = self.store.clone();
-        let id = self.summary.id;
-        let work = cx.background_executor().spawn(async move {
-            onicode_core::composer::validate_attachments(&checked_attachments)?;
-            locked(&store)?.validate_edit_last_turn(id, &edit)?;
-            let binding = match provider::rewind_last_turn(request, edit.provider_turn_id.as_deref()) {
-                Ok(binding)=>binding,
-                Err(error)=> {
-                    if error.provider_may_have_changed {
-                        locked(&store)?.mark_edit_recovery_required(id)?;
-                        return Err(format!("Provider recovery required: {error}"));
-                    }
-                    return Err(error.to_string());
-                }
+        // The engine rewinds the provider, and only once it confirms drops the turn.
+        let work = self.session_call::<EditLastTurn>(
+            Some(OpId::new()),
+            move |session| EditLastTurn {
+                session,
+                attachments: checked_attachments,
+                model,
+            },
+            cx,
+        );
+        cx.spawn(async move |this, cx| {
+            let result = match work.await {
+                Ok(EditedTurn {
+                    outcome: Outcome::Applied,
+                    provider_id,
+                }) => Ok(provider_id),
+                Ok(EditedTurn {
+                    outcome: Outcome::Rejected(Rejection::Denied(error)),
+                    ..
+                }) => Err(error),
+                Ok(EditedTurn {
+                    outcome: Outcome::Rejected(Rejection::Gone),
+                    ..
+                }) => Err("the edit is no longer held".into()),
+                Ok(EditedTurn {
+                    outcome: Outcome::Rejected(rejection),
+                    ..
+                }) => Err(format!("{rejection:?}")),
+                Err(error) => Err(error),
             };
-            // Provider confirmation is the only path to the destructive write.
-            match locked(&store)?.finish_edit_last_turn(id, &edit, &binding) {
-                Ok(()) => Ok((edit, binding)),
-                Err(error) => Err(format!(
-                    "Provider recovery required: Provider rewound, but local history changed: {error}"
-                )),
-            }
-        });
-        cx.spawn(async move |this,cx| {
-            let result: Result<(EditSnapshot,String),String> = work.await;
-            let _ = this.update(cx,|this,cx| {
+            let _ = this.update(cx, |this, cx| {
                 this.editing_last_turn.active = false;
-                this.input.update(cx,|input,_| input.set_read_only(false));
+                this.input.update(cx, |input, _| input.set_read_only(false));
                 match result {
-                    Ok((edit,binding)) => {
+                    Ok(binding) => {
                         this.editing_last_turn.prepared = None;
-                        this.summary.provider_id = Some(binding);
-                        this.settings.turns.retain(|&row,_| row < edit.start);
-                        this.transcript.update(cx,|view,cx| view.replace_history(edit.rows[..edit.start].to_vec(),cx));
+                        this.summary.provider_id = binding;
+                        this.settings.turns.retain(|&row, _| row < edit.start);
+                        this.transcript.update(cx, |view, cx| {
+                            view.replace_history(edit.rows[..edit.start].to_vec(), cx)
+                        });
                         this.summary.has_messages = edit.start > 0;
                         this.context = None;
-                        if this.input.read(cx).content.as_str() == prompt && this.attachments == attachments {
+                        if this.input.read(cx).content.as_str() == prompt
+                            && this.attachments == attachments
+                        {
                             // Normal submit still owns mode commands, attachments,
                             // account checks, durable acceptance and failure recovery.
                             this.send(cx);
                         } else {
                             // Programmatic composer updates can bypass read-only.
                             // Preserve both the new composer and the accepted edit.
-                            this.preserve_interrupted_edit(prompt,attachments,edit.start,cx);
+                            this.preserve_interrupted_edit(prompt, attachments, edit.start, cx);
                         }
                         this.run_history_actions(cx);
                     }
@@ -310,15 +302,22 @@ impl Conversation {
                         if error.starts_with("Provider recovery required:") {
                             this.editing_last_turn.blocked = true;
                             this.editing_last_turn.prepared = None;
-                            this.status = format!("{error}. Start a new conversation; your edited draft is preserved here.");
+                            this.edit_recovery = Some(error.clone());
+                            this.status = format!(
+                                "{error}. Start a new conversation; your edited draft is preserved here."
+                            );
                         } else {
-                            this.status = format!("Could not rewind last turn: {error}. Your edited prompt is preserved.");
+                            this.status = format!(
+                                "Could not rewind last turn: {error}. Your edited prompt is preserved."
+                            );
                         }
                     }
                 }
-                cx.emit(SessionChanged); cx.notify();
+                cx.emit(SessionChanged);
+                cx.notify();
             });
-        }).detach();
+        })
+        .detach();
         cx.notify();
         true
     }
@@ -331,11 +330,7 @@ impl Conversation {
         cx: &mut Context<Self>,
     ) {
         let message = onicode_core::follow_up::Message {
-            id: format!(
-                "edited-{}-{}",
-                self.summary.id,
-                onicode_core::time::now_ms()
-            ),
+            id: onicode_protocol::MessageId::new().to_string(),
             text,
             attachments,
             at,
@@ -357,10 +352,24 @@ mod tests {
     use std::sync::Mutex;
 
     use gpui::TestAppContext;
-    use onicode_core::store::Store;
+    use onicode_core::store::{EditSnapshot, Store};
     use onicode_core::transcript::Transcript;
 
     use super::*;
+
+    /// The edit as `RecallLastTurn` hands it to the conversation.
+    fn recalled(edit: &EditSnapshot) -> RecalledTurn {
+        RecalledTurn {
+            start: edit.start,
+            prompt: edit.prompt.clone(),
+            attachments: edit.attachments.clone(),
+            provider: edit.provider().to_owned(),
+            provider_id: edit.provider_id.clone(),
+            account_id: edit.account_id.clone(),
+            cwd: edit.cwd.clone(),
+            rows: edit.rows.clone(),
+        }
+    }
     #[gpui::test]
     fn cancelled_recall_preserves_history_and_native_provider_binding(cx: &mut TestAppContext) {
         let mut store = Store::open(Path::new(":memory:")).unwrap();
@@ -381,7 +390,7 @@ mod tests {
             chat.loaded = true;
             chat.transcript
                 .update(cx, |view, cx| view.patch(0, transcript.rows.clone(), cx));
-            chat.editing_last_turn.prepared = Some(edit);
+            chat.editing_last_turn.prepared = Some(recalled(&edit));
             assert!(chat.submit_edited(cx));
             assert!(!chat.editing_last_turn.pending());
             assert_eq!(chat.transcript.read(cx).source_rows(), transcript.rows);
@@ -442,7 +451,7 @@ mod tests {
             chat.loaded = true;
             chat.transcript
                 .update(cx, |view, cx| view.patch(0, transcript.rows.clone(), cx));
-            chat.editing_last_turn.prepared = Some(edit);
+            chat.editing_last_turn.prepared = Some(recalled(&edit));
             chat.input
                 .update(cx, |input, cx| input.set_text("/compact".into(), cx));
             assert!(chat.submit_edited(cx));
@@ -482,9 +491,13 @@ mod tests {
                 .finish_edit_last_turn(session.id, &edit, "fork")
                 .is_err()
         );
+        let recovery = store.edit_recovery_reason(session.id).unwrap();
+        assert!(recovery.is_some());
         let chat = cx.new(|cx| Conversation::new(session, Arc::new(Mutex::new(store)), cx));
         chat.update(cx, |chat, cx| {
             chat.loaded = true;
+            // As `ReadSession` loads it.
+            chat.edit_recovery = recovery;
             chat.input.update(cx, |input, cx| {
                 input.set_text("Unsent edited prompt".into(), cx)
             });

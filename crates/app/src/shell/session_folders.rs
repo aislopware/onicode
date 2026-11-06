@@ -235,7 +235,7 @@ impl Shell {
             window,
             move |this, _, target: &Target, window, cx| {
                 if !matches!(target, Target::Dismiss) && this.sessions.contains_key(&id) {
-                    let groups = this.groups.entry(project.clone()).or_default();
+                    let mut groups = this.groups.get(&project).cloned().unwrap_or_default();
                     match target {
                         Target::Existing(folder) => groups.add_to_folder(folder, id),
                         Target::New(name) => {
@@ -245,11 +245,7 @@ impl Shell {
                         }
                         Target::Dismiss => {}
                     }
-                    let groups = groups.clone();
-                    let project = project.clone();
-                    this.store_write("save the session folder", cx, move |store| {
-                        store.save_groups(&project, &groups)
-                    });
+                    this.save_groups("save the session folder", project.clone(), groups, cx);
                     this.sessions[&id].update(cx, |session, cx| session.folder_chosen(cx));
                     this.invalidate_chrome(cx);
                 }
@@ -349,28 +345,18 @@ mod tests {
                 let project = shell.workspace.project.clone();
                 let groups = &shell.groups[&project];
                 assert_eq!(groups.folder_of(id).unwrap().name, "Migration");
-                assert_eq!(
-                    locked(&shell.store)
-                        .unwrap()
-                        .groups(&project)
-                        .unwrap()
-                        .folder_of(id)
-                        .unwrap()
-                        .name,
-                    "Migration"
-                );
+                let state = shell.mirror.state();
+                let saved = state
+                    .projects
+                    .iter()
+                    .find(|known| known.path == project)
+                    .unwrap();
+                assert_eq!(saved.groups.folder_of(id).unwrap().name, "Migration");
                 let session = shell.sessions[&id].read(cx);
                 assert!(!session.busy);
                 assert_eq!(session.input.read(cx).content.as_ref(), "/add-to-folder ");
                 assert!(session.input.focus_handle(cx).is_focused(w));
-                assert!(
-                    locked(&shell.store)
-                        .unwrap()
-                        .load(id)
-                        .unwrap()
-                        .rows
-                        .is_empty()
-                );
+                assert!(session.transcript.read(cx).source_rows().is_empty());
                 shell.sessions[&id].update(cx, |view, cx| {
                     view.input.update(cx, |i, cx| {
                         i.set_text("/add-to-folder Preserve this prompt".into(), cx)

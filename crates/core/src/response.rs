@@ -19,7 +19,7 @@ pub struct Target {
     pub settings: std::collections::HashMap<String, String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Note {
+pub struct ResponseNote {
     pub id: u64,
     pub title: String,
     pub body: String,

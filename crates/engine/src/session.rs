@@ -4,6 +4,7 @@
 //! them for every watcher. [`SessionService`] serves it as the protocol's Session group over
 //! `onicode-rpc`; [`Viewer`] is a watcher's side, folding what arrives back into `turn::Update`s
 //! for a view that still merges those.
+mod asides;
 mod hub;
 #[cfg(test)]
 mod model;

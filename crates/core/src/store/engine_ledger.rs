@@ -74,6 +74,36 @@ impl Store {
         parse_uid(&uid)
     }
 
+    /// Gives a session without a uid the one its creator minted (`CreateSession`), and returns
+    /// the uid the session holds: an earlier uid stands.
+    pub fn adopt_session_uid(&self, id: i64, uid: Uuid) -> Result<Uuid, String> {
+        let Some(shared) = &self.shared else {
+            sql(self.conn.execute(
+                "UPDATE native_sessions SET uid=?2 WHERE id=?1 AND uid IS NULL",
+                params![id, uid.to_string()],
+            ))?;
+            return self.session_uid(id);
+        };
+        let session = self.persisted_session_id(id)?;
+        match &shared.extras_db {
+            Some(conn) => {
+                sql(conn.execute(
+                    "INSERT OR IGNORE INTO session_uids(session,uid) VALUES(?1,?2)",
+                    params![session, uid.to_string()],
+                ))?;
+            }
+            None => {
+                shared
+                    .ledger
+                    .borrow_mut()
+                    .uids
+                    .entry(session)
+                    .or_insert(uid);
+            }
+        }
+        self.session_uid(id)
+    }
+
     /// The session known by `uid`, if it still exists.
     pub fn session_by_uid(&self, uid: Uuid) -> Result<Option<i64>, String> {
         let uid = uid.to_string();
@@ -204,6 +234,21 @@ mod tests {
             assert_ne!(store.session_uid(second.id).unwrap(), uid);
             assert_eq!(store.session_by_uid(uid).unwrap(), Some(first.id));
             assert_eq!(store.session_by_uid(Uuid::now_v7()).unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn a_created_session_takes_its_creators_uid_once() {
+        let dir = tempfile::tempdir().unwrap();
+        for store in stores(dir.path()) {
+            let session = store.create("codex", "/project").unwrap();
+            let minted = Uuid::now_v7();
+            assert_eq!(store.adopt_session_uid(session.id, minted).unwrap(), minted);
+            assert_eq!(
+                store.adopt_session_uid(session.id, Uuid::now_v7()).unwrap(),
+                minted
+            );
+            assert_eq!(store.session_by_uid(minted).unwrap(), Some(session.id));
         }
     }
 

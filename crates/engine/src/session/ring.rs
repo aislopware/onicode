@@ -20,6 +20,7 @@ pub(crate) fn weight(event: &SessionEvent) -> usize {
                 .sum::<usize>()
         }
         SessionEvent::Append { text, .. } => 24 + text.len(),
+        SessionEvent::BtwText { thread, text } => 32 + thread.len() + text.len(),
         SessionEvent::Status { status, turn } => {
             64 + status.len()
                 + turn

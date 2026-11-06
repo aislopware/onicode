@@ -16,12 +16,19 @@ use std::path::PathBuf;
 use onicode_protocol::agent::AccessMode;
 use onicode_protocol::engine::{EngineInfo, Hello, StopEngine, UpdateEngine};
 use onicode_protocol::provider::Kind;
+use onicode_protocol::search::Target;
 use onicode_protocol::session::{
     Answer, Btw, Configure, Decide, EditLastTurn, Fork, KeepQuestionOpen, QueueChange, QueueEdit,
-    ReadTranscript, Rewind, Send, SendNow, Steer, SteerNow, Stop, SwitchProvider, Verdict,
-    WatchSession,
+    ReadBtw, ReadSession, ReadTranscript, RecallLastTurn, Rewind, SaveBtw, SaveQueue, Send,
+    SendNow, Steer, SteerNow, Stop, StopBtw, SwitchProvider, Verdict, WatchSession,
 };
 use onicode_protocol::transcript::Row;
+use onicode_protocol::workspace::{
+    Archive, ClaimInboxEvents, CreateNote, CreateSession, Delete, DeleteNote, FinishAutomationRun,
+    GenerateTitle, ListNotes, MarkSeen, NameWorktree, NewSession, Pin, PrepareAutomationRun,
+    PreviewSession, ReminderChange, Rename, SaveGroups, SaveOrchestration, SaveResponseNote,
+    SearchSessions, SetReminder, SetWorkItem, UpsertNote, WatchWorkspace,
+};
 use onicode_protocol::{
     Call, Cursor, Item, METHODS, MessageId, Method, MethodKind, OpId, PROTOCOL, Rejection, Routed,
     SessionId, TerminalId, Watch,
@@ -222,6 +229,36 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<Btw>();
     shapes.call::<SwitchProvider>();
     shapes.call::<ReadTranscript>();
+    shapes.call::<ReadSession>();
+    shapes.call::<SaveQueue>();
+    shapes.call::<RecallLastTurn>();
+    shapes.call::<ReadBtw>();
+    shapes.call::<SaveBtw>();
+    shapes.call::<StopBtw>();
+    // Workspace.
+    shapes.watch::<WatchWorkspace>();
+    shapes.call::<CreateSession>();
+    shapes.call::<Rename>();
+    shapes.call::<Archive>();
+    shapes.call::<Pin>();
+    shapes.call::<Delete>();
+    shapes.call::<SetWorkItem>();
+    shapes.call::<SetReminder>();
+    shapes.call::<SaveGroups>();
+    shapes.call::<SearchSessions>();
+    shapes.call::<PreviewSession>();
+    shapes.call::<MarkSeen>();
+    shapes.call::<SaveOrchestration>();
+    shapes.call::<GenerateTitle>();
+    shapes.call::<NameWorktree>();
+    shapes.call::<ListNotes>();
+    shapes.call::<CreateNote>();
+    shapes.call::<UpsertNote>();
+    shapes.call::<DeleteNote>();
+    shapes.call::<SaveResponseNote>();
+    shapes.call::<PrepareAutomationRun>();
+    shapes.call::<FinishAutomationRun>();
+    shapes.call::<ClaimInboxEvents>();
     // What every call and watch travels in.
     shapes.envelope::<Cursor>("Cursor");
     shapes.envelope::<Item<(), ()>>("Item");
@@ -231,6 +268,9 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.variants::<QueueChange>();
     shapes.variants::<Kind>();
     shapes.variants::<AccessMode>();
+    shapes.variants::<NewSession>();
+    shapes.variants::<ReminderChange>();
+    shapes.variants::<Target>();
     shapes.table()
 }
 

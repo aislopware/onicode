@@ -162,7 +162,7 @@ pub struct AutomationTrigger {
     pub actor: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DueAutomationRun {
     pub automation: Automation,

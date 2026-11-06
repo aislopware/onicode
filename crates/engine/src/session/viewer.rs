@@ -105,6 +105,13 @@ impl Viewer {
         self.updated = true;
     }
 
+    /// A steer of the queued message `id` that never reached the host: it fails with `error` in
+    /// the next update.
+    pub fn fail_steer(&mut self, id: String, error: String) {
+        self.pending.follow_up_errors.push((id, error));
+        self.updated = true;
+    }
+
     /// Everything since the last call as one update, once an update arrived. Rows carry no ids:
     /// the view patches by index and its rows equal the store's.
     pub fn take(&mut self) -> Option<Update> {
@@ -184,7 +191,9 @@ impl Viewer {
             SessionEvent::Commands(commands) => self.pending.commands = Some(commands.clone()),
             SessionEvent::Handoff(handoff) => self.pending.handoff = Some(handoff.clone()),
             SessionEvent::Receipt { op, outcome } => self.receipt(*op, outcome),
-            SessionEvent::Queue { .. } | SessionEvent::TurnFinished { .. } => {}
+            SessionEvent::Queue { .. }
+            | SessionEvent::TurnFinished { .. }
+            | SessionEvent::BtwText { .. } => {}
         }
         apply(&mut self.state, event);
         finished

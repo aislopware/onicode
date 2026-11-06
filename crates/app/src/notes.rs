@@ -10,9 +10,12 @@ use gpui::{
     AnyElement, App, ClipboardItem, Context, CursorStyle, Entity, EventEmitter, ExternalPaths,
     FocusHandle, Focusable, FontWeight, MouseButton, Role, Subscription, Task, Window, div, px,
 };
-use onicode_core::notes::{self, Note};
+use onicode_core::notes::{self, Note, NoteUpsert};
 use onicode_engine::turn::{Database, locked};
+use onicode_protocol::workspace::{CreateNote, DeleteNote, ListNotes, UpsertNote};
+use onicode_protocol::{Call, OpId, Outcome, Rejection};
 
+use crate::engine_client;
 use crate::explorer::DraggedFile;
 use crate::input::{self, Input};
 use crate::popover::{Anchor, AnchorSlot, popover};
@@ -20,7 +23,8 @@ use crate::theme::*;
 
 pub(crate) enum Event {
     Close,
-    OpenSource(i64),
+    /// The note's source conversation, by the key it was saved under.
+    OpenSource(String),
     AddToChat(Note),
 }
 
@@ -46,6 +50,16 @@ pub(crate) struct Notes {
     loading: bool,
     error: Option<String>,
     debounce: Option<Task<()>>,
+    /// The view's engine calls, each sent once the one before it is answered, so the engine
+    /// applies them in the order the person made them.
+    writes: Option<Task<()>>,
+    /// The latest save sent for each note, by a count of saves: an older reply never
+    /// overwrites a newer echo.
+    pending: HashMap<String, u64>,
+    saves: u64,
+    /// Saves that failed for notes no longer being edited, sent again on the next flush.
+    retry: HashMap<String, NoteUpsert>,
+    creating: bool,
     image_busy: bool,
     image_drag: bool,
     list_width: f32,
@@ -128,6 +142,11 @@ impl Notes {
             loading: true,
             error: None,
             debounce: None,
+            writes: None,
+            pending: HashMap::new(),
+            saves: 0,
+            retry: HashMap::new(),
+            creating: false,
             image_busy: false,
             image_drag: false,
             list_width: 280.,
@@ -191,6 +210,12 @@ impl Notes {
         cx.notify();
     }
 
+    /// The shell found no conversation under the note's source key.
+    pub(crate) fn source_missing(&mut self, cx: &mut Context<Self>) {
+        self.error = Some("Source conversation no longer exists.".into());
+        cx.notify();
+    }
+
     /// How many notes the list holds, once it has loaded.
     pub(crate) fn count(&self) -> Option<usize> {
         (!self.loading).then_some(self.notes.len())
@@ -202,43 +227,69 @@ impl Notes {
             return;
         }
         let revision = self.revision;
-        let store = self.store.clone();
-        let work = cx
-            .background_executor()
-            .spawn(async move { locked(&store)?.list_notes() });
-        cx.spawn(async move |this, cx| {
-            let result = work.await;
-            let _ = this.update(cx, |this, cx| {
-                this.loading = false;
-                if this.revision != revision {
-                    return;
-                }
-                match result {
-                    Ok(mut notes) => {
-                        // Preserve edits made while the refresh was in flight.
-                        if this.dirty
-                            && let Some(draft) = this.draft(cx)
-                        {
-                            notes.retain(|note| note.id != draft.id);
-                            notes.insert(0, draft);
-                        }
-                        this.notes = notes;
-                        let next = this
-                            .selected
-                            .clone()
-                            .filter(|id| this.notes.iter().any(|note| &note.id == id))
-                            .or_else(|| this.notes.first().map(|note| note.id.clone()));
-                        if !this.dirty || next != this.selected || this.document.is_none() {
-                            this.load_selection(next, cx);
-                        }
-                        this.error = None;
+        // Read behind the view's own saves, so the list holds them.
+        self.queue::<ListNotes>(None, ListNotes {}, cx, move |this, result, cx| {
+            this.loading = false;
+            if this.revision != revision {
+                return;
+            }
+            match result {
+                Ok(mut notes) => {
+                    // Preserve edits made while the refresh was in flight.
+                    if this.dirty
+                        && let Some(draft) = this.draft(cx)
+                    {
+                        notes.retain(|note| note.id != draft.id);
+                        notes.insert(0, draft);
                     }
-                    Err(error) => this.error = Some(error),
+                    this.notes = notes;
+                    let next = this
+                        .selected
+                        .clone()
+                        .filter(|id| this.notes.iter().any(|note| &note.id == id))
+                        .or_else(|| this.notes.first().map(|note| note.id.clone()));
+                    if !this.dirty || next != this.selected || this.document.is_none() {
+                        this.load_selection(next, cx);
+                    }
+                    this.error = None;
                 }
+                Err(error) => this.error = Some(error),
+            }
+        });
+    }
+
+    /// Sends `body` once the view's earlier calls are answered, then hands the reply to `settle`.
+    fn queue<C: Call + 'static>(
+        &mut self,
+        op: Option<OpId>,
+        body: C::Params,
+        cx: &mut Context<Self>,
+        settle: impl FnOnce(&mut Self, Result<C::Reply, String>, &mut Context<Self>) + 'static,
+    ) where
+        C::Params: Send + 'static,
+        C::Reply: Send + 'static,
+    {
+        let previous = self.writes.take();
+        self.writes = Some(cx.spawn(async move |this, cx| {
+            if let Some(previous) = previous {
+                previous.await;
+            }
+            let Ok(call) = this.update(cx, |this, cx| {
+                engine_client::call::<C>(&this.store, op, body, cx)
+            }) else {
+                return;
+            };
+            let reply = call.await;
+            let _ = this.update(cx, |this, cx| {
+                settle(this, reply, cx);
                 cx.notify();
             });
-        })
-        .detach();
+        }));
+    }
+
+    fn sort(&mut self) {
+        self.notes
+            .sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(a.id.cmp(&b.id)));
     }
 
     fn draft(&self, cx: &App) -> Option<Note> {
@@ -266,9 +317,19 @@ impl Notes {
     }
 
     /// Serializing at the editor boundary means a delayed save never overwrites
-    /// a newer edit or resurrects a deleted note.
+    /// a newer edit or resurrects a deleted note: the engine applies the view's saves in the
+    /// order they were made, and each is echoed here at once, so a flush lets the caller move
+    /// on in the same frame.
     pub(crate) fn flush(&mut self, cx: &mut Context<Self>) {
         self.add_tag(cx);
+        for update in std::mem::take(&mut self.retry).into_values() {
+            self.save(
+                update,
+                None,
+                |error| format!("Could not save note: {error}"),
+                cx,
+            );
+        }
         self.persist(true, cx);
     }
 
@@ -286,7 +347,6 @@ impl Notes {
         if !self.dirty && !(finalize && (draft.slug_pending || draft.title != saved_title)) {
             return;
         }
-        self.dirty = true;
         if draft.title.trim().is_empty() {
             draft.title = if finalize {
                 notes::title(&draft.body)
@@ -294,25 +354,90 @@ impl Notes {
                 saved_title
             };
         }
-        let result =
-            locked(&self.store).and_then(|store| store.upsert_note(&draft.upsert(finalize)));
-        match result {
-            Ok(saved) => {
-                self.revision = self.revision.wrapping_add(1);
-                if finalize {
-                    self.title
-                        .update(cx, |input, cx| input.set_text(saved.title.clone(), cx));
-                }
-                self.notes.retain(|note| note.id != saved.id);
-                self.notes.push(saved);
-                self.notes
-                    .sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(a.id.cmp(&b.id)));
-                self.dirty = false;
-                self.error = None;
-            }
-            Err(error) => self.error = Some(format!("Could not save note: {error}")),
+        let update = draft.upsert(finalize);
+        // The echo keeps its place in the list until the engine's reply names the time it saved.
+        self.revision = self.revision.wrapping_add(1);
+        let typed = finalize.then(|| draft.title.clone());
+        if let Some(typed) = &typed {
+            self.title
+                .update(cx, |input, cx| input.set_text(typed.clone(), cx));
         }
+        draft.slug_pending &= !finalize;
+        if let Some(note) = self.notes.iter_mut().find(|note| note.id == draft.id) {
+            *note = draft;
+        }
+        self.dirty = false;
+        self.error = None;
+        self.save(
+            update,
+            typed,
+            |error| format!("Could not save note: {error}"),
+            cx,
+        );
         cx.notify();
+    }
+
+    /// Sends a save behind the view's earlier calls. `typed` is the title a finalizing save
+    /// put in the title field: the engine's own title replaces it unless it was edited since.
+    fn save(
+        &mut self,
+        update: NoteUpsert,
+        typed: Option<String>,
+        describe: fn(String) -> String,
+        cx: &mut Context<Self>,
+    ) {
+        self.saves = self.saves.wrapping_add(1);
+        let save = self.saves;
+        let id = update.id.clone();
+        self.pending.insert(id.clone(), save);
+        self.retry.remove(&id);
+        let body = UpsertNote {
+            note: update.clone(),
+        };
+        self.queue::<UpsertNote>(Some(OpId::new()), body, cx, move |this, reply, cx| {
+            let latest = this.pending.get(&id) == Some(&save);
+            if latest {
+                this.pending.remove(&id);
+            }
+            match reply {
+                Ok(saved) if latest => this.saved(saved, typed, cx),
+                Ok(_) => {}
+                Err(error) => {
+                    this.error = Some(describe(error));
+                    if latest && this.notes.iter().any(|note| note.id == id) {
+                        if this.selected.as_ref() == Some(&id) {
+                            this.dirty = true;
+                        } else {
+                            this.retry.insert(id, update);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /// Settles the echo of the latest save of a note with what the engine saved.
+    fn saved(&mut self, mut saved: Note, typed: Option<String>, cx: &mut Context<Self>) {
+        // A note deleted since stays deleted.
+        let Some(at) = self.notes.iter().position(|note| note.id == saved.id) else {
+            return;
+        };
+        let editing = self.selected.as_ref() == Some(&saved.id);
+        if editing
+            && let Some(typed) = typed
+            && &*self.title.read(cx).content == typed.as_str()
+            && saved.title != typed
+        {
+            self.title
+                .update(cx, |input, cx| input.set_text(saved.title.clone(), cx));
+        }
+        if editing && self.dirty {
+            // Tags and the project are edited in the list itself: keep the newer ones.
+            saved.tags = self.notes[at].tags.clone();
+            saved.source_cwd = self.notes[at].source_cwd.clone();
+        }
+        self.notes[at] = saved;
+        self.sort();
     }
 
     fn select(&mut self, id: String, cx: &mut Context<Self>) {
@@ -380,24 +505,50 @@ impl Notes {
 
     fn create(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.flush(cx);
-        if self.dirty {
+        if self.dirty || self.creating {
             return;
         }
-        let result =
-            locked(&self.store).and_then(|store| store.create_note(Some(self.cwd.clone())));
-        match result {
-            Ok(note) => {
-                self.revision = self.revision.wrapping_add(1);
-                let id = note.id.clone();
-                self.notes.insert(0, note);
-                self.query
-                    .update(cx, |input, cx| input.set_text(String::new(), cx));
-                self.load_selection(Some(id), cx);
-                window.focus(&self.body.focus_handle(cx), cx);
+        // The engine names the note, so it opens once the engine answers.
+        self.creating = true;
+        let body = CreateNote {
+            cwd: Some(self.cwd.clone()),
+        };
+        let previous = self.writes.take();
+        self.writes = Some(cx.spawn_in(window, async move |this, cx| {
+            if let Some(previous) = previous {
+                previous.await;
             }
-            Err(error) => self.error = Some(error),
-        }
-        cx.notify();
+            let Ok(call) = this.update(cx, |this, cx| {
+                engine_client::call::<CreateNote>(&this.store, Some(OpId::new()), body, cx)
+            }) else {
+                return;
+            };
+            let reply = call.await;
+            let focus = this.update(cx, |this, cx| {
+                this.creating = false;
+                cx.notify();
+                match reply {
+                    Ok(note) => {
+                        // Save what was typed while the engine answered before leaving it.
+                        this.flush(cx);
+                        this.revision = this.revision.wrapping_add(1);
+                        let id = note.id.clone();
+                        this.notes.insert(0, note);
+                        this.query
+                            .update(cx, |input, cx| input.set_text(String::new(), cx));
+                        this.load_selection(Some(id), cx);
+                        Some(this.body.focus_handle(cx))
+                    }
+                    Err(error) => {
+                        this.error = Some(error);
+                        None
+                    }
+                }
+            });
+            if let Ok(Some(focus)) = focus {
+                let _ = cx.update(|window, cx| window.focus(&focus, cx));
+            }
+        }));
     }
 
     fn delete(&mut self, cx: &mut Context<Self>) {
@@ -405,17 +556,54 @@ impl Notes {
             return;
         };
         self.debounce = None;
-        let result = locked(&self.store).and_then(|store| store.delete_note(&id));
-        match result {
-            Ok(()) => {
-                self.revision = self.revision.wrapping_add(1);
-                self.notes.retain(|note| note.id != id);
-                self.modes.remove(&id);
-                self.dirty = false;
-                self.load_selection(self.notes.first().map(|note| note.id.clone()), cx);
+        // What to put back if the engine refuses: the note as shown, with its unsaved edits.
+        let shown = self.notes.iter().find(|note| note.id == id).cloned();
+        let unsaved = if self.dirty { self.draft(cx) } else { None };
+        let edited = unsaved.is_some();
+        let restore = match (unsaved, shown) {
+            (Some(mut draft), Some(shown)) => {
+                if draft.title.trim().is_empty() {
+                    draft.title = shown.title;
+                }
+                Some(draft)
             }
-            Err(error) => self.error = Some(error),
-        }
+            (unsaved, shown) => unsaved.or(shown),
+        };
+        let mode = self.modes.remove(&id);
+        self.revision = self.revision.wrapping_add(1);
+        self.notes.retain(|note| note.id != id);
+        self.pending.remove(&id);
+        self.retry.remove(&id);
+        self.dirty = false;
+        self.load_selection(self.notes.first().map(|note| note.id.clone()), cx);
+        let body = DeleteNote { id: id.clone() };
+        self.queue::<DeleteNote>(Some(OpId::new()), body, cx, move |this, reply, cx| {
+            let error = match reply {
+                Ok(Outcome::Rejected(Rejection::Denied(reason))) => reason,
+                // Any other refusal means the note is gone already.
+                Ok(_) => return,
+                Err(error) => error,
+            };
+            this.error = Some(error);
+            let Some(note) = restore else {
+                return;
+            };
+            if this.notes.iter().any(|saved| saved.id == note.id) {
+                return;
+            }
+            this.revision = this.revision.wrapping_add(1);
+            if let Some(mode) = mode {
+                this.modes.insert(id.clone(), mode);
+            }
+            if edited {
+                this.retry.insert(id.clone(), note.upsert(false));
+            }
+            this.notes.push(note);
+            this.sort();
+            if this.selected.is_none() {
+                this.load_selection(Some(id), cx);
+            }
+        });
         cx.notify();
     }
 
@@ -489,6 +677,7 @@ impl Notes {
         self.image_busy = true;
         self.image_drag = false;
         let work = cx.background_executor().spawn(async move {
+            // Note images are files: they stay app-side until files move into the engine.
             let store = locked(&store)?;
             let mut images = Vec::new();
             let mut failure = None;
@@ -567,11 +756,7 @@ impl Notes {
                                 block
                             );
                             let update = note.upsert(false);
-                            if let Err(error) =
-                                locked(&this.store).and_then(|store| store.upsert_note(&update))
-                            {
-                                this.error = Some(error);
-                            }
+                            this.save(update, None, |error| error, cx);
                         }
                     }
                     Err(error) => this.error = Some(error),
@@ -824,15 +1009,7 @@ impl Notes {
                             if this.dirty {
                                 return;
                             }
-                            if let Some(id) = locked(&this.store)
-                                .ok()
-                                .and_then(|store| store.resolve_existing_session_id(&source))
-                            {
-                                cx.emit(Event::OpenSource(id));
-                            } else {
-                                this.error = Some("Source conversation no longer exists.".into());
-                                cx.notify();
-                            }
+                            cx.emit(Event::OpenSource(source.clone()));
                         })),
                 )
             })

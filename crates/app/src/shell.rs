@@ -49,6 +49,7 @@ use terminal_panes::terminal_drag_ghost;
 mod title_tabs;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 mod window_chrome;
+mod workspace_mirror;
 mod worktrees;
 
 use std::collections::{HashMap, HashSet};
@@ -603,7 +604,7 @@ pub(crate) struct Shell {
     mobile: mobile_host::Mobile,
     app_results: HashMap<(i64, String), (String, Result<serde_json::Value, String>)>,
     app_pending: HashSet<(i64, String)>,
-    orchestrations: HashMap<i64, orchestration::Run>,
+    orchestrations: HashMap<i64, onicode_engine::workspace::orchestration::Run>,
     /// Each lead's last orchestration, whose agents hang under it in the sidebar.
     orchestration_summaries: HashMap<i64, onicode_core::orchestration::Summary>,
     /// Sessions an /operator thread started, by the session that started them.
@@ -688,7 +689,10 @@ pub(crate) struct Shell {
     /// The dock terminal each action last ran in, by project and action id.
     action_terminals: HashMap<(String, String), gpui::WeakEntity<Terminal>>,
     deleting: HashSet<i64>,
+    /// The shell's workspace calls, in the order it made them.
     group_writes: Option<gpui::Task<()>>,
+    /// The engine's workspace as the shell mirrors it.
+    mirror: workspace_mirror::Mirror,
     selected_sessions: HashSet<i64>,
     selection_anchor: Option<i64>,
     context_selection: bool,
@@ -938,7 +942,6 @@ impl Shell {
                     .await;
                 if this
                     .update(cx, |this, cx| {
-                        this.poll_reminders(cx);
                         this.poll_automations(cx);
                         this.update_chat_visibility(cx);
                         if this.workspace.sidebar_visible {
@@ -1072,6 +1075,7 @@ impl Shell {
             action_terminals: HashMap::new(),
             deleting: HashSet::new(),
             group_writes: None,
+            mirror: Default::default(),
             selected_sessions: HashSet::new(),
             selection_anchor: None,
             context_selection: false,
@@ -1199,7 +1203,6 @@ impl Shell {
             this.scan_external_editors(cx);
         }
         this.observe_accounts(cx);
-        this.load_note_count(cx);
         this.observe_picker_preferences(cx);
         this.bind_notices(cx);
         this.init_app_bridge(cx);
@@ -1219,7 +1222,7 @@ impl Shell {
         this.update_chat_visibility(cx);
         this.update_usage_provider(cx);
         this.apply_preferences(cx);
-        this.poll_reminders(cx);
+        this.mirror_workspace(cx);
         this.initialize_automations(cx);
         if this.workspace.active.is_none() {
             cx.spawn(async move |this, cx| {
@@ -1421,26 +1424,27 @@ impl Shell {
         }
         self.close_preview(cx);
         let archived = !self.session_metadata(id, cx).summary.archived;
-        let store = self.store.clone();
-        let work = cx
-            .background_executor()
-            .spawn(async move { locked(&store)?.set_archived(id, archived) });
+        let work = crate::engine_client::call::<onicode_protocol::workspace::Archive>(
+            &self.store,
+            Some(onicode_protocol::OpId::new()),
+            onicode_protocol::workspace::Archive {
+                session: id,
+                archived,
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
-            let result = work.await;
+            let result = work.await.and_then(|outcome| match outcome {
+                onicode_protocol::Outcome::Applied => Ok(()),
+                onicode_protocol::Outcome::Rejected(rejection) => Err(format!("{rejection:?}")),
+            });
             let _ = this.update_in(cx, |this, window, cx| {
                 this.archiving.remove(&id);
                 match result {
                     Ok(()) => {
-                        if let Some(summary) = this.session_summaries.get_mut(&id) {
-                            summary.archived = archived;
-                        }
-                        if let Some(view) = this.sessions.get(&id) {
-                            view.update(cx, |session, cx| {
-                                session.summary.archived = archived;
-                                if archived {
-                                    session.stop_if_busy(cx);
-                                }
-                            });
+                        this.mark_session(id, cx, |summary| summary.archived = archived);
+                        if archived && let Some(view) = this.sessions.get(&id) {
+                            view.update(cx, |session, cx| session.stop_if_busy(cx));
                         }
                         this.refresh_session_mark(id, cx);
                         if archived && this.workspace.tab_of(id).is_some() {
@@ -1466,45 +1470,45 @@ impl Shell {
         use onicode_core::agent::{Handoff, Settings};
         use onicode_core::response::{self, TransferKind};
         let navigation_revision = self.navigation_revision;
-        let store = self.store.clone();
         let target_kind = Kind::from_id(&transfer.target.provider);
         let account = crate::accounts::get(cx)
             .map(|center| center.read(cx).selected(target_kind, &transfer.cwd))
             .unwrap_or_default();
-        let work = cx.background_executor().spawn(async move {
-            let mut settings = Settings {
-                account,
-                revision: response::now_ms() * 1_000_000,
-                model: transfer.target.model.clone(),
-                effort: transfer.target.effort.clone(),
-                model_settings: transfer.target.settings.clone(),
-                access: transfer.settings.access,
-                worktree_cwd: transfer.settings.worktree_cwd.clone(),
-                ..Settings::default()
-            };
-            let prompt = if transfer.kind == TransferKind::SecondOpinion {
-                Some(response::second_opinion(&transfer.from, &transfer.turn))
-            } else {
-                settings.handoff = Some(Handoff {
-                    from: transfer.from.clone(),
-                    brief: response::handoff(&transfer.through),
-                });
-                None
-            };
-            let mut summary = locked(&store)?.create(&transfer.target.provider, &transfer.cwd)?;
-            summary.title = if transfer.kind == TransferKind::SecondOpinion {
-                "Second opinion".into()
-            } else {
-                transfer.title
-            };
-            locked(&store)?.title(summary.id, &summary.title)?;
-            locked(&store)?.configure_agent(summary.id, &summary.provider, &settings)?;
-            Ok::<_, String>((summary, settings, prompt))
-        });
+        let mut settings = Settings {
+            account,
+            revision: response::now_ms() * 1_000_000,
+            model: transfer.target.model.clone(),
+            effort: transfer.target.effort.clone(),
+            model_settings: transfer.target.settings.clone(),
+            access: transfer.settings.access,
+            worktree_cwd: transfer.settings.worktree_cwd.clone(),
+            ..Settings::default()
+        };
+        let prompt = if transfer.kind == TransferKind::SecondOpinion {
+            Some(response::second_opinion(&transfer.from, &transfer.turn))
+        } else {
+            settings.handoff = Some(Handoff {
+                from: transfer.from.clone(),
+                brief: response::handoff(&transfer.through),
+            });
+            None
+        };
+        let title = if transfer.kind == TransferKind::SecondOpinion {
+            "Second opinion".into()
+        } else {
+            transfer.title
+        };
+        let work = self.create_in_engine(
+            &transfer.target.provider,
+            &transfer.cwd,
+            Some(title),
+            onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| match result {
-                Ok((summary, settings, prompt)) => {
+                Ok((summary, _)) => {
                     let id = summary.id;
                     this.add(summary, cx);
                     this.sessions[&id]
@@ -3513,7 +3517,6 @@ impl Shell {
         );
         let navigation_revision = self.navigation_revision;
         let target = self.workspace.active;
-        let store = self.store.clone();
         let cwd = self.workspace.project.clone();
         let worktree = target.and_then(|id| {
             let path = self.session_working_copy(id, cx);
@@ -3524,10 +3527,8 @@ impl Shell {
                 },
             )
         });
-        let worktree_cwd = worktree.as_ref().map(|f| f.path.clone());
-        let work = cx
-            .background_executor()
-            .spawn(async move { defaults.create(&*locked(&store)?, &cwd, worktree_cwd) });
+        let (provider, start) = defaults.start(worktree.as_ref().map(|f| f.path.clone()));
+        let work = self.create_in_engine(provider, &cwd, None, start, cx);
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| match result {
@@ -3535,6 +3536,7 @@ impl Shell {
                     let id = summary.id;
                     this.add(summary, cx);
                     if let Some(view) = this.sessions.get(&id) {
+                        let settings = settings.unwrap_or_default();
                         view.update(cx, |view, cx| view.seed_new_settings(settings, cx));
                     }
                     this.seed_worktree(id, worktree.as_ref(), cx);
@@ -4499,7 +4501,6 @@ impl Shell {
         folder: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        let store = self.store.clone();
         let cwd = self.workspace.project.clone();
         let focus = self.worktree_focus.get(&cwd).cloned();
         // The project folder as a selected checkout is not a separate worktree.
@@ -4512,11 +4513,8 @@ impl Shell {
         }
         let navigation_revision = self.navigation_revision;
         let defaults = session_loading::NewSessionDefaults::read(choice, &cwd, cx);
-        let work = cx.background_executor().spawn({
-            let cwd = cwd.clone();
-            let worktree_cwd = copy.as_ref().map(|f| f.path.clone());
-            async move { defaults.create(&*locked(&store)?, &cwd, worktree_cwd) }
-        });
+        let (provider, start) = defaults.start(copy.as_ref().map(|f| f.path.clone()));
+        let work = self.create_in_engine(provider, &cwd, None, start, cx);
         let previous = self.new_tab_task.take();
         self.new_tab_task = Some(cx.spawn(async move |this, cx| {
             let result = work.await;
@@ -4532,15 +4530,12 @@ impl Shell {
                         let id = summary.id;
                         this.add(summary, cx);
                         if let Some(folder) = &folder {
-                            let groups = this.groups.entry(cwd.clone()).or_default();
+                            let mut groups = this.groups.get(&cwd).cloned().unwrap_or_default();
                             groups.add_to_folder(folder, id);
-                            let groups = groups.clone();
-                            let project = cwd.clone();
-                            this.store_write("save folders", cx, move |store| {
-                                store.save_groups(&project, &groups)
-                            });
+                            this.save_groups("save folders", cwd.clone(), groups, cx);
                         }
                         if let Some(view) = this.sessions.get(&id) {
+                            let settings = settings.unwrap_or_default();
                             view.update(cx, |view, cx| view.seed_new_settings(settings, cx));
                         }
                         this.seed_worktree(id, copy.as_ref(), cx);
@@ -5848,7 +5843,7 @@ impl Shell {
             + std::time::Duration::from_millis(120);
         self.preview_open = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(delay).await;
-            let Ok(Some(store)) = this.update_in(cx, |this, window, cx| {
+            let Ok(Some(work)) = this.update_in(cx, |this, window, cx| {
                 if this.session_hover != Some(id)
                     || this.menu.is_some()
                     || !this.session_summaries.contains_key(&id)
@@ -5866,15 +5861,22 @@ impl Shell {
                 });
                 this.sidebar_frame.update(cx, |_, cx| cx.notify());
                 // An already-open conversation has its own live metadata.
-                (!this.sessions.contains_key(&id)).then(|| this.store.clone())
+                (!this.sessions.contains_key(&id)).then(|| {
+                    this.workspace_read::<onicode_protocol::workspace::PreviewSession>(
+                        onicode_protocol::workspace::PreviewSession { session: id },
+                        cx,
+                    )
+                })
             }) else {
                 return;
             };
-            let data = cx
-                .background_executor()
-                .spawn(async move { locked(&store).and_then(|store| store.session_preview(id)) })
+            let data = work
                 .await
-                .ok();
+                .ok()
+                .map(|preview| onicode_core::store::SessionPreviewData {
+                    model: preview.model,
+                    worktree_cwd: preview.worktree,
+                });
             let _ = this.update(cx, |this, cx| {
                 if let Some(preview) = this
                     .session_preview
@@ -9178,10 +9180,12 @@ mod tests {
             .update(cx, |shell, window, cx| {
                 // Classic previews remain available without loading a conversation.
                 shell.workspace.classic_layout = true;
-                let mut summary = locked(&shell.store)
-                    .unwrap()
-                    .create("codex", "/work/monocode")
-                    .unwrap();
+                let mut summary = crate::engine_client::create_for_test(
+                    &shell.store,
+                    "codex",
+                    "/work/monocode",
+                    cx,
+                );
                 summary.has_messages = true;
                 let id = summary.id;
                 shell.order.push(id);
@@ -9457,10 +9461,12 @@ mod tests {
         let (window, a, b) = window(cx);
         window
             .update(cx, |shell, w, cx| {
-                let summary = locked(&shell.store)
-                    .unwrap()
-                    .create("codex", "/work/another-project")
-                    .unwrap();
+                let summary = crate::engine_client::create_for_test(
+                    &shell.store,
+                    "codex",
+                    "/work/another-project",
+                    cx,
+                );
                 let c = summary.id;
                 shell.add(summary, cx);
                 shell.open(a, w, cx);
@@ -9611,10 +9617,12 @@ mod tests {
             .update(cx, |shell, w, cx| {
                 let mut extra = Vec::new();
                 for _ in 0..2 {
-                    let summary = locked(&shell.store)
-                        .unwrap()
-                        .create("codex", "/work/monocode")
-                        .unwrap();
+                    let summary = crate::engine_client::create_for_test(
+                        &shell.store,
+                        "codex",
+                        "/work/monocode",
+                        cx,
+                    );
                     extra.push(summary.id);
                     shell.add(summary, cx);
                     shell.open(*extra.last().unwrap(), w, cx);
@@ -9643,10 +9651,12 @@ mod tests {
         let (window, a, b) = window(cx);
         window
             .update(cx, |shell, w, cx| {
-                let summary = locked(&shell.store)
-                    .unwrap()
-                    .create("codex", "/work/monocode")
-                    .unwrap();
+                let summary = crate::engine_client::create_for_test(
+                    &shell.store,
+                    "codex",
+                    "/work/monocode",
+                    cx,
+                );
                 let c = summary.id;
                 shell.add(summary, cx);
                 shell.open(c, w, cx);
@@ -11430,10 +11440,12 @@ mod tests {
         });
         let next = window
             .update(cx, |shell, w, cx| {
-                let mut summary = locked(&shell.store)
-                    .unwrap()
-                    .create("codex", &shell.workspace.project)
-                    .unwrap();
+                let mut summary = crate::engine_client::create_for_test(
+                    &shell.store,
+                    "codex",
+                    &shell.workspace.project,
+                    cx,
+                );
                 summary.has_messages = true;
                 summary.updated_at = 3;
                 let next = summary.id;
@@ -11683,10 +11695,12 @@ mod tests {
         window
             .update(cx, |shell, _, cx| {
                 for _ in 0..18 {
-                    let summary = locked(&shell.store)
-                        .unwrap()
-                        .create("codex", "/work/monocode")
-                        .unwrap();
+                    let summary = crate::engine_client::create_for_test(
+                        &shell.store,
+                        "codex",
+                        "/work/monocode",
+                        cx,
+                    );
                     let id = summary.id;
                     assert!(!summary.has_messages);
                     shell.add(summary, cx);
@@ -11760,6 +11774,15 @@ mod tests {
             .unwrap();
     }
     pub(super) fn window(cx: &mut TestAppContext) -> (WindowHandle<Shell>, i64, i64) {
+        let (window, a, b, ()) = seeded_window(cx, |_| {});
+        (window, a, b)
+    }
+    /// [`window`], with `seed` writing to the store before the shell and its engine open it, so
+    /// the engine's workspace holds what it wrote.
+    pub(super) fn seeded_window<T>(
+        cx: &mut TestAppContext,
+        seed: impl FnOnce(&mut Store) -> T,
+    ) -> (WindowHandle<Shell>, i64, i64, T) {
         let mut store = Store::open(std::path::Path::new(":memory:")).unwrap();
         let mut a = store.create("codex", "/work/another-project").unwrap();
         let b = store.create("claude", "/work/monocode").unwrap();
@@ -11777,6 +11800,7 @@ mod tests {
             )
             .unwrap();
         a.has_messages = true;
+        let seeded = seed(&mut store);
         let ids = (a.id, b.id);
         // Layout tests start from the rounded frame and opt into boxy.
         let mut state = Workspace {
@@ -11804,7 +11828,7 @@ mod tests {
         });
         cx.refresh().unwrap();
         cx.run_until_parked();
-        (window, ids.0, ids.1)
+        (window, ids.0, ids.1, seeded)
     }
     #[gpui::test]
     fn leaving_the_original_layout_defaults_to_boxy_only_before_the_notice(

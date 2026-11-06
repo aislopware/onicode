@@ -2,6 +2,7 @@
 //! JSON value. Compared as values, so maps may come back in another order.
 use std::path::PathBuf;
 
+use onicode_protocol::accounts::Profile;
 use onicode_protocol::agent::{
     AccessMode, Approval, Handoff, ProviderSwitch, Question, QuestionItem, QuestionOption,
     Settings, TurnInfo, TurnMetrics,
@@ -13,12 +14,24 @@ use onicode_protocol::engine::{
 use onicode_protocol::follow_up::{Message, State};
 use onicode_protocol::provider::{BackgroundTask, Kind, NativeCommand, NativeSubcommand};
 use onicode_protocol::session::{
-    Answer, Btw, Configure, Decide, EditLastTurn, Fork, KeepQuestionOpen, QueueChange, QueueEdit,
-    ReadTranscript, Rewind, Send, SendNow, SessionEvent, SessionState, Steer, SteerNow, Stop,
-    SwitchProvider, TranscriptPage, TurnState, Verdict, WatchSession,
+    Answer, Btw, BtwAnswer, BtwThread, BtwThreads, Configure, Decide, EditLastTurn, EditedTurn,
+    Fork, KeepQuestionOpen, QueueChange, QueueEdit, ReadBtw, ReadSession, ReadTranscript,
+    RecallLastTurn, RecalledTurn, Rewind, SaveBtw, SaveQueue, Send, SendNow, SessionEvent,
+    SessionRecord, SessionState, Steer, SteerNow, Stop, StopBtw, SwitchProvider, TranscriptPage,
+    TurnState, Verdict, WatchSession,
+};
+use onicode_protocol::sessions::{
+    Folder, Groups, Orchestration, Reminder, Session, SummaryTask, TextModel, WorkItem,
 };
 use onicode_protocol::transcript::Row;
 use onicode_protocol::usage::Limit;
+use onicode_protocol::workspace::{
+    Archive, ClaimInboxEvents, CreateNote, CreateSession, Created, Delete, DeleteNote,
+    FinishAutomationRun, GenerateTitle, Lead, MarkSeen, NameWorktree, Named, NewSession, Pin,
+    Preview, PreviewSession, Project, ReminderChange, Rename, SaveGroups, SaveOrchestration,
+    SearchSessions, SessionDefaults, SessionSummary, SetReminder, SetWorkItem, WatchWorkspace,
+    WorkspaceEvent, WorkspaceState,
+};
 use onicode_protocol::{
     Cursor, EngineId, Item, MessageId, OpId, Outcome, Rejection, Routed, SessionId, TerminalId,
 };
@@ -489,6 +502,7 @@ fn session_event() -> impl Strategy<Value = SessionEvent> {
         (any::<usize>(), turn_info())
             .prop_map(|(turn, info)| SessionEvent::TurnFinished { turn, info }),
         (op_id(), outcome()).prop_map(|(op, outcome)| SessionEvent::Receipt { op, outcome }),
+        (text(), text()).prop_map(|(thread, text)| SessionEvent::BtwText { thread, text }),
     ]
 }
 
@@ -677,8 +691,7 @@ proptest! {
         let Send { session, message, text, attachments } = value.clone();
         round_trips(&value)?;
         round_trips(&Steer { session, message, text: text.clone(), attachments: attachments.clone() })?;
-        round_trips(&EditLastTurn { session, message, text: text.clone(), attachments })?;
-        round_trips(&Btw { session, message, text })?;
+        round_trips(&EditLastTurn { session, attachments, model: Some(text) })?;
         round_trips(&Stop { session })?;
         round_trips(&Rewind { session, turn })?;
     }
@@ -703,8 +716,8 @@ proptest! {
     }
 
     #[test]
-    fn configure(session in session_id(), settings in settings()) {
-        round_trips(&Configure { session, settings })?;
+    fn configure(session in session_id(), provider in text(), settings in settings()) {
+        round_trips(&Configure { session, provider, settings })?;
     }
 
     #[test]
@@ -731,5 +744,435 @@ proptest! {
     ) {
         round_trips(&ReadTranscript { session, before_turn, turns })?;
         round_trips(&TranscriptPage { first_row, rows, more })?;
+    }
+}
+
+fn btw_thread() -> impl Strategy<Value = BtwThread> {
+    (
+        (
+            text(),
+            any::<usize>(),
+            text(),
+            text(),
+            option::of(text()),
+            text(),
+        ),
+        (
+            text(),
+            option::of(text()),
+            model_settings(),
+            vec(row(), 0..3),
+            text(),
+            text(),
+            option::of(text()),
+        ),
+    )
+        .prop_map(
+            |(
+                (id, source_turn, snapshot, provider, model, cwd),
+                (account, effort, model_settings, rows, draft, status, error),
+            )| BtwThread {
+                id,
+                source_turn,
+                snapshot,
+                provider,
+                model,
+                cwd,
+                account: Profile {
+                    id: account,
+                    root: None,
+                },
+                effort,
+                model_settings,
+                rows,
+                draft,
+                status,
+                error,
+            },
+        )
+}
+
+proptest! {
+    #[test]
+    fn session_records(
+        session in session_id(),
+        settings in option::of(settings()),
+        context in option::of(usage()),
+        queue in queue(),
+        edit_recovery in option::of(text()),
+    ) {
+        round_trips(&ReadSession { session })?;
+        round_trips(&SaveQueue { session, queue: queue.clone() })?;
+        round_trips(&SessionRecord {
+            settings: settings.map(Box::new),
+            context,
+            queue,
+            edit_recovery,
+        })?;
+    }
+
+    #[test]
+    fn last_turn_edits(
+        session in session_id(),
+        turn in option::of(text()),
+        start in any::<usize>(),
+        names in (text(), text(), text(), text(), text()),
+        attachments in paths(),
+        rows in vec(row(), 0..3),
+        outcome in outcome(),
+        provider_id in option::of(text()),
+    ) {
+        let (prompt, provider, bound, account_id, cwd) = names;
+        round_trips(&RecallLastTurn { session, turn: turn.clone() })?;
+        round_trips(&RecalledTurn {
+            start,
+            prompt,
+            attachments: attachments.clone(),
+            provider,
+            provider_id: bound,
+            account_id,
+            cwd,
+            rows,
+        })?;
+        round_trips(&EditLastTurn { session, attachments, model: turn })?;
+        round_trips(&EditedTurn { outcome, provider_id })?;
+    }
+
+    #[test]
+    fn btw_threads(
+        session in session_id(),
+        thread in btw_thread(),
+        threads in vec(btw_thread(), 0..3),
+        revision in any::<u64>(),
+        outcome in outcome(),
+        text in option::of(text()),
+    ) {
+        round_trips(&ReadBtw { session })?;
+        round_trips(&SaveBtw { session, threads: BtwThreads { revision, threads } })?;
+        round_trips(&StopBtw { session, thread: thread.id.clone() })?;
+        round_trips(&Btw { session, thread })?;
+        round_trips(&BtwAnswer { outcome, text })?;
+    }
+}
+
+fn work_item() -> impl Strategy<Value = WorkItem> {
+    (text(), text(), any::<u64>(), text()).prop_map(|(kind, repo, number, url)| WorkItem {
+        kind,
+        repo,
+        number,
+        url,
+    })
+}
+
+fn stored_session() -> impl Strategy<Value = Session> {
+    (
+        (any::<i64>(), text(), text(), text(), option::of(text())),
+        (
+            any::<bool>(),
+            any::<u64>(),
+            any::<bool>(),
+            any::<bool>(),
+            option::of(work_item()),
+        ),
+    )
+        .prop_map(
+            |(
+                (id, title, provider, cwd, provider_id),
+                (has_messages, updated_at, archived, pinned, work_item),
+            )| Session {
+                id,
+                title,
+                provider,
+                cwd,
+                provider_id,
+                has_messages,
+                updated_at,
+                archived,
+                pinned,
+                work_item,
+            },
+        )
+}
+
+fn summary() -> impl Strategy<Value = SessionSummary> {
+    (
+        (session_id(), stored_session(), text()),
+        option::of(text()),
+        any::<bool>(),
+        option::of(any::<i64>()),
+        option::of(text()),
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(
+            |((id, session, key), worktree, draft, started_by, automation, busy, unread)| {
+                SessionSummary {
+                    id,
+                    session,
+                    key,
+                    worktree,
+                    draft,
+                    started_by,
+                    automation,
+                    busy,
+                    unread,
+                }
+            },
+        )
+}
+
+fn groups() -> impl Strategy<Value = Groups> {
+    (
+        vec(
+            (
+                text(),
+                text(),
+                vec(any::<i64>(), 0..3),
+                any::<bool>(),
+                option::of(any::<usize>()),
+                option::of(text()),
+            ),
+            0..3,
+        ),
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(|(folders, pinned_collapsed, reminders_collapsed)| Groups {
+            folders: folders
+                .into_iter()
+                .map(
+                    |(id, name, session_ids, collapsed, color_index, custom_color)| Folder {
+                        id,
+                        name,
+                        session_ids,
+                        collapsed,
+                        color_index,
+                        custom_color,
+                    },
+                )
+                .collect(),
+            pinned_collapsed,
+            reminders_collapsed,
+        })
+}
+
+fn project() -> impl Strategy<Value = Project> {
+    (text(), groups()).prop_map(|(path, groups)| Project { path, groups })
+}
+
+fn reminder() -> impl Strategy<Value = Reminder> {
+    (any::<i64>(), any::<u64>(), option::of(any::<u64>())).prop_map(
+        |(session_id, due_at, fired_at)| Reminder {
+            session_id,
+            due_at,
+            fired_at,
+        },
+    )
+}
+
+fn lead() -> impl Strategy<Value = Lead> {
+    (
+        any::<i64>(),
+        vec(
+            (
+                option::of(any::<i64>()),
+                text(),
+                text(),
+                option::of(text()),
+                text(),
+            ),
+            0..3,
+        ),
+        any::<bool>(),
+    )
+        .prop_map(|(lead, tasks, live)| Lead {
+            lead,
+            summary: Orchestration {
+                tasks: tasks
+                    .into_iter()
+                    .map(|(session, title, provider, model, status)| SummaryTask {
+                        session,
+                        title,
+                        provider,
+                        model,
+                        status,
+                    })
+                    .collect(),
+                live,
+            },
+        })
+}
+
+fn workspace_event() -> impl Strategy<Value = WorkspaceEvent> {
+    prop_oneof![
+        summary().prop_map(|summary| WorkspaceEvent::Session(Box::new(summary))),
+        any::<i64>().prop_map(WorkspaceEvent::Removed),
+        project().prop_map(WorkspaceEvent::Project),
+        vec(reminder(), 0..3).prop_map(WorkspaceEvent::Reminders),
+        lead().prop_map(WorkspaceEvent::Orchestration),
+        any::<usize>().prop_map(WorkspaceEvent::Notes),
+        text().prop_map(WorkspaceEvent::AutomationTaken),
+        (op_id(), outcome()).prop_map(|(op, outcome)| WorkspaceEvent::Receipt { op, outcome }),
+    ]
+}
+
+fn workspace_state() -> impl Strategy<Value = WorkspaceState> {
+    (
+        vec(summary(), 0..3),
+        vec(project(), 0..3),
+        vec(reminder(), 0..3),
+        vec(lead(), 0..2),
+        any::<usize>(),
+    )
+        .prop_map(
+            |(sessions, projects, reminders, orchestrations, notes)| WorkspaceState {
+                sessions,
+                projects,
+                reminders,
+                orchestrations,
+                notes,
+                automations: Vec::new(),
+            },
+        )
+}
+
+fn reminder_change() -> impl Strategy<Value = ReminderChange> {
+    prop_oneof![
+        any::<u64>().prop_map(ReminderChange::At),
+        (any::<u64>(), any::<u64>())
+            .prop_map(|(expected, due_at)| ReminderChange::Snooze { expected, due_at }),
+        option::of(any::<u64>()).prop_map(|expected| ReminderChange::Clear { expected }),
+    ]
+}
+
+fn new_session() -> impl Strategy<Value = NewSession> {
+    prop_oneof![
+        Just(NewSession::Bare),
+        settings().prop_map(|settings| NewSession::Settings(Box::new(settings))),
+        (
+            option::of(text()),
+            text(),
+            access(),
+            option::of(text()),
+            option::of(text())
+        )
+            .prop_map(|(model, account, access, effort, worktree_cwd)| {
+                NewSession::Defaults(SessionDefaults {
+                    model,
+                    account: Profile {
+                        id: account,
+                        root: None,
+                    },
+                    access,
+                    effort,
+                    worktree_cwd,
+                })
+            }),
+    ]
+}
+
+fn text_model() -> impl Strategy<Value = TextModel> {
+    (
+        proptest::sample::select(Kind::ALL.to_vec()),
+        option::of(text()),
+        text(),
+    )
+        .prop_map(|(kind, model, account)| TextModel {
+            kind,
+            model,
+            account: Profile {
+                id: account,
+                root: None,
+            },
+        })
+}
+
+proptest! {
+    #[test]
+    fn workspace_events(value in workspace_event()) {
+        round_trips(&value)?;
+    }
+
+    #[test]
+    fn workspace_states(value in workspace_state(), since in option::of(cursor())) {
+        round_trips(&value)?;
+        round_trips(&WatchWorkspace { since })?;
+    }
+
+    #[test]
+    fn workspace_items(at in cursor(), state in workspace_state(), events in vec(workspace_event(), 0..3)) {
+        round_trips(&Item::<WorkspaceState, WorkspaceEvent>::Snapshot { at, state })?;
+        round_trips(&Item::<WorkspaceState, WorkspaceEvent>::Events { first: 1, last: 3, events })?;
+    }
+
+    #[test]
+    fn creations(
+        session in session_id(),
+        provider in text(),
+        cwd in text(),
+        title in option::of(text()),
+        start in new_session(),
+        started_by in option::of(any::<i64>()),
+        outcome in outcome(),
+        created in option::of(summary()),
+        settings in option::of(settings()),
+    ) {
+        round_trips(&CreateSession { session, provider, cwd, title, start, started_by })?;
+        round_trips(&Created {
+            outcome,
+            session: created.map(Box::new),
+            settings: settings.map(Box::new),
+        })?;
+    }
+
+    #[test]
+    fn session_marks(
+        session in any::<i64>(),
+        sessions in vec(any::<i64>(), 0..3),
+        flag in any::<bool>(),
+        title in text(),
+        expected in option::of(text()),
+        item in option::of(work_item()),
+        change in reminder_change(),
+    ) {
+        round_trips(&Rename { session, title, expected })?;
+        round_trips(&Archive { session, archived: flag })?;
+        round_trips(&Pin { sessions: sessions.clone(), pinned: flag })?;
+        round_trips(&Delete { session })?;
+        round_trips(&SetWorkItem { session, item, if_unlinked: flag })?;
+        round_trips(&SetReminder { sessions, change })?;
+        round_trips(&MarkSeen { session })?;
+    }
+
+    #[test]
+    fn workspace_chores(
+        project in text(),
+        groups in groups(),
+        lead in lead(),
+        session in any::<i64>(),
+        message in text(),
+        model in text_model(),
+        branch in option::of(text()),
+        run in text(),
+    ) {
+        round_trips(&SaveGroups { project: project.clone(), groups })?;
+        round_trips(&SaveOrchestration { lead: lead.lead, summary: lead.summary })?;
+        round_trips(&SearchSessions { query: message.clone() })?;
+        round_trips(&PreviewSession { session })?;
+        round_trips(&Preview { model: branch.clone(), worktree: Some(project.clone()) })?;
+        round_trips(&GenerateTitle {
+            session,
+            message: message.clone(),
+            placeholder: project.clone(),
+            seed: message.clone(),
+            cwd: project.clone(),
+            model: model.clone(),
+        })?;
+        round_trips(&NameWorktree { session, root: project.clone(), cwd: project.clone(), message, model })?;
+        round_trips(&Named { branch })?;
+        round_trips(&CreateNote { cwd: Some(project) })?;
+        round_trips(&DeleteNote { id: run.clone() })?;
+        round_trips(&FinishAutomationRun { run, status: "succeeded".into(), error: None })?;
+        round_trips(&ClaimInboxEvents::default())?;
     }
 }

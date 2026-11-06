@@ -5,10 +5,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::StreamExt;
 use onicode_protocol::session::{
-    self, Answer, Btw, Configure, Decide, EditLastTurn, Fork, KeepQuestionOpen, QueueEdit,
-    ReadTranscript, Rewind, SendNow, Steer, SteerNow, Stop, SwitchProvider, WatchSession,
+    self, Answer, Btw, Configure, Decide, EditLastTurn, Fork, KeepQuestionOpen, QueueEdit, ReadBtw,
+    ReadSession, ReadTranscript, RecallLastTurn, Rewind, SaveBtw, SaveQueue, SendNow, Steer,
+    SteerNow, Stop, StopBtw, SwitchProvider, WatchSession,
 };
-use onicode_protocol::{Call, Outcome, Routed, Watch};
+use onicode_protocol::{Call, Routed, Watch};
 use onicode_rpc::{RpcError, RpcReply, RpcService, parse_params};
 use serde::de::DeserializeOwned;
 
@@ -39,7 +40,7 @@ fn routed<T: DeserializeOwned>(
     Ok((routed.op, routed.body))
 }
 
-fn outcome(result: Result<Outcome, String>) -> Result<RpcReply, RpcError> {
+fn reply<T: serde::Serialize>(result: Result<T, String>) -> Result<RpcReply, RpcError> {
     RpcReply::value(&result.map_err(RpcError::Failed)?)
 }
 
@@ -58,52 +59,84 @@ impl RpcService for SessionService {
         }
         if method == session::Send::NAME {
             let (op, body) = routed::<session::Send>(params)?;
-            return outcome(hub.send(op, body).await);
+            return reply(hub.send(op, body).await);
         }
         if method == Steer::NAME {
             let (op, body) = routed::<Steer>(params)?;
-            return outcome(hub.steer(op, body).await);
+            return reply(hub.steer(op, body).await);
         }
         if method == Stop::NAME {
             let (op, body) = routed::<Stop>(params)?;
-            return outcome(hub.stop(op, body).await);
+            return reply(hub.stop(op, body).await);
         }
         if method == Decide::NAME {
             let (op, body) = routed::<Decide>(params)?;
-            return outcome(hub.decide(op, body).await);
+            return reply(hub.decide(op, body).await);
         }
         if method == Answer::NAME {
             let (op, body) = routed::<Answer>(params)?;
-            return outcome(hub.answer(op, body).await);
+            return reply(hub.answer(op, body).await);
         }
         if method == KeepQuestionOpen::NAME {
             let (op, body) = routed::<KeepQuestionOpen>(params)?;
-            return outcome(hub.keep_question_open(op, body).await);
+            return reply(hub.keep_question_open(op, body).await);
         }
         if method == QueueEdit::NAME {
             let (op, body) = routed::<QueueEdit>(params)?;
-            return outcome(hub.queue_edit(op, body).await);
+            return reply(hub.queue_edit(op, body).await);
         }
         if method == Configure::NAME {
             let (op, body) = routed::<Configure>(params)?;
-            return outcome(hub.configure(op, body).await);
+            return reply(hub.configure(op, body).await);
+        }
+        if method == SendNow::NAME {
+            let (op, body) = routed::<SendNow>(params)?;
+            return reply(hub.send_now(op, body).await);
+        }
+        if method == SteerNow::NAME {
+            let (op, body) = routed::<SteerNow>(params)?;
+            return reply(hub.steer_now(op, body).await);
+        }
+        if method == SaveQueue::NAME {
+            let (op, body) = routed::<SaveQueue>(params)?;
+            return reply(hub.save_queue(op, body).await);
+        }
+        if method == RecallLastTurn::NAME {
+            let (_, body) = routed::<RecallLastTurn>(params)?;
+            return reply(hub.recall_last_turn(&body));
+        }
+        if method == EditLastTurn::NAME {
+            let (op, body) = routed::<EditLastTurn>(params)?;
+            return reply(hub.edit_last_turn(op, body).await);
+        }
+        if method == ReadBtw::NAME {
+            let (_, body) = routed::<ReadBtw>(params)?;
+            return reply(hub.read_btw(&body));
+        }
+        if method == SaveBtw::NAME {
+            let (op, body) = routed::<SaveBtw>(params)?;
+            return reply(hub.save_btw(op, body).await);
+        }
+        if method == Btw::NAME {
+            let (op, body) = routed::<Btw>(params)?;
+            return reply(hub.btw(op, body).await);
+        }
+        if method == StopBtw::NAME {
+            let (op, body) = routed::<StopBtw>(params)?;
+            return reply(hub.stop_btw(op, body).await);
+        }
+        if method == ReadSession::NAME {
+            let (_, body) = routed::<ReadSession>(params)?;
+            return reply(hub.read_session(&body));
         }
         if method == ReadTranscript::NAME {
             let (_, body) = routed::<ReadTranscript>(params)?;
-            return RpcReply::value(&hub.read_transcript(&body).map_err(RpcError::Failed)?);
+            return reply(hub.read_transcript(&body));
         }
-        // Still the app's own until they move into the engine (engine.md, migration step 4).
-        if [
-            SendNow::NAME,
-            SteerNow::NAME,
-            EditLastTurn::NAME,
-            Rewind::NAME,
-            Fork::NAME,
-            Btw::NAME,
-            SwitchProvider::NAME,
-        ]
-        .contains(&method)
-        {
+        // No code of theirs moves before their own steps: rewinding to and forking from any turn
+        // come with the history view's calls (engine.md, migration step 5), and a provider switch
+        // with the accounts and catalog (step 6).
+        if [Rewind::NAME, Fork::NAME, SwitchProvider::NAME].contains(&method) {
             return Err(RpcError::Failed(format!(
                 "{method} is not served by the engine yet"
             )));

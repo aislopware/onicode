@@ -1,5 +1,6 @@
 //! Background session names never join or rewrite the user's provider history.
 use onicode_core::session_title::{TextModel, display_title};
+use onicode_protocol::workspace::GenerateTitle;
 
 use super::*;
 
@@ -35,18 +36,13 @@ impl Conversation {
     }
 
     pub(crate) fn rename(&mut self, title: String, cx: &mut Context<Self>) {
-        self.cancel_title_generation();
         self.summary.title = title;
         cx.emit(SessionChanged);
         cx.notify();
     }
 
-    pub(super) fn cancel_title_generation(&mut self) {
-        if let Some(cancel) = self.title_cancel.take() {
-            cancel.store(true, Ordering::Relaxed);
-        }
-    }
-
+    /// Names a blank session after its first prompt: the prompt's start stands in at once, and
+    /// the engine's generated title and any pasted work item arrive through the workspace.
     pub(super) fn generate_title(&mut self, message: &str, cx: &mut Context<Self>) {
         if self.summary.has_messages
             || self.summary.title
@@ -57,7 +53,6 @@ impl Conversation {
         {
             return;
         }
-        self.cancel_title_generation();
         let placeholder = self.summary.title.clone();
         let seed = message
             .split_whitespace()
@@ -69,104 +64,22 @@ impl Conversation {
         if seed.is_empty() {
             return;
         }
-        self.summary.title = seed.clone();
-        let cancel = Arc::new(AtomicBool::new(false));
-        self.title_cancel = Some(cancel.clone());
-        let text = self.background_text_model(cx);
-        let cwd = self
-            .settings
-            .worktree_cwd
-            .clone()
-            .unwrap_or_else(|| self.summary.cwd.clone());
-        let message = message.to_owned();
-        let id = self.summary.id;
-        let store = self.store.clone();
-        let expected = seed.clone();
-        let flag = cancel.clone();
-        let work = cx.background_executor().spawn(async move {
-            // Persist the fallback before generation so a fast response cannot
-            // race its initial write, and never overwrite a saved manual name.
-            let titled = locked(&store)
-                .and_then(|s| s.replace_title(id, &placeholder, &expected))
-                .unwrap_or(false);
-            // GPUI unit tests use synthetic conversations. Live-provider checks
-            // are opt-in; the core runner is tested with isolated CLI fixtures.
-            let generated = if !titled || cfg!(test) {
-                None
-            } else {
-                onicode_core::session_title::generate_for(text, Path::new(&cwd), &message, flag)
-            };
-            // Tauri's resolveLinkedWorkItem: a pasted issue or PR links the
-            // session even when a manual name kept the title. Tests never shell
-            // out to `gh`, so they only see pasted URLs.
-            let linked = if cfg!(test) {
-                onicode_core::session_groups::parse_github_work_item(&message)
-            } else {
-                onicode_core::session_groups::resolve_work_item(
-                    &message,
-                    Path::new(&cwd),
-                    generated.as_ref().and_then(|g| g.work_item.as_ref()),
-                )
-            };
-            (generated, linked)
-        });
-        cx.spawn(async move |this, cx| {
-            let (generated, linked) = work.await;
-            let _ = this.update(cx, |this, cx| {
-                if !cancel.load(Ordering::Relaxed)
-                    && let Some(generated) = generated
-                {
-                    this.apply_generated_title(&seed, generated.title, cx);
-                }
-                if let Some(item) = linked {
-                    this.link_first_work_item(item, cx);
-                }
-            });
-        })
-        .detach();
-    }
-
-    /// Links only an unlinked session: a manual or inbox link always wins.
-    fn link_first_work_item(
-        &mut self,
-        item: onicode_core::session_groups::WorkItem,
-        cx: &mut Context<Self>,
-    ) {
-        if self.summary.work_item.is_some() {
-            return;
-        }
-        self.summary.work_item = Some(item.clone());
-        let store = self.store.clone();
-        let id = self.summary.id;
-        cx.background_executor()
-            .spawn(async move {
-                let _ = locked(&store).and_then(|s| s.set_work_item(id, Some(&item)));
-            })
+        self.summary.title.clone_from(&seed);
+        let body = GenerateTitle {
+            session: self.summary.id,
+            message: message.to_owned(),
+            placeholder,
+            seed,
+            cwd: self
+                .settings
+                .worktree_cwd
+                .clone()
+                .unwrap_or_else(|| self.summary.cwd.clone()),
+            model: self.background_text_model(cx),
+        };
+        // Applied or not, the workspace says what the title became.
+        crate::engine_client::call::<GenerateTitle>(&self.store, Some(OpId::new()), body, cx)
             .detach();
-        cx.emit(SessionChanged);
-        cx.notify();
-    }
-
-    pub(super) fn apply_generated_title(
-        &mut self,
-        seed: &str,
-        title: String,
-        cx: &mut Context<Self>,
-    ) {
-        if self.summary.title != seed {
-            return;
-        }
-        self.summary.title = title.clone();
-        let store = self.store.clone();
-        let id = self.summary.id;
-        let seed = seed.to_owned();
-        cx.background_executor()
-            .spawn(async move {
-                let _ = locked(&store).and_then(|s| s.replace_title(id, &seed, &title));
-            })
-            .detach();
-        cx.emit(SessionChanged);
-        cx.notify();
     }
 }
 
@@ -195,79 +108,5 @@ mod tests {
         for title in ["codex", "Codex", "New Codex session"] {
             assert_eq!(display_title(title, "codex"), "New session");
         }
-    }
-    #[gpui::test]
-    fn late_generated_titles_preserve_manual_names_and_conversation_history(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
-        let summary = locked(&store).unwrap().create("codex", "/tmp").unwrap();
-        let id = summary.id;
-        let view = cx.new(|cx| Conversation::new(summary, store.clone(), cx));
-        view.update(cx, |v, cx| {
-            v.summary.title = "The first prompt".into();
-            v.apply_generated_title("The first prompt", "Improve session filtering".into(), cx);
-        });
-        cx.run_until_parked();
-        view.update(cx, |v, cx| {
-            assert_eq!(v.summary.title, "Improve session filtering");
-            let cancelled = Arc::new(AtomicBool::new(false));
-            v.title_cancel = Some(cancelled.clone());
-            v.rename("My session name".into(), cx);
-            assert!(cancelled.load(Ordering::Relaxed));
-            v.apply_generated_title(
-                "Improve session filtering",
-                "Late generated title".into(),
-                cx,
-            );
-            assert_eq!(v.summary.title, "My session name");
-        });
-        assert!(locked(&store).unwrap().load(id).unwrap().rows.is_empty());
-    }
-    #[gpui::test]
-    fn first_prompts_link_a_pasted_pull_request_without_replacing_a_link(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
-        let prompt = "hey lets review this pr\n\nhttps://github.com/acme/app/pull/1142 its for the native one";
-        let fresh = |cx: &mut gpui::TestAppContext| {
-            let mut summary = locked(&store).unwrap().create("codex", "/tmp").unwrap();
-            summary.title = "New Codex session".into();
-            locked(&store)
-                .unwrap()
-                .title(summary.id, &summary.title)
-                .unwrap();
-            cx.new(|cx| Conversation::new(summary, store.clone(), cx))
-        };
-
-        let view = fresh(cx);
-        view.update(cx, |v, cx| v.generate_title(prompt, cx));
-        cx.run_until_parked();
-        let id = view.read_with(cx, |v, _| v.summary.id);
-        let linked = view
-            .read_with(cx, |v, _| v.summary.work_item.clone())
-            .unwrap();
-        assert_eq!((linked.kind.as_str(), linked.number), ("pr", 1142));
-        assert_eq!(linked.url, "https://github.com/acme/app/pull/1142");
-        let saved = locked(&store).unwrap().sessions().unwrap();
-        let saved = saved.into_iter().find(|s| s.id == id).unwrap();
-        assert_eq!(saved.work_item, Some(linked));
-
-        let view = fresh(cx);
-        let manual =
-            onicode_core::session_groups::parse_github_work_item("https://github.com/a/b/issues/7");
-        view.update(cx, |v, cx| {
-            v.summary.work_item = manual.clone();
-            v.generate_title(prompt, cx);
-        });
-        cx.run_until_parked();
-        assert_eq!(
-            view.read_with(cx, |v, _| v.summary.work_item.clone()),
-            manual
-        );
     }
 }

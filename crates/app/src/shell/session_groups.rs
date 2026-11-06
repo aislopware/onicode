@@ -7,6 +7,10 @@ use onicode_core::session_groups::{
     reminder_at, reminder_presets,
 };
 use onicode_core::store::Reminder;
+use onicode_protocol::workspace::{
+    Delete, Pin, ReminderChange, Rename, SaveGroups, SetReminder, SetWorkItem,
+};
+use onicode_protocol::{Outcome, Rejection};
 
 use super::*;
 
@@ -299,38 +303,29 @@ impl Shell {
         change: impl FnOnce(&mut Groups),
     ) {
         let project = self.workspace.project.clone();
-        let groups = self.groups.entry(project.clone()).or_default();
-        change(groups);
-        let groups = groups.clone();
-        self.store_write("save folders", cx, move |store| {
-            store.save_groups(&project, &groups)
-        });
+        let mut groups = self.groups.get(&project).cloned().unwrap_or_default();
+        change(&mut groups);
+        self.save_groups("save folders", project, groups, cx);
         self.invalidate_chrome(cx);
         cx.notify();
     }
 
-    pub(super) fn store_write(
+    /// Saves `project`'s folders, showing them at once.
+    pub(super) fn save_groups(
         &mut self,
         what: &'static str,
+        project: String,
+        groups: Groups,
         cx: &mut Context<Self>,
-        write: impl FnOnce(&mut onicode_core::store::Store) -> Result<(), String> + Send + 'static,
     ) {
-        let store = self.store.clone();
-        let previous = self.group_writes.take();
-        self.group_writes = Some(cx.spawn(async move |this, cx| {
-            if let Some(previous) = previous {
-                previous.await;
-            }
-            let work = cx
-                .background_executor()
-                .spawn(async move { write(&mut *locked(&store)?) });
-            if let Err(error) = work.await {
-                let _ = this.update(cx, |this, cx| {
-                    this.error = Some(format!("Could not {what}: {error}"));
-                    cx.notify();
-                });
-            }
-        }));
+        let echo = {
+            let project = project.clone();
+            let groups = groups.clone();
+            Box::new(move |shell: &mut Self, _: &mut Context<Self>| {
+                shell.groups.insert(project.clone(), groups.clone());
+            })
+        };
+        self.workspace_write::<SaveGroups>(what, SaveGroups { project, groups }, Some(echo), cx);
     }
 
     /// The project's sidebar entries, reminders first.
@@ -540,9 +535,7 @@ impl Shell {
                 let text = if action == "copy-harness-session-id" {
                     summary.provider_id
                 } else {
-                    locked(&self.store)
-                        .and_then(|store| store.persisted_session_id(summary.id))
-                        .ok()
+                    self.mirror.key(summary.id)
                 };
                 if let Some(text) = text {
                     cx.write_to_clipboard(ClipboardItem::new_string(text));
@@ -552,15 +545,21 @@ impl Shell {
                 let pinned = !ids
                     .iter()
                     .all(|id| self.session_metadata(*id, cx).summary.pinned);
-                for id in &ids {
-                    if let Some(summary) = self.session_summaries.get_mut(id) {
-                        summary.pinned = pinned;
+                let rows = ids.clone();
+                let echo = Box::new(move |shell: &mut Self, cx: &mut Context<Self>| {
+                    for row in &rows {
+                        shell.mark_session(*row, cx, |summary| summary.pinned = pinned);
                     }
-                    if let Some(view) = self.sessions.get(id) {
-                        view.update(cx, |s, _| s.summary.pinned = pinned);
-                    }
-                }
-                self.store_write("pin the session", cx, move |s| s.set_pinned(&ids, pinned));
+                });
+                self.workspace_write::<Pin>(
+                    "pin the session",
+                    Pin {
+                        sessions: ids,
+                        pinned,
+                    },
+                    Some(echo),
+                    cx,
+                );
                 self.invalidate_chrome(cx);
             }
             "rename" => self.start_rename(RenameTarget::Session(id), window, cx),
@@ -583,20 +582,25 @@ impl Shell {
                 else {
                     return;
                 };
-                self.reminders.retain(|r| !ids.contains(&r.session_id));
-                self.reminders.extend(ids.iter().map(|id| Reminder {
-                    session_id: *id,
-                    due_at,
-                    fired_at: None,
-                }));
-                let project = self.workspace.project.clone();
-                if let Some(groups) = self.groups.get_mut(&project) {
-                    groups.reminders_collapsed = false;
-                }
-                self.update_groups(cx, |_| {});
-                self.store_write("set the reminder", cx, move |s| {
-                    s.set_reminders(&ids, due_at)
+                let rows = ids.clone();
+                let echo = Box::new(move |shell: &mut Self, _: &mut Context<Self>| {
+                    shell.reminders.retain(|r| !rows.contains(&r.session_id));
+                    shell.reminders.extend(rows.iter().map(|id| Reminder {
+                        session_id: *id,
+                        due_at,
+                        fired_at: None,
+                    }));
                 });
+                self.update_groups(cx, |groups| groups.reminders_collapsed = false);
+                self.workspace_write::<SetReminder>(
+                    "set the reminder",
+                    SetReminder {
+                        sessions: ids,
+                        change: ReminderChange::At(due_at),
+                    },
+                    Some(echo),
+                    cx,
+                );
             }
             "folder-new" => {
                 let folder = format!("{:x}", onicode_core::time::now_ms() ^ ((id as u64) << 40));
@@ -692,75 +696,6 @@ impl Shell {
         self.clear_notification_reminder(id, due, cx);
     }
 
-    pub(super) fn poll_reminders(&mut self, cx: &mut Context<Self>) {
-        if self.notification_state.reminder_error.is_some() {
-            return;
-        }
-        let now = onicode_core::time::now_ms();
-        let due: Vec<_> = self
-            .reminders
-            .iter_mut()
-            .filter_map(|reminder| {
-                if reminder.due_at > now || reminder.fired_at.is_some() {
-                    return None;
-                }
-                reminder.fired_at = Some(now);
-                Some((reminder.session_id, reminder.due_at))
-            })
-            .collect();
-        if due.is_empty() {
-            return;
-        }
-        let store = self.store.clone();
-        let previous = self.group_writes.take();
-        self.group_writes = Some(cx.spawn(async move |this, cx| {
-            if let Some(previous) = previous {
-                previous.await;
-            }
-            let work = cx
-                .background_executor()
-                .spawn(async move { locked(&store)?.take_due_reminders(now) });
-            let result = work.await;
-            let _ = this.update(cx, |this, cx| {
-                match result {
-                    Ok(claimed) => {
-                        this.notification_state.reminder_error = None;
-                        for reminder in claimed {
-                            // A cancel/reschedule while the store operation was
-                            // pending must never deliver an obsolete occurrence.
-                            if this.reminders.iter().any(|current| {
-                                current.session_id == reminder.session_id
-                                    && current.due_at == reminder.due_at
-                            }) {
-                                this.deliver_reminder_notice(
-                                    reminder.session_id,
-                                    reminder.due_at,
-                                    cx,
-                                );
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        // Re-arm only the occurrences claimed by this request;
-                        // a newer schedule has its own independent fired state.
-                        for reminder in &mut this.reminders {
-                            if due.contains(&(reminder.session_id, reminder.due_at))
-                                && reminder.fired_at == Some(now)
-                            {
-                                reminder.fired_at = None;
-                            }
-                        }
-                        this.notification_state.reminder_error =
-                            Some(format!("Could not deliver reminders: {error}"));
-                    }
-                }
-                this.invalidate_chrome(cx);
-                cx.notify();
-            });
-        }));
-        self.invalidate_chrome(cx);
-    }
-
     pub(super) fn delete_session(&mut self, id: i64, window: &mut Window, cx: &mut Context<Self>) {
         if self.workspace.review_owners.iter().any(|(pane, owner)| {
             *owner == id
@@ -801,37 +736,24 @@ impl Shell {
             return;
         }
         self.invalidate_chrome(cx);
-        let store = self.store.clone();
-        let previous = self.group_writes.take();
-        self.group_writes = Some(cx.spawn(async move |this, cx| {
-            if let Some(previous) = previous {
-                previous.await;
+        // The engine drops its recorded turns, reminder and folder entry with it.
+        self.workspace_call::<Delete>(Delete { session: id }, None, cx, move |this, reply, cx| {
+            this.deleting.remove(&id);
+            match reply {
+                Ok(Outcome::Applied | Outcome::Rejected(Rejection::Gone)) => {
+                    this.forget_session(id, cx);
+                }
+                Ok(Outcome::Rejected(rejection)) => {
+                    this.error = Some(format!("Could not delete the session: {rejection:?}"));
+                }
+                Err(error) => this.error = Some(format!("Could not delete the session: {error}")),
             }
-            let work = cx.background_executor().spawn(async move {
-                locked(&store)?.delete(id)?;
-                // Drop the session's recorded turns and their Git refs.
-                if let Some(checkpoints) = onicode_core::checkpoint::store() {
-                    let _ = checkpoints.exclusive(|c| c.forget(&id.to_string()));
-                }
-                Ok::<_, String>(())
-            });
-            let result = work.await;
-            let _ = this.update(cx, |this, cx| {
-                this.deleting.remove(&id);
-                match result {
-                    Ok(()) => this.forget_session(id, cx),
-                    Err(error) => {
-                        this.error = Some(format!("Could not delete the session: {error}"))
-                    }
-                }
-                this.invalidate_chrome(cx);
-                this.sync_settings(cx);
-                cx.notify();
-            });
-        }));
+            this.sync_settings(cx);
+        });
     }
 
-    fn forget_session(&mut self, id: i64, cx: &mut Context<Self>) {
+    /// Drops a session the engine deleted from every view of it.
+    pub(super) fn forget_session(&mut self, id: i64, cx: &mut Context<Self>) {
         // A tab opened on it while the store was deleting keeps it alive.
         if self.workspace.tab_of(id).is_some() {
             return;
@@ -868,19 +790,10 @@ impl Shell {
         {
             self.renaming = None;
         }
-        let projects: Vec<String> = self
-            .groups
-            .iter()
-            .filter(|(_, g)| g.folder_of(id).is_some())
-            .map(|(p, _)| p.clone())
-            .collect();
-        for project in projects {
-            let groups = self.groups.get_mut(&project).unwrap();
-            groups.remove_sessions(&[id]);
-            let groups = groups.clone();
-            self.store_write("save folders", cx, move |s| {
-                s.save_groups(&project, &groups)
-            });
+        for groups in self.groups.values_mut() {
+            if groups.folder_of(id).is_some() {
+                groups.remove_sessions(&[id]);
+            }
         }
         self.persist(cx);
     }
@@ -946,15 +859,27 @@ impl Shell {
                     if self.session_summaries.contains_key(&id)
                         && self.session_metadata(id, cx).summary.title != name
                     {
-                        if let Some(summary) = self.session_summaries.get_mut(&id) {
-                            summary.title = name.clone();
-                        }
                         if let Some(session) = self.sessions.get(&id) {
                             session.update(cx, |s, cx| {
                                 s.rename(name.clone(), cx);
                             });
                         }
-                        self.store_write("rename the session", cx, move |s| s.title(id, &name));
+                        let title = name.clone();
+                        let echo = Box::new(move |shell: &mut Self, cx: &mut Context<Self>| {
+                            shell.mark_session(id, cx, |summary| {
+                                summary.title.clone_from(&title);
+                            });
+                        });
+                        self.workspace_write::<Rename>(
+                            "rename the session",
+                            Rename {
+                                session: id,
+                                title: name,
+                                expected: None,
+                            },
+                            Some(echo),
+                            cx,
+                        );
                     }
                 }
                 RenameTarget::Folder(folder) => {
@@ -1728,15 +1653,20 @@ impl Shell {
         } else {
             None
         };
-        if let Some(summary) = self.session_summaries.get_mut(&id) {
-            summary.work_item = item.clone();
-        }
-        if let Some(session) = self.sessions.get(&id) {
-            session.update(cx, |s, _| s.summary.work_item = item.clone());
-        }
-        self.store_write("link the session", cx, move |s| {
-            s.set_work_item(id, item.as_ref())
+        let linked = item.clone();
+        let echo = Box::new(move |shell: &mut Self, cx: &mut Context<Self>| {
+            shell.mark_session(id, cx, |summary| summary.work_item.clone_from(&linked));
         });
+        self.workspace_write::<SetWorkItem>(
+            "link the session",
+            SetWorkItem {
+                session: id,
+                item,
+                if_unlinked: false,
+            },
+            Some(echo),
+            cx,
+        );
         self.invalidate_chrome(cx);
         self.close_link_dialog(window, cx);
     }
@@ -1936,6 +1866,23 @@ mod tests {
         (window, a, b)
     }
 
+    /// The session at `row` as the engine last showed it.
+    fn saved_session(shell: &Shell, row: i64) -> Option<Session> {
+        shell.mirror.session(row)
+    }
+
+    /// The current project's folders as the engine last showed them.
+    fn saved_groups(shell: &Shell) -> Groups {
+        shell
+            .mirror
+            .state()
+            .projects
+            .iter()
+            .find(|project| project.path == shell.workspace.project)
+            .map(|project| project.groups.clone())
+            .unwrap_or_default()
+    }
+
     #[gpui::test]
     fn expanded_folders_use_compact_connected_rows_and_keep_operator_children(
         cx: &mut TestAppContext,
@@ -1945,10 +1892,12 @@ mod tests {
             .update(cx, |shell, _, cx| {
                 let mut ids = Vec::new();
                 for _ in 0..2 {
-                    let mut summary = locked(&shell.store)
-                        .unwrap()
-                        .create("codex", &shell.workspace.project)
-                        .unwrap();
+                    let mut summary = crate::engine_client::create_for_test(
+                        &shell.store,
+                        "codex",
+                        &shell.workspace.project,
+                        cx,
+                    );
                     summary.has_messages = true;
                     ids.push(summary.id);
                     shell.add(summary, cx);
@@ -1956,7 +1905,8 @@ mod tests {
                         .update(cx, |chat, _| chat.summary.has_messages = true);
                 }
                 let (plain, child) = (ids[0], ids[1]);
-                shell.groups.insert(
+                shell.save_groups(
+                    "save folders",
                     shell.workspace.project.clone(),
                     Groups {
                         folders: vec![onicode_core::session_groups::Folder {
@@ -1967,6 +1917,7 @@ mod tests {
                         }],
                         ..Default::default()
                     },
+                    cx,
                 );
                 shell.started_by.insert(child, a);
                 shell.workspace.active = Some(a);
@@ -2124,8 +2075,8 @@ mod tests {
             .update(cx, |shell, _, cx| {
                 assert!(shell.sessions[&a].read(cx).summary.pinned);
                 assert!(shell.sessions[&b].read(cx).summary.pinned);
-                let stored = locked(&shell.store).unwrap().sessions().unwrap();
-                assert!(stored.iter().all(|s| s.pinned));
+                let saved = &shell.mirror.state().sessions;
+                assert!(saved.iter().all(|summary| summary.session.pinned));
             })
             .unwrap();
     }
@@ -2178,10 +2129,7 @@ mod tests {
         cx.run_until_parked();
         window
             .update(cx, |shell, w, cx| {
-                let saved = locked(&shell.store)
-                    .unwrap()
-                    .groups(&shell.workspace.project)
-                    .unwrap();
+                let saved = saved_groups(shell);
                 let saved = saved.folder(&folder).unwrap();
                 assert_eq!(saved.name, "Work");
                 assert_eq!(saved.color_index, Some(3));
@@ -2199,14 +2147,7 @@ mod tests {
         cx.run_until_parked();
         window
             .update(cx, |shell, _, _| {
-                assert!(
-                    locked(&shell.store)
-                        .unwrap()
-                        .groups(&shell.workspace.project)
-                        .unwrap()
-                        .folders
-                        .is_empty()
-                );
+                assert!(saved_groups(shell).folders.is_empty())
             })
             .unwrap();
     }
@@ -2231,11 +2172,7 @@ mod tests {
         window
             .update(cx, |shell, w, cx| {
                 assert_eq!(shell.sessions[&a].read(cx).summary.title, "First name");
-                let saved = locked(&shell.store).unwrap().sessions().unwrap();
-                assert_eq!(
-                    saved.iter().find(|s| s.id == a).unwrap().title,
-                    "First name"
-                );
+                assert_eq!(saved_session(shell, a).unwrap().title, "First name");
                 shell.run_menu(MenuTarget::Session(a), "rename", None, w, cx);
                 shell
                     .renaming
@@ -2291,6 +2228,8 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let (window, a, _) = setup(cx);
+        let now = onicode_core::time::now_ms();
+        let due_at = now.saturating_sub(1);
         window
             .update(cx, |shell, w, cx| {
                 shell.run_menu(MenuTarget::Session(a), "link-work-item", None, w, cx);
@@ -2318,44 +2257,39 @@ mod tests {
         cx.run_until_parked();
         window
             .update(cx, |shell, w, cx| {
-                let store = locked(&shell.store).unwrap();
-                assert_eq!(store.reminders().unwrap().len(), 1);
-                assert_eq!(
-                    store
-                        .sessions()
-                        .unwrap()
-                        .iter()
-                        .find(|s| s.id == a)
-                        .unwrap()
-                        .work_item
-                        .as_ref()
-                        .unwrap()
-                        .number,
-                    42
-                );
-                drop(store);
+                assert_eq!(shell.mirror.state().reminders.len(), 1);
+                let link = saved_session(shell, a).unwrap().work_item.unwrap();
+                assert_eq!(link.number, 42);
                 assert!(shell.link_dialog.is_none());
                 shell.run_menu(MenuTarget::Session(a), "reminder:cancel", None, w, cx);
-                let due_at = onicode_core::time::now_ms().saturating_sub(1);
-                shell.reminders.push(Reminder {
-                    session_id: a,
-                    due_at,
-                    fired_at: None,
-                });
-                shell.store_write("set test reminder", cx, move |store| {
-                    store.set_reminders(&[a], due_at)
-                });
-                shell.poll_reminders(cx);
+                shell.workspace_write::<SetReminder>(
+                    "set the reminder",
+                    SetReminder {
+                        sessions: vec![a],
+                        change: ReminderChange::At(due_at),
+                    },
+                    None,
+                    cx,
+                );
+            })
+            .unwrap();
+        cx.run_until_parked();
+        // The engine fires it on its next beat, and the mirror announces it.
+        window
+            .update(cx, |shell, _, cx| {
+                assert!(shell.mirror.state().reminders[0].fired_at.is_none());
+                crate::engine_client::tick(&shell.store, now, cx).unwrap();
             })
             .unwrap();
         cx.run_until_parked();
         window
             .update(cx, |shell, w, cx| {
-                assert!(
-                    locked(&shell.store).unwrap().reminders().unwrap()[0]
-                        .fired_at
-                        .is_some()
+                assert_eq!(
+                    shell.reminders[0].fired_at,
+                    Some(now),
+                    "the mirror shows the engine's firing"
                 );
+                assert_eq!(shell.mirror.state().reminders[0].fired_at, Some(now));
                 shell.open(a, w, cx);
                 assert!(shell.reminders.is_empty());
             })
@@ -2363,13 +2297,7 @@ mod tests {
         cx.run_until_parked();
         window
             .update(cx, |shell, _, _| {
-                assert!(
-                    locked(&shell.store)
-                        .unwrap()
-                        .reminders()
-                        .unwrap()
-                        .is_empty()
-                )
+                assert!(shell.mirror.state().reminders.is_empty())
             })
             .unwrap();
     }
@@ -2456,15 +2384,16 @@ mod tests {
                 assert!(!shell.sessions.contains_key(&a));
                 assert!(shell.sessions.contains_key(&b));
                 assert!(shell.project_groups().folders.is_empty());
-                let store = locked(&shell.store).unwrap();
-                assert!(!store.sessions().unwrap().iter().any(|s| s.id == a));
-                assert!(store.load(a).unwrap().rows.is_empty());
-                assert!(store.reminders().unwrap().is_empty());
+                // The engine's `Delete` took its row, reminder and folder entry.
+                assert!(saved_session(shell, a).is_none());
+                assert!(shell.mirror.state().reminders.is_empty());
+                assert!(saved_groups(shell).folders.is_empty());
                 assert!(
-                    store
-                        .groups(&shell.workspace.project)
+                    locked(&shell.store)
                         .unwrap()
-                        .folders
+                        .load(a)
+                        .unwrap()
+                        .rows
                         .is_empty()
                 );
             })
@@ -2516,10 +2445,7 @@ mod tests {
         visual.run_until_parked();
         window
             .update(visual, |shell, _, _| {
-                let saved = locked(&shell.store)
-                    .unwrap()
-                    .groups(&shell.workspace.project)
-                    .unwrap();
+                let saved = saved_groups(shell);
                 assert_eq!(saved.folders[0].id, "first");
                 assert_eq!(saved.folder("first").unwrap().color_index, Some(3));
             })

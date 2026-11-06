@@ -111,6 +111,35 @@ mirrors the session from its watch and folds what arrived into one `Update` per 
 app-owned, its steers sent as `Steer` with the queued message staged whole; `SendNow`, `SteerNow`,
 `EditLastTurn`, `Rewind`, `Fork`, `Btw` and `SwitchProvider` answer "not served yet" until step 4.
 
+**Step 4 as built.** The engine's `WorkspaceHub` holds the workspace (every session's summary, the projects'
+folders, reminders, orchestration summaries, the note count and the automation runs waiting to start) and serves
+it as `WatchWorkspace` with a session's seq, ring and backpressure. Only the Workspace calls change it, each
+answered from the ledger on repeat; a created session takes the viewer's `SessionId`. A session created that
+way which no turn has started in is removed when its last session watcher leaves, once the store shows no rows and
+no saved draft in it (another viewer of the engine may have used it), and every viewer sees it go as `Removed`;
+the mark lives in memory, so a session left from an earlier engine run stays. The desktop holds no session watch
+while a blank chat is open, so what it shows of blank chats is still monocode's own draft behaviour. Sessions are
+keyed there by the store's row id beside their `SessionId`, because folders, reminders and the saved layout name sessions by row
+until `SessionKey`; `SessionSummary.key` is the id other tools know a session by. The engine runs the reminder and
+automation schedulers on its own clock (a beat at start, then every 30 s in process; tests beat in virtual time),
+recovers runs an earlier engine claimed, keeps and retries Inbox event claims, generates titles and worktree branch
+names, stores notes and keeps orchestration summaries; a plan's dispatch is the pure `orchestration::Run`. The shell
+mirrors the watch into the maps its views already read and echoes each call in the same frame until its receipt.
+A conversation reads its record and transcript (`ReadSession`, `ReadTranscript`) and saves its queue (`SaveQueue`)
+through the Session calls. `SendNow` and `SteerNow` take a stored queued message by its `MessageId`; the desktop
+steers with `SteerNow` and still launches a queued message with `Send`. `EditLastTurn` replaces the turn that
+`RecallLastTurn` holds. A side question (`Btw`, `ReadBtw`, `SaveBtw`, `StopBtw`) streams its answer as `BtwText`
+events to a watch that holds no turns. Title generation and branch naming outlive the conversation that asked, and
+closing the side sheet no longer stops its answer. `Rewind`, `Fork` and `SwitchProvider` stay unserved until the
+composer and accounts move (step 6).
+App-side for now: a run's prompt still goes through the conversation, since the composer and accounts move in step
+6 (the engine claims the run, creates its session and records its end); the Inbox view still fetches from its
+providers and reports what appeared (`ClaimInboxEvents`) until the providers' fetch moves with a watch of its own;
+the Automations view edits definitions, and the app bridge (`sessions.create`, `sessions.read`, notes actions,
+receipts) uses the store, until settings move (step 6); the layout and seen markers are preferences (step 6); note
+images, attachments, worktree removal and session search are files and search (step 5). `PROTOCOL` is 3; the golden
+file is re-recorded with `ONICODE_GOLDEN=record`.
+
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,
 `EngineInfo` and `UpdateEngine`, whose shapes are frozen, so the machines list can say "Needs update" and offer

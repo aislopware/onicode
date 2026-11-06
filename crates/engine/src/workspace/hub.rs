@@ -1,0 +1,1509 @@
+//! The workspace hub: what the sidebar, history and workspace views show of every session, kept
+//! as one `WorkspaceState` numbered by a `Cursor {epoch, seq}`, with a ring of recent events for
+//! watchers that come back and a bounded queue per watcher. Every change goes through the hub,
+//! which writes the store and publishes the change under one lock, so the state never drifts from
+//! the store and two racing calls apply in the order they took the lock.
+//!
+//! The hub also runs the workspace's schedulers on [`WorkspaceHub::tick`]: due reminders, due
+//! and recovered automation runs, and retried Inbox event claims. `tick` takes the time it runs
+//! at, so its tests run in virtual time.
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::future::Future;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
+use futures::StreamExt;
+use futures::stream::BoxStream;
+use onicode_core::agent::{AccessMode, Settings};
+use onicode_core::automations::{AutomationRun, DueAutomationRun, Service};
+use onicode_core::inbox::Item as InboxItem;
+use onicode_core::session_groups::WorkItem;
+use onicode_core::store::{Session, Store};
+use onicode_protocol::workspace::{
+    Archive, ClaimInboxEvents, CreateNote, CreateSession, Created, Delete, DeleteNote,
+    FinishAutomationRun, GenerateTitle, Lead, MarkSeen, NameWorktree, Named, NewSession, Pin,
+    PrepareAutomationRun, Preview, PreviewSession, Project, ReminderChange, Rename, SaveGroups,
+    SaveOrchestration, SaveResponseNote, SearchResults, SearchSessions, SessionDefaults,
+    SessionSummary, SetReminder, SetWorkItem, UpsertNote, WatchWorkspace, WorkspaceEvent,
+    WorkspaceState,
+};
+use onicode_protocol::{Cursor, Item, OpId, Outcome, Rejection, SessionId};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use tokio::sync::{Notify, watch};
+use uuid::Uuid;
+
+use super::chores::{Chores, ProviderChores};
+use super::queue::{QUEUE_BATCHES, QUEUE_BYTES, RING_BYTES, RING_EVENTS, Ring, WatchQueue};
+use super::reduce::apply;
+use crate::session::Spawn;
+use crate::turn::{Database, locked};
+
+/// How long the ledger keeps a processed op (engine.md "Ids").
+const OP_RETENTION_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+/// The ledger is pruned after every this many recorded ops.
+const PRUNE_EVERY: u64 = 256;
+/// Where Inbox items whose event claim failed wait for the next tick, across restarts.
+const INBOX_RETRIES: &str = "native-automation-inbox-retries";
+/// At most this many Inbox items wait for a retry; the most recently updated stay.
+const MAX_RETRIES: usize = 500;
+
+/// The hub's bounds: the ring's and each watcher queue's, in events or batches and in bytes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Limits {
+    pub(crate) ring: (usize, usize),
+    pub(crate) queue: (usize, usize),
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            ring: (RING_EVENTS, RING_BYTES),
+            queue: (QUEUE_BATCHES, QUEUE_BYTES),
+        }
+    }
+}
+
+type Settled = Option<Result<String, String>>;
+
+struct Watcher {
+    queue: WatchQueue,
+    notify: Arc<Notify>,
+}
+
+/// The automation scheduler's own state.
+#[derive(Default)]
+struct Automations {
+    /// Opened on the first tick, over the store's database.
+    service: Option<Service>,
+    /// Runs an earlier engine left pending or running were handed out again.
+    recovered: bool,
+    /// Inbox items whose event claim must be retried, by key; read from the store once.
+    retries: Option<BTreeMap<String, InboxItem>>,
+}
+
+struct Inner {
+    loaded: bool,
+    epoch: u64,
+    seq: u64,
+    state: WorkspaceState,
+    ring: Ring,
+    watchers: HashMap<u64, Watcher>,
+    next_watcher: u64,
+    /// Mutating calls still running, by op: a repeat waits for the first one's reply.
+    inflight: HashMap<OpId, watch::Receiver<Settled>>,
+    recorded: u64,
+    /// Sessions with a turn running, and with a turn finished since a viewer showed them.
+    busy: HashSet<i64>,
+    unread: HashSet<i64>,
+    /// Title generations running, by session: renaming the session cancels its own.
+    titles: HashMap<i64, Arc<AtomicBool>>,
+    automations: Automations,
+    /// Sessions this run created (`CreateSession`) that no turn has started in yet: closed by
+    /// their last viewer with nothing in them, they go.
+    unprompted: HashSet<i64>,
+}
+
+pub struct WorkspaceHub {
+    store: Database,
+    spawn: Arc<dyn Spawn>,
+    chores: Arc<dyn Chores>,
+    limits: Limits,
+    /// When this engine run started (Unix ms): automation runs created before it and never
+    /// finished are handed out again.
+    started: u64,
+    inner: Mutex<Inner>,
+}
+
+/// What a mutating call did: its reply, the outcome its receipt carries, and its events.
+type Applied<R> = (R, Outcome, Vec<WorkspaceEvent>);
+
+fn rejected<R>(reply: R, rejection: Rejection) -> Applied<R> {
+    (reply, Outcome::Rejected(rejection), Vec::new())
+}
+
+fn ms(now: u64) -> i64 {
+    i64::try_from(now).unwrap_or(i64::MAX)
+}
+
+impl WorkspaceHub {
+    /// A hub over `store` whose background chores run on `spawn` with the real providers.
+    pub fn new(store: Database, spawn: Arc<dyn Spawn>) -> Arc<Self> {
+        Self::with_chores(store, spawn, Arc::new(ProviderChores))
+    }
+
+    /// A hub whose chores are `chores`: tests answer them without a provider.
+    pub fn with_chores(
+        store: Database,
+        spawn: Arc<dyn Spawn>,
+        chores: Arc<dyn Chores>,
+    ) -> Arc<Self> {
+        let now = onicode_core::time::now_ms();
+        Self::build(store, spawn, chores, Limits::default(), now)
+    }
+
+    pub(crate) fn build(
+        store: Database,
+        spawn: Arc<dyn Spawn>,
+        chores: Arc<dyn Chores>,
+        limits: Limits,
+        started: u64,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            store,
+            spawn,
+            chores,
+            limits,
+            started,
+            inner: Mutex::new(Inner {
+                loaded: false,
+                // This run's epoch: a cursor from an earlier run never matches.
+                epoch: started.wrapping_shl(16) | 1,
+                seq: 0,
+                state: WorkspaceState::default(),
+                ring: Ring::new(limits.ring),
+                watchers: HashMap::new(),
+                next_watcher: 0,
+                inflight: HashMap::new(),
+                recorded: 0,
+                busy: HashSet::new(),
+                unread: HashSet::new(),
+                titles: HashMap::new(),
+                automations: Automations::default(),
+                unprompted: HashSet::new(),
+            }),
+        })
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Inner> {
+        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Reads the workspace from the store the first time anything needs it.
+    fn ready(&self, inner: &mut Inner) -> Result<(), String> {
+        if !inner.loaded {
+            inner.state = load(&*locked(&self.store)?, &inner.busy, &inner.unread)?;
+            inner.loaded = true;
+        }
+        Ok(())
+    }
+
+    /// The workspace as of now, and the cursor it is at.
+    pub fn snapshot(&self) -> Result<(Cursor, WorkspaceState), String> {
+        let mut inner = self.lock();
+        self.ready(&mut inner)?;
+        Ok((
+            Cursor {
+                epoch: inner.epoch,
+                seq: inner.seq,
+            },
+            inner.state.clone(),
+        ))
+    }
+
+    /// Runs a mutating call once per op: a repeat waits for the first one's reply, or gets it
+    /// from the ledger. A call that failed is not recorded, so its retry runs again.
+    async fn once<R, F>(&self, op: Option<OpId>, run: F) -> Result<R, String>
+    where
+        R: Serialize + DeserializeOwned,
+        F: Future<Output = Result<R, String>>,
+    {
+        enum Start {
+            Wait(watch::Receiver<Settled>),
+            Done(String),
+            Run(watch::Sender<Settled>),
+        }
+        let Some(op) = op else {
+            return run.await;
+        };
+        let start = {
+            let mut inner = self.lock();
+            match inner.inflight.get(&op) {
+                Some(waiting) => Start::Wait(waiting.clone()),
+                None => match locked(&self.store)?.op_receipt(&op.to_string())? {
+                    Some(receipt) => Start::Done(receipt),
+                    None => {
+                        let (resolve, waiting) = watch::channel(None);
+                        inner.inflight.insert(op, waiting);
+                        Start::Run(resolve)
+                    }
+                },
+            }
+        };
+        let resolve = match start {
+            Start::Wait(mut waiting) => {
+                let settled = waiting
+                    .wait_for(Option::is_some)
+                    .await
+                    .map(|settled| settled.clone())
+                    .map_err(|_| "The engine stopped before this call settled".to_owned())?;
+                let text = settled.ok_or("The engine stopped before this call settled")??;
+                return serde_json::from_str(&text).map_err(|error| error.to_string());
+            }
+            Start::Done(receipt) => {
+                return serde_json::from_str(&receipt).map_err(|error| error.to_string());
+            }
+            Start::Run(resolve) => resolve,
+        };
+        let result = run.await;
+        let settled = match &result {
+            Ok(reply) => serde_json::to_string(reply).map_err(|error| error.to_string()),
+            Err(error) => Err(error.clone()),
+        };
+        {
+            let mut inner = self.lock();
+            if let Ok(text) = &settled {
+                self.record(&mut inner, op, text);
+            }
+            inner.inflight.remove(&op);
+        }
+        resolve.send_replace(Some(settled));
+        result
+    }
+
+    fn record(&self, inner: &mut Inner, op: OpId, reply: &str) {
+        let now = onicode_core::time::now_ms();
+        if let Ok(store) = locked(&self.store) {
+            let _ = store.record_op(&op.to_string(), Uuid::nil(), reply, now);
+            inner.recorded += 1;
+            if inner.recorded.is_multiple_of(PRUNE_EVERY) {
+                let _ = store.prune_ops(now.saturating_sub(OP_RETENTION_MS));
+            }
+        }
+    }
+
+    /// Runs `body` with the state and the store held, publishes its events and its receipt, and
+    /// replies; once per op.
+    async fn mutate<R, B>(&self, op: Option<OpId>, body: B) -> Result<R, String>
+    where
+        R: Serialize + DeserializeOwned,
+        B: FnOnce(&mut Inner, &mut Store) -> Result<Applied<R>, String>,
+    {
+        self.once(op, async {
+            let mut inner = self.lock();
+            self.ready(&mut inner)?;
+            let mut store = locked(&self.store)?;
+            let (reply, outcome, mut events) = body(&mut inner, &mut store)?;
+            drop(store);
+            if let Some(op) = op {
+                events.push(WorkspaceEvent::Receipt { op, outcome });
+            }
+            publish(&mut inner, events);
+            Ok(reply)
+        })
+        .await
+    }
+
+    /// `CreateSession`: a session under the viewer's id, with its starting settings.
+    pub async fn create_session(
+        &self,
+        op: Option<OpId>,
+        body: CreateSession,
+    ) -> Result<Created, String> {
+        self.mutate(op, move |inner, store| {
+            let CreateSession {
+                session,
+                provider,
+                cwd,
+                title,
+                start,
+                started_by,
+            } = body;
+            let mut stored = store.create(&provider, &cwd)?;
+            let row = stored.id;
+            let id = SessionId(store.adopt_session_uid(row, session.0)?);
+            if let Some(title) = title {
+                store.title(row, &title)?;
+                stored.title = title;
+            }
+            let settings = match start {
+                NewSession::Bare => None,
+                NewSession::Settings(settings) => {
+                    store.save_agent_settings(row, &settings)?;
+                    Some(*settings)
+                }
+                NewSession::Defaults(defaults) => {
+                    Some(start_with_defaults(store, &provider, &cwd, row, defaults)?)
+                }
+            };
+            if let Some(caller) = started_by {
+                store.save_started_link(row, caller)?;
+            }
+            let summary = SessionSummary {
+                id,
+                key: persisted_key(store, row),
+                worktree: settings.as_ref().and_then(|s| s.worktree_cwd.clone()),
+                draft: false,
+                started_by,
+                automation: None,
+                busy: false,
+                unread: false,
+                session: stored,
+            };
+            inner.unprompted.insert(row);
+            let mut events = vec![WorkspaceEvent::Session(Box::new(summary.clone()))];
+            events.extend(new_project(inner, store, &summary.session.cwd));
+            let created = Created {
+                outcome: Outcome::Applied,
+                session: Some(Box::new(summary)),
+                settings: settings.map(Box::new),
+            };
+            Ok((created, Outcome::Applied, events))
+        })
+        .await
+    }
+
+    /// `Rename`. A rename without `expected` is the person's own: it cancels the session's title
+    /// generation.
+    pub async fn rename(&self, op: Option<OpId>, body: Rename) -> Result<Outcome, String> {
+        self.mutate(op, move |inner, store| {
+            let Some(mut summary) = known(inner, store, body.session) else {
+                return Ok(gone());
+            };
+            match &body.expected {
+                Some(expected) => {
+                    if !store.replace_title(body.session, expected, &body.title)? {
+                        return Ok(rejected(
+                            Outcome::Rejected(Rejection::StaleRev),
+                            Rejection::StaleRev,
+                        ));
+                    }
+                }
+                None => {
+                    store.title(body.session, &body.title)?;
+                    if let Some(cancel) = inner.titles.remove(&body.session) {
+                        cancel.store(true, Ordering::Relaxed);
+                    }
+                }
+            }
+            summary.session.title = body.title;
+            Ok(applied(summary))
+        })
+        .await
+    }
+
+    /// `Archive`.
+    pub async fn archive(&self, op: Option<OpId>, body: Archive) -> Result<Outcome, String> {
+        self.mutate(op, move |inner, store| {
+            let Some(mut summary) = known(inner, store, body.session) else {
+                return Ok(gone());
+            };
+            store.set_archived(body.session, body.archived)?;
+            summary.session.archived = body.archived;
+            Ok(applied(summary))
+        })
+        .await
+    }
+
+    /// `Pin`.
+    pub async fn pin(&self, op: Option<OpId>, body: Pin) -> Result<Outcome, String> {
+        self.mutate(op, move |inner, store| {
+            let summaries: Vec<_> = body
+                .sessions
+                .iter()
+                .filter_map(|&row| known(inner, store, row))
+                .collect();
+            if summaries.is_empty() {
+                return Ok(gone());
+            }
+            let rows: Vec<i64> = summaries.iter().map(|s| s.session.id).collect();
+            store.set_pinned(&rows, body.pinned)?;
+            let events = summaries
+                .into_iter()
+                .map(|mut summary| {
+                    summary.session.pinned = body.pinned;
+                    WorkspaceEvent::Session(Box::new(summary))
+                })
+                .collect();
+            Ok((Outcome::Applied, Outcome::Applied, events))
+        })
+        .await
+    }
+
+    /// `Delete`: the session, its settings, reminder and folder entry, and its recorded turns.
+    pub async fn delete(&self, op: Option<OpId>, body: Delete) -> Result<Outcome, String> {
+        self.mutate(op, move |inner, store| {
+            let row = body.session;
+            if known(inner, store, row).is_none() {
+                return Ok(gone());
+            }
+            let events = remove(inner, store, row)?;
+            Ok((Outcome::Applied, Outcome::Applied, events))
+        })
+        .await
+    }
+
+    /// Session `row` was made or changed in the store by a path that does not go through the
+    /// engine yet (the app bridge's launches, engine.md migration step 6): its summary is read
+    /// again, and watchers get it if it differs.
+    pub fn refresh_session(&self, row: i64) {
+        let mut inner = self.lock();
+        if !inner.loaded {
+            return;
+        }
+        let Ok(store) = locked(&self.store) else {
+            return;
+        };
+        let Some(mut summary) = read_summary(&store, &inner, row) else {
+            return;
+        };
+        if summary.started_by.is_none() {
+            summary.started_by = store
+                .started_links()
+                .ok()
+                .and_then(|links| links.get(&row).copied());
+        }
+        let project = new_project(&inner, &store, &summary.session.cwd);
+        drop(store);
+        if inner.state.sessions.contains(&summary) {
+            return;
+        }
+        let mut events = vec![WorkspaceEvent::Session(Box::new(summary))];
+        events.extend(project);
+        publish(&mut inner, events);
+    }
+
+    /// The last viewer of session `row` closed it. A session this run created that no turn
+    /// started in goes, once the store shows nothing in it: no rows, and no saved draft, which is
+    /// the person's (another viewer of this engine may have used it meanwhile). Every viewer
+    /// sees it go as `Removed`.
+    pub fn session_closed(&self, row: i64) {
+        let mut inner = self.lock();
+        if !inner.unprompted.contains(&row) || inner.busy.contains(&row) || !inner.loaded {
+            return;
+        }
+        let Ok(mut store) = locked(&self.store) else {
+            return;
+        };
+        let empty = store
+            .load(row)
+            .is_ok_and(|transcript| transcript.rows.is_empty())
+            && store
+                .draft_sessions()
+                .is_ok_and(|drafts| !drafts.contains(&row));
+        if !empty {
+            // Used after all: it stays, and no later close removes it.
+            inner.unprompted.remove(&row);
+            return;
+        }
+        let events = remove(&mut inner, &mut store, row);
+        drop(store);
+        if let Ok(events) = events {
+            publish(&mut inner, events);
+        }
+    }
+
+    /// `SetWorkItem`.
+    pub async fn set_work_item(
+        &self,
+        op: Option<OpId>,
+        body: SetWorkItem,
+    ) -> Result<Outcome, String> {
+        self.mutate(op, move |inner, store| {
+            let Some(mut summary) = known(inner, store, body.session) else {
+                return Ok(gone());
+            };
+            if body.if_unlinked && summary.session.work_item.is_some() {
+                return Ok(rejected(
+                    Outcome::Rejected(Rejection::AlreadyResolved),
+                    Rejection::AlreadyResolved,
+                ));
+            }
+            store.set_work_item(body.session, body.item.as_ref())?;
+            summary.session.work_item = body.item;
+            Ok(applied(summary))
+        })
+        .await
+    }
+
+    /// `SetReminder`.
+    pub async fn set_reminder(
+        &self,
+        op: Option<OpId>,
+        body: SetReminder,
+    ) -> Result<Outcome, String> {
+        self.mutate(op, move |_, store| {
+            let outcome = match body.change {
+                ReminderChange::At(due_at) => {
+                    store.set_reminders(&body.sessions, due_at)?;
+                    Outcome::Applied
+                }
+                ReminderChange::Snooze { expected, due_at } => {
+                    let mut moved = false;
+                    for &row in &body.sessions {
+                        moved |= store.snooze_reminder_if(row, expected, due_at)?;
+                    }
+                    if moved {
+                        Outcome::Applied
+                    } else {
+                        Outcome::Rejected(Rejection::StaleRev)
+                    }
+                }
+                ReminderChange::Clear { expected } => {
+                    store.clear_reminders(&body.sessions, expected)?;
+                    Outcome::Applied
+                }
+            };
+            let events = vec![WorkspaceEvent::Reminders(store.reminders()?)];
+            Ok((outcome.clone(), outcome, events))
+        })
+        .await
+    }
+
+    /// `SaveGroups`.
+    pub async fn save_groups(&self, op: Option<OpId>, body: SaveGroups) -> Result<Outcome, String> {
+        self.mutate(op, move |_, store| {
+            store.save_groups(&body.project, &body.groups)?;
+            let events = vec![WorkspaceEvent::Project(Project {
+                path: body.project,
+                groups: body.groups,
+            })];
+            Ok((Outcome::Applied, Outcome::Applied, events))
+        })
+        .await
+    }
+
+    /// `MarkSeen`.
+    pub async fn mark_seen(&self, op: Option<OpId>, body: MarkSeen) -> Result<Outcome, String> {
+        self.mutate(op, move |inner, store| {
+            if !inner.unread.remove(&body.session) {
+                return Ok((Outcome::Applied, Outcome::Applied, Vec::new()));
+            }
+            let Some(mut summary) = known(inner, store, body.session) else {
+                return Ok(gone());
+            };
+            summary.unread = false;
+            Ok(applied(summary))
+        })
+        .await
+    }
+
+    /// `SaveOrchestration`.
+    pub async fn save_orchestration(
+        &self,
+        op: Option<OpId>,
+        body: SaveOrchestration,
+    ) -> Result<Outcome, String> {
+        self.mutate(op, move |_, store| {
+            store.save_orchestration_summary(body.lead, &body.summary)?;
+            let events = vec![WorkspaceEvent::Orchestration(Lead {
+                lead: body.lead,
+                summary: body.summary,
+            })];
+            Ok((Outcome::Applied, Outcome::Applied, events))
+        })
+        .await
+    }
+
+    /// `SearchSessions`, on the store's search reader when it has one, off the caller's thread.
+    pub async fn search_sessions(&self, body: SearchSessions) -> Result<SearchResults, String> {
+        let reader = locked(&self.store)?.search_reader()?;
+        let store = self.store.clone();
+        let (reply, answer) = futures::channel::oneshot::channel();
+        self.spawn.spawn(Box::pin(async move {
+            let cancel = Arc::new(AtomicBool::new(false));
+            let found = match reader {
+                Some(reader) => reader.search_sessions(&body.query, cancel),
+                None => locked(&store).and_then(|store| store.search_sessions(&body.query, cancel)),
+            };
+            let _ = reply.send(found);
+        }));
+        let (hits, truncated) = answer
+            .await
+            .map_err(|_| "The search stopped before it finished".to_owned())??;
+        Ok(SearchResults { hits, truncated })
+    }
+
+    /// `GenerateTitle`: the seed stands in now; the generated title and a pasted work item follow
+    /// as `Session` events.
+    pub async fn generate_title(
+        self: &Arc<Self>,
+        op: Option<OpId>,
+        body: GenerateTitle,
+    ) -> Result<Outcome, String> {
+        let hub = self.clone();
+        self.mutate(op, move |inner, store| {
+            let Some(mut summary) = known(inner, store, body.session) else {
+                return Ok(gone());
+            };
+            let titled = store.replace_title(body.session, &body.placeholder, &body.seed)?;
+            let mut events = Vec::new();
+            if titled {
+                summary.session.title.clone_from(&body.seed);
+                events.push(WorkspaceEvent::Session(Box::new(summary)));
+            }
+            let cancel = Arc::new(AtomicBool::new(false));
+            if let Some(previous) = inner.titles.insert(body.session, cancel.clone()) {
+                previous.store(true, Ordering::Relaxed);
+            }
+            let mut model = body.model.clone();
+            if model.account.id != onicode_core::accounts::DEFAULT {
+                model.account.root = store.data_dir().map(Path::to_path_buf);
+            }
+            let work = hub.clone();
+            hub.spawn.spawn(Box::pin(async move {
+                work.titled(body, model, titled, cancel);
+            }));
+            Ok((Outcome::Applied, Outcome::Applied, events))
+        })
+        .await
+    }
+
+    /// Runs a title's generation and work item lookup, then applies what they found.
+    fn titled(
+        &self,
+        body: GenerateTitle,
+        model: onicode_core::session_title::TextModel,
+        titled: bool,
+        cancel: Arc<AtomicBool>,
+    ) {
+        let cwd = Path::new(&body.cwd);
+        let generated = if titled {
+            self.chores.title(model, cwd, &body.message, cancel.clone())
+        } else {
+            None
+        };
+        let linked = self.chores.work_item(
+            &body.message,
+            cwd,
+            generated.as_ref().and_then(|g| g.work_item.as_ref()),
+        );
+        let mut inner = self.lock();
+        if inner
+            .titles
+            .get(&body.session)
+            .is_some_and(|running| Arc::ptr_eq(running, &cancel))
+        {
+            inner.titles.remove(&body.session);
+        }
+        let Ok(store) = locked(&self.store) else {
+            return;
+        };
+        let Some(mut summary) = known(&inner, &store, body.session) else {
+            return;
+        };
+        let mut changed = false;
+        if !cancel.load(Ordering::Relaxed)
+            && let Some(generated) = generated
+            && store
+                .replace_title(body.session, &body.seed, &generated.title)
+                .unwrap_or(false)
+        {
+            summary.session.title = generated.title;
+            changed = true;
+        }
+        // A manual or Inbox link always wins.
+        if let Some(item) = linked
+            && summary.session.work_item.is_none()
+            && store.set_work_item(body.session, Some(&item)).is_ok()
+        {
+            summary.session.work_item = Some(item);
+            changed = true;
+        }
+        drop(store);
+        if changed {
+            publish(&mut inner, vec![WorkspaceEvent::Session(Box::new(summary))]);
+        }
+    }
+
+    /// `NameWorktree`: renames a new checkout's temporary branch once its name is generated,
+    /// unless the session left the checkout or the branch moved meanwhile.
+    pub async fn name_worktree(
+        self: &Arc<Self>,
+        op: Option<OpId>,
+        body: NameWorktree,
+    ) -> Result<Named, String> {
+        let hub = self.clone();
+        self.once(op, async move {
+            let mut model = body.model.clone();
+            if model.account.id != onicode_core::accounts::DEFAULT {
+                model.account.root = locked(&hub.store)?.data_dir().map(Path::to_path_buf);
+            }
+            let (reply, answer) = futures::channel::oneshot::channel();
+            let work = hub.clone();
+            hub.spawn.spawn(Box::pin(async move {
+                let _ = reply.send(work.named(&body, model));
+            }));
+            Ok(Named {
+                branch: answer.await.ok().flatten(),
+            })
+        })
+        .await
+    }
+
+    fn named(
+        &self,
+        body: &NameWorktree,
+        model: onicode_core::session_title::TextModel,
+    ) -> Option<String> {
+        use onicode_core::git::{self, naming};
+        let path = Path::new(&body.cwd);
+        let expected = naming::temporary_branch(path, body.session)?;
+        if git::snapshot(path).ok()?.current.as_deref() != Some(expected.as_str()) {
+            return None;
+        }
+        let branch =
+            self.chores
+                .branch(model, path, &body.message, Arc::new(AtomicBool::new(false)))?;
+        // A deleted session, or a checkout chosen while the name was generated, gets no late
+        // name.
+        let retained = locked(&self.store).ok()?.session_worktrees().ok()?;
+        if retained.get(&body.session).and_then(Option::as_deref) != Some(body.cwd.as_str()) {
+            return None;
+        }
+        naming::rename(Path::new(&body.root), path, &expected, &branch)
+            .ok()?
+            .current
+    }
+
+    /// `PreviewSession`.
+    pub fn preview_session(&self, body: &PreviewSession) -> Result<Preview, String> {
+        let preview = locked(&self.store)?.session_preview(body.session)?;
+        Ok(Preview {
+            model: preview.model,
+            worktree: preview.worktree_cwd,
+        })
+    }
+
+    /// `ListNotes`.
+    pub fn list_notes(&self) -> Result<Vec<onicode_core::notes::Note>, String> {
+        locked(&self.store)?.list_notes()
+    }
+
+    /// `CreateNote`.
+    pub async fn create_note(
+        &self,
+        op: Option<OpId>,
+        body: CreateNote,
+    ) -> Result<onicode_core::notes::Note, String> {
+        self.mutate(op, move |_, store| {
+            let note = store.create_note(body.cwd)?;
+            let events = vec![WorkspaceEvent::Notes(store.list_notes()?.len())];
+            Ok((note, Outcome::Applied, events))
+        })
+        .await
+    }
+
+    /// `UpsertNote`.
+    pub async fn upsert_note(
+        &self,
+        op: Option<OpId>,
+        body: UpsertNote,
+    ) -> Result<onicode_core::notes::Note, String> {
+        self.mutate(op, move |_, store| {
+            let note = store.upsert_note(&body.note)?;
+            let events = vec![WorkspaceEvent::Notes(store.list_notes()?.len())];
+            Ok((note, Outcome::Applied, events))
+        })
+        .await
+    }
+
+    /// `DeleteNote`.
+    pub async fn delete_note(&self, op: Option<OpId>, body: DeleteNote) -> Result<Outcome, String> {
+        self.mutate(op, move |_, store| {
+            store.delete_note(&body.id)?;
+            let events = vec![WorkspaceEvent::Notes(store.list_notes()?.len())];
+            Ok((Outcome::Applied, Outcome::Applied, events))
+        })
+        .await
+    }
+
+    /// `SaveResponseNote`.
+    pub async fn save_response_note(
+        &self,
+        op: Option<OpId>,
+        body: SaveResponseNote,
+    ) -> Result<Outcome, String> {
+        self.mutate(op, move |_, store| {
+            store.save_note(&body.note)?;
+            let events = vec![WorkspaceEvent::Notes(store.list_notes()?.len())];
+            Ok((Outcome::Applied, Outcome::Applied, events))
+        })
+        .await
+    }
+
+    /// `PrepareAutomationRun`: the store half of starting a claimed run.
+    pub async fn prepare_automation_run(
+        &self,
+        op: Option<OpId>,
+        body: PrepareAutomationRun,
+    ) -> Result<Created, String> {
+        self.mutate(op, move |inner, store| {
+            let claimed = inner
+                .state
+                .automations
+                .iter()
+                .find(|due| due.run.id == body.due.run.id)
+                .cloned();
+            let mut events = Vec::new();
+            if claimed.is_some() {
+                events.push(WorkspaceEvent::AutomationTaken(body.due.run.id.clone()));
+            }
+            let due = claimed.unwrap_or(*body.due);
+            let now = ms(onicode_core::time::now_ms());
+            let prepared = prepare_run(store, &due, body.reuse, *body.settings).and_then(
+                |(stored, settings, persisted)| {
+                    let row = stored.id;
+                    let summary = SessionSummary {
+                        id: SessionId(store.session_uid(row).unwrap_or_else(|_| row_uid(row))),
+                        key: persisted_key(store, row),
+                        worktree: settings.worktree_cwd.clone(),
+                        draft: false,
+                        started_by: None,
+                        automation: Some(due.automation.id.clone()),
+                        busy: inner.busy.contains(&row),
+                        unread: inner.unread.contains(&row),
+                        session: stored,
+                    };
+                    service(&mut inner.automations, store)?.update_run(
+                        &due.run.id,
+                        "running",
+                        Some(persisted),
+                        None,
+                        now,
+                    )?;
+                    Ok((summary, settings))
+                },
+            );
+            match prepared {
+                Ok((summary, settings)) => {
+                    let row = summary.session.id;
+                    events.push(WorkspaceEvent::Session(Box::new(summary.clone())));
+                    events.extend(new_project(inner, store, &due.automation.cwd));
+                    if !due.automation.session_folder_id.is_empty() {
+                        let mut groups = store.groups(&due.automation.cwd)?;
+                        groups.add_to_folder(&due.automation.session_folder_id, row);
+                        store.save_groups(&due.automation.cwd, &groups)?;
+                        events.push(WorkspaceEvent::Project(Project {
+                            path: due.automation.cwd.clone(),
+                            groups,
+                        }));
+                    }
+                    let created = Created {
+                        outcome: Outcome::Applied,
+                        session: Some(Box::new(summary)),
+                        settings: Some(Box::new(settings)),
+                    };
+                    Ok((created, Outcome::Applied, events))
+                }
+                Err(error) => {
+                    // A run that cannot start is over: record why.
+                    let _ = service(&mut inner.automations, store).and_then(|service| {
+                        service.update_run(&due.run.id, "failed", None, Some(error.clone()), now)
+                    });
+                    let outcome = Outcome::Rejected(Rejection::Denied(error));
+                    let created = Created {
+                        outcome: outcome.clone(),
+                        session: None,
+                        settings: None,
+                    };
+                    Ok((created, outcome, events))
+                }
+            }
+        })
+        .await
+    }
+
+    /// `FinishAutomationRun`.
+    pub async fn finish_automation_run(
+        &self,
+        op: Option<OpId>,
+        body: FinishAutomationRun,
+    ) -> Result<Outcome, String> {
+        self.mutate(op, move |inner, store| {
+            let now = ms(onicode_core::time::now_ms());
+            service(&mut inner.automations, store)?.update_run(
+                &body.run,
+                &body.status,
+                None,
+                body.error,
+                now,
+            )?;
+            Ok((Outcome::Applied, Outcome::Applied, Vec::new()))
+        })
+        .await
+    }
+
+    /// `ClaimInboxEvents`: claims the event automations the items trigger now; the items whose
+    /// claim failed wait for the next tick.
+    pub async fn claim_inbox_events(
+        &self,
+        op: Option<OpId>,
+        body: ClaimInboxEvents,
+    ) -> Result<Outcome, String> {
+        self.mutate(op, move |inner, store| {
+            let now = onicode_core::time::now_ms();
+            let waiting = retries(&mut inner.automations, store);
+            for item in body.items {
+                waiting.insert(item.key(), item);
+            }
+            let due = claim_events(&mut inner.automations, store, now)?;
+            let events = due
+                .into_iter()
+                .map(|due| WorkspaceEvent::AutomationDue(Box::new(due)))
+                .collect();
+            Ok((Outcome::Applied, Outcome::Applied, events))
+        })
+        .await
+    }
+
+    /// One beat of the schedulers at `now` (Unix ms): delivers due reminders, claims due and
+    /// recovered automation runs, and retries Inbox event claims.
+    pub fn tick(&self, now: u64) -> Result<(), String> {
+        let mut inner = self.lock();
+        self.ready(&mut inner)?;
+        let mut store = locked(&self.store)?;
+        let mut events = Vec::new();
+        if !store.take_due_reminders(now)?.is_empty() {
+            events.push(WorkspaceEvent::Reminders(store.reminders()?));
+        }
+        let mut due = Vec::new();
+        let automations = &mut inner.automations;
+        if !automations.recovered {
+            due.extend(service(automations, &store)?.recover(ms(self.started), ms(now))?);
+            automations.recovered = true;
+        }
+        due.extend(service(automations, &store)?.claim_due(ms(now))?);
+        due.extend(claim_events(automations, &store, now)?);
+        drop(store);
+        events.extend(
+            due.into_iter()
+                .map(|due| WorkspaceEvent::AutomationDue(Box::new(due))),
+        );
+        publish(&mut inner, events);
+        Ok(())
+    }
+
+    /// Whether any enabled automation waits on Inbox events: the viewer's Inbox then keeps
+    /// polling in the background.
+    pub fn has_event_automations(&self) -> Result<bool, String> {
+        let mut inner = self.lock();
+        let store = locked(&self.store)?;
+        Ok(service(&mut inner.automations, &store)?
+            .list()?
+            .iter()
+            .any(|automation| {
+                automation.enabled
+                    && automation.triggers.as_ref().is_some_and(|triggers| {
+                        triggers.iter().any(|trigger| trigger.kind != "time")
+                    })
+            }))
+    }
+
+    /// A turn started in session `row`.
+    pub fn turn_started(&self, row: i64) {
+        let mut inner = self.lock();
+        // Prompted: it is the person's now, whoever closes it.
+        inner.unprompted.remove(&row);
+        if !inner.busy.insert(row) || !inner.loaded {
+            return;
+        }
+        let Ok(store) = locked(&self.store) else {
+            return;
+        };
+        let summary = known(&inner, &store, row);
+        drop(store);
+        if let Some(mut summary) = summary {
+            summary.busy = true;
+            publish(&mut inner, vec![WorkspaceEvent::Session(Box::new(summary))]);
+        }
+    }
+
+    /// A turn ended in session `row`: its summary is read again (it has messages now, a newer
+    /// time, perhaps a provider id) and it is unread.
+    pub fn turn_finished(&self, row: i64) {
+        let mut inner = self.lock();
+        inner.busy.remove(&row);
+        inner.unread.insert(row);
+        if !inner.loaded {
+            return;
+        }
+        let Ok(store) = locked(&self.store) else {
+            return;
+        };
+        let summary = read_summary(&store, &inner, row);
+        drop(store);
+        if let Some(summary) = summary {
+            publish(&mut inner, vec![WorkspaceEvent::Session(Box::new(summary))]);
+        }
+    }
+
+    /// `WatchWorkspace`: a snapshot (or, with a `since` the ring covers, only what was missed),
+    /// then every event. After `Resync` the stream ends; resubscribe with the last cursor.
+    pub fn watch(
+        self: &Arc<Self>,
+        params: WatchWorkspace,
+    ) -> Result<BoxStream<'static, Item<WorkspaceState, WorkspaceEvent>>, String> {
+        let notify = Arc::new(Notify::new());
+        let id = {
+            let mut inner = self.lock();
+            self.ready(&mut inner)?;
+            let resumed = params
+                .since
+                .filter(|since| since.epoch == inner.epoch)
+                .and_then(|since| {
+                    inner
+                        .ring
+                        .since(since.seq, inner.seq)
+                        .map(|events| (since.seq, events))
+                });
+            let queue = match resumed {
+                Some((since, events)) => {
+                    WatchQueue::resume(since, inner.seq, events, self.limits.queue)
+                }
+                None => WatchQueue::snapshot(
+                    Item::Snapshot {
+                        at: Cursor {
+                            epoch: inner.epoch,
+                            seq: inner.seq,
+                        },
+                        state: inner.state.clone(),
+                    },
+                    inner.seq,
+                    self.limits.queue,
+                ),
+            };
+            inner.next_watcher += 1;
+            let id = inner.next_watcher;
+            inner.watchers.insert(
+                id,
+                Watcher {
+                    queue,
+                    notify: notify.clone(),
+                },
+            );
+            id
+        };
+        let guard = WatchGuard {
+            hub: self.clone(),
+            id,
+        };
+        Ok(
+            futures::stream::unfold(Some((guard, notify)), |held| async move {
+                let (guard, notify) = held?;
+                loop {
+                    match guard.hub.drain(guard.id)? {
+                        Some(Item::Resync) => return Some((Item::Resync, None)),
+                        Some(item) => return Some((item, Some((guard, notify)))),
+                        None => notify.notified().await,
+                    }
+                }
+            })
+            .boxed(),
+        )
+    }
+
+    /// The watcher's next item: `None` when it is gone, `Some(None)` when nothing is ready.
+    fn drain(&self, id: u64) -> Option<Option<Item<WorkspaceState, WorkspaceEvent>>> {
+        let mut inner = self.lock();
+        Some(inner.watchers.get_mut(&id)?.queue.drain())
+    }
+
+    fn unwatch(&self, id: u64) {
+        self.lock().watchers.remove(&id);
+    }
+}
+
+struct WatchGuard {
+    hub: Arc<WorkspaceHub>,
+    id: u64,
+}
+
+impl Drop for WatchGuard {
+    fn drop(&mut self) {
+        self.hub.unwatch(self.id);
+    }
+}
+
+/// Numbers `events`, applies them to the state and the ring, and queues them for every watcher.
+fn publish(inner: &mut Inner, events: Vec<WorkspaceEvent>) {
+    if events.is_empty() {
+        return;
+    }
+    let first = inner.seq + 1;
+    for event in &events {
+        inner.seq += 1;
+        apply(&mut inner.state, event);
+        inner.ring.push(inner.seq, event.clone());
+    }
+    for watcher in inner.watchers.values_mut() {
+        watcher.queue.push(first, events.clone());
+        watcher.notify.notify_one();
+    }
+}
+
+fn applied(summary: SessionSummary) -> Applied<Outcome> {
+    (
+        Outcome::Applied,
+        Outcome::Applied,
+        vec![WorkspaceEvent::Session(Box::new(summary))],
+    )
+}
+
+fn gone() -> Applied<Outcome> {
+    rejected(Outcome::Rejected(Rejection::Gone), Rejection::Gone)
+}
+
+/// An id for a session the ledger cannot name (a legacy remote one): derived from its row, so it
+/// stays the same, and no session watch finds it.
+fn row_uid(row: i64) -> Uuid {
+    Uuid::from_u64_pair(0, row.cast_unsigned())
+}
+
+/// The session's summary as the state holds it, or as the store does when the state has not
+/// seen it (a session another writer created).
+fn known(inner: &Inner, store: &Store, row: i64) -> Option<SessionSummary> {
+    inner
+        .state
+        .sessions
+        .iter()
+        .find(|known| known.session.id == row)
+        .cloned()
+        .or_else(|| read_summary(store, inner, row))
+}
+
+/// The session's summary as the store holds it now.
+fn read_summary(store: &Store, inner: &Inner, row: i64) -> Option<SessionSummary> {
+    let session = store
+        .sessions()
+        .ok()?
+        .into_iter()
+        .find(|session| session.id == row)?;
+    let previous = inner
+        .state
+        .sessions
+        .iter()
+        .find(|known| known.session.id == row);
+    Some(SessionSummary {
+        id: SessionId(store.session_uid(row).unwrap_or_else(|_| row_uid(row))),
+        key: persisted_key(store, row),
+        worktree: store
+            .agent_settings(row)
+            .ok()
+            .flatten()
+            .and_then(|settings| settings.worktree_cwd),
+        draft: store
+            .draft_sessions()
+            .is_ok_and(|drafts| drafts.contains(&row)),
+        started_by: previous.and_then(|known| known.started_by),
+        automation: previous.and_then(|known| known.automation.clone()),
+        busy: inner.busy.contains(&row),
+        unread: inner.unread.contains(&row),
+        session,
+    })
+}
+
+/// Deletes session `row` from the store: its settings, reminder, folder entries and recorded
+/// turns. Returns the events that show it gone.
+fn remove(inner: &mut Inner, store: &mut Store, row: i64) -> Result<Vec<WorkspaceEvent>, String> {
+    store.delete(row)?;
+    // Drop the session's recorded turns and their Git refs.
+    if let Some(checkpoints) = onicode_core::checkpoint::store() {
+        let _ = checkpoints.exclusive(|c| c.forget(&row.to_string()));
+    }
+    inner.busy.remove(&row);
+    inner.unread.remove(&row);
+    inner.unprompted.remove(&row);
+    let mut events = vec![WorkspaceEvent::Removed(row)];
+    if inner
+        .state
+        .reminders
+        .iter()
+        .any(|reminder| reminder.session_id == row)
+    {
+        events.push(WorkspaceEvent::Reminders(store.reminders()?));
+    }
+    // Out of its folders; a folder it leaves empty goes too.
+    for project in &inner.state.projects {
+        if project.groups.folder_of(row).is_some() {
+            let mut groups = project.groups.clone();
+            groups.remove_sessions(&[row]);
+            store.save_groups(&project.path, &groups)?;
+            events.push(WorkspaceEvent::Project(Project {
+                path: project.path.clone(),
+                groups,
+            }));
+        }
+    }
+    Ok(events)
+}
+
+/// The id the store keeps the session under for other tools.
+fn persisted_key(store: &Store, row: i64) -> String {
+    store
+        .persisted_session_id(row)
+        .unwrap_or_else(|_| row.to_string())
+}
+
+/// The project at `path`, when the state does not list it yet.
+fn new_project(inner: &Inner, store: &Store, path: &str) -> Option<WorkspaceEvent> {
+    if inner.state.projects.iter().any(|known| known.path == path) {
+        return None;
+    }
+    Some(WorkspaceEvent::Project(Project {
+        path: path.to_owned(),
+        groups: store.groups(path).unwrap_or_default(),
+    }))
+}
+
+/// The workspace as the store holds it.
+fn load(
+    store: &Store,
+    busy: &HashSet<i64>,
+    unread: &HashSet<i64>,
+) -> Result<WorkspaceState, String> {
+    let stored = store.sessions()?;
+    let worktrees = store.session_worktrees().unwrap_or_default();
+    let drafts = store.draft_sessions().unwrap_or_default();
+    let started = store.started_links().unwrap_or_default();
+    let automations = store.automation_session_ids().unwrap_or_default();
+    let paths: BTreeSet<String> = stored.iter().map(|session| session.cwd.clone()).collect();
+    let sessions = stored
+        .into_iter()
+        .map(|session| {
+            let row = session.id;
+            SessionSummary {
+                id: SessionId(store.session_uid(row).unwrap_or_else(|_| row_uid(row))),
+                key: persisted_key(store, row),
+                worktree: worktrees.get(&row).cloned().flatten(),
+                draft: drafts.contains(&row),
+                started_by: started.get(&row).copied(),
+                automation: automations.get(&row).cloned(),
+                busy: busy.contains(&row),
+                unread: unread.contains(&row),
+                session,
+            }
+        })
+        .collect();
+    let projects = paths
+        .into_iter()
+        .map(|path| Project {
+            groups: store.groups(&path).unwrap_or_default(),
+            path,
+        })
+        .collect();
+    let mut orchestrations: Vec<Lead> = store
+        .orchestration_summaries()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(lead, summary)| Lead { lead, summary })
+        .collect();
+    orchestrations.sort_by_key(|lead| lead.lead);
+    Ok(WorkspaceState {
+        sessions,
+        projects,
+        reminders: store.reminders()?,
+        orchestrations,
+        notes: store.list_notes().map_or(0, |notes| notes.len()),
+        automations: Vec::new(),
+    })
+}
+
+/// Settings a model override starts fresh from: the source's controls belong to its model.
+#[must_use]
+pub fn new_session_settings(source: Option<Settings>, model: Option<String>) -> Settings {
+    let mut settings = source.unwrap_or_default();
+    if let Some(model) = model {
+        if settings
+            .model
+            .as_ref()
+            .is_some_and(|source| source != &model)
+        {
+            settings.effort = None;
+            settings.fast = false;
+            settings.thinking = None;
+            settings.service_tier = None;
+            settings.model_settings.clear();
+        }
+        settings.model = Some(model);
+    }
+    settings
+}
+
+/// A new session's settings from the project's saved defaults and the viewer's choices, saved
+/// when they differ from a bare session's.
+fn start_with_defaults(
+    store: &Store,
+    provider: &str,
+    cwd: &str,
+    row: i64,
+    defaults: SessionDefaults,
+) -> Result<Settings, String> {
+    let SessionDefaults {
+        model,
+        account,
+        access,
+        effort,
+        worktree_cwd,
+    } = defaults;
+    let mut settings = new_session_settings(
+        store
+            .desktop_preferences()
+            .and_then(|preferences| preferences.session_defaults(provider, cwd)),
+        model,
+    );
+    settings.access = access;
+    if let Some(effort) = effort {
+        settings.model_settings.retain(|key, _| {
+            !matches!(
+                key.as_str(),
+                "effort" | "reasoning" | "reasoningEffort" | "reasoning_effort"
+            )
+        });
+        settings.effort = Some(effort);
+    }
+    settings.account = account;
+    settings.worktree_cwd = worktree_cwd;
+    if settings.model.is_some()
+        || settings.effort.is_some()
+        || !settings.model_settings.is_empty()
+        || settings.worktree_cwd.is_some()
+        || settings.account.id != onicode_core::accounts::DEFAULT
+        || access != AccessMode::default()
+    {
+        store.save_agent_settings(row, &settings)?;
+    }
+    Ok(settings)
+}
+
+/// The automations service, opened over the store's database the first time.
+fn service<'a>(automations: &'a mut Automations, store: &Store) -> Result<&'a mut Service, String> {
+    if automations.service.is_none() {
+        automations.service = Some(Service::open(store.database_path())?);
+    }
+    automations
+        .service
+        .as_mut()
+        .ok_or_else(|| "Automations are unavailable".to_owned())
+}
+
+/// The Inbox items waiting for a retry, read from the store the first time.
+fn retries<'a>(
+    automations: &'a mut Automations,
+    store: &Store,
+) -> &'a mut BTreeMap<String, InboxItem> {
+    automations.retries.get_or_insert_with(|| {
+        store
+            .setting(INBOX_RETRIES)
+            .ok()
+            .flatten()
+            .and_then(|raw| serde_json::from_str::<Vec<InboxItem>>(&raw).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|item| (item.key(), item))
+            .collect()
+    })
+}
+
+/// Claims the event runs the waiting Inbox items trigger; what failed waits again, kept in the
+/// store first so a restart retries it too.
+fn claim_events(
+    automations: &mut Automations,
+    store: &Store,
+    now: u64,
+) -> Result<Vec<DueAutomationRun>, String> {
+    let waiting = retries(automations, store);
+    if waiting.is_empty() {
+        return Ok(Vec::new());
+    }
+    if waiting.len() > MAX_RETRIES {
+        let mut items: Vec<_> = std::mem::take(waiting).into_values().collect();
+        items.sort_by_key(|item| std::cmp::Reverse(item.updated_ms()));
+        *waiting = items
+            .into_iter()
+            .take(MAX_RETRIES)
+            .map(|item| (item.key(), item))
+            .collect();
+    }
+    let items: Vec<InboxItem> = waiting.values().cloned().collect();
+    store.save_setting(
+        INBOX_RETRIES,
+        &serde_json::to_string(&items).map_err(|error| error.to_string())?,
+    )?;
+    let (runs, retry) = onicode_core::automations::claim_inbox_events_retry(
+        service(automations, store)?,
+        &items,
+        ms(now),
+    )?;
+    let waiting = retries(automations, store);
+    *waiting = retry.into_iter().map(|item| (item.key(), item)).collect();
+    let left: Vec<&InboxItem> = waiting.values().collect();
+    store.save_setting(
+        INBOX_RETRIES,
+        &serde_json::to_string(&left).map_err(|error| error.to_string())?,
+    )?;
+    Ok(runs)
+}
+
+/// The session a claimed run starts in: the reusable one, or a new one in the automation's
+/// project, linked, titled and given `settings`. Returns it, its settings and its persisted id.
+fn prepare_run(
+    store: &Store,
+    due: &DueAutomationRun,
+    reuse: Option<i64>,
+    mut settings: Settings,
+) -> Result<(Session, Settings, String), String> {
+    let automation = &due.automation;
+    if onicode_core::provider::Kind::parse(&automation.harness).is_none() {
+        return Err("The automation's agent is unavailable".into());
+    }
+    if !Path::new(&automation.cwd).is_dir() {
+        return Err("The automation's project folder is unavailable".into());
+    }
+    if automation.workspace_mode == "existing" && !Path::new(&automation.worktree_cwd).is_dir() {
+        return Err("The automation's worktree is unavailable".into());
+    }
+    let mut summary = if let Some(row) = reuse {
+        if let Some(previous) = store.agent_settings(row)? {
+            settings.turns = previous.turns;
+            settings.revision = previous.revision;
+        }
+        store
+            .sessions()?
+            .into_iter()
+            .find(|session| session.id == row)
+            .ok_or("The reusable session no longer exists")?
+    } else {
+        let mut summary = store.create(&automation.harness, &automation.cwd)?;
+        if due.run.trigger != "event" {
+            summary.title.clone_from(&automation.name);
+            store.title(summary.id, &summary.title)?;
+        }
+        summary
+    };
+    store.set_automation_id(summary.id, &automation.id)?;
+    if let Some(item) = automation_work_item(&due.run) {
+        store.set_work_item(summary.id, Some(&item))?;
+        summary.work_item = Some(item);
+    }
+    if reuse.is_none() {
+        store.save_agent_settings(summary.id, &settings)?;
+    }
+    let persisted = store.persisted_session_id(summary.id)?;
+    Ok((summary, settings, persisted))
+}
+
+/// The pull request or issue a GitHub event run is about.
+fn automation_work_item(run: &AutomationRun) -> Option<WorkItem> {
+    if run.trigger != "event" || run.event_kind.as_deref() != Some("github") {
+        return None;
+    }
+    let mut parts = run.event_key.as_deref()?.split(':');
+    if parts.next()? != "github" {
+        return None;
+    }
+    let kind = match parts.next()? {
+        "pr" => "pull",
+        "issue" => "issues",
+        _ => return None,
+    };
+    let repo = parts.next()?;
+    let number = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    onicode_core::session_groups::parse_github_work_item(&format!(
+        "https://github.com/{repo}/{kind}/{number}"
+    ))
+}

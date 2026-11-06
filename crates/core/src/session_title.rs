@@ -60,7 +60,7 @@ pub struct GeneratedTitle {
 
 /// The model a background chore runs on: session titles, worktree branch
 /// names, commit messages and pull request text.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TextModel {
     pub kind: Kind,
     pub model: Option<String>,

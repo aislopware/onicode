@@ -5,8 +5,9 @@
 //! `SessionModel`, and a snapshot plus the events after it must be the later snapshot.
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures::executor::{LocalPool, block_on};
@@ -14,17 +15,20 @@ use futures::future::BoxFuture;
 use futures::stream::BoxStream;
 use futures::task::LocalSpawnExt;
 use futures::{FutureExt, StreamExt};
-use onicode_core::agent::{Approval, Decision, Question};
+use onicode_core::agent::{Approval, Decision, Question, Settings};
 use onicode_core::context::Usage;
+use onicode_core::provider::RewindError;
 use onicode_core::store::Store;
-use onicode_core::transcript::Row;
+use onicode_core::transcript::{Row, Transcript};
 use onicode_protocol::session::{
-    self, Answer, Decide, QueueChange, QueueEdit, SessionEvent, SessionState, Stop, Verdict,
-    WatchSession,
+    self, Answer, Btw, BtwAnswer, BtwThread, BtwThreads, Configure, Decide, EditLastTurn,
+    EditedTurn, QueueChange, QueueEdit, ReadBtw, ReadSession, RecallLastTurn, SaveBtw, SaveQueue,
+    SendNow, SessionEvent, SessionState, SteerNow, Stop, Verdict, WatchSession,
 };
 use onicode_protocol::{Cursor, Item, MessageId, OpId, Outcome, Rejection, SessionId};
 use proptest::prelude::*;
 
+use super::asides::{Aside, Asides, Sink};
 use super::hub::{Limits, Runner, SessionHub, Spawn, TurnJob};
 use super::model::SessionModel;
 use super::queue::WatchQueue;
@@ -35,7 +39,8 @@ use crate::turn::{Database, Update, locked};
 
 type Work = Arc<Mutex<Vec<BoxFuture<'static, ()>>>>;
 type Jobs = Arc<Mutex<Vec<TurnJob>>>;
-type Slot = Rc<RefCell<Option<Result<Outcome, String>>>>;
+type Reply<T> = Rc<RefCell<Option<Result<T, String>>>>;
+type Slot = Reply<Outcome>;
 type Stream = BoxStream<'static, Item<SessionState, SessionEvent>>;
 
 /// The hub's work, held until the test runs it.
@@ -53,10 +58,38 @@ fn scripted(jobs: &Jobs) -> Runner {
     Arc::new(move |job| jobs.lock().unwrap().push(job))
 }
 
+/// The provider's asides, answered by the script: every rewind binds the provider session
+/// `rewound`, and every by-the-way answer is `ANSWER` in two pieces.
+#[derive(Default)]
+struct Scripted {
+    rewinds: AtomicUsize,
+    asks: AtomicUsize,
+}
+
+const ANSWER: [&str; 2] = ["The answer", " is 42."];
+
+impl Asides for Scripted {
+    fn rewind(&self, aside: Aside, _: Option<&str>) -> Result<String, RewindError> {
+        assert!(aside.prompt.is_empty(), "a rewind sends no prompt");
+        self.rewinds.fetch_add(1, Ordering::Relaxed);
+        Ok("rewound".into())
+    }
+
+    fn ask(&self, aside: Aside, _: Arc<AtomicBool>, text: Sink<'_>) -> Result<(), String> {
+        assert!(aside.settings.text_only, "an aside never runs tools");
+        self.asks.fetch_add(1, Ordering::Relaxed);
+        for piece in ANSWER {
+            text(piece.into())?;
+        }
+        Ok(())
+    }
+}
+
 struct Harness {
     pool: LocalPool,
     work: Work,
     jobs: Jobs,
+    asides: Arc<Scripted>,
     hub: Arc<SessionHub>,
     store: Database,
     id: i64,
@@ -65,8 +98,13 @@ struct Harness {
 
 impl Harness {
     fn new(limits: Limits) -> Self {
+        Self::of("codex", limits)
+    }
+
+    /// A hub over a store holding one session of `provider`.
+    fn of(provider: &str, limits: Limits) -> Self {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let id = store.create("codex", "/project").unwrap().id;
+        let id = store.create(provider, "/project").unwrap().id;
         Self::over(Arc::new(Mutex::new(store)), id, limits)
     }
 
@@ -74,10 +112,12 @@ impl Harness {
     fn over(store: Database, id: i64, limits: Limits) -> Self {
         let work = Work::default();
         let jobs = Jobs::default();
+        let asides = Arc::new(Scripted::default());
         let hub = SessionHub::build(
             store.clone(),
             Arc::new(Queued(work.clone())),
             scripted(&jobs),
+            asides.clone(),
             limits,
         );
         let session = hub.session_id(id).unwrap();
@@ -85,6 +125,7 @@ impl Harness {
             pool: LocalPool::new(),
             work,
             jobs,
+            asides,
             hub,
             store,
             id,
@@ -126,6 +167,48 @@ impl Harness {
             .unwrap();
         self.settle();
         slot
+    }
+
+    /// Runs `call` on the test's pool until nothing more can happen; its reply lands in the
+    /// slot.
+    fn call<T: 'static>(
+        &mut self,
+        call: impl Future<Output = Result<T, String>> + 'static,
+    ) -> Reply<T> {
+        let slot = Reply::<T>::default();
+        let held = slot.clone();
+        self.pool
+            .spawner()
+            .spawn_local(async move {
+                *held.borrow_mut() = Some(call.await);
+            })
+            .unwrap();
+        self.settle();
+        slot
+    }
+
+    /// Queues `text` in the stored queue, as a steer, under a new id.
+    fn queue(&self, text: &str) -> MessageId {
+        let id = MessageId::new();
+        let added = block_on(self.hub.queue_edit(
+            None,
+            QueueEdit {
+                session: self.session,
+                id,
+                base_rev: self.stored_queue().revision,
+                edit: QueueChange::Add {
+                    text: text.into(),
+                    attachments: Vec::new(),
+                    steer: true,
+                },
+            },
+        ));
+        assert_eq!(added, Ok(Outcome::Applied));
+        id
+    }
+
+    fn stored_queue(&self) -> onicode_core::follow_up::State {
+        locked(&self.store).unwrap().follow_ups(self.id).unwrap()
     }
 
     /// The running turn publishes `update`, saved as a provider's turn saves it; a finished
@@ -1090,9 +1173,8 @@ async fn the_service_serves_a_turn_over_rpc() {
 #[test]
 fn a_real_turn_runs_through_the_hub() {
     use std::os::unix::fs::PermissionsExt;
-    use std::sync::atomic::AtomicBool;
 
-    use onicode_core::agent::{Settings, TurnInfo};
+    use onicode_core::agent::TurnInfo;
 
     use super::{Staged, StagedTurn, ThreadSpawn};
     use crate::turn::{TurnInput, run_turn_using};
@@ -1217,4 +1299,520 @@ for line in sys.stdin:
         "the provider's answer: {:?}",
         seen.rows
     );
+}
+
+/// Starts a turn and has it take steers.
+fn running(harness: &mut Harness) {
+    let _launch = harness.send(None, MessageId::new(), "go");
+    harness.publish(Update {
+        rows: vec![row(0, "go")],
+        status: "Working".into(),
+        turn_ready: true,
+        ..Update::default()
+    });
+}
+
+/// Every control the running turn was handed since the last look.
+fn controls(harness: &Harness) -> Vec<onicode_core::agent::Control> {
+    let jobs = harness.jobs.lock().unwrap();
+    let job = jobs.last().expect("a running turn");
+    std::iter::from_fn(|| job.controls.try_recv().ok()).collect()
+}
+
+#[test]
+fn steer_now_moves_a_queued_message_into_the_turn_once() {
+    let mut harness = Harness::new(Limits::default());
+    let mut watcher = Client::join(&harness, usize::MAX);
+    running(&mut harness);
+    let id = harness.queue("also this");
+    let op = OpId::new();
+    let steer = |harness: &mut Harness| {
+        let hub = harness.hub.clone();
+        let body = SteerNow {
+            session: harness.session,
+            id,
+        };
+        harness.call(async move { hub.steer_now(Some(op), body).await })
+    };
+    let first = steer(&mut harness);
+    let again = steer(&mut harness);
+    let handed = controls(&harness);
+    assert_eq!(handed.len(), 1, "one steer for one op");
+    assert_eq!(handed[0].id, id.to_string());
+    assert!(matches!(&handed[0].decision, Decision::Steer(message) if message.text == "also this"));
+    assert!(harness.stored_queue().messages.is_empty());
+    assert_eq!(*first.borrow(), None, "the receipt waits for the provider");
+
+    harness.publish(Update {
+        start: 1,
+        follow_up_delivered: vec![id.to_string()],
+        status: "Working".into(),
+        ..Update::default()
+    });
+    assert_eq!(*first.borrow(), Some(Ok(Outcome::Applied)));
+    assert_eq!(*again.borrow(), Some(Ok(Outcome::Applied)));
+    let late = steer(&mut harness);
+    assert_eq!(*late.borrow(), Some(Ok(Outcome::Applied)));
+    assert!(controls(&harness).is_empty(), "a repeat steers nothing");
+    watcher.pump(&harness);
+    assert!(watcher.state.as_ref().unwrap().queue.messages.is_empty());
+
+    let gone = steer_now_of(&mut harness, MessageId::new());
+    assert_eq!(*gone.borrow(), Some(Ok(Outcome::Rejected(Rejection::Gone))));
+}
+
+fn steer_now_of(harness: &mut Harness, id: MessageId) -> Slot {
+    let hub = harness.hub.clone();
+    let body = SteerNow {
+        session: harness.session,
+        id,
+    };
+    harness.call(async move { hub.steer_now(Some(OpId::new()), body).await })
+}
+
+#[test]
+fn a_refused_steer_now_returns_to_the_queue_paused_on_the_error() {
+    let mut harness = Harness::new(Limits::default());
+    running(&mut harness);
+    let kept = harness.queue("later");
+    let id = harness.queue("now");
+    let steered = steer_now_of(&mut harness, id);
+    assert_eq!(controls(&harness).len(), 1);
+    harness.publish(Update {
+        start: 1,
+        follow_up_errors: vec![(id.to_string(), "Busy".into())],
+        status: "Working".into(),
+        ..Update::default()
+    });
+    assert_eq!(
+        *steered.borrow(),
+        Some(Ok(Outcome::Rejected(Rejection::Denied("Busy".into()))))
+    );
+    let queue = harness.stored_queue();
+    assert!(queue.paused);
+    let ids: Vec<_> = queue.messages.iter().map(|m| m.id.clone()).collect();
+    assert_eq!(ids, [id.to_string(), kept.to_string()], "back at the head");
+    assert_eq!(queue.messages[0].error.as_deref(), Some("Busy"));
+    assert_eq!(harness.state().queue.messages.len(), 2);
+}
+
+#[test]
+fn send_now_stops_the_turn_and_sends_the_message_when_it_ends() {
+    let mut harness = Harness::new(Limits::default());
+    let mut watcher = Client::join(&harness, usize::MAX);
+    running(&mut harness);
+    let id = harness.queue("next");
+    let op = OpId::new();
+    let send_now = |harness: &mut Harness| {
+        let hub = harness.hub.clone();
+        let body = SendNow {
+            session: harness.session,
+            id,
+        };
+        harness.call(async move { hub.send_now(Some(op), body).await })
+    };
+    let first = send_now(&mut harness);
+    let again = send_now(&mut harness);
+    {
+        let jobs = harness.jobs.lock().unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert!(
+            jobs[0].cancel.load(Ordering::Relaxed),
+            "the running turn stops"
+        );
+    }
+    assert!(harness.stored_queue().messages.is_empty());
+    let other = harness.queue("other");
+    let refused = {
+        let hub = harness.hub.clone();
+        let body = SendNow {
+            session: harness.session,
+            id: other,
+        };
+        harness.call(async move { hub.send_now(Some(OpId::new()), body).await })
+    };
+    assert!(matches!(
+        *refused.borrow(),
+        Some(Ok(Outcome::Rejected(Rejection::Denied(_))))
+    ));
+    assert_eq!(
+        harness.stored_queue().messages.len(),
+        1,
+        "a refusal keeps it"
+    );
+
+    harness.publish(Update {
+        start: 1,
+        status: "Stopped".into(),
+        finished: true,
+        ..Update::default()
+    });
+    {
+        let jobs = harness.jobs.lock().unwrap();
+        assert_eq!(jobs.len(), 1, "the message follows as the next turn");
+        assert_eq!(jobs[0].prompt, "next");
+        assert_eq!(jobs[0].settings.mono_message_id, Some(id.to_string()));
+    }
+    assert_eq!(*first.borrow(), None);
+    harness.publish(Update {
+        start: 1,
+        rows: vec![row(1, "")],
+        delivered: Some(id.to_string()),
+        status: "Working".into(),
+        ..Update::default()
+    });
+    assert_eq!(*first.borrow(), Some(Ok(Outcome::Applied)));
+    assert_eq!(*again.borrow(), Some(Ok(Outcome::Applied)));
+    harness.publish(Update {
+        start: 1,
+        rows: vec![row(1, "Done")],
+        status: "Done".into(),
+        finished: true,
+        ..Update::default()
+    });
+    let late = send_now(&mut harness);
+    assert_eq!(*late.borrow(), Some(Ok(Outcome::Applied)));
+    assert!(
+        harness.jobs.lock().unwrap().is_empty(),
+        "a repeat sends nothing"
+    );
+    watcher.pump(&harness);
+    let queue = &watcher.state.as_ref().unwrap().queue;
+    assert_eq!(queue.messages.len(), 1);
+    assert_eq!(queue.messages[0].id, other.to_string());
+}
+
+#[test]
+fn send_now_with_no_turn_running_sends_at_once() {
+    let mut harness = Harness::new(Limits::default());
+    let id = harness.queue("hello");
+    let hub = harness.hub.clone();
+    let body = SendNow {
+        session: harness.session,
+        id,
+    };
+    let sent = harness.call(async move { hub.send_now(None, body).await });
+    {
+        let jobs = harness.jobs.lock().unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].prompt, "hello");
+    }
+    harness.publish(Update {
+        rows: vec![row(0, "hello")],
+        delivered: Some(id.to_string()),
+        status: "Working".into(),
+        ..Update::default()
+    });
+    assert_eq!(*sent.borrow(), Some(Ok(Outcome::Applied)));
+    let state = harness.state();
+    assert_eq!(
+        state.rows[0].id,
+        Some(id.0),
+        "the prompt keeps the message's id"
+    );
+}
+
+/// A `pi` session whose last turn the store holds: a prompt and its answer.
+fn answered() -> Harness {
+    let harness = Harness::of("pi", Limits::default());
+    let mut transcript = Transcript::default();
+    transcript.begin("user");
+    transcript.append("Original");
+    transcript.begin("assistant");
+    transcript.append("Answer");
+    let mut store = locked(&harness.store).unwrap();
+    store.provider_id(harness.id, "thread").unwrap();
+    store.write_rows(harness.id, 0, &transcript.rows).unwrap();
+    drop(store);
+    harness
+}
+
+fn edit(harness: &mut Harness, op: OpId) -> Reply<EditedTurn> {
+    let hub = harness.hub.clone();
+    let body = EditLastTurn {
+        session: harness.session,
+        attachments: Vec::new(),
+        model: None,
+    };
+    harness.call(async move { hub.edit_last_turn(Some(op), body).await })
+}
+
+#[test]
+fn an_edit_rewinds_the_provider_once_then_drops_the_turn() {
+    let mut harness = answered();
+    let mut watcher = Client::join(&harness, usize::MAX);
+    let recalled = harness
+        .hub
+        .recall_last_turn(&RecallLastTurn {
+            session: harness.session,
+            turn: None,
+        })
+        .unwrap();
+    assert_eq!((recalled.start, recalled.prompt.as_str()), (0, "Original"));
+    assert_eq!(recalled.provider_id, "thread");
+    assert_eq!(recalled.rows.len(), 2);
+
+    let op = OpId::new();
+    let edited = edit(&mut harness, op);
+    let applied = EditedTurn {
+        outcome: Outcome::Applied,
+        provider_id: Some("rewound".into()),
+    };
+    assert_eq!(*edited.borrow(), Some(Ok(applied.clone())));
+    assert_eq!(harness.asides.rewinds.load(Ordering::Relaxed), 1);
+    assert!(
+        locked(&harness.store)
+            .unwrap()
+            .load(harness.id)
+            .unwrap()
+            .rows
+            .is_empty()
+    );
+    watcher.pump(&harness);
+    let state = watcher.state.as_ref().unwrap();
+    assert!(state.rows.is_empty(), "watchers lose the turn too");
+    assert_eq!(state.provider_id.as_deref(), Some("rewound"));
+
+    let again = edit(&mut harness, op);
+    assert_eq!(
+        *again.borrow(),
+        Some(Ok(applied)),
+        "a repeat gets the first reply"
+    );
+    assert_eq!(
+        harness.asides.rewinds.load(Ordering::Relaxed),
+        1,
+        "and rewinds nothing"
+    );
+    let unrecalled = edit(&mut harness, OpId::new());
+    assert_eq!(
+        *unrecalled.borrow(),
+        Some(Ok(EditedTurn {
+            outcome: Outcome::Rejected(Rejection::Gone),
+            provider_id: None,
+        }))
+    );
+}
+
+#[test]
+fn an_edit_of_a_changed_transcript_rewinds_nothing() {
+    let mut harness = answered();
+    harness
+        .hub
+        .recall_last_turn(&RecallLastTurn {
+            session: harness.session,
+            turn: None,
+        })
+        .unwrap();
+    locked(&harness.store)
+        .unwrap()
+        .write_rows(harness.id, 2, &[row(2, "More")])
+        .unwrap();
+    let edited = edit(&mut harness, OpId::new());
+    assert!(matches!(
+        &*edited.borrow(),
+        Some(Ok(EditedTurn {
+            outcome: Outcome::Rejected(Rejection::Denied(_)),
+            provider_id: None,
+        }))
+    ));
+    assert_eq!(harness.asides.rewinds.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        locked(&harness.store)
+            .unwrap()
+            .load(harness.id)
+            .unwrap()
+            .rows
+            .len(),
+        3
+    );
+}
+
+fn question_thread() -> BtwThread {
+    BtwThread {
+        id: "side".into(),
+        provider: "codex".into(),
+        cwd: "/project".into(),
+        snapshot: "user: go".into(),
+        rows: vec![Row {
+            role: "user".into(),
+            text: "Why?".into(),
+            first: true,
+            sent_at: None,
+            id: None,
+        }],
+        status: "running".into(),
+        ..BtwThread::default()
+    }
+}
+
+#[test]
+fn a_btw_answer_streams_to_watchers_and_stays_with_its_thread() {
+    let mut harness = Harness::new(Limits::default());
+    let mut stream = harness
+        .hub
+        .watch(WatchSession {
+            session: harness.session,
+            since: None,
+            window_turns: 0,
+        })
+        .unwrap();
+    let op = OpId::new();
+    let ask = |harness: &mut Harness| {
+        let hub = harness.hub.clone();
+        let body = Btw {
+            session: harness.session,
+            thread: question_thread(),
+        };
+        harness.call(async move { hub.btw(Some(op), body).await })
+    };
+    let answer = ask(&mut harness);
+    assert_eq!(
+        *answer.borrow(),
+        Some(Ok(BtwAnswer {
+            outcome: Outcome::Applied,
+            text: Some(ANSWER.concat()),
+        }))
+    );
+    let mut streamed = String::new();
+    while let Some(Some(item)) = stream.next().now_or_never() {
+        if let Item::Events { events, .. } = item {
+            for event in events {
+                if let SessionEvent::BtwText { thread, text } = event {
+                    assert_eq!(thread, "side");
+                    streamed.push_str(&text);
+                }
+            }
+        }
+    }
+    assert_eq!(streamed, ANSWER.concat());
+
+    let kept = harness
+        .hub
+        .read_btw(&ReadBtw {
+            session: harness.session,
+        })
+        .unwrap();
+    let thread = &kept.threads[0];
+    assert_eq!(thread.status, "completed");
+    assert_eq!(thread.rows.len(), 2);
+    assert_eq!(thread.rows[1].text, ANSWER.concat());
+
+    let again = ask(&mut harness);
+    assert_eq!(
+        *again.borrow(),
+        Some(Ok(BtwAnswer {
+            outcome: Outcome::Applied,
+            text: None,
+        })),
+        "a repeat gets the first outcome"
+    );
+    assert_eq!(
+        harness.asides.asks.load(Ordering::Relaxed),
+        1,
+        "and asks nothing"
+    );
+}
+
+#[test]
+fn btw_saves_land_only_when_newer_and_keep_nothing_else() {
+    let harness = Harness::new(Limits::default());
+    let save = |revision, op| {
+        block_on(harness.hub.save_btw(
+            Some(op),
+            SaveBtw {
+                session: harness.session,
+                threads: BtwThreads {
+                    revision,
+                    threads: vec![question_thread()],
+                },
+            },
+        ))
+    };
+    let op = OpId::new();
+    assert_eq!(save(5, op), Ok(Outcome::Applied));
+    assert_eq!(
+        save(5, op),
+        Ok(Outcome::Applied),
+        "a repeat gets the first receipt"
+    );
+    assert_eq!(
+        save(5, OpId::new()),
+        Ok(Outcome::Rejected(Rejection::StaleRev))
+    );
+    assert_eq!(
+        save(4, OpId::new()),
+        Ok(Outcome::Rejected(Rejection::StaleRev))
+    );
+    let read = harness
+        .hub
+        .read_btw(&ReadBtw {
+            session: harness.session,
+        })
+        .unwrap();
+    assert_eq!(read.revision, 5);
+    assert_eq!(read.threads, [question_thread()]);
+}
+
+#[test]
+fn a_saved_queue_and_settings_read_back_and_older_settings_are_stale() {
+    let mut harness = Harness::new(Limits::default());
+    let mut watcher = Client::join(&harness, usize::MAX);
+    let mut queue = onicode_core::follow_up::State {
+        revision: 3,
+        ..Default::default()
+    };
+    queue.messages.push(onicode_core::follow_up::Message {
+        id: MessageId::new().to_string(),
+        text: "queued".into(),
+        ..Default::default()
+    });
+    let hub = harness.hub.clone();
+    let body = SaveQueue {
+        session: harness.session,
+        queue: queue.clone(),
+    };
+    let saved = harness.call(async move { hub.save_queue(Some(OpId::new()), body).await });
+    let saved = saved.borrow_mut().take().unwrap().unwrap();
+    assert_eq!(saved.messages, queue.messages);
+
+    let configure = |revision, model: &str| {
+        block_on(harness.hub.configure(
+            Some(OpId::new()),
+            Configure {
+                session: harness.session,
+                provider: "codex".into(),
+                settings: Settings {
+                    revision,
+                    model: Some(model.into()),
+                    ..Settings::default()
+                },
+            },
+        ))
+    };
+    assert_eq!(configure(2, "newer"), Ok(Outcome::Applied));
+    assert_eq!(
+        configure(1, "older"),
+        Ok(Outcome::Rejected(Rejection::StaleRev))
+    );
+    let record = harness
+        .hub
+        .read_session(&ReadSession {
+            session: harness.session,
+        })
+        .unwrap();
+    assert_eq!(record.queue.revision, 3);
+    assert_eq!(record.queue.messages, queue.messages);
+    assert_eq!(
+        record
+            .settings
+            .and_then(|settings| settings.model)
+            .as_deref(),
+        Some("newer")
+    );
+    assert_eq!(record.edit_recovery, None);
+    watcher.pump(&harness);
+    let state = watcher.state.as_ref().unwrap();
+    assert_eq!(state.queue_rev, 3);
+    assert_eq!(state.settings.model.as_deref(), Some("newer"));
 }

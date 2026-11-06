@@ -64,8 +64,9 @@ pub fn apply(state: &mut SessionState, event: &SessionEvent) {
         SessionEvent::TurnFinished { turn, info } => {
             state.settings.turns.insert(*turn, info.clone());
         }
-        // A turn's metrics live in its `TurnFinished` receipt; a receipt changes nothing.
-        SessionEvent::Metrics(_) | SessionEvent::Receipt { .. } => {}
+        // A turn's metrics live in its `TurnFinished` receipt; a receipt changes nothing, and a
+        // by-the-way answer is the `Btw` call's, not the session's.
+        SessionEvent::Metrics(_) | SessionEvent::Receipt { .. } | SessionEvent::BtwText { .. } => {}
     }
 }
 
