@@ -7,16 +7,15 @@
 //!   found it.
 //! - rooms ([`room`]): each open chat follows its host over a `doc/{chatId}` peer stream;
 //!   [`room::spawn_owed`] reopens chats that still owe their host after a restart;
-//! - relay ([`relay`]): host RPCs, chunked uploads / attachment reads, PR-status watches;
+//! - hosts ([`hosts`]): host RPCs, chunked uploads / attachment reads, PR-status watches;
 //! - escorts ([`escort`]): `pending://` attachment bytes pushed to the host.
 //!
-//! Every loop here retries forever with bounded backoff that event wakes (the links set, a
+//! Every loop here retries forever with bounded backoff that link events (the links set, a
 //! path change, the foreground) cut short.
 
 pub(crate) mod escort;
-pub(crate) mod relay;
+pub(crate) mod hosts;
 pub(crate) mod room;
-pub(crate) mod urls;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
@@ -26,8 +25,8 @@ use std::time::Duration;
 use onicode_doc::{REGISTRY_DOC_ID, RegistryDoc, RegistryRow, Vv};
 use onicode_net::{Role, StreamHead, StreamKind};
 use onicode_peer::PeerLinks;
+use onicode_sync::DocsStore;
 use onicode_sync::registry::{self, End, Replica};
-use onicode_sync::{DocsStore, SyncError};
 use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -37,62 +36,24 @@ use crate::{lock, now_ms};
 
 /// Registry snapshot debounce.
 const REGISTRY_SAVE_DEBOUNCE: Duration = Duration::from_secs(1);
-/// While the OS says there is no path, backoffs park at least this long
-/// (any online event still cuts them short).
-const OFFLINE_PARK: Duration = Duration::from_secs(30);
 /// How long opening the registry stream may take before the engine counts as away.
 const REGISTRY_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 /// The first wait before mirroring again; doubles to [`REGISTRY_RETRY_CAP`].
 const REGISTRY_RETRY_BASE: Duration = Duration::from_millis(500);
 const REGISTRY_RETRY_CAP: Duration = Duration::from_secs(16);
 
-/// Sleep `wait` (jittered), cut short by wake/online events. `false` when
-/// cancelled.
-pub(crate) async fn wait_backoff(cancel: &CancellationToken, wait: Duration) -> bool {
-    let mut wake = onicode_sync::wake::subscribe();
-    let mut online = onicode_sync::wake::subscribe_online();
-    while online.try_recv().is_ok() {}
+/// Sleep `wait` (jittered), cut short when the links change (set, a new network path, the
+/// foreground). `false` when cancelled.
+pub(crate) async fn wait_backoff(
+    cancel: &CancellationToken,
+    links_wake: &Notify,
+    wait: Duration,
+) -> bool {
     let jitter = Duration::from_millis((now_ms().unsigned_abs() % 250) + 1);
-    let wait = if onicode_sync::wake::path_is_offline() {
-        wait.max(OFFLINE_PARK)
-    } else {
-        wait + jitter
-    };
     tokio::select! {
-        _ = cancel.cancelled() => false,
-        _ = tokio::time::sleep(wait) => true,
-        _ = wake.recv() => true,
-        _ = online.recv() => true,
-    }
-}
-
-/// Fresh bearer for every request, from the client's token provider.
-#[derive(Clone)]
-pub(crate) struct Bearer(pub(crate) Weak<ClientInner>);
-
-impl Bearer {
-    pub(crate) async fn get(&self) -> std::result::Result<String, SyncError> {
-        let Some(inner) = self.0.upgrade() else {
-            return Err(SyncError::Closed);
-        };
-        match inner.tokens.bearer().await {
-            Ok(token) => Ok(token),
-            Err(ClientError::Auth(reason)) => Err(SyncError::Auth(reason)),
-            Err(err) => Err(SyncError::TemporarilyUnavailable(err.to_string())),
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl onicode_rpc::TokenSource for Bearer {
-    async fn token(&self) -> std::result::Result<String, onicode_rpc::TokenError> {
-        match self.get().await {
-            Ok(token) => Ok(token),
-            Err(SyncError::Auth(_) | SyncError::Closed) => Err(onicode_rpc::TokenError::SignedOut),
-            Err(err) => Err(onicode_rpc::TokenError::TemporarilyUnavailable(
-                err.to_string(),
-            )),
-        }
+        () = cancel.cancelled() => false,
+        () = tokio::time::sleep(wait + jitter) => true,
+        () = links_wake.notified() => true,
     }
 }
 
@@ -173,7 +134,6 @@ fn mirror(links: &PeerLinks) -> Option<String> {
 }
 
 pub(crate) struct LiveBackend {
-    pub(crate) edge: String,
     pub(crate) store: Arc<DocsStore>,
     inner: Weak<ClientInner>,
     registry: Arc<RegistryState>,
@@ -184,7 +144,7 @@ pub(crate) struct LiveBackend {
     registry_save: Arc<Notify>,
     registry_save_gate: Mutex<()>,
     registry_dirty: Arc<AtomicBool>,
-    pub(crate) relay: relay::Relay,
+    pub(crate) hosts: hosts::Hosts,
     pub(crate) escorts: escort::Escorts,
     /// Rescans the chats that owe their host something ([`room::spawn_owed`]).
     pub(crate) owed_wake: Arc<Notify>,
@@ -210,15 +170,11 @@ impl LiveBackend {
     }
 
     pub(crate) fn new(inner: &Arc<ClientInner>, store: DocsStore) -> Self {
-        let bearer = Bearer(Arc::downgrade(inner));
-        let edge = inner.config.edge_base().to_owned();
-        let store = Arc::new(store);
         Self {
-            relay: relay::Relay::new(inner, &edge, bearer),
+            hosts: hosts::Hosts::new(inner),
             escorts: escort::Escorts::new(&inner.config.data_dir),
             owed_wake: Arc::new(Notify::new()),
-            edge,
-            store,
+            store: Arc::new(store),
             inner: Arc::downgrade(inner),
             registry: Arc::default(),
             registry_changes: Arc::new(watch::channel(0).0),
@@ -242,7 +198,7 @@ impl LiveBackend {
 
     pub(crate) fn stop(&self) {
         self.cancel.cancel();
-        self.relay.shutdown();
+        self.hosts.shutdown();
         self.flush_registry_now_with(None);
     }
 
@@ -283,28 +239,10 @@ impl LiveBackend {
         self.registry_save.notify_one();
     }
 
-    /// Cheap edge reachability check (`GET /health`, 3s): a 200 un-parks
-    /// every backoff in the process at once.
-    pub(crate) fn probe_health(&self) {
-        let url = urls::health(&self.edge);
-        crate::runtime::shared().spawn(async move {
-            let ok = crate::auth::http()
-                .get(url)
-                .timeout(Duration::from_secs(3))
-                .send()
-                .await
-                .is_ok_and(|r| r.status().is_success());
-            if ok {
-                onicode_sync::wake::notify_online();
-            }
-        });
-    }
-
     /// Foreground / network restored: mirror the registry again now.
     pub(crate) fn kick(&self) {
         self.registry_kick.notify_one();
         self.owed_wake.notify_one();
-        onicode_sync::wake::notify_online();
     }
 
     fn flush_registry_now_with(&self, inner: Option<&ClientInner>) {
@@ -374,7 +312,7 @@ impl LiveBackend {
     fn spawn_presence(&self, inner: &Arc<ClientInner>) {
         let weak = Arc::downgrade(inner);
         let cancel = self.cancel.clone();
-        let links_set = inner.terminals_wake.clone();
+        let links_set = inner.links_wake.clone();
         crate::runtime::shared().spawn(async move {
             let links = loop {
                 let set = links_set.notified();
@@ -416,7 +354,7 @@ impl LiveBackend {
         let weak = Arc::downgrade(inner);
         let cancel = self.cancel.clone();
         let kick = self.registry_kick.clone();
-        let links_set = inner.terminals_wake.clone();
+        let links_set = inner.links_wake.clone();
         crate::runtime::shared().spawn(async move {
             let state = replica.state.clone();
             let head = StreamHead::new(StreamKind::Registry, "");

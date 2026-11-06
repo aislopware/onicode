@@ -10,8 +10,8 @@
 //! Linux desktop) and source builds are always on stable: beta publishes the
 //! macOS app alone.
 //!
-//!   stable  `{edge}/releases/manifest.json` (and `latest.txt`), unchanged
-//!   beta    `{edge}/releases/beta/manifest.json`
+//!   stable  `{feed}/releases/manifest.json` (and `latest.txt`), unchanged
+//!   beta    `{feed}/releases/beta/manifest.json`
 //!
 //! Opting in: a "Get beta updates" choice in the app (`select`), or a beta
 //! download whose first launch claims the channel (`claim_for_beta_build`).
@@ -59,8 +59,8 @@ impl Channel {
         }
     }
 
-    /// The release feed's base for this channel, under `stable` (the edge's
-    /// `/releases` or `ONICODE_RELEASES_URL`).
+    /// The release feed's base for this channel, under `stable` (the release
+    /// feed's `/releases` or `ONICODE_RELEASES_URL`).
     pub fn base(self, stable: &str) -> String {
         let stable = stable.trim_end_matches('/');
         match self {
@@ -224,12 +224,12 @@ mod tests {
     #[test]
     fn beta_reads_its_own_folder() {
         assert_eq!(
-            Channel::Stable.base("https://edge.zeron.sh/releases/"),
-            "https://edge.zeron.sh/releases"
+            Channel::Stable.base("https://feed.example/releases/"),
+            "https://feed.example/releases"
         );
         assert_eq!(
-            Channel::Beta.base("https://edge.zeron.sh/releases"),
-            "https://edge.zeron.sh/releases/beta"
+            Channel::Beta.base("https://feed.example/releases"),
+            "https://feed.example/releases/beta"
         );
     }
 

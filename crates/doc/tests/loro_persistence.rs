@@ -1,4 +1,4 @@
-//! Actual 1.13.7 persisted bytes, shared with the edge compatibility tests.
+//! Actual 1.13.7 persisted bytes: what older replicas wrote still loads and merges.
 use loro::{ExportMode, LoroDoc, ToJson};
 use serde_json::{Value, json};
 

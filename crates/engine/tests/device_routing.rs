@@ -99,7 +99,7 @@ fn registry_for(harness: HarnessId) -> Arc<HarnessRegistry> {
 fn assemble(dir: &std::path::Path, device_id: &str) -> EngineCore {
     std::fs::create_dir_all(dir).expect("create data dir");
     std::fs::write(dir.join("device-id"), device_id).expect("write device id");
-    EngineCore::assemble(dir, registry(), HarnessId::Mock, None).expect("engine assembles")
+    EngineCore::assemble(dir, registry(), HarnessId::Mock).expect("engine assembles")
 }
 
 async fn git(cwd: &std::path::Path, args: &[&str]) {
@@ -1869,13 +1869,12 @@ async fn mcp_standalone_session_executes_on_the_selected_device() {
     let remote_dir = dirs.path().join("b");
     std::fs::create_dir_all(&remote_dir).unwrap();
     std::fs::write(remote_dir.join("device-id"), "device-b").unwrap();
-    let profile = onicode_engine::EngineProfile::development(&remote_dir, "dev-org", "dev-user");
+    let profile = onicode_engine::EngineProfile::local(&remote_dir).unwrap();
     let remote_store = onicode_sync::DocsStore::open(profile.store_root()).unwrap();
     let b = EngineCore::assemble_with_profile(
         profile,
         registry_for(HarnessId::Codex),
         HarnessId::Codex,
-        None,
     )
     .unwrap();
     // The mesh replicates the registry between the two engines.

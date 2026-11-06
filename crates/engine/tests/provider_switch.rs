@@ -147,7 +147,7 @@ fn rig_with(gated: Option<HarnessId>, codex_failures: usize) -> Rig {
             })),
         }));
     }
-    let core = EngineCore::assemble(dir.path(), Arc::new(registry), CLAUDE, None).unwrap();
+    let core = EngineCore::assemble(dir.path(), Arc::new(registry), CLAUDE).unwrap();
     core.workspace
         .create_chat(
             "main",
@@ -461,7 +461,7 @@ async fn a_switch_survives_an_engine_restart_and_a_retried_dispatch_writes_one_s
                 failures: Arc::default(),
             }));
         }
-        EngineCore::assemble(dir, Arc::new(registry), CLAUDE, None).unwrap()
+        EngineCore::assemble(dir, Arc::new(registry), CLAUDE).unwrap()
     };
 
     {

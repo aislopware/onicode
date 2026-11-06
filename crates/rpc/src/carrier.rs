@@ -8,8 +8,7 @@
 //! [`serve_connection`] does for every transport), and a subscription keeps it open while it
 //! lives: dropping a [`CarriedSubscription`] ends the duplex, which ends the call at the server.
 //!
-//! The serving side refuses the local-only methods as the device-room relay does
-//! ([`crate::local_only`]) and runs each call as [`Caller::Peer`].
+//! The serving side runs each call as [`Caller::Peer`].
 
 use std::sync::Arc;
 
@@ -119,11 +118,6 @@ struct PeerGuard {
 #[async_trait]
 impl RpcService for PeerGuard {
     async fn handle(&self, method: &str, params: serde_json::Value) -> Result<RpcReply, RpcError> {
-        if crate::local_only(method) {
-            return Err(RpcError::Failed(format!(
-                "{method} is only answered over this device's local IPC"
-            )));
-        }
         let caller = Caller::Peer {
             device: self.device.clone(),
         };
@@ -181,7 +175,7 @@ mod tests {
     }
 
     /// Each call takes a duplex of its own and runs as the peer; a stream's items arrive over
-    /// its duplex; what only this device's own clients may call is refused.
+    /// its duplex.
     #[tokio::test]
     async fn every_call_has_its_own_duplex_and_runs_as_the_peer() {
         let memory = Arc::new(Memory {
@@ -211,10 +205,6 @@ mod tests {
                 serde_json::json!(2)
             ]
         );
-        let refused = client
-            .call(crate::methods::ACCESS_TOKEN, serde_json::Value::Null)
-            .await;
-        assert!(matches!(refused, Err(RpcError::Failed(_))), "{refused:?}");
-        assert_eq!(memory.opened.load(std::sync::atomic::Ordering::Relaxed), 4);
+        assert_eq!(memory.opened.load(std::sync::atomic::Ordering::Relaxed), 3);
     }
 }

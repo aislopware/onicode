@@ -99,8 +99,7 @@ async fn steering_never_aborts_a_running_tool() {
     std::fs::write(&script, SLOW_MCP).unwrap();
     let registry = HarnessRegistry::new();
     registry.register(harness);
-    let core =
-        EngineCore::assemble(&dir.path().join("engine"), Arc::new(registry), id, None).unwrap();
+    let core = EngineCore::assemble(&dir.path().join("engine"), Arc::new(registry), id).unwrap();
     let cwd = dir.path().to_str().unwrap().to_owned();
     core.workspace
         .create_space(CHAT, &core.device_id, &cwd, None, false)

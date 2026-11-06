@@ -2689,7 +2689,6 @@ mod tests {
             &dir.path().join("engine"),
             Arc::new(crate::HarnessRegistry::new()),
             onicode_proto::HarnessId::Mock,
-            None,
         )
         .unwrap();
         core.workspace

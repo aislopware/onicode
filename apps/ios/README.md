@@ -1,9 +1,10 @@
 # Onicode for iOS
 
 A UIKit viewport onto the onicode mesh, built on the Rust mobile core. The phone
-is a **peer device**: it mirrors the workspace registry, joins per-chat session
-rooms, and drives remote engines through the durable command ledger. No agent
-runs on the phone.
+is a **peer device** on your tailnet: it links to the computers listed in
+Settings → Computers over QUIC, mirrors their workspace registry, joins per-chat
+session rooms, and drives their engines through the durable command ledger. No
+agent runs on the phone.
 
 **Rust decides what to paint and where; Swift paints, scrolls and handles
 gestures.** Everything in Rust is platform-neutral — the future Android app
@@ -50,7 +51,7 @@ Onicode/
   Threads/     Sessions (foldable sidebar sections)/folder/search lists,
                cells, new-project folder browser
   Shell/       Tab bar (Sessions, Settings, search; "New session" accessory
-               with live summary), sign-in
+               with live summary), Settings → Computers
   Debug/       Transcript lab + hitch meter
 OnicodeLiveActivity/  Widget extension: the voice call's Live Activity (Dynamic
                Island + Lock Screen), with the orb's states exported from
@@ -106,8 +107,7 @@ A session's subagents, side chats and terminals (`Companions/`):
 | `-big` / `-huge` | Demo transcripts with 120 / 600 turns |
 | `-route chat:<id>` / `new` / `more` / `search` | Open a screen at launch |
 | `-companions` / `-terminal [-terminal-demo]` / `-subagent <tool id>` / `-side-chat <id>` | With `-route chat:<id>`: open its companions panel, a terminal (typing a scripted demo), a subagent, or a side chat (DEBUG) |
-| `-signedout` | Clear stored credentials |
-| `-dev <userId> <orgId> [-edge <url>]` | Dev bearer against an `AUTH_MODE=dev` edge (e.g. `wrangler dev`); not persisted |
+| `-engines <a,b>` | The computers to reach, comma-separated, in place of Settings → Computers (DEBUG; saved) |
 | `-harness <id>` | Default harness for new sessions (`mock` for live-stack tests) |
 | `-bench` (with `-lab`) | Display-link fling benchmark; writes `Documents/bench.json` |
 | `-measureopen` | Session open latency; writes `Documents/open.json` |
@@ -126,34 +126,17 @@ xcodebuild … -only-testing:OnicodeUITests/SessionFlowTests test
 xcodebuild … -only-testing:OnicodeUITests/ScrollPerformanceTests test
 ```
 
-Live stack (real edge + headless engine; see `OnicodeUITests/LiveStackTests.swift`):
+Live stack (a headless engine on a computer on this Mac's tailnet; see
+`OnicodeUITests/LiveStackTests.swift`):
 
 ```sh
-(cd edge && npx wrangler dev --port 27650 --var AUTH_MODE:dev) &
-ONICODE_DATA_DIR=/tmp/e2e ONICODE_IPC_PORT=27811 ONICODE_EDGE_URL=http://localhost:27650 \
-  ONICODE_EDGE_TOKEN=alice@org1 ONICODE_ORG_ID=org1 ONICODE_HARNESS=mock target/debug/onicode headless &
-TEST_RUNNER_ONICODE_LIVE_EDGE=http://localhost:27650 xcodebuild … -only-testing:OnicodeUITests/LiveStackTests test
+ONICODE_DATA_DIR=/tmp/e2e ONICODE_HARNESS=mock target/debug/onicode headless &
+TEST_RUNNER_ONICODE_LIVE_ENGINE=<its tailnet name> xcodebuild … -only-testing:OnicodeUITests/LiveStackTests test
 ```
 
 The test launches the app with `-harness mock`: a chat's configured harness
 wins over the engine's `ONICODE_HARNESS` default, so without it a real agent
 would run.
-
-## Session notifications
-
-The edge sends them (`edge/src/push-notify.ts`, `registry-room.ts`): when a
-session's registry row changes it applies the desktop's rule (run finished,
-waiting on your input, run failed) and pushes to every phone that registered
-with `POST /registry/:org/push-target`. The app asks for permission the first
-time a session is started from the phone (or from Settings → Notifications),
-registers its APNs token with the choices from Settings, stays quiet while
-open, and opens the session a notification is tapped for.
-
-Setup once per deployment: an APNs auth key (Apple Developer → Keys →
-Apple Push Notifications service), then `wrangler secret put APNS_KEY_P8` (the
-`.p8` contents) and `wrangler secret put APNS_KEY_ID` in `edge/`. The
-TestFlight workflow enables the Push capability on the App ID itself.
-`/registry/:org/stats` shows registered phones and recent deliveries.
 
 ## TestFlight release
 

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template for Onicode.app/Contents/Library/LaunchAgents/<helper id>.plist, which the app
+     registers with SMAppService.agent(plistName:) (onicode_desktop_grants::agent::register).
+     The bundling scripts replace __LABEL__ with the helper's bundle id and __APP_ID__ with the
+     app's. BundleProgram is relative to Onicode.app, so desktopd runs from the helper bundle and
+     TCC attributes it to "Onicode Desktop"; AssociatedBundleIdentifiers lists it under Onicode in
+     Login Items. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>__LABEL__</string>
+    <key>BundleProgram</key>
+    <string>Contents/Library/LoginItems/Onicode Desktop.app/Contents/MacOS/Onicode Desktop</string>
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>__APP_ID__</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- Started again after a crash or after it leaves to take up a new grant
+         (onicode_desktop_grants::RESTART_EXIT_CODE); a clean exit stays down. -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <!-- Capture, encoding and input run at interactive priority, not background throttling. -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+</dict>
+</plist>

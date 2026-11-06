@@ -255,10 +255,6 @@ impl Onicode {
             .ok_or_else(|| anyhow!("LocalDevice reply missing deviceId"))
     }
 
-    pub async fn engine_info(&self) -> anyhow::Result<Value> {
-        self.call(methods::ENGINE_INFO, json!({})).await
-    }
-
     pub async fn devices(&self) -> anyhow::Result<Vec<Device>> {
         self.snapshot_as(methods::WATCH_DEVICES, json!({})).await
     }
@@ -861,7 +857,6 @@ mod tests {
             child_kind: None,
             space_id: None,
             last_seen_at: None,
-            room_gen: None,
         }
     }
 

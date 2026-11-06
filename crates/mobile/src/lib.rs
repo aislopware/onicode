@@ -5,11 +5,13 @@
 //!   `onicode-markdown` + `onicode-text`).
 //! - [`orb`]: the desktop's voice orb as paintable frames (wraps `onicode-orb`).
 //! - [`caption`]: the voice caption's streaming veil (wraps `onicode-veil`).
+//! - [`desktop`]: a Mac's desktop, shown and driven (wraps `onicode-desktop-client`).
 
 uniffi::setup_scaffolding!("onicode_core");
 
 pub mod caption;
 mod client_ffi;
+pub mod desktop;
 pub mod layout;
 pub mod orb;
 pub mod terminal;

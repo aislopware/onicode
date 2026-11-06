@@ -151,16 +151,6 @@ settings_index! {
         "subagent delegate side chats tasks spawn"),
     (UpdatePolicy, Harnesses, Some("Updates"), "Update policy",
         "automatic upgrade version cli"),
-    (CloudUsage, Cloud, None, "Usage",
-        "hours consumption range"),
-    (CloudGitHub, Cloud, None, "GitHub",
-        "connect repositories account"),
-    (Credits, Billing, None, "Credits",
-        "balance"),
-    (Plan, Billing, None, "Plan",
-        "subscription upgrade manage stripe"),
-    (ExtraCredits, Billing, None, "Extra credits",
-        "buy packs top up"),
     (Autosave, Files, None, "Autosave",
         "save automatically"),
     (AutosaveDelay, Files, None, "Autosave delay",
@@ -370,8 +360,6 @@ fn page_terms(section: SettingsSection) -> &'static str {
              antigravity muse install enable disable update policy accounts sign in login"
         }
         SettingsSection::Devices => "machines computers remote this device other devices rename",
-        SettingsSection::Cloud => "machine remote github repositories usage",
-        SettingsSection::Billing => "plan credits subscription payment stripe",
         SettingsSection::Files => "editor autosave wrap hidden",
         SettingsSection::Appshots => "screenshots capture permissions",
         SettingsSection::Archived => "archive unarchive restore delete sessions threads",
@@ -434,7 +422,7 @@ pub(crate) fn unindexed(section: SettingsSection, drawn: &[gpui::SharedString]) 
 }
 
 /// The hits for `query`, best first; none for a blank query. `visible` says
-/// which pages the nav shows (Cloud and Billing follow the account).
+/// which pages the nav shows (Appshots only on desktop platforms).
 pub fn search(query: &str, visible: impl Fn(SettingsSection) -> bool) -> Vec<Hit> {
     let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
     if words.is_empty() {
@@ -788,13 +776,15 @@ mod tests {
 
     #[test]
     fn hidden_pages_are_not_searched() {
-        let signed_out = |section: SettingsSection| {
-            !matches!(section, SettingsSection::Cloud | SettingsSection::Billing)
-        };
-        assert_eq!(top("credits"), Target::Setting(SettingId::Credits));
-        // Signed out, Billing's credits are gone.
-        let hits = search("credits", signed_out);
-        assert!(hits.iter().all(|hit| signed_out(hit.entry.section)));
+        let shown = |section: SettingsSection| section != SettingsSection::Appshots;
+        assert!(
+            search("capture appshots", |_| true)
+                .iter()
+                .any(|hit| hit.entry.section == SettingsSection::Appshots)
+        );
+        // Where Appshots hides, its rows are gone.
+        let hits = search("capture appshots", shown);
+        assert!(hits.iter().all(|hit| shown(hit.entry.section)));
     }
 
     #[test]

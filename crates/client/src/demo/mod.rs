@@ -2,12 +2,12 @@
 //! simulated host.
 //!
 //! Nothing here short-circuits the client: the dataset lives in a real
-//! `RegistryDoc` (local-only, like an edge-less engine: writes fold straight
-//! into its rows, with no room to ack them) and real [`SessionDoc`]s. The viewer side writes
+//! `RegistryDoc` (local-only, like an engine with no peers: writes fold straight
+//! into its rows, with nobody to ack them) and real [`SessionDoc`]s. The viewer side writes
 //! commands and queue rows exactly as in live mode; [`DemoHost`] plays the
 //! engine — adopting commands (writing the user entry under the client-minted
 //! id), streaming replies through `SegmentWriter`, flipping session status
-//! rows, draining the queue, and answering relay RPCs.
+//! rows, draining the queue, and answering host RPCs.
 
 mod fixtures;
 mod png;
@@ -787,7 +787,7 @@ impl DemoHost {
         core.view_attached()
     }
 
-    // ── relay RPCs ─────────────────────────────────────────────────────────
+    // ── host RPCs ──────────────────────────────────────────────────────────
 
     pub(crate) async fn host_rpc(
         self: &Arc<Self>,
@@ -971,14 +971,6 @@ impl DemoHost {
             m::CLOSE_TERMINAL => {
                 self.terminals.close(&terminal());
                 ok
-            }
-            m::FETCH_TOOL_BLOB => {
-                let blob = params["blobRef"].as_str().unwrap_or_default();
-                let doc_id = blob.split_once('/').map_or(blob, |(_, doc)| doc);
-                let host = self.host_of(client, "chat-veil");
-                let entries = transcripts::subagent_transcript(doc_id, &host, now_ms(), None)
-                    .ok_or_else(|| ClientError::HostError("FetchToolBlob: no such blob".into()))?;
-                serde_json::json!({ "text": serde_json::to_string(&entries).unwrap_or_default() })
             }
             m::FORK_SIDE_CHAT => {
                 let source_id = params["sourceChatId"].as_str().unwrap_or_default();

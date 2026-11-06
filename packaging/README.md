@@ -18,8 +18,7 @@ Produces `target/package/onicode-<version>-linux-<arch>.tar.gz` containing:
 - `install.sh` — installs into `~/.onicode/app/<version>` behind a `current`
   symlink (the curl installer's layout, which the in-app updater manages),
   links `~/.local/bin/onicode` to it, and writes the desktop entry and icon under
-  `$XDG_DATA_HOME` (default `~/.local/share`). The curl installer does the same
-  from the extracted tarball; `scripts/test-linux-desktop-entry.sh` checks both
+  `$XDG_DATA_HOME` (default `~/.local/share`)
 
 The release profile in the root `Cargo.toml` sets `lto = "thin"` and
 `strip = "symbols"` for distribution builds.

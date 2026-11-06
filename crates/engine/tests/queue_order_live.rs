@@ -88,7 +88,7 @@ impl Rig {
         let registry = HarnessRegistry::new();
         registry.register(harness);
         let core =
-            EngineCore::assemble(&dir.path().join("engine"), Arc::new(registry), id, None).unwrap();
+            EngineCore::assemble(&dir.path().join("engine"), Arc::new(registry), id).unwrap();
         let model = std::env::var("ONICODE_TEST_MODEL").ok();
         let cwd = dir.path().to_str().unwrap().to_owned();
         core.workspace

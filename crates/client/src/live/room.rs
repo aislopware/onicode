@@ -199,7 +199,7 @@ pub(crate) struct RoomDeps {
     pub on_status: Arc<dyn Fn() + Send + Sync>,
     /// The chat adopted a snapshot: this replica is stale; reopen it.
     pub on_adopted: Arc<dyn Fn() + Send + Sync>,
-    /// The client's lifetime: sign-out stops the room even while a view holds its session.
+    /// The client's lifetime: shutdown stops the room even while a view holds its session.
     pub cancel: CancellationToken,
 }
 

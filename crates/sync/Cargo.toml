@@ -14,15 +14,9 @@ lz4_flex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-tokio-tungstenite.workspace = true
-futures.workspace = true
 rusqlite.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-
-# NWPathMonitor bridge (net_path.rs) — the update handler is an ObjC block.
-[target.'cfg(target_os = "macos")'.dependencies]
-block2 = "0.6"
 
 [dev-dependencies]
 chrono.workspace = true

@@ -1,11 +1,11 @@
 # Replica sync: version vectors peer to peer, the host's ack retires
 
-Session docs and the registry used to sync through the edge: a relay room per chat that held a cursor
-and an epoch, and a registry service with a pending-op queue. Both now sync replica to replica over
+Session docs and the registry used to sync through zeron's edge: a relay room per chat that held a
+cursor and an epoch, and a registry service with a pending-op queue. Both now sync replica to replica over
 tailnet QUIC streams, `doc/{chatId}` and `registry`, by trading version vectors. Each side sends exactly
 what the other's vv lacks, so a reconnect cannot strand a range, and no cursor, epoch or server copy
 exists to drift. A replica behind a doc's shallow root gets the whole snapshot, adopts it, and starts
-over (`docs/chat2-sync.md`).
+over.
 
 A viewer's outbox retires only on its host's ack. Any other replica's ack retires nothing. While the
 host is away, a third engine holding the chat serves as a mailbox: it imports the viewer's ops and keeps

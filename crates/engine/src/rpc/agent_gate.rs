@@ -3,7 +3,6 @@
 //!
 //! - A chat it creates never runs with more access than its own: the new chat's sandbox and access
 //!   mode are capped at the creating chat's, silently (Onicode's MCP tool says so in its reply).
-//!   Cloud children too.
 //! - Of `Mutate`, only what its tools do: create, rename and archive chats. Never `setChatConfig`
 //!   (raising a chat's access) or deleting.
 //! - A run it starts in a chat runs as that chat is set (its harness, sandbox, access, plan mode
@@ -216,7 +215,6 @@ mod tests {
             crate::EngineProfile::local(temp.path()).unwrap(),
             std::sync::Arc::new(HarnessRegistry::new()),
             HarnessId::Codex,
-            None,
         )
         .unwrap();
         (temp, core)
@@ -248,7 +246,7 @@ mod tests {
 
     /// Residual (2): a sandboxed or supervised agent can't make a
     /// full-access chat, through MCP's createChat or straight at the engine,
-    /// here or on Cloud; it's capped at its own, silently.
+    /// here or on another device; it's capped at its own, silently.
     #[tokio::test]
     async fn an_agents_new_chat_never_has_more_access_than_its_own() {
         let (_temp, core) = core().await;
@@ -274,11 +272,11 @@ mod tests {
         assert_eq!(child.sandbox, onicode_proto::SandboxLevel::ReadOnly);
         assert_eq!(child.access, onicode_proto::AccessMode::Supervised);
 
-        // A Cloud child is capped before it goes anywhere.
+        // A child for another device is capped before it is forwarded.
         let gated = with_caller(agent("careful"), async {
             rpc.agent_gate(
                 methods::MUTATE,
-                json!({"op":"createChat", "chatId":"cloudy", "cloud": true,
+                json!({"op":"createChat", "chatId":"elsewhere", "targetDeviceId": "peer",
                     "config":{"harness":"codex","sandbox":"danger-full-access"}}),
             )
         })

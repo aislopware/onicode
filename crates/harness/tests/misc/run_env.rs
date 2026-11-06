@@ -1,4 +1,4 @@
-//! `RunRequest::env` (host-resolved credentials on a Cloud device) reaches the
+//! `RunRequest::env` (the host-resolved run environment) reaches the
 //! agent process each native driver spawns.
 
 #![cfg(unix)]

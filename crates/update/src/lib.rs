@@ -3,17 +3,16 @@
 //! (its own report-only checker, the "Check for Updates…" menu item, the
 //! sidebar update strip, and the desktop install paths).
 //!
-//! Release layout (see `.github/workflows/release.yml` and `edge/src/install.sh`):
-//! artifacts live in the `comet-native-releases` R2 bucket, served pre-auth at
-//! `{edge}/releases/*`. `manifest.json` carries the latest version plus a
+//! Release layout: the release feed (`ONICODE_UPDATE_FEED`, or
+//! `ONICODE_RELEASES_URL` for its `releases` directory itself) serves
+//! `{feed}/releases/*`. `manifest.json` carries the latest version plus a
 //! sha256 per artifact; `latest.txt` (version only) remains as the fallback for
 //! releases published before the manifest existed.
 //!
 //! Install kinds and their update paths:
-//! - **Managed** (`~/.onicode/app/<ver>` + `current` symlink — the curl|sh installer and the Linux
-//!   tarball's `install.sh`): download the headless tarball into a new versioned dir, then restart
-//!   into a trial of it that moves the symlink only once it has proved it's ready
-//!   ([`transaction`]).
+//! - **Managed** (`~/.onicode/app/<ver>` + `current` symlink — the Linux tarball's `install.sh`):
+//!   download the headless tarball into a new versioned dir, then restart into a trial of it that
+//!   moves the symlink only once it has proved it's ready ([`transaction`]).
 //! - **MacApp** (running out of an app bundle): download the app tarball, swap the bundle
 //!   directory, relaunch, driven by the UI; or, asked from another device, the engine's own trial
 //!   of it ([`transaction`]).
@@ -66,11 +65,11 @@ pub fn app_version() -> &'static str {
         .unwrap_or(current_version())
 }
 
-/// Successful checks repeat this often. The feed is a sub-kilobyte,
-/// edge-cached document, so hourly polling is free and bounds how long a
+/// Successful checks repeat this often. The feed is a sub-kilobyte
+/// document, so hourly polling is free and bounds how long a
 /// long-running app can sit on a stale release.
 const CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60);
-/// Failed checks (offline boot, captive portal, transient edge error) back off
+/// Failed checks (offline boot, captive portal, transient feed error) back off
 /// through these delays, then stay at the last one.
 const CHECK_RETRY: [Duration; 4] = [
     Duration::from_secs(60),
@@ -101,7 +100,7 @@ const RELEASE_METADATA_TIMEOUT: Duration = Duration::from_secs(60);
 // Release metadata
 // ---------------------------------------------------------------------------
 
-/// `{edge}/releases/manifest.json` — written by the release workflow.
+/// `{feed}/releases/manifest.json` — written by the release workflow.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Manifest {
     pub version: String,
@@ -337,13 +336,13 @@ pub fn offer(
 
 /// Fetch the newest release metadata: `manifest.json`, falling back to
 /// `latest.txt` (version only, no checksums) for pre-manifest releases.
-pub async fn fetch_latest(edge_url: &str) -> anyhow::Result<Manifest> {
-    fetch_latest_on(edge_url, channel::selected()).await
+pub async fn fetch_latest(feed_url: &str) -> anyhow::Result<Manifest> {
+    fetch_latest_on(feed_url, channel::selected()).await
 }
 
 /// [`fetch_latest`] from `channel`'s feed.
-pub async fn fetch_latest_on(edge_url: &str, channel: Channel) -> anyhow::Result<Manifest> {
-    let mut manifest = fetch_latest_from(&channel.base(&release_base(edge_url)?)).await?;
+pub async fn fetch_latest_on(feed_url: &str, channel: Channel) -> anyhow::Result<Manifest> {
+    let mut manifest = fetch_latest_from(&channel.base(&release_base(feed_url)?)).await?;
     manifest.channel = channel;
     Ok(manifest)
 }
@@ -415,9 +414,8 @@ async fn fetch_release_metadata_with_limits(
     let request = async {
         let response = client
             .get(url)
-            // Intermediaries must revalidate: the edge already bounds its own
-            // cache to a minute, and a proxy holding an old manifest for
-            // longer is exactly the "prompt appears late" failure.
+            // Intermediaries must revalidate: a proxy holding an old manifest
+            // is exactly the "prompt appears late" failure.
             .header(reqwest::header::CACHE_CONTROL, "no-cache")
             .send()
             .await
@@ -507,15 +505,15 @@ pub const RELEASES_PAGE: &str = "https://github.com/aislopware/onicode/releases"
 /// installation cannot replace itself.
 pub const LATEST_RELEASE_PAGE: &str = "https://github.com/aislopware/onicode/releases/latest";
 
-fn release_base(edge_url: &str) -> anyhow::Result<String> {
+fn release_base(feed_url: &str) -> anyhow::Result<String> {
     if let Ok(url) = std::env::var("ONICODE_RELEASES_URL")
         && !url.trim().is_empty()
     {
         return validate_release_override(&url);
     }
-    let edge = edge_url.trim_end_matches('/');
-    anyhow::ensure!(!edge.is_empty(), "no release feed is configured");
-    Ok(format!("{edge}/releases"))
+    let feed = feed_url.trim_end_matches('/');
+    anyhow::ensure!(!feed.is_empty(), "no release feed is configured");
+    Ok(format!("{feed}/releases"))
 }
 
 // ---------------------------------------------------------------------------
@@ -526,7 +524,7 @@ fn release_base(edge_url: &str) -> anyhow::Result<String> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstallKind {
     /// `~/.onicode/app/<ver>/onicode` behind the `current` symlink
-    /// (curl|sh installer, the Linux tarball's `install.sh`, or a previous
+    /// (the Linux tarball's `install.sh`, or a previous
     /// `onicode update`).
     Managed { app_root: PathBuf },
     /// Running out of a macOS `.app` bundle.
@@ -590,14 +588,14 @@ impl InstallKind {
 
     pub async fn stage_desktop(
         &self,
-        edge_url: &str,
+        feed_url: &str,
         manifest: &Manifest,
         data_dir: &Path,
     ) -> anyhow::Result<PathBuf> {
         match self {
-            Self::MacApp { .. } => stage_mac_app(edge_url, manifest, data_dir).await,
+            Self::MacApp { .. } => stage_mac_app(feed_url, manifest, data_dir).await,
             Self::Managed { app_root } if self.supports_desktop_update() => {
-                stage_headless(edge_url, manifest, app_root).await
+                stage_headless(feed_url, manifest, app_root).await
             }
             _ => bail!("this installation does not support desktop updates"),
         }
@@ -721,8 +719,8 @@ pub struct UpdateAbility {
     pub manual_command: Option<String>,
 }
 
-/// The one command that installs Onicode on Linux.
-const LINUX_INSTALL_COMMAND: &str = "curl -fsSL https://zeron.sh/install.sh | sh";
+/// The command that installs Onicode on Linux, run in the unpacked release tarball.
+const LINUX_INSTALL_COMMAND: &str = "./install.sh";
 
 impl UpdateAbility {
     fn refused(
@@ -925,17 +923,17 @@ fn plist_string(plist: &str, key: &str) -> Option<String> {
 // Download + verify
 // ---------------------------------------------------------------------------
 
-/// Stream `{edge}/releases/<file>` to `dest`, verifying the manifest sha256 when
+/// Stream `{feed}/releases/<file>` to `dest`, verifying the manifest sha256 when
 /// present. Writes through a `.partial` sidecar so an interrupted download never
 /// leaves a plausible-looking artifact behind.
 pub async fn download_release_file(
-    edge_url: &str,
+    feed_url: &str,
     manifest: &Manifest,
     file: &str,
     dest: &Path,
 ) -> anyhow::Result<()> {
     // From the feed the manifest came from: a beta's files are beta's.
-    let url = format!("{}/{file}", manifest.channel.base(&release_base(edge_url)?));
+    let url = format!("{}/{file}", manifest.channel.base(&release_base(feed_url)?));
     let expected = manifest.files.get(file).and_then(|m| m.sha256.as_deref());
     if expected.is_none() {
         tracing::warn!(
@@ -1023,7 +1021,7 @@ async fn verify_staged_binary(binary: &Path, version: &str) -> anyhow::Result<()
 /// Download + unpack the headless tarball into `app_root/<ver>` (idempotent —
 /// an already-staged version is reused). Returns the versioned dir.
 pub async fn stage_headless(
-    edge_url: &str,
+    feed_url: &str,
     manifest: &Manifest,
     app_root: &Path,
 ) -> anyhow::Result<PathBuf> {
@@ -1044,7 +1042,7 @@ pub async fn stage_headless(
     std::fs::create_dir_all(&stage).with_context(|| format!("creating {}", stage.display()))?;
     let result = async {
         let tarball = stage.join(&file);
-        download_release_file(edge_url, manifest, &file, &tarball).await?;
+        download_release_file(feed_url, manifest, &file, &tarball).await?;
         let unpacked = stage.join("unpacked");
         std::fs::create_dir_all(&unpacked)?;
         // Tarball root is the versioned stage dir (see scripts/package-linux.sh);
@@ -1158,7 +1156,7 @@ pub fn service_unit() -> String {
 }
 
 /// Restart the installed engine service (the same units `onicode daemon` and the
-/// curl|sh installer manage). Called after a symlink swap so the running daemon
+/// tarball's `install.sh` manage). Called after a symlink swap so the running daemon
 /// picks up the new binary. Only queues the restart: the caller may be the
 /// service itself, which must stay responsive to the stop signal that follows.
 pub fn restart_service() -> anyhow::Result<()> {
@@ -1212,7 +1210,7 @@ fn restart_outcome(code: Option<i32>, stderr: &[u8]) -> anyhow::Result<()> {
 /// only after its binary answers with the expected version, so an interrupted
 /// unpack can never be mistaken for a staged update. Returns the staged bundle.
 pub async fn stage_mac_app(
-    edge_url: &str,
+    feed_url: &str,
     manifest: &Manifest,
     data_dir: &Path,
 ) -> anyhow::Result<PathBuf> {
@@ -1235,7 +1233,7 @@ pub async fn stage_mac_app(
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let file = mac_app_artifact(version);
     let tarball = dir.join(&file);
-    download_release_file(edge_url, manifest, &file, &tarball).await?;
+    download_release_file(feed_url, manifest, &file, &tarball).await?;
     let unpack = dir.join(".unpack");
     std::fs::create_dir_all(&unpack)?;
     let unpacked = run(
@@ -1560,7 +1558,7 @@ enum Role {
     Desktop,
 }
 
-/// Background release checker: polls `{edge}/releases` hourly on a wall-clock
+/// Background release checker: polls `{feed}/releases` hourly on a wall-clock
 /// schedule (so sleep/wake cannot stretch it), backs off on failure, and
 /// publishes [`UpdateStatus`] over a watch channel. In the engine, managed
 /// installs with `ONICODE_AUTO_UPDATE` set stage + apply + service restart on
@@ -1568,7 +1566,7 @@ enum Role {
 /// the apply defers and re-probes every `IDLE_RECHECK`.
 #[derive(Clone)]
 pub struct Updater {
-    edge_url: String,
+    feed_url: String,
     role: Arc<Role>,
     /// The version releases are compared with: the engine's own, or the app's
     /// ([`app_version`]).
@@ -1589,17 +1587,17 @@ pub struct Updater {
 
 impl Updater {
     /// Spawn the engine's check loop (must run on a tokio runtime).
-    pub fn spawn(edge_url: String, quiescent: Option<QuiescentCheck>) -> Self {
-        Self::spawn_role(edge_url, Role::Engine { quiescent })
+    pub fn spawn(feed_url: String, quiescent: Option<QuiescentCheck>) -> Self {
+        Self::spawn_role(feed_url, Role::Engine { quiescent })
     }
 
     /// Spawn the desktop app's report-only check loop (must run on a tokio
     /// runtime).
-    pub fn spawn_desktop(edge_url: String) -> Self {
-        Self::spawn_role(edge_url, Role::Desktop)
+    pub fn spawn_desktop(feed_url: String) -> Self {
+        Self::spawn_role(feed_url, Role::Desktop)
     }
 
-    fn spawn_role(edge_url: String, role: Role) -> Self {
+    fn spawn_role(feed_url: String, role: Role) -> Self {
         let initial_delay = match role {
             Role::Engine { .. } => ENGINE_INITIAL_DELAY,
             Role::Desktop => DESKTOP_INITIAL_DELAY,
@@ -1621,7 +1619,7 @@ impl Updater {
         let (wake_tx, _) = watch::channel(0);
         let (shutdown_tx, _) = watch::channel(false);
         let updater = Self {
-            edge_url,
+            feed_url,
             role: Arc::new(role),
             version,
             status_tx: Arc::new(status_tx),
@@ -1642,7 +1640,7 @@ impl Updater {
     }
 
     /// Stop the check loop and wait for it to exit — a replaced runtime must
-    /// not keep polling `{edge}/releases` (or auto-applying) in the background.
+    /// not keep polling `{feed}/releases` (or auto-applying) in the background.
     /// Idempotent, and callable from any clone.
     pub async fn shutdown(&self) {
         let _ = self.shutdown_tx.send(true);
@@ -1690,7 +1688,7 @@ impl Updater {
     /// One user-requested check, awaited: publishes the result like a
     /// scheduled check and returns it.
     pub async fn check(&self) -> anyhow::Result<UpdateStatus> {
-        match fetch_latest(&self.edge_url).await {
+        match fetch_latest(&self.feed_url).await {
             Ok(manifest) => {
                 self.publish(manifest);
                 Ok(self.status_tx.borrow().clone())
@@ -1760,9 +1758,9 @@ impl Updater {
     /// idle→restart gap to well under a second.
     async fn auto_apply_when_idle(&self) {
         if let InstallKind::Managed { app_root } = detect_install() {
-            match fetch_latest(&self.edge_url).await {
+            match fetch_latest(&self.feed_url).await {
                 Ok(manifest) if version_newer(&manifest.version, current_version()) => {
-                    if let Err(err) = stage_headless(&self.edge_url, &manifest, &app_root).await {
+                    if let Err(err) = stage_headless(&self.feed_url, &manifest, &app_root).await {
                         tracing::warn!(error = %err, "auto-update staging failed");
                         return;
                     }
@@ -1870,7 +1868,7 @@ impl Updater {
         if let InstallKind::MacApp { bundle } = detect_install() {
             prune_retired_mac_bundles(&bundle);
         }
-        match fetch_latest(&self.edge_url).await {
+        match fetch_latest(&self.feed_url).await {
             Ok(manifest) => {
                 self.publish(manifest);
                 true
@@ -1932,8 +1930,8 @@ impl Updater {
         if transaction::read(&data_dir).is_some_and(|last| last.in_progress()) {
             bail!("An update is already in progress on this device.");
         }
-        let manifest = fetch_latest(&self.edge_url).await?;
-        let Some(prepared) = prepare_this_install(&self.edge_url, &manifest, &data_dir).await?
+        let manifest = fetch_latest(&self.feed_url).await?;
+        let Some(prepared) = prepare_this_install(&self.feed_url, &manifest, &data_dir).await?
         else {
             bail!("already up to date ({})", current_version());
         };
@@ -2005,7 +2003,7 @@ struct PreparedInstall {
 /// newer to install. A release that isn't installable here is an error, in words
 /// for the person.
 async fn prepare_this_install(
-    edge_url: &str,
+    feed_url: &str,
     manifest: &Manifest,
     data_dir: &Path,
 ) -> anyhow::Result<Option<PreparedInstall>> {
@@ -2014,7 +2012,7 @@ async fn prepare_this_install(
             if !version_newer(&manifest.version, current_version()) {
                 return Ok(None);
             }
-            prepare_install(edge_url, manifest, &app_root, data_dir).await?;
+            prepare_install(feed_url, manifest, &app_root, data_dir).await?;
             let from = installed_version(&InstallKind::Managed {
                 app_root: app_root.clone(),
             })
@@ -2043,7 +2041,7 @@ async fn prepare_this_install(
             let parent = bundle
                 .parent()
                 .context("app bundle has no parent directory")?;
-            let download = artifact_size(edge_url, manifest, &mac_app_artifact(&manifest.version))
+            let download = artifact_size(feed_url, manifest, &mac_app_artifact(&manifest.version))
                 .await
                 .unwrap_or(transaction::UNKNOWN_ARTIFACT_BYTES);
             // A staged copy and the one beside the installed app.
@@ -2051,7 +2049,7 @@ async fn prepare_this_install(
             {
                 bail!(why);
             }
-            let staged = stage_mac_app(edge_url, manifest, data_dir).await?;
+            let staged = stage_mac_app(feed_url, manifest, data_dir).await?;
             let name = bundle
                 .file_name()
                 .context("app bundle has no name")?
@@ -2092,7 +2090,7 @@ pub struct AppliedUpdate {
 /// Everything before an update has to stop anything: refuse if there's no room,
 /// then download, verify and unpack the release beside the running one.
 pub async fn prepare_install(
-    edge_url: &str,
+    feed_url: &str,
     manifest: &Manifest,
     app_root: &Path,
     data_dir: &Path,
@@ -2100,20 +2098,20 @@ pub async fn prepare_install(
     let download = if app_root.join(&manifest.version).join("onicode").exists() {
         0
     } else {
-        artifact_size(edge_url, manifest, &headless_artifact(&manifest.version))
+        artifact_size(feed_url, manifest, &headless_artifact(&manifest.version))
             .await
             .unwrap_or(transaction::UNKNOWN_ARTIFACT_BYTES)
     };
     if let Err(why) = transaction::ensure_room(data_dir, app_root, download) {
         bail!(why);
     }
-    stage_headless(edge_url, manifest, app_root).await?;
+    stage_headless(feed_url, manifest, app_root).await?;
     Ok(())
 }
 
 /// What the feed says the release's download weighs, if it says.
-async fn artifact_size(edge_url: &str, manifest: &Manifest, file: &str) -> Option<u64> {
-    let base = manifest.channel.base(&release_base(edge_url).ok()?);
+async fn artifact_size(feed_url: &str, manifest: &Manifest, file: &str) -> Option<u64> {
+    let base = manifest.channel.base(&release_base(feed_url).ok()?);
     let url = format!("{base}/{file}");
     let response = http_client().ok()?.head(&url).send().await.ok()?;
     response

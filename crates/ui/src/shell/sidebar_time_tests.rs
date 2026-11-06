@@ -46,10 +46,7 @@ fn setup(cx: &mut TestAppContext) -> &mut VisualTestContext {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -61,7 +58,6 @@ fn setup(cx: &mut TestAppContext) -> &mut VisualTestContext {
             // Active 50s ago: "now" for ten more seconds, then "1m".
             let created = crate::label_clock::utc_now(cx) - chrono::Duration::seconds(50);
             shell.state.update(cx, |state, _| {
-                state.workspace_scope = Some(WorkspaceScope::Local);
                 state.local_device_id = Some("local".into());
                 state.no_project = true;
                 state.chats = vec![

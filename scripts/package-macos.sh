@@ -22,7 +22,7 @@ DMG="$OUT_DIR/onicode-$VERSION-macos-$ARCH.dmg"
 APP_TARBALL="$OUT_DIR/onicode-$VERSION-macos-$ARCH-app.tar.gz"
 
 cd "$ROOT"
-cargo build --release -p onicode
+cargo build --release -p onicode -p onicode-desktopd
 
 rm -rf "$APP" "$DMG" "$APP_TARBALL"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -51,15 +51,24 @@ done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/onicode.icns"
 rm -rf "$ICONSET"
 
+# The remote-desktop host, in its own helper bundle so its grants are its own.
+# shellcheck source=scripts/macos-desktop-helper.sh
+source "$ROOT/scripts/macos-desktop-helper.sh"
+desktop_helper_assemble "$ROOT" "$APP" "$ROOT/target/release/onicode-desktopd" \
+  dev.aislopware.onicode "$VERSION" "Onicode Desktop"
+
 if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
   # Hardened runtime + secure timestamp are both notarization requirements.
   # (No --deep: Apple deprecated it. Nested code is signed first, inside out:
-  # the engine, then the bundle that seals it.)
+  # the desktop helper, the engine, then the bundle that seals them.)
+  desktop_helper_sign "$APP" dev.aislopware.onicode "$CODESIGN_IDENTITY" --options runtime --timestamp
   codesign --entitlements "$ROOT/packaging/macos/Onicode.entitlements" --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" --identifier dev.aislopware.onicode.engine "$APP/Contents/MacOS/Onicode Engine"
   codesign --entitlements "$ROOT/packaging/macos/Onicode.entitlements" --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP"
 else
   # Ad-hoc signature so the app launches on Apple silicon (Gatekeeper still
-  # requires right-click → Open on first launch without notarization).
+  # requires right-click → Open on first launch without notarization). An ad
+  # hoc helper's grants last only until the next build.
+  desktop_helper_sign "$APP" dev.aislopware.onicode -
   codesign --deep --force --entitlements "$ROOT/packaging/macos/Onicode.entitlements" --sign - "$APP"
 fi
 

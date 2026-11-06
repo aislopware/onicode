@@ -467,7 +467,6 @@ mod tests {
     fn test_shell(data_dir: &std::path::Path, cx: &mut Context<Shell>) -> Shell {
         let state = cx.new(|_| {
             let mut state = AppState::new();
-            state.workspace_scope = Some(WorkspaceScope::Development);
             state.connection = ConnectionStatus::Ready;
             state.chats = vec![test_chat("hover-test"), test_chat("next")];
             state
@@ -477,10 +476,7 @@ mod tests {
             EngineBootConfig {
                 data_dir: data_dir.into(),
                 ipc_port: 0,
-                edge_url: "http://127.0.0.1:1".into(),
-                edge_token: None,
-                org_id: None,
-                workos_client_id: None,
+                update_feed: String::new(),
                 default_harness: onicode_proto::HarnessId::Mock,
             },
             cx,

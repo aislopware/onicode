@@ -1,6 +1,6 @@
 //! A computer's agents from the phone: which harnesses it offers and the CLI
 //! logins each one runs on — what desktop Settings → Providers shows for a
-//! device picked in its switcher. Every call goes over the device relay to
+//! device picked in its switcher. Every call goes over the phone's peer link to
 //! that computer's engine, which owns its own CLI logins.
 //!
 //! Signing a computer's agent in: the computer runs the sign-in (its CLI or
@@ -19,7 +19,8 @@ use onicode_proto::{
     AgentAccount, AgentAccountsSnapshot, AgentAuthKind, AgentLoginMode, AgentLoginPoll,
     AgentLoginStart, AgentLoginStatus, HarnessId,
 };
-use tokio::io::AsyncWriteExt as _;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpStream;
 
 use crate::catalog::HarnessInfo;
 use crate::client::Backend;
@@ -52,7 +53,7 @@ impl Client {
             ));
         };
         let reply = live
-            .relay
+            .hosts
             .call(
                 device_id,
                 onicode_rpc::methods::START_AGENT_LOGIN,
@@ -89,7 +90,7 @@ impl Client {
             return Err(ClientError::Unsupported("No computer in the demo.".into()));
         };
         let reply = live
-            .relay
+            .hosts
             .call(
                 device_id,
                 onicode_rpc::methods::POLL_AGENT_LOGIN,
@@ -141,7 +142,7 @@ impl Client {
         crate::runtime::shared().spawn(async move {
             if let Backend::Live(live) = client.inner.backend() {
                 let _ = live
-                    .relay
+                    .hosts
                     .call(
                         &device_id,
                         onicode_rpc::methods::CANCEL_AGENT_LOGIN,
@@ -184,14 +185,14 @@ impl Client {
                     let Ok((mut socket, _)) = listener.accept().await else {
                         continue;
                     };
-                    let Some(path) = crate::provider_login::read_request_target(&mut socket).await
+                    let Some(path) = read_request_target(&mut socket).await
                     else {
                         continue;
                     };
                     if path.starts_with("/favicon") {
                         let _ = socket
                             .write_all(
-                                crate::provider_login::http_response("404 Not Found", &[], "")
+                                http_response("404 Not Found", &[], "")
                                     .as_bytes(),
                             )
                             .await;
@@ -201,7 +202,7 @@ impl Client {
                         return;
                     };
                     let relayed = live
-                        .relay
+                        .hosts
                         .call(
                             &device_id,
                             onicode_rpc::methods::RELAY_AGENT_LOGIN_CALLBACK,
@@ -219,7 +220,7 @@ impl Client {
                     if (200..400).contains(&status) {
                         let _ = socket
                             .write_all(
-                                crate::provider_login::http_response(
+                                http_response(
                                     "302 Found",
                                     &[("Location", &done_url)],
                                     "",
@@ -231,7 +232,7 @@ impl Client {
                     }
                     let _ = socket
                         .write_all(
-                            crate::provider_login::http_response(
+                            http_response(
                                 "502 Bad Gateway",
                                 &[("Content-Type", "text/plain; charset=utf-8")],
                                 "The computer didn't accept the sign-in. Go back to Onicode and try again.",
@@ -264,7 +265,7 @@ impl Client {
             }
             Backend::Live(live) => {
                 let reply = live
-                    .relay
+                    .hosts
                     .call(
                         device_id,
                         onicode_rpc::methods::SET_HARNESS_ENABLED,
@@ -337,11 +338,49 @@ impl Client {
         match self.inner.backend() {
             Backend::Demo(_) => Ok(demo_accounts()),
             Backend::Live(live) => {
-                let reply = live.relay.call(device_id, method, params).await?;
+                let reply = live.hosts.call(device_id, method, params).await?;
                 serde_json::from_value(reply).map_err(|e| ClientError::HostError(e.to_string()))
             }
         }
     }
+}
+
+/// The request target of a browser's `GET` (headers read and discarded).
+async fn read_request_target(socket: &mut TcpStream) -> Option<String> {
+    let mut head = Vec::new();
+    let mut chunk = [0u8; 2048];
+    let read = async {
+        while !head.windows(4).any(|w| w == b"\r\n\r\n") && head.len() < 16 * 1024 {
+            let n = socket.read(&mut chunk).await.ok()?;
+            if n == 0 {
+                break;
+            }
+            head.extend_from_slice(&chunk[..n]);
+        }
+        Some(())
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(10), read)
+        .await
+        .ok()??;
+    let line = String::from_utf8_lossy(&head);
+    let mut parts = line.lines().next()?.split_whitespace();
+    (parts.next()? == "GET").then_some(())?;
+    parts
+        .next()
+        .filter(|target| target.starts_with('/'))
+        .map(str::to_string)
+}
+
+fn http_response(status: &str, headers: &[(&str, &str)], body: &str) -> String {
+    let mut response = format!("HTTP/1.1 {status}\r\n");
+    for (name, value) in headers {
+        response.push_str(&format!("{name}: {value}\r\n"));
+    }
+    response.push_str(&format!(
+        "Content-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n{body}",
+        body.len()
+    ));
+    response
 }
 
 fn stop_relay(login_id: &str) {

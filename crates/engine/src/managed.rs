@@ -28,7 +28,7 @@ pub use onicode_launch::{
 };
 use onicode_rpc::{RpcError, RpcReply, RpcService, methods};
 
-use crate::{Engine, EngineConfig, InstanceLock, WorkspaceScope, deferred, desktop_notify};
+use crate::{Engine, EngineConfig, InstanceLock, deferred, desktop_notify};
 
 /// How long a restarting engine waits for its predecessor to let go of the
 /// data directory.
@@ -41,17 +41,13 @@ pub fn launch(config: &EngineConfig, app_exe: &Path) -> std::io::Result<Child> {
         &onicode_launch::LaunchConfig {
             data_dir: config.data_dir.clone(),
             ipc_port: config.ipc_port,
-            edge_url: config.edge_url.clone(),
-            workos_client_id: config.workos_client_id.clone(),
-            edge_token: config.edge_token.clone(),
-            org_id: config.org_id.clone(),
+            update_feed: config.update_feed.clone(),
         },
         app_exe,
     )
 }
 
-/// IPC-only lifecycle control: `StopEngine` ends the background engine (the
-/// app's sign-out and workspace switches restart it on the new profile).
+/// IPC-only lifecycle control: `StopEngine` ends the background engine.
 struct ManagedRpc {
     inner: Arc<dyn RpcService>,
     stop_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -190,12 +186,10 @@ fn relaunch_self() -> anyhow::Result<()> {
 
 impl Engine {
     /// Run as the desktop app's background engine until stopped: serves the
-    /// app over the IPC port at once (identity and sign-in before the profile
-    /// is open, so a session still picking an organization waits for the
-    /// app's onboarding instead of a terminal prompt), posts desktop banners,
-    /// and restarts into a newer installed version once nothing is running.
-    /// Ends on `StopEngine`, SIGTERM/ctrl-c, or — for a synced workspace —
-    /// sign-out, after draining.
+    /// app over the IPC port at once (identity before the profile is open),
+    /// posts desktop banners, and restarts into a newer installed version once
+    /// nothing is running. Ends on `StopEngine` or SIGTERM/ctrl-c, after
+    /// draining.
     pub async fn run_managed(self) -> anyhow::Result<()> {
         let config = self.config;
         tracing::info!(data_dir = %config.data_dir.display(), port = config.ipc_port, "background engine starting");
@@ -239,12 +233,6 @@ impl Engine {
             Ok(())
         });
         let uninstalled_stop = stop_tx.clone();
-        // Signed in with no organization chosen, there's no profile to open
-        // (maybe for a long while), and so nothing a trial could migrate:
-        // answering on the port is all it can prove.
-        if !engine.profile_is_resolved {
-            crate::update_trial::commit_without_a_profile(&config);
-        }
         let trial_config = config.clone();
         let boot = engine.spawn_boot(
             config.clone(),
@@ -259,19 +247,11 @@ impl Engine {
             },
         );
 
-        let mut auth_state = engine.auth.watch_state();
         let mut assembly = engine.state();
-        let synced = engine.workspace_scope == WorkspaceScope::Synced;
         let outcome = tokio::select! {
             result = crate::shutdown_signal() => result.map_err(anyhow::Error::from),
             _ = stop_rx.recv() => {
                 tracing::info!("background engine stop requested");
-                Ok(())
-            }
-            _ = crate::wait_for_signed_out(&mut auth_state), if synced => {
-                tracing::info!("signed out; stopping the synced background engine");
-                // A brief reply window for the SignOut RPC itself.
-                tokio::time::sleep(Duration::from_millis(100)).await;
                 Ok(())
             }
             failure = async {
@@ -284,14 +264,7 @@ impl Engine {
         tracing::info!("background engine shutting down");
         server.abort();
         boot.abort();
-        // Before the data dir is released (with the runtime): no refresh may
-        // be mid-exchange when the next engine takes over the session file.
-        engine.refresh_task.abort();
-        engine.auth.quiesce_refresh(Duration::from_secs(10)).await;
         let runtime = engine.runtime.lock().await.take();
-        // The app signs out, then stops the engine: the StopEngine may land
-        // before the auth watcher does, so the runtime's shutdown decides
-        // revival from the auth state, not from the branch that fired.
         if let Some(runtime) = runtime {
             runtime.shutdown().await;
         }

@@ -162,7 +162,6 @@ fn main() -> anyhow::Result<()> {
             &temp.path().join("engine"),
             Arc::new(onicode_engine::HarnessRegistry::new()),
             HarnessId::Mock,
-            None,
         )
     })?);
     let project = temp.path().join("program-status");
@@ -260,7 +259,6 @@ fn main() -> anyhow::Result<()> {
         let state = cx.new(|_| {
             let mut state = state::AppState::new();
             state.connection = onicode_proto::view::ConnectionStatus::Ready;
-            state.workspace_scope = Some(onicode_proto::WorkspaceScope::Local);
             state.local_device_id = Some(render_core.device_id.clone());
             state.devices = serde_json::from_value(serde_json::json!([{
                 "id":render_core.device_id,"name":"This device","platform":std::env::consts::OS,"lastSeenAt":null
@@ -273,8 +271,7 @@ fn main() -> anyhow::Result<()> {
             state.auto_selected = true; state.chats_synced = true; state.spaces_synced = true;
             state
         });
-        let boot = EngineBootConfig { data_dir: data, ipc_port: 0, edge_url: String::new(),
-            edge_token: None, org_id: None, workos_client_id: None, default_harness: HarnessId::Mock };
+        let boot = EngineBootConfig { data_dir: data, ipc_port: 0, update_feed: String::new(), default_harness: HarnessId::Mock };
         let window = cx.open_window(WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(gpui::point(px(20.), px(40.)), size(px(1200.), px(820.))))),
             window_background: theme::Theme::of(cx).window_background_appearance(),

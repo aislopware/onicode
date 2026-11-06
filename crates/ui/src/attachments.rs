@@ -28,10 +28,10 @@ use crate::theme::ink;
 
 /// use-attachments.ts `MAX_ATTACHMENT_BYTES`.
 pub const MAX_ATTACHMENT_BYTES: u64 = 24 * 1024 * 1024;
-/// Base64 chars per `UploadChunk`, sized against the relay's hard ceiling:
-/// Cloudflare caps a WebSocket message at 1 MiB, and a chunk rides one relay
-/// frame (JSON envelope + uleb header add ~150 bytes) — 680 000 chars ≈
-/// 510 KB binary leaves ~35% headroom. Multiple of 4 so a slice of the
+/// Base64 chars per `UploadChunk`: one chunk rides one RPC frame (JSON
+/// envelope + uleb header add ~150 bytes) kept under 1 MiB, so a peer link
+/// interleaves other traffic between chunks and progress moves in small
+/// steps — 680 000 chars ≈ 510 KB binary. Multiple of 4 so a slice of the
 /// whole-file base64 stays independently decodable. The old 60 000 (45 KB)
 /// made a 3 MB screenshot ~70 sequential round trips — each one a stall
 /// opportunity on a flaky link.
@@ -448,7 +448,7 @@ fn with_target(mut params: serde_json::Value, target_device_id: Option<&str>) ->
     params
 }
 
-/// Per-call deadlines (desktop state.ts): a stalled-but-open relay link never
+/// Per-call deadlines (desktop state.ts): a stalled-but-open peer link never
 /// fails an RPC on its own, so every attachment call races a timer. The first
 /// chunk gets 90s (a cold dial to a remote device), later chunks 30s; commit
 /// 150s (it must outlast the engine's cross-device assemble); reads 20s.
@@ -477,7 +477,7 @@ pub(crate) async fn call_with_timeout(
 
 /// Chunks in flight at once. `seq` slots are idempotent engine-side, so
 /// completion order doesn't matter; a small window hides per-chunk latency
-/// without flooding the relay socket.
+/// without flooding the peer link.
 const UPLOAD_CONCURRENCY: usize = 3;
 
 /// Whole-attachment deadline. Per-chunk timeouts + retries bound each CALL,
@@ -1640,9 +1640,8 @@ mod tests {
     }
 
     #[test]
-    fn upload_chunk_fits_the_relay_frame_ceiling() {
-        // Cloudflare caps a WebSocket message at 1 MiB; the chunk rides one
-        // relay frame with a small JSON envelope + uleb header.
+    fn upload_chunk_stays_under_a_mebibyte_frame() {
+        // The chunk rides one frame with a small JSON envelope + uleb header.
         const { assert!(UPLOAD_CHUNK_B64_CHARS + 1_024 < 1_048_576) };
         // A slice of the whole-file base64 must stay independently decodable.
         assert_eq!(UPLOAD_CHUNK_B64_CHARS % 4, 0);

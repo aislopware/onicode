@@ -64,10 +64,6 @@ const LIMIT_REACHED: &[&str] = &[
 /// The problem `message` reports, if signing in can fix it.
 pub fn provider_problem(message: &str) -> Option<ProviderProblem> {
     let text = message.to_ascii_lowercase();
-    // Cloud credits are Onicode's, not the provider's: not a sign-in.
-    if text.contains("out of credits") || text.contains("cloud credits") {
-        return None;
-    }
     if SIGNED_OUT.iter().any(|needle| text.contains(needle)) {
         return Some(ProviderProblem::SignedOut);
     }
@@ -84,8 +80,6 @@ mod tests {
     #[test]
     fn reads_the_errors_the_harnesses_and_engine_write() {
         for signed_out in [
-            "Claude Code isn't signed in on Cloud. Sign in with Claude, pick an account or add an Anthropic API key in Settings → Providers → Cloud, then send again.",
-            "Codex isn't signed in on Cloud. Sign in with ChatGPT, pick an account or add an OpenAI API key in Settings → Providers → Cloud, then send again.",
             "Authentication failed — sign in to Claude again.",
             "Invalid API key · Please run /login",
             "OAuth token has expired. Please obtain a new token or refresh your existing token.",
@@ -112,7 +106,6 @@ mod tests {
         for other in [
             "Claude is overloaded right now — try again shortly.",
             "The selected model isn't available.",
-            "You're out of Cloud credits. Add credits to keep going.",
             "Harness exited with status 1",
             "Listening on port 4012",
         ] {

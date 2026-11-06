@@ -89,8 +89,7 @@ async fn steer_now_interrupts_a_streaming_answer() {
     let dir = tempfile::tempdir().unwrap();
     let registry = HarnessRegistry::new();
     registry.register(harness);
-    let core =
-        EngineCore::assemble(&dir.path().join("engine"), Arc::new(registry), id, None).unwrap();
+    let core = EngineCore::assemble(&dir.path().join("engine"), Arc::new(registry), id).unwrap();
     let cwd = dir.path().to_str().unwrap().to_owned();
     core.workspace
         .create_space(CHAT, &core.device_id, &cwd, None, false)

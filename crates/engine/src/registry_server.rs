@@ -28,10 +28,10 @@ pub(crate) struct RegistryServer(pub(crate) WeakWorkspaceHost);
 impl StreamHandler for RegistryServer {
     fn stream(&self, device: &str, _head: StreamHead, tx: StreamTx, rx: StreamRx) {
         match self.0.upgrade() {
-            Some(host) if !host.local_only() => {
+            Some(host) => {
                 tokio::spawn(session(host, device.to_owned(), tx, rx));
             }
-            _ => tx.reset(close::NOT_GRANTED),
+            None => tx.reset(close::NOT_GRANTED),
         }
     }
 }

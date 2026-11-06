@@ -13,7 +13,7 @@ and converge across devices without delete-and-insert duplicates.
 
 Clients can enqueue and reorder through their local document. Only the chat host
 may deliver, remove or grant an edit lease. Desktop routes these actions with
-`targetDeviceId`; iOS uses the host's relay. `WatchQueue` sends whole-list snapshots.
+`targetDeviceId`; iOS calls the host over its own peer link. `WatchQueue` sends whole-list snapshots.
 Failed or unacknowledged mutations trigger a fresh authoritative projection.
 
 ## Delivery

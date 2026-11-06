@@ -263,7 +263,6 @@ pub fn owner_only(kind: &str, key: &str) -> bool {
                 | "lastMessageAt"
                 | "checkoutId"
                 | "sourceContext"
-                | "roomGen"
         ),
         KIND_SESSIONS => key != DEVICE_ID,
         _ => false,
@@ -418,21 +417,6 @@ struct PersistedState {
     rows: Vec<RegistryRow>,
 }
 
-/// The edge-room snapshot this replaces: its rows, plus writes the room never acked.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct EdgeState {
-    clock: HlcClock,
-    rows: Vec<RegistryRow>,
-    #[serde(default)]
-    pending: Vec<EdgeBatch>,
-}
-
-#[derive(Deserialize)]
-struct EdgeBatch {
-    ops: Vec<RowOp>,
-}
-
 /// The local registry replica. Pure data — no I/O, no async; the `registry` stream sessions
 /// (`onicode_sync::registry`) and the hosts drive it under a lock.
 pub struct RegistryDoc {
@@ -503,8 +487,7 @@ impl RegistryDoc {
         Ok(serde_json::to_vec(&state)?)
     }
 
-    /// Loads a snapshot. The edge-room snapshot (`v: 1`) loads once: its rows and unacked
-    /// writes become this replica's own, stamped so they reach every peer.
+    /// Loads a snapshot.
     pub fn from_bytes(bytes: &[u8], device_id: &str) -> Result<Self, DocError> {
         let version = serde_json::from_slice::<Value>(bytes)?
             .get("v")
@@ -519,19 +502,6 @@ impl RegistryDoc {
                 for row in state.rows {
                     doc.put(row);
                 }
-            }
-            Some(1) => {
-                let state: EdgeState = serde_json::from_slice(bytes)?;
-                doc.clock = state.clock;
-                doc.oseq = 1;
-                for mut row in state.rows {
-                    row.vv = Vv::from([(doc.device_id.clone(), 1)]);
-                    row.settle();
-                    doc.put(row);
-                }
-                doc.vv.insert(doc.device_id.clone(), 1);
-                let ops = state.pending.into_iter().flat_map(|b| b.ops).collect();
-                doc.apply_local(ops);
             }
             other => {
                 return Err(DocError::Schema(format!(
@@ -1001,10 +971,6 @@ impl RegistryDoc {
             ("spaceId", opt_str(chat.space_id.as_deref())),
             ("parentChatId", opt_str(chat.parent_chat_id.as_deref())),
             ("lastSeenAt", opt_ms(chat.last_seen_at)),
-            (
-                "roomGen",
-                chat.room_gen.map(|g| json!(g)).unwrap_or(Value::Null),
-            ),
             ("parentChatId", opt_str(chat.parent_chat_id.as_deref())),
             (
                 "childKind",
@@ -1114,23 +1080,6 @@ impl RegistryDoc {
             chat_id,
             OpKind::Update,
             fields([("archived", json!(archived))]),
-        );
-        Ok(true)
-    }
-
-    /// Flip the chat's sync room generation (docs/chat2-sync.md M2). The
-    /// host calls this in the same breath as seeding the chat2 checkpoint;
-    /// LWW per-field like every registry write, so the flip is per-chat and
-    /// instantly revertible by writing 1 back.
-    pub fn set_chat_room_gen(&mut self, chat_id: &str, room_gen: u32) -> Result<bool, DocError> {
-        if !self.row_exists(KIND_CHATS, chat_id) {
-            return Ok(false);
-        }
-        self.write(
-            KIND_CHATS,
-            chat_id,
-            OpKind::Update,
-            fields([("roomGen", json!(room_gen))]),
         );
         Ok(true)
     }

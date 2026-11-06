@@ -20,11 +20,10 @@ fn background_engine_serves_its_port_and_stops_on_request() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_onicode-engine"))
         .env("ONICODE_DATA_DIR", dir.path())
         .env("ONICODE_IPC_PORT", port.to_string())
-        // Development auth with no bearer: an offline runtime.
-        .env("ONICODE_WORKOS_CLIENT_ID", "")
-        .env_remove("ONICODE_EDGE_TOKEN")
-        .env("ONICODE_EDGE_URL", "http://127.0.0.1:1")
+        // No release feed: the updater stays off.
+        .env_remove("ONICODE_UPDATE_FEED")
         .env("ONICODE_DISABLE_NOTIFICATIONS", "1")
+        .env("ONICODE_PEERS", "0")
         .env("ONICODE_AUTO_UPDATE", "0")
         .spawn()
         .expect("start the background engine");

@@ -21,7 +21,7 @@ pub const PRESENCE_FRESH_MS: i64 = 45_000;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum ConnectivityState {
-    /// Demo mode / no edge transports — hide the pill.
+    /// Demo mode — hide the pill.
     #[default]
     Disabled,
     /// The OS reports no network path (graced): sends are saved locally.

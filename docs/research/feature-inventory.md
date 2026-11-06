@@ -125,7 +125,7 @@ display EXCLUDED. File paths refer to the reference repo.
 
 ### 1.13 State & connection
 - Every UI action = RPC to local backend; send path QueueCommand (doc). Chunked uploads 60KB.
-- Subscriptions: AuthStatus, WatchDevices, WatchChats(scoped), WatchSessions, WatchCheckoutDiffs,
+- Subscriptions: WatchDevices, WatchChats(scoped), WatchSessions, WatchCheckoutDiffs,
   LocalDevice, per-active-chat WatchDocMessages; hover-prefetch; reconnect from scratch on drop.
 
 ## 2. Control plane (RPC surface)
@@ -147,16 +147,13 @@ display EXCLUDED. File paths refer to the reference repo.
 - QueueCommand{chatId,kind,payload}->{commandId}
 - Mutate: CreateChat, SetChatConfig, SetChatArchived, RenameChat, RenameDevice, DeleteChat,
   MarkChatSeen
-### AuthRpc (IPC-only)
-- AuthStatus -> stream (SignedOut|NeedsOrganization{user}|SignedIn{user,orgId?})
-- SignIn->{url}; SignInHeadless->{url}; CompleteSignIn{code}; SignOut; ListOrgs; CreateOrg; SelectOrg
 ### Wire types
 - AgentEvent: SessionStarted, TextDelta, ReasoningDelta, ToolCall, ToolResult, Usage(kept as event,
   not displayed), Error, InputRequested, InputResolved, Steered, Done
 - ToolCall kinds: Exec/ReadFile/WriteFile/EditFile/ApplyPatch/Search/Glob/WebFetch/WebSearch/
   Todo/Mcp/Unknown
 - Model/ModelOption/ModelOptionChoice, RunRequest, Chat/Session/Message/Device/Repo/Worktree/
-  FolderListing/CheckoutDiff, AgentAccount/AgentUsage, AuthState
+  FolderListing/CheckoutDiff, AgentAccount/AgentUsage
 
 ## 3. Backend engine
 - 3.1 Lifecycle: single-instance lock on data dir; login-shell PATH; crash shield (drain+exit);
@@ -225,26 +222,6 @@ display EXCLUDED. File paths refer to the reference repo.
   truncated, 3MiB).
 - Constants: MSG_INLINE_MAX 256KB, RETAIN_DAYS 30, COMPACT_LOG_BYTES 8MB, SOFT_CEILING 25MB,
   STREAM_COMMIT_MS 120, DO_FLUSH_MS 5000, LRU 80MB, TAIL 64, TERMINAL_OUTPUT_BATCH_MS 12.
-
-## 6. Edge (Cloudflare Worker + DOs — stays TypeScript)
-- Worker routes: /health; /session/:chatId/ws (loro room); /tail/:chatId; /stats/:chatId;
-  /diff/:chatId GET/POST; /snapshot/:chatId; /append/:chatId; /seed/:chatId;
-  /device/:deviceId/ws?role=host|client&connId=; /device/:id/sidecar/:name; /device/:id/status;
-  /device/:id/nudge; /attachments/:sha256 PUT/GET/HEAD (content-addressed R2 att/{user}/{sha},
-  32MB, server-side hash verify).
-- Auth: WorkOS JWKS at edge; DOs see only Worker-stamped identity; ownership claim-on-first-join.
-- SessionRoom DO: hibernatable WS, updates log (5s flush), snapshot blob, lazy tail, diff blob,
-  %EPH presence; two-level compaction (log-fold @8MB lossless; history-trim shallow snapshot at
-  daily frontier checkpoints >= RETAIN_DAYS); daily alarm -> checkpoint + trim + R2
-  backup/{chatId}/latest.loro; VV backfill on join; fragment reassembly; stale-peer import ->
-  InvalidUpdate ack -> app re-submit; blobs chunked over DO SQL.
-- DeviceRoom DO: byte-pipe frames uleb128 len ‖ JSON {s,k,to?,from?} ‖ payload; one live host
-  socket; relay control frames; durable nudges (replayed on host join, dedup, cap 256); sidecar
-  slots (repos snapshot); /status /nudge.
-
-## 7. Server -> folded into edge for native
-- Keep: WorkOS code exchange/refresh, org list/create (move to edge Worker routes).
-- Drop: entity push/query, Postgres, signaling, Fly deploy of separate server.
 
 ## 8. EXCLUDED (token usage display)
 - WatchUsage RPC, UsageStats/UsageDay, backend usage aggregation, profile heatmap/hero/stats,

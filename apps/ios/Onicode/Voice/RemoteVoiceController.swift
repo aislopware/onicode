@@ -61,9 +61,7 @@ final class RemoteVoiceController {
         Self.forced || (app?.client?.devices().contains(where: Self.compatible) ?? false)
     }
 
-    private var preferenceKey: String {
-        "remoteVoice.\(app?.client?.userId() ?? "none").\(app?.client?.orgId() ?? "none")"
-    }
+    private let preferenceKey = "remoteVoice"
     var selectedHost: String? {
         get { UserDefaults.standard.string(forKey: preferenceKey + ".host") }
         set {
@@ -280,7 +278,7 @@ final class RemoteVoiceController {
 
     /// `-voice-preview`: a scripted call for screenshots and UI work — the
     /// orb walks through listening, speaking and working with synthetic
-    /// levels. No audio, host or relay is involved.
+    /// levels. No audio or host is involved.
     func preview() {
         previewing = true
         hostName = "Fedora"

@@ -89,12 +89,11 @@ pub(crate) fn follow_subagent(
     client: &CoreClient,
     chat_id: &str,
     doc_id: &str,
-    frozen: bool,
     sink: Arc<dyn zc::SubagentSink>,
 ) -> Option<SubagentFollow> {
     client
         .client
-        .watch_subagent(chat_id, doc_id, frozen, sink)
+        .watch_subagent(chat_id, doc_id, sink)
         .ok()
         .map(SubagentFollow)
 }

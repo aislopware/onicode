@@ -1,7 +1,6 @@
 //! Settings → Devices (feature-inventory §1.5): the device registry — name,
 //! platform, last-seen, an Online/Offline badge, a "This device" badge, click-to-copy id,
-//! and a Rename dialog (Mutate renameDevice). A Cloud device reads "Cloud"
-//! and, while its sandbox sleeps, "Asleep" rather than a last-seen time.
+//! and a Rename dialog (Mutate renameDevice).
 
 use std::time::Duration;
 
@@ -10,7 +9,6 @@ use gpui::prelude::*;
 use gpui::{
     AnyElement, ClipboardItem, Context, Entity, SharedString, Subscription, Task, Window, div, px,
 };
-use onicode_proto::WorkspaceScope;
 use onicode_rpc::methods;
 
 use crate::composer::{ComposerInput, ComposerInputEvent};
@@ -46,13 +44,13 @@ pub fn format_last_seen(last_seen: Option<DateTime<Utc>>, now: DateTime<Utc>) ->
     }
 }
 
-/// Scope-aware copy: a local registry describes only the active local
-/// workspace and must not imply that account device metadata is already live.
-pub fn devices_subtitle(scope: Option<WorkspaceScope>) -> &'static str {
-    match scope {
-        Some(WorkspaceScope::Local) => "Devices in this local workspace.",
-        Some(WorkspaceScope::Synced) => "Devices synced to this workspace.",
-        Some(WorkspaceScope::Development) | None => "Devices in this workspace.",
+/// The glyph for a device row, chip or crumb.
+pub fn device_glyph(platform: &str) -> &'static str {
+    match platform {
+        "macos" | "darwin" => crate::icons::LAPTOP,
+        "web" => crate::icons::GLOBAL,
+        "ios" | "android" => crate::icons::SMARTPHONE,
+        _ => crate::icons::MONITOR,
     }
 }
 
@@ -71,8 +69,6 @@ pub struct DevicesPage {
     error: Option<SharedString>,
     task: Option<Task<()>>,
     copy_task: Option<Task<()>>,
-    /// One CloudStatus read per visit (kept alive, never polled).
-    _cloud_task: Option<Task<()>>,
     /// Wakes the page when a "Last seen 5m ago" turns over.
     seen_tick: crate::label_clock::LabelTick,
     _observe: Subscription,
@@ -81,23 +77,6 @@ pub struct DevicesPage {
 impl DevicesPage {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         let observe = cx.observe(&state, |_, _, cx| cx.notify());
-        // Read the Cloud account once per visit: the Cloud row reads from it
-        // (on while Cloud is enabled), not from a heartbeat.
-        let cloud_task = {
-            let state_ref = state.read(cx);
-            state_ref
-                .cloud_enabled()
-                .then(|| state_ref.engine().cloned())
-                .flatten()
-        }
-        .map(|engine| {
-            let state = state.clone();
-            cx.spawn(async move |_, cx| {
-                if let Ok(status) = crate::cloud::fetch_status(engine).await {
-                    state.update(cx, |state, cx| state.set_cloud_status(status, cx));
-                }
-            })
-        });
         Self {
             state,
             scroll: widgets::PageScroll::default(),
@@ -106,7 +85,6 @@ impl DevicesPage {
             error: None,
             task: None,
             copy_task: None,
-            _cloud_task: cloud_task,
             seen_tick: Default::default(),
             _observe: observe,
         }
@@ -177,6 +155,16 @@ impl DevicesPage {
         }));
         cx.notify();
     }
+
+    /// Open the Mac `device_id`'s desktop in a window of its own.
+    #[cfg(target_os = "macos")]
+    fn open_desktop(&mut self, device_id: String, name: String, cx: &mut Context<Self>) {
+        crate::desktop::open_window(self.state.clone(), device_id, name, cx);
+    }
+
+    /// Remote desktop is a Mac's app only.
+    #[cfg(not(target_os = "macos"))]
+    fn open_desktop(&mut self, _device_id: String, _name: String, _cx: &mut Context<Self>) {}
 
     fn copy_id(&mut self, device_id: String, cx: &mut Context<Self>) {
         cx.write_to_clipboard(ClipboardItem::new_string(device_id.clone()));
@@ -275,7 +263,6 @@ pub fn platform_label(platform: &str) -> &str {
         "web" => "Web",
         "ios" => "iOS",
         "android" => "Android",
-        onicode_proto::CLOUD_PLATFORM => crate::cloud::CLOUD_LABEL,
         other => other,
     }
 }
@@ -294,21 +281,19 @@ impl Render for DevicesPage {
         crate::toast::take_error(&mut self.error, cx);
         let theme = Theme::of(cx).for_settings_surface();
         let now = Utc::now();
-        // Cloud's per-session machines are not listed; the Cloud row stands
-        // for them.
-        let (devices, local_id, workspace_scope) = {
+        let (devices, local_id) = {
             let state = self.state.read(cx);
             (
                 state
-                    .listed_devices()
-                    .map(|d| (d.clone(), state.device_presence(&d.id, now)))
+                    .devices
+                    .iter()
+                    .map(|d| (d.clone(), state.device_online(&d.id, now)))
                     .collect::<Vec<_>>(),
                 state.local_device_id.clone(),
-                state.workspace_scope,
             )
         };
-        for (device, presence) in &devices {
-            if let Some(seen) = device.last_seen_at.filter(|_| presence.warns()) {
+        for (device, online) in &devices {
+            if let Some(seen) = device.last_seen_at.filter(|_| !online) {
                 self.seen_tick.schedule(
                     cx.entity().downgrade(),
                     crate::label_clock::ago_turns_in(seen, now),
@@ -325,21 +310,22 @@ impl Render for DevicesPage {
             .enumerate()
             .partition(|(_, (device, _))| local_id.as_deref() == Some(device.id.as_str()));
         let device_row = |ix: usize,
-                          (device, presence): (onicode_proto::Device, crate::cloud::Presence),
+                          (device, online): (onicode_proto::Device, bool),
                           first: bool| {
-            let is_cloud = crate::cloud::is_cloud(&device);
             let is_local = local_id.as_deref() == Some(device.id.as_str());
             let id_copied = copied.as_deref() == Some(device.id.as_str());
             let copy_id = device.id.clone();
             let rename_id = device.id.clone();
             let rename_name = device.name.clone();
+            // A Mac's desktop opens in a window of its own (`crate::desktop`).
+            let opens_desktop =
+                cfg!(target_os = "macos") && matches!(device.platform.as_str(), "macos" | "darwin");
+            let desktop_of = (device.id.clone(), device.name.clone());
             let mut meta: Vec<AnyElement> = vec![
                 div()
-                    .child(SharedString::from(if is_cloud {
-                        crate::cloud::CLOUD_LABEL.to_string()
-                    } else {
-                        platform_label(&device.platform).to_string()
-                    }))
+                    .child(SharedString::from(
+                        platform_label(&device.platform).to_string(),
+                    ))
                     .into_any_element(),
             ];
             if let Some(version) = device.version.as_deref().filter(|v| !v.is_empty()) {
@@ -351,30 +337,19 @@ impl Render for DevicesPage {
             }
             // Presence only says something about other devices.
             if !is_local {
-                meta.push(
-                    if matches!(
-                        presence,
-                        crate::cloud::Presence::Online | crate::cloud::Presence::Available
-                    ) {
-                        div()
-                            .text_color(theme.success_muted)
-                            .child(SharedString::from(presence.label()))
-                            .into_any_element()
-                    } else if !presence.warns() {
-                        // A Cloud machine that is asleep or starting answers on
-                        // its own; its last heartbeat is not news.
-                        div()
-                            .child(SharedString::from(presence.label()))
-                            .into_any_element()
-                    } else {
-                        div()
-                            .child(SharedString::from(format!(
-                                "Last seen {}",
-                                format_last_seen(device.last_seen_at, now)
-                            )))
-                            .into_any_element()
-                    },
-                );
+                meta.push(if online {
+                    div()
+                        .text_color(theme.success_muted)
+                        .child(SharedString::from("Online"))
+                        .into_any_element()
+                } else {
+                    div()
+                        .child(SharedString::from(format!(
+                            "Last seen {}",
+                            format_last_seen(device.last_seen_at, now)
+                        )))
+                        .into_any_element()
+                });
             }
             widgets::card_row(&theme, first)
                 .child(
@@ -390,6 +365,26 @@ impl Render for DevicesPage {
                         .flex()
                         .items_center()
                         .gap(px(4.0))
+                        .when(opens_desktop, |actions| {
+                            actions.child(
+                                widgets::text_action(
+                                    &theme,
+                                    widgets::ActionTone::Quiet,
+                                    "Open desktop",
+                                )
+                                .id(("device-desktop", ix))
+                                .tab_index(0)
+                                .role(gpui::Role::Button)
+                                .aria_label(format!("Open {}'s desktop", device.name))
+                                .focus_visible(|s| s.border_2().border_color(theme.accent))
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        let (id, name) = desktop_of.clone();
+                                        this.open_desktop(id, name, cx);
+                                    },
+                                )),
+                            )
+                        })
                         .child(
                             widgets::text_action(
                                 &theme,
@@ -435,7 +430,7 @@ impl Render for DevicesPage {
                         .text_size(crate::typography::ui_rems(13.0))
                         .text_color(theme.text_muted)
                         .child(SharedString::from(
-                            "Sign in on another device to see it here.",
+                            "Run onicode on another machine on your tailnet to see it here.",
                         )),
                 ),
             )
@@ -453,11 +448,8 @@ impl Render for DevicesPage {
                 el.child(widgets::section_label(&theme, "This device").mt(px(28.0)))
                     .child(block)
             })
-            // A local-only workspace never has other devices to list.
-            .when(workspace_scope != Some(WorkspaceScope::Local), |el| {
-                el.child(widgets::section_label(&theme, "Other devices").mt(px(28.0)))
-                    .child(others_block)
-            });
+            .child(widgets::section_label(&theme, "Other devices").mt(px(28.0)))
+            .child(others_block);
 
         let scrollbar = popover::rail(self, "devices-page-scrollbar", &theme, cx);
         div()
@@ -480,7 +472,7 @@ impl Render for DevicesPage {
                                 .child(widgets::page_header(&theme, "Devices", None))
                                 .child(widgets::page_subtitle(
                                     &theme,
-                                    devices_subtitle(workspace_scope),
+                                    "This machine and the others on your tailnet.",
                                 ))
                                 .child(card),
                         ),
@@ -532,15 +524,10 @@ mod tests {
     }
 
     #[test]
-    fn cloud_platform_reads_cloud() {
-        assert_eq!(platform_label("cloud"), "Cloud");
+    fn platforms_read_as_people_name_them() {
         assert_eq!(platform_label("darwin"), "macOS");
-    }
-
-    #[test]
-    fn local_subtitle_does_not_claim_synced_metadata() {
-        let copy = devices_subtitle(Some(WorkspaceScope::Local));
-        assert!(copy.contains("local workspace"));
-        assert!(!copy.contains("synced"));
+        assert_eq!(platform_label("plan9"), "plan9");
+        assert_eq!(device_glyph("ios"), crate::icons::SMARTPHONE);
+        assert_eq!(device_glyph("plan9"), crate::icons::MONITOR);
     }
 }

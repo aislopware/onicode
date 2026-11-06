@@ -36,7 +36,6 @@ fn draft_child_row(from: &onicode_proto::Chat, parent_id: String) -> onicode_pro
     chat.last_seen_at = None;
     chat.harness_session_id = None;
     chat.harness_session_cwd = None;
-    chat.room_gen = Some(2);
     chat
 }
 
@@ -563,10 +562,7 @@ mod tests {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -617,10 +613,7 @@ mod tests {
                 EngineBootConfig {
                     data_dir: dir.into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,

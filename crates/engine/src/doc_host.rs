@@ -34,8 +34,6 @@ use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::edge::EdgeConfig;
-use crate::http_error::describe_http_error;
 use crate::project_actions::{
     ProjectActionSetupHandoff, ProjectActionsStore, launch_project_setup_action,
 };
@@ -66,13 +64,9 @@ const RESIDENT_BYTES_PER_SNAPSHOT_BYTE: usize = 6;
 /// Floor per open doc (room socket buffers, tasks) regardless of content size.
 const DOC_RESIDENT_FLOOR_BYTES: usize = 512 * 1024;
 
-/// A quiesce for a Cloud sleep the stop never followed lifts after this.
-const QUIESCE_LEASE: std::time::Duration = std::time::Duration::from_secs(180);
-
 /// Queued-attachment transfer pacing: chunk pushes are bounded per call (a
-/// stalled-but-open relay link never fails on its own) and a timeout marks
-/// the link suspect; attempts retry on this backoff, cut short by the online
-/// bus / system wake.
+/// stalled-but-open link never fails on its own) and a timeout marks the link
+/// suspect; attempts retry on this backoff, cut short by a link change.
 const TRANSFER_CHUNK_B64: usize = 60_000;
 const TRANSFER_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const TRANSFER_COMMIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
@@ -100,9 +94,6 @@ pub struct DocHostConfig {
     pub device_id: String,
     /// Harness for doc-command runs on chats without a workspace `config` row.
     pub default_harness: HarnessId,
-    /// Where tool-output sidecar blobs go. `None` = no sidecars (local profiles, tests). Chats
-    /// themselves never touch it: they sync between engines.
-    pub edge: Option<EdgeConfig>,
 }
 
 struct DocHostInner {
@@ -112,22 +103,17 @@ struct DocHostInner {
     /// doc-host reference each other through Arcs, so a retired runtime's
     /// graph only drops once this back-edge is severed.
     sessions: Mutex<Option<SessionsEngine>>,
-    /// Quiesced for a Cloud sleep ([`DocHost::quiesce_for_sleep`]): drains
-    /// leave new work pending in the doc, for the machine once it wakes.
+    /// Work held for an update on trial ([`DocHost::hold_work`]): drains
+    /// leave new work pending in the doc until it's lifted.
     quiesced: AtomicBool,
-    /// Bumped per quiesce: only the newest one's lease lifts it.
-    quiesce_generation: AtomicU64,
-    /// Drains between their quiesce check and the end of their dispatch (a
-    /// run they start is registered — and Working — by then).
-    dispatching: Arc<AtomicUsize>,
     workspace: OnceLock<WorkspaceHost>,
     /// Worktree materialization for Run commands (see `set_repos`).
     repos: OnceLock<crate::repos::Repos>,
     project_action_runtime: OnceLock<(ProjectActionsStore, Terminals)>,
     /// Cancels every worker spawned through `spawn_worker` — the loops'
     /// own exit conditions (weak handle death, closed channels) don't cover
-    /// runtime replacement, where Edge-capable tasks must stop doing
-    /// network work even while something still pins the graph.
+    /// runtime replacement, where tasks must stop doing network work even
+    /// while something still pins the graph.
     shutdown: CancellationToken,
     /// Tracks every spawned worker so `shutdown_workers` can await them.
     tasks: TaskTracker,
@@ -162,9 +148,6 @@ struct DocHostInner {
     /// Links to the other engines, once the tailnet is up: chats follow their hosts over them,
     /// and queued attachment bytes travel to remote hosts.
     links: OnceLock<Arc<onicode_peer::PeerLinks>>,
-    /// Shared client for sidecar blob PUT/GET (30s timeout, uploads.rs
-    /// discipline — diff_sync's untimed client hung on dead links).
-    http: reqwest::Client,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -421,14 +404,6 @@ pub struct ChatDocHandle {
     _outbox_sub: loro::Subscription,
     /// Doc subscription (drop = unsubscribe) — bumps the change watch on every commit.
     _sub: loro::Subscription,
-}
-
-/// One drain counted in [`DocHostInner::dispatching`] until dropped.
-struct DispatchGuard(Arc<AtomicUsize>);
-impl Drop for DispatchGuard {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
-    }
 }
 
 pub struct DocWriter {
@@ -821,8 +796,6 @@ impl DocHost {
                 config,
                 sessions: Mutex::new(None),
                 quiesced: AtomicBool::new(false),
-                quiesce_generation: AtomicU64::new(0),
-                dispatching: Arc::new(AtomicUsize::new(0)),
                 workspace: OnceLock::new(),
                 repos: OnceLock::new(),
                 project_action_runtime: OnceLock::new(),
@@ -839,14 +812,6 @@ impl DocHost {
                 transfers: watch::channel(Vec::new()).0,
                 executing: Mutex::new(HashSet::new()),
                 links: OnceLock::new(),
-                http: reqwest::Client::builder()
-                    .pool_max_idle_per_host(2)
-                    .pool_idle_timeout(std::time::Duration::from_secs(10))
-                    .connect_timeout(std::time::Duration::from_secs(15))
-                    .read_timeout(std::time::Duration::from_secs(30))
-                    .timeout(std::time::Duration::from_secs(30))
-                    .build()
-                    .unwrap_or_else(|_| reqwest::Client::new()),
             }),
         }
     }
@@ -907,63 +872,14 @@ impl DocHost {
         lock(&self.inner.sessions).clone()
     }
 
-    /// Entered by a drain that may start work; `None` while quiesced. Count
-    /// first, check second (both SeqCst): a quiesce that set its flag then
-    /// either sees this drain counted or this drain sees the flag.
-    fn dispatch_guard(&self) -> Option<DispatchGuard> {
-        self.inner.dispatching.fetch_add(1, Ordering::SeqCst);
-        let guard = DispatchGuard(self.inner.dispatching.clone());
-        (!self.inner.quiesced.load(Ordering::SeqCst)).then_some(guard)
-    }
-
-    /// Before a Cloud sleep stops this engine: start nothing the stop would
-    /// cut off. Commands arriving from here on stay pending in their chat's
-    /// room and run on the woken machine (its boot reconcile finds them).
-    /// `Err(why)` when a turn is in flight or a command is already waiting:
-    /// the sleep is declined and work resumes at once. A quiesce the stop
-    /// never follows lifts itself after `QUIESCE_LEASE`.
-    pub async fn quiesce_for_sleep(&self) -> Result<(), String> {
-        let generation = self.inner.quiesce_generation.fetch_add(1, Ordering::SeqCst) + 1;
-        self.inner.quiesced.store(true, Ordering::SeqCst);
-        // Drains already past their check finish dispatching first.
-        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-        while self.inner.dispatching.load(Ordering::SeqCst) > 0 {
-            if tokio::time::Instant::now() >= deadline {
-                self.lift_quiesce();
-                return Err("work is still being dispatched".into());
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        }
-        let running = self
-            .sessions()
-            .map_or(0, |sessions| sessions.active_count());
-        let busy = if running > 0 {
-            Some(format!("{running} chat(s) have a turn in flight"))
-        } else if self.has_waiting_commands() {
-            Some("a message is waiting to run".to_string())
-        } else {
-            None
-        };
-        if let Some(why) = busy {
-            self.lift_quiesce();
-            return Err(why);
-        }
-        let host = self.clone();
-        self.spawn_worker(async move {
-            tokio::time::sleep(QUIESCE_LEASE).await;
-            if host.inner.quiesce_generation.load(Ordering::SeqCst) == generation {
-                tracing::warn!(
-                    "quiesced for a sleep that never stopped this engine; resuming work"
-                );
-                host.lift_quiesce();
-            }
-        });
-        Ok(())
+    /// Whether new work waits ([`Self::hold_work`]).
+    fn work_held(&self) -> bool {
+        self.inner.quiesced.load(Ordering::SeqCst)
     }
 
     /// Start no new work until [`Self::lift_quiesce`]: a new version trying out
-    /// an update, whose changes may yet be undone. Controls keep working, as
-    /// they do in a quiesce, and what queues meanwhile runs when it's lifted.
+    /// an update, whose changes may yet be undone. Controls keep working, and
+    /// what queues meanwhile runs when it's lifted.
     pub fn hold_work(&self) {
         self.inner.quiesced.store(true, Ordering::SeqCst);
     }
@@ -981,20 +897,6 @@ impl DocHost {
                 host.drain_queue(&handle).await;
             });
         }
-    }
-
-    /// A hosted chat has a command no drain has executed yet.
-    fn has_waiting_commands(&self) -> bool {
-        let handles: Vec<_> = lock(&self.inner.handles).values().cloned().collect();
-        let is_processed = |id: &str| self.inner.store.is_processed(id).unwrap_or(false);
-        handles.iter().any(|handle| {
-            self.is_host(&handle.chat_id)
-                && handle.doc.read_commands().is_ok_and(|commands| {
-                    commands
-                        .iter()
-                        .any(|c| c.status == SessionCommandStatus::Pending && !is_processed(&c.id))
-                })
-        })
     }
 
     /// Wire the sessions engine (engine assembly; see `SessionsEngine::set_doc_host`).
@@ -1605,15 +1507,16 @@ impl DocHost {
         rx
     }
 
-    /// One snapshot of the sync posture: `Disabled` (the default) on a local
-    /// profile; else `Offline` with no network path, `Reconnecting` until the
-    /// tailnet is up, `Connected` after — with each open chat's standing with
-    /// its host.
+    /// One snapshot of the sync posture, from the peer links: `Connected` while
+    /// a link to another engine is live, `Reconnecting` while one is expected
+    /// (the tailnet lists another engine, or an open chat is hosted on one) but
+    /// none is live, `Disabled` (the default) when no peer is expected — with
+    /// each open chat's standing with its host.
     fn compute_connectivity(&self) -> onicode_proto::Connectivity {
         use onicode_proto::{ChatConnectivity, Connectivity, ConnectivityState};
-        if self.workspace().is_none_or(WorkspaceHost::local_only) {
+        let Some(links) = self.inner.links.get() else {
             return Connectivity::default();
-        }
+        };
         let mut handles: Vec<Arc<ChatDocHandle>> =
             lock(&self.inner.handles).values().cloned().collect();
         handles.sort_by(|a, b| a.chat_id.cmp(&b.chat_id));
@@ -1635,12 +1538,25 @@ impl DocHost {
                 }
             })
             .collect();
-        let state = if onicode_sync::wake::path_is_offline() {
-            ConnectivityState::Offline
-        } else if self.inner.links.get().is_none() {
+        let own = self.inner.config.device_id.as_str();
+        let state = if links
+            .links()
+            .iter()
+            .any(|link| link.peer.role == onicode_net::Role::Engine)
+        {
+            ConnectivityState::Connected
+        } else if links
+            .directory()
+            .peers()
+            .iter()
+            .any(|peer| peer.device_id != own && peer.hello.role == onicode_net::Role::Engine)
+            || handles
+                .iter()
+                .any(|handle| matches!(self.chat_host(&handle.chat_id), ChatHost::Peer(_)))
+        {
             ConnectivityState::Reconnecting
         } else {
-            ConnectivityState::Connected
+            ConnectivityState::Disabled
         };
         Connectivity {
             state,
@@ -2373,9 +2289,9 @@ impl DocHost {
     ///
     /// One at a time by design: each send changes the status this reads.
     pub async fn drain_queue(&self, handle: &Arc<ChatDocHandle>) {
-        let Some(_dispatch) = self.dispatch_guard() else {
-            return; // quiesced for a Cloud sleep; lifting it re-drains
-        };
+        if self.work_held() {
+            return; // lifting the hold re-drains
+        }
         let Some(sessions) = self.sessions() else {
             return; // executor not wired yet; the set_sessions kick re-drains
         };
@@ -2724,8 +2640,7 @@ impl DocHost {
         chat: &str,
         transfers: &[crate::uploads::AttachmentTransfer],
     ) -> bool {
-        let mut wake = onicode_sync::wake::subscribe();
-        let mut online = onicode_sync::wake::subscribe_online();
+        let mut link_changes = self.links().map(|links| links.subscribe_changes());
         let mut backoff = TRANSFER_BACKOFF_BASE;
         let deadline = tokio::time::Instant::now() + ATTACHMENT_WAIT_MAX;
         loop {
@@ -2754,12 +2669,16 @@ impl DocHost {
                 tracing::warn!(chat = %chat, "queued attachment transfer gave up (wait cap)");
                 return false;
             }
-            while wake.try_recv().is_ok() {}
-            while online.try_recv().is_ok() {}
-            tokio::select! {
-                _ = tokio::time::sleep(backoff) => {}
-                _ = wake.recv() => {}
-                _ = online.recv() => {}
+            // A link coming up (or going) cuts the backoff short.
+            match link_changes.as_mut() {
+                Some(changes) => {
+                    changes.borrow_and_update();
+                    tokio::select! {
+                        _ = tokio::time::sleep(backoff) => {}
+                        _ = changes.changed() => {}
+                    }
+                }
+                None => tokio::time::sleep(backoff).await,
             }
             backoff = (backoff * 2).min(TRANSFER_BACKOFF_CAP);
         }
@@ -2988,121 +2907,6 @@ impl DocHost {
         Ok(())
     }
 
-    /// Upload a tool result's full output/diff to the R2 sidecar
-    /// (`PUT {edge}/blob/{chatId}/{partId}[.diff]`, docs/chat2-sync.md A2).
-    /// Fire-and-forget: the doc already carries the summary, so a lost upload
-    /// degrades to "full output unavailable" — it must never block or fail
-    /// the run. Offline/edge-less engines skip silently.
-    pub fn upload_tool_sidecar(&self, chat_id: &str, payload: onicode_doc::SidecarPayload) {
-        let Some(edge) = self.inner.config.edge.clone() else {
-            return;
-        };
-        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-            return; // bare sync callers (unit tests) skip rather than panic
-        };
-        let http = self.inner.http.clone();
-        let base = format!(
-            "{}/blob/{}/{}",
-            edge.url.trim_end_matches('/'),
-            chat_id,
-            encode_part_segment(&payload.part_id)
-        );
-        self.spawn_worker_on(&runtime, async move {
-            let Ok(bearer) = edge.bearer().await else {
-                return; // token unavailable; serve the local summary
-            };
-            let mut puts: Vec<(String, &'static str, Vec<u8>)> = Vec::new();
-            if let Some(output) = &payload.output {
-                puts.push((
-                    base.clone(),
-                    "text/plain; charset=utf-8",
-                    output.clone().into_bytes(),
-                ));
-            }
-            if let Some(diff) = &payload.diff
-                && let Ok(json) = serde_json::to_vec(diff)
-            {
-                puts.push((format!("{base}.diff"), "application/json", json));
-            }
-            for (url, content_type, body) in puts {
-                let sent = http
-                    .put(&url)
-                    .bearer_auth(&bearer)
-                    .header("content-type", content_type)
-                    .body(body)
-                    .send()
-                    .await;
-                match sent {
-                    Ok(res) if res.status().is_success() => {}
-                    Ok(res) => tracing::warn!(url, status = res.status().as_u16(),
-                        "tool sidecar upload rejected"),
-                    Err(err) => {
-                        let err = describe_http_error(err);
-                        tracing::warn!(url, error = %err, "tool sidecar upload failed (best-effort)")
-                    }
-                }
-            }
-        });
-    }
-
-    /// Fetch a sidecar blob by its doc-resident ref (`{chatId}/{partId}` or
-    /// `…​.diff`) — the UI's lazy "Show full output" path, served over RPC
-    /// because the UI crate has no HTTP client or edge bearer.
-    pub async fn fetch_tool_blob(&self, blob_ref: &str) -> Result<String, EngineError> {
-        // Same shape `apply_sidecar_refs` writes; anything else is a forged ref.
-        let valid = blob_ref.split_once('/').is_some_and(|(chat, part)| {
-            !chat.is_empty()
-                && chat.len() <= 128
-                && chat
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-                && !part.is_empty()
-                && part.len() <= 200
-                && part
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"._:#~-".contains(&b))
-        });
-        if !valid {
-            return Err(EngineError::Other(format!("bad blob ref: {blob_ref}")));
-        }
-        let Some(edge) = self.inner.config.edge.clone() else {
-            return Err(EngineError::Other("offline: no edge configured".into()));
-        };
-        let bearer = edge.bearer().await?;
-        // `valid` above guarantees the split; re-split to encode the part
-        // segment for transport (PART_RE allows `#`, which a raw URL would
-        // truncate as a fragment — the 2026-08-10 silent-collision bug).
-        let (chat, part) = blob_ref.split_once('/').expect("validated above");
-        let url = format!(
-            "{}/blob/{}/{}",
-            edge.url.trim_end_matches('/'),
-            chat,
-            encode_part_segment(part)
-        );
-        let res = self
-            .inner
-            .http
-            .get(&url)
-            .bearer_auth(&bearer)
-            .send()
-            .await
-            .map_err(|e| {
-                EngineError::Other(format!("sidecar fetch failed: {}", describe_http_error(e)))
-            })?;
-        if !res.status().is_success() {
-            return Err(EngineError::Other(format!(
-                "sidecar fetch: HTTP {}",
-                res.status().as_u16()
-            )));
-        }
-        res.text().await.map_err(|e| {
-            EngineError::Other(format!(
-                "sidecar body read failed: {}",
-                describe_http_error(e)
-            ))
-        })
-    }
-
     /// §2.2 writer discipline: we host a chat iff its workspace row's `deviceId` is
     /// ours; a chat with no row is claimable (claim-on-first-command). Without a
     /// wired workspace host (bare-DocHost tests) every open chat is ours — M2's
@@ -3137,16 +2941,11 @@ impl DocHost {
     }
 
     async fn drain_command_kind(&self, handle: &Arc<ChatDocHandle>, controls_only: bool) {
-        // A quiesced engine still serves controls (interrupt, answers): only
-        // new work waits for the machine to wake.
-        let _dispatch = if controls_only {
-            None
-        } else {
-            match self.dispatch_guard() {
-                Some(guard) => Some(guard),
-                None => return, // quiesced for a Cloud sleep; lifting it re-drains
-            }
-        };
+        // Held work still serves controls (interrupt, answers): only new
+        // work waits; lifting the hold re-drains.
+        if !controls_only && self.work_held() {
+            return;
+        }
         let Some(sessions) = self.sessions() else {
             return; // executor not wired yet (or retired); the set_sessions kick re-drains
         };
@@ -4154,23 +3953,6 @@ pub fn respond_input_prompt(
     lines.join("\n")
 }
 
-/// Percent-encode one URL path segment of a sidecar part id. PART_RE's
-/// alphabet includes `#` and `:` — legal in R2 keys and doc refs, but a raw
-/// `#` in a URL is a fragment delimiter (the request would silently hit the
-/// truncated key, colliding parts). The Worker decodes before validating.
-fn encode_part_segment(part_id: &str) -> String {
-    let mut out = String::with_capacity(part_id.len());
-    for byte in part_id.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(byte as char)
-            }
-            _ => out.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod transfer_progress_tests {
     use std::sync::Arc;
@@ -4185,7 +3967,6 @@ mod transfer_progress_tests {
             DocHostConfig {
                 device_id: "dev-test".into(),
                 default_harness: onicode_proto::HarnessId::Mock,
-                edge: None,
             },
         );
         (dir, host)
@@ -4359,7 +4140,6 @@ mod source_context_tests {
             DocHostConfig {
                 device_id: "device-a".into(),
                 default_harness: onicode_proto::HarnessId::Mock,
-                edge: None,
             },
         );
         host.set_repos(crate::repos::Repos::new(
@@ -4379,18 +4159,6 @@ mod source_context_tests {
         );
         assert!(context.head_sha.is_some());
         assert!(!context.checkout_id.is_empty());
-    }
-}
-
-#[cfg(test)]
-mod part_segment_tests {
-    use super::encode_part_segment;
-
-    #[test]
-    fn hash_and_colon_are_escaped_unreserved_pass_through() {
-        assert_eq!(encode_part_segment("m1#c1"), "m1%23c1");
-        assert_eq!(encode_part_segment("tool:call_9"), "tool%3Acall_9");
-        assert_eq!(encode_part_segment("plain-id_0.diff~"), "plain-id_0.diff~");
     }
 }
 
@@ -4498,7 +4266,6 @@ mod outbox_tests {
             DocHostConfig {
                 device_id: "writer".into(),
                 default_harness: HarnessId::Mock,
-                edge: None,
             },
         )
     }
@@ -4536,7 +4303,6 @@ mod outbox_tests {
             DocHostConfig {
                 device_id: "writer".into(),
                 default_harness: HarnessId::Mock,
-                edge: None,
             },
         );
         let handle = reopened.open_local("chat").unwrap();
@@ -4582,7 +4348,6 @@ mod outbox_tests {
             DocHostConfig {
                 device_id: "writer".into(),
                 default_harness: HarnessId::Mock,
-                edge: None,
             },
         );
         assert_eq!(
@@ -4627,7 +4392,6 @@ mod outbox_tests {
             DocHostConfig {
                 device_id: "viewer".into(),
                 default_harness: HarnessId::Mock,
-                edge: None,
             },
         );
         let workspace = WorkspaceHost::open(
@@ -4636,10 +4400,6 @@ mod outbox_tests {
                 device_id: "viewer".into(),
                 device_name: "viewer".into(),
                 platform: "macos".into(),
-                org_id: "org".into(),
-                user_id: "user".into(),
-                edge: None,
-                local_only: false,
             },
         )
         .unwrap();

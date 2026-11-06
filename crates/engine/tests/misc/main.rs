@@ -4,6 +4,6 @@
 
 mod claude_subagents;
 mod codex_subagents;
-mod local_profiles;
+mod device_identity;
 mod osc7501;
 mod pi_resume;

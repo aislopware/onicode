@@ -82,7 +82,7 @@ pub struct Peers {
 
 impl Peers {
     /// Binds on this machine's tailnet addresses as `device_id`, finds the user's other
-    /// engines and serves `service` to them.
+    /// engines and serves `service` to them; a network path handover redials at once.
     ///
     /// # Errors
     ///
@@ -92,14 +92,16 @@ impl Peers {
         service: Arc<dyn RpcService>,
         streams: Arc<StreamRouter>,
     ) -> Result<Self, PeerError> {
-        Self::start_on(
+        let peers = Self::start_on(
             Arc::new(Relooking::system()),
             &SystemSockets,
             PeerConfig::new(device_id, Role::Engine),
             Some(service),
             Some(streams),
         )
-        .await
+        .await?;
+        peers.links.follow_path();
+        Ok(peers)
     }
 
     /// [`Self::start`] on `tailnet` with `sockets`, serving `service` and `streams` if any: a

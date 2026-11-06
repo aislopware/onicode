@@ -3,8 +3,7 @@
 A field under Back in the Settings sidebar finds any setting on any page. These
 frames are the production Shell drawn offscreen by
 `crates/ui/examples/settings-search-fixture.rs`, with temporary settings and no
-engine or account: Cloud and Billing stay hidden, so their rows are not
-searched here. ⌘F and Enter go through the window's real key dispatch; the
+engine. ⌘F and Enter go through the window's real key dispatch; the
 queries are set on the field.
 
 ```bash
@@ -62,15 +61,12 @@ the frosted surface and `ZERON_FIXTURE_SIZE=<w>x<h>` the window size.
   the real Shell, the keyboard flow end to end, shortcut hits, the keyboard
   kept across a pick (Appshots, a click), Enter on the clear button, and
   leaving Settings by any route.
-- `the_index_and_the_pages_agree` draws every page reachable without an
-  account: each row a page draws is in the index, and each indexed row is
+- `the_index_and_the_pages_agree` draws every page: each row a page draws is in the index, and each indexed row is
   anchored on its page.
 
 ## Limits
 
 - Static frames say nothing of the glide's smoothness.
-- Cloud and Billing rows are indexed and anchored, but draw only with an
-  account: neither these frames nor the tests reach them.
 - The hits are listbox options marked selected, but the keyboard stays in the
   input, which is not their ancestor, so gpui does not announce the active hit
   to screen readers. The ⌘K palette shares this.

@@ -75,6 +75,9 @@ pub mod channel {
     pub const MEDIA: u8 = 2;
     /// Remote desktop, client to host: NACKs, refresh requests and clock reports.
     pub const FEEDBACK: u8 = 3;
+    /// Remote desktop, client to host: the datagram copy of a numbered input
+    /// (`onicode_desktop_link::copy`).
+    pub const DESKTOP_INPUT: u8 = 4;
 }
 
 /// What a stream is, written by its opener before anything else.

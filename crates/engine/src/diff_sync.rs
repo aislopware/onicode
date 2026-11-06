@@ -4,12 +4,8 @@
 //! Chats do not own working-tree state: a concrete Git checkout does. This service
 //! groups this device's chats by their canonical checkout identity (`chat.cwd` →
 //! [`Repos::checkout_identity`]), computes one bounded atomic snapshot per checkout,
-//! and publishes it three ways:
-//!
-//! - the local `WatchCheckoutDiffs` stream (a watch channel of every checkout's latest
-//!   [`CheckoutDiff`]);
-//! - a [`DiffSidecar`] JSON `POST {edge}/diff/{chatId}` for every syncing chat of the checkout
-//!   (bearer = engine edge token), so "review pending changes while the host sleeps" works;
+//! and publishes it on the `WatchCheckoutDiffs` stream (a watch channel of every
+//! checkout's latest [`CheckoutDiff`]), which other devices follow over their links.
 //!
 //! Checkout snapshots remain live checkout state. Conversation branch identity
 //! is captured by the command host and is never rewritten from this watcher;
@@ -48,14 +44,12 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
 use onicode_proto::{Chat, CheckoutDiff, DiffFileSummary};
-use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
 use tokio::sync::{Notify, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::EngineError;
-use crate::edge::EdgeConfig;
 use crate::fs_watch::{FsWatch, FsWatchHub};
 use crate::repos::{CheckoutIdentity, Repos};
 use crate::workspace_host::WorkspaceHost;
@@ -84,27 +78,6 @@ const INTEREST_LINGER: Duration = Duration::from_secs(30);
 const MAX_WATCH_DIRS: usize = 8_000;
 /// `git hash-object -t tree /dev/null` — diff base for repos with no commits yet.
 const EMPTY_TREE_SHA: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-
-/// Latest-only diff sidecar published to each chat's session DO slot
-/// (`POST /diff/{chatId}`; shape: edge/src/session-doc/sidecar.ts).
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiffSidecar {
-    pub chat_id: String,
-    pub device_id: String,
-    pub checkout_path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub branch: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub head_sha: Option<String>,
-    pub patch: String,
-    pub files: Vec<DiffFileSummary>,
-    pub additions: u32,
-    pub deletions: u32,
-    pub truncated: bool,
-    /// Epoch millis.
-    pub published_at: i64,
-}
 
 /// One bounded atomic snapshot of a checkout's working tree.
 #[derive(Debug, Clone)]
@@ -227,8 +200,6 @@ struct DiffSyncInner {
     repos: Repos,
     workspace: WorkspaceHost,
     device_id: String,
-    edge: Option<EdgeConfig>,
-    http: reqwest::Client,
     entries: Mutex<HashMap<String, Arc<CheckoutEntry>>>,
     /// Serializes [`reconcile`] passes. Concurrent passes (chat-watch task vs.
     /// `reconcile_now`) can both observe a checkout as missing and both
@@ -244,7 +215,7 @@ struct DiffSyncInner {
     /// chat_id → turn-start tree (see [`TurnSnapshot`]).
     turn_trees: Mutex<TurnBases<TurnSnapshot>>,
     /// The tasks hold `Weak` refs, but an in-flight iteration holds an
-    /// upgraded Arc — the token cuts it so no sidecar HTTP outlives shutdown.
+    /// upgraded Arc — the token cuts it so no capture outlives shutdown.
     cancel: CancellationToken,
     supervisor: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// chat_id → viewer interest; see [`CheckoutDiffSync::retain_chat`].
@@ -339,15 +310,10 @@ pub struct CheckoutDiffSync {
 impl CheckoutDiffSync {
     /// Build and start the sync loop: follows the workspace chat watch and runs the
     /// 2-minute repair tick. Requires a tokio runtime.
-    pub fn start(
-        repos: Repos,
-        workspace: WorkspaceHost,
-        device_id: &str,
-        edge: Option<EdgeConfig>,
-    ) -> Self {
+    pub fn start(repos: Repos, workspace: WorkspaceHost, device_id: &str) -> Self {
         // Grace = one repair interval: an entry must survive at least one full
         // fresh revalidation pass before reconcile may tear it down.
-        Self::start_with_orphan_grace(repos, workspace, device_id, edge, REPAIR_INTERVAL)
+        Self::start_with_orphan_grace(repos, workspace, device_id, REPAIR_INTERVAL)
     }
 
     /// [`CheckoutDiffSync::start`] with an explicit orphan grace — test hook so
@@ -357,17 +323,9 @@ impl CheckoutDiffSync {
         repos: Repos,
         workspace: WorkspaceHost,
         device_id: &str,
-        edge: Option<EdgeConfig>,
         orphan_grace: Duration,
     ) -> Self {
-        Self::start_with_timings(
-            repos,
-            workspace,
-            device_id,
-            edge,
-            orphan_grace,
-            INTEREST_LINGER,
-        )
+        Self::start_with_timings(repos, workspace, device_id, orphan_grace, INTEREST_LINGER)
     }
 
     /// [`CheckoutDiffSync::start_with_orphan_grace`] plus an explicit interest
@@ -377,7 +335,6 @@ impl CheckoutDiffSync {
         repos: Repos,
         workspace: WorkspaceHost,
         device_id: &str,
-        edge: Option<EdgeConfig>,
         orphan_grace: Duration,
         interest_linger: Duration,
     ) -> Self {
@@ -390,8 +347,6 @@ impl CheckoutDiffSync {
                 repos,
                 workspace: workspace.clone(),
                 device_id: device_id.to_string(),
-                edge,
-                http: reqwest::Client::new(),
                 entries: Mutex::new(HashMap::new()),
                 reconcile_gate: tokio::sync::Mutex::new(()),
                 identities: Mutex::new(HashMap::new()),
@@ -418,8 +373,8 @@ impl CheckoutDiffSync {
     }
 
     /// Stop the sync graph and wait for the supervisor to exit. Per-entry
-    /// tasks observe the same token, so an in-flight `sync_entry` drops its
-    /// sidecar POST instead of finishing it under a replaced runtime.
+    /// tasks observe the same token, so an in-flight `sync_entry` is dropped
+    /// instead of finishing under a replaced runtime.
     /// Idempotent.
     pub async fn shutdown(&self) {
         self.inner.cancel.cancel();
@@ -472,7 +427,7 @@ impl CheckoutDiffSync {
 
     /// Keep `chat_id` tracked while the returned guard lives — even when the
     /// chat is archived. Archived chats otherwise cost nothing (no entry,
-    /// watch, capture or sidecar), but an archived chat someone has open must
+    /// watch or capture), but an archived chat someone has open must
     /// still show its checkout's live diff, accept a discard, and get its
     /// `checkoutId` stamped. The engine holds one guard per open transcript
     /// stream; released interest lingers `INTEREST_LINGER`.
@@ -649,7 +604,7 @@ async fn reconcile(inner: &Arc<DiffSyncInner>, chats: Vec<Chat>, fresh: bool) {
     // Dedupe resolution within this pass — many chats share one checkout.
     let mut resolved: HashMap<String, Option<CheckoutIdentity>> = HashMap::new();
     // This device's archived chats nobody has open: never grouped (no entry,
-    // watcher, capture or sidecar), and an entry left holding only these is
+    // watcher or capture), and an entry left holding only these is
     // dropped below. An archived chat with a viewer is grouped like any other.
     let interested = interested_chats(inner);
     let mut archived: HashSet<String> = HashSet::new();
@@ -757,7 +712,7 @@ async fn reconcile(inner: &Arc<DiffSyncInner>, chats: Vec<Chat>, fresh: bool) {
                     has_new
                 };
                 if has_new {
-                    let _ = entry.kick_tx.send(()); // new chat needs a sidecar now
+                    let _ = entry.kick_tx.send(()); // new chat needs a capture now
                 }
             }
             None => add_entry(inner, identity, chats),
@@ -927,7 +882,7 @@ async fn entry_task(
             continue;
         }
         // The upgraded Arc would let a sync outlive shutdown — race the token
-        // so an in-flight sidecar POST is dropped, not completed.
+        // so an in-flight capture is dropped, not completed.
         tokio::select! {
             _ = cancel.cancelled() => return,
             _ = sync_entry(&inner, &entry) => {}
@@ -977,55 +932,6 @@ async fn sync_entry(inner: &Arc<DiffSyncInner>, entry: &Arc<CheckoutEntry>) {
         }
     }
     publish_watch_with(inner, Some(diff));
-
-    // Latest-only sidecar to every syncing chat's session DO slot.
-    let chats = lock(&entry.chats).clone();
-    // The legacy s2 sidecar route is closed to Cloud runner tokens (and no
-    // current client reads it), so a Cloud machine doesn't post it.
-    if let Some(edge) = inner
-        .edge
-        .as_ref()
-        .filter(|_| !crate::runner::is_cloud_platform())
-    {
-        for chat in &chats {
-            let sidecar = DiffSidecar {
-                chat_id: chat.id.clone(),
-                device_id: inner.device_id.clone(),
-                checkout_path: entry.identity.root.to_string_lossy().to_string(),
-                branch: Some(snapshot.branch.clone()),
-                head_sha: snapshot.head_sha.clone(),
-                patch: snapshot.patch.clone(),
-                files: snapshot.files.clone(),
-                additions: snapshot.additions,
-                deletions: snapshot.deletions,
-                truncated: snapshot.truncated,
-                published_at: chrono::Utc::now().timestamp_millis(),
-            };
-            let url = format!("{}/diff/{}", edge.url.trim_end_matches('/'), chat.id);
-            // Fresh bearer per request — never the boot-time snapshot.
-            let Ok(bearer) = edge.bearer().await else {
-                tracing::debug!(chat = %chat.id, "diff-sync: sidecar skipped (token unavailable)");
-                continue;
-            };
-            let result = inner
-                .http
-                .post(&url)
-                .bearer_auth(&bearer)
-                .json(&sidecar)
-                .send()
-                .await;
-            match result {
-                Ok(response) if !response.status().is_success() => {
-                    tracing::debug!(chat = %chat.id, status = %response.status(),
-                        "diff-sync: sidecar publish rejected");
-                }
-                Err(err) => {
-                    tracing::debug!(chat = %chat.id, error = %err, "diff-sync: sidecar publish failed");
-                }
-                Ok(_) => {}
-            }
-        }
-    }
 }
 
 /// Re-emit the watch channel from the current entries' cached diffs, replacing (or

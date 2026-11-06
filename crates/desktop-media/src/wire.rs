@@ -48,7 +48,10 @@ pub const HEADER_BYTES: usize = 16;
 pub const MAX_PAYLOAD: usize = (MAX_DATAGRAM - HEADER_BYTES) & !1;
 
 /// One media stream of a link: a display's picture (or one stripe of it), or its sound.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
 pub struct StreamId(pub u32);
 
 impl fmt::Display for StreamId {
@@ -314,7 +317,7 @@ const _: () = assert!(
 );
 
 /// Video codec.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 #[repr(u8)]
 pub enum VideoCodec {
     /// HEVC: Main, 8-bit 4:2:0, or Main 4:4:4 10 for a [`Chroma::Full`] stream.
@@ -336,7 +339,9 @@ impl VideoCodec {
 }
 
 /// How much colour a video stream carries.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, Hash, Debug, Default, serde::Serialize, serde::Deserialize,
+)]
 #[repr(u8)]
 pub enum Chroma {
     /// 4:2:0, one colour sample per 2×2 pixels: HEVC Main or H.264 High, fed full-range NV12.
@@ -360,7 +365,7 @@ impl Chroma {
 }
 
 /// What the host's bitrate controller made of its last decision window.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 #[repr(u8)]
 pub enum RateVerdict {
     /// Loss, queueing or hold time: the target was cut.
@@ -393,7 +398,7 @@ impl RateVerdict {
 /// frames being lost; without the hint it would ask for a refresh for as long as the stream is
 /// open. A locked Mac, or one whose screens another session has, shows nothing until someone at
 /// the Mac changes that.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 #[repr(u8)]
 pub enum SourceState {
     /// Open and capturing, but the display has produced no frame yet. Nothing to refresh from.
@@ -422,7 +427,7 @@ impl SourceState {
 }
 
 /// Receiver-side telemetry, all relative so no clock sync is assumed.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ReceiverReport {
     /// Frames received complete or recovered in the window.
     pub frames_ok: u32,
@@ -531,7 +536,7 @@ impl ReceiverReport {
 }
 
 /// What the client's one player of a host's sound ([`SOUND`]) heard since its last report.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct SoundReport {
     /// Audio packets that arrived in the window.
     pub received: u16,

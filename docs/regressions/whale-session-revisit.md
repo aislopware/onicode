@@ -49,8 +49,8 @@ rows exist before a new watch frame arrives, while preserving its historical
 and live animation assertions.
 
 Additional tests cover count/byte eviction, unloaded sessions, chat deletion,
-account replacement, and a persisted 2,000-message snapshot opened with no edge
-configured. One debug run measured 36.47 ms for offline cold open and 35.06 ms
+account replacement, and a persisted 2,000-message snapshot opened with no peer
+linked. One debug run measured 36.47 ms for offline cold open and 35.06 ms
 for rebuilding the cleared mirror; these are observations, not timing gates or
 laptop performance claims.
 
@@ -73,7 +73,7 @@ replacement for durable local storage or authoritative synchronization.
 
 The revisit fixes above did not address the first-open cost. A read-only copy of
 the locally available **Zlang Performance And Safety** snapshot was profiled
-without connecting to the edge. No transcript content or snapshot is committed.
+without linking to a peer. No transcript content or snapshot is committed.
 It contains 37,630 parts across just 16 joined messages (21,628,288 snapshot bytes).
 The original 2,000-message fixture did not represent this shape.
 

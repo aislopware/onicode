@@ -2,10 +2,7 @@
 //! a systemd **user** unit on Linux (the VPS deployment target), a launchd
 //! LaunchAgent on macOS. The unit runs the current executable with the
 //! `ONICODE_*` environment captured at install time, so
-//! `ONICODE_EDGE_URL=… onicode daemon install` bakes that override in.
-//!
-//! Auth is decoupled: without a saved session the service remains up on the
-//! local-only profile. `onicode login` and a service restart opt into sync.
+//! `ONICODE_UPDATE_FEED=… onicode daemon install` bakes that feed in.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -13,8 +10,7 @@ use std::process::Command;
 use anyhow::{Context, bail};
 
 const LAUNCHD_LABEL: &str = "dev.aislopware.onicode";
-/// Same unit name the curl|sh installer (`edge/src/install.sh`) writes, so
-/// `onicode daemon …` manages that installation rather than a competing copy.
+/// The systemd user unit `onicode daemon install` writes.
 const SYSTEMD_UNIT: &str = "onicode.service";
 
 /// Environment captured into the unit file. `PATH` is always included (the
@@ -23,13 +19,8 @@ const SYSTEMD_UNIT: &str = "onicode.service";
 const CAPTURED_ENV: &[&str] = &[
     "PATH",
     "ONICODE_DATA_DIR",
-    "ONICODE_EDGE_URL",
-    "ONICODE_EDGE_TOKEN",
-    "ONICODE_ORG_ID",
-    "ONICODE_WORKOS_CLIENT_ID",
-    "ONICODE_WORKOS_API_BASE",
+    "ONICODE_UPDATE_FEED",
     "ONICODE_IPC_PORT",
-    "ONICODE_CALLBACK_PORT",
     "ONICODE_HARNESS",
     "ONICODE_DEVICE_NAME",
     "RUST_LOG",
@@ -69,9 +60,6 @@ pub fn install(data_dir: &Path) -> anyhow::Result<()> {
     } else {
         bail!("onicode daemon is only supported on macOS (launchd) and Linux (systemd)");
     }
-    println!(
-        "Without a saved account the engine stays local-only; sign-in and restart are optional for sync."
-    );
     println!(
         "Logs: {}",
         if cfg!(target_os = "macos") {
@@ -241,8 +229,8 @@ fn render_systemd_unit(exe: &Path, env: &[(String, String)]) -> String {
 }
 
 /// The ExecStart binary path. An exe under `~/.onicode/app/` came from the
-/// curl|sh installer, whose upgrades relink `app/current` — point the unit at
-/// the symlink (as the installer's own unit does) so it never pins one version.
+/// tarball's installer, whose upgrades relink `app/current` — point the unit at
+/// the symlink so it never pins one version.
 /// (`current_exe` resolves symlinks, so the versioned dir is what we see here.)
 fn systemd_exec_path(exe: &Path) -> String {
     exec_path_for(exe, std::env::var_os("HOME").map(PathBuf::from).as_deref())
@@ -383,13 +371,13 @@ mod tests {
             Path::new("/usr/local/bin/onicode"),
             &[
                 ("PATH".into(), "/usr/bin:/bin".into()),
-                ("ONICODE_EDGE_URL".into(), "https://edge.example".into()),
+                ("ONICODE_UPDATE_FEED".into(), "https://feed.example".into()),
                 ("RUST_LOG".into(), "info,onicode=\"debug\"".into()),
             ],
         );
         assert!(unit.contains("ExecStart=/usr/local/bin/onicode headless\n"));
         assert!(unit.contains("Environment=\"PATH=/usr/bin:/bin\"\n"));
-        assert!(unit.contains("Environment=\"ONICODE_EDGE_URL=https://edge.example\"\n"));
+        assert!(unit.contains("Environment=\"ONICODE_UPDATE_FEED=https://feed.example\"\n"));
         // Inner quotes escaped so systemd re-parses the value verbatim.
         assert!(unit.contains("Environment=\"RUST_LOG=info,onicode=\\\"debug\\\"\"\n"));
         assert!(unit.contains("StartLimitIntervalSec=60\n"));
@@ -399,16 +387,6 @@ mod tests {
         assert!(!unit.contains("ConditionPathExists"));
         assert!(unit.contains("EnvironmentFile=-%h/.onicode/env"));
         assert!(unit.contains("WantedBy=default.target"));
-    }
-
-    #[test]
-    fn curl_installer_always_starts_the_local_capable_service() {
-        let installer = include_str!("../../../edge/src/install.sh");
-        assert!(!installer.contains("session.json"));
-        assert!(installer.contains("StartLimitIntervalSec=60\n"));
-        assert!(installer.contains("StartLimitBurst=5\n"));
-        assert!(installer.contains("systemctl --user enable onicode"));
-        assert!(installer.contains("systemctl --user restart onicode"));
     }
 
     #[test]
@@ -436,7 +414,7 @@ mod tests {
     fn launchd_plist_shape() {
         let plist = render_launchd_plist(
             Path::new("/Users/x/onicode & co/onicode"),
-            &[("ONICODE_EDGE_URL".into(), "https://e?a=1&b=2".into())],
+            &[("ONICODE_UPDATE_FEED".into(), "https://e?a=1&b=2".into())],
             Path::new("/Users/x/.onicode/daemon.log"),
         );
         assert!(plist.contains("<key>Label</key><string>dev.aislopware.onicode</string>"));

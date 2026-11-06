@@ -409,15 +409,9 @@ impl<T: HostTerminals> TerminalService<T> {
     }
 }
 
-/// Whether `device` may reach a shell here: a Cloud machine runs agent code, and a stream it
-/// opens back over a link must not reach this device's terminals.
-fn allowed(device: &str) -> bool {
-    !onicode_proto::is_cloud_device(device, "")
-}
-
 impl<T: HostTerminals> StreamHandler for TerminalService<T> {
     fn stream(&self, device: &str, head: StreamHead, tx: StreamTx, rx: StreamRx) {
-        if head.kind != StreamKind::Terminal || head.name.is_empty() || !allowed(device) {
+        if head.kind != StreamKind::Terminal || head.name.is_empty() {
             tx.reset(close::NOT_GRANTED);
             return;
         }
@@ -435,7 +429,7 @@ impl<T: HostTerminals> StreamHandler for TerminalService<T> {
                 client,
                 seq,
                 bytes,
-            }) if allowed(device) => {
+            }) => {
                 if let Err(err) = self.terminals.write_next(&terminal, &client, seq, &bytes) {
                     tracing::debug!(error = %err, "terminal input copy not applied");
                 }
@@ -650,14 +644,5 @@ mod tests {
             let (kind, payload) = encode_event(&event);
             assert_eq!(decode_event(kind, &payload), Some(event));
         }
-    }
-
-    #[test]
-    fn only_the_owners_own_devices_may_attach() {
-        assert!(allowed("laptop-device"));
-        assert!(
-            !allowed(&format!("{}abc", onicode_proto::CLOUD_DEVICE_PREFIX)),
-            "a Cloud machine must not reach a shell here"
-        );
     }
 }

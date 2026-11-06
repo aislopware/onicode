@@ -78,7 +78,6 @@ fn assemble(dir: &Path) -> EngineCore {
         dir,
         Arc::new(HarnessRegistry::new()),
         onicode_proto::HarnessId::Mock,
-        None,
     )
     .expect("engine assembles")
 }

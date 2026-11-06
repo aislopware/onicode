@@ -19,13 +19,8 @@ fn setup(path: &std::path::Path) -> EngineCore {
     );
     let registry = HarnessRegistry::new();
     registry.register(Arc::new(CursorHarness::new()));
-    let core = EngineCore::assemble(
-        &path.join("engine"),
-        Arc::new(registry),
-        HarnessId::Cursor,
-        None,
-    )
-    .unwrap();
+    let core =
+        EngineCore::assemble(&path.join("engine"), Arc::new(registry), HarnessId::Cursor).unwrap();
     core.workspace
         .create_space(
             "audit",

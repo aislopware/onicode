@@ -1,5 +1,5 @@
 //! Harness + model catalogs. The phone mirrors its run device's live catalog
-//! (`ListHarnesses` / `ListModels` over the relay) and falls back to these
+//! (`ListHarnesses` / `ListModels` over its link) and falls back to these
 //! curated statics (ports of crates/harness's catalogs via the legacy
 //! `HarnessCatalog.swift`). Ids are wire strings (`claude-code`, `xhigh`) so a
 //! newer host's harness never fails to decode here.

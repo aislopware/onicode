@@ -61,24 +61,11 @@ pub mod capabilities {
     }
 }
 
-/// The fixed data boundary selected when an engine runtime is assembled.
-///
-/// Authentication can change while a runtime is alive, but its workspace scope
-/// cannot. Switching scopes requires assembling a new runtime.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum WorkspaceScope {
-    Local,
-    Synced,
-    Development,
-}
-
 /// Stable information about the engine runtime reached by a client.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineInfo {
     pub device_id: String,
-    pub workspace_scope: WorkspaceScope,
     /// SDK selected by the owning engine, absent on older versions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor_sdk_version: Option<String>,
@@ -104,25 +91,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn workspace_scope_uses_wire_safe_names() {
-        for (scope, encoded) in [
-            (WorkspaceScope::Local, "\"local\""),
-            (WorkspaceScope::Synced, "\"synced\""),
-            (WorkspaceScope::Development, "\"development\""),
-        ] {
-            assert_eq!(serde_json::to_string(&scope).unwrap(), encoded);
-            assert_eq!(
-                serde_json::from_str::<WorkspaceScope>(encoded).unwrap(),
-                scope
-            );
-        }
-    }
-
-    #[test]
     fn engine_info_uses_camel_case_fields() {
         let info = EngineInfo {
             device_id: "device-1".into(),
-            workspace_scope: WorkspaceScope::Local,
             cursor_sdk_version: Some("1.0.31".into()),
             capabilities: capabilities::current(),
             build: None,
@@ -131,7 +102,6 @@ mod tests {
             serde_json::to_value(&info).unwrap(),
             serde_json::json!({
                 "deviceId": "device-1",
-                "workspaceScope": "local",
                 "cursorSdkVersion": "1.0.31",
                 "capabilities": [
                     "composer-references-v1",
@@ -155,8 +125,7 @@ mod tests {
     #[test]
     fn old_engine_info_defaults_to_no_capabilities() {
         let info: EngineInfo = serde_json::from_value(serde_json::json!({
-            "deviceId": "old",
-            "workspaceScope": "synced"
+            "deviceId": "old"
         }))
         .unwrap();
         assert!(info.capabilities.is_empty());

@@ -878,7 +878,6 @@ mod tests {
             temp.path(),
             Arc::new(crate::HarnessRegistry::new()),
             onicode_proto::HarnessId::Mock,
-            None,
         )
         .unwrap();
         core.workspace

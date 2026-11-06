@@ -2,12 +2,11 @@
 //! collaborators, …). Each spawn is a tool part on the parent's transcript —
 //! `Agent[: <description>]`, stamped with the child doc it writes to — and the
 //! child's own transcript is a separate doc on the parent's host
-//! (`{chatId}--sub--{toolUseId}`), uploaded as a blob once it finishes.
+//! (`{chatId}--sub--{toolUseId}`).
 //!
 //! [`subagents`] lists a transcript's spawns; [`Client::watch_subagent`]
-//! follows one child's transcript: the frozen blob for a finished child
-//! (falling back to the doc — the upload is best effort), the live doc
-//! (`WatchDocMessages`) for a running one.
+//! follows one child's transcript doc (`WatchDocMessages`), running or
+//! finished.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -145,12 +144,11 @@ impl Drop for SubagentWatch {
 
 impl Client {
     /// Follow `doc_id`, spawned in `chat_id` (a chat, or a parent child's doc
-    /// for a nested spawn). `frozen`: the child is finished.
+    /// for a nested spawn).
     pub fn watch_subagent(
         &self,
         chat_id: &str,
         doc_id: &str,
-        frozen: bool,
         sink: Arc<dyn SubagentSink>,
     ) -> Result<SubagentWatch> {
         let source = source_chat(doc_id, chat_id).to_owned();
@@ -159,9 +157,7 @@ impl Client {
         crate::runtime::shared().spawn(follow(
             Arc::downgrade(&self.inner),
             device_id,
-            source,
             doc_id.to_owned(),
-            frozen,
             sink,
             cancel.clone(),
         ));
@@ -172,32 +168,10 @@ impl Client {
 async fn follow(
     weak: std::sync::Weak<ClientInner>,
     device_id: String,
-    source: String,
     doc_id: String,
-    frozen: bool,
     sink: Arc<dyn SubagentSink>,
     cancel: CancellationToken,
 ) {
-    if frozen {
-        let Some(inner) = weak.upgrade() else { return };
-        let fetch = inner.host_rpc(
-            &device_id,
-            methods::FETCH_TOOL_BLOB,
-            json!({ "blobRef": format!("{source}/{doc_id}") }),
-        );
-        let reply = tokio::select! {
-            _ = cancel.cancelled() => return,
-            reply = fetch => reply,
-        };
-        drop(inner);
-        let entries = reply.ok().and_then(|value| {
-            serde_json::from_str::<Vec<SessionMessageEntry>>(value.get("text")?.as_str()?).ok()
-        });
-        if let Some(entries) = entries {
-            sink.transcript(entries.into_iter().map(Arc::new).collect());
-            return;
-        }
-    }
     let mut backoff = Duration::from_millis(500);
     loop {
         let Some(inner) = weak.upgrade() else { return };
@@ -279,9 +253,7 @@ mod tests {
             resolved,
             output: None,
             diff: None,
-            output_ref: None,
             output_bytes: None,
-            diff_ref: None,
             diff_stats: None,
             subagent_ref: status.map(|_| format!("chat--sub--{id}")),
             subagent_status: status,

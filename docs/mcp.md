@@ -32,8 +32,7 @@ for one whose host doesn't know its parent yet.
 ### IPC authentication
 
 The IPC port is loopback-only, but loopback is not an identity: any local
-process could otherwise drive the engine (start agents, broker Cloud vault
-grants). Every engine start that binds the port mints a fresh 32-byte token
+process could otherwise drive the engine (start agents, open terminals). Every engine start that binds the port mints a fresh 32-byte token
 and writes it to `{data_dir}/ipc-token` (owner-only `0600`, atomic replace). The
 WebSocket handshake must carry `Authorization: Bearer <token>` (compared in
 constant time) and is refused with `401` otherwise; the browser `Origin`
@@ -77,12 +76,6 @@ row (`Mutate createChat { parentChatId? }`). Any chat may delegate to any provid
 Delegation is one level deep: a chat that has a parent creates no chats at all,
 and a new chat's parent (the origin, or an explicit `parent`) must be top-level.
 Standalone sessions have no parent.
-
-`cloud: true` runs the child on a Cloud machine of its own (Codex or Claude
-Code), cloning the project's GitHub repository; from a Cloud chat, the parent's
-repository. Without it, a child of a Cloud chat shares the parent's machine. A
-Cloud machine starts children only for the chat it runs, and sees and manages
-only those children (docs/design/cloud-device.md, "Delegation").
 
 For children, `parent` (id, prefix, or title) overrides the origin (`ZERON_CHAT_ID`).
 `list_chats { parent }` returns children, and chat summaries carry `parentChatId`.

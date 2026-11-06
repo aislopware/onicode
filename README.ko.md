@@ -20,29 +20,21 @@
 서버처럼 디스플레이가 없는 머신용입니다. 예를 들어 노트북을 닫은 뒤에도 에이전트를 계속 돌려 두는 VPS에 쓰면 됩니다. Linux만 지원합니다.
 
 ```bash
-curl -fsSL https://zeron.sh/install.sh | sh
+./install.sh      # Linux 릴리스 tarball에 포함
 zeron status
 ```
 
 설치 스크립트는 엔진을 백그라운드 서비스로 실행하며, 재부팅 후에도 자동으로 다시 시작됩니다.
 
 ```bash
-zeron status      # 로컬/동기화 모드와 엔진 상태 확인
+zeron status      # 엔진 상태 확인
 zeron update      # 최신 버전으로 업데이트
 zeron daemon start|stop|restart|status
 ```
 
-## 여러 기기 간 동기화 (선택)
+## 여러 기기
 
-로그인하면 한 기기에서 에이전트를 시작하고 다른 기기에서 이어서 보거나 조작할 수 있습니다.
-
-```bash
-zeron daemon stop
-zeron login        # 로컬 전용 모드로 돌아가려면 zeron logout
-zeron daemon start
-```
-
-같은 계정에 로그인한 기기끼리는 서로의 워크스페이스 파일을 읽고 쓸 수 있으므로, 신뢰하는 기기에서만 로그인하세요. 기존 로컬 세션은 업로드되지 않습니다.
+한 기기에서 에이전트를 시작하고 다른 기기에서 이어서 보거나 조작할 수 있습니다. 엔진을 실행하는 tailnet의 기기들은 로그인이나 중간 서버 없이 서로를 찾습니다. 각 기기는 서로의 워크스페이스 파일을 읽고 쓸 수 있으므로, 신뢰하는 기기에서만 엔진을 실행하세요.
 
 ## 후원
 

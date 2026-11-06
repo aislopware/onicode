@@ -451,6 +451,18 @@ impl PeerLinks {
         self.0.kick.send_modify(|n| *n = n.wrapping_add(1));
     }
 
+    /// Cuts every backoff short ([`Self::reset`]) each time the OS reports a usable network
+    /// path, from now on ([`crate::path`]). The watch holds the links weakly: once they are
+    /// gone it does nothing.
+    pub fn follow_path(&self) {
+        let links = Arc::downgrade(&self.0);
+        crate::path::watch(Box::new(move || {
+            if let Some(inner) = links.upgrade() {
+                Self(inner).reset();
+            }
+        }));
+    }
+
     /// Closes every link and dials nothing more.
     pub fn shutdown(&self) {
         self.0.shut.store(true, Ordering::Relaxed);

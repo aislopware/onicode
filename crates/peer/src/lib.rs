@@ -10,6 +10,8 @@
 //!   device-id dialled), redialled with backoff, kept alive on the control stream, with the path
 //!   each takes; RPC calls, streams and datagrams to a device by its id.
 //! * [`carrier`]: the existing RPC envelopes over one QUIC stream per call.
+//! * [`EngineList`]: the tailnet as engines the person listed, for a node with no `LocalAPI` (iOS).
+//! * [`path`]: the OS's reports of a usable network path, which cut the links' backoffs short.
 //!
 //! No relay, no pairing and no crypto of its own: a peer is who the tailnet says it is.
 
@@ -18,14 +20,17 @@
 pub mod carrier;
 pub mod directory;
 pub mod endpoint;
+pub mod engine_list;
 #[cfg(unix)]
 #[allow(unsafe_code)]
 mod iface;
 pub mod links;
+pub mod path;
 
 pub use carrier::PeerCarrier;
 pub use directory::{Peer, PeerDirectory};
 pub use endpoint::{PeerConfig, PeerEndpoint, PeerSession, Sockets, SystemSockets};
+pub use engine_list::EngineList;
 pub use links::{LinkInfo, LinkState, LinksConfig, PathReport, PeerLinks, StreamHandler};
 use onicode_net::NetError;
 use onicode_tailnet::LocalApiError;

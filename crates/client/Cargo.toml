@@ -5,9 +5,9 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
-# The engine-free thin client ("viewer device"): workspace registry, chat2
-# session docs, the durable command ledger and host RPC over the device-room
-# relay, plus a fully offline Demo mode. Pure Rust — the UniFFI facade lives
+# The engine-free thin client ("viewer device"): workspace registry, session
+# docs, the durable command ledger and host RPC over peer links on the
+# tailnet, plus a fully offline Demo mode. Pure Rust — the UniFFI facade lives
 # in crates/mobile (`client_ffi`), so this crate stays usable from any
 # frontend (iOS, Android, tests, CLIs).
 
@@ -17,8 +17,10 @@ onicode-proto.workspace = true
 onicode-doc.workspace = true
 onicode-sync.workspace = true
 onicode-rpc.workspace = true
+onicode-desktop-link.workspace = true
 onicode-peer.workspace = true
 onicode-net.workspace = true
+onicode-tailnet.workspace = true
 onicode-term-link.workspace = true
 loro.workspace = true
 tokio.workspace = true
@@ -30,13 +32,8 @@ chrono.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-reqwest.workspace = true
-sha2.workspace = true
-base64 = "0.22"
-async-trait.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
 onicode-visual.workspace = true
-async-trait.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

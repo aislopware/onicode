@@ -476,7 +476,7 @@ impl RpcService for Service {
 }
 
 /// The engine's RPC runs over the link, a stream per call, as the calling peer; a stream's
-/// items arrive over its own stream; what only the device's own window may call is refused.
+/// items arrive over its own stream.
 #[tokio::test(start_paused = true)]
 async fn rpc_runs_over_the_link_as_the_calling_peer() {
     const SEED: u64 = 39;
@@ -524,18 +524,6 @@ async fn rpc_runs_over_the_link_as_the_calling_peer() {
             serde_json::json!(1),
             serde_json::json!(2)
         ]
-    );
-    let refused = mac_engine
-        .links
-        .call(
-            "dev-laptop",
-            onicode_rpc::methods::ACCESS_TOKEN,
-            serde_json::Value::Null,
-        )
-        .await;
-    assert!(
-        matches!(refused, Err(PeerError::Rpc(RpcError::Failed(_)))),
-        "{refused:?}"
     );
     assert_eq!(
         mac_engine.links.links().len(),

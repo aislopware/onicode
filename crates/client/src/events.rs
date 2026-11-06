@@ -13,7 +13,6 @@ use std::time::Duration;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::AuthTokens;
 use crate::connectivity::Connectivity;
 use crate::lock;
 
@@ -30,12 +29,6 @@ pub enum ClientEvent {
     ComposerChanged { chat_id: String, revision: u64 },
     /// Graced connectivity posture changed.
     ConnectivityChanged(Connectivity),
-    /// The WorkOS pair rotated — persist it (Keychain) now; the old refresh
-    /// token is already spent.
-    AuthRefreshed(AuthTokens),
-    /// The session cannot be refreshed any more (refresh token rejected) —
-    /// the platform should sign out and show sign-in.
-    AuthExpired { reason: String },
 }
 
 pub trait ClientListener: Send + Sync + 'static {

@@ -156,8 +156,8 @@ async fn run(
                 }
             }) as crate::rpc::ProgressFn
         });
-        let relay_result = live
-            .relay
+        let sent = live
+            .hosts
             .upload(
                 &meta.host_device_id,
                 upload_id,
@@ -169,7 +169,7 @@ async fn run(
         if let Some(core) = &core {
             core.set_transfer_progress(None);
         }
-        match relay_result {
+        match sent {
             Ok(path) => {
                 tracing::info!(upload = %upload_id, %path, "attachment escorted");
                 live.escorts.remove(upload_id);
@@ -180,8 +180,9 @@ async fn run(
                 tracing::warn!(upload = %upload_id, error = %err, "attachment escort failed; retrying");
             }
         }
+        let links_wake = inner.links_wake.clone();
         drop(inner);
-        if !super::wait_backoff(&cancel, backoff).await {
+        if !super::wait_backoff(&cancel, &links_wake, backoff).await {
             return;
         }
         backoff = (backoff * 2).min(BACKOFF_CAP);

@@ -21,9 +21,9 @@ crates/text      zeron-text      pretext-style text engine: UAX#14 segmentation,
                                  segment widths, pure-arithmetic line layout
 crates/markdown  zeron-markdown  block model + append-incremental reparse
                                  (extracted from the desktop; desktop re-exports it)
-crates/client    zeron-client    engine-free viewer device: registry + chat2 rooms
-                                 (zeron-sync), docs (zeron-doc), relay RPCs, auth,
-                                 view models (front page ordering = desktop sidebar:
+crates/client    zeron-client    engine-free viewer device: registry and session
+                                 docs over peer links (zeron-sync, zeron-doc), host
+                                 RPCs over the same links, view models (front page ordering = desktop sidebar:
                                  pins, sections, recency), demo dataset
 crates/mobile    zeron-mobile    UniFFI facade (Swift today, Kotlin later) + the
                                  transcript layout engine: rows → measured display
@@ -35,7 +35,7 @@ apps/ios                          UIKit shell: tab bar + glass, virtualized
 
 ## Transcript pipeline
 
-1. `zeron-client` applies chat2 rows to the session doc and republishes an
+1. `zeron-client` imports its host's doc updates and republishes an
    immutable snapshot; unchanged entries stay pointer-equal.
 2. The layout engine (background thread) turns changed entries into rows
    (one per top-level markdown block / tool group / user message), parses
@@ -68,8 +68,7 @@ separate layer, split at the exact glyph offset.
 | Layout timing (3,300 rows) | `cargo test --release -p zeron-mobile --lib bench_layout -- --ignored --nocapture` |
 | Line breaks vs CoreText on the same font bytes | `ZeronTests/LineBreakAccuracyTests`, `crates/text/tests/coretext.rs` |
 | Demo end-to-end (send → echo → reply, questions, queue, offline host) | `crates/client/tests/demo.rs`, `ZeronUITests/SessionFlowTests` |
-| Live sync against an in-process edge | `crates/client/tests/live.rs` |
-| Real stack (wrangler dev edge + headless engine, mock harness) | `ZeronUITests/LiveStackTests` |
+| A thin client joining an engine by a listed address on the simulated tailnet | `crates/engine/tests/thin_client.rs` |
 | Frame pacing (hitch ratio, idle + streaming) | `-lab -bench`, `ZeronUITests/ScrollPerformanceTests` |
 
 Reference numbers (M-series Mac, iPhone 17 Pro simulator): cold layout of

@@ -340,7 +340,6 @@ mod tests {
             child_kind: None,
             space_id: None,
             last_seen_at: None,
-            room_gen: None,
         }
     }
 

@@ -101,8 +101,6 @@ running an older engine. So:
   degrade when a peer lacks them; they don't fail.
 - Never rename or repurpose persisted keys, RPC method names, or document
   fields. Add new ones instead.
-- Some infrastructure (Cloudflare worker, R2 buckets) keeps its old `comet`
-  name on purpose. Don't rename it.
 
 ### Agent harnesses
 

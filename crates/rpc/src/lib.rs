@@ -1,5 +1,5 @@
-//! onicode-rpc — the typed control plane (UiRpc / ControlRpc) over WebSocket + in-memory
-//! transports, plus the device-room relay transport ({s,k,to,from} frames — [`device_room`]).
+//! onicode-rpc — the typed control plane (UiRpc / ControlRpc) over WebSocket, in-memory and
+//! per-call carrier (peer QUIC streams, `carrier`) transports.
 //!
 //! Framing: ndjson envelopes, one JSON object per WebSocket text message (or per line on
 //! byte transports), matching the shape of onicode's Effect RPC without the Effect runtime:
@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 mod caller;
 mod carrier;
 mod client;
-pub mod device_room;
 pub mod ipc_auth;
 mod server;
 mod ws;
@@ -29,12 +28,6 @@ mod ws;
 pub use caller::{Caller, caller, with_caller};
 pub use carrier::{CarriedSubscription, CarrierClient, Duplex, StreamCarrier, serve_carried};
 pub use client::{RpcClient, RpcSubscription, connect_ipc, connect_ipc_as_agent, connect_ws};
-pub use device_room::{
-    CallerProof, CallerProofFn, DeviceFrameHeader, DeviceLink, HostRelay, HostRelayConfig,
-    LinkCache, LinkCacheConfig, NudgeHandler, PeerLiveness, PeerLivenessProbe, StaticToken,
-    TokenError, TokenSource, caller_proof_message, decode_device_frame, device_room_ws_url,
-    encode_device_frame, is_liveness_probe,
-};
 pub use server::{serve_connection, serve_ws_listener, serve_ws_listener_scoped};
 
 /// RPC method names — single source of truth for both ends.
@@ -131,7 +124,7 @@ pub mod methods {
     /// registry caught up and with whom, and each open chat's host, whether it
     /// is followed live, and its unacked writes. No params; IPC-only.
     pub const SYNC_STATUS: &str = "SyncStatus";
-    /// Pushed edge-connectivity posture (`onicode_proto::Connectivity`):
+    /// Pushed peer-connectivity posture (`onicode_proto::Connectivity`):
     /// current value first, then every change — the connection pill /
     /// composer-honesty / queued-badge feed. No params; IPC-only.
     pub const WATCH_CONNECTIVITY: &str = "WatchConnectivity";
@@ -149,7 +142,7 @@ pub mod methods {
     /// Params are tagged `{op: createChat|createSpace|renameSpace|setSpaceIcon|
     /// deleteSpace|renameChat|setChatArchived|deleteChat|renameDevice|markChatSeen, …}`.
     pub const MUTATE: &str = "Mutate";
-    /// This engine's identity → `{deviceId}` (IPC-only; never relay-forwarded —
+    /// This engine's identity → `{deviceId}` (IPC-only; never forwarded —
     /// the answer is about whichever engine you are directly connected to).
     pub const LOCAL_DEVICE: &str = "LocalDevice";
     /// This engine runtime's fixed device and workspace identity.
@@ -161,40 +154,7 @@ pub mod methods {
     /// Headed IPC owners do not implement this method: closing another app's
     /// engine behind its windows would leave that process unusable.
     pub const STOP_ENGINE: &str = "StopEngine";
-    /// Headless IPC only: stop starting work ahead of a Cloud sleep (the
-    /// edge runs `onicode quiesce` before stopping the machine). Replies
-    /// `{"quiesced":true}` or `{"quiesced":false,"busy":"<why>"}`.
-    pub const QUIESCE_FOR_SLEEP: &str = "QuiesceForSleep";
-    pub const AUTH_STATUS: &str = "AuthStatus";
-    // AuthRpc mutations (feature-inventory §2 AuthRpc; IPC-only).
-    pub const SIGN_IN: &str = "SignIn";
-    pub const SIGN_IN_HEADLESS: &str = "SignInHeadless";
-    pub const COMPLETE_SIGN_IN: &str = "CompleteSignIn";
-    pub const SIGN_OUT: &str = "SignOut";
-    /// The signed-in session's current bearer, for a local client that calls
-    /// the edge as the user itself (zgx's account calls): `{}` →
-    /// `{token, expiresAt?}` (unix seconds). Refreshed as the engine's own
-    /// calls refresh; the refresh token never leaves the engine. Local IPC
-    /// only ([`crate::local_only`]): the device-room relay refuses it.
-    pub const ACCESS_TOKEN: &str = "AccessToken";
-    /// `{}` → `{url}`: a fresh interactive sign-in (as `SignIn`) whose
-    /// exchange leaves the engine a one-time step-up ticket, kept in memory
-    /// and never handed out. Needed before `DeleteAccount`.
-    pub const STEP_UP: &str = "StepUp";
-    /// `{confirm}` (the account's email) → `{ok: true}`, or `{ok: false,
-    /// error, message, organization?}`: the engine deletes the account at
-    /// the edge with its step-up ticket. `error` is `step_up_required` (run
-    /// `StepUp`, then retry), `signed_out`, `offline`, `invalid`,
-    /// `last_admin` (with `organization`), `busy` or `upstream`.
-    pub const DELETE_ACCOUNT: &str = "DeleteAccount";
-    pub const LIST_ORGS: &str = "ListOrgs";
-    pub const CREATE_ORG: &str = "CreateOrg";
-    pub const SELECT_ORG: &str = "SelectOrg";
-    /// One-time local→synced profile import: what's importable (unary).
-    pub const LOCAL_IMPORT_STATUS: &str = "LocalImportStatus";
-    /// One-time local→synced profile import: run it (stream of progress items).
-    pub const IMPORT_LOCAL_WORKSPACE: &str = "ImportLocalWorkspace";
-    // Repos / worktrees / folders (ControlRpc, relay-forwardable).
+    // Repos / worktrees / folders (ControlRpc, forwardable).
     pub const LIST_REPOS: &str = "ListRepos";
     pub const ADD_REPO: &str = "AddRepo";
     pub const CLONE_REPO: &str = "CloneRepo";
@@ -220,7 +180,7 @@ pub mod methods {
     pub const RELEASE_HOME_FOLDER_SEARCH: &str = "ReleaseHomeFolderSearch";
     /// Fuzzy relative-path search rooted in a known chat or space checkout.
     pub const SEARCH_FILES: &str = "SearchFiles";
-    // Device-local workspace filesystem operations. All are relay-forwardable;
+    // Device-local workspace filesystem operations. All are forwardable;
     // WatchWorkspaceFiles is the only streaming method in this group.
     pub const LIST_WORKSPACE_DIRECTORY: &str = "ListWorkspaceDirectory";
     pub const SEARCH_WORKSPACE_FILES: &str = "SearchWorkspaceFiles";
@@ -244,14 +204,14 @@ pub mod methods {
     pub const DELETE_PROJECT_ACTION: &str = "DeleteProjectAction";
     pub const RUN_PROJECT_ACTION: &str = "RunProjectAction";
     // A chat's background processes (`Session::background_tasks`) live in
-    // its host's runtime: `{chatId, taskId}`, relay-forwardable.
+    // its host's runtime: `{chatId, taskId}`, forwardable.
     pub const STOP_BACKGROUND_TASK: &str = "StopBackgroundTask";
     pub const READ_BACKGROUND_TASK_OUTPUT: &str = "ReadBackgroundTaskOutput";
     /// `{chatId, toolId, offset}` → `ToolOutputChunk`: one command's whole
     /// output, from the run journal of the device that ran it, redacted;
-    /// relay-forwardable (target the chat's host).
+    /// forwardable (target the chat's host).
     pub const READ_TOOL_OUTPUT: &str = "ReadToolOutput";
-    // Terminals (ControlRpc, relay-forwardable; SubscribeTerminal streams).
+    // Terminals (ControlRpc, forwardable; SubscribeTerminal streams).
     pub const OPEN_TERMINAL: &str = "OpenTerminal";
     pub const SUBSCRIBE_TERMINAL: &str = "SubscribeTerminal";
     pub const WRITE_TERMINAL: &str = "WriteTerminal";
@@ -259,8 +219,19 @@ pub mod methods {
     pub const CLOSE_TERMINAL: &str = "CloseTerminal";
     /// Whether closing a terminal would end a program running in it.
     pub const TERMINAL_STATUS: &str = "TerminalStatus";
+    // Remote desktop (forwardable; the target Mac's engine brokers, desktopd streams).
+    /// `{}` → `onicode_desktop_link::broker::DesktopEndpoint`: start or find the Mac's
+    /// `onicode-desktopd` and say where it listens and what it may do. The client then dials
+    /// it directly; the engine carries no media.
+    pub const OPEN_DESKTOP: &str = "OpenDesktop";
+    /// `{}` → `onicode_desktop_link::broker::GrantsReply`: the Mac's Screen Recording and
+    /// Accessibility grants, read without prompting.
+    pub const DESKTOP_GRANTS: &str = "DesktopGrants";
+    /// `onicode_desktop_link::broker::OpenGuideParams` → `{ok}`: open the guide to a privacy
+    /// pane on the Mac's own screen, for the person sitting at it.
+    pub const DESKTOP_OPEN_GUIDE: &str = "DesktopOpenGuide";
     /// Checkout-diff stream for the target device's chats (DataRpc,
-    /// relay-forwardable — diffs are produced where the checkout lives).
+    /// forwardable — diffs are produced where the checkout lives).
     pub const WATCH_CHECKOUT_DIFFS: &str = "WatchCheckoutDiffs";
     pub const WATCH_WORKSPACE_GIT_STATUS: &str = "WatchWorkspaceGitStatus";
     /// Current pull request for one checkout, resolved on the checkout's host device.
@@ -286,7 +257,7 @@ pub mod methods {
     /// remove only its untracked, non-ignored paths.
     pub const DISCARD_WORKING_TREE: &str = "DiscardWorkingTree";
     pub const GET_CHECKOUT_FILE_DIFF_TEXT: &str = "GetCheckoutFileDiffText";
-    // Agent accounts (ControlRpc, relay-forwardable — CLI logins are per-device).
+    // Agent accounts (ControlRpc, forwardable — CLI logins are per-device).
     pub const LIST_AGENT_ACCOUNTS: &str = "ListAgentAccounts";
     pub const ACTIVATE_AGENT_ACCOUNT: &str = "ActivateAgentAccount";
     pub const FORGET_AGENT_ACCOUNT: &str = "ForgetAgentAccount";
@@ -299,7 +270,7 @@ pub mod methods {
     pub const POLL_AGENT_LOGIN: &str = "PollAgentLogin";
     pub const CANCEL_AGENT_LOGIN: &str = "CancelAgentLogin";
     pub const CONSUME_CODEX_RESET_CREDIT: &str = "ConsumeCodexResetCredit";
-    // Uploads / attachments (ControlRpc, relay-forwardable — target the chat's host device).
+    // Uploads / attachments (ControlRpc, forwardable — target the chat's host device).
     pub const UPLOAD_CHUNK: &str = "UploadChunk";
     pub const UPLOAD_COMMIT: &str = "UploadCommit";
     pub const READ_ATTACHMENT_CHUNK: &str = "ReadAttachmentChunk";
@@ -312,10 +283,7 @@ pub mod methods {
     /// Store an image file an agent shows and fold it into that chat's live
     /// turn as an image part (`show_image`). Local only, like `PublishVisual`.
     pub const PUBLISH_IMAGE: &str = "PublishImage";
-    /// Lazy full-tool-output fetch from the R2 sidecar by doc-resident ref
-    /// (chat2-sync A3). Edge-direct from any device — never relay-forwarded.
-    pub const FETCH_TOOL_BLOB: &str = "FetchToolBlob";
-    // Updates (ControlRpc, relay-forwardable — a device reports/applies its own
+    // Updates (ControlRpc, forwardable — a device reports/applies its own
     // binary's update). Stream: current UpdateStatus, then every change.
     pub const UPDATE_STATUS: &str = "UpdateStatus";
     /// Download + apply the newest release on the target device (symlink-managed
@@ -329,113 +297,13 @@ pub mod methods {
     pub const CANCEL_HARNESS_UPDATE: &str = "CancelHarnessUpdate";
     pub const DISMISS_HARNESS_UPDATE: &str = "DismissHarnessUpdate";
     pub const SET_HARNESS_UPDATE_POLICY: &str = "SetHarnessUpdatePolicy";
-    // Cloud (docs/design/cloud-device.md). IPC-only: the engine calls the
-    // edge's CloudAccount DO with the user's bearer; never routed by
-    // targetDeviceId.
-    /// The account: `{}` → `CloudStatus`.
-    pub const CLOUD_STATUS: &str = "CloudStatus";
-    /// Turn Cloud on (instant: mints the logical Cloud device; sandboxes are
-    /// per session). `{}` → `CloudStatus`.
-    pub const CLOUD_ENABLE: &str = "CloudEnable";
-    /// Turn Cloud off: deletes every session sandbox (final usage captured
-    /// first), revokes their vault enrollments, and removes the logical
-    /// device. `{}` → `CloudStatus` (`Deleting`, then `Off`).
-    pub const CLOUD_DELETE: &str = "CloudDelete";
-    /// `{}` → `CloudSessions`.
-    pub const CLOUD_SESSIONS: &str = "CloudSessions";
-    /// `{chatId}` → `CloudSession`. Wake/sleep one session's sandbox; sending
-    /// to a sleeping session wakes it on its own (the host nudge).
-    pub const CLOUD_SESSION_WAKE: &str = "CloudSessionWake";
-    pub const CLOUD_SESSION_SLEEP: &str = "CloudSessionSleep";
-    /// `{chatId}` → `CloudSession` (`Deleting`). Deletes the sandbox and
-    /// anything uncommitted in it; the transcript stays.
-    pub const CLOUD_SESSION_DELETE: &str = "CloudSessionDelete";
-    /// The signed-in user's Cloud credits — balance, and use per UTC day
-    /// (reconciled against the sandbox provider's own meter):
-    /// `{from?: "YYYY-MM-DD", to?: "YYYY-MM-DD"}` (default: the last 30 days)
-    /// → `CloudUsage`.
-    pub const CLOUD_USAGE: &str = "CloudUsage";
-    /// The signed-in user's plan and credits, and what can be bought:
-    /// `{}` → `BillingStatus`.
-    pub const BILLING_STATUS: &str = "BillingStatus";
-    /// A Stripe Checkout page: `{kind: "subscription", plan}` or
-    /// `{kind: "credits", packs}` → `BillingLink`.
-    pub const BILLING_CHECKOUT: &str = "BillingCheckout";
-    /// The Stripe Billing Portal (change plan, payment method, invoices,
-    /// cancel): `{}` → `BillingLink`.
-    pub const BILLING_PORTAL: &str = "BillingPortal";
-    // Credential vault (IPC-only; the edge forwards to the vault Worker).
-    /// `{}` → `VaultStatus`.
-    pub const VAULT_STATUS: &str = "VaultStatus";
-    /// Sign in to Codex on THIS device (`codex login` into a throwaway
-    /// CODEX_HOME, shredded afterwards) and upload the result to the vault;
-    /// the device's own Codex login and account slots are untouched.
-    ///
-    /// Returns as soon as the sign-in page is known, in the same shape as
-    /// `StartAgentLogin`: `{authorizedDevices}` →
-    /// `AgentLoginStart {loginId, url, mode: "browser", callbackPort?}`.
-    /// The caller opens `url` in the browser, then drives the flow with the
-    /// existing account-login methods on this same engine (NO
-    /// `targetDeviceId`): `PollAgentLogin {loginId}` → `AgentLoginPoll`
-    /// (`pending` — may carry a late `url`; `done` once the vault holds the
-    /// credential; `error` + `message`, e.g. the vault's refusal) and
-    /// `CancelAgentLogin {loginId}`. After `done`, refresh with `VaultStatus`.
-    /// The flow gives up after 15 minutes. Fails up front (no browser) when
-    /// the account can't use Cloud.
-    pub const VAULT_CONNECT_CODEX: &str = "VaultConnectCodex";
-    /// Sign in to Claude on THIS device through Claude's own OAuth flow
-    /// (PKCE, loopback callback) in capture-only mode — the `claudeAiOauth`
-    /// tokens go straight to the vault, never into this device's live Claude
-    /// login, Keychain or an account slot, so the vault stays the only
-    /// refresher: `{authorizedDevices}` → `AgentLoginStart`, driven exactly
-    /// like `VaultConnectCodex` (`PollAgentLogin` / `CancelAgentLogin`). When
-    /// no loopback port can be bound the start comes back with
-    /// `mode: "paste-code"`: finish it with `CompleteAgentLogin {loginId,
-    /// code}` (its reply is this device's unchanged `AgentAccountsSnapshot`;
-    /// the upload has happened once it returns), then `VaultStatus`.
-    pub const VAULT_CONNECT_CLAUDE: &str = "VaultConnectClaude";
-    /// `{provider: "anthropic-key"|"openai-key", key, authorizedDevices}` →
-    /// `VaultStatus`.
-    pub const VAULT_PUT_API_KEY: &str = "VaultPutApiKey";
-    /// `{provider, authorizedDevices}` → `VaultStatus`.
-    pub const VAULT_AUTHORIZE: &str = "VaultAuthorize";
-    /// `{provider}` → `VaultStatus`.
-    pub const VAULT_DISCONNECT: &str = "VaultDisconnect";
-    /// `{deviceId}` → `VaultStatus`.
-    pub const VAULT_REVOKE_DEVICE: &str = "VaultRevokeDevice";
-    /// `{authorizedDevices}` → `GithubDeviceFlow`.
-    pub const GITHUB_CONNECT_START: &str = "GithubConnectStart";
-    /// `{flowId}` → `GithubConnectProgress`.
-    pub const GITHUB_CONNECT_POLL: &str = "GithubConnectPoll";
-    /// Repositories the account's vault-held GitHub connection can see,
-    /// newest push first: `{query?}` → `{repos: GithubRepo[]}`. Answered via
-    /// the edge (the vault calls GitHub; the token never leaves it), so any
-    /// signed-in device can list them; a Cloud session device answers with
-    /// its own grant. Fails with a `github_not_connected:`-prefixed message
-    /// when GitHub isn't connected.
-    pub const LIST_GITHUB_REPOS: &str = "ListGithubRepos";
-    /// `{repo, defaultBranch?}` → `RepoRef[]`: the branches a Cloud session
-    /// of `repo` (`owner/name`) can start from, through the user's GitHub
-    /// connection (the vault calls GitHub), the default first.
-    pub const LIST_CLOUD_BRANCHES: &str = "ListCloudBranches";
-}
-
-/// Methods answered only over this device's own local IPC, never to a peer
-/// device through the device-room relay ([`HostRelay`] refuses them): they
-/// hand the caller this device's credentials.
-pub fn local_only(method: &str) -> bool {
-    matches!(
-        method,
-        methods::ACCESS_TOKEN | methods::STEP_UP | methods::DELETE_ACCOUNT
-    )
 }
 
 /// The methods an agent's `onicode mcp` server may call with the
 /// agent-scoped IPC token: what its tools need and nothing that grants
 /// power. An allow-list, so a method added later stays the app's until
 /// it's listed here. Never here: updating (the engine's and harnesses'),
-/// credentials (`AccessToken`, sign-in, `StepUp`, `DeleteAccount`),
-/// terminals, files, vault and agent logins, and a command's whole output
+/// terminals, files, agent logins, and a command's whole output
 /// (`ReadToolOutput`: an agent reads a chat as its doc keeps it).
 pub fn agent_allowed(method: &str) -> bool {
     matches!(
@@ -989,12 +857,7 @@ mod tests {
         let agent = connect_ws(&url, Some(&tokens.agent)).await.unwrap();
         for method in [
             methods::APPLY_UPDATE,
-            methods::ACCESS_TOKEN,
-            methods::STEP_UP,
-            methods::DELETE_ACCOUNT,
-            methods::SIGN_IN,
-            methods::COMPLETE_SIGN_IN,
-            methods::SIGN_OUT,
+            methods::START_AGENT_LOGIN,
             methods::OPEN_TERMINAL,
             methods::WRITE_TERMINAL,
             methods::WRITE_WORKSPACE_FILE,
@@ -1016,7 +879,7 @@ mod tests {
         assert!(asked.as_str().unwrap().starts_with("Agent"), "{asked}");
 
         let app = connect_ws(&url, Some(&tokens.full)).await.unwrap();
-        for method in [methods::APPLY_UPDATE, methods::ACCESS_TOKEN] {
+        for method in [methods::APPLY_UPDATE, methods::START_AGENT_LOGIN] {
             let asked = app.call(method, serde_json::json!({})).await.unwrap();
             assert_eq!(asked, serde_json::json!("Local"), "{method}");
         }

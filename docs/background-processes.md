@@ -42,7 +42,7 @@ whole line.
 
 ### RPC
 
-Both are relay-forwardable and addressed to the chat's host:
+Both are forwarded over the peer link to the chat's host:
 
 - `StopBackgroundTask {chatId, taskId}` → `{stopping}`. `false` when no live
   runtime lists the process (it ended meanwhile). A process leaves the list only

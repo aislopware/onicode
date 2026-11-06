@@ -140,18 +140,8 @@ pub struct NativeSubagentSettings {
 type Factory = Box<dyn Fn() -> Result<Arc<dyn Harness>, HarnessError> + Send + Sync>;
 type InstalledProbe = Box<dyn Fn() -> bool + Send + Sync>;
 
-/// The harnesses a Cloud device (`ONICODE_DEVICE_PLATFORM=cloud`) registers —
-/// the typed twin of [`onicode_proto::CLOUD_HARNESSES`]. Everything else is not
-/// merely disabled but absent: never probed (`--version`, install detection,
-/// model discovery, update checks). The rule is generic to the `cloud`
-/// platform; the motivating example is a hosted sandbox whose preinstalled
-/// CLIs are lazy installer shims (Boat's, at the time of writing) that
-/// download and install the real agent when merely probed.
-pub const CLOUD_HARNESS_IDS: &[HarnessId] = &[HarnessId::Codex, HarnessId::ClaudeCode];
-
-/// Host-side environment for agent spawns (the Cloud device's credential
-/// broker). Called right before a request reaches the harness; whatever it
-/// puts in [`onicode_proto::RunRequest::env`] is never persisted.
+/// Host-side environment for agent spawns (an account's credentials). Called right before a request
+/// reaches the harness; whatever it puts in [`onicode_proto::RunRequest::env`] is never persisted.
 #[async_trait::async_trait]
 pub trait RunEnvironment: Send + Sync {
     /// `Err` = the run can't start: no credential for `harness` (the
@@ -208,10 +198,8 @@ pub struct HarnessRegistry {
     gates: Mutex<HashMap<HarnessId, Arc<tokio::sync::RwLock<()>>>>,
     pending_updates: Mutex<std::collections::HashSet<HarnessId>>,
     update_generation: tokio::sync::watch::Sender<u64>,
-    /// Spawn-time environment provider (Cloud runner only).
-    run_environment: Mutex<Option<Arc<dyn RunEnvironment>>>,
     /// Spawn-time environment of the agent accounts onicode keeps itself
-    /// (Muse's per-account roots); after the Cloud broker, never over it.
+    /// (Muse's per-account roots).
     account_environment: Mutex<Option<Arc<dyn RunEnvironment>>>,
 }
 
@@ -295,18 +283,8 @@ impl HarnessRegistry {
             gates: Mutex::new(HashMap::new()),
             pending_updates: Mutex::new(std::collections::HashSet::new()),
             update_generation,
-            run_environment: Mutex::new(None),
             account_environment: Mutex::new(None),
         }
-    }
-
-    /// Install the spawn-time environment provider (the Cloud runner's
-    /// credential broker). Laptops never set one.
-    pub fn set_run_environment(&self, environment: Arc<dyn RunEnvironment>) {
-        *self
-            .run_environment
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(environment);
     }
 
     /// Install the agent accounts' environment provider (every device).
@@ -317,11 +295,11 @@ impl HarnessRegistry {
             .unwrap_or_else(PoisonError::into_inner) = Some(environment);
     }
 
-    fn environments(&self) -> Vec<Arc<dyn RunEnvironment>> {
-        [&self.run_environment, &self.account_environment]
-            .into_iter()
-            .filter_map(|slot| slot.lock().unwrap_or_else(PoisonError::into_inner).clone())
-            .collect()
+    fn environment(&self) -> Option<Arc<dyn RunEnvironment>> {
+        self.account_environment
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     /// Fill `request.env` for a spawn of `harness` (no-op without a provider).
@@ -330,23 +308,18 @@ impl HarnessRegistry {
         harness: HarnessId,
         request: &mut onicode_proto::RunRequest,
     ) -> Result<(), String> {
-        for environment in self.environments() {
-            environment.prepare(harness, request).await?;
+        match self.environment() {
+            Some(environment) => environment.prepare(harness, request).await,
+            None => Ok(()),
         }
-        Ok(())
     }
 
     /// [`RunEnvironment::credential`] (`None` without a provider).
     pub async fn run_credential(&self, harness: HarnessId) -> Option<String> {
-        for environment in self.environments() {
-            if let Some(credential) = environment.credential(harness).await {
-                return Some(credential);
-            }
-        }
-        None
+        self.environment()?.credential(harness).await
     }
 
-    /// Hand a run's reported subscription usage to every provider (the
+    /// Hand a run's reported subscription usage to the provider (the
     /// account it belongs to records it).
     pub async fn record_plan_usage(
         &self,
@@ -355,24 +328,16 @@ impl HarnessRegistry {
         windows: Vec<onicode_proto::AgentUsageWindow>,
         plan_label: Option<String>,
     ) {
-        for environment in self.environments() {
+        if let Some(environment) = self.environment() {
             environment
-                .record_usage(harness, credential, windows.clone(), plan_label.clone())
+                .record_usage(harness, credential, windows, plan_label)
                 .await;
         }
     }
 
-    /// Whether `id` exists on this device at all (a Cloud device registers
-    /// only [`CLOUD_HARNESS_IDS`]).
+    /// Whether `id` exists on this device at all.
     pub fn is_registered(&self, id: HarnessId) -> bool {
         self.slots().contains_key(&id)
-    }
-
-    /// Drop every slot `keep` rejects. Lazy slots are dropped unresolved, so
-    /// a removed harness is never probed.
-    fn retain(&self, keep: impl Fn(HarnessId) -> bool) {
-        self.slots().retain(|id, _| keep(*id));
-        self.order().retain(|id| keep(*id));
     }
 
     fn gate(&self, id: HarnessId) -> Arc<tokio::sync::RwLock<()>> {
@@ -785,26 +750,10 @@ impl HarnessRegistry {
     }
 }
 
-/// The production registry for this engine's platform (see
-/// [`registry_for_platform`]).
-pub fn default_registry() -> HarnessRegistry {
-    registry_for_platform(&crate::runner::device_platform())
-}
-
 /// The production registry: MockHarness (hidden from production pickers) plus a lazy
-/// `claude-code` slot resolved through `onicode_harness` on first use (subprocess
-/// discovery only happens when a run/model call actually needs it). On a
-/// `cloud` platform only [`CLOUD_HARNESS_IDS`] (plus the test-only mock)
-/// are registered.
-pub fn registry_for_platform(platform: &str) -> HarnessRegistry {
-    let registry = full_registry();
-    if platform == onicode_proto::CLOUD_PLATFORM {
-        registry.retain(|id| id == HarnessId::Mock || CLOUD_HARNESS_IDS.contains(&id));
-    }
-    registry
-}
-
-fn full_registry() -> HarnessRegistry {
+/// slot per harness resolved through `onicode_harness` on first use (subprocess
+/// discovery only happens when a run/model call actually needs it).
+pub fn default_registry() -> HarnessRegistry {
     // Warm the login-shell PATH snapshot in the background so the first
     // claude/codex resolve doesn't pay the shell-startup latency inline.
     onicode_harness::shell_env::prewarm();
@@ -1178,7 +1127,7 @@ mod tests {
     /// honors once it does.
     #[test]
     fn lazy_descriptors_offer_the_modes_their_harness_honors() {
-        let registry = full_registry();
+        let registry = default_registry();
         for described in registry.descriptors() {
             let harness = registry.resolve(described.id).unwrap();
             assert_eq!(
@@ -1885,61 +1834,6 @@ mod gate_tests {
         registry.end_update(HarnessId::Codex);
     }
 
-    #[test]
-    fn cloud_platform_registers_only_codex_and_claude() {
-        let registry = registry_for_platform(onicode_proto::CLOUD_PLATFORM);
-        let ids: Vec<HarnessId> = registry.descriptors().iter().map(|d| d.id).collect();
-        assert_eq!(
-            ids,
-            vec![HarnessId::Mock, HarnessId::ClaudeCode, HarnessId::Codex]
-        );
-        for hidden in [
-            HarnessId::Cursor,
-            HarnessId::Devin,
-            HarnessId::Grok,
-            HarnessId::Hermes,
-            HarnessId::Fx,
-            HarnessId::Pi,
-            HarnessId::Opencode,
-            HarnessId::Antigravity,
-            HarnessId::Muse,
-        ] {
-            assert!(!registry.is_registered(hidden), "{hidden:?}");
-            // Never resolved, so never probed or spawned.
-            assert!(registry.resolve(hidden).is_err(), "{hidden:?}");
-        }
-        let enabled = registry.enabled_set();
-        assert!(
-            enabled.iter().all(|id| CLOUD_HARNESS_IDS.contains(id)),
-            "{enabled:?}"
-        );
-        // Laptops keep the full catalog.
-        let laptop = registry_for_platform("macos");
-        assert!(laptop.is_registered(HarnessId::Cursor));
-        assert!(laptop.is_registered(HarnessId::Opencode));
-    }
-
-    #[test]
-    fn cloud_harness_ids_mirror_the_proto_contract() {
-        // `CLOUD_HARNESSES` uses the wire names, so serialize the typed ids.
-        let names: Vec<String> = CLOUD_HARNESS_IDS
-            .iter()
-            .map(|id| {
-                serde_json::to_value(id)
-                    .unwrap()
-                    .as_str()
-                    .unwrap()
-                    .to_owned()
-            })
-            .collect();
-        let names: Vec<&str> = names.iter().map(String::as_str).collect();
-        let mut expected: Vec<&str> = onicode_proto::CLOUD_HARNESSES.to_vec();
-        let mut names = names;
-        names.sort_unstable();
-        expected.sort_unstable();
-        assert_eq!(names, expected);
-    }
-
     #[tokio::test]
     async fn run_environment_fills_env_only_when_installed() {
         struct Fill;
@@ -1964,7 +1858,7 @@ mod gate_tests {
             .await
             .unwrap();
         assert!(request.env.is_empty());
-        registry.set_run_environment(Arc::new(Fill));
+        registry.set_account_environment(Arc::new(Fill));
         registry
             .prepare_run(HarnessId::Codex, &mut request)
             .await

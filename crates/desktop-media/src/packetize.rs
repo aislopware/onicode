@@ -717,6 +717,52 @@ mod tests {
         assert_eq!(rebuilt, shard(1));
     }
 
+    /// What cutting one frame costs on the VideoToolbox callback thread, and how soon its first
+    /// datagram is handed on: a 62 KB P-frame and a 300 KB keyframe at the default parity and at
+    /// none. Until the data went ahead of the parity the first datagram left only once the whole
+    /// frame was cut. Run by hand with `--ignored`;
+    /// slopty's `docs/MEASUREMENTS.md` records runs.
+    #[test]
+    #[ignore = "a measurement; run by hand with `--ignored`"]
+    fn packetize_cost() {
+        let bench = onicode_desktop_testkit::bench::Bench::new("media.packetize_cost");
+        for (name, len) in [("p_frame", 62_000_usize), ("keyframe", 300_000)] {
+            let data: Vec<u8> = (0..len)
+                .map(|i| u8::try_from(i % 251).unwrap_or(0))
+                .collect();
+            let frame = EncodedFrame {
+                data: &data,
+                keyframe: false,
+                ltr_token: None,
+                ltr_refresh: false,
+                discardable: false,
+                capture_ts_us: 0,
+                stripes: 0,
+            };
+            for permille in [DEFAULT_PARITY_PERMILLE, 0] {
+                let mut p = Packetizer::new(StreamId(1));
+                p.set_parity_permille(permille);
+                let mut cut = bench.series(&format!("{name}.parity_{permille}"));
+                let mut first = bench.series(&format!("{name}.parity_{permille}.first_datagram"));
+                let mut datagrams = 0;
+                for _ in 0..2_000 {
+                    let began = std::time::Instant::now();
+                    let mut shipped = None;
+                    datagrams = cut.time(|| {
+                        let ship = |_: &[Bytes]| {
+                            shipped.get_or_insert_with(|| began.elapsed());
+                        };
+                        p.packetize(&frame, 0, ship).unwrap().datagrams.len()
+                    });
+                    first.record(shipped.unwrap_or_default());
+                }
+                eprintln!("{name} {len} B, parity {permille}‰: {datagrams} datagrams");
+                cut.report().unwrap();
+                first.report().unwrap();
+            }
+        }
+    }
+
     /// A long-term reference is what a refresh is predicted from, so a frame carrying one is
     /// never one a receiver may skip, whatever the encoder said of it.
     #[test]

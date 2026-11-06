@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 use onicode_proto::voice::{remote as wire, *};
-use onicode_rpc::{RpcClient, methods};
+use onicode_rpc::{CarrierClient, RpcClient, methods};
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
@@ -89,6 +89,57 @@ impl VoiceControlTransport for RpcTransport {
             })
             .boxed(),
         )
+    }
+}
+/// [`RpcTransport`] straight to the host over a peer link: each call and the lease's event
+/// stream take a QUIC stream of their own.
+pub struct PeerTransport {
+    pub client: CarrierClient,
+    pub host: String,
+}
+#[async_trait]
+impl VoiceControlTransport for PeerTransport {
+    async fn call(
+        &self,
+        method: &str,
+        payload: Value,
+        seconds: u64,
+    ) -> Result<Value, VoiceRejection> {
+        tokio::time::timeout(
+            Duration::from_secs(seconds),
+            self.client.call(
+                method,
+                json!({"targetDeviceId":self.host,"payload":payload}),
+            ),
+        )
+        .await
+        .map_err(|_| VoiceRejection::Protocol)?
+        .map_err(rejection)
+    }
+
+    async fn own(
+        &self,
+        lease: &wire::Lease,
+    ) -> Result<BoxStream<'static, Result<VoiceEvent, VoiceRejection>>, VoiceRejection> {
+        let rx = tokio::time::timeout(
+            Duration::from_secs(8),
+            self.client.subscribe(
+                methods::OWN_VOICE_V2,
+                json!({"targetDeviceId":self.host,"payload":lease}),
+            ),
+        )
+        .await
+        .map_err(|_| VoiceRejection::Protocol)?
+        .map_err(rejection)?;
+        Ok(futures::stream::unfold(rx, |mut rx| async move {
+            rx.recv().await.map(|v| {
+                (
+                    serde_json::from_value(v).map_err(|_| VoiceRejection::Protocol),
+                    rx,
+                )
+            })
+        })
+        .boxed())
     }
 }
 pub fn rejection(error: onicode_rpc::RpcError) -> VoiceRejection {

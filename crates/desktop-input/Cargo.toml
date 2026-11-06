@@ -1,0 +1,57 @@
+[package]
+name = "onicode-desktop-input"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Remote-desktop input and clipboard on the host: CGEvent injection into a whole display, input sources and NSPasteboard on macOS (ported from slopty-input)"
+
+[dependencies]
+onicode-desktop-capture.workspace = true
+onicode-desktop-proto.workspace = true
+thiserror.workspace = true
+# The pointer a cursor loop waits on (`pointer`), and the input source's answers (`sources`).
+tokio.workspace = true
+# The input-source claims every stream shares (`sources`), and the Caps Lock claim.
+parking_lot.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The input source is selected on the main queue (`sources`).
+dispatch2.workspace = true
+objc2.workspace = true
+# A remote tile's keys taken before the text system (`keyboard`), and the live gesture test's
+# own app following a swipe as Safari does (`tests/support/gesture_app.rs`).
+objc2-app-kit = { workspace = true, features = ["block2"] }
+block2.workspace = true
+# A copied file named by reference resolved to its path (`pasteboard`).
+objc2-foundation = { workspace = true, features = ["NSURL"] }
+# The input source's changes, heard from HIToolbox, and the keyboard layout's own data a chord's
+# character is looked up in (`input_source`).
+objc2-core-foundation = { workspace = true, features = ["CFNotificationCenter", "CFData"] }
+objc2-core-graphics.workspace = true
+# Caps Lock through the HID system (`backend`).
+objc2-io-kit.workspace = true
+# The input thread's QoS class (`user_interactive_thread`): pthread/qos.h.
+libc.workspace = true
+
+[dev-dependencies]
+# A live test's opt-in and skip, which the VM lane counts as a failure (`live`).
+onicode-desktop-testkit.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util", "time"] }
+
+# A measurement with a real `NSApplication` on the main thread, which libtest does not give a
+# test; opt-in (`ONICODE_MEASURE=1`), and it lists no test to a runner.
+[[test]]
+name = "key_path"
+harness = false
+
+# The live gesture test's own app, which it spawns and posts to: the one process a test here
+# posts gestures to (`tests/inject.rs`).
+[[bin]]
+name = "onicode-gesture-app"
+path = "tests/support/gesture_app.rs"
+test = false
+doc = false
+bench = false

@@ -1,7 +1,6 @@
-//! UniFFI facade over `onicode-client`: the account-scoped [`CoreClient`], the
+//! UniFFI facade over `onicode-client`: the device's [`CoreClient`], the
 //! per-chat [`SessionHandle`], the foreign [`ClientListener`], and the static
-//! helpers the platform needs before a client exists (sign-in, catalogs,
-//! formatting).
+//! helpers the platform needs before a client exists (catalogs, formatting).
 //!
 //! Threading: every method is safe from any thread and never blocks on the
 //! network; `async` methods run on the client's own tokio runtime and can be
@@ -11,10 +10,8 @@
 //! through [`CoreClient::session_handle`] → [`onicode_client::SessionHandle`]
 //! (`snapshot()` / `subscribe()`), never over FFI.
 
-mod cloud;
 pub(crate) mod companions;
 mod providers;
-pub use providers::UsageWindowInfo;
 mod session;
 mod voice;
 pub use voice::*;
@@ -55,8 +52,8 @@ where
     zc::runtime::run(fut).await.map_err(Into::into)
 }
 
-/// One signed-in account (or Demo mode). Create one per sign-in; call
-/// `shutdown()` on sign-out.
+/// This device's view of the user's engines (or Demo mode). Create one at
+/// launch, then `join_engines` with the engines the person listed.
 #[derive(uniffi::Object)]
 pub struct CoreClient {
     pub(crate) client: zc::Client,
@@ -80,16 +77,16 @@ impl CoreClient {
 #[uniffi::export]
 impl CoreClient {
     /// Build and start. Never blocks on the network: live mode hydrates from
-    /// `data_dir` and connects in the background; Demo seeds its dataset.
+    /// `data_dir` and syncs once it is on the tailnet; Demo seeds its dataset.
     #[uniffi::constructor]
     pub fn new(
         config: CoreConfig,
-        credentials: Credentials,
+        mode: ClientMode,
         listener: Arc<dyn ClientListener>,
     ) -> CoreResult<Arc<Self>> {
         let client = zc::Client::new(
             config.into(),
-            credentials.into(),
+            mode.into(),
             Arc::new(ListenerBridge(listener)),
         )?;
         Ok(Arc::new(Self { client }))
@@ -103,22 +100,30 @@ impl CoreClient {
         self.client.device_id().to_owned()
     }
 
-    pub fn user_id(&self) -> String {
-        self.client.user_id().to_owned()
-    }
-
-    pub fn org_id(&self) -> String {
-        self.client.org_id().to_owned()
-    }
-
-    /// Stop all background work (sign-out). Snapshots stay readable.
+    /// Stop all background work. Snapshots stay readable.
     pub fn shutdown(&self) {
         self.client.shutdown();
     }
 
-    /// The platform restored/re-signed a newer WorkOS pair.
-    pub fn update_tokens(&self, tokens: AuthTokens) {
-        self.client.update_tokens(tokens.into());
+    // ── the tailnet ────────────────────────────────────────────────────────
+
+    /// Join the tailnet through the engines the person listed: `MagicDNS`
+    /// names (`studio`, `studio.tail1234.ts.net`) or tailnet addresses
+    /// (`100.101.102.103`). Called again, the new list replaces the old and is
+    /// looked up now. Returns at once: until the Tailscale app's VPN is up the
+    /// client keeps trying, and hosts read as unavailable.
+    pub fn join_engines(&self, hosts: Vec<String>) -> CoreResult<()> {
+        Ok(self.client.join_engines(hosts)?)
+    }
+
+    /// The engines listed now, trimmed and without repeats.
+    pub fn engine_hosts(&self) -> Vec<String> {
+        self.client.engine_hosts()
+    }
+
+    /// Whether the client holds its links to the tailnet yet.
+    pub fn on_tailnet(&self) -> bool {
+        self.client.on_tailnet()
     }
 
     // ── workspace reads ────────────────────────────────────────────────────
@@ -390,50 +395,6 @@ impl CoreClient {
             .collect()
     }
 
-    /// Cloud's model catalog for `harness`: the edge's list, else the last
-    /// one read, else the static list.
-    pub async fn cloud_models(&self, harness: String) -> Vec<ModelInfo> {
-        let client = self.client.clone();
-        let fallback = harness.clone();
-        on_runtime(async move { Ok(client.cloud_models(&harness).await) })
-            .await
-            .unwrap_or_else(|_| zc::catalog::fallback_models(&fallback))
-            .into_iter()
-            .map(Into::into)
-            .collect()
-    }
-
-    /// Ask for session notifications on this device (APNs token as hex,
-    /// "production" | "sandbox", and which kinds).
-    pub async fn register_push_target(
-        &self,
-        token: String,
-        environment: String,
-        prefs: PushPrefs,
-    ) -> CoreResult<()> {
-        let client = self.client.clone();
-        on_runtime(async move {
-            client
-                .register_push_target(
-                    &token,
-                    &environment,
-                    zc::PushPrefs {
-                        done: prefs.done,
-                        input: prefs.input,
-                        failed: prefs.failed,
-                    },
-                )
-                .await
-        })
-        .await
-    }
-
-    /// Stop session notifications to this device.
-    pub async fn unregister_push_target(&self) -> CoreResult<()> {
-        let client = self.client.clone();
-        on_runtime(async move { client.unregister_push_target().await }).await
-    }
-
     pub async fn list_refs(
         &self,
         device_id: String,
@@ -558,7 +519,8 @@ impl CoreClient {
         self.client.warm_link(&chat_id);
     }
 
-    /// App returned to the foreground: resume, redial/probe rooms.
+    /// App returned to the foreground: resume, look the engines up again,
+    /// redial.
     pub fn on_foreground(&self) {
         self.client.on_foreground();
     }
@@ -570,70 +532,6 @@ impl CoreClient {
 }
 
 // ── static helpers ─────────────────────────────────────────────────────────
-
-/// Production edge base URL.
-#[uniffi::export]
-pub fn auth_production_edge_url() -> String {
-    zc::auth::PRODUCTION_EDGE_URL.to_owned()
-}
-
-/// OAuth callback scheme (`onicode`).
-#[uniffi::export]
-pub fn auth_callback_scheme() -> String {
-    zc::auth::CALLBACK_SCHEME.to_owned()
-}
-
-/// WorkOS AuthKit authorize URL (start of the web-auth session).
-#[uniffi::export]
-pub fn workos_authorize_url(state: String) -> String {
-    zc::auth::workos_authorize_url(&state)
-}
-
-/// `code`/`state` (or the provider error) of a `onicode://callback?…` URL.
-#[uniffi::export]
-pub fn parse_auth_callback(url: String) -> Option<AuthCallback> {
-    zc::auth::parse_auth_callback(&url).map(Into::into)
-}
-
-/// Exchange an authorization code for an (unscoped) token pair.
-#[uniffi::export]
-pub async fn auth_exchange_code(edge_url: String, code: String) -> CoreResult<AuthExchange> {
-    let exchange = zc::auth::exchange_code(&edge_url, &code).await?;
-    Ok(AuthExchange {
-        user: exchange.user.into(),
-        tokens: exchange.tokens.into(),
-    })
-}
-
-/// Organizations the (unscoped) access token's user belongs to.
-#[uniffi::export]
-pub async fn auth_list_orgs(edge_url: String, access_token: String) -> CoreResult<Vec<AuthOrg>> {
-    Ok(zc::auth::list_orgs(&edge_url, &access_token)
-        .await?
-        .into_iter()
-        .map(Into::into)
-        .collect())
-}
-
-/// Rotate the pair; `organization_id` scopes the access token to an org.
-#[uniffi::export]
-pub async fn auth_refresh(
-    edge_url: String,
-    refresh_token: String,
-    organization_id: Option<String>,
-) -> CoreResult<AuthTokens> {
-    Ok(
-        zc::auth::refresh(&edge_url, &refresh_token, organization_id.as_deref())
-            .await?
-            .into(),
-    )
-}
-
-/// A JWT's `exp` claim (epoch seconds).
-#[uniffi::export]
-pub fn jwt_expiry(jwt: String) -> Option<i64> {
-    zc::auth::jwt_expiry(&jwt)
-}
 
 /// Static harness catalog (the device-unreachable fallback).
 #[uniffi::export]

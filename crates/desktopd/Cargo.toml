@@ -1,0 +1,52 @@
+[package]
+name = "onicode-desktopd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Remote desktop's host: the login-item agent that captures, encodes and injects on a Mac, serving clients peer to peer over plaintext QUIC on the tailnet"
+
+[lib]
+name = "onicode_desktopd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "onicode-desktopd"
+path = "src/main.rs"
+
+[dependencies]
+bytes.workspace = true
+# `PathId`, for the congestion window a frame must fit (`session::LinkSink::cwnd`).
+noq.workspace = true
+onicode-desktop-capture.workspace = true
+onicode-desktop-codec.workspace = true
+onicode-desktop-grants.workspace = true
+onicode-desktop-input.workspace = true
+onicode-desktop-link.workspace = true
+onicode-desktop-media.workspace = true
+onicode-desktop-proto.workspace = true
+onicode-desktop-vdisplay.workspace = true
+onicode-net.workspace = true
+onicode-peer.workspace = true
+onicode-tailnet.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# The main queue the made displays live on (`sized::MainQueue`).
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2.workspace = true
+objc2.workspace = true
+
+[dev-dependencies]
+onicode-desktop-testkit.workspace = true
+onicode-net-sim.workspace = true
+pretty_assertions.workspace = true
+proptest.workspace = true
+tempfile.workspace = true
+# `start_paused`: the session tests run on the simulated tailnet in virtual time.
+tokio = { workspace = true, features = ["test-util"] }

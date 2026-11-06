@@ -1,5 +1,5 @@
 //! Optimistic pin/section writes are an overlay, never the authoritative watch state.
-//! Serialize drops per attachment; old replies cannot undo a newer drop/profile.
+//! Serialize drops per attachment; old replies cannot undo a newer drop.
 
 use std::collections::VecDeque;
 
@@ -10,7 +10,6 @@ use crate::state::EngineHandle;
 
 pub(super) struct PendingSidebarPins {
     pub id: u64,
-    pub profile_key: String,
     pub engine: EngineHandle,
     pub queue: VecDeque<SidebarPinChange>,
     pub unconfirmed: bool,
@@ -37,12 +36,10 @@ impl Shell {
     }
 
     fn pin_write_is_current(&self, pending: &PendingSidebarPins, cx: &App) -> bool {
-        self.active_sidebar_pin_profile_key(cx).as_ref() == Some(&pending.profile_key)
-            && self
-                .state
-                .read(cx)
-                .engine()
-                .is_some_and(|engine| engine.same_connection(&pending.engine))
+        self.state
+            .read(cx)
+            .engine()
+            .is_some_and(|engine| engine.same_connection(&pending.engine))
     }
 
     pub(super) fn optimistic_sidebar_pins(&self, cx: &App) -> Option<Vec<String>> {
@@ -74,7 +71,6 @@ impl Shell {
 
     pub(super) fn queue_sidebar_pin_write(
         &mut self,
-        profile_key: String,
         change: SidebarPinChange,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -101,7 +97,6 @@ impl Shell {
         let id = self.sidebar_pin_write_generation;
         self.sidebar_pin_write = Some(PendingSidebarPins {
             id,
-            profile_key,
             engine: engine.clone(),
             queue: VecDeque::from([change.clone()]),
             unconfirmed: false,
@@ -165,19 +160,6 @@ impl Shell {
         {
             return None;
         }
-        let imported_profile = if result.is_ok() {
-            self.sidebar_pin_write.as_ref().and_then(|pending| {
-                matches!(
-                    pending.queue.front(),
-                    Some(SidebarPinChange::Section {
-                        change: onicode_proto::SidebarSectionChange::Import { .. }
-                    })
-                )
-                .then(|| pending.profile_key.clone())
-            })
-        } else {
-            None
-        };
         match result {
             Ok(value) => {
                 self.clear_pin_write_notice();
@@ -193,11 +175,6 @@ impl Shell {
                     cx,
                 );
             }
-        }
-        if let Some(profile) = imported_profile {
-            // The engine durably owns these rows (including its offline outbox).
-            self.settings.sidebar_sections_by_profile.remove(&profile);
-            self.schedule_save(cx);
         }
         let pending = self.sidebar_pin_write.as_mut().unwrap();
         pending.queue.pop_front();

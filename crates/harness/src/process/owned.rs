@@ -4,10 +4,9 @@ use std::ops::{Deref, DerefMut};
 use crate::process::{Child as ProcessChild, Command};
 
 /// A private process group, and none of the markers a Claude Code session
-/// leaves in its children's environment. Onicode is often launched from one
-/// (or runs inside one, on a Cloud machine): inherited, they make an agent's
-/// own Claude believe it is nested in that session — it reports to its
-/// socket, IDE port and session id, and takes its effort level. The user's
+/// leaves in its children's environment. Onicode is often launched from one:
+/// inherited, they make an agent's own Claude believe it is nested in that session — it reports to
+/// its socket, IDE port and session id, and takes its effort level. The user's
 /// own configuration (`CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_USE_BEDROCK`/`VERTEX`,
 /// `CLAUDE_CODE_GIT_BASH_PATH`, `ANTHROPIC_*`) is kept. Every Claude Onicode
 /// starts, directly or through an adapter, reports Onicode as its entrypoint.

@@ -1,8 +1,7 @@
 //! A subscription's plan usage as meters: the replies of Claude's
 //! `/api/oauth/usage` and Codex's `/wham/usage` read into windows
-//! ("Session", "Week", "Month") and the live plan label. Shared by every
-//! reader: the engine probing a CLI login, and Cloud's logins, whose usage
-//! only the vault can fetch (the desktop and the phone read its reply). Pure.
+//! ("Session", "Week", "Month") and the live plan label, as the engine
+//! probing a CLI login reads them. Pure.
 
 use chrono::{DateTime, Utc};
 

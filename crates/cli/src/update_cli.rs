@@ -1,7 +1,6 @@
-//! `onicode update` — check for and apply a newer release, natively (the same
-//! flow `edge/src/install.sh` performs: download → verify → symlink swap →
-//! service restart). macOS app bundles swap the bundle instead; source builds
-//! are report-only.
+//! `onicode update` — check for and apply a newer release, natively (download →
+//! verify → symlink swap → service restart). macOS app bundles swap the bundle instead; source
+//! builds are report-only.
 
 use anyhow::bail;
 use onicode_update::{InstallKind, Offer};
@@ -9,9 +8,9 @@ use onicode_update::{InstallKind, Offer};
 /// `--check` prints the verdict and exits (nonzero when an update is available,
 /// so scripts can gate on it). A macOS app follows its release channel
 /// (`update-channel.json` in the data dir), as the app's own updater does.
-pub async fn update(edge_url: &str, check_only: bool) -> anyhow::Result<()> {
+pub async fn update(feed_url: &str, check_only: bool) -> anyhow::Result<()> {
     onicode_update::channel::set_data_dir(&super::paths::data_dir());
-    let manifest = onicode_update::fetch_latest(edge_url).await?;
+    let manifest = onicode_update::fetch_latest(feed_url).await?;
     let current = onicode_update::app_version();
     let running_engine = match onicode_update::detect_install() {
         InstallKind::MacApp { bundle } => onicode_update::bundle_engine_version(&bundle),
@@ -56,7 +55,7 @@ pub async fn update(edge_url: &str, check_only: bool) -> anyhow::Result<()> {
                 onicode_update::headless_artifact(&manifest.version)
             );
             let data_dir = super::paths::data_dir();
-            onicode_update::prepare_install(edge_url, &manifest, &app_root, &data_dir).await?;
+            onicode_update::prepare_install(feed_url, &manifest, &app_root, &data_dir).await?;
             let from = onicode_update::installed_version(&InstallKind::Managed {
                 app_root: app_root.clone(),
             })
@@ -91,7 +90,7 @@ pub async fn update(edge_url: &str, check_only: bool) -> anyhow::Result<()> {
                 "downloading {}…",
                 onicode_update::headless_artifact(&manifest.version)
             );
-            onicode_update::stage_headless(edge_url, &manifest, &app_root).await?;
+            onicode_update::stage_headless(feed_url, &manifest, &app_root).await?;
             onicode_update::apply_headless(&app_root, &manifest.version)?;
             println!(
                 "installed {} (current → {})",
@@ -112,7 +111,7 @@ pub async fn update(edge_url: &str, check_only: bool) -> anyhow::Result<()> {
                 onicode_update::mac_app_artifact(&manifest.version)
             );
             let data_dir = super::paths::data_dir();
-            let staged = onicode_update::stage_mac_app(edge_url, &manifest, &data_dir).await?;
+            let staged = onicode_update::stage_mac_app(feed_url, &manifest, &data_dir).await?;
             onicode_update::apply_mac_app(&staged, &bundle)?;
             println!("updated {} — relaunch Onicode to finish.", bundle.display());
             Ok(())
@@ -120,7 +119,7 @@ pub async fn update(edge_url: &str, check_only: bool) -> anyhow::Result<()> {
         InstallKind::Unmanaged => {
             bail!(
                 "this binary is not update-managed (source build or hand-copied).\n\
-                 Linux: curl -fsSL https://zeron.sh/install.sh | sh, or run install.sh from the release tarball\n\
+                 Linux: run install.sh from the release tarball\n\
                  macOS: download the new Onicode.app dmg from {}, or rebuild from source.",
                 onicode_update::LATEST_RELEASE_PAGE
             )

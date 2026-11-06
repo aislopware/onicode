@@ -65,7 +65,6 @@ fn main() -> anyhow::Result<()> {
             &temp.path().join("engine"),
             Arc::new(onicode_engine::default_registry()),
             onicode_proto::HarnessId::ClaudeCode,
-            None,
         )
     })?;
     core.workspace
@@ -84,10 +83,7 @@ fn main() -> anyhow::Result<()> {
     let boot = EngineBootConfig {
         data_dir: data.clone(),
         ipc_port,
-        edge_url: String::new(),
-        edge_token: None,
-        org_id: None,
-        workos_client_id: None,
+        update_feed: String::new(),
         default_harness: onicode_proto::HarnessId::ClaudeCode,
     };
     let handle = runtime.block_on(state::EngineHandle::bootstrap(boot.clone()))?;
@@ -173,7 +169,7 @@ fn main() -> anyhow::Result<()> {
         theme_library::init(data.clone(),cx); appearance::init(appearance::AppearanceMode::Dark,settings.theme_selection,settings.accent,settings.surface,cx);
         history::init(settings.git_history_columns,settings.git_history_column_widths,settings.git_history_column_order,settings.git_history_author_display,cx);
         composer::init(cx,settings.composer_send_behavior); terminal::panel::init(cx); app_menus::init(cx);
-        let state=cx.new(|_| { let mut s=state::AppState::new(); s.fixture_attachment_engine(handle); s.connection=onicode_proto::view::ConnectionStatus::Ready; s.workspace_scope=Some(onicode_proto::WorkspaceScope::Development); s.local_device_id=Some(device.clone()); s.devices=vec![serde_json::from_value(serde_json::json!({"id":device,"name":"This device","platform":std::env::consts::OS,"lastSeenAt":null})).unwrap()]; s.chats=chats; s.selected_chat=Some("appshots-fixture".into()); s.auto_selected=true; s.chats_synced=true; s.spaces_synced=true; s });
+        let state=cx.new(|_| { let mut s=state::AppState::new(); s.fixture_attachment_engine(handle); s.connection=onicode_proto::view::ConnectionStatus::Ready; s.local_device_id=Some(device.clone()); s.devices=vec![serde_json::from_value(serde_json::json!({"id":device,"name":"This device","platform":std::env::consts::OS,"lastSeenAt":null})).unwrap()]; s.chats=chats; s.selected_chat=Some("appshots-fixture".into()); s.auto_selected=true; s.chats_synced=true; s.spaces_synced=true; s });
         let window=cx.open_window(WindowOptions {window_background:theme::Theme::of(cx).window_background_appearance(),window_bounds:Some(WindowBounds::Windowed(Bounds::new(gpui::point(px(20.),px(40.)),size(px(1100.),px(850.))))),..Default::default()},|_,cx|cx.new(|cx|shell::Shell::new(state.clone(),boot,cx))).unwrap();
         state.update(cx,|_,cx|cx.notify()); cx.activate(true);
         cx.spawn(async move |cx| {

@@ -141,7 +141,7 @@ impl PeerDirectory {
             let Some(ip) = node.ipv4().or_else(|| node.ips.first().copied()) else {
                 continue;
             };
-            let addr = SocketAddr::new(ip, self.endpoint.local_addrs()[0].port());
+            let addr = SocketAddr::new(ip, self.endpoint.port());
             let (endpoint, node_id) = (Arc::clone(&self.endpoint), node.id.clone());
             probes.spawn(async move { (node_id, addr, endpoint.probe(addr, PROBE_BUDGET).await) });
         }

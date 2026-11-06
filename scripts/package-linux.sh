@@ -46,8 +46,7 @@ cp "$ROOT/crates/voice/NOTICE.md" "$STAGE/licenses/parakeet-v3.txt"
 cat >"$STAGE/install.sh" <<'INSTALL'
 #!/usr/bin/env bash
 # Install Onicode for this user (no root needed), in the layout the in-app
-# updater manages: ~/.onicode/app/<version> behind a `current` symlink — the
-# same layout `curl -fsSL https://zeron.sh/install.sh | sh` uses — with
+# updater manages: ~/.onicode/app/<version> behind a `current` symlink, with
 # ~/.local/bin/onicode and the desktop entry pointing through it.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -78,7 +77,6 @@ ln -sfn "$APP_ROOT/current/onicode" "$HOME/.local/bin/onicode"
 # paths through the `current` symlink, which keeps working across updates. The
 # icon is referenced by path too: the only artwork is 1024x1024, a size the
 # hicolor theme doesn't index, so a name lookup alone can come up empty.
-# (Duplicated in edge/src/install.sh, the curl installer; keep the two in sync.)
 install_desktop_entry() {
   src="$1"
   app="$2"
@@ -106,8 +104,6 @@ install_desktop_entry() {
   mkdir -p "$apps_dir" "$icon_dir" || return 1
   # Write beside the final name, then rename, so a launcher watching the
   # directory never reads a half-written entry (a leading dot is ignored).
-  # Not `tmp`: sh has no `local`, and the curl installer's EXIT trap removes
-  # its download dir through `$tmp`.
   entry_tmp="$apps_dir/.onicode.desktop.$$"
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in

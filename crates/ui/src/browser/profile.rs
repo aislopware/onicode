@@ -1,7 +1,6 @@
 //! Stable device-local browser storage, independent of chats and repositories.
 use std::path::{Path, PathBuf};
 
-use onicode_proto::{AuthState, WorkspaceScope};
 use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -10,30 +9,9 @@ pub(crate) struct BrowserProfile {
 }
 
 impl BrowserProfile {
-    pub fn for_workspace(
-        data_dir: &Path,
-        scope: Option<WorkspaceScope>,
-        auth: Option<&AuthState>,
-        local_device_id: Option<&str>,
-    ) -> Option<Self> {
-        let scope = scope?;
-        let scope_key = match scope {
-            WorkspaceScope::Local => "local",
-            WorkspaceScope::Synced => "synced",
-            WorkspaceScope::Development => "development",
-        };
-        match scope {
-            WorkspaceScope::Local => Some(Self::new(data_dir, &[scope_key, local_device_id?])),
-            WorkspaceScope::Synced | WorkspaceScope::Development => {
-                let AuthState::SignedIn { user, org_id } = auth? else {
-                    return None;
-                };
-                Some(Self::new(
-                    data_dir,
-                    &[scope_key, &user.id, org_id.as_deref().unwrap_or("")],
-                ))
-            }
-        }
+    /// This device's browser store. `None` until the engine names the device.
+    pub fn for_device(data_dir: &Path, local_device_id: Option<&str>) -> Option<Self> {
+        Some(Self::new(data_dir, &["local", local_device_id?]))
     }
 
     fn new(data_dir: &Path, identity: &[&str]) -> Self {
@@ -73,23 +51,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn identity_is_stable_and_scoped_to_account_organization_and_installation() {
+    fn identity_is_stable_and_scoped_to_device_and_installation() {
         let root = tempfile::tempdir().unwrap();
         let make = |parts: &[&str]| BrowserProfile::new(root.path(), parts);
-        let a = make(&["synced", "user-a", "org-a"]);
-        assert_eq!(a, make(&["synced", "user-a", "org-a"]));
-        for parts in [
-            ["synced", "user-b", "org-a"],
-            ["synced", "user-a", "org-b"],
-            ["development", "user-a", "org-a"],
-        ] {
-            let b = make(&parts);
-            assert_ne!(a.root, b.root);
-            assert_ne!(a.data_store_identifier(), b.data_store_identifier());
-        }
-        let other = tempfile::tempdir().unwrap();
-        let b = BrowserProfile::new(other.path(), &["synced", "user-a", "org-a"]);
+        let a = make(&["local", "device-a"]);
+        assert_eq!(a, make(&["local", "device-a"]));
+        let b = make(&["local", "device-b"]);
+        assert_ne!(a.root, b.root);
         assert_ne!(a.data_store_identifier(), b.data_store_identifier());
+        let other = tempfile::tempdir().unwrap();
+        let elsewhere = BrowserProfile::new(other.path(), &["local", "device-a"]);
+        assert_ne!(a.data_store_identifier(), elsewhere.data_store_identifier());
         assert_ne!(make(&["ab", "c"]), make(&["a", "bc"]));
         assert!(
             make(&["../../outside"])
@@ -99,68 +71,10 @@ mod tests {
     }
 
     #[test]
-    fn authenticated_profiles_follow_user_and_organization_not_device() {
-        let root = tempfile::tempdir().unwrap();
-        let make = |user: &str, org: Option<&str>, device: &str, scope| {
-            let auth = AuthState::SignedIn {
-                user: onicode_proto::UserProfile {
-                    id: user.into(),
-                    email: "fixture@example.test".into(),
-                    name: None,
-                },
-                org_id: org.map(str::to_owned),
-            };
-            BrowserProfile::for_workspace(root.path(), Some(scope), Some(&auth), Some(device))
-                .unwrap()
-        };
-        let a = make("alice", Some("one"), "device-a", WorkspaceScope::Synced);
-        assert_eq!(
-            a,
-            make("alice", Some("one"), "device-b", WorkspaceScope::Synced)
-        );
-        assert_ne!(
-            a,
-            make("bob", Some("one"), "device-a", WorkspaceScope::Synced)
-        );
-        assert_ne!(
-            a,
-            make("alice", Some("two"), "device-a", WorkspaceScope::Synced)
-        );
-        assert_ne!(a, make("alice", None, "device-a", WorkspaceScope::Synced));
-        assert_ne!(
-            a,
-            make(
-                "alice",
-                Some("one"),
-                "device-a",
-                WorkspaceScope::Development
-            )
-        );
-        assert!(
-            BrowserProfile::for_workspace(
-                root.path(),
-                Some(WorkspaceScope::Synced),
-                Some(&AuthState::SignedOut),
-                Some("device-a")
-            )
-            .is_none()
-        );
-    }
-
-    #[test]
-    fn unresolved_identity_does_not_select_a_shared_persistent_profile() {
+    fn an_unnamed_device_selects_no_persistent_profile() {
         let root = Path::new("/unused");
-        assert!(BrowserProfile::for_workspace(root, None, None, None).is_none());
-        assert!(
-            BrowserProfile::for_workspace(root, Some(WorkspaceScope::Local), None, None).is_none()
-        );
-        assert!(
-            BrowserProfile::for_workspace(root, Some(WorkspaceScope::Synced), None, Some("device"))
-                .is_none()
-        );
-        let local = |device| {
-            BrowserProfile::for_workspace(root, Some(WorkspaceScope::Local), None, Some(device))
-        };
+        assert!(BrowserProfile::for_device(root, None).is_none());
+        let local = |device| BrowserProfile::for_device(root, Some(device));
         assert_eq!(local("one"), local("one"));
         assert_ne!(local("one"), local("two"));
     }

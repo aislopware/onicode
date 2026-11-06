@@ -232,9 +232,7 @@ fn messages_the_agent_sent_show_as_one_line_naming_the_recipient() {
         resolved: true,
         output: None,
         diff: None,
-        output_ref: None,
         output_bytes: None,
-        diff_ref: None,
         diff_stats: None,
         subagent_ref: None,
         subagent_status: None,
@@ -1053,9 +1051,7 @@ fn running_subagent_shows_a_spinner_after_its_spawn_resolves() {
         resolved: true,
         output: None,
         diff: None,
-        output_ref: None,
         output_bytes: None,
-        diff_ref: None,
         diff_stats: None,
         subagent_ref: Some("sub-1".into()),
         subagent_status: Some(status),
@@ -2190,7 +2186,7 @@ fn errors_render_as_cards_with_a_log_in_button_when_signing_in_fixes_them() {
     input.entries = vec![
         error(
             "signed-out",
-            "Claude Code isn't signed in on Cloud. Sign in with Claude, then send again.",
+            "Claude Code isn't signed in on this computer. Sign in with Claude, then send again.",
         ),
         error(
             "limited",

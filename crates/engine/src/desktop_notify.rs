@@ -3,7 +3,7 @@
 //! the connection went away, agent updates are ready.
 //!
 //! Only desktop engines post (the app's background engine and its
-//! in-process fallback call [`enable`]); a server or Cloud machine never
+//! in-process fallback call [`enable`]); a headless server never
 //! does. The decision is the one the app used to make itself:
 //!
 //! - one baseline per session; a row's first appearance seeds it silently, so a boot or replay

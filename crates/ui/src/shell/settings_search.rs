@@ -60,14 +60,14 @@ impl Shell {
     }
 
     fn on_settings_search_edited(&mut self, cx: &mut Context<Self>) {
-        let cloud_offered = self.state.read(cx).cloud_offered();
         let Some(search) = self.settings_search.as_mut() else {
             return;
         };
-        // Only what the nav shows: Cloud and Billing follow the account.
-        search.hits = settings::search::search(search.input.read(cx).text(), |section| {
-            section.shown_in_nav(cloud_offered)
-        });
+        // Only what the nav shows.
+        search.hits = settings::search::search(
+            search.input.read(cx).text(),
+            SettingsSection::visible_in_nav,
+        );
         search.active = 0;
         search.results.set_offset(Point::default());
         cx.notify();
@@ -420,10 +420,7 @@ mod tests {
                 EngineBootConfig {
                     data_dir,
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -644,14 +641,13 @@ mod tests {
 
     /// The index and the pages agree. Every row a page draws can be found,
     /// and no hit opens a page to land nowhere: each row the index lists is
-    /// anchored there, or its stand-in is while it hides. Cloud and Billing
-    /// draw their rows from account data that tests never load.
+    /// anchored there, or its stand-in is while it hides.
     #[gpui::test]
     fn the_index_and_the_pages_agree(cx: &mut TestAppContext) {
         let (shell, cx, _dir) = open_settings(cx);
         let sections = SettingsSection::ALL
             .into_iter()
-            .filter(|section| section.visible_in_nav() && !section.needs_account());
+            .filter(|section| section.visible_in_nav());
         for section in sections {
             take_anchored();
             take_row_titles();

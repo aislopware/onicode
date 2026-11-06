@@ -81,7 +81,7 @@ async fn fork_is_frozen_durable_idempotent_and_has_an_independent_provider_sessi
     let requests = Arc::new(Mutex::new(Vec::new()));
     let registry = HarnessRegistry::new();
     registry.register(Arc::new(Capture(requests.clone())));
-    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock, None).unwrap();
+    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock).unwrap();
     core.workspace
         .create_chat(
             "main",
@@ -146,7 +146,6 @@ async fn fork_is_frozen_durable_idempotent_and_has_an_independent_provider_sessi
     assert_eq!(fork.parent_chat_id.as_deref(), Some("main"));
     assert_eq!(fork.harness_session_id, None);
     assert_eq!(fork.cwd, Some("/tmp".into()));
-    assert!(fork.on_chat2());
     let target = core.doc_host.open("side").unwrap();
     let copied = target.doc().read_entries().unwrap();
     // The frozen prefix, then the seam: a system entry naming the source.
@@ -240,7 +239,6 @@ async fn fork_is_frozen_durable_idempotent_and_has_an_independent_provider_sessi
         dir.path(),
         Arc::new(HarnessRegistry::new()),
         HarnessId::Mock,
-        None,
     )
     .unwrap();
     assert_eq!(
@@ -272,7 +270,6 @@ async fn cannot_fork_an_empty_chat_or_overwrite_a_main_chat() {
         dir.path(),
         Arc::new(HarnessRegistry::new()),
         HarnessId::Mock,
-        None,
     )
     .unwrap();
     core.workspace
@@ -307,7 +304,6 @@ async fn forking_a_side_chat_can_land_as_a_sibling_under_the_main_chat() {
         dir.path(),
         Arc::new(HarnessRegistry::new()),
         HarnessId::Mock,
-        None,
     )
     .unwrap();
     core.workspace
@@ -418,7 +414,6 @@ async fn a_fork_settles_the_running_subagent_chips_it_copies() {
         dir.path(),
         Arc::new(HarnessRegistry::new()),
         HarnessId::Mock,
-        None,
     )
     .unwrap();
     core.workspace
@@ -434,9 +429,7 @@ async fn a_fork_settles_the_running_subagent_chips_it_copies() {
         resolved: true,
         output: None,
         diff: None,
-        output_ref: None,
         output_bytes: None,
-        diff_ref: None,
         diff_stats: None,
         subagent_ref: Some(format!("main--sub--{id}")),
         subagent_status: Some(status),
@@ -602,7 +595,7 @@ async fn native_commands_and_empty_side_chats_skip_the_history_wrapper() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let registry = HarnessRegistry::new();
     registry.register(Arc::new(Capture(requests.clone())));
-    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock, None).unwrap();
+    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock).unwrap();
     for (id, parent) in [
         ("main", None),
         ("plus-review", Some("main")),
@@ -746,7 +739,7 @@ async fn warm_side_chat_sends_owed_fork_history_once() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let registry = HarnessRegistry::new();
     registry.register(Arc::new(Warm(seen.clone())));
-    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock, None).unwrap();
+    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock).unwrap();
     core.workspace
         .create_chat(
             "main",
@@ -943,7 +936,7 @@ async fn orphaned_history_steer_still_owes_the_history() {
         runs: runs.clone(),
         release: release.clone(),
     }));
-    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock, None).unwrap();
+    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock).unwrap();
     core.workspace
         .create_chat(
             "main",
@@ -1059,8 +1052,7 @@ async fn a_side_chat_keeps_its_subagent_tools_when_native_subagents_are_off() {
                 .join("../harness/tests/fixtures/fake-claude.sh"),
         ),
     ));
-    let core =
-        EngineCore::assemble(dir.path(), registry.clone(), HarnessId::ClaudeCode, None).unwrap();
+    let core = EngineCore::assemble(dir.path(), registry.clone(), HarnessId::ClaudeCode).unwrap();
     // A served IPC port: runs carry Onicode's own MCP server.
     core.sessions.set_ipc_port(27699);
     registry

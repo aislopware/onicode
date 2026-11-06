@@ -36,7 +36,6 @@ async fn preview_watch_follows_the_session_checkout_and_owning_device() {
         &temp.path().join("engine"),
         Arc::new(HarnessRegistry::new()),
         HarnessId::Mock,
-        None,
     )
     .unwrap();
     core.workspace

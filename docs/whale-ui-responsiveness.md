@@ -69,4 +69,4 @@ optimizes `zeron-ui` only; dependencies keep the test profile. A fresh laptop
 build is still needed to confirm the reported 300–700 ms pause is gone there.
 
 This is a desktop UI change. It requires updating the laptop application, with
-no additional host or edge rollout beyond PR #444.
+no additional rollout beyond PR #444.

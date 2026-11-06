@@ -4,15 +4,13 @@
 //! subcommands that run the engine's code here (`onicode_cli::EngineCommand`).
 //! The command line itself, paths, logging and the rest are `onicode_cli`'s.
 
-pub mod auth_cli;
 pub mod background;
 pub mod engine_commands;
 pub mod ipc_cli;
 
 pub use engine_commands::run_engine_command;
 pub use onicode_cli::{
-    DEFAULT_EDGE_URL, DEFAULT_WORKOS_CLIENT_ID, edge_url_from_env, init_logging,
-    long_running_setup, open_log_file, paths, workos_client_id_from_env,
+    init_logging, long_running_setup, open_log_file, paths, update_feed_from_env,
 };
 
 /// mimalloc, macOS only: libmalloc never returns the streaming churn's
@@ -25,26 +23,22 @@ pub use onicode_cli::{
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-/// The env-resolved engine configuration shared by `headless`, `login`,
-/// `logout`, and `status` — one resolution so the CLI auth commands always
-/// operate on the exact session the daemon will load.
+/// The env-resolved engine configuration shared by `headless`, `status`, `sync` and the
+/// background engine, so each reads the data dir and port the daemon uses.
 pub fn engine_config_from_env() -> onicode_engine::EngineConfig {
-    // Dev-mode bearer (no WorkOS): an explicit token enables sync.
-    let edge_token = std::env::var("ONICODE_EDGE_TOKEN").ok();
     onicode_engine::EngineConfig {
         data_dir: paths::data_dir(),
-        edge_url: edge_url_from_env(),
         ipc_port: onicode_cli::ipc_port_from_env(),
         default_harness: harness_from_env(),
-        // WorkOS mode: the signed-in session's org wins; ONICODE_ORG_ID (dev
-        // default "dev-org") scopes the workspace room otherwise.
-        org_id: std::env::var("ONICODE_ORG_ID").ok(),
-        // Real auth against production by default; see
-        // `workos_client_id_from_env` for the dev-mode escape hatches.
-        workos_client_id: workos_client_id_from_env(&edge_token),
-        peers: true,
-        edge_token,
+        update_feed: update_feed_from_env(),
+        peers: peers_from_env(),
     }
+}
+
+/// `ONICODE_PEERS=0` keeps the engine off the tailnet: tests that run the binary set it, as no
+/// test engine may join the real tailnet. On by default.
+pub fn peers_from_env() -> bool {
+    std::env::var("ONICODE_PEERS").as_deref().map(str::trim) != Ok("0")
 }
 
 /// `ONICODE_HARNESS` (kebab-case id) picks the default harness for chats without a

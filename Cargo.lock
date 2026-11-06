@@ -2050,6 +2050,7 @@ checksum = "1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38"
 dependencies = [
  "bitflags 2.13.2",
  "block2 0.6.2",
+ "libc",
  "objc2 0.6.5",
 ]
 
@@ -3327,7 +3328,7 @@ dependencies = [
 [[package]]
 name = "gpui-base"
 version = "0.9.0"
-source = "git+https://github.com/aislopware/gpui-kit.git?rev=a15e2658c44497a4b4861baac66e30d59de297df#a15e2658c44497a4b4861baac66e30d59de297df"
+source = "git+https://github.com/aislopware/gpui-kit.git?rev=489bc829d9c72969da724fca040cf6fde82894c1#489bc829d9c72969da724fca040cf6fde82894c1"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -6000,6 +6001,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-application-services"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69282c2b5bc58fba07cb9de2113619532eb551e98efe3d8d695509ef45fbd53b"
+dependencies = [
+ "bitflags 2.13.2",
+ "libc",
+ "objc2-core-foundation",
+]
+
+[[package]]
 name = "objc2-audio-toolbox"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6103,6 +6115,7 @@ checksum = "e022c9d066895efa1345f8e33e584b9f958da2fd4cd116792e15e07e4720a807"
 dependencies = [
  "bitflags 2.13.2",
  "dispatch2",
+ "libc",
  "objc2 0.6.5",
  "objc2-core-foundation",
  "objc2-io-surface",
@@ -6128,6 +6141,21 @@ checksum = "e5d563b38d2b97209f8e861173de434bd0214cf020e3423a52624cd1d989f006"
 dependencies = [
  "objc2 0.6.5",
  "objc2-foundation 0.3.2",
+]
+
+[[package]]
+name = "objc2-core-media"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05ec576860167a15dd9fce7fbee7512beb4e31f532159d3482d1f9c6caedf31d"
+dependencies = [
+ "bitflags 2.13.2",
+ "dispatch2",
+ "objc2 0.6.5",
+ "objc2-core-audio",
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+ "objc2-core-video",
 ]
 
 [[package]]
@@ -6207,6 +6235,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-io-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33fafba39597d6dc1fb709123dfa8289d39406734be322956a69f0931c73bb15"
+dependencies = [
+ "libc",
+ "objc2-core-foundation",
+]
+
+[[package]]
 name = "objc2-io-surface"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6281,6 +6319,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-screen-capture-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74b7c5390f477482f001bc354d6571a70db7e4f8d5288e860c45521fbce11394"
+dependencies = [
+ "block2 0.6.2",
+ "dispatch2",
+ "libc",
+ "objc2 0.6.5",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-core-media",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
 name = "objc2-security"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6324,6 +6378,18 @@ dependencies = [
  "block2 0.6.2",
  "objc2 0.6.5",
  "objc2-foundation 0.3.2",
+]
+
+[[package]]
+name = "objc2-video-toolbox"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05bf9a3c14831a7d9641b0d81d87dd913ee238a012b2fde27db5a84b56f5df3e"
+dependencies = [
+ "bitflags 2.13.2",
+ "objc2-core-foundation",
+ "objc2-core-media",
+ "objc2-core-video",
 ]
 
 [[package]]
@@ -6421,24 +6487,22 @@ dependencies = [
 name = "onicode-client"
 version = "0.1.0"
 dependencies = [
- "async-trait",
- "base64 0.22.1",
  "chrono",
  "futures",
  "loro",
+ "onicode-desktop-link",
  "onicode-doc",
  "onicode-net",
  "onicode-peer",
  "onicode-proto",
  "onicode-rpc",
  "onicode-sync",
+ "onicode-tailnet",
  "onicode-term-link",
  "onicode-visual",
  "onicode-voice-session",
- "reqwest",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -6448,18 +6512,207 @@ dependencies = [
 ]
 
 [[package]]
+name = "onicode-desktop-capture"
+version = "0.1.0"
+dependencies = [
+ "block2 0.6.2",
+ "dispatch2",
+ "libc",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-application-services",
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-core-media",
+ "objc2-core-video",
+ "objc2-foundation 0.3.2",
+ "objc2-screen-capture-kit",
+ "onicode-desktop-codec",
+ "onicode-desktop-proto",
+ "onicode-desktop-testkit",
+ "parking_lot",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "onicode-desktop-client"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "onicode-desktop-codec",
+ "onicode-desktop-link",
+ "onicode-desktop-media",
+ "onicode-desktop-proto",
+ "onicode-net",
+ "onicode-peer",
+ "onicode-tailnet",
+ "parking_lot",
+ "pretty_assertions",
+ "proptest",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "onicode-desktop-codec"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "libc",
+ "loom",
+ "objc2-audio-toolbox",
+ "objc2-core-audio",
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+ "objc2-core-media",
+ "objc2-core-video",
+ "objc2-video-toolbox",
+ "onicode-desktop-media",
+ "onicode-desktop-testkit",
+ "parking_lot",
+ "pretty_assertions",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "onicode-desktop-grants"
+version = "0.1.0"
+dependencies = [
+ "block2 0.6.2",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-application-services",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
+ "onicode-desktop-testkit",
+ "pretty_assertions",
+ "proptest",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "onicode-desktop-input"
+version = "0.1.0"
+dependencies = [
+ "block2 0.6.2",
+ "dispatch2",
+ "libc",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
+ "objc2-io-kit",
+ "onicode-desktop-capture",
+ "onicode-desktop-proto",
+ "onicode-desktop-testkit",
+ "parking_lot",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "onicode-desktop-link"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "onicode-desktop-proto",
+ "pretty_assertions",
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "onicode-desktop-media"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
  "bytes",
+ "onicode-desktop-testkit",
  "onicode-net",
  "pretty_assertions",
  "proptest",
  "reed-solomon-simd",
+ "serde",
  "thiserror 2.0.21",
  "tracing",
  "zerocopy",
+]
+
+[[package]]
+name = "onicode-desktop-proto"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.13.2",
+ "onicode-desktop-media",
+ "serde",
+ "serde_bytes",
+]
+
+[[package]]
+name = "onicode-desktop-testkit"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "objc2-core-foundation",
+]
+
+[[package]]
+name = "onicode-desktop-vdisplay"
+version = "0.1.0"
+dependencies = [
+ "dispatch2",
+ "objc2 0.6.5",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
+ "onicode-desktop-testkit",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "onicode-desktopd"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "dispatch2",
+ "noq",
+ "objc2 0.6.5",
+ "onicode-desktop-capture",
+ "onicode-desktop-codec",
+ "onicode-desktop-grants",
+ "onicode-desktop-input",
+ "onicode-desktop-link",
+ "onicode-desktop-media",
+ "onicode-desktop-proto",
+ "onicode-desktop-testkit",
+ "onicode-desktop-vdisplay",
+ "onicode-net",
+ "onicode-net-sim",
+ "onicode-peer",
+ "onicode-tailnet",
+ "parking_lot",
+ "pretty_assertions",
+ "proptest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -6497,6 +6750,9 @@ dependencies = [
  "loro",
  "noq",
  "notify 7.0.0",
+ "onicode-client",
+ "onicode-desktop-grants",
+ "onicode-desktop-link",
  "onicode-doc",
  "onicode-harness",
  "onicode-launch",
@@ -6513,9 +6769,9 @@ dependencies = [
  "onicode-term-link",
  "onicode-update",
  "onicode-visual",
+ "plist",
  "portable-pty",
  "reqwest",
- "ring",
  "rusqlite",
  "same-file",
  "semver",
@@ -6526,7 +6782,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tokio-tungstenite",
  "tokio-util",
  "toml 0.8.23",
  "tracing",
@@ -6610,6 +6865,10 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "onicode-client",
+ "onicode-desktop-client",
+ "onicode-desktop-link",
+ "onicode-desktop-media",
+ "onicode-desktop-proto",
  "onicode-doc",
  "onicode-markdown",
  "onicode-orb",
@@ -6688,6 +6947,7 @@ name = "onicode-peer"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "block2 0.6.2",
  "bytes",
  "futures",
  "libc",
@@ -6758,8 +7018,6 @@ dependencies = [
  "async-trait",
  "futures",
  "getrandom 0.4.3",
- "onicode-doc",
- "onicode-sync",
  "serde",
  "serde_json",
  "tempfile",
@@ -6767,17 +7025,14 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tracing",
- "uuid",
 ]
 
 [[package]]
 name = "onicode-sync"
 version = "0.1.0"
 dependencies = [
- "block2 0.6.2",
  "bytes",
  "chrono",
- "futures",
  "loro",
  "lz4_flex",
  "onicode-doc",
@@ -6790,7 +7045,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tokio-tungstenite",
  "tracing",
 ]
 
@@ -6929,13 +7183,21 @@ dependencies = [
  "gpui_tokio",
  "html5ever",
  "image",
+ "libc",
  "mermaid-rs-renderer",
  "mimalloc",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
  "objc2-core-graphics",
+ "objc2-core-video",
  "objc2-foundation 0.3.2",
  "objc2-web-kit",
+ "onicode-desktop-client",
+ "onicode-desktop-grants",
+ "onicode-desktop-link",
+ "onicode-desktop-media",
+ "onicode-desktop-proto",
  "onicode-doc",
  "onicode-engine",
  "onicode-harness",
@@ -6954,7 +7216,9 @@ dependencies = [
  "onicode-voice",
  "onicode-voice-media",
  "onicode-voice-session",
+ "parking_lot",
  "png 0.18.1",
+ "proptest",
  "pulldown-cmark",
  "reqwest",
  "roxmltree 0.21.2",

@@ -201,10 +201,7 @@ fn files_panel_workspace_navigation_and_external_updates() {
             let boot = EngineBootConfig {
                 data_dir: data,
                 ipc_port: port,
-                edge_url: String::new(),
-                edge_token: None,
-                org_id: None,
-                workos_client_id: None,
+                update_feed: String::new(),
                 default_harness: onicode_proto::HarnessId::Mock,
             };
             let state = cx.new(|_| AppState::new());

@@ -5,7 +5,6 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use onicode_proto::WorkspaceScope;
 use onicode_update::transaction;
 
 use crate::{EngineConfig, EngineCore, InstanceLock};
@@ -87,27 +86,22 @@ async fn answers_on_its_port(port: u16, data_dir: &Path) -> Result<(), String> {
 
 struct Proof {
     workspace: crate::workspace_host::WorkspaceHost,
-    auth: crate::Auth,
-    scope: WorkspaceScope,
     port: u16,
     data_dir: PathBuf,
 }
 
 impl Proof {
     /// Its databases open and read (migrations included: assembly ran them), it
-    /// serves clients, and a signed-in device syncs with the devices it reaches.
+    /// serves clients, and it syncs with the devices it reaches.
     /// Sessions wait until after this.
     async fn run(&self) -> Result<(), String> {
         self.workspace
             .read_chats()
             .map_err(|err| format!("it couldn't read its data ({err})"))?;
         answers_on_its_port(self.port, &self.data_dir).await?;
-        if self.scope != WorkspaceScope::Synced {
-            return Ok(());
-        }
         let deadline = tokio::time::Instant::now() + PEER_PROOF;
         loop {
-            if !self.auth.state().is_signed_in() || self.workspace.registry_synced() {
+            if self.workspace.registry_synced() {
                 return Ok(());
             }
             if tokio::time::Instant::now() >= deadline {
@@ -136,8 +130,6 @@ pub(crate) fn prove_and_commit(core: &EngineCore, config: &EngineConfig) {
     };
     let proof = Proof {
         workspace: core.workspace.clone(),
-        auth: core.auth(),
-        scope: core.workspace_scope(),
         port: config.ipc_port,
         data_dir: config.data_dir.clone(),
     };
@@ -178,41 +170,6 @@ pub(crate) fn prove_and_commit(core: &EngineCore, config: &EngineConfig) {
         doc_host.lift_quiesce();
         tokio::time::sleep(TIDY_AFTER).await;
         transaction::tidy_latest(&proof.data_dir);
-    });
-}
-
-/// A trial with no profile to open: answering on its port is all it can prove.
-pub(crate) fn commit_without_a_profile(config: &EngineConfig) {
-    if !transaction::in_trial() {
-        return;
-    }
-    let (port, data_dir) = (config.ipc_port, config.data_dir.clone());
-    tokio::spawn(async move {
-        let client = onicode_rpc::connect_ipc(port, Some(&data_dir)).await;
-        let answered = match client {
-            Ok(client) => client
-                .call(onicode_rpc::methods::ENGINE_INFO, serde_json::json!({}))
-                .await
-                .map(drop)
-                .map_err(|err| err.to_string()),
-            Err(err) => Err(err.to_string()),
-        };
-        if let Err(why) = answered {
-            fail(
-                &data_dir,
-                &format!("The new version started, but it isn't answering on its port ({why})."),
-            );
-        }
-        tokio::time::sleep(SETTLE).await;
-        if let Err(err) = transaction::commit_trial() {
-            tracing::error!(error = %format!("{err:#}"), "couldn't commit the update");
-            fail(
-                &data_dir,
-                "The new version couldn't be saved as the current one.",
-            );
-        }
-        tokio::time::sleep(TIDY_AFTER).await;
-        transaction::tidy_latest(&data_dir);
     });
 }
 

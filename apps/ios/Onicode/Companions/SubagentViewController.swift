@@ -86,7 +86,7 @@ final class SubagentViewController: UIViewController {
         ])
 
         if let client = app.client {
-            if !engine.attachSubagent(client: client, chatId: parentId, docId: docId, frozen: !running) {
+            if !engine.attachSubagent(client: client, chatId: parentId, docId: docId) {
                 showUnavailable()
             }
             if let host = app.row(rootChatId)?.deviceId {

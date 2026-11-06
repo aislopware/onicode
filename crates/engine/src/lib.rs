@@ -1,16 +1,15 @@
 //! onicode-engine — the headless backend: sessions engine, doc host + command executor,
 //! run journal + crash recovery, and the IPC RPC server.
 //!
-//! Spec: ARCHITECTURE.md §5 and docs/research/feature-inventory.md §3. M2 surface:
-//! sessions + docs + commands + minimal IPC. Terminals, repos/diffs, uploads, auth,
-//! agent accounts, and the device-room host land in later milestones.
+//! It serves its clients over the localhost IPC port, and the user's other engines and
+//! viewers over QUIC links on the tailnet ([`peers`]).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-pub use onicode_proto::{EngineInfo, HarnessId, WorkspaceScope};
+pub use onicode_proto::{EngineInfo, HarnessId};
 use onicode_rpc::{RpcError, RpcReply, RpcService, methods};
 use onicode_sync::DocsStore;
 
@@ -34,25 +33,19 @@ pub fn build_id() -> &'static str {
         format!("{}.{built}", env!("ONICODE_GIT_COMMIT"))
     })
 }
-pub mod auth;
 mod change_request_store;
 pub mod change_requests;
 mod chat_persistence;
-mod cloud_accounts;
-pub mod cloud_client;
-pub mod credentials;
 pub mod deferred;
+pub mod desktop;
 pub mod desktop_notify;
 pub mod diff_sync;
 pub mod doc_host;
 mod doc_server;
-pub mod edge;
 mod fs_watch;
 pub mod harness_updates;
 pub(crate) mod home_index;
-mod http_error;
 pub mod instance_lock;
-pub mod local_import;
 pub mod managed;
 mod model_catalogs;
 mod peer_doc_sink;
@@ -65,7 +58,6 @@ pub mod remote_terminals;
 pub mod repos;
 pub mod rpc;
 pub mod run_journal;
-pub mod runner;
 pub mod sessions;
 pub mod source_control;
 pub mod spaces;
@@ -82,15 +74,13 @@ pub mod workspace_search;
 mod worktree_settings;
 
 pub use agent_accounts::{AgentAccounts, AgentAccountsConfig};
-pub use auth::{Auth, AuthConfig, AuthState, AuthUser, OrgMembership, ScreenHint, SignInOptions};
 pub use change_requests::{ChangeRequestCacheKey, CheckoutChangeRequests};
 pub use diff_sync::{
-    CheckoutDiffSync, DiffFileTextPair, DiffSidecar, DiffSnapshot, TreeSnapshot, TurnSnapshot,
+    CheckoutDiffSync, DiffFileTextPair, DiffSnapshot, TreeSnapshot, TurnSnapshot,
     capture_commit_diff, capture_diff, capture_diff_against, capture_turn_diff,
     discard_working_tree, merge_base, read_diff_file_text, snapshot_tree, working_diff_base,
 };
 pub use doc_host::{ChatDocHandle, DocHost, DocHostConfig};
-pub use edge::EdgeConfig;
 pub use instance_lock::InstanceLock;
 pub use onicode_preview::Scope as PreviewScope;
 pub use profile::EngineProfile;
@@ -110,15 +100,13 @@ pub use terminals::Terminals;
 pub use titles::TitleGenerator;
 pub use uploads::{AttachmentChunk, Uploads};
 pub use workspace_files::WorkspaceFiles;
-pub use workspace_host::{DEFAULT_ORG_ID, DEFAULT_USER_ID, WorkspaceHost, WorkspaceHostConfig};
+pub use workspace_host::{WorkspaceHost, WorkspaceHostConfig};
 pub use workspace_search::WorkspaceSearch;
 
 pub(crate) const LEGACY_UNKNOWN_DEVICE_NAME: &str = "unknown-device";
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
-    #[error(transparent)]
-    Token(#[from] onicode_rpc::TokenError),
     #[error("doc: {0}")]
     Doc(#[from] onicode_doc::DocError),
     #[error("journal: {0}")]
@@ -146,20 +134,12 @@ pub(crate) fn new_id() -> String {
 pub struct EngineConfig {
     /// Data directory (default `~/.onicode`, dev `~/.onicode-dev`).
     pub data_dir: PathBuf,
-    /// Edge base URL.
-    pub edge_url: String,
-    /// Explicit development bearer for edge room joins. Synced WorkOS runtimes
-    /// obtain their bearer from [`Auth`]; development stays offline when this is absent.
-    pub edge_token: Option<String>,
     /// Localhost IPC port for the UI.
     pub ipc_port: u16,
     /// Harness for doc-command runs on chats without a workspace `config` row.
     pub default_harness: HarnessId,
-    /// Workspace-doc org (`ws/{orgId}` room). `None` = `$ONICODE_ORG_ID` or the dev default.
-    /// In WorkOS mode the signed-in session's org wins.
-    pub org_id: Option<String>,
-    /// WorkOS client id — enables real auth; `None` = dev mode (bearer = `edge_token`).
-    pub workos_client_id: Option<String>,
+    /// Base URL of the public release feed (releases and harness compatibility).
+    pub update_feed: String,
     /// Join the tailnet: serve this engine to the user's other engines and reach theirs.
     /// Off for tests and fixtures, which must never show up on a real tailnet.
     pub peers: bool,
@@ -190,11 +170,6 @@ pub struct EngineCore {
     pub device_id: String,
     /// Which app windows are focused (desktop banners hold back while one is).
     pub viewport_focus: desktop_notify::ViewportFocus,
-    /// Local→synced profile import (account-scoped runtimes only).
-    pub local_import: Option<local_import::LocalImporter>,
-    workspace_scope: WorkspaceScope,
-    /// Auth service (attached by [`Engine::run`]; a lazy dev-mode instance otherwise).
-    auth: std::sync::Mutex<Option<Auth>>,
     /// Links to the user's other engines on the tailnet, once it is up: `targetDeviceId`
     /// routing and every stream to a peer.
     links: std::sync::Mutex<Option<Arc<onicode_peer::PeerLinks>>>,
@@ -203,49 +178,26 @@ pub struct EngineCore {
     /// Release checker (attached by [`Engine::assemble_runtime`]) — the
     /// UpdateStatus stream + ApplyUpdate.
     updater: std::sync::Mutex<Option<onicode_update::Updater>>,
-    /// The updater's token-change wake forwarder — owned so shutdown can end it.
-    updater_wake: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    /// Cloud runner only: credential broker + heartbeat (dropped on shutdown).
-    cloud: std::sync::Mutex<Option<runner::CloudRunner>>,
     /// Exclusive data-dir lock — held for the engine's lifetime (single-instance).
     _instance_lock: InstanceLock,
 }
 
 impl EngineCore {
-    /// Open stores under `data_dir`, wire sessions ⇄ doc host ⇄ workspace host, and
-    /// recover stale journals from a previous crash. Identity comes from
-    /// `$ONICODE_ORG_ID` / `$ONICODE_USER_ID` (dev defaults `dev-org` / `dev-user`);
-    /// use [`Self::assemble_with_identity`] to pass one explicitly.
+    /// Open the profile under `data_dir`, wire sessions ⇄ doc host ⇄ workspace host, and
+    /// recover stale journals from a previous crash.
     pub fn assemble(
         data_dir: &Path,
         registry: Arc<HarnessRegistry>,
         default_harness: HarnessId,
-        edge: Option<EdgeConfig>,
     ) -> Result<Self, EngineError> {
-        let org_id = env_or("ONICODE_ORG_ID", DEFAULT_ORG_ID);
-        let user_id = env_or("ONICODE_USER_ID", DEFAULT_USER_ID);
-        let profile = EngineProfile::development(data_dir, &org_id, &user_id);
-        Self::assemble_with_profile(profile, registry, default_harness, edge)
+        Self::assemble_with_profile(EngineProfile::local(data_dir)?, registry, default_harness)
     }
 
-    pub fn assemble_with_identity(
-        data_dir: &Path,
-        registry: Arc<HarnessRegistry>,
-        default_harness: HarnessId,
-        edge: Option<EdgeConfig>,
-        org_id: &str,
-        user_id: &str,
-    ) -> Result<Self, EngineError> {
-        let profile = EngineProfile::synced(data_dir, org_id, user_id);
-        Self::assemble_with_profile(profile, registry, default_harness, edge)
-    }
-
-    /// Assemble the engine against one resolved, immutable workspace profile.
+    /// Assemble the engine against one resolved profile.
     pub fn assemble_with_profile(
         profile: EngineProfile,
         registry: Arc<HarnessRegistry>,
         default_harness: HarnessId,
-        edge: Option<EdgeConfig>,
     ) -> Result<Self, EngineError> {
         let data_dir = profile.device_root();
         std::fs::create_dir_all(data_dir)?;
@@ -253,7 +205,7 @@ impl EngineCore {
         // SQLite snapshots + journals. Taken before any store opens or the IPC
         // port binds; held (and kernel-released on crash) for the engine's life.
         let lock = InstanceLock::acquire(data_dir)?;
-        Self::assemble_with_profile_locked(profile, registry, default_harness, edge, lock)
+        Self::assemble_with_profile_locked(profile, registry, default_harness, lock)
     }
 
     /// Assemble against a pre-acquired [`InstanceLock`]. The headed app takes
@@ -263,19 +215,16 @@ impl EngineCore {
         profile: EngineProfile,
         registry: Arc<HarnessRegistry>,
         default_harness: HarnessId,
-        edge: Option<EdgeConfig>,
         lock: InstanceLock,
     ) -> Result<Self, EngineError> {
         let data_dir = profile.device_root();
         std::fs::create_dir_all(data_dir)?;
         update_trial::refuse_mid_update(data_dir)?;
-        let legacy_uploads_root = profile.claim_legacy_uploads_root()?;
         let device_id = load_or_create_device_id(data_dir)?;
         // This device's harness enablement (Settings → Providers) rides the
         // engine data dir — per-device, like the CLI installs it gates.
         registry.load_prefs(data_dir);
         let store = Arc::new(DocsStore::open(profile.store_root())?);
-        let store_for_import = store.clone();
         let journal = Arc::new(RunJournal::open(profile.store_root().join("journals"))?);
         let sessions = SessionsEngine::new(device_id.clone(), journal, registry.clone());
         let doc_host = DocHost::new(
@@ -283,7 +232,6 @@ impl EngineCore {
             DocHostConfig {
                 device_id: device_id.clone(),
                 default_harness,
-                edge: edge.clone(),
             },
         );
         let workspace = WorkspaceHost::open(
@@ -291,12 +239,7 @@ impl EngineCore {
             WorkspaceHostConfig {
                 device_id: device_id.clone(),
                 device_name: local_device_name(&device_id),
-                // `ONICODE_DEVICE_PLATFORM` (a Cloud device stamps `cloud`).
-                platform: runner::device_platform(),
-                org_id: profile.org_id().to_string(),
-                user_id: profile.user_id().to_string(),
-                edge: edge.clone(),
-                local_only: matches!(profile.scope(), WorkspaceScope::Local),
+                platform: std::env::consts::OS.to_string(),
             },
         )?;
         doc_host.set_workspace(workspace.clone());
@@ -319,14 +262,8 @@ impl EngineCore {
         sessions.set_scratch_root(repos.scratch_root());
         doc_host.set_repos(repos.clone());
         let change_requests = CheckoutChangeRequests::start(repos.clone(), &device_id);
-        let workspace_files = WorkspaceFiles::with_cloud_checkout(
-            repos.clone(),
-            workspace.clone(),
-            device_id.clone(),
-            runner::session()
-                .and_then(|session| session.path.clone())
-                .map(std::path::PathBuf::from),
-        );
+        let workspace_files =
+            WorkspaceFiles::new(repos.clone(), workspace.clone(), device_id.clone());
         let terminals = Terminals::new();
         sessions.track_terminal_activity(terminals.clone(), workspace.clone());
         let project_actions = ProjectActionsStore::open(profile.store_root())?;
@@ -356,42 +293,15 @@ impl EngineCore {
             onicode_net::StreamKind::Registry,
             workspace.registry_server(),
         );
-        let uploads = Uploads::from_root_with_fallback(
-            profile.uploads_root(),
-            legacy_uploads_root.as_deref(),
-        );
-        // A recorded local→synced import grants this account the local
-        // profile's uploads root read-only — transcripts imported earlier
-        // embed absolute paths under it (same shape as the legacy adoption).
-        if profile.scope() != WorkspaceScope::Local
-            && let Some(root) =
-                local_import::marker_grants_read_root(data_dir, profile.org_id(), profile.user_id())
-        {
-            uploads.add_read_only_root(&root);
-        }
+        let uploads = Uploads::from_root(profile.uploads_root());
         // Queued-attachment support: the doc host resolves `pending://` refs
         // against this store and pushes staged bytes to remote hosts.
         doc_host.set_uploads(uploads.clone());
         let agent_accounts_config = AgentAccountsConfig::detect(data_dir);
-        // A Cloud device's Codex runs in the broker's managed CODEX_HOME.
-        let codex_home = if runner::is_cloud_platform() {
-            credentials::managed_codex_home(data_dir)
-        } else {
-            agent_accounts_config.codex_home.clone()
-        };
-        sessions.set_generated_images(uploads.clone(), codex_home.join("generated_images"));
-        let local_import = (profile.scope() == WorkspaceScope::Synced).then(|| {
-            local_import::LocalImporter::new(
-                data_dir,
-                &device_id,
-                profile.org_id(),
-                profile.user_id(),
-                store_for_import.clone(),
-                profile.store_root().join("journals"),
-                workspace.clone(),
-                uploads.clone(),
-            )
-        });
+        sessions.set_generated_images(
+            uploads.clone(),
+            agent_accounts_config.codex_home.join("generated_images"),
+        );
         // Logins started from another device publish their callback port to
         // the P2P service, which serves it to that device alone.
         let agent_accounts =
@@ -410,7 +320,7 @@ impl EngineCore {
             registry.clone(),
             repos.clone(),
         ));
-        let diff_sync = CheckoutDiffSync::start(repos.clone(), workspace.clone(), &device_id, edge);
+        let diff_sync = CheckoutDiffSync::start(repos.clone(), workspace.clone(), &device_id);
         // Turn starts snapshot the checkout tree — the "Latest turn" diff base.
         let turn_diff = diff_sync.clone();
         sessions.set_turn_listener(Arc::new(move |chat_id, cwd| {
@@ -436,48 +346,12 @@ impl EngineCore {
             agent_accounts,
             harness_updates,
             device_id,
-            local_import,
-            workspace_scope: profile.scope(),
-            auth: std::sync::Mutex::new(None),
             links: std::sync::Mutex::new(None),
             streams,
             updater: std::sync::Mutex::new(None),
-            updater_wake: std::sync::Mutex::new(None),
-            cloud: std::sync::Mutex::new(None),
             viewport_focus,
             _instance_lock: lock,
         })
-    }
-
-    pub fn workspace_scope(&self) -> WorkspaceScope {
-        self.workspace_scope
-    }
-
-    /// Attach the auth service (before building the RPC service / relays).
-    pub fn set_auth(&self, auth: Auth) {
-        *self
-            .auth
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(auth);
-    }
-
-    /// The attached auth service, or a lazily-created dev-mode one (in-process embeds
-    /// that never wired WorkOS still answer AuthStatus honestly).
-    pub fn auth(&self) -> Auth {
-        let mut slot = self
-            .auth
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        slot.get_or_insert_with(|| {
-            let dev_user = std::env::var("ONICODE_EDGE_TOKEN")
-                .ok()
-                .filter(|s| !s.trim().is_empty())
-                .unwrap_or_else(|| "dev-user".into());
-            let mut config = AuthConfig::new("http://localhost:27640", std::env::temp_dir());
-            config.dev_user_id = dev_user;
-            Auth::new(config)
-        })
-        .clone()
     }
 
     /// Attach the links to the user's other engines: `targetDeviceId` routing,
@@ -506,13 +380,6 @@ impl EngineCore {
     }
 
     /// Attach the release checker (before building the RPC service).
-    pub fn set_updater_wake(&self, handle: tokio::task::JoinHandle<()>) {
-        *self
-            .updater_wake
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(handle);
-    }
-
     pub fn set_updater(&self, updater: onicode_update::Updater) {
         *self
             .updater
@@ -556,9 +423,7 @@ impl EngineCore {
             self.diff_sync.clone(),
             self.uploads.clone(),
             self.agent_accounts.clone(),
-            self.workspace_scope,
         )
-        .with_auth(self.auth())
         .with_previews(self.previews.clone())
         .with_remote_terminals(self.remote_terminals.clone())
         .with_harness_updates(self.harness_updates.clone())
@@ -569,61 +434,14 @@ impl EngineCore {
         if let Some(updater) = self.updater() {
             rpc = rpc.with_updater(updater);
         }
-        if let Some(importer) = self.local_import.clone() {
-            rpc = rpc.with_local_import(importer);
-        }
-        if let Some(broker) = self.credentials() {
-            rpc = rpc.with_credentials(broker);
-        }
         Arc::new(rpc)
-    }
-
-    /// Revoke every account-scoped transport before any slower graceful
-    /// draining. Connected sockets remain authorized by their handshake, so
-    /// clearing credentials alone is not a security boundary.
-    pub fn disconnect_edge(&self) {
-        self.previews.stop();
     }
 
     /// Graceful teardown: settle live runs (streaming entries stamped `aborted`),
     /// kill live PTYs, stamp our workspace `lastSeenAt`, and flush every open doc
-    /// snapshot.
-    /// Attach the Cloud runner's background work (before building the RPC
-    /// service / relays).
-    pub fn set_cloud(&self, cloud: runner::CloudRunner) {
-        *self
-            .cloud
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(cloud);
-    }
-
-    /// The Cloud runner's relay activity counter (`None` on every other device).
-    pub fn relay_activity(&self) -> Option<runner::RelayActivity> {
-        self.cloud
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-            .map(|cloud| cloud.activity().clone())
-    }
-
-    /// The Cloud runner's credential broker (`None` on every other device).
-    pub fn credentials(&self) -> Option<credentials::CredentialBroker> {
-        self.cloud
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-            .map(|cloud| cloud.broker().clone())
-    }
-
-    /// Each phase's time goes to the log, so a slow quit names its cause.
+    /// snapshot. Each phase's time goes to the log, so a slow quit names its cause.
     pub async fn shutdown(&self) {
         let mut phases = ShutdownPhases::new();
-        // Stop the runner heartbeat + credential refresher first.
-        self.cloud
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        phases.end("cloud");
         self.previews.shutdown().await;
         phases.end("previews");
         self.harness_updates.shutdown().await;
@@ -632,16 +450,6 @@ impl EngineCore {
         // releases the next queued row. Freeze first so quitting never starts
         // recovered work while the engine is being torn down.
         self.doc_host.pause_all_queues();
-        // Decided here, from the auth state at the stop, so every way an
-        // engine goes down (headless, background, in-process) agrees.
-        let auth = self
-            .auth
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        if auth.is_some_and(|auth| forgoes_revival(self.workspace_scope, &auth.state())) {
-            self.sessions.forgo_revival();
-        }
         self.sessions.shutdown().await;
         phases.end("sessions");
         self.terminals.shutdown();
@@ -651,18 +459,7 @@ impl EngineCore {
         self.agent_accounts.shutdown();
         self.change_requests.shutdown();
         phases.end("accounts_and_change_requests");
-        // Cancel + await every worker that can reach Edge before flushing: a
-        // replaced synced runtime must not keep polling releases or draining
-        // the attachment outbox under the old identity after Local boots.
-        let wake = self
-            .updater_wake
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some(wake) = wake {
-            wake.abort();
-            let _ = wake.await;
-        }
+        // Stop polling releases before flushing.
         let updater = self
             .updater
             .lock()
@@ -737,9 +534,9 @@ pub struct Engine {
     pub config: EngineConfig,
 }
 
-/// A fully assembled identity-scoped engine plus its place on the tailnet, whose lifetime
-/// keeps this device reachable. Used by both the headless server and the headed
-/// in-process engine so their production authentication paths cannot diverge.
+/// A fully assembled engine plus its place on the tailnet, whose lifetime keeps this device
+/// reachable. Used by both the headless server and the headed in-process engine so their
+/// boot paths cannot diverge.
 pub struct EngineRuntime {
     core: EngineCore,
     peers: std::sync::Mutex<Option<peers::Peers>>,
@@ -752,20 +549,12 @@ pub struct EngineRuntime {
 /// attached to another headed process cannot shut down that process's engine.
 struct HeadlessRpc {
     inner: Arc<dyn RpcService>,
-    doc_host: DocHost,
     stop_tx: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
 #[async_trait]
 impl RpcService for HeadlessRpc {
     async fn handle(&self, method: &str, params: serde_json::Value) -> Result<RpcReply, RpcError> {
-        if method == methods::QUIESCE_FOR_SLEEP {
-            // Local IPC only (never relayed): a Cloud sleep's last check.
-            return RpcReply::value(&match self.doc_host.quiesce_for_sleep().await {
-                Ok(()) => serde_json::json!({ "quiesced": true }),
-                Err(busy) => serde_json::json!({ "quiesced": false, "busy": busy }),
-            });
-        }
         if method != methods::STOP_ENGINE {
             return self.inner.handle(method, params).await;
         }
@@ -786,14 +575,6 @@ impl EngineRuntime {
         &self.core
     }
 
-    pub fn workspace_scope(&self) -> WorkspaceScope {
-        self.core.workspace_scope()
-    }
-
-    pub fn disconnect_edge(&self) {
-        self.core.disconnect_edge();
-    }
-
     pub async fn shutdown(&self) {
         self.stop_notifier();
         // Off the tailnet before draining: no peer call may start work meanwhile.
@@ -801,7 +582,6 @@ impl EngineRuntime {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
-        self.disconnect_edge();
         self.core.shutdown().await;
     }
 
@@ -832,110 +612,11 @@ impl Engine {
         Self { config }
     }
 
-    /// Resolve the shared dev/WorkOS auth configuration for headed and headless
-    /// modes. A clean WorkOS boot deliberately avoids probing Edge: signed-out
-    /// installations must be able to start locally without network access.
-    pub async fn build_auth(config: &EngineConfig) -> Auth {
-        // A Cloud runner authenticates with its enrolled key; runner.json
-        // wins over every other mode (and never touches session.json).
-        match runner::RunnerIdentity::load(&config.data_dir) {
-            Ok(Some(identity)) => {
-                let auth_config = AuthConfig::new(identity.edge_url(), config.data_dir.clone());
-                return Auth::new_runner(auth_config, Arc::new(identity));
-            }
-            Ok(None) => {}
-            Err(err) => tracing::error!(error = %err, "runner identity unusable; ignoring it"),
-        }
-        let mut auth_config = AuthConfig::new(config.edge_url.clone(), config.data_dir.clone());
-        auth_config.workos_client_id = config.workos_client_id.clone();
-        if let Ok(base) = std::env::var("ONICODE_WORKOS_API_BASE")
-            && !base.trim().is_empty()
-        {
-            auth_config.workos_api_base = base;
-        }
-        auth_config.callback_port = Some(
-            std::env::var("ONICODE_CALLBACK_PORT")
-                .ok()
-                .and_then(|p| p.parse().ok())
-                .unwrap_or(27641),
-        );
-        if let Some(token) = &config.edge_token {
-            auth_config.dev_user_id = token.clone();
-        }
-        Auth::new(auth_config)
-    }
-
-    /// Capture the workspace boundary once, before refresh or sign-in can mutate auth.
-    pub fn initial_workspace_scope(auth: &Auth) -> WorkspaceScope {
-        if auth.is_runner() {
-            // A Cloud runner is always synced for its enrolled {org, user}.
-            WorkspaceScope::Synced
-        } else if !auth.workos_enabled() {
-            WorkspaceScope::Development
-        } else if auth.loaded_workos_session() {
-            WorkspaceScope::Synced
-        } else {
-            WorkspaceScope::Local
-        }
-    }
-
-    /// Resolve a profile for the captured scope. A synced session without an
-    /// organization returns `None` until onboarding selects one; it never falls
-    /// through to the local or development profile.
-    pub fn resolve_profile(
-        config: &EngineConfig,
-        auth: &Auth,
-        scope: WorkspaceScope,
-    ) -> Result<Option<EngineProfile>, EngineError> {
-        match scope {
-            WorkspaceScope::Local => EngineProfile::local(&config.data_dir).map(Some),
-            WorkspaceScope::Development => {
-                let dev_token_org = config
-                    .edge_token
-                    .as_deref()
-                    .and_then(|token| token.split_once('@'))
-                    .map(|(_, org)| org.to_string())
-                    .filter(|org| !org.is_empty());
-                let org_id = dev_token_org
-                    .or(config.org_id.clone())
-                    .unwrap_or_else(|| env_or("ONICODE_ORG_ID", DEFAULT_ORG_ID));
-                let user_id = auth
-                    .user_id()
-                    .unwrap_or_else(|| env_or("ONICODE_USER_ID", DEFAULT_USER_ID));
-                Ok(Some(EngineProfile::development(
-                    &config.data_dir,
-                    &org_id,
-                    &user_id,
-                )))
-            }
-            WorkspaceScope::Synced => {
-                let state = auth.state();
-                let Some(user) = state.user() else {
-                    return Err(EngineError::Other(
-                        "captured synced session no longer exposes its user identity".into(),
-                    ));
-                };
-                let Some(org_id) = state.org_id() else {
-                    return Ok(None);
-                };
-                Ok(Some(EngineProfile::synced(
-                    &config.data_dir,
-                    org_id,
-                    &user.id,
-                )))
-            }
-        }
-    }
-
     /// Resolve the one-shot identity served before profile stores are available.
-    pub fn engine_info(
-        config: &EngineConfig,
-        workspace_scope: WorkspaceScope,
-    ) -> Result<EngineInfo, EngineError> {
+    pub fn engine_info(config: &EngineConfig) -> Result<EngineInfo, EngineError> {
         std::fs::create_dir_all(&config.data_dir)?;
         Ok(EngineInfo {
             device_id: load_or_create_device_id(&config.data_dir)?,
-            workspace_scope,
             cursor_sdk_version: Some(onicode_harness::CursorHarness::sdk_version().into()),
             capabilities: {
                 let mut capabilities = onicode_proto::capabilities::current();
@@ -949,15 +630,12 @@ impl Engine {
         })
     }
 
-    /// Open one already-resolved profile. Synced profiles always keep their
-    /// Edge supervisors alive; temporary token or network failures are runtime
-    /// states, not a reason to permanently assemble an offline engine.
+    /// Open the profile and join the tailnet (when `config.peers`).
     pub async fn assemble_runtime(
         config: &EngineConfig,
-        auth: Auth,
         profile: EngineProfile,
     ) -> anyhow::Result<EngineRuntime> {
-        Self::assemble_runtime_inner(config, auth, profile, None).await
+        Self::assemble_runtime_inner(config, profile, None).await
     }
 
     /// Like [`Self::assemble_runtime`], but against an [`InstanceLock`] the
@@ -965,111 +643,30 @@ impl Engine {
     /// acquires it before binding IPC).
     pub async fn assemble_runtime_with_lock(
         config: &EngineConfig,
-        auth: Auth,
         profile: EngineProfile,
         lock: InstanceLock,
     ) -> anyhow::Result<EngineRuntime> {
-        Self::assemble_runtime_inner(config, auth, profile, Some(lock)).await
+        Self::assemble_runtime_inner(config, profile, Some(lock)).await
     }
 
     async fn assemble_runtime_inner(
         config: &EngineConfig,
-        auth: Auth,
         profile: EngineProfile,
         lock: Option<InstanceLock>,
     ) -> anyhow::Result<EngineRuntime> {
-        let edge_enabled = match profile.scope() {
-            WorkspaceScope::Local => false,
-            WorkspaceScope::Synced => {
-                // Validate the persisted session in the BACKGROUND: the probe
-                // still transitions auth to SignedOut on definitive revocation
-                // (and warms the single-flight refresh every first dial waits
-                // on), but assembly — and the viewport blocked on it — no
-                // longer stalls on a WorkOS round trip that can take seconds
-                // on a bad link. Everything shown at boot is local anyway.
-                let auth_probe = auth.clone();
-                tokio::spawn(async move {
-                    let _ = auth_probe.access_token().await;
-                });
-                true
-            }
-            // Dev Auth always exposes `dev_user_id` as its synthetic access
-            // token, including when WorkOS was merely disabled with
-            // ONICODE_WORKOS_CLIENT_ID="". Only an explicitly configured,
-            // non-empty bearer opts this runtime into Edge rooms and relays.
-            WorkspaceScope::Development => config
-                .edge_token
-                .as_deref()
-                .is_some_and(|token| !token.trim().is_empty()),
-        };
-        if edge_enabled {
-            // OS network-path events (macOS NWPathMonitor): the instant the
-            // path returns every parked reconnect backoff redials, and while
-            // the OS says there is no path the dial loops park instead of
-            // burning attempts. No-op on platforms without a monitor.
-            onicode_sync::net_path::spawn_path_monitor();
-        }
-        let device_id = load_or_create_device_id(profile.device_root())?;
-        let edge = edge_enabled.then(|| {
-            EdgeConfig::new(config.edge_url.clone(), Arc::new(auth.clone())).with_device(device_id)
-        });
-
-        let device_root = profile.device_root().to_path_buf();
         let core = match lock {
             Some(lock) => EngineCore::assemble_with_profile_locked(
                 profile,
                 Arc::new(default_registry()),
                 config.default_harness,
-                edge.clone(),
                 lock,
             )?,
             None => EngineCore::assemble_with_profile(
                 profile,
                 Arc::new(default_registry()),
                 config.default_harness,
-                edge.clone(),
             )?,
         };
-        core.set_auth(auth.clone());
-        // Cloud runner: the credential broker fills agent spawns' env (and
-        // backs ListGithubRepos / CloneRepo); the heartbeat feeds idle sleep.
-        // Attached before the host relay so relayed RPCs see the broker.
-        if let Some(identity) = auth.runner_identity() {
-            let tokens: Arc<dyn onicode_rpc::TokenSource> = Arc::new(auth.clone());
-            let broker = credentials::CredentialBroker::new(
-                credentials::BrokerConfig::detect(&device_root),
-                identity.clone(),
-                tokens.clone(),
-            );
-            core.registry.set_run_environment(Arc::new(broker.clone()));
-            broker.start();
-            let sessions = core.sessions.clone();
-            let activity = runner::RelayActivity::default();
-            let heartbeat = runner::spawn_heartbeat(
-                identity.edge_url(),
-                tokens,
-                Arc::new(move || sessions.active_count()),
-                activity.clone(),
-                runner::HEARTBEAT_INTERVAL,
-            );
-            // Check the session's project out. Runs dispatched meanwhile
-            // show the setup steps live and start once it is done
-            // (`runner::setup_pending`).
-            if let Some(session) = runner::session()
-                && session.repo.is_some()
-            {
-                runner::begin_setup();
-                let broker = broker.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = runner::prepare_checkout(session, Some(&broker)).await {
-                        // Runs still start (in the parent folder), so the
-                        // agent and the user see the failure in the chat.
-                        tracing::error!(error = %err, "runner: session checkout failed");
-                    }
-                });
-            }
-            core.set_cloud(runner::CloudRunner::new(broker, activity, heartbeat));
-        }
         let preview_workspace = core.workspace.clone();
         let preview_device = core.device_id.clone();
         let preview_terminals = core.terminals.clone();
@@ -1085,12 +682,9 @@ impl Engine {
             reserved_ports: onicode_harness::agent_ports::reserved(),
         });
         core.previews.start(projects).await;
-        // Release checker: polls {edge}/releases hourly (wall clock); headless
+        // Release checker: polls {feed}/releases hourly (wall clock); headless
         // installs with ONICODE_AUTO_UPDATE=1 apply + restart themselves — gated
         // on quiescence so a restart never lands under a live run or open PTY.
-        // Spawned for every install: application updates must not depend on
-        // workspace sync being enabled — the feed is the public release feed
-        // (served without authentication), not an edge feature.
         let quiescent: onicode_update::QuiescentCheck = {
             let sessions = core.sessions.clone();
             let terminals = core.terminals.clone();
@@ -1098,31 +692,18 @@ impl Engine {
         };
         core.harness_updates.set_compatibility_feed(format!(
             "{}/releases/harness-compatibility.json",
-            config.edge_url.trim_end_matches('/')
+            config.update_feed.trim_end_matches('/')
         ));
         // The release channel a macOS app install follows lives in the data
         // dir (update-channel.json), so this report follows the app's choice.
         onicode_update::channel::set_data_dir(&config.data_dir);
-        let updater = onicode_update::Updater::spawn(config.edge_url.clone(), Some(quiescent));
-        if let Some(mut token_changes) = edge.as_ref().and_then(EdgeConfig::token_changes) {
-            let updater_for_tokens = updater.clone();
-            let wake = tokio::spawn(async move {
-                while token_changes.changed().await.is_ok() {
-                    updater_for_tokens.check_now();
-                }
-            });
-            core.set_updater_wake(wake);
-        }
+        let updater = onicode_update::Updater::spawn(config.update_feed.clone(), Some(quiescent));
         core.set_updater(updater);
         tracing::info!(device_id = %core.device_id, "engine core assembled");
         // Managed ACP adapters install in the background at boot (agents
         // whose CLI is present but whose adapter isn't yet), so a first chat
         // never waits on — or dies inside — an npm run.
-        // Not on a Cloud device: it registers only Codex + Claude Code, and
-        // a sandbox's lazy CLI shims install themselves when merely probed.
-        if !runner::is_cloud_platform() {
-            onicode_harness::acp::prewarm_managed_adapters();
-        }
+        onicode_harness::acp::prewarm_managed_adapters();
 
         let peers = if config.peers {
             match peers::Peers::start(&core.device_id, core.rpc_service(), core.streams().clone())
@@ -1150,50 +731,16 @@ impl Engine {
         })
     }
 
-    /// Run until ctrl-c: auth (dev or WorkOS), sessions engine + doc host + command
-    /// executor, IPC server, and — when edge+auth are ready — the device-room host
-    /// relay + peer link cache (targetDeviceId routing).
+    /// Run until ctrl-c, SIGTERM or `StopEngine`: the profile's engine, its IPC server, and
+    /// its links to the user's other engines on the tailnet.
     pub async fn run(self) -> anyhow::Result<()> {
-        let mut config = self.config;
+        let config = self.config;
         tracing::info!(data_dir = %config.data_dir.display(), "engine starting");
 
         std::fs::create_dir_all(&config.data_dir)?;
         update_trial::boot(&config.data_dir)?;
-        // Cloud runner: runner.json wins; else ONICODE_RUNNER_ENROLL enrolls
-        // first (retrying network failures; a rejected code is fatal).
-        if let Some(identity) = runner::bootstrap(&config.data_dir, &config.edge_url).await? {
-            if identity.edge_url() != config.edge_url.trim_end_matches('/') {
-                tracing::info!(edge = %identity.edge_url(), "runner: using the edge this device enrolled with");
-                config.edge_url = identity.edge_url().to_string();
-            }
-            tracing::info!(device = %identity.device_id(), org = %identity.org_id(),
-                platform = %runner::device_platform(), "runner: Cloud device mode");
-            // A session machine: its project (from the provisioning env, or
-            // persisted from a previous boot).
-            let session = runner::CloudSession::resolve(&config.data_dir);
-            if let Some(session) = &session {
-                tracing::info!(chat = %session.chat_id, account = %session.account,
-                    "runner: Cloud session machine");
-            }
-            runner::set_session(session);
-        }
-        let auth = Self::build_auth(&config).await;
-        let mut auth_state = auth.watch_state();
-        let workspace_scope = Self::initial_workspace_scope(&auth);
-        let mut profile = Self::resolve_profile(&config, &auth, workspace_scope)?;
-        let _refresh_loop = auth.spawn_refresh_loop();
-
-        // A captured cloud session without an organization must finish onboarding
-        // before its profile can open. A clean signed-out install is local and never
-        // enters the terminal sign-in flow.
-        if workspace_scope == WorkspaceScope::Synced && profile.is_none() {
-            terminal_sign_in(&auth).await?;
-            profile = Self::resolve_profile(&config, &auth, workspace_scope)?;
-        }
-        let profile = profile
-            .ok_or_else(|| EngineError::Other("synced workspace profile is not ready".into()))?;
-
-        let runtime = Self::assemble_runtime(&config, auth, profile).await?;
+        let profile = EngineProfile::local(&config.data_dir)?;
+        let runtime = Self::assemble_runtime(&config, profile).await?;
         // The desktop app or `onicode update` may install a newer binary under
         // a running service; restart into it once no run or terminal is live.
         if let Some(updater) = runtime.core().updater() {
@@ -1206,7 +753,6 @@ impl Engine {
         let (stop_tx, mut stop_rx) = tokio::sync::mpsc::unbounded_channel();
         let service: Arc<dyn RpcService> = Arc::new(HeadlessRpc {
             inner: runtime.core().rpc_service(),
-            doc_host: runtime.core().doc_host.clone(),
             stop_tx,
         });
         let server = serve_ipc(config.ipc_port, &config.data_dir, service).await?;
@@ -1226,47 +772,11 @@ impl Engine {
                     tracing::info!("headless shutdown requested over IPC");
                 }
             }
-            _ = wait_for_signed_out(&mut auth_state), if workspace_scope == WorkspaceScope::Synced => {
-                // Edge transports observe the same auth signal and close at
-                // once. Leave a brief reply window for a SignOut RPC before
-                // the localhost server itself is aborted.
-                runtime.disconnect_edge();
-                tracing::info!("headless authentication revoked; stopping synced runtime");
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            }
         }
         tracing::info!("shutting down");
         server.abort();
-        // No token refresh mid-exchange when the next engine takes over the
-        // session file (a refresh token is single-use).
-        runtime
-            .core()
-            .auth()
-            .quiesce_refresh(std::time::Duration::from_secs(10))
-            .await;
         runtime.shutdown().await;
         Ok(())
-    }
-}
-
-/// Whether a stopping engine's cut-off turns stay ended rather than revive on
-/// the next boot ([`EngineCore::shutdown`] asks): a synced engine whose
-/// account is signed out by the time it stops, whichever stop reached it
-/// first — the auth watcher, or the app's StopEngine right after its SignOut.
-/// Sign-out is the user ending the session, like a Stop. A local engine is
-/// signed out as a matter of course.
-pub(crate) fn forgoes_revival(scope: WorkspaceScope, auth: &AuthState) -> bool {
-    scope == WorkspaceScope::Synced && matches!(auth, AuthState::SignedOut)
-}
-
-async fn wait_for_signed_out(state: &mut tokio::sync::watch::Receiver<AuthState>) {
-    loop {
-        if matches!(&*state.borrow(), AuthState::SignedOut) {
-            return;
-        }
-        if state.changed().await.is_err() {
-            return;
-        }
     }
 }
 
@@ -1311,165 +821,6 @@ pub async fn serve_ipc(
     Ok(tokio::spawn(onicode_rpc::serve_ws_listener_scoped(
         listener, service, tokens,
     )))
-}
-
-/// Block until the WorkOS session is signed in AND org-scoped. On a TTY, print the
-/// headless (paste-code) sign-in URL, read the pasted `state.code` from stdin, and
-/// run workspace onboarding (create / auto-join / numbered picker). Off a TTY this
-/// errors immediately — a daemon under systemd/launchd must load the session that
-/// `onicode login` persisted, never wait on a prompt nobody can see.
-pub async fn terminal_sign_in(auth: &Auth) -> Result<(), EngineError> {
-    use std::io::IsTerminal;
-    let interactive = std::io::stdin().is_terminal();
-    let mut state_rx = auth.watch_state();
-    let mut stdin_reader: Option<tokio::task::JoinHandle<()>> = None;
-    let mut org_reader: Option<tokio::task::JoinHandle<()>> = None;
-    loop {
-        let state = state_rx.borrow().clone();
-        match state {
-            AuthState::SignedIn { user, org_id } => {
-                tracing::info!(email = %user.email, org = org_id.as_deref().unwrap_or("<none>"),
-                    "auth: session ready");
-                break;
-            }
-            AuthState::NeedsOrganization { user } => {
-                if !interactive {
-                    // No reader tasks have been spawned on this path (both spawns
-                    // are TTY-gated), so an early return leaks nothing.
-                    return Err(EngineError::Other(format!(
-                        "signed in as {} but no workspace is selected — run `onicode login` on this machine to pick one",
-                        user.email
-                    )));
-                }
-                if org_reader.is_none() {
-                    // Workspace onboarding on the TTY (old onicode's
-                    // `backend login` flow): create if none, auto-join a
-                    // single membership, numbered picker otherwise.
-                    println!("Signed in as {}.", user.email);
-                    org_reader = Some(tokio::spawn(run_org_onboarding(auth.clone())));
-                }
-            }
-            AuthState::SignedOut => {
-                if !interactive {
-                    return Err(EngineError::Other(
-                        "not signed in — run `onicode login` on this machine first".into(),
-                    ));
-                }
-                if stdin_reader.is_none() {
-                    let url = auth.start_headless_sign_in();
-                    println!("Sign in to Onicode:\n\n  {url}\n");
-                    println!("Then paste the code shown in the browser here and press enter.");
-                    let auth = auth.clone();
-                    stdin_reader = Some(tokio::spawn(async move {
-                        loop {
-                            let Some(line) = read_stdin_line().await else {
-                                return;
-                            };
-                            let pasted = line.trim();
-                            if pasted.is_empty() {
-                                continue;
-                            }
-                            match auth.complete_sign_in(pasted).await {
-                                Ok(()) => return,
-                                Err(err) => println!("Sign-in failed: {err}"),
-                            }
-                        }
-                    }));
-                }
-            }
-        }
-        if state_rx.changed().await.is_err() {
-            break;
-        }
-    }
-    if let Some(reader) = stdin_reader {
-        reader.abort();
-    }
-    if let Some(reader) = org_reader {
-        reader.abort();
-    }
-    Ok(())
-}
-
-/// One line from stdin (blocking read off the runtime). `None` = stdin closed.
-async fn read_stdin_line() -> Option<String> {
-    tokio::task::spawn_blocking(|| {
-        let mut line = String::new();
-        match std::io::stdin().read_line(&mut line) {
-            Ok(0) | Err(_) => None, // EOF / error
-            Ok(_) => Some(line),
-        }
-    })
-    .await
-    .ok()
-    .flatten()
-}
-
-/// TTY workspace onboarding for an org-less session (ports old onicode's
-/// `backend login` flow): no memberships → prompt a name and create; exactly
-/// one → auto-join; several → numbered picker. Success flips the auth state to
-/// `SignedIn`, which ends `wait_for_sign_in`'s wait (and aborts this task).
-async fn run_org_onboarding(auth: Auth) {
-    let orgs = match auth.list_orgs().await {
-        Ok(orgs) => orgs,
-        Err(err) => {
-            println!(
-                "Could not list workspaces ({err}) — create or select one from the Onicode UI to continue."
-            );
-            return;
-        }
-    };
-    match orgs.len() {
-        0 => {
-            println!("No workspaces yet — name your new workspace and press enter:");
-            loop {
-                let Some(line) = read_stdin_line().await else {
-                    return;
-                };
-                let name = line.trim();
-                if name.is_empty() {
-                    continue;
-                }
-                match auth.create_org(name).await {
-                    Ok(()) => return,
-                    Err(err) => println!("Creating workspace failed: {err}"),
-                }
-            }
-        }
-        1 => {
-            let only = &orgs[0];
-            println!("Joining workspace \"{}\"…", only.name);
-            if let Err(err) = auth.select_org(&only.organization_id).await {
-                println!("Joining workspace failed: {err}");
-            }
-        }
-        _ => {
-            println!("\nYour workspaces:");
-            for (index, org) in orgs.iter().enumerate() {
-                println!("  {}. {}", index + 1, org.name);
-            }
-            println!("Pick a workspace [1-{}]:", orgs.len());
-            loop {
-                let Some(line) = read_stdin_line().await else {
-                    return;
-                };
-                let choice = line
-                    .trim()
-                    .parse::<usize>()
-                    .ok()
-                    .and_then(|n| n.checked_sub(1))
-                    .and_then(|index| orgs.get(index));
-                let Some(org) = choice else {
-                    println!("Pick a workspace [1-{}]:", orgs.len());
-                    continue;
-                };
-                match auth.select_org(&org.organization_id).await {
-                    Ok(()) => return,
-                    Err(err) => println!("Joining workspace failed: {err}"),
-                }
-            }
-        }
-    }
 }
 
 /// Best-effort human name for this device's registry row.
@@ -1523,79 +874,6 @@ fn native_friendly_device_name() -> Option<String> {
 #[cfg(not(target_os = "macos"))]
 fn native_friendly_device_name() -> Option<String> {
     None
-}
-
-#[cfg(test)]
-mod device_name_tests {
-    use super::select_local_device_name;
-
-    fn name(candidates: &[Option<&str>], device_id: &str, platform: &str) -> String {
-        select_local_device_name(
-            candidates
-                .iter()
-                .map(|candidate| candidate.map(str::to_string)),
-            device_id,
-            platform,
-        )
-    }
-
-    #[test]
-    fn explicit_override_wins_and_is_trimmed() {
-        assert_eq!(
-            name(
-                &[Some("  Studio Mac  "), Some("system-host")],
-                "17bc0aa2-rest",
-                "macos"
-            ),
-            "Studio Mac"
-        );
-    }
-
-    #[test]
-    fn native_friendly_name_wins_over_hostnames() {
-        assert_eq!(
-            name(
-                &[
-                    None,
-                    Some("MacBook Pro de Jose"),
-                    None,
-                    Some("MacBook-Pro.local"),
-                ],
-                "17bc0aa2-rest",
-                "macos"
-            ),
-            "MacBook Pro de Jose"
-        );
-    }
-
-    #[test]
-    fn blank_candidates_are_ignored() {
-        assert_eq!(
-            name(
-                &[Some("  "), None, Some("\n"), Some("linux-box")],
-                "17bc0aa2-rest",
-                "linux"
-            ),
-            "linux-box"
-        );
-    }
-
-    #[test]
-    fn final_fallback_is_platform_specific_and_distinct() {
-        assert_eq!(
-            name(&[None, Some(" ")], "17bc0aa2-rest", "linux"),
-            "Linux device 17bc0aa2"
-        );
-    }
-}
-
-/// Trimmed env var or the given default.
-fn env_or(key: &str, default: &str) -> String {
-    std::env::var(key)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| default.to_string())
 }
 
 /// Stable per-installation device id, persisted at `{data_dir}/device-id`.
@@ -1702,33 +980,65 @@ fn replace_empty_device_id(temp_path: &Path, path: &Path) -> std::io::Result<()>
 }
 
 #[cfg(test)]
-mod revival_tests {
-    use super::*;
+mod device_name_tests {
+    use super::select_local_device_name;
+
+    fn name(candidates: &[Option<&str>], device_id: &str, platform: &str) -> String {
+        select_local_device_name(
+            candidates
+                .iter()
+                .map(|candidate| candidate.map(str::to_string)),
+            device_id,
+            platform,
+        )
+    }
 
     #[test]
-    fn only_a_signed_out_synced_engine_forgoes_revival() {
-        assert!(forgoes_revival(
-            WorkspaceScope::Synced,
-            &AuthState::SignedOut
-        ));
-        let user = AuthUser {
-            id: "u".into(),
-            email: "u@example.com".into(),
-            name: None,
-        };
-        assert!(!forgoes_revival(
-            WorkspaceScope::Synced,
-            &AuthState::SignedIn {
-                user: user.clone(),
-                org_id: Some("o".into()),
-            }
-        ));
-        assert!(!forgoes_revival(
-            WorkspaceScope::Synced,
-            &AuthState::NeedsOrganization { user }
-        ));
-        for scope in [WorkspaceScope::Local, WorkspaceScope::Development] {
-            assert!(!forgoes_revival(scope, &AuthState::SignedOut));
-        }
+    fn explicit_override_wins_and_is_trimmed() {
+        assert_eq!(
+            name(
+                &[Some("  Studio Mac  "), Some("system-host")],
+                "17bc0aa2-rest",
+                "macos"
+            ),
+            "Studio Mac"
+        );
+    }
+
+    #[test]
+    fn native_friendly_name_wins_over_hostnames() {
+        assert_eq!(
+            name(
+                &[
+                    None,
+                    Some("MacBook Pro de Jose"),
+                    None,
+                    Some("MacBook-Pro.local"),
+                ],
+                "17bc0aa2-rest",
+                "macos"
+            ),
+            "MacBook Pro de Jose"
+        );
+    }
+
+    #[test]
+    fn blank_candidates_are_ignored() {
+        assert_eq!(
+            name(
+                &[Some("  "), None, Some("\n"), Some("linux-box")],
+                "17bc0aa2-rest",
+                "linux"
+            ),
+            "linux-box"
+        );
+    }
+
+    #[test]
+    fn final_fallback_is_platform_specific_and_distinct() {
+        assert_eq!(
+            name(&[None, Some(" ")], "17bc0aa2-rest", "linux"),
+            "Linux device 17bc0aa2"
+        );
     }
 }

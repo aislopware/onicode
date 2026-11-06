@@ -99,7 +99,6 @@ icon_assets![
     (PULL_REQUEST, "pull-request"),
     (WORKTREE, "worktree"),
     (PLUS, "plus"),
-    (MINUS, "minus"),
     (ARROW_LEFT, "arrow-left"),
     (ARROW_RIGHT, "arrow-right"),
     (ALT_ARROW_DOWN, "alt-arrow-down"),
@@ -152,7 +151,6 @@ icon_assets![
     // Shared settings glyph: user-supplied horizontal sliders.
     (SETTINGS, "settings"),
     (SETTINGS_MINIMALISTIC, "settings-minimalistic"),
-    (LOGOUT_2, "logout-2"),
     (MAGNIFER, "magnifer"),
     // Compact magnifier with a distinct handle, matching the linear icon family.
     (PALETTE_SEARCH, "palette-search"),
@@ -231,11 +229,6 @@ icon_assets![
     (FX_MARK, "fx-mark"),
     (PI_MARK, "pi-mark"),
     (OPENCODE_MARK, "opencode-mark"),
-    // GitHub's mark (Octicons `mark-github`, MIT) for the Cloud page's
-    // GitHub connection.
-    (GITHUB_MARK, "github-mark"),
-    // Settings → Billing (drawn to the Solar linear set's 1.5 stroke).
-    (WALLET, "wallet"),
     (ANTIGRAVITY_MARK, "antigravity-mark"),
     // Muse Code's mark (Meta's infinity), tinted its brand blue at call sites.
     (MUSE_MARK, "muse-mark"),

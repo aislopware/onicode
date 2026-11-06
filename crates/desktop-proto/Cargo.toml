@@ -1,0 +1,13 @@
+[package]
+name = "onicode-desktop-proto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Remote-desktop control types: displays, stream setup, screen input, events, keys and the clipboard"
+
+[dependencies]
+bitflags.workspace = true
+onicode-desktop-media.workspace = true
+serde.workspace = true
+serde_bytes.workspace = true

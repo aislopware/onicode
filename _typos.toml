@@ -24,6 +24,8 @@ extend-ignore-re = [
 ]
 
 [default.extend-words]
+# ue(v), the H.26x unsigned exp-Golomb code (onicode_desktop_codec::conformance).
+ue = "ue"
 # PBR material term (glTF metallicFactor).
 metalness = "metalness"
 # struct msghdr's msg_controllen.

@@ -17,10 +17,10 @@ use crate::{
 /// the feed asked again, so a long-lived status still lands on the newest
 /// release (and that release's checksums).
 pub async fn current_offer(
-    edge_url: &str,
+    feed_url: &str,
     install: &InstallKind,
 ) -> anyhow::Result<(Offer, crate::Manifest)> {
-    let manifest = fetch_latest(edge_url).await?;
+    let manifest = fetch_latest(feed_url).await?;
     let running_engine = match install {
         InstallKind::MacApp { bundle } => bundle_engine_version(bundle),
         _ => None,
@@ -40,17 +40,17 @@ pub async fn current_offer(
 /// the staged bundle. An offer that's gone or held is an error, in words for
 /// the person.
 pub async fn stage_offer(
-    edge_url: &str,
+    feed_url: &str,
     data_dir: &Path,
     install: &InstallKind,
 ) -> anyhow::Result<(String, PathBuf)> {
-    let (offer, manifest) = current_offer(edge_url, install).await?;
+    let (offer, manifest) = current_offer(feed_url, install).await?;
     match offer {
         Offer::Newer | Offer::Switch => {}
         Offer::Held(why) => anyhow::bail!(why),
         Offer::Current => anyhow::bail!("the release feed no longer offers a newer version"),
     }
-    let staged = install.stage_desktop(edge_url, &manifest, data_dir).await?;
+    let staged = install.stage_desktop(feed_url, &manifest, data_dir).await?;
     Ok((manifest.version, staged))
 }
 

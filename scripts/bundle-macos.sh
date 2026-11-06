@@ -2,7 +2,9 @@
 # Build the release binaries and assemble target/package/Onicode.app, unsigned.
 # better-update (`better-update build --platform macos`, profile in eas.json)
 # runs this, then signs the bundle inside out with the Developer ID identity
-# from its vault, notarizes, staples, packages and uploads it.
+# from its vault, notarizes, staples, packages and uploads it. The nested
+# Contents/Library/LoginItems/Onicode Desktop.app is signed first, as its own
+# bundle (identifier dev.aislopware.onicode.desktop, from its Info.plist).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -13,7 +15,7 @@ OUT_DIR="$ROOT/target/package"
 APP="$OUT_DIR/Onicode.app"
 
 cd "$ROOT"
-nice -n 10 cargo build --release --locked -p onicode --bins
+nice -n 10 cargo build --release --locked -p onicode -p onicode-desktopd --bins
 
 /bin/rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/licenses/fonts"
@@ -34,4 +36,10 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/onicode.icns"
 /bin/rm -rf "$ICONSET"
+
+# The remote-desktop host, in its own helper bundle so its grants are its own.
+# shellcheck source=scripts/macos-desktop-helper.sh
+source "$ROOT/scripts/macos-desktop-helper.sh"
+desktop_helper_assemble "$ROOT" "$APP" "$TARGET_DIR/release/onicode-desktopd" \
+  dev.aislopware.onicode "$VERSION" "Onicode Desktop"
 echo "bundled: $APP ($VERSION)"

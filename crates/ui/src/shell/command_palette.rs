@@ -1089,10 +1089,7 @@ impl Shell {
                     (None, None) => None,
                     _ => Some("?"),
                 };
-                // A Cloud chat's own machine isn't a device worth naming.
-                let device = (!onicode_proto::is_cloud_device(&chat.device_id, ""))
-                    .then(|| state.device_name(&chat.device_id))
-                    .flatten();
+                let device = state.device_name(&chat.device_id);
                 let folder = match (project, device) {
                     (Some(project), Some(device)) => format!("{project} @ {device}"),
                     (Some(project), None) => project.to_string(),
@@ -1523,10 +1520,7 @@ mod tests {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -2658,7 +2652,6 @@ mod tests {
                 shell.settings.sidebar_organization = SidebarOrganization::InOneList;
                 shell.state.update(cx, |state, _| {
                     state.connection = onicode_proto::view::ConnectionStatus::Ready;
-                    state.workspace_scope = Some(WorkspaceScope::Local);
                     state.local_device_id = Some("local".into());
                     state.apply_chats(vec![
                         chat("first", None, false, 0),

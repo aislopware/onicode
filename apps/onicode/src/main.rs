@@ -1,12 +1,11 @@
-//! onicode — headed by default; `onicode headless` runs the engine alone. Both start
-//! local-only without credentials. `onicode login` and `onicode logout` select the
-//! profile used by the next engine start without mutating a live runtime.
+//! onicode — headed by default; `onicode headless` runs the engine alone. Either serves this
+//! device's profile and joins the user's other engines on the tailnet.
 //!
 //! The command line is `onicode_cli`'s (shared with the engine helper and the
 //! zgx interface). This binary links the engine, so it runs the engine's
 //! subcommands itself; with no subcommand it opens the window.
 
-use onicode_app::{edge_url_from_env, paths, workos_client_id_from_env};
+use onicode_app::{paths, update_feed_from_env};
 use onicode_cli::{Engines, Launch};
 
 fn main() -> anyhow::Result<()> {
@@ -19,16 +18,12 @@ fn main() -> anyhow::Result<()> {
         )
         .map_err(anyhow::Error::msg),
         Launch::Window { open_url } => {
-            let edge_token = std::env::var("ONICODE_EDGE_TOKEN").ok();
             // Headed: the UI probes ONICODE_IPC_PORT and connects to a running
             // daemon, or embeds the engine in-process (ARCHITECTURE §1).
             onicode_ui::run_app(onicode_ui::UiConfig {
                 data_dir: paths::data_dir(),
                 ipc_port: onicode_cli::ipc_port_from_env(),
-                edge_url: edge_url_from_env(),
-                workos_client_id: workos_client_id_from_env(&edge_token),
-                edge_token,
-                org_id: std::env::var("ONICODE_ORG_ID").ok(),
+                update_feed: update_feed_from_env(),
                 default_harness: onicode_ui::HarnessId::ClaudeCode,
                 initial_url: open_url,
             });

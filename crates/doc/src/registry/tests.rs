@@ -90,7 +90,6 @@ fn chat(id: &str, device_id: &str) -> Chat {
         child_kind: None,
         space_id: None,
         last_seen_at: None,
-        room_gen: None,
     }
 }
 
@@ -237,7 +236,7 @@ fn a_space_icon_is_set_whole_survives_upserts_and_clears() {
     // Another kind replaces it whole: no emoji left beside the image.
     let image = SpaceIcon {
         emoji: None,
-        image: Some("https://edge.test/auth/avatars/ab".into()),
+        image: Some("https://example.test/avatars/ab".into()),
         hue: None,
     };
     assert!(ws.set_space_icon("sp-1", Some(&image)).unwrap());
@@ -1025,7 +1024,6 @@ fn side_chat_origin_syncs_and_survives_updates_and_restart() {
     let mut b = RegistryDoc::new("dev-b");
     let mut side = chat("side", "dev-a");
     side.parent_chat_id = Some("main".into());
-    side.room_gen = Some(2);
     a.upsert_chat(&side).unwrap();
     sync(&mut [&mut a, &mut b]);
     assert_eq!(b.chat("side").unwrap(), Some(side.clone()));
@@ -1233,39 +1231,6 @@ fn snapshots_round_trip_rows_and_version_vector() {
     assert_eq!(all_rows(&restored), all_rows(&a));
     assert_eq!(restored.vv(), a.vv());
     assert!(restored.chat_deleted("chat-1"));
-}
-
-#[test]
-fn an_edge_room_snapshot_loads_once_as_this_replicas_own_writes() {
-    let mut source = RegistryDoc::new("dev-a");
-    source.upsert_chat(&chat("chat-1", "dev-a")).unwrap();
-    let row = source.live_row(KIND_CHATS, "chat-1").unwrap();
-    let rename = RowOp {
-        kind: KIND_CHATS.into(),
-        id: "chat-1".into(),
-        op: OpKind::Update,
-        set: Some(fields([("title", json!("unacked rename"))])),
-        hlc: encode_hlc(i64::MAX / 2, 0, "dev-a"),
-        clocks: None,
-    };
-    let edge = json!({
-        "v": 1,
-        "resyncEpoch": 1,
-        "deviceId": "dev-a",
-        "serverSeq": 41,
-        "gcFloor": 0,
-        "clock": {"last_ms": 0, "counter": 0},
-        "rows": [row],
-        "pending": [{"batch": "b-1", "ops": [rename]}],
-    });
-    let doc = RegistryDoc::from_bytes(&serde_json::to_vec(&edge).unwrap(), "dev-a").unwrap();
-    assert_eq!(
-        doc.chat("chat-1").unwrap().unwrap().title.as_deref(),
-        Some("unacked rename")
-    );
-    assert_eq!(doc.rows_since(&Vv::new()).len(), 1, "a fresh peer gets it");
-    let reloaded = RegistryDoc::from_bytes(&doc.to_bytes().unwrap(), "dev-a").unwrap();
-    assert_eq!(all_rows(&reloaded), all_rows(&doc));
 }
 
 #[test]

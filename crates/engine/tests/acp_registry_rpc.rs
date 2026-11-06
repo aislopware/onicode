@@ -134,7 +134,6 @@ async fn registry_agents_are_listed_added_as_harnesses_and_removed() {
         dir.path(),
         onicode_engine::registry::default_registry().into(),
         HarnessId::Mock,
-        None,
     )
     .expect("an isolated engine");
     onicode_engine::acp_registry::start(dir.path(), &core.registry);

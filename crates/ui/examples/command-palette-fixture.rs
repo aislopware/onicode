@@ -25,7 +25,6 @@ fn main() -> anyhow::Result<()> {
         let state = cx.new(|_| {
             let mut s = state::AppState::new();
             s.connection = onicode_proto::view::ConnectionStatus::Ready;
-            s.workspace_scope = Some(onicode_proto::WorkspaceScope::Local);
             s.local_device_id = Some("local".into());
             s.devices = vec![serde_json::from_value(serde_json::json!({"id":"local","name":"This device","platform":std::env::consts::OS,"lastSeenAt":null})).unwrap()];
             s.selected_chat = Some("browser-fixture".into()); s.selected_space = Some("project".into());
@@ -48,7 +47,7 @@ fn main() -> anyhow::Result<()> {
             }
             s
         });
-        let boot = EngineBootConfig { data_dir: data, ipc_port: 0, edge_url: String::new(), edge_token: None, org_id: None, workos_client_id: None, default_harness: HarnessId::ClaudeCode };
+        let boot = EngineBootConfig { data_dir: data, ipc_port: 0, update_feed: String::new(), default_harness: HarnessId::ClaudeCode };
         let _window = cx.open_window(WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(gpui::point(px(12.),px(30.)), size(px(1100.),px(800.))))),
             titlebar: Some(gpui::TitlebarOptions { title: None, appears_transparent: true, traffic_light_position: Some(gpui::point(px(14.),px(14.))) }),

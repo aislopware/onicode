@@ -29,7 +29,6 @@ cargo test -p zeron-harness codex
 cargo test -p zeron-harness --test codex
 cargo test -p zeron-ui transcript
 cargo test -p zeron-ui attachments
-cd edge && npm test
 ```
 
 The engine fixture covers repeated completions, restart-style Loro export/import,
@@ -82,8 +81,7 @@ image Base64. Other user-authored content may legitimately contain those strings
 ## Implementation validation (2026-09-14)
 
 - Proto/document, generated-image engine tests, e2e/device routing, Codex fake
-  integration, transcript and attachment tests pass. Edge's 54 unit/workerd
-  tests and TypeScript typecheck pass.
+  integration, transcript and attachment tests pass.
 - The workspace run passed 1,826 tests (21 intentionally ignored) with
   `--skip online_runtime_shutdown_stops_edge_workers_and_retires_the_graph`.
   The unfiltered run and an isolated retry failed that shutdown assertion;

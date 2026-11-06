@@ -18,8 +18,8 @@
 #                  they are listed instead of globbed to avoid compiling them.
 #   voice (moved from voice-tests.yml offline-linux, which ran them as 14 separate
 #   `cargo test` builds): onicode-voice-media, onicode-voice-session and onicode-orb
-#                  lib, onicode-proto lib `voice` tests, onicode-mcp lib, onicode-rpc
-#                  device_room, engine voice_runtime and device_routing. They need no
+#                  lib, onicode-proto lib `voice` tests, onicode-mcp lib, engine
+#                  voice_runtime and device_routing. They need no
 #                  audio stack, and harness already depends on all of them.
 # nextest does not run doctests; these crates have none (their doc comments
 # contain no Rust code blocks).
@@ -40,14 +40,14 @@ for f in crates/harness/tests/*.rs crates/preview/tests/*.rs crates/doc/tests/*.
 done
 # `misc` (harness, engine and preview): the small suites, one binary each.
 # The orb geometry tests live in onicode-orb's `geometry`.
-for t in misc geometry peer_sync restart_resume side_chats message_queue voice_runtime device_routing device_room; do
+for t in misc geometry peer_sync restart_resume side_chats message_queue voice_runtime device_routing; do
   tests+=(--test "$t")
 done
 
 exec cargo nextest run --config-file scripts/ci/nextest.toml --locked --no-fail-fast \
   -p onicode-harness -p onicode-engine -p onicode-sync -p onicode-update -p onicode-doc -p onicode-preview \
-  -p onicode-mcp -p onicode-proto -p onicode-rpc -p onicode-orb -p onicode-voice-session -p onicode-voice-media \
+  -p onicode-mcp -p onicode-proto -p onicode-orb -p onicode-voice-session -p onicode-voice-media \
   -p onicode-cli -p onicode-launch -p onicode-notify \
   --features onicode-harness/native-fixture \
   --lib --bins "${tests[@]}" \
-  -E 'not ((package(onicode-proto) & not test(voice)) | (package(onicode-rpc) & kind(lib)))' "$@"
+  -E 'not (package(onicode-proto) & not test(voice))' "$@"

@@ -202,7 +202,7 @@ struct Entry {
     release_at: Option<Instant>,
 }
 
-/// Where loads go: the engine and this device's id (remote owners relay).
+/// Where loads go: the engine and this device's id (remote owners are reached through it).
 pub(crate) struct Loader {
     pub engine: Option<EngineHandle>,
     pub local_device: Option<String>,

@@ -63,7 +63,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Take photos to attach to messages.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Terminals connect straight to your computer on the same network, so typing shows up without a round trip through the cloud.</string>
+	<string>Onicode talks straight to the computers on your tailnet: sessions, terminals and voice never pass through a server.</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

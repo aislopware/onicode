@@ -3,7 +3,7 @@
 //! `onicode mcp` speaks MCP (JSON-RPC 2.0, newline-delimited) on stdin/stdout
 //! and proxies every tool into the engine's localhost IPC — the same
 //! `onicode_rpc` WebSocket the headed app and `onicode sync` dial. Nothing here
-//! talks to the edge or touches the filesystem: the engine stays the single
+//! talks to a peer or touches the filesystem: the engine stays the single
 //! authority for chats, devices, projects, and the command plane.
 //!
 //! The server is hand-rolled rather than an SDK: the MCP surface a stdio

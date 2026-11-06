@@ -28,7 +28,6 @@ fn main() {
         let state = cx.new(|_| {
             let mut s = state::AppState::new();
             s.connection = onicode_proto::view::ConnectionStatus::Ready;
-            s.workspace_scope = Some(onicode_proto::WorkspaceScope::Local);
             s.local_device_id = Some("local".into());
             s.devices = serde_json::from_value(serde_json::json!([
                 {"id":"local","name":"Studio Mac","platform":"macos","lastSeenAt":null},
@@ -49,9 +48,7 @@ fn main() {
             }
             s
         });
-        let boot = EngineBootConfig { data_dir: data, ipc_port: 0, edge_url: String::new(),
-            edge_token: None, org_id: None, workos_client_id: None,
-            default_harness: HarnessId::ClaudeCode };
+        let boot = EngineBootConfig { data_dir: data, ipc_port: 0, update_feed: String::new(), default_harness: HarnessId::ClaudeCode };
         cx.open_window(WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(px(0.), px(0.)), size(px(1000.), px(680.))))),
             ..Default::default()

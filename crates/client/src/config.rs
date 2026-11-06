@@ -1,20 +1,15 @@
-//! Construction inputs: where the edge is, who this device is, and how it
-//! authenticates. Token *persistence* stays on the platform (Keychain /
-//! Keystore): the client takes tokens in and reports rotations through
-//! [`crate::ClientEvent::AuthRefreshed`].
+//! Construction inputs: who this device is, where it keeps its replicas, and whether it is
+//! live (engines over the tailnet) or the offline demo.
 
 use std::path::PathBuf;
 
 /// Static per-install configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientConfig {
-    /// Edge base URL, e.g. `https://edge.zeron.sh` (no trailing slash needed).
-    pub edge_url: String,
-    /// Writable directory for registry/doc snapshots and caches. Scoped by the
-    /// platform to the signed-in identity (sign-out wipes it).
+    /// Writable directory for registry/doc snapshots and caches.
     pub data_dir: PathBuf,
     /// This device's stable id (`ios-xxxxxxxx`) — stamped on every command
-    /// and queue row this device writes.
+    /// and queue row this device writes, and its hello on the tailnet.
     pub device_id: String,
     /// Human name for presence/attribution ("Wing's iPhone").
     pub device_name: String,
@@ -25,9 +20,8 @@ pub struct ClientConfig {
 }
 
 impl ClientConfig {
-    pub fn new(edge_url: impl Into<String>, data_dir: impl Into<PathBuf>) -> Self {
+    pub fn new(data_dir: impl Into<PathBuf>) -> Self {
         Self {
-            edge_url: edge_url.into(),
             data_dir: data_dir.into(),
             device_id: format!("ios-{}", &crate::new_id()[..8]),
             device_name: "iPhone".into(),
@@ -35,55 +29,21 @@ impl ClientConfig {
             app_version: env!("CARGO_PKG_VERSION").into(),
         }
     }
-
-    pub(crate) fn edge_base(&self) -> &str {
-        self.edge_url.trim_end_matches('/')
-    }
 }
 
-/// WorkOS access/refresh pair. Refresh tokens are SINGLE-USE (rotated per
-/// refresh) — the client single-flights every refresh and hands the rotated
-/// pair back through [`crate::ClientEvent::AuthRefreshed`].
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AuthTokens {
-    pub access_token: String,
-    pub refresh_token: String,
-}
-
-/// How this client authenticates against the edge.
+/// What the client drives.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Credentials {
-    /// WorkOS session scoped to `org_id` (the token carries the `org_id`
-    /// claim the registry room requires).
-    WorkOs {
-        user_id: String,
-        org_id: String,
-        tokens: AuthTokens,
-    },
-    /// `AUTH_MODE=dev` edge: the bearer is `userId@orgId`.
-    Dev { user_id: String, org_id: String },
+pub enum Mode {
+    /// The user's engines, over the tailnet ([`crate::Client::join_tailnet`],
+    /// [`crate::Client::join_engines`]).
+    Live,
     /// Fully offline, deterministic dataset with a simulated host.
     Demo(DemoOptions),
 }
 
-impl Credentials {
+impl Mode {
     pub fn is_demo(&self) -> bool {
-        matches!(self, Credentials::Demo(_))
-    }
-
-    pub fn org_id(&self) -> &str {
-        match self {
-            Credentials::WorkOs { org_id, .. } | Credentials::Dev { org_id, .. } => org_id,
-            Credentials::Demo(_) => "demo",
-        }
-    }
-
-    pub fn user_id(&self) -> &str {
-        match self {
-            Credentials::WorkOs { user_id, .. } | Credentials::Dev { user_id, .. } => user_id,
-            Credentials::Demo(_) => "demo",
-        }
+        matches!(self, Mode::Demo(_))
     }
 }
 

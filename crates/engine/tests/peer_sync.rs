@@ -17,7 +17,7 @@ use onicode_doc::{
     SessionMessageEntry, Vv, encode_hlc,
 };
 use onicode_engine::peers::Peers;
-use onicode_engine::{DEFAULT_ORG_ID, DEFAULT_USER_ID, EngineCore, EngineProfile, HarnessRegistry};
+use onicode_engine::{EngineCore, EngineProfile, HarnessRegistry};
 use onicode_harness::{Harness, HarnessError, RunControls};
 use onicode_net::{Role, StreamHead, StreamKind};
 use onicode_net_sim::NodeId;
@@ -105,18 +105,16 @@ fn engine(root: &std::path::Path, device: &str, seed: &[(&str, &[u8])]) -> Engin
     let dir = root.join(device);
     std::fs::create_dir_all(&dir).expect("data dir");
     std::fs::write(dir.join("device-id"), device).expect("device id");
-    let store = DocsStore::open(
-        EngineProfile::development(&dir, DEFAULT_ORG_ID, DEFAULT_USER_ID).store_root(),
-    )
-    .expect("store opens");
+    let store =
+        DocsStore::open(EngineProfile::local(&dir).unwrap().store_root()).expect("store opens");
     for (doc, bytes) in seed {
         store.save_snapshot(doc, bytes).expect("seed snapshot");
     }
     let runs = Arc::new(AtomicUsize::new(0));
     let registry = HarnessRegistry::new();
     registry.register(Arc::new(CountingHarness(runs.clone())));
-    let core = EngineCore::assemble(&dir, Arc::new(registry), HarnessId::Mock, None)
-        .expect("engine assembles");
+    let core =
+        EngineCore::assemble(&dir, Arc::new(registry), HarnessId::Mock).expect("engine assembles");
     Engine { core, runs, store }
 }
 

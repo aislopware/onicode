@@ -128,7 +128,6 @@ impl Shell {
 
     fn navigation_overlay_open(&self, cx: &App) -> bool {
         self.overlay_owns_keyboard(cx)
-            || self.sync_flow.has_visible_overlay()
             || self.delete_confirm.is_some()
             || self.delete_space_confirm.is_some()
             || self.chat_rename.is_some()

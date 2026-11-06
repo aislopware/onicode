@@ -3,14 +3,16 @@
 //! A phone (or any frontend without an engine) is a *peer* on the onicode mesh:
 //! it mirrors the workspace registry, joins per-chat chat2 rooms, renders the
 //! session docs, and drives remote engines through the durable command ledger
-//! (`onicode_doc::SessionDoc::queue_command`) plus host RPCs over the device
-//! relay. No agent ever runs here.
+//! (`onicode_doc::SessionDoc::queue_command`) plus host RPCs, all over its
+//! peer links to the user's engines on the tailnet. No agent ever runs here.
 //!
 //! # Shape
 //!
-//! - [`Client`] — one signed-in account (or the offline Demo mode). Owns the registry mirror, open
-//!   sessions, and background tasks on the crate's shared tokio runtime ([`runtime::shared`]).
-//!   Every snapshot read is an `Arc` clone — never a network wait, never a whole-doc decode.
+//! - [`Client`] — one device's view of the user's engines (or the offline Demo mode). Owns its
+//!   links on the tailnet ([`Client::join_tailnet`], [`Client::join_engines`]), the registry
+//!   mirror, open sessions, and background tasks on the crate's shared tokio runtime
+//!   ([`runtime::shared`]). Every snapshot read is an `Arc` clone — never a network wait, never a
+//!   whole-doc decode.
 //! - [`WorkspaceSnapshot`] — the derived view models (front page with pins and sections, projects,
 //!   PRs, archived, devices, search), rebuilt only when the registry, presence, or time-dependent
 //!   status actually changes.
@@ -20,22 +22,21 @@
 //! - [`ClientListener`] — coalesced change notifications; platforms pull the new snapshot after an
 //!   event.
 //!
-//! Demo mode ([`Credentials::Demo`]) runs the *same* registry/session code
+//! Demo mode ([`Mode::Demo`]) runs the *same* registry/session code
 //! against an in-process simulated host, so it exercises the real pipeline.
 
 pub mod attachments;
-pub mod auth;
 pub mod catalog;
 mod client;
-pub mod cloud;
 pub mod config;
 pub mod connectivity;
 mod demo;
+pub mod desktop;
 pub mod error;
 pub mod events;
 mod host_stream;
+mod join;
 mod live;
-pub mod provider_login;
 pub mod providers;
 pub mod rpc;
 pub mod runtime;
@@ -44,11 +45,8 @@ pub mod subagents;
 pub mod terminal;
 pub mod workspace;
 
-pub use client::{Client, NewSession, PRELOAD_CAP, PushPrefs, SessionTarget, WARM_SESSION_CAP};
-pub use cloud::CloudRepoRef;
-pub use config::{
-    AuthTokens, ClientConfig, Credentials, DemoFixture, DemoOptions, StreamSpeed, TranscriptScale,
-};
+pub use client::{Client, NewSession, PRELOAD_CAP, SessionTarget, WARM_SESSION_CAP};
+pub use config::{ClientConfig, DemoFixture, DemoOptions, Mode, StreamSpeed, TranscriptScale};
 pub use connectivity::{Connectivity, ConnectivityState, SendState};
 pub use error::ClientError;
 pub use events::{ClientEvent, ClientListener};
@@ -59,7 +57,6 @@ pub use onicode_proto::{
     ChangeRequestState, ChangeRequestSummary, ChatConfig, ChatIndicator, ContextUsage,
     UserInputAnswer, UserInputQuestion, WorktreeSpec,
 };
-pub use provider_login::{LoginProvider, ProviderLoginStart};
 pub use session::{
     AppendHint, BusyPolicy, ComposerState, Entry, HostCapabilities, HostInfo, InputRequest,
     LiveStatus, LocalEcho, OutgoingAttachment, PendingKind, PendingSend, QueueEditAction,

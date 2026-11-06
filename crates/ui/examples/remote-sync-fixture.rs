@@ -136,15 +136,6 @@ impl RpcService for Scripted {
         let chat = params.get("chatId").and_then(Value::as_str);
         let remote = chat.is_some_and(|chat| chat == CHAT || chat == SIDE_CHAT);
         match method {
-            // The workspace the other fixtures render.
-            methods::ENGINE_INFO => match self.engine.handle(method, params).await? {
-                RpcReply::Value(mut info) => {
-                    info["workspaceScope"] = json!("development");
-                    Ok(RpcReply::Value(info))
-                }
-                reply => Ok(reply),
-            },
-            methods::AUTH_STATUS => Ok(RpcReply::Stream(stream::pending().boxed())),
             methods::WATCH_CHATS => Ok(standing(self.chats.clone())),
             methods::WATCH_DEVICES => Ok(standing(self.devices.clone())),
             methods::WATCH_SPACES => Ok(standing(self.spaces.clone())),
@@ -210,7 +201,6 @@ fn main() -> anyhow::Result<()> {
             &temp.path().join("engine"),
             Arc::new(onicode_engine::default_registry()),
             onicode_proto::HarnessId::ClaudeCode,
-            None,
         )
     })?;
     let device = core.device_id.clone();
@@ -221,7 +211,7 @@ fn main() -> anyhow::Result<()> {
         json!({"id": id, "deviceId": HOST, "title": title, "archived": false,
             "cwd": "/home/dev/onicode", "branch": "main", "checkoutId": null, "config": config,
             "lastMessagePreview": preview, "lastMessageAt": at(last), "createdAt": at(last + 30),
-            "lastSeenAt": at(last), "spaceId": "onicode", "roomGen": 2, "parentChatId": parent})
+            "lastSeenAt": at(last), "spaceId": "onicode", "parentChatId": parent})
     };
     let chats = json!([
         chat(
@@ -277,10 +267,7 @@ fn main() -> anyhow::Result<()> {
     let boot = EngineBootConfig {
         data_dir: data.clone(),
         ipc_port,
-        edge_url: String::new(),
-        edge_token: None,
-        org_id: None,
-        workos_client_id: None,
+        update_feed: String::new(),
         default_harness: onicode_proto::HarnessId::ClaudeCode,
     };
     let failure = Arc::new(std::sync::Mutex::new(None));

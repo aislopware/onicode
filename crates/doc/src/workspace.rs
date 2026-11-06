@@ -760,8 +760,6 @@ pub(crate) struct RawChat {
     #[serde(default)]
     last_seen_at: Option<i64>,
     #[serde(default)]
-    room_gen: Option<u32>,
-    #[serde(default)]
     parent_chat_id: Option<String>,
     /// LENIENT, as `config`: a kind from a newer peer reads as none.
     #[serde(default, deserialize_with = "onicode_proto::lenient_child_kind")]
@@ -806,7 +804,6 @@ impl From<RawChat> for Chat {
             harness_session_harness: raw.harness_session_harness,
             space_id: raw.space_id,
             last_seen_at: raw.last_seen_at.map(dt),
-            room_gen: raw.room_gen,
             parent_chat_id: raw.parent_chat_id,
             child_kind: raw.child_kind,
         }
@@ -934,7 +931,6 @@ mod tests {
             child_kind: None,
             space_id: None,
             last_seen_at: None,
-            room_gen: None,
         }
     }
 

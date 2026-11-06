@@ -1,0 +1,29 @@
+[package]
+name = "onicode-desktop-vdisplay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "A virtual display sized to one client, through CoreGraphics' CGVirtualDisplay on macOS (ported from slopty-vdisplay)"
+
+[[bin]]
+name = "onicode-vdisplay-probe"
+path = "src/bin/onicode-vdisplay-probe.rs"
+test = false
+doc = false
+bench = false
+
+[dependencies]
+thiserror.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2.workspace = true
+objc2.workspace = true
+objc2-core-foundation.workspace = true
+objc2-core-graphics = { workspace = true, features = ["CGDisplayConfiguration"] }
+# A virtual display's size in points (`display`).
+objc2-foundation = { workspace = true, features = ["NSGeometry", "objc2-core-foundation"] }
+
+[dev-dependencies]
+# A live test's skip (`onicode_desktop_testkit::live::skip`).
+onicode-desktop-testkit.workspace = true

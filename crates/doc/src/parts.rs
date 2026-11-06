@@ -13,14 +13,12 @@ use crate::constants::MSG_INLINE_MAX;
 /// Char cap for the tool-output SUMMARY persisted into the doc: first
 /// non-empty line, nothing more. The per-part 4KB cap (c951c3e) bounded each
 /// part but not the session — chat 1b65e93d measured 917KB (85%) of a 1MB doc
-/// in capped outputs across 426 tool parts (docs/chat2-sync.md). Full outputs
-/// live in the R2 sidecar behind `output_ref`; t3code ships an 84-char
-/// summary, so 160 is generous.
+/// in capped outputs across 426 tool parts. Full outputs live only in the
+/// host's run journal; t3code ships an 84-char summary, so 160 is generous.
 pub const TOOL_OUTPUT_SUMMARY_MAX: usize = 160;
 
-/// The doc-resident form of a tool output (docs/chat2-sync.md A1; the R2
-/// sidecar is PARKED as of 2026-08-10, so this IS the whole record in the
-/// doc — the full text survives only in the host's local run journal):
+/// The doc-resident form of a tool output (the whole record in the doc — the
+/// full text survives only in the host's local run journal):
 ///
 /// - Markdown code fences are stripped first — ACP harnesses fence every output, so the fence is
 ///   transport wrapping, never content (pre-fix, every summary read "```console…").
@@ -166,8 +164,7 @@ pub fn command_output_end(
 
 /// Per-file diff stats persisted in place of inline diff text (t3's shape).
 /// The inline diff was the bigger bomb than outputs — 32KB/edit, unexercised
-/// only because the claude harness emits none. Full diff text lives in the
-/// sidecar behind `diff_ref`.
+/// only because the claude harness emits none.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolDiffStat {
@@ -269,25 +266,18 @@ pub enum MessagePart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
         /// Inline file diff — written by pre-strip app versions only; new
-        /// folds persist [`Self::Tool::diff_stats`] + `diff_ref` instead.
+        /// folds persist [`Self::Tool::diff_stats`] instead.
         /// Kept so old docs render their diffs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         diff: Option<ToolDiff>,
-        /// Sidecar key (`{chatId}/{partId}`) of the full output — additive;
-        /// stamped by [`apply_sidecar_refs`] (the fold is chat-agnostic).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        output_ref: Option<String>,
         /// Full-output byte length, so the UI can say "Show full output (12 KB)".
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output_bytes: Option<u64>,
-        /// Sidecar key (`{chatId}/{partId}.diff`) of the full diff JSON.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        diff_ref: Option<String>,
         /// Per-file diff stats (additive replacement for inline `diff`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         diff_stats: Option<Vec<ToolDiffStat>>,
         /// The SUBAGENT doc id this spawn chip indexes (additive; stamped by
-        /// the engine like the sidecar refs — the fold is chat-agnostic).
+        /// the engine — the fold is chat-agnostic).
         /// The chip IS the index: the client learns the doc/blob id from it,
         /// there is no listing endpoint.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -520,9 +510,7 @@ pub fn fold_event_into_parts(out: &mut Vec<MessagePart>, event: &AgentEvent) {
                     resolved: false,
                     output: None,
                     diff: None,
-                    output_ref: None,
                     output_bytes: None,
-                    diff_ref: None,
                     diff_stats: None,
                     subagent_ref: None,
                     subagent_status: None,
@@ -561,8 +549,7 @@ pub fn fold_event_into_parts(out: &mut Vec<MessagePart>, event: &AgentEvent) {
                     *resolved = true;
                     // Tool OUTPUTS never enter the doc (2026-08-10 product
                     // call: chips are one-liners — name + call info — like
-                    // pre-output builds; the R2 sidecar is parked with them,
-                    // docs/chat2-sync.md A2). Full text lives only in the
+                    // pre-output builds). Full text lives only in the
                     // host's run journal. Inline diffs die the same way:
                     // stats only, never text. `is_error` still folds so
                     // failed chips read as failed.
@@ -724,62 +711,6 @@ pub fn fold_event_into_parts(out: &mut Vec<MessagePart>, event: &AgentEvent) {
         | AgentEvent::AvailableCommands { .. }
         | AgentEvent::UserMessage { .. } => {}
     }
-}
-
-/// Stamp sidecar keys onto resolved tool parts that have sidecar content.
-///
-/// Separate from the fold because the fold is chat-agnostic and pure; the
-/// caller (who knows the chat id) runs this right after each fold step, before
-/// the parts hit the doc. Idempotent. Key shape `{chatId}/{partId}` (+
-/// `.diff`) matches the edge's `/blob/{chatId}/{partId}` route.
-pub fn apply_sidecar_refs(chat_id: &str, parts: &mut [MessagePart]) {
-    for part in parts.iter_mut() {
-        if let MessagePart::Tool {
-            id,
-            resolved: true,
-            output_ref,
-            output_bytes,
-            diff_ref,
-            diff_stats,
-            ..
-        } = part
-        {
-            if output_ref.is_none() && output_bytes.is_some() {
-                *output_ref = Some(format!("{chat_id}/{id}"));
-            }
-            if diff_ref.is_none() && diff_stats.is_some() {
-                *diff_ref = Some(format!("{chat_id}/{id}.diff"));
-            }
-        }
-    }
-}
-
-/// What a [`AgentEvent::ToolResult`] owes the sidecar: the full output text
-/// and/or the full diff (as JSON), keyed by part id. `None` when the event
-/// carries nothing worth uploading.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SidecarPayload {
-    pub part_id: String,
-    pub output: Option<String>,
-    pub diff: Option<ToolDiff>,
-}
-
-pub fn sidecar_payload(event: &AgentEvent) -> Option<SidecarPayload> {
-    let AgentEvent::ToolResult {
-        id, output, diff, ..
-    } = event
-    else {
-        return None;
-    };
-    let output = output.clone().filter(|o| !o.trim().is_empty());
-    if output.is_none() && diff.is_none() {
-        return None;
-    }
-    Some(SidecarPayload {
-        part_id: id.clone(),
-        output,
-        diff: diff.clone(),
-    })
 }
 
 /// Render-only privacy policy — strip heavy/sensitive tool inputs before a call enters the doc.
@@ -1267,9 +1198,7 @@ mod tests {
                 resolved: true,
                 output: None,
                 diff: None,
-                output_ref: None,
                 output_bytes: None,
-                diff_ref: None,
                 diff_stats: None,
                 subagent_ref: None,
                 subagent_status: None,
@@ -1639,61 +1568,6 @@ mod tests {
     }
 
     #[test]
-    fn sidecar_refs_stamp_once_and_only_where_content_exists() {
-        let mut parts = Vec::new();
-        fold_event_into_parts(
-            &mut parts,
-            &AgentEvent::ToolCall {
-                id: "t1".into(),
-                call: ToolCall::WriteFile {
-                    path: "/w/a".into(),
-                    content: None,
-                },
-            },
-        );
-        // Unresolved: no refs yet.
-        apply_sidecar_refs("chat-9", &mut parts);
-        assert!(matches!(
-            &parts[0],
-            MessagePart::Tool {
-                output_ref: None,
-                diff_ref: None,
-                ..
-            }
-        ));
-        fold_event_into_parts(
-            &mut parts,
-            &AgentEvent::ToolResult {
-                id: "t1".into(),
-                is_error: false,
-                output: Some("hello".into()),
-                diff: Some(ToolDiff {
-                    path: "/w/a".into(),
-                    old_text: None,
-                    new_text: "x\n".into(),
-                }),
-                exit_code: None,
-            },
-        );
-        apply_sidecar_refs("chat-9", &mut parts);
-        apply_sidecar_refs("chat-9", &mut parts); // idempotent
-        match &parts[0] {
-            MessagePart::Tool {
-                output_ref,
-                diff_ref,
-                ..
-            } => {
-                // One-liner fold: outputs never reach the doc, so there is
-                // no output content to key even after resolution; diff
-                // STATS exist, so the diff ref still stamps.
-                assert_eq!(output_ref.as_deref(), None);
-                assert_eq!(diff_ref.as_deref(), Some("chat-9/t1.diff"));
-            }
-            other => panic!("unexpected {other:?}"),
-        }
-    }
-
-    #[test]
     fn subagent_events_refresh_the_spawn_chip_in_place() {
         use onicode_proto::DoneStatus;
         let mut parts = Vec::new();
@@ -1813,34 +1687,5 @@ mod tests {
             } => assert_eq!(*subagent_status, None),
             other => panic!("{other:?}"),
         }
-    }
-
-    #[test]
-    fn sidecar_payload_carries_full_texts() {
-        assert_eq!(
-            sidecar_payload(&AgentEvent::TextDelta { text: "x".into() }),
-            None
-        );
-        assert_eq!(
-            sidecar_payload(&AgentEvent::ToolResult {
-                id: "t".into(),
-                is_error: false,
-                output: Some("   \n".into()),
-                diff: None,
-                exit_code: None,
-            }),
-            None,
-            "blank output uploads nothing"
-        );
-        let payload = sidecar_payload(&AgentEvent::ToolResult {
-            id: "t".into(),
-            is_error: true,
-            output: Some("full output".into()),
-            diff: None,
-            exit_code: None,
-        })
-        .unwrap();
-        assert_eq!(payload.part_id, "t");
-        assert_eq!(payload.output.as_deref(), Some("full output"));
     }
 }

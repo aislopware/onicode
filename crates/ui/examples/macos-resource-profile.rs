@@ -63,7 +63,6 @@ fn main() -> anyhow::Result<()> {
             let state = cx.new(|_| {
                 let mut state = state::AppState::new();
                 state.connection = onicode_proto::view::ConnectionStatus::Ready;
-                state.workspace_scope = Some(onicode_proto::WorkspaceScope::Local);
                 state.selected_chat = Some("profile".into());
                 state.selected_space = Some("project".into());
                 state.auto_selected = true;
@@ -108,8 +107,7 @@ fn main() -> anyhow::Result<()> {
                 state
             });
             let boot = EngineBootConfig { data_dir:data, ipc_port:0,
-                edge_url:String::new(), edge_token:None, org_id:None,
-                workos_client_id:None, default_harness:HarnessId::ClaudeCode };
+                update_feed: String::new(), default_harness:HarnessId::ClaudeCode };
             let window = cx.open_window(WindowOptions {
                 window_bounds:Some(WindowBounds::Windowed(Bounds::new(
                     gpui::point(px(0.),px(0.)),size(px(1320.),px(880.))))),

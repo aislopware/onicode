@@ -1748,3 +1748,62 @@ mod nack_delay_tests {
         assert_eq!(rx.stall_threshold(), Duration::from_millis(140));
     }
 }
+
+#[cfg(test)]
+mod cost_tests {
+    use super::*;
+    use crate::{EncodedFrame, Packetizer};
+
+    /// What reassembling one frame costs on the client's stream task when every data fragment
+    /// arrives: a 62 KB P-frame and a 300 KB keyframe, fed datagram by datagram and taken out
+    /// in decode order. Run by hand with `--ignored`;
+    /// slopty's `docs/MEASUREMENTS.md` records runs.
+    #[test]
+    #[ignore = "a measurement; run by hand with `--ignored`"]
+    fn reassemble_cost() {
+        let bench = onicode_desktop_testkit::bench::Bench::new("media.reassemble_cost");
+        for (name, len) in [("p_frame", 62_000_usize), ("keyframe", 300_000)] {
+            let data: Vec<u8> = (0..len)
+                .map(|i| u8::try_from(i % 251).unwrap_or(0))
+                .collect();
+            let rounds = 200_u32;
+            let mut packetizer = Packetizer::new(StreamId(1));
+            packetizer.set_parity_permille(0);
+            let frames: Vec<Vec<Bytes>> = (0..rounds)
+                .map(|n| {
+                    let frame = EncodedFrame {
+                        data: &data,
+                        keyframe: n == 0,
+                        ltr_token: None,
+                        ltr_refresh: false,
+                        discardable: false,
+                        capture_ts_us: n,
+                        stripes: 0,
+                    };
+                    packetizer
+                        .packetize(&frame, 0, |_| {})
+                        .unwrap()
+                        .datagrams
+                        .clone()
+                })
+                .collect();
+            let now = Instant::now();
+            let mut rx = Reassembler::new(StreamId(1), Config::default(), now);
+            let mut series = bench.series(name);
+            let mut out = 0_usize;
+            for datagrams in &frames {
+                series.time(|| {
+                    for d in datagrams {
+                        let _stored = rx.ingest(d, now);
+                    }
+                    while let Some(frame) = rx.next_frame() {
+                        out = out.wrapping_add(frame.data.len());
+                    }
+                });
+            }
+            assert_eq!(out, len.saturating_mul(rounds as usize));
+            eprintln!("{name} {len} B, {} datagrams", frames[0].len());
+            series.report().unwrap();
+        }
+    }
+}

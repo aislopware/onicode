@@ -39,7 +39,6 @@ async fn native_core(temp: &tempfile::TempDir) -> EngineCore {
         EngineProfile::local(&temp.path().join("data")).unwrap(),
         registry,
         HarnessId::Codex,
-        None,
     )
     .unwrap();
     let config =
@@ -381,7 +380,6 @@ async fn remote_voice_crosses_two_engines_and_owner_drop_releases_host() {
         EngineProfile::local(viewer_dir.path()).unwrap(),
         Arc::new(HarnessRegistry::new()),
         HarnessId::Codex,
-        None,
     )
     .unwrap();
     let mesh = tailnet::mesh(&[&viewer, &host], 70).await;
@@ -411,7 +409,15 @@ async fn remote_voice_crosses_two_engines_and_owner_drop_releases_host() {
         .call_as(methods::PREPARE_VOICE_V2, wrap(json!(request)))
         .await
         .unwrap();
-    assert!(viewer.workspace.chat(&prepared.chat_id).unwrap().is_none());
+    // The voice chat is the host's: the viewer holds at most the host's replicated row of it.
+    assert!(
+        viewer
+            .workspace
+            .chat(&prepared.chat_id)
+            .unwrap()
+            .is_none_or(|chat| chat.device_id == host.device_id),
+        "the viewer made no voice chat of its own"
+    );
     let mut owner = client
         .subscribe_checked(methods::OWN_VOICE_V2, wrap(json!(prepared.lease)))
         .await

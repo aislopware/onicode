@@ -80,7 +80,6 @@ fn main() -> anyhow::Result<()> {
             &temp.path().join("engine"),
             Arc::new(onicode_engine::default_registry()),
             onicode_proto::HarnessId::ClaudeCode,
-            None,
         )
     })?;
     core.workspace.create_chat(
@@ -104,10 +103,7 @@ fn main() -> anyhow::Result<()> {
     let boot = EngineBootConfig {
         data_dir: data.clone(),
         ipc_port,
-        edge_url: String::new(),
-        edge_token: None,
-        org_id: None,
-        workos_client_id: None,
+        update_feed: String::new(),
         default_harness: onicode_proto::HarnessId::ClaudeCode,
     };
     let handle = runtime.block_on(state::EngineHandle::bootstrap(boot.clone()))?;
@@ -241,7 +237,6 @@ And shorten the feature lists."}]}]}
                 let mut s = state::AppState::new();
                 s.fixture_attachment_engine(handle);
                 s.connection = onicode_proto::view::ConnectionStatus::Ready;
-                s.workspace_scope = Some(onicode_proto::WorkspaceScope::Development);
                 s.local_device_id = Some(device.clone());
                 s.devices = vec![
                     serde_json::from_value(json!({"id": device, "name": "This device",

@@ -1,15 +1,12 @@
-//! First-run setup: a welcome, then appearance, sync and the agents on this
+//! First-run setup: a welcome, then appearance and the agents on this
 //! device, ending on "You're all set" with the way to a first project.
 //!
 //! Shown in place of the Ready shell until it's finished
 //! (`onboardingCompleted` in `ui-settings.json`); only a fresh install starts
 //! it. Each step is a full-window `render_page`: the Settings column, type
 //! and blocks straight on the window's surface. The shell owns what the steps
-//! can't do from here — the sign-in flow and the add-project dialog — and
-//! hears about them through [`OnboardingEvent`]. Its sign-in steps render
-//! through the same page, inside the sync step while setup runs, so logging
-//! in looks the same wherever it starts; the signed-in edge moves setup on to
-//! the agents step.
+//! can't do from here — the add-project dialog — and hears about it through
+//! [`OnboardingEvent`].
 
 use std::path::{Path, PathBuf};
 
@@ -25,7 +22,6 @@ use crate::appearance::{self, AppearanceMode};
 use crate::icons::{self, icon};
 use crate::motion;
 use crate::popover::{self, Loadable};
-use crate::settings::cloud::CloudPage;
 use crate::settings::harnesses::HarnessesPage;
 use crate::settings::{NewThreadBackgroundEffect, widgets};
 use crate::state::{AppState, EngineHandle};
@@ -35,72 +31,56 @@ use crate::theme::Theme;
 pub enum Step {
     Welcome,
     Appearance,
-    Sync,
-    /// Signed in only: GitHub for Cloud agents (skippable).
-    Github,
     Providers,
     Done,
 }
 
 impl Step {
+    /// How many numbered steps there are.
+    const TOTAL: usize = 2;
+
     /// `ONICODE_ONBOARDING` values: a step name, or anything else to start at
     /// the beginning.
     pub fn parse(value: &str) -> Step {
         match value {
             "appearance" => Step::Appearance,
-            "sync" => Step::Sync,
-            "github" => Step::Github,
             "providers" | "agents" => Step::Providers,
             "done" => Step::Done,
             _ => Step::Welcome,
         }
     }
 
-    /// The way on. `github`: the GitHub step is in the flow (signed in).
-    fn next(self, github: bool) -> Step {
+    /// The way on.
+    fn next(self) -> Step {
         match self {
             Step::Welcome => Step::Appearance,
-            Step::Appearance => Step::Sync,
-            Step::Sync if github => Step::Github,
-            Step::Sync | Step::Github => Step::Providers,
+            Step::Appearance => Step::Providers,
             Step::Providers | Step::Done => Step::Done,
         }
     }
 
-    fn previous(self, github: bool) -> Step {
+    fn previous(self) -> Step {
         match self {
             Step::Welcome | Step::Appearance => Step::Welcome,
-            Step::Sync => Step::Appearance,
-            Step::Github => Step::Sync,
-            Step::Providers if github => Step::Github,
-            Step::Providers => Step::Sync,
+            Step::Providers => Step::Appearance,
             Step::Done => Step::Providers,
         }
     }
 
     /// Place among the numbered steps; the welcome and the ending aren't
-    /// counted, nor the GitHub step when signed out.
-    fn number(self, github: bool) -> Option<usize> {
+    /// counted.
+    fn number(self) -> Option<usize> {
         match self {
             Step::Appearance => Some(1),
-            Step::Sync => Some(2),
-            Step::Github => Some(3),
-            Step::Providers => Some(if github { 4 } else { 3 }),
+            Step::Providers => Some(2),
             Step::Welcome | Step::Done => None,
         }
-    }
-
-    /// How many numbered steps there are.
-    fn total(github: bool) -> usize {
-        if github { 4 } else { 3 }
     }
 
     fn key(self) -> &'static str {
         match self {
             Step::Welcome => "welcome",
             Step::Appearance => "appearance",
-            Step::Sync => "sync",
-            Step::Github => "github",
             Step::Providers => "providers",
             Step::Done => "done",
         }
@@ -117,7 +97,6 @@ const FRAME_MAX_HEIGHT: f32 = 640.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnboardingEvent {
-    SignIn,
     Finish { add_project: bool },
 }
 
@@ -179,22 +158,16 @@ fn this_device() -> &'static str {
 pub struct Onboarding {
     state: Entity<AppState>,
     step: Step,
-    /// Log in was pressed: the signed-in edge moves on to the GitHub step.
-    awaiting_sign_in: bool,
     /// What the agents page last found, mirrored for the summary and the
     /// way on.
     harnesses: Loadable<Vec<HarnessDescriptor>>,
     /// Settings → Providers' rows for this device — toggles, installs, and
     /// each agent's settings and sign-in under its caret.
     agents_page: Option<Entity<HarnessesPage>>,
-    /// The engine the agents page talks to; the sync switch replaces it.
+    /// The engine the agents page talks to; a reconnect replaces it.
     agents_engine: Option<EngineHandle>,
     _observe_state: Subscription,
     _observe_agents: Option<Subscription>,
-    /// Settings → Cloud's GitHub block, built when the GitHub step is
-    /// reached (it also turns Cloud on for the account).
-    github_page: Option<Entity<CloudPage>>,
-    _observe_github: Option<Subscription>,
     effect_select: widgets::SelectState,
     /// The page column as last laid out: the wallpaper clears around it the
     /// way the new-chat wallpaper clears around the composer.
@@ -208,32 +181,15 @@ impl EventEmitter<OnboardingEvent> for Onboarding {}
 impl Onboarding {
     pub fn new(state: Entity<AppState>, step: Step, cx: &mut Context<Self>) -> Self {
         let observe_state = cx.observe(&state, |this, state, cx| {
-            if this.awaiting_sign_in && state.read(cx).signed_in() {
-                this.awaiting_sign_in = false;
-                let next = if this.github_in_flow(cx) {
-                    Step::Github
-                } else {
-                    Step::Providers
-                };
-                this.go(next, cx);
-            }
-            // The edge answered that this account has no Cloud while on its
-            // GitHub step: move past it.
-            if this.step == Step::Github && !this.github_in_flow(cx) {
-                this.go(Step::Providers, cx);
-            }
-            // The engine arrived, or the sync switch replaced it: the agents
-            // page has to ask the new one.
+            // The engine arrived, or a reconnect replaced it: the agents page
+            // has to ask the new one.
             let engine_changed = match (state.read(cx).engine(), &this.agents_engine) {
                 (Some(engine), Some(seen)) => !engine.same_connection(seen),
                 (Some(_), None) => true,
                 (None, _) => false,
             };
             if engine_changed
-                && matches!(
-                    this.step,
-                    Step::Sync | Step::Github | Step::Providers | Step::Done
-                )
+                && matches!(this.step, Step::Appearance | Step::Providers | Step::Done)
             {
                 this.load(cx);
             }
@@ -242,14 +198,11 @@ impl Onboarding {
         let mut onboarding = Self {
             state,
             step: Step::Welcome,
-            awaiting_sign_in: false,
             harnesses: Loadable::Idle,
             agents_page: None,
             agents_engine: None,
             _observe_state: observe_state,
             _observe_agents: None,
-            github_page: None,
-            _observe_github: None,
             effect_select: Default::default(),
             column_bounds: Default::default(),
             wallpaper: Default::default(),
@@ -266,41 +219,16 @@ impl Onboarding {
     fn go(&mut self, step: Step, cx: &mut Context<Self>) {
         self.step = step;
         // Look for agents a step early, so the list is there on arrival.
-        if matches!(
-            step,
-            Step::Sync | Step::Github | Step::Providers | Step::Done
-        ) && !matches!(self.harnesses, Loadable::Ready(_) | Loadable::Loading)
+        if matches!(step, Step::Appearance | Step::Providers | Step::Done)
+            && !matches!(self.harnesses, Loadable::Ready(_) | Loadable::Loading)
         {
             self.load(cx);
-        }
-        if step == Step::Github && self.github_page.is_none() {
-            let state = self.state.clone();
-            let page = cx.new(|cx| CloudPage::new_github_only(state, cx));
-            self._observe_github = Some(cx.observe(&page, |_, _, cx| cx.notify()));
-            self.github_page = Some(page);
         }
         cx.notify();
     }
 
-    /// Whether the GitHub step is part of setup: signed in, and Cloud offered
-    /// to the account (kept while its status is still unknown).
-    fn github_in_flow(&self, cx: &Context<Self>) -> bool {
-        self.state.read(cx).cloud_maybe_offered()
-    }
-
-    fn github_connected(&self, cx: &Context<Self>) -> bool {
-        self.github_page
-            .as_ref()
-            .is_some_and(|page| page.read(cx).github_connected())
-    }
-
     fn finish(&mut self, add_project: bool, cx: &mut Context<Self>) {
         cx.emit(OnboardingEvent::Finish { add_project });
-    }
-
-    fn sign_in(&mut self, cx: &mut Context<Self>) {
-        self.awaiting_sign_in = true;
-        cx.emit(OnboardingEvent::SignIn);
     }
 
     /// This device's agents: the Providers page, built against the current
@@ -430,8 +358,7 @@ impl Onboarding {
 
 // ---- the page ----
 
-/// One full-window page of setup. The sign-in flow fills one too, so it reads
-/// as part of setup wherever it started.
+/// One full-window page: a setup step, or the shell's engine gate.
 pub(crate) struct PageParts {
     /// Keys the body's entrance: a new key replays it.
     pub key: SharedString,
@@ -447,29 +374,6 @@ pub(crate) struct PageParts {
     pub backdrop: Option<AnyElement>,
     /// Receives the column's bounds each frame, before anything paints.
     pub measure: Option<crate::new_thread_background_mask::SurfaceBounds>,
-}
-
-/// A sign-in step the shell owns, shown in the sync step's place while it
-/// runs.
-pub(crate) struct SignInSlot {
-    pub key: SharedString,
-    pub body: AnyElement,
-    pub footer: AnyElement,
-}
-
-impl SignInSlot {
-    /// The slot on its own, outside setup: the same page without progress.
-    pub fn into_page(self) -> PageParts {
-        PageParts {
-            key: self.key,
-            header: None,
-            body: self.body,
-            footer: Some(self.footer),
-            fixed: false,
-            backdrop: None,
-            measure: None,
-        }
-    }
 }
 
 /// The page: a centered column under the titlebar strip, on the window's own
@@ -579,37 +483,6 @@ pub(crate) fn row_text(
         )
 }
 
-/// One block holding a single quiet line: where sync stands, what the
-/// sign-in is waiting on.
-pub(crate) fn status_block(
-    theme: &Theme,
-    leading: AnyElement,
-    text: impl Into<SharedString>,
-    emphasized: bool,
-) -> gpui::Div {
-    widgets::section_card(theme).mt(px(28.0)).child(
-        widgets::card_row(theme, true)
-            .min_h(px(44.0))
-            .py(px(10.0))
-            .flex_nowrap()
-            .gap(px(10.0))
-            .child(div().flex_none().flex().items_center().child(leading))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_size(crate::typography::ui_rems(12.5))
-                    .line_height(px(17.0))
-                    .text_color(if emphasized {
-                        theme.text
-                    } else {
-                        theme.text_muted
-                    })
-                    .child(text.into()),
-            ),
-    )
-}
-
 /// The wide white button the welcome and the ending end on.
 pub(crate) fn wide_button(
     theme: &Theme,
@@ -686,22 +559,6 @@ pub(crate) fn footer_row(
         .into_any_element()
 }
 
-/// One reason to do a step, as a settings row: a quiet glyph, a line, a
-/// muted explainer.
-fn benefit(
-    theme: &Theme,
-    first: bool,
-    glyph: &'static str,
-    heading: &'static str,
-    detail: &'static str,
-) -> gpui::Div {
-    widgets::card_row(theme, first)
-        .flex_nowrap()
-        .gap(px(12.0))
-        .child(widgets::row_tile(theme, glyph))
-        .child(row_text(theme, heading, detail))
-}
-
 /// One short segment per step: done and current in the accent, the rest a
 /// wash.
 pub(crate) fn progress(theme: &Theme, number: usize, total: usize) -> gpui::Div {
@@ -736,50 +593,26 @@ pub(crate) fn progress(theme: &Theme, number: usize, total: usize) -> gpui::Div 
 }
 
 impl Onboarding {
-    /// The current step as a page. `sign_in` stands in for the sync step's
-    /// body and footer while the shell's sign-in flow runs, under the same
-    /// progress, so it reads as this step.
-    pub(crate) fn page_parts(
-        &mut self,
-        sign_in: Option<SignInSlot>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> PageParts {
+    /// The current step as a page.
+    pub(crate) fn page_parts(&mut self, window: &mut Window, cx: &mut Context<Self>) -> PageParts {
         let theme = Theme::of(cx).for_settings_surface();
         let backdrop = Some(self.render_wallpaper(&theme, window, cx));
         let measure = Some(self.column_bounds.clone());
-        let github = self.github_in_flow(cx);
-        let total = Step::total(github);
-        if let Some(slot) = sign_in {
-            return PageParts {
-                key: slot.key,
-                header: Step::Sync
-                    .number(github)
-                    .map(|number| progress(&theme, number, total).into_any_element()),
-                body: slot.body,
-                footer: Some(slot.footer),
-                fixed: true,
-                backdrop,
-                measure,
-            };
-        }
         let step = self.step;
         let body = match step {
             Step::Welcome => self.render_welcome(&theme, cx),
             Step::Appearance => self.render_appearance(&theme, window, cx),
-            Step::Sync => self.render_sync(&theme, cx),
-            Step::Github => self.render_github(&theme),
             Step::Providers => self.render_providers(&theme, cx),
             Step::Done => self.render_done(&theme, cx),
         };
         PageParts {
             key: SharedString::from(format!("onboarding-{}", step.key())),
             header: step
-                .number(github)
-                .map(|number| progress(&theme, number, total).into_any_element()),
+                .number()
+                .map(|number| progress(&theme, number, Step::TOTAL).into_any_element()),
             body,
-            footer: step.number(github).map(|_| self.render_footer(&theme, cx)),
-            fixed: step.number(github).is_some(),
+            footer: step.number().map(|_| self.render_footer(&theme, cx)),
+            fixed: step.number().is_some(),
             backdrop,
             measure,
         }
@@ -815,7 +648,7 @@ impl Onboarding {
                     .line_height(px(21.0))
                     .text_color(theme.text_muted)
                     .child(SharedString::from(
-                        "Run your coding agents side by side — on this computer, your other devices, or in the cloud.",
+                        "Run your coding agents side by side — on this computer or your other machines.",
                     )),
             )
             .child(
@@ -1036,91 +869,14 @@ impl Onboarding {
         .into_any_element()
     }
 
-    fn render_sync(&mut self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-        let state = self.state.read(cx);
-        let email = state
-            .signed_in()
-            .then(|| state.auth_user().map(|user| user.email.clone()))
-            .flatten();
-        let signed_in = state.signed_in();
-        div()
-            .flex()
-            .flex_col()
-            .child(heading(
-                theme,
-                "Sync your work",
-                "Log in to keep your chats, projects and settings in step everywhere you use Onicode.",
-            ))
-            .child(
-                widgets::section_card(theme)
-                    .child(benefit(
-                        theme,
-                        true,
-                        icons::SMARTPHONE,
-                        "On every device",
-                        "Pick up a chat on your phone or another computer, right where you left it.",
-                    ))
-                    .child(benefit(
-                        theme,
-                        false,
-                        icons::REMOTE_SERVER,
-                        "Run agents anywhere",
-                        "Start work on any of your machines from whichever one you're at.",
-                    ))
-                    .child(benefit(
-                        theme,
-                        false,
-                        icons::CLOUD,
-                        "Onicode Cloud",
-                        "Hand chats to cloud machines that keep going while your computer sleeps.",
-                    )),
-            )
-            .child(status_block(
-                theme,
-                icon(if signed_in { icons::CHECK } else { icons::LAPTOP })
-                    .size(px(14.0))
-                    .text_color(if signed_in { theme.accent } else { theme.text_muted })
-                    .into_any_element(),
-                match (&email, signed_in) {
-                    (Some(email), true) => format!("Signed in as {email}"),
-                    (None, true) => "You're signed in".into(),
-                    _ => format!(
-                        "Not ready? Everything stays on {} until you log in.",
-                        this_device()
-                    ),
-                },
-                signed_in,
-            ))
-            .into_any_element()
-    }
-
-    /// GitHub for Cloud agents: Settings → Cloud's own GitHub block, which
-    /// shows the account when it's already connected.
-    fn render_github(&mut self, theme: &Theme) -> AnyElement {
-        div()
-            .flex()
-            .flex_col()
-            .child(heading(
-                theme,
-                "Connect GitHub",
-                "Cloud agents work in your repositories on machines of their own. Connect GitHub so they can clone and push — or skip and do it later in Settings → Cloud.",
-            ))
-            .children(
-                self.github_page
-                    .clone()
-                    .map(|page| div().mt(px(24.0)).child(page)),
-            )
-            .into_any_element()
-    }
-
     fn render_providers(&mut self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-        let signed_in = self.state.read(cx).signed_in();
         // Settings → Providers' own header controls: refresh, and once
-        // you're signed in the device switcher, Cloud's logins among them.
+        // another of your machines is a peer, the device switcher.
+        let peers = self.state.read(cx).devices.len() > 1;
         let toolbar = self
             .agents_page
             .clone()
-            .map(|page| page.update(cx, |page, cx| page.render_toolbar(theme, signed_in, cx)));
+            .map(|page| page.update(cx, |page, cx| page.render_toolbar(theme, peers, cx)));
         let place = self.agents_place(cx);
         let summary = agents_summary(&self.harnesses);
         let (title, detail): (&'static str, String) = match &summary {
@@ -1178,8 +934,8 @@ impl Onboarding {
             .into_any_element()
     }
 
-    /// Where the agents page is looking, for its subtitle: this device, one
-    /// of your others, or Cloud.
+    /// Where the agents page is looking, for its subtitle: this device or one
+    /// of your others.
     fn agents_place(&self, cx: &Context<Self>) -> String {
         let target = self
             .agents_page
@@ -1187,13 +943,11 @@ impl Onboarding {
             .and_then(|page| page.read(cx).target_device().map(str::to_owned));
         match target {
             None => this_device().into(),
-            Some(id) if id == onicode_proto::CLOUD_ACCOUNTS_DEVICE => "Cloud".into(),
             Some(id) => self
                 .state
                 .read(cx)
-                .provider_devices()
-                .find(|device| device.id == id)
-                .map(|device| device.name.clone())
+                .device_name(&id)
+                .map(str::to_owned)
                 .unwrap_or_else(|| "that device".into()),
         }
     }
@@ -1201,27 +955,11 @@ impl Onboarding {
     fn render_done(&mut self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let state = self.state.read(cx);
         let has_projects = !state.spaces.is_empty();
-        let sync = if state.signed_in() {
-            state
-                .auth_user()
-                .map(|user| format!("Signed in as {}", user.email))
-                .unwrap_or_else(|| "Signed in".into())
-        } else {
-            format!("Only on {}", this_device())
-        };
         let look = format!(
             "{} · {}",
             appearance::mode(cx).label(),
             appearance::accent(cx).label()
         );
-        // Signed in: whether Cloud agents can reach GitHub yet.
-        let github = self.github_in_flow(cx).then(|| {
-            if self.github_connected(cx) {
-                "Connected".to_string()
-            } else {
-                "Not yet · Settings → Cloud".to_string()
-            }
-        });
         let agents = match agents_summary(&self.harnesses) {
             AgentsSummary::Installed(names) => short_names(&names),
             AgentsSummary::NoneInstalled => "None yet".into(),
@@ -1292,8 +1030,6 @@ impl Onboarding {
                     .mt(px(28.0))
                     .w(px(400.0))
                     .child(line("Appearance", look, true))
-                    .child(line("Sync", sync, false))
-                    .when_some(github, |card, github| card.child(line("GitHub", github, false)))
                     .child(line("Agents", agents, false)),
             )
             .child(
@@ -1327,31 +1063,9 @@ impl Onboarding {
 
     /// Back on the left; the step's way forward on the right.
     fn render_footer(&mut self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-        let back =
-            ghost(theme, "onboarding-back", "Back").on_click(cx.listener(|this, _, _, cx| {
-                let github = this.github_in_flow(cx);
-                this.go(this.step.previous(github), cx)
-            }));
+        let back = ghost(theme, "onboarding-back", "Back")
+            .on_click(cx.listener(|this, _, _, cx| this.go(this.step.previous(), cx)));
         let forward: Vec<AnyElement> = match self.step {
-            Step::Sync if !self.state.read(cx).signed_in() => vec![
-                ghost(theme, "onboarding-skip-sync", "Skip for now")
-                    .on_click(cx.listener(|this, _, _, cx| this.go(Step::Providers, cx)))
-                    .into_any_element(),
-                primary(theme, "onboarding-log-in", "Log in", true)
-                    .on_click(cx.listener(|this, _, _, cx| this.sign_in(cx)))
-                    .into_any_element(),
-            ],
-            // Connected (now or before): on. Otherwise skippable.
-            Step::Github if self.github_connected(cx) => vec![
-                primary(theme, "onboarding-continue", "Continue", true)
-                    .on_click(cx.listener(|this, _, _, cx| this.go(Step::Providers, cx)))
-                    .into_any_element(),
-            ],
-            Step::Github => vec![
-                ghost(theme, "onboarding-skip-github", "Skip for now")
-                    .on_click(cx.listener(|this, _, _, cx| this.go(Step::Providers, cx)))
-                    .into_any_element(),
-            ],
             Step::Providers => {
                 let ready = matches!(agents_summary(&self.harnesses), AgentsSummary::Installed(_));
                 let checked = matches!(
@@ -1379,10 +1093,7 @@ impl Onboarding {
             }
             _ => vec![
                 primary(theme, "onboarding-continue", "Continue", true)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        let github = this.github_in_flow(cx);
-                        this.go(this.step.next(github), cx)
-                    }))
+                    .on_click(cx.listener(|this, _, _, cx| this.go(this.step.next(), cx)))
                     .into_any_element(),
             ],
         };
@@ -1412,40 +1123,24 @@ mod tests {
 
     #[test]
     fn steps_walk_forward_and_back() {
-        let walk = |github: bool| {
-            let mut step = Step::Welcome;
-            let mut seen = vec![step];
-            while step != Step::Done {
-                step = step.next(github);
-                seen.push(step);
-            }
-            seen
-        };
         use Step::*;
-        // Signed out: no GitHub step, three numbered.
-        assert_eq!(walk(false), [Welcome, Appearance, Sync, Providers, Done]);
+        let mut step = Welcome;
+        let mut seen = vec![step];
+        while step != Done {
+            step = step.next();
+            seen.push(step);
+        }
+        assert_eq!(seen, [Welcome, Appearance, Providers, Done]);
         assert_eq!(
-            [Welcome, Appearance, Sync, Providers, Done].map(|s| s.number(false)),
-            [None, Some(1), Some(2), Some(3), None]
+            [Welcome, Appearance, Providers, Done].map(Step::number),
+            [None, Some(1), Some(2), None]
         );
-        assert_eq!(Step::total(false), 3);
-        assert_eq!(Providers.previous(false), Sync);
-        // Signed in: GitHub after sync, four numbered.
-        assert_eq!(
-            walk(true),
-            [Welcome, Appearance, Sync, Github, Providers, Done]
-        );
-        assert_eq!(
-            [Appearance, Sync, Github, Providers].map(|s| s.number(true)),
-            [Some(1), Some(2), Some(3), Some(4)]
-        );
-        assert_eq!(Step::total(true), 4);
-        assert_eq!(Providers.previous(true), Github);
-        assert_eq!(Github.previous(true), Sync);
-        assert_eq!(Done.previous(true), Providers);
-        assert_eq!(Appearance.previous(true), Welcome);
+        assert_eq!(Step::TOTAL, 2);
+        assert_eq!(Done.previous(), Providers);
+        assert_eq!(Providers.previous(), Appearance);
+        assert_eq!(Appearance.previous(), Welcome);
         assert_eq!(Step::parse("agents"), Providers);
-        assert_eq!(Step::parse("github"), Github);
+        assert_eq!(Step::parse("sync"), Welcome);
         assert_eq!(Step::parse("1"), Welcome);
     }
 

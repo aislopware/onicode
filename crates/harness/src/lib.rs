@@ -37,8 +37,8 @@ pub enum HarnessError {
     Discovery(#[from] CatalogFailure),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
-    /// The host has no login for this run's provider (a Cloud device with
-    /// nothing connected for it). The message says where to sign in.
+    /// The host has no login for this run's provider. The message says where
+    /// to sign in.
     #[error("{0}")]
     NotSignedIn(String),
 }
@@ -517,8 +517,8 @@ pub fn compose_child_path(cmd: &mut process::Command, exe: &std::path::Path) {
     apply_login_shell_env(cmd.as_std_mut());
 }
 
-/// Apply the host-resolved run environment ([`RunRequest::env`] — credential
-/// broker output on a Cloud device) to an agent child. Call it after the
+/// Apply the host-resolved run environment ([`RunRequest::env`]) to an agent
+/// child. Call it after the
 /// driver's own env setup so the host's values win. Values are never logged.
 pub fn apply_run_env(cmd: &mut process::Command, env: &std::collections::BTreeMap<String, String>) {
     for (key, value) in env {

@@ -18,10 +18,7 @@ use futures::stream::BoxStream;
 use onicode_doc::{
     MessagePart, MessageRole, MessageStatus, SessionCommandPayload, SessionDoc, SessionMessageEntry,
 };
-use onicode_engine::{
-    Auth, AuthConfig, AuthState, EngineCore, EngineProfile, HarnessRegistry, RunJournal,
-    WorkspaceScope,
-};
+use onicode_engine::{EngineCore, HarnessRegistry, RunJournal};
 use onicode_harness::{Harness, HarnessError, RunControls};
 use onicode_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
@@ -283,8 +280,7 @@ impl Harness for HoldingHarness {
 fn assemble(dir: &std::path::Path, harness: impl Harness + 'static) -> EngineCore {
     let registry = HarnessRegistry::new();
     registry.register(Arc::new(harness));
-    EngineCore::assemble(dir, Arc::new(registry), HarnessId::Mock, None)
-        .expect("engine core assembles")
+    EngineCore::assemble(dir, Arc::new(registry), HarnessId::Mock).expect("engine core assembles")
 }
 
 fn data_dir(tmp: &tempfile::TempDir) -> std::path::PathBuf {
@@ -296,7 +292,7 @@ fn data_dir(tmp: &tempfile::TempDir) -> std::path::PathBuf {
 }
 
 fn journal(dir: &std::path::Path) -> RunJournal {
-    RunJournal::open(dir.join("orgs/dev-org/dev-user/journals")).unwrap()
+    RunJournal::open(dir.join("profiles/local/journals")).unwrap()
 }
 
 /// Create + name the chat row so the auto-titler stays out of the request log.
@@ -378,7 +374,7 @@ fn manufacture_crash(
     events: &[AgentEvent],
 ) {
     let now = now_ms();
-    let store = DocsStore::open(dir.join("orgs/dev-org/dev-user")).unwrap();
+    let store = DocsStore::open(dir.join("profiles/local")).unwrap();
     let doc = SessionDoc::init(CHAT).unwrap();
     let entry = |id: &str, role, text: &str, created_at, status| SessionMessageEntry {
         id: id.into(),
@@ -825,53 +821,18 @@ async fn a_shutdown_mark_over_a_finished_turn_is_ignored() {
     core.shutdown().await;
 }
 
-/// An engine over `dir` in `scope`, its account signed out.
-fn assemble_signed_out(dir: &std::path::Path, scope: WorkspaceScope) -> EngineCore {
-    let registry = HarnessRegistry::new();
-    registry.register(Arc::new(HoldingHarness {
-        ask: false,
-        on_interrupt: OnInterrupt::End,
-    }));
-    let profile = match scope {
-        WorkspaceScope::Synced => EngineProfile::synced(dir, "dev-org", "dev-user"),
-        _ => EngineProfile::development(dir, "dev-org", "dev-user"),
-    };
-    let core =
-        EngineCore::assemble_with_profile(profile, Arc::new(registry), HarnessId::Mock, None)
-            .expect("engine core assembles");
-    let mut config = AuthConfig::new("http://127.0.0.1:9", dir.join("auth"));
-    config.workos_client_id = Some("client_test".into());
-    let auth = Auth::new(config);
-    assert!(matches!(auth.state(), AuthState::SignedOut));
-    core.set_auth(auth);
-    core
-}
-
 #[tokio::test]
-async fn a_shutdown_after_sign_out_is_not_revived() {
+async fn a_turn_the_shutdown_cut_off_revives_on_the_next_boot() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = data_dir(&tmp);
-    // The runtime's own shutdown decides, from the auth state: no caller
-    // has to remember to.
-    let core = hold_a_turn_in(assemble_signed_out(&dir, WorkspaceScope::Synced), false).await;
-    core.shutdown().await;
-    drop(core);
-    assert!(journal(&dir).shutdown_interrupts().unwrap().is_empty());
-
-    let requests: RequestLog = Default::default();
-    let core = assemble(&dir, ScriptedHarness::completing(&requests, "hs-held"));
-    settle().await;
-    assert!(requests.lock().unwrap().is_empty());
-    core.shutdown().await;
-}
-
-#[tokio::test]
-async fn a_signed_out_local_engine_still_revives_after_shutdown() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = data_dir(&tmp);
-    // Signed out is a local engine's normal state, not a sign-out.
     let core = hold_a_turn_in(
-        assemble_signed_out(&dir, WorkspaceScope::Development),
+        assemble(
+            &dir,
+            HoldingHarness {
+                ask: false,
+                on_interrupt: OnInterrupt::End,
+            },
+        ),
         false,
     )
     .await;
@@ -1087,7 +1048,7 @@ async fn a_rejected_resume_in_a_switched_chat_starts_fresh_and_says_so() {
             }),
         },
     }));
-    let core = EngineCore::assemble(&dir, Arc::new(registry), HarnessId::Mock, None)
+    let core = EngineCore::assemble(&dir, Arc::new(registry), HarnessId::Mock)
         .expect("engine core assembles");
     pre_title(&core);
     let turn = |harness, prompt: &'static str, id: &'static str, replies| {
@@ -1344,53 +1305,6 @@ async fn a_revival_yields_to_a_message_sent_while_it_was_on_its_way() {
     );
     assert_eq!(log[0].prompt, "something else");
     core.shutdown().await;
-}
-
-/// A sign-out's shutdown that dies before it reached a turn (killed in its
-/// serial terminate loop) still never revives that turn.
-#[test]
-fn a_sign_out_shutdown_that_dies_midway_revives_nothing() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = data_dir(&tmp);
-    {
-        let engine = tokio::runtime::Runtime::new().unwrap();
-        engine.block_on(async {
-            let core = assemble(
-                &dir,
-                HoldingHarness {
-                    ask: false,
-                    on_interrupt: OnInterrupt::Ignore,
-                },
-            );
-            let core = hold_a_turn_in(core, false).await;
-            core.sessions.forgo_revival();
-            let sessions = core.sessions.clone();
-            tokio::spawn(async move { sessions.shutdown().await });
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            core.doc_host.flush_all();
-            drop(core);
-        });
-        engine.shutdown_timeout(Duration::from_millis(100));
-    }
-    assert!(
-        journal(&dir)
-            .stale_sessions()
-            .unwrap()
-            .contains(&CHAT.to_string()),
-        "the journal reads like a crash"
-    );
-
-    let engine = tokio::runtime::Runtime::new().unwrap();
-    engine.block_on(async {
-        let requests: RequestLog = Default::default();
-        let core = assemble(&dir, ScriptedHarness::completing(&requests, "hs-held"));
-        settle().await;
-        assert!(
-            requests.lock().unwrap().is_empty(),
-            "a sign-out is never undone"
-        );
-        core.shutdown().await;
-    });
 }
 
 #[test]

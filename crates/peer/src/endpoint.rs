@@ -67,8 +67,12 @@ pub struct PeerConfig {
     pub device_id: String,
     /// What this node is to its peers.
     pub role: Role,
-    /// The UDP port on every tailnet address ([`PORT`]).
+    /// The UDP port engines listen on, on every tailnet address ([`PORT`]): bound here unless
+    /// [`Self::ephemeral`], and dialled on every engine found.
     pub port: u16,
+    /// Bind an OS-chosen port rather than [`Self::port`]: a viewer, which serves nothing, on a
+    /// machine whose own engine holds that port.
+    pub ephemeral: bool,
     /// Draws every random choice the endpoints make, so a simulated run repeats.
     pub seed: Option<u64>,
     /// Ranges let in without the tailnet's word, besides loopback (a test bench's LAN).
@@ -83,9 +87,17 @@ impl PeerConfig {
             device_id: device_id.into(),
             role,
             port: PORT,
+            ephemeral: false,
             seed: None,
             allow: Vec::new(),
         }
+    }
+
+    /// The same, bound on an OS-chosen port ([`Self::ephemeral`]).
+    #[must_use]
+    pub const fn on_ephemeral_port(mut self) -> Self {
+        self.ephemeral = true;
+        self
     }
 
     /// The same, drawing from `seed`.
@@ -108,6 +120,8 @@ pub struct PeerSession {
 /// The endpoints on this node's tailnet addresses.
 pub struct PeerEndpoint {
     endpoints: Vec<(SocketAddr, noq::Endpoint)>,
+    /// The port engines listen on ([`PeerConfig::port`]).
+    port: u16,
     admission: Admission,
     hello: Hello,
     /// The node each device-id was first seen on, while that node is on the tailnet.
@@ -142,8 +156,9 @@ impl PeerEndpoint {
             .filter(|_| status.running())
             .ok_or(PeerError::NotRunning)?;
         let mut endpoints = Vec::new();
+        let bind_port = if config.ephemeral { 0 } else { config.port };
         for (i, ip) in me.ips.iter().enumerate() {
-            let local = SocketAddr::new(*ip, config.port);
+            let local = SocketAddr::new(*ip, bind_port);
             let seed = config
                 .seed
                 .map(|s| s ^ (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15));
@@ -165,6 +180,7 @@ impl PeerEndpoint {
         }
         Ok(Arc::new(Self {
             endpoints,
+            port: config.port,
             admission: Admission::new(Some(tailnet), config.allow),
             hello: Hello::new(config.device_id, config.role),
             nodes: Mutex::default(),
@@ -181,6 +197,12 @@ impl PeerEndpoint {
     #[must_use]
     pub fn device_id(&self) -> &str {
         &self.hello.device_id
+    }
+
+    /// The port engines listen on: where every engine found is dialled.
+    #[must_use]
+    pub const fn port(&self) -> u16 {
+        self.port
     }
 
     /// The addresses the endpoints are bound on.

@@ -194,13 +194,8 @@ async fn check_worktree_setup_and_reuse(use_project_symlink: bool, test_setup: b
     let cwds: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let registry = HarnessRegistry::new();
     registry.register(Arc::new(RecordingHarness { cwds: cwds.clone() }));
-    let core = EngineCore::assemble(
-        &tmp_path.join("data"),
-        Arc::new(registry),
-        HarnessId::Mock,
-        None,
-    )
-    .expect("engine core assembles");
+    let core = EngineCore::assemble(&tmp_path.join("data"), Arc::new(registry), HarnessId::Mock)
+        .expect("engine core assembles");
     core.workspace
         .create_space(
             "space-worktree-run",

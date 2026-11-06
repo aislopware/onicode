@@ -32,7 +32,6 @@ fn setup(cx: &mut TestAppContext) -> (tempfile::TempDir, Entity<Shell>, &mut Vis
     let (shell, cx) = cx.add_window_view(|_, cx| {
         let state = cx.new(|_| {
             let mut state = AppState::new();
-            state.workspace_scope = Some(WorkspaceScope::Development);
             state.connection = ConnectionStatus::Ready;
             state.local_device_id = Some("local".into());
             for (id, number) in [("a", 90), ("b", 91)] {
@@ -74,10 +73,7 @@ fn setup(cx: &mut TestAppContext) -> (tempfile::TempDir, Entity<Shell>, &mut Vis
             EngineBootConfig {
                 data_dir: dir.path().into(),
                 ipc_port: 0,
-                edge_url: "http://127.0.0.1:1".into(),
-                edge_token: None,
-                org_id: None,
-                workos_client_id: None,
+                update_feed: String::new(),
                 default_harness: onicode_proto::HarnessId::Mock,
             },
             cx,

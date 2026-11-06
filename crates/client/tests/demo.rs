@@ -7,16 +7,16 @@ use std::time::{Duration, Instant};
 
 use onicode_client::events::NullListener;
 use onicode_client::{
-    ChatIndicator, Client, ClientConfig, Credentials, DemoFixture, DemoOptions, MessageRole,
-    MessageStatus, SendOutcome, SendRequest, StreamSpeed, TranscriptScale,
+    ChatIndicator, Client, ClientConfig, DemoFixture, DemoOptions, MessageRole, MessageStatus,
+    Mode, SendOutcome, SendRequest, StreamSpeed, TranscriptScale,
 };
 
 fn demo(options: DemoOptions) -> (Client, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
-    let mut config = ClientConfig::new("https://edge.invalid", dir.path());
+    let mut config = ClientConfig::new(dir.path());
     config.device_id = "ios-test".into();
     config.device_name = "Test iPhone".into();
-    let client = Client::new(config, Credentials::Demo(options), Arc::new(NullListener)).unwrap();
+    let client = Client::new(config, Mode::Demo(options), Arc::new(NullListener)).unwrap();
     (client, dir)
 }
 

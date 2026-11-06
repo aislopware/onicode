@@ -1,6 +1,6 @@
 import XCTest
 
-/// Voice controls around a scripted call (`-voice-preview`: no audio, host or relay).
+/// Voice controls around a scripted call (`-voice-preview`: no audio, no host).
 final class VoiceFlowTests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false

@@ -229,7 +229,7 @@ fn rig_full(adopts_config: bool, turn_boundary: bool) -> Rig {
         turn_boundary,
     }));
     let dir = tempfile::tempdir().unwrap();
-    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock, None)
+    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock)
         .expect("engine core assembles");
     Rig {
         core,

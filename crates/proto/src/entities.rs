@@ -137,8 +137,7 @@ pub struct Space {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repository_id: Option<String>,
     /// Owner-stamped when git: the GitHub repository (`owner/name`) of the
-    /// folder's `origin` remote. When Cloud reaches it, a session in this
-    /// project can run on its own Cloud machine (the checkout picker's Cloud).
+    /// folder's `origin` remote.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github_repo: Option<String>,
     /// The picture its people chose for it (LWW, from any device); absent ⇒
@@ -303,12 +302,6 @@ pub struct Chat {
     /// device clears the badge everywhere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_seen_at: Option<DateTime<Utc>>,
-    /// Which sync room generation serves this chat (docs/chat2-sync.md M2):
-    /// `None`/1 = legacy s2 loro room, 2 = chat2 dumb relay. The HOST flips
-    /// this in the same breath as seeding the chat2 checkpoint; every device
-    /// dials the room the registry names. Per-chat and instantly revertible.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub room_gen: Option<u32>,
     /// The chat this one hangs off: the conversation a side chat was forked
     /// from, or the chat whose agent spawned this one through the Onicode MCP
     /// server. Children stay out of the main sidebar and list under their
@@ -378,11 +371,6 @@ impl Chat {
     /// (`parent_chat_id`) nor a hidden voice orchestrator.
     pub fn is_top_level(&self) -> bool {
         self.parent_chat_id.is_none() && !crate::voice::is_orchestrator_chat(&self.id)
-    }
-
-    /// True when this chat syncs over the chat2 dumb relay.
-    pub fn on_chat2(&self) -> bool {
-        self.room_gen.unwrap_or(1) >= 2
     }
 }
 
@@ -1486,28 +1474,6 @@ pub struct CheckoutFileDiffText {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UserProfile {
-    pub id: String,
-    pub email: String,
-    pub name: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "state", rename_all = "camelCase")]
-pub enum AuthState {
-    SignedOut,
-    NeedsOrganization {
-        user: UserProfile,
-    },
-    #[serde(rename_all = "camelCase")]
-    SignedIn {
-        user: UserProfile,
-        org_id: Option<String>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AgentAccount {
     pub id: String,
     pub harness: HarnessId,
@@ -1791,10 +1757,10 @@ pub struct TransferProgress {
     pub total: u64,
 }
 
-/// Live edge-connectivity posture (the `WatchConnectivity` stream): the truth
+/// Live peer-connectivity posture (the `WatchConnectivity` stream): the truth
 /// the connection pill, composer honesty, and queued-send badges render.
-/// Derived engine-side from the registry room's reconnect state, the OS
-/// network-path monitor, and each open chat room's stats.
+/// Derived engine-side from the peer links' state and each open chat's
+/// replica sync.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Connectivity {
@@ -1817,12 +1783,12 @@ pub struct Connectivity {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ConnectivityState {
-    /// No edge transports on this profile (local scope) — hide the pill.
+    /// No peer is expected (this engine is alone on the tailnet) — hide the pill.
     #[default]
     Disabled,
     /// The OS reports no network path.
     Offline,
-    /// Edge expected but the registry room is down (dialing/backing off).
+    /// A peer is expected but its link is down (dialing/backing off).
     Reconnecting,
     Connected,
 }
@@ -1854,7 +1820,7 @@ pub struct ChatConnectivity {
     /// Older engines omit it, so consumers conservatively assume false.
     #[serde(default)]
     pub delivery_live: bool,
-    /// Local update batches not yet acked by the chat's edge room.
+    /// Local update batches not yet acked by the chat's host.
     #[serde(default)]
     pub pending_pushes: u64,
 }

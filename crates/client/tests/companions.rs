@@ -8,20 +8,20 @@ use std::time::{Duration, Instant};
 
 use onicode_client::events::NullListener;
 use onicode_client::{
-    Client, ClientConfig, Credentials, DemoOptions, MessageRole, MessageStatus,
-    SessionMessageEntry, StreamSpeed, SubagentSink, SubagentState, TerminalSink, TerminalUpdate,
+    Client, ClientConfig, DemoOptions, MessageRole, MessageStatus, Mode, SessionMessageEntry,
+    StreamSpeed, SubagentSink, SubagentState, TerminalSink, TerminalUpdate,
 };
 
 fn demo() -> (Client, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
-    let mut config = ClientConfig::new("https://edge.invalid", dir.path());
+    let mut config = ClientConfig::new(dir.path());
     config.device_id = "ios-test".into();
     config.device_name = "Test iPhone".into();
     let options = DemoOptions {
         stream_speed: StreamSpeed::Fast,
         ..Default::default()
     };
-    let client = Client::new(config, Credentials::Demo(options), Arc::new(NullListener)).unwrap();
+    let client = Client::new(config, Mode::Demo(options), Arc::new(NullListener)).unwrap();
     (client, dir)
 }
 
@@ -144,13 +144,12 @@ fn subagents_list_off_the_transcript_and_open_live_or_frozen() {
     assert_eq!(agents[0].kind.as_deref(), Some("Explore"));
     assert_eq!(agents[2].kind, None, "general-purpose isn't worth naming");
 
-    // Finished: its uploaded copy, whole, once.
+    // Finished: its doc, whole.
     let frozen = Arc::new(Transcript::default());
     let _a = client
         .watch_subagent(
             "chat-veil",
             agents[0].doc_id.as_deref().unwrap(),
-            true,
             frozen.clone(),
         )
         .unwrap();
@@ -167,7 +166,6 @@ fn subagents_list_off_the_transcript_and_open_live_or_frozen() {
         .watch_subagent(
             "chat-veil",
             agents[2].doc_id.as_deref().unwrap(),
-            false,
             live.clone(),
         )
         .unwrap();

@@ -466,7 +466,6 @@ mod tests {
             child_kind: None,
             space_id: Some("space".into()),
             last_seen_at: None,
-            room_gen: None,
         }
     }
 

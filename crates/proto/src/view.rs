@@ -12,7 +12,7 @@
 
 use chrono::{DateTime, Utc};
 
-use crate::{AuthState, Chat, ChatIndicator, Session, SessionStatus, Space, WorkspaceScope};
+use crate::{Chat, ChatIndicator, Session, SessionStatus, Space};
 
 // ---------------------------------------------------------------------------
 // Connection + status
@@ -216,28 +216,6 @@ pub fn project_key(space: &Space) -> String {
     }
 }
 
-/// The repository identity for a Cloud project of `github_repo`. A Cloud
-/// project lives on the logical Cloud device, where no engine runs, so
-/// whoever creates it stamps it: with the identity a clone of the same
-/// repository already has (a full clone's `commit:<root>`), so the two read
-/// as one project, else the normalized remote form. Pure.
-pub fn cloud_repository_id(spaces: &[Space], github_repo: &str) -> String {
-    spaces
-        .iter()
-        .filter(|s| !s.device_id.starts_with(crate::CLOUD_DEVICE_PREFIX))
-        .filter(|s| {
-            s.github_repo
-                .as_deref()
-                .is_some_and(|repo| repo.eq_ignore_ascii_case(github_repo))
-        })
-        .filter_map(|s| s.repository_id.as_deref().map(|id| (s, id)))
-        // The repository itself, not a folder inside it (`<identity>:<path>`).
-        .filter(|(_, id)| !id.strip_prefix("commit:").unwrap_or(id).contains(':'))
-        .min_by_key(|(s, id)| (!id.starts_with("commit:"), s.created_at, s.id.as_str()))
-        .map(|(_, id)| id.to_string())
-        .unwrap_or_else(|| format!("github.com/{}", github_repo.to_lowercase()))
-}
-
 /// The space that speaks for `space`'s whole project: the oldest member, id
 /// tiebreak. Its name and color stand for every member, and the choice is
 /// the same on every device, so a repository looks alike everywhere. Pure.
@@ -276,33 +254,17 @@ pub enum GatePhase {
     Loading,
     /// Engine unreachable and embedding failed.
     Failed(String),
-    /// Engine up, but signed out — show the sign-in card.
-    SignIn,
-    /// Signed in but no organization selected — "Create your workspace".
-    OrgGate,
     /// Render the shell.
     Ready,
 }
 
-/// Missing scope is treated as synced. Current engines always publish
-/// [`WorkspaceScope`] before becoming ready, while old daemons are deliberately
-/// kept behind the account gate instead of being mistaken for local runtimes.
-pub fn gate_phase(
-    connection: &ConnectionStatus,
-    workspace_scope: Option<WorkspaceScope>,
-    auth: Option<&AuthState>,
-) -> GatePhase {
+/// The gate for a viewport's connection to its engine: the shell renders as soon as the
+/// engine answers, since the engine serves the device's own profile with no sign-in.
+pub fn gate_phase(connection: &ConnectionStatus) -> GatePhase {
     match connection {
         ConnectionStatus::Connecting => GatePhase::Loading,
         ConnectionStatus::Failed(err) => GatePhase::Failed(err.clone()),
-        ConnectionStatus::Ready => match workspace_scope.unwrap_or(WorkspaceScope::Synced) {
-            WorkspaceScope::Local | WorkspaceScope::Development => GatePhase::Ready,
-            WorkspaceScope::Synced => match auth {
-                Some(AuthState::NeedsOrganization { .. }) => GatePhase::OrgGate,
-                Some(AuthState::SignedIn { .. }) => GatePhase::Ready,
-                Some(AuthState::SignedOut) | None => GatePhase::SignIn,
-            },
-        },
+        ConnectionStatus::Ready => GatePhase::Ready,
     }
 }
 
@@ -327,36 +289,6 @@ mod project_tests {
     }
 
     #[test]
-    fn a_cloud_project_takes_the_identity_of_a_clone_of_its_repository() {
-        let github = |mut s: Space, repo: &str| {
-            s.github_repo = Some(repo.into());
-            s
-        };
-        // No clone yet: the remote form.
-        assert_eq!(cloud_repository_id(&[], "Acme/App"), "github.com/acme/app");
-        let spaces = vec![
-            github(
-                space("shallow", "vps", Some("github.com/acme/app"), 0),
-                "acme/app",
-            ),
-            github(space("full", "mac", Some("commit:abc"), 1), "Acme/App"),
-            github(space("sub", "mac", Some("commit:abc:web"), 0), "acme/app"),
-            github(
-                space("cloud", "cloud-1", Some("github.com/acme/app"), 0),
-                "acme/app",
-            ),
-            github(space("other", "mac", Some("commit:def"), 0), "acme/other"),
-        ];
-        // A full clone's commit identity wins over a shallow clone's remote
-        // form; a folder inside the repository and Cloud's own rows don't count.
-        assert_eq!(cloud_repository_id(&spaces, "acme/app"), "commit:abc");
-        assert_eq!(
-            cloud_repository_id(&spaces[..1], "acme/app"),
-            "github.com/acme/app"
-        );
-    }
-
-    #[test]
     fn spaces_sharing_a_repository_are_one_project_led_by_the_oldest() {
         let spaces = vec![
             space("laptop", "mac", Some("github.com/o/r"), 2),
@@ -375,15 +307,6 @@ mod project_tests {
 #[cfg(test)]
 mod gate_tests {
     use super::*;
-    use crate::UserProfile;
-
-    fn user() -> UserProfile {
-        UserProfile {
-            id: "user-1".into(),
-            email: "user@example.com".into(),
-            name: None,
-        }
-    }
 
     fn running_session(running: u32, updated_at: DateTime<Utc>) -> Session {
         Session {
@@ -521,89 +444,16 @@ mod gate_tests {
     }
 
     #[test]
-    fn workspace_scope_controls_the_auth_gate() {
+    fn the_gate_follows_the_engine_connection() {
         assert_eq!(
-            gate_phase(
-                &ConnectionStatus::Ready,
-                Some(WorkspaceScope::Local),
-                Some(&AuthState::SignedOut),
-            ),
-            GatePhase::Ready
+            gate_phase(&ConnectionStatus::Connecting),
+            GatePhase::Loading
         );
+        assert_eq!(gate_phase(&ConnectionStatus::Ready), GatePhase::Ready);
         assert_eq!(
-            gate_phase(
-                &ConnectionStatus::Ready,
-                Some(WorkspaceScope::Synced),
-                Some(&AuthState::SignedOut),
-            ),
-            GatePhase::SignIn
+            gate_phase(&ConnectionStatus::Failed("down".into())),
+            GatePhase::Failed("down".into())
         );
-        assert_eq!(
-            gate_phase(
-                &ConnectionStatus::Ready,
-                Some(WorkspaceScope::Synced),
-                Some(&AuthState::NeedsOrganization { user: user() }),
-            ),
-            GatePhase::OrgGate
-        );
-    }
-
-    #[test]
-    fn development_and_local_never_use_the_workos_gate() {
-        for scope in [WorkspaceScope::Local, WorkspaceScope::Development] {
-            for auth in [
-                AuthState::SignedOut,
-                AuthState::NeedsOrganization { user: user() },
-                AuthState::SignedIn {
-                    user: user(),
-                    org_id: Some("org-1".into()),
-                },
-            ] {
-                assert_eq!(
-                    gate_phase(&ConnectionStatus::Ready, Some(scope), Some(&auth)),
-                    GatePhase::Ready
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn missing_scope_falls_back_to_a_synced_gate() {
-        assert_eq!(
-            gate_phase(&ConnectionStatus::Ready, None, None),
-            GatePhase::SignIn
-        );
-    }
-}
-
-/// Parse an `AuthStatus` frame tolerantly. The engine currently serializes its
-/// own enum (`{"_tag": "SignedIn", ...}`) while the proto type expects
-/// `{"state": "signedIn", ...}` — accept both so either side can converge
-/// without breaking a viewport.
-pub fn parse_auth_state(value: &serde_json::Value) -> Option<AuthState> {
-    if let Ok(state) = serde_json::from_value::<AuthState>(value.clone()) {
-        return Some(state);
-    }
-    let tag = value.get("_tag").and_then(|t| t.as_str())?;
-    let user = || -> Option<crate::UserProfile> {
-        let u = value.get("user")?;
-        Some(crate::UserProfile {
-            id: u.get("id")?.as_str()?.to_string(),
-            email: u.get("email")?.as_str()?.to_string(),
-            name: u.get("name").and_then(|n| n.as_str()).map(str::to_string),
-        })
-    };
-    match tag {
-        "SignedOut" => Some(AuthState::SignedOut),
-        "NeedsOrganization" => Some(AuthState::NeedsOrganization { user: user()? }),
-        "SignedIn" => Some(AuthState::SignedIn {
-            user: user()?,
-            org_id: value
-                .get("orgId")
-                .and_then(|v| v.as_str())
-                .map(str::to_string),
-        }),
-        _ => None,
     }
 }
 
@@ -763,10 +613,6 @@ fn tool_chip_content_raw(call: &crate::ToolCall) -> (&'static str, String) {
         // (every native driver's convention): label them "Agent" with the
         // description as the detail — "Tool · Agent: scan repo" read as two
         // labels fighting.
-        // A Cloud machine's own setup ("Cloned acme/app").
-        call @ ToolCall::Unknown { name, .. } if crate::cloud_setup_step(call).is_some() => {
-            ("Cloud", name.clone())
-        }
         ToolCall::Unknown { name, .. } => match name.strip_prefix("Agent: ") {
             Some(description) => ("Agent", description.to_owned()),
             None if name == "Agent" => ("Agent", String::new()),
@@ -781,25 +627,6 @@ fn tool_chip_content_raw(call: &crate::ToolCall) -> (&'static str, String) {
 /// the summary itself is one implementation for both.
 pub fn tool_group_summary(tools: &[(crate::ToolCall, bool)]) -> String {
     use crate::ToolCall;
-    // A Cloud machine's setup steps read as what happened to the machine.
-    if !tools.is_empty() {
-        let steps: Option<Vec<&str>> = tools
-            .iter()
-            .map(|(call, _)| crate::cloud_setup_step(call))
-            .collect();
-        if let Some(steps) = steps {
-            let mut summary = if steps.contains(&"wake") {
-                "Woke the Cloud machine".to_string()
-            } else {
-                "Set up the Cloud machine".to_string()
-            };
-            let failed = tools.iter().filter(|(_, is_error)| *is_error).count();
-            if failed > 0 {
-                summary.push_str(&format!(" · {failed} failed"));
-            }
-            return summary;
-        }
-    }
     let mut commands = 0usize;
     let mut edited: Vec<&str> = Vec::new();
     let mut reads = 0usize;
@@ -1298,56 +1125,5 @@ mod input_outcome_tests {
         };
         assert!(parsed[0].answer.ends_with("…”"), "{}", parsed[0].answer);
         assert!(parsed[0].answer.chars().count() <= ANSWER_DISPLAY_MAX + 3);
-    }
-}
-
-#[cfg(test)]
-mod cloud_setup_tests {
-    use super::*;
-    use crate::ToolCall;
-
-    fn step(step: &str, name: &str) -> ToolCall {
-        ToolCall::Unknown {
-            name: name.into(),
-            input: Some(
-                serde_json::json!({ crate::CLOUD_SETUP_KEY: step, "command": "git clone x" }),
-            ),
-        }
-    }
-
-    #[test]
-    fn cloud_setup_steps_read_as_what_happened_to_the_machine() {
-        let start = step("start", "Started a machine");
-        let clone = step("clone", "Cloned acme/app");
-        assert_eq!(crate::cloud_setup_step(&clone), Some("clone"));
-        assert_eq!(
-            tool_chip_content(&clone),
-            ("Cloud", "Cloned acme/app".to_string())
-        );
-        assert_eq!(
-            tool_group_summary(&[(start.clone(), false), (clone.clone(), false)]),
-            "Set up the Cloud machine"
-        );
-        assert_eq!(
-            tool_group_summary(&[(step("wake", "Woke the machine"), false)]),
-            "Woke the Cloud machine"
-        );
-        assert_eq!(
-            tool_group_summary(&[(start, false), (clone.clone(), true)]),
-            "Set up the Cloud machine · 1 failed"
-        );
-        // Mixed with ordinary tools: the ordinary summary.
-        let exec = ToolCall::Exec {
-            command: "ls".into(),
-        };
-        assert_eq!(
-            tool_group_summary(&[(clone, false), (exec, false)]),
-            "Ran 1 command · called 1 tool"
-        );
-        let other = ToolCall::Unknown {
-            name: "x".into(),
-            input: Some(serde_json::json!({"a": 1})),
-        };
-        assert_eq!(crate::cloud_setup_step(&other), None);
     }
 }

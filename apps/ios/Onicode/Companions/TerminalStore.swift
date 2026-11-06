@@ -190,13 +190,6 @@ final class TerminalStore {
         for tab in tabs.values.flatMap(\.self) { tab.session.setDark(dark: dark) }
     }
 
-    func signOut() {
-        for tab in tabs.values.flatMap(\.self) { tab.session.detach() }
-        tabs = [:]
-        restored = []
-        UserDefaults.standard.removeObject(forKey: Self.key)
-    }
-
     private final class StoreToken {
         let cancel: () -> Void
         init(cancel: @escaping () -> Void) { self.cancel = cancel }

@@ -1,10 +1,10 @@
 //! The client's own tokio runtime.
 //!
 //! One small multi-thread runtime per process, created on first use and never
-//! dropped: platform UI threads never block on it, and a signed-out client
-//! shuts down its *tasks* (cancellation token) rather than a runtime — dropping
-//! a runtime from inside async context panics, and sign-out/sign-in cycles
-//! would otherwise churn OS threads.
+//! dropped: platform UI threads never block on it, and a client that shuts
+//! down stops its *tasks* (cancellation token) rather than a runtime — dropping
+//! a runtime from inside async context panics, and client restarts would
+//! otherwise churn OS threads.
 //!
 //! Every public `async fn` in this crate spawns its work onto this runtime and
 //! awaits the join handle, so the returned futures are executor-agnostic:

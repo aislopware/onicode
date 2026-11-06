@@ -70,7 +70,7 @@ impl Host {
         crate::process::owned::configure(&mut cmd);
         crate::compose_child_path(&mut cmd, exe);
         // An inherited API key would silently replace the user's own Muse
-        // login; a run's explicit one (a Cloud device's) still wins below.
+        // login; a run's explicit one still wins below.
         // Onicode updates Muse itself: no background self-update mid-session.
         cmd.env_remove("META_API_KEY")
             .env("MUSE_NO_AUTO_UPDATE", "1");

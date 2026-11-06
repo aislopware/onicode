@@ -12,13 +12,7 @@ use onicode_proto::{ChatIndicator, HarnessId, Session, SessionStatus, TerminalEv
 use onicode_rpc::memory_client;
 
 fn assemble(path: &std::path::Path) -> EngineCore {
-    EngineCore::assemble(
-        path,
-        Arc::new(HarnessRegistry::new()),
-        HarnessId::Mock,
-        None,
-    )
-    .unwrap()
+    EngineCore::assemble(path, Arc::new(HarnessRegistry::new()), HarnessId::Mock).unwrap()
 }
 
 async fn state(

@@ -1,8 +1,7 @@
 import UIKit
-import UserNotifications
 
-/// Settings & utilities: account, providers, Cloud and billing, devices,
-/// appearance, archive.
+/// Settings & utilities: the computers this phone reaches, providers,
+/// devices, appearance, archive.
 final class MoreViewController: UIViewController, UICollectionViewDelegate {
     private let app: AppModel
     private var collectionView: UICollectionView!
@@ -103,68 +102,13 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
         wallpaperObserver = NotificationCenter.default.addObserver(
             forName: WallpaperStore.didChange, object: nil, queue: .main
         ) { [weak self] _ in self?.reload() }
-        // Devices go on/offline and the org name backfills after opening.
+        // Devices go on/offline, the tailnet comes up.
         appToken = app.observe { [weak self] in self?.reload() }
-        cloudToken = app.cloud.observe { [weak self] in self?.reload() }
-        app.cloud.refresh()
-        // Back from iOS Settings (notifications may have been allowed there).
-        foregroundObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.refreshNotificationStatus()
-        }
     }
-
-    private var foregroundObserver: NSObjectProtocol?
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         if dataSource != nil { reload() }
-        refreshNotificationStatus()
-    }
-
-    // MARK: Notifications
-
-    private var notificationStatus: UNAuthorizationStatus = .notDetermined
-
-    private func refreshNotificationStatus() {
-        Task { @MainActor in
-            let status = await PushNotifications.shared.authorizationStatus()
-            guard status != self.notificationStatus else { return }
-            self.notificationStatus = status
-            self.reload()
-        }
-    }
-
-    /// On when this phone wants them and iOS allows them.
-    private var notificationsOn: Bool {
-        PushNotifications.shared.enabled
-            && (notificationStatus == .authorized || notificationStatus == .provisional
-                || notificationStatus == .ephemeral)
-    }
-
-    private func notificationRows() -> [Row] {
-        var rows = [
-            Row(
-                id: "notify:enabled", title: "Notifications",
-                subtitle: notificationStatus == .denied
-                    ? "Turned off in iOS Settings" : "When a session finishes, needs you or fails", symbol: "bell",
-                accessory: .toggle(notificationsOn))
-        ]
-        if notificationsOn {
-            rows += PushNotifications.Kind.allCases.map { kind in
-                let symbol: String =
-                    switch kind {
-                    case .done: "checkmark.circle"
-                    case .input: "questionmark.bubble"
-                    case .failed: "exclamationmark.triangle"
-                    }
-                return Row(
-                    id: "notify:\(kind.rawValue)", title: kind.title, symbol: symbol,
-                    accessory: .toggle(PushNotifications.shared.isOn(kind)))
-            }
-        }
-        return rows
     }
 
     private func toggled(_ id: String, _ on: Bool) {
@@ -175,81 +119,28 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
         if id == "math:render" {
             MathSettings.render = on
             reload()
-            return
-        }
-        let push = PushNotifications.shared
-        if id == "notify:enabled" {
-            guard on else {
-                push.enabled = false
-                reload()
-                return
-            }
-            if notificationStatus == .denied {
-                // Only the Settings app can turn them back on.
-                let alert = UIAlertController(
-                    title: "Notifications are off", message: "Allow notifications for Onicode in iOS Settings.",
-                    preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "Not Now", style: .cancel) { [weak self] _ in self?.reload() })
-                alert.addAction(
-                    UIAlertAction(title: "Open Settings", style: .default) { [weak self] _ in
-                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                        self?.reload()
-                    })
-                present(alert, animated: true)
-                return
-            }
-            push.enabled = true
-            Task { @MainActor in
-                await push.requestPermission()
-                self.notificationStatus = await push.authorizationStatus()
-                self.reload()
-            }
-            return
-        }
-        if let kind = PushNotifications.Kind(rawValue: String(id.dropFirst("notify:".count))) {
-            push.set(kind, on)
         }
     }
 
     private var wallpaperObserver: NSObjectProtocol?
     private var appToken: AnyObject?
-    private var cloudToken: AnyObject?
 
     private func reload() {
         var s = NSDiffableDataSourceSnapshot<String, Row>()
-        s.appendSections(["Account"])
+        s.appendSections(["Tailnet"])
+        s.appendItems([computersRow])
+        s.appendSections(["Agents"])
         s.appendItems([
             Row(
-                id: "account", title: app.accountName, subtitle: app.accountDetail, symbol: "person.crop.circle",
-                accessory: .plain)
+                id: "providers", title: "Providers", subtitle: "Agents and their accounts on each computer",
+                symbol: "cpu")
         ])
-        // Agents and where they run, as the desktop groups them: Providers,
-        // then Cloud and Billing when this account is offered Cloud.
-        s.appendSections(["Agents"])
-        var agents = [
-            Row(
-                id: "providers", title: "Providers", subtitle: "Agents and their accounts on each device", symbol: "cpu"
-            )
-        ]
-        let demoCloud = app.isDemo && ProcessInfo.processInfo.arguments.contains("-cloud")
-        if (!app.isDemo && app.cloud.available) || demoCloud {
-            let cloud = app.cloud
-            let github = cloud.githubAccount.map { "GitHub @\($0)" } ?? "Connect GitHub"
-            agents.append(Row(id: "cloud", title: "Cloud", subtitle: cloud.problem?.title ?? github, symbol: "cloud"))
-            let credits = cloud.credits.map { "\(CloudUI.credits($0)) credits" }
-            let plan = cloud.billing?.plan.map { "\($0.name) plan" }
-            agents.append(
-                Row(
-                    id: "billing", title: "Billing",
-                    subtitle: [plan, credits].compactMap(\.self).joined(separator: " · ").nonEmpty
-                        ?? "Plans and credits", symbol: "creditcard"))
-        }
-        s.appendItems(agents)
         s.appendSections(["Devices"])
         s.appendItems(
             app.hostOptions.map {
                 Row(
-                    id: "device:\($0.id)", title: $0.name, subtitle: $0.online ? "Online" : "Offline",
+                    id: "device:\($0.id)", title: $0.name,
+                    subtitle: $0.online ? "Online · Tap to show its screen" : "Offline",
                     symbol: "desktopcomputer", accessory: .dot($0.online))
             })
         if app.voice.available {
@@ -261,8 +152,6 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
                         ?? "Codex voice device and style", symbol: "waveform")
             ])
         }
-        s.appendSections(["Notifications"])
-        s.appendItems(notificationRows())
         s.appendSections(["Appearance"])
         let style = UserDefaults.standard.integer(forKey: "appearance")
         s.appendItems([
@@ -316,13 +205,22 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
                 accessory: .toggle(app.groupByProject)),
             Row(id: "archived", title: "Archived Sessions", symbol: "archivebox"),
         ])
-        s.appendSections([" "])
-        s.appendItems([
-            Row(
-                id: "signout", title: "Sign Out", symbol: "rectangle.portrait.and.arrow.right", accessory: .plain,
-                destructive: true)
-        ])
         dataSource.apply(s, animatingDifferences: false)
+    }
+
+    /// The computers this phone reaches, and whether it's on the tailnet.
+    private var computersRow: Row {
+        if app.isDemo {
+            return Row(
+                id: "computers", title: "Computers", subtitle: "The demo's computers are simulated", symbol: "network",
+                accessory: .plain)
+        }
+        let hosts = app.engineHosts
+        let subtitle =
+            hosts.isEmpty
+            ? "Add a computer by its tailnet name"
+            : app.onTailnet ? hosts.joined(separator: ", ") : "Waiting for Tailscale · \(hosts.joined(separator: ", "))"
+        return Row(id: "computers", title: "Computers", subtitle: subtitle, symbol: "network")
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt path: IndexPath) {
@@ -332,10 +230,8 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
         case "voice": navigationController?.pushViewController(VoiceViewController(app: app), animated: true)
         case "providers":
             navigationController?.pushViewController(ProvidersViewController(app: app), animated: true)
-        case "cloud":
-            navigationController?.pushViewController(CloudSettingsViewController(app: app), animated: true)
-        case "billing":
-            navigationController?.pushViewController(BillingViewController(app: app), animated: true)
+        case "computers" where !app.isDemo:
+            navigationController?.pushViewController(EngineHostsViewController(app: app), animated: true)
         case let id where id.hasPrefix("appearance:"):
             let style = Int(id.dropFirst(11)) ?? 0
             UserDefaults.standard.set(style, forKey: "appearance")
@@ -381,6 +277,12 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
             sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
             sheet.popoverPresentationController?.sourceView = collectionView.cellForItem(at: path)
             present(sheet, animated: true)
+        case let id where id.hasPrefix("device:") && !app.isDemo:
+            // A Mac's desktop, full screen (Desktop/DesktopView.swift).
+            guard let client = app.client else { return }
+            let desktop = DesktopViewController(
+                client: client, deviceId: String(id.dropFirst("device:".count)), deviceName: row.title)
+            present(desktop, animated: true)
         case "wallpaper:remove":
             WallpaperStore.remove()
         case "archived":
@@ -388,14 +290,6 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
                 FolderViewController(
                     app: app, folder: FolderRowVM(id: "archived", name: "Archived", count: 0, symbol: "archivebox")),
                 animated: true)
-        case "signout":
-            let alert = UIAlertController(
-                title: "Sign out?", message: "Local drafts stay on this device.", preferredStyle: .actionSheet)
-            alert.addAction(
-                UIAlertAction(title: "Sign Out", style: .destructive) { [weak self] _ in self?.app.signOut() })
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-            alert.popoverPresentationController?.sourceView = collectionView.cellForItem(at: path)
-            present(alert, animated: true)
         default:
             break
         }

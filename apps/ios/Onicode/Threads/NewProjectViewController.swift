@@ -1,7 +1,7 @@
 import UIKit
 
 /// Create a project (a device + folder pair): pick a host, browse its folders
-/// over the device relay (git repos badged), and use the current folder.
+/// over its link (git repos badged), and use the current folder.
 final class NewProjectViewController: UIViewController, UICollectionViewDelegate {
     private let app: AppModel
     private var device: HostOption?

@@ -21,7 +21,6 @@ fn main() -> anyhow::Result<()> {
         let by_project = std::env::var_os("ONICODE_SIDEBAR_BY_PROJECT").is_some();
         settings.sidebar_organization = if by_project { settings::SidebarOrganization::ByProject } else { settings::SidebarOrganization::InOneList };
         settings.sidebar_width = 310.0;
-        settings.sidebar_pins_mut("local".into()).extend(["chat-0".into(), "chat-1".into()]);
         let project_path = data.join("fieldnotes");
         std::fs::create_dir_all(project_path.join("public")).unwrap();
         std::fs::write(project_path.join("public/favicon.svg"), r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="6" fill="#668cf5"/><path d="M7 6h11v3h-8v3h6v3h-6v4H7Z" fill="white"/></svg>"##).unwrap();
@@ -38,14 +37,7 @@ fn main() -> anyhow::Result<()> {
         let state = cx.new(|_| {
             let mut s = state::AppState::new();
             s.connection = onicode_proto::view::ConnectionStatus::Ready;
-            s.workspace_scope = Some(onicode_proto::WorkspaceScope::Local);
-            if std::env::var_os("ONICODE_SIDEBAR_ACCOUNT").is_some() {
-                s.workspace_scope = Some(onicode_proto::WorkspaceScope::Synced);
-                s.auth = Some(onicode_proto::AuthState::SignedIn {
-                    user: onicode_proto::UserProfile { id: "fixture-user".into(), email: "alex@example.test".into(), name: Some("Alex".into()) },
-                    org_id: Some("fixture-org".into()),
-                });
-            }
+            s.sidebar_preferences.pinned_session_ids = vec!["chat-0".into(), "chat-1".into()];
             s.local_device_id = Some("local".into());
             s.devices = vec![serde_json::from_value(serde_json::json!({"id":"local","name":"This device","platform":std::env::consts::OS,"lastSeenAt":null})).unwrap()];
             s.selected_chat = Some("browser-fixture".into()); s.selected_space = Some("project".into());
@@ -91,7 +83,7 @@ fn main() -> anyhow::Result<()> {
             s.chats[8].archived = true;
             s
         });
-        let boot = EngineBootConfig { data_dir: data, ipc_port: 0, edge_url: String::new(), edge_token: None, org_id: None, workos_client_id: None, default_harness: HarnessId::ClaudeCode };
+        let boot = EngineBootConfig { data_dir: data, ipc_port: 0, update_feed: String::new(), default_harness: HarnessId::ClaudeCode };
         let window = cx.open_window(WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(gpui::point(px(12.),px(30.)), size(px(1100.),px(800.))))),
             titlebar: Some(gpui::TitlebarOptions { title: None, appears_transparent: true, traffic_light_position: Some(gpui::point(px(14.),px(14.))) }),

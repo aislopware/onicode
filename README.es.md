@@ -20,29 +20,21 @@ No necesitas cuenta ni conexión a internet; las sesiones se quedan en tu dispos
 Para servidores y otras máquinas sin pantalla, como un VPS que mantiene los agentes en ejecución después de cerrar tu portátil. Solo Linux:
 
 ```bash
-curl -fsSL https://zeron.sh/install.sh | sh
+./install.sh      # del tarball de Linux de la versión
 zeron status
 ```
 
 El instalador arranca el motor como un servicio en segundo plano que sobrevive a los reinicios.
 
 ```bash
-zeron status      # modo local/sincronizado y estado del motor
+zeron status      # estado del motor
 zeron update      # actualizar a la última versión
 zeron daemon start|stop|restart|status
 ```
 
-## Sincronización entre dispositivos (opcional)
+## Varios dispositivos
 
-Inicia sesión para lanzar un agente en un dispositivo y seguirlo o controlarlo desde otro:
-
-```bash
-zeron daemon stop
-zeron login        # o: zeron logout para volver al modo solo local
-zeron daemon start
-```
-
-Los dispositivos con sesión iniciada en la misma cuenta pueden leer y escribir los archivos del espacio de trabajo de los demás, así que inicia sesión solo en dispositivos de confianza. Las sesiones locales existentes nunca se suben.
+Lanza un agente en un dispositivo y síguelo o contrólalo desde otro: cada dispositivo de tu tailnet que ejecuta el motor encuentra a los demás por sí solo, sin iniciar sesión y sin servidor intermedio. Cada dispositivo puede leer y escribir los archivos del espacio de trabajo de los demás, así que ejecuta el motor solo en dispositivos de confianza.
 
 ## Patrocinadores
 

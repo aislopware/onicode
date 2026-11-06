@@ -50,8 +50,7 @@ await new Promise(r => server.close(r));
 const env = { ...process.env, ONICODE_IPC_PORT: String(port), ONICODE_DATA_DIR: `${output}/engine`,
   ONICODE_HARNESS: harness, ONICODE_FRAME_STATS: process.env.ONICODE_FRAME_STATS ?? '1', RUST_LOG: 'warn',
   ONICODE_MOCK_CHARS: '24', ONICODE_MOCK_DELAY_MS: '20' };
-delete env.ONICODE_EDGE_TOKEN;
-delete env.ONICODE_ORG_ID;
+delete env.ONICODE_UPDATE_FEED;
 const processes = [];
 function start(args, name, extra = {}) {
   const log = openSync(`${output}/${name}.log`, 'w');

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-command demo: boots a seeded engine daemon + the headed app, offline.
-# Made for judging look & feel with real input — no edge, no auth needed.
+# Made for judging look & feel with real input — no peers, no tailnet needed.
 #
 #   scripts/dev-demo.sh            # build, seed demo data, open the app
 #   scripts/dev-demo.sh --slow     # pace mock streams (~10s) to watch streaming

@@ -1,0 +1,59 @@
+[package]
+name = "onicode-desktop-codec"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "VideoToolbox HEVC/H.264 encode (macOS) and decode (macOS, iOS) with length-prefixed framing, two-stripe coding, the SPS conformance window, and Opus audio"
+
+# The two deep lanes slopty ran: the audio ring model-checked on loom's atomics
+# (`--cfg onicode_loom`), and the render callback under RealtimeSanitizer (`--cfg onicode_rtsan`,
+# nightly).
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(onicode_loom)", "cfg(onicode_rtsan)"] }
+
+[features]
+# The encoder's measurement-only surface: the VBV rate-control mode the ruling rejected, raw
+# property writes, and the property probes. Turned on by the tests that measure them, never by
+# a shipped binary.
+experiments = []
+
+[dependencies]
+# The codec and chroma a stream carries are the media wire's (`wire::{VideoCodec, Chroma}`).
+onicode-desktop-media.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_vendor = "apple")'.dependencies]
+bytes.workspace = true
+objc2-audio-toolbox.workspace = true
+objc2-core-audio-types.workspace = true
+objc2-core-foundation.workspace = true
+objc2-core-media.workspace = true
+# `CVPixelBufferPool` for a stripe's own pictures (`stripes.rs`).
+objc2-core-video = { workspace = true, features = ["CVPixelBufferPool"] }
+objc2-video-toolbox.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The output device's I/O buffer size, which the player asks for; also the latency terms the
+# ignored measurement in `tests/audio_latency.rs` reads.
+objc2-core-audio.workspace = true
+
+# The audio ring on loom's atomics, only under `--cfg onicode_loom`.
+[target.'cfg(onicode_loom)'.dependencies]
+loom.workspace = true
+
+[dev-dependencies]
+onicode-desktop-testkit.workspace = true
+pretty_assertions.workspace = true
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+# The process's CPU time, CPU energy and footprint in the concurrent-decode measurement.
+libc.workspace = true
+objc2-core-foundation.workspace = true
+objc2-core-media.workspace = true
+objc2-core-video.workspace = true
+# `VTCopyVideoEncoderList` and the per-encoder property dictionaries, read by the ignored 4:4:4
+# probe in `tests/chroma444.rs`.
+objc2-video-toolbox = { workspace = true, features = ["VTVideoEncoderList"] }

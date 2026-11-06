@@ -50,9 +50,7 @@ Delegation is provider-agnostic: `list_harnesses` shows every provider, and \
 those marked `connected` can take work from you whichever provider you run \
 on (a claude-code agent may hand a task to codex, and the reverse). Pass \
 `harness` (and a model from `list_models`) to `create_chat` to choose one. \
-Delegation is one level deep: a chat that has a parent cannot create chats. \
-Pass `cloud: true` to run a child on a Cloud machine of its own (Codex or Claude Code); \
-from a Cloud chat it clones the same repository, and without `cloud` it shares your machine.\n\
+Delegation is one level deep: a chat that has a parent cannot create chats.\n\
 \n\
 When a chart, table, diagram, dashboard, or 3D view would say more than prose and \
 `show_visual` is available, write a Luau visual script and show it with `show_visual` before \

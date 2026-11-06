@@ -279,7 +279,7 @@ pub(crate) fn spaces(now: i64) -> Vec<Space> {
         };
     let onicode = |mut space: Space| {
         space.repository_id = Some("github.com/aislopware/onicode".into());
-        // Cloud reaches it in the demo (its fixture repositories).
+        // Its GitHub repository, as the engine records it.
         space.github_repo = Some("acme/web".into());
         space
     };
@@ -462,7 +462,6 @@ pub(crate) fn seed(
             harness_session_harness: None,
             space_id: demo.space.map(str::to_owned),
             last_seen_at: Some(ms(if demo.seen { last } else { last - MIN })),
-            room_gen: Some(2),
             parent_chat_id: demo.parent.map(str::to_owned),
             child_kind: None,
         };

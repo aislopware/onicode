@@ -144,8 +144,7 @@ impl Harness for RecordingHarness {
 fn assemble(dir: &std::path::Path, harness: RecordingHarness) -> EngineCore {
     let registry = HarnessRegistry::new();
     registry.register(Arc::new(harness));
-    EngineCore::assemble(dir, Arc::new(registry), HarnessId::Mock, None)
-        .expect("engine core assembles")
+    EngineCore::assemble(dir, Arc::new(registry), HarnessId::Mock).expect("engine core assembles")
 }
 
 fn queue_run(core: &EngineCore, prompt: &str, cwd: &str, message_id: &str) {
@@ -338,7 +337,7 @@ async fn kill_crash_recovers_resume_from_journal_and_stamps_aborted() {
     // - a journal whose last event is NOT `Done` (run died mid-stream), holding the only copy of
     //   the harness session id (the debounced workspace-row write never landed).
     {
-        let store = DocsStore::open(dir.join("orgs/dev-org/dev-user")).unwrap();
+        let store = DocsStore::open(dir.join("profiles/local")).unwrap();
         let doc = SessionDoc::init(CHAT).unwrap();
         doc.push_message(&SessionMessageEntry {
             id: "msg-user-1".into(),
@@ -372,7 +371,7 @@ async fn kill_crash_recovers_resume_from_journal_and_stamps_aborted() {
             .save_snapshot(CHAT, &doc.export_snapshot().unwrap())
             .unwrap();
 
-        let journal = RunJournal::open(dir.join("orgs/dev-org/dev-user/journals")).unwrap();
+        let journal = RunJournal::open(dir.join("profiles/local/journals")).unwrap();
         journal
             .append(
                 CHAT,
@@ -412,7 +411,7 @@ async fn kill_crash_recovers_resume_from_journal_and_stamps_aborted() {
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[1].status, Some(MessageStatus::Aborted));
     // … and closed the stale journal with a synthetic Done.
-    let journal = RunJournal::open(dir.join("orgs/dev-org/dev-user/journals")).unwrap();
+    let journal = RunJournal::open(dir.join("profiles/local/journals")).unwrap();
     assert!(matches!(
         journal.last_event(CHAT).unwrap(),
         Some((_, AgentEvent::Done { .. }))
@@ -554,7 +553,7 @@ async fn persistent_session_serves_multiple_turns_on_one_child() {
         id: HarnessId::Mock,
         side_chats_only: Default::default(),
     }));
-    let core = EngineCore::assemble(&dir, Arc::new(registry), HarnessId::Mock, None)
+    let core = EngineCore::assemble(&dir, Arc::new(registry), HarnessId::Mock)
         .expect("engine core assembles");
     pre_title(&core);
 
@@ -590,7 +589,7 @@ async fn persistent_session_serves_multiple_turns_on_one_child() {
     core.shutdown().await;
 }
 
-/// A Cloud device's credential broker whose answer the test changes.
+/// A run environment whose credential the test changes.
 struct SwitchableCredential(Arc<Mutex<String>>);
 
 #[async_trait]
@@ -604,7 +603,7 @@ impl onicode_engine::registry::RunEnvironment for SwitchableCredential {
     }
 }
 
-/// Switching the Cloud account between turns replaces the parked child, so
+/// Switching the account between turns replaces the parked child, so
 /// the next turn runs with the new login; an unchanged one keeps it warm.
 #[tokio::test]
 async fn a_switched_credential_replaces_the_parked_session() {
@@ -620,9 +619,11 @@ async fn a_switched_credential_replaces_the_parked_session() {
         id: HarnessId::Mock,
         side_chats_only: Default::default(),
     }));
-    registry.set_run_environment(Arc::new(SwitchableCredential(credential.clone())));
-    let core = EngineCore::assemble(&dir, Arc::new(registry), HarnessId::Mock, None)
+    let core = EngineCore::assemble(&dir, Arc::new(registry), HarnessId::Mock)
         .expect("engine core assembles");
+    // In place of the accounts' own environment the assembly installed.
+    core.registry
+        .set_account_environment(Arc::new(SwitchableCredential(credential.clone())));
     pre_title(&core);
 
     queue_run(&core, "first", "/tmp", "msg-user-1");
@@ -671,7 +672,7 @@ async fn switched_native_subagents_replace_the_parked_session() {
         id: HarnessId::ClaudeCode,
         side_chats_only: side_chats_only.clone(),
     }));
-    let core = EngineCore::assemble(&dir, registry.clone(), HarnessId::ClaudeCode, None)
+    let core = EngineCore::assemble(&dir, registry.clone(), HarnessId::ClaudeCode)
         .expect("engine core assembles");
     // A served IPC port: runs carry Onicode's own MCP server.
     core.sessions.set_ipc_port(27699);
@@ -725,7 +726,7 @@ async fn a_parked_side_chat_stays_warm_when_native_subagents_switch() {
         id: HarnessId::ClaudeCode,
         side_chats_only: side_chats_only.clone(),
     }));
-    let core = EngineCore::assemble(&dir, registry.clone(), HarnessId::ClaudeCode, None)
+    let core = EngineCore::assemble(&dir, registry.clone(), HarnessId::ClaudeCode)
         .expect("engine core assembles");
     core.sessions.set_ipc_port(27699);
     core.workspace
@@ -782,7 +783,7 @@ async fn fresh_crash_auto_resumes_and_notes_the_interruption() {
         .unwrap()
         .as_millis() as i64;
     {
-        let store = DocsStore::open(dir.join("orgs/dev-org/dev-user")).unwrap();
+        let store = DocsStore::open(dir.join("profiles/local")).unwrap();
         let doc = SessionDoc::init(CHAT).unwrap();
         doc.push_message(&SessionMessageEntry {
             id: "msg-user-1".into(),
@@ -816,7 +817,7 @@ async fn fresh_crash_auto_resumes_and_notes_the_interruption() {
             .save_snapshot(CHAT, &doc.export_snapshot().unwrap())
             .unwrap();
 
-        let journal = RunJournal::open(dir.join("orgs/dev-org/dev-user/journals")).unwrap();
+        let journal = RunJournal::open(dir.join("profiles/local/journals")).unwrap();
         journal
             .append(
                 CHAT,
@@ -920,7 +921,7 @@ async fn a_crash_before_the_reply_reached_disk_still_auto_resumes() {
         .unwrap()
         .as_millis() as i64;
     {
-        let store = DocsStore::open(dir.join("orgs/dev-org/dev-user")).unwrap();
+        let store = DocsStore::open(dir.join("profiles/local")).unwrap();
         let doc = SessionDoc::init(CHAT).unwrap();
         doc.push_message(&SessionMessageEntry {
             id: "msg-user-1".into(),
@@ -939,7 +940,7 @@ async fn a_crash_before_the_reply_reached_disk_still_auto_resumes() {
         store
             .save_snapshot(CHAT, &doc.export_snapshot().unwrap())
             .unwrap();
-        let journal = RunJournal::open(dir.join("orgs/dev-org/dev-user/journals")).unwrap();
+        let journal = RunJournal::open(dir.join("profiles/local/journals")).unwrap();
         journal
             .append(
                 CHAT,
@@ -1072,7 +1073,7 @@ async fn a_crash_revives_no_turn_of_a_chat_put_away() {
             .unwrap()
             .as_millis() as i64;
         {
-            let store = DocsStore::open(dir.join("orgs/dev-org/dev-user")).unwrap();
+            let store = DocsStore::open(dir.join("profiles/local")).unwrap();
             let doc = SessionDoc::init(CHAT).unwrap();
             for (id, role, text, status, ago) in [
                 (
@@ -1108,7 +1109,7 @@ async fn a_crash_revives_no_turn_of_a_chat_put_away() {
             store
                 .save_snapshot(CHAT, &doc.export_snapshot().unwrap())
                 .unwrap();
-            let journal = RunJournal::open(dir.join("orgs/dev-org/dev-user/journals")).unwrap();
+            let journal = RunJournal::open(dir.join("profiles/local/journals")).unwrap();
             journal
                 .append(
                     CHAT,
@@ -1191,7 +1192,7 @@ async fn a_crash_recovers_the_conversation_through_a_symlinked_folder() {
         .unwrap()
         .as_millis() as i64;
     {
-        let store = DocsStore::open(dir.join("orgs/dev-org/dev-user")).unwrap();
+        let store = DocsStore::open(dir.join("profiles/local")).unwrap();
         let doc = SessionDoc::init(CHAT).unwrap();
         doc.push_message(&SessionMessageEntry {
             id: "msg-user-1".into(),
@@ -1210,7 +1211,7 @@ async fn a_crash_recovers_the_conversation_through_a_symlinked_folder() {
         store
             .save_snapshot(CHAT, &doc.export_snapshot().unwrap())
             .unwrap();
-        let journal = RunJournal::open(dir.join("orgs/dev-org/dev-user/journals")).unwrap();
+        let journal = RunJournal::open(dir.join("profiles/local/journals")).unwrap();
         journal
             .append(
                 CHAT,
@@ -1434,7 +1435,6 @@ async fn real_claude_remembers_codeword_across_engine_restart() {
             &dir,
             Arc::new(onicode_engine::default_registry()),
             HarnessId::ClaudeCode,
-            None,
         )
         .expect("engine core assembles")
     };

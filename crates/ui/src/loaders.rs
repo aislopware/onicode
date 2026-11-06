@@ -452,7 +452,7 @@ const RING_STROKE: f32 = 2.5;
 const RING_SEGMENTS: f32 = 64.0;
 
 /// Radial upload-progress ring with the percent centered — overlaid on a
-/// sending echo's attachment thumbnail while its bytes cross the relay
+/// sending echo's attachment thumbnail while its bytes cross to the peer
 /// (2026-08-18 "Sending… forever" report; the thumbnail is where the wait
 /// visibly belongs). A faint full track plus a bright arc growing clockwise
 /// from 12 o'clock; gpui paths have no arc primitive, so both are stroked

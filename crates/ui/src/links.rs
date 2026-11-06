@@ -6,7 +6,7 @@ pub use onicode_notify::links::{
     ConversationDeepLink, conversation_link as onicode_conversation_link,
     parse_conversation_link as parse_onicode_conversation_link,
 };
-use onicode_proto::{AuthState, Chat, HarnessId, WorkspaceScope};
+use onicode_proto::{Chat, HarnessId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HarnessConversationLink {
@@ -14,30 +14,12 @@ pub struct HarnessConversationLink {
     pub url: String,
 }
 
-/// Opaque locator: enough to reject links for a different local/synced
-/// workspace without putting device, user, or organization ids in the URL.
-pub fn workspace_locator(
-    scope: Option<WorkspaceScope>,
-    auth: Option<&AuthState>,
-    local_device_id: Option<&str>,
-) -> Option<String> {
-    let scope = scope?;
-    let identity = match scope {
-        WorkspaceScope::Synced | WorkspaceScope::Development => {
-            let Some(AuthState::SignedIn { user, org_id }) = auth else {
-                return None;
-            };
-            format!(
-                "user:{}:org:{}",
-                user.id,
-                org_id.as_deref().unwrap_or("personal")
-            )
-        }
-        WorkspaceScope::Local => format!("device:{}", local_device_id?),
-    };
+/// Opaque locator: enough to reject links for another profile without putting
+/// the device id in the URL. `None` until the engine names this device.
+pub fn workspace_locator(local_device_id: Option<&str>) -> Option<String> {
     Some(onicode_notify::links::workspace_locator_of(
-        &format!("{scope:?}"),
-        &identity,
+        "Local",
+        &format!("device:{}", local_device_id?),
     ))
 }
 
@@ -88,59 +70,16 @@ mod tests {
             child_kind: None,
             space_id: None,
             last_seen_at: None,
-            room_gen: None,
         }
     }
 
     #[test]
-    fn local_workspace_locator_waits_for_device_identity() {
-        assert_eq!(
-            workspace_locator(Some(WorkspaceScope::Local), None, None),
-            None
-        );
-        let first = workspace_locator(Some(WorkspaceScope::Local), None, Some("device-a"));
-        let second = workspace_locator(Some(WorkspaceScope::Local), None, Some("device-b"));
+    fn workspace_locator_waits_for_device_identity() {
+        assert_eq!(workspace_locator(None), None);
+        let first = workspace_locator(Some("device-a"));
+        let second = workspace_locator(Some("device-b"));
         assert!(first.is_some());
         assert_ne!(first, second);
-    }
-
-    #[test]
-    fn synced_workspace_locator_waits_for_signed_in_identity() {
-        let scope = Some(WorkspaceScope::Synced);
-        assert_eq!(workspace_locator(scope, None, Some("device-a")), None);
-        assert_eq!(
-            workspace_locator(scope, Some(&AuthState::SignedOut), Some("device-a")),
-            None
-        );
-        assert_eq!(
-            workspace_locator(
-                scope,
-                Some(&AuthState::NeedsOrganization {
-                    user: onicode_proto::UserProfile {
-                        id: "user-a".into(),
-                        email: "user@example.com".into(),
-                        name: None,
-                    },
-                }),
-                Some("device-a"),
-            ),
-            None
-        );
-        assert!(
-            workspace_locator(
-                scope,
-                Some(&AuthState::SignedIn {
-                    user: onicode_proto::UserProfile {
-                        id: "user-a".into(),
-                        email: "user@example.com".into(),
-                        name: None,
-                    },
-                    org_id: Some("org-a".into()),
-                }),
-                None,
-            )
-            .is_some()
-        );
     }
 
     #[test]

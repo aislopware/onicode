@@ -230,7 +230,7 @@ fn registry_with(harness: Arc<dyn Harness>) -> Arc<HarnessRegistry> {
 }
 
 fn assemble(dir: &std::path::Path, harness: Arc<dyn Harness>) -> EngineCore {
-    EngineCore::assemble(dir, registry_with(harness), HarnessId::Mock, None)
+    EngineCore::assemble(dir, registry_with(harness), HarnessId::Mock)
         .expect("engine core assembles")
 }
 
@@ -297,7 +297,7 @@ async fn update_deferred_steering_preserves_the_active_turn_and_queued_prompt() 
     });
     let registry = registry_with(harness.clone());
     let dir = tempfile::tempdir().unwrap();
-    let core = EngineCore::assemble(dir.path(), registry.clone(), HarnessId::Mock, None).unwrap();
+    let core = EngineCore::assemble(dir.path(), registry.clone(), HarnessId::Mock).unwrap();
     let handle = core.doc_host.open(CHAT).unwrap();
     core.sessions
         .dispatch(
@@ -434,8 +434,7 @@ async fn pending_update_does_not_block_dispatch_or_other_harnesses() {
     for id in [HarnessId::ClaudeCode, HarnessId::Codex] {
         registry.register(Arc::new(RecordingHarness(id, started.clone())));
     }
-    let core =
-        EngineCore::assemble(dir.path(), registry.clone(), HarnessId::ClaudeCode, None).unwrap();
+    let core = EngineCore::assemble(dir.path(), registry.clone(), HarnessId::ClaudeCode).unwrap();
     let active_turn = registry.execution_lease(HarnessId::ClaudeCode).await;
     registry.begin_update(HarnessId::ClaudeCode);
     // These awaits model the shared queue watcher's serial dispatch calls.
@@ -789,7 +788,7 @@ async fn interrupt_stamps_streaming_entry_aborted() {
     )
     .await;
     // Journal closed with a Done — nothing left to recover.
-    let journal = RunJournal::open(dir.path().join("orgs/dev-org/dev-user/journals")).unwrap();
+    let journal = RunJournal::open(dir.path().join("profiles/local/journals")).unwrap();
     assert!(journal.stale_sessions().unwrap().is_empty());
     assert_eq!(
         core.sessions.session_status(CHAT).map(|s| s.status),
@@ -1124,7 +1123,7 @@ async fn processed_commands_are_skipped_on_redelivery() {
     // Simulate a crash AFTER mark-processed but BEFORE execute/outcome: the ledger has
     // the id, the doc still says pending.
     {
-        let store = DocsStore::open(dir.path().join("orgs/dev-org/dev-user")).unwrap();
+        let store = DocsStore::open(dir.path().join("profiles/local")).unwrap();
         assert!(store.mark_processed("cmd-crashed").unwrap());
     }
 
@@ -1167,7 +1166,7 @@ async fn processed_commands_are_skipped_on_redelivery() {
     assert!(core.sessions.session_status(CHAT).is_none());
 
     // Direct ledger-evaluation check: re-evaluating a processed command = Skip.
-    let store = DocsStore::open(dir.path().join("orgs/dev-org/dev-user")).unwrap();
+    let store = DocsStore::open(dir.path().join("profiles/local")).unwrap();
     let commands = handle.doc().read_commands().unwrap();
     let entry = commands.iter().find(|c| c.id == "cmd-crashed").unwrap();
     let is_processed = |id: &str| store.is_processed(id).unwrap_or(false);
@@ -1194,7 +1193,7 @@ async fn processed_commands_are_skipped_on_redelivery() {
 #[tokio::test]
 async fn a_command_whose_ledger_claim_is_lost_never_runs() {
     let dir = tempfile::tempdir().unwrap();
-    let store_root = dir.path().join("orgs/dev-org/dev-user");
+    let store_root = dir.path().join("profiles/local");
     drop(DocsStore::open(&store_root).unwrap());
     rusqlite::Connection::open(store_root.join("docs.sqlite3"))
         .unwrap()
@@ -1255,7 +1254,7 @@ async fn a_command_whose_ledger_claim_is_lost_never_runs() {
 async fn retry_reissues_a_swallowed_send() {
     let dir = tempfile::tempdir().unwrap();
     {
-        let store = DocsStore::open(dir.path().join("orgs/dev-org/dev-user")).unwrap();
+        let store = DocsStore::open(dir.path().join("profiles/local")).unwrap();
         assert!(store.mark_processed("cmd-dead").unwrap());
     }
     let core = assemble(
@@ -1339,7 +1338,7 @@ async fn recover_stale_journal_stamps_aborted_on_boot() {
     // Craft the crash state: a journal without a terminal Done + a doc snapshot whose
     // assistant entry is still `streaming`.
     {
-        let journal = RunJournal::open(dir.path().join("orgs/dev-org/dev-user/journals")).unwrap();
+        let journal = RunJournal::open(dir.path().join("profiles/local/journals")).unwrap();
         journal
             .append(
                 CHAT,
@@ -1372,7 +1371,7 @@ async fn recover_stale_journal_stamps_aborted_on_boot() {
             }])
             .unwrap();
         // No finish — the "process" dies here with the entry still streaming.
-        let store = DocsStore::open(dir.path().join("orgs/dev-org/dev-user")).unwrap();
+        let store = DocsStore::open(dir.path().join("profiles/local")).unwrap();
         store
             .save_snapshot(CHAT, &doc.export_snapshot().unwrap())
             .unwrap();
@@ -1396,7 +1395,7 @@ async fn recover_stale_journal_stamps_aborted_on_boot() {
     }
 
     // Journal closed with a synthetic Done{interrupted}; no longer stale.
-    let journal = RunJournal::open(dir.path().join("orgs/dev-org/dev-user/journals")).unwrap();
+    let journal = RunJournal::open(dir.path().join("profiles/local/journals")).unwrap();
     assert!(journal.stale_sessions().unwrap().is_empty());
     let (_, last) = journal.last_event(CHAT).unwrap().unwrap();
     assert!(matches!(
@@ -1423,9 +1422,7 @@ fn spawn_chip(id: &str, status: SubagentStatus) -> MessagePart {
         diff: None,
         is_error: false,
         resolved: true,
-        output_ref: None,
         output_bytes: None,
-        diff_ref: None,
         diff_stats: None,
         subagent_ref: Some(format!("{CHAT}--sub--{id}")),
         subagent_status: Some(status),
@@ -1441,7 +1438,7 @@ async fn recover_stale_journal_settles_chips_in_completed_local_entries() {
     let dir = tempfile::tempdir().unwrap();
     let device_id = "dev-host-fixed";
     std::fs::write(dir.path().join("device-id"), device_id).unwrap();
-    let journal = RunJournal::open(dir.path().join("orgs/dev-org/dev-user/journals")).unwrap();
+    let journal = RunJournal::open(dir.path().join("profiles/local/journals")).unwrap();
     journal
         .append(
             CHAT,
@@ -1470,7 +1467,7 @@ async fn recover_stale_journal_settles_chips_in_completed_local_entries() {
         })
         .unwrap();
     }
-    let store = DocsStore::open(dir.path().join("orgs/dev-org/dev-user")).unwrap();
+    let store = DocsStore::open(dir.path().join("profiles/local")).unwrap();
     store
         .save_snapshot(CHAT, &doc.export_snapshot().unwrap())
         .unwrap();
@@ -2725,7 +2722,6 @@ async fn real_claude_sees_uploaded_image_inline() {
         &dir,
         Arc::new(onicode_engine::default_registry()),
         HarnessId::ClaudeCode,
-        None,
     )
     .expect("engine core assembles");
     // Pre-title the chat so the auto-titler doesn't spend a second model call.
@@ -3450,7 +3446,6 @@ async fn generated_image_is_materialized_before_publication_and_survives_reopen(
         DocHostConfig {
             device_id: "host".into(),
             default_harness: HarnessId::Mock,
-            edge: None,
         },
     );
     sessions.set_doc_host(host.clone());
@@ -3546,7 +3541,6 @@ async fn real_image_generation_profile_smoke() {
         dir.path(),
         registry_with(Arc::new(onicode_harness::CodexHarness::new())),
         HarnessId::Codex,
-        None,
     )
     .unwrap();
     core.sessions

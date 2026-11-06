@@ -17,7 +17,8 @@ pub enum CoreError {
     NotFound { message: String },
     #[error("invalid argument: {message}")]
     InvalidArgument { message: String },
-    /// The host device could not be reached over the relay.
+    /// The host device could not be reached over its link (not on the
+    /// tailnet yet, the engine not found or away, or the call timed out).
     #[error("host unavailable: {message}")]
     HostUnavailable { message: String },
     #[error("not supported by the host: {message}")]
@@ -25,11 +26,6 @@ pub enum CoreError {
     /// The host answered with an error (bad request, git failure, …).
     #[error("host error: {message}")]
     HostError { message: String },
-    #[error("network: {message}")]
-    Network { message: String },
-    /// Credentials rejected. Irrecoverable cases also raise `AuthExpired`.
-    #[error("auth: {message}")]
-    Auth { message: String },
     #[error("storage: {message}")]
     Storage { message: String },
     #[error("not implemented yet: {message}")]
@@ -48,9 +44,7 @@ impl From<zc::ClientError> for CoreError {
             E::InvalidArgument(message) => CoreError::InvalidArgument { message },
             E::HostUnavailable(message) => CoreError::HostUnavailable { message },
             E::Unsupported(message) => CoreError::Unsupported { message },
-            E::Network(message) => CoreError::Network { message },
             E::HostError(message) => CoreError::HostError { message },
-            E::Auth(message) => CoreError::Auth { message },
             E::Storage(message) => CoreError::Storage { message },
             E::NotImplemented(message) => CoreError::NotImplemented { message },
             E::Closed => CoreError::Closed,
@@ -61,15 +55,12 @@ impl From<zc::ClientError> for CoreError {
 
 pub type CoreResult<T> = Result<T, CoreError>;
 
-// ── config / credentials ──────────────────────────────────────────────────
+// ── config / mode ─────────────────────────────────────────────────────────
 
 /// Static per-install configuration.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct CoreConfig {
-    /// Edge base URL (`auth_production_edge_url()` for prod).
-    pub edge_url: String,
-    /// Writable directory for registry/doc snapshots and caches, scoped by
-    /// the platform to the signed-in identity (sign-out wipes it).
+    /// Writable directory for registry/doc snapshots and caches.
     pub data_dir: String,
     /// Stable device id (`ios-xxxxxxxx`), stamped on every command/queue row.
     pub device_id: String,
@@ -83,36 +74,11 @@ pub struct CoreConfig {
 impl From<CoreConfig> for zc::ClientConfig {
     fn from(c: CoreConfig) -> Self {
         zc::ClientConfig {
-            edge_url: c.edge_url,
             data_dir: c.data_dir.into(),
             device_id: c.device_id,
             device_name: c.device_name,
             platform: c.platform,
             app_version: c.app_version,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct AuthTokens {
-    pub access_token: String,
-    pub refresh_token: String,
-}
-
-impl From<zc::AuthTokens> for AuthTokens {
-    fn from(t: zc::AuthTokens) -> Self {
-        Self {
-            access_token: t.access_token,
-            refresh_token: t.refresh_token,
-        }
-    }
-}
-
-impl From<AuthTokens> for zc::AuthTokens {
-    fn from(t: AuthTokens) -> Self {
-        Self {
-            access_token: t.access_token,
-            refresh_token: t.refresh_token,
         }
     }
 }
@@ -180,103 +146,20 @@ impl From<DemoOptions> for zc::DemoOptions {
     }
 }
 
-/// How the client authenticates against the edge.
+/// What the client drives.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
-pub enum Credentials {
-    /// WorkOS session scoped to `org_id`.
-    WorkOs {
-        user_id: String,
-        org_id: String,
-        tokens: AuthTokens,
-    },
-    /// `AUTH_MODE=dev` edge: the bearer is `userId@orgId`.
-    Dev { user_id: String, org_id: String },
+pub enum ClientMode {
+    /// The user's engines, over the tailnet (`join_engines`).
+    Live,
     /// Fully offline dataset with a simulated host.
     Demo { options: DemoOptions },
 }
 
-impl From<Credentials> for zc::Credentials {
-    fn from(c: Credentials) -> Self {
-        match c {
-            Credentials::WorkOs {
-                user_id,
-                org_id,
-                tokens,
-            } => zc::Credentials::WorkOs {
-                user_id,
-                org_id,
-                tokens: tokens.into(),
-            },
-            Credentials::Dev { user_id, org_id } => zc::Credentials::Dev { user_id, org_id },
-            Credentials::Demo { options } => zc::Credentials::Demo(options.into()),
-        }
-    }
-}
-
-// ── auth ──────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct AuthUser {
-    pub id: String,
-    pub email: Option<String>,
-    pub first_name: Option<String>,
-    pub last_name: Option<String>,
-}
-
-impl From<zc::auth::AuthUser> for AuthUser {
-    fn from(u: zc::auth::AuthUser) -> Self {
-        Self {
-            id: u.id,
-            email: u.email,
-            first_name: u.first_name,
-            last_name: u.last_name,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct AuthOrg {
-    pub id: String,
-    pub organization_id: String,
-    pub name: String,
-}
-
-impl From<zc::auth::AuthOrg> for AuthOrg {
-    fn from(o: zc::auth::AuthOrg) -> Self {
-        Self {
-            id: o.id,
-            organization_id: o.organization_id,
-            name: o.name,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct AuthExchange {
-    pub user: AuthUser,
-    /// Unscoped pair: refresh with an organization id before use.
-    pub tokens: AuthTokens,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
-pub enum AuthCallback {
-    Code {
-        code: String,
-        state: Option<String>,
-    },
-    Error {
-        error: String,
-        description: Option<String>,
-    },
-}
-
-impl From<zc::auth::AuthCallback> for AuthCallback {
-    fn from(c: zc::auth::AuthCallback) -> Self {
-        match c {
-            zc::auth::AuthCallback::Code { code, state } => AuthCallback::Code { code, state },
-            zc::auth::AuthCallback::Error { error, description } => {
-                AuthCallback::Error { error, description }
-            }
+impl From<ClientMode> for zc::Mode {
+    fn from(m: ClientMode) -> Self {
+        match m {
+            ClientMode::Live => zc::Mode::Live,
+            ClientMode::Demo { options } => zc::Mode::Demo(options.into()),
         }
     }
 }
@@ -285,7 +168,7 @@ impl From<zc::auth::AuthCallback> for AuthCallback {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum ConnectivityState {
-    /// Demo / no edge transports — hide the pill.
+    /// Demo — hide the pill.
     Disabled,
     /// No network path (graced): sends are saved locally.
     Offline,
@@ -326,52 +209,38 @@ impl From<zc::Connectivity> for Connectivity {
 #[derive(Debug, Clone, PartialEq, uniffi::Enum)]
 pub enum ClientEvent {
     /// `workspace()` advanced.
-    WorkspaceChanged {
+    Workspace {
         revision: u64,
     },
     /// A session's transcript advanced (the layout engine consumes it in Rust;
     /// this is informational for the platform).
-    SessionChanged {
+    Session {
         chat_id: String,
         revision: u64,
     },
     /// A session's `composer()` advanced.
-    ComposerChanged {
+    Composer {
         chat_id: String,
         revision: u64,
     },
-    ConnectivityChanged {
+    Connectivity {
         connectivity: Connectivity,
-    },
-    /// The WorkOS pair rotated — persist it now (the old refresh token is spent).
-    AuthRefreshed {
-        tokens: AuthTokens,
-    },
-    /// The session can't be refreshed any more — sign out.
-    AuthExpired {
-        reason: String,
     },
 }
 
 impl From<zc::ClientEvent> for ClientEvent {
     fn from(e: zc::ClientEvent) -> Self {
         match e {
-            zc::ClientEvent::WorkspaceChanged { revision } => {
-                ClientEvent::WorkspaceChanged { revision }
-            }
+            zc::ClientEvent::WorkspaceChanged { revision } => ClientEvent::Workspace { revision },
             zc::ClientEvent::SessionChanged { chat_id, revision } => {
-                ClientEvent::SessionChanged { chat_id, revision }
+                ClientEvent::Session { chat_id, revision }
             }
             zc::ClientEvent::ComposerChanged { chat_id, revision } => {
-                ClientEvent::ComposerChanged { chat_id, revision }
+                ClientEvent::Composer { chat_id, revision }
             }
-            zc::ClientEvent::ConnectivityChanged(c) => ClientEvent::ConnectivityChanged {
+            zc::ClientEvent::ConnectivityChanged(c) => ClientEvent::Connectivity {
                 connectivity: c.into(),
             },
-            zc::ClientEvent::AuthRefreshed(tokens) => ClientEvent::AuthRefreshed {
-                tokens: tokens.into(),
-            },
-            zc::ClientEvent::AuthExpired { reason } => ClientEvent::AuthExpired { reason },
         }
     }
 }
@@ -478,8 +347,6 @@ pub struct SessionRow {
     pub device_id: String,
     pub device_name: Option<String>,
     pub device_online: bool,
-    /// Cloud: its own Cloud machine (sessions) or Cloud alone (projects).
-    pub is_cloud: bool,
     /// Wire harness id (`claude-code`).
     pub harness: Option<String>,
     pub harness_label: Option<String>,
@@ -507,8 +374,6 @@ pub struct SessionRow {
     /// Oldest unadopted send from this device (open sessions only).
     pub send_state: Option<SendState>,
     pub parent_chat_id: Option<String>,
-    /// 2 = chat2; 1 = legacy (not dialable).
-    pub room_gen: u32,
 }
 
 impl From<&zc::SessionRow> for SessionRow {
@@ -527,7 +392,6 @@ impl From<&zc::SessionRow> for SessionRow {
             device_id: r.device_id.clone(),
             device_name: r.device_name.clone(),
             device_online: r.device_online,
-            is_cloud: r.is_cloud,
             harness: r.harness.clone(),
             harness_label: r.harness_label.clone(),
             model: r.model.clone(),
@@ -548,7 +412,6 @@ impl From<&zc::SessionRow> for SessionRow {
             pull_request: r.pull_request.as_ref().map(PullRequest::from),
             send_state: r.send_state.map(Into::into),
             parent_chat_id: r.parent_chat_id.clone(),
-            room_gen: r.room_gen,
         }
     }
 }
@@ -605,8 +468,6 @@ pub struct ProjectView {
     pub device_id: String,
     pub device_name: Option<String>,
     pub device_online: bool,
-    /// Cloud: its own Cloud machine (sessions) or Cloud alone (projects).
-    pub is_cloud: bool,
     /// `owner/name`, when the project has a GitHub repository.
     pub github_repo: Option<String>,
     pub git_detected: bool,
@@ -632,7 +493,6 @@ impl From<&zc::ProjectView> for ProjectView {
             device_id: p.device_id.clone(),
             device_name: p.device_name.clone(),
             device_online: p.device_online,
-            is_cloud: p.is_cloud,
             github_repo: p.github_repo.clone(),
             git_detected: p.git_detected,
             created_at_ms: p.created_at_ms,
@@ -1092,12 +952,4 @@ pub struct FileMatch {
 #[uniffi::export]
 pub fn file_mention_link(path: String, is_dir: bool) -> String {
     onicode_proto::file_mentions::local_file_link(&path, is_dir)
-}
-
-/// Which session notifications this device wants.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
-pub struct PushPrefs {
-    pub done: bool,
-    pub input: bool,
-    pub failed: bool,
 }

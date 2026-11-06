@@ -200,7 +200,7 @@ async fn park_after_spawn() -> Parked {
         feed: Mutex::new(Some(rx)),
     }));
     let dir = tempfile::tempdir().unwrap();
-    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock, None)
+    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock)
         .expect("engine core assembles");
     core.sessions
         .dispatch(CHAT, HarnessId::Mock, run_request("fan out"), None)

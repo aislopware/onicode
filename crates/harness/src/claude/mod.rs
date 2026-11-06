@@ -388,9 +388,8 @@ impl ClaudeHarness {
         // stream-json`) forwards its own subagents' text too, which only
         // adds tagged frames to its stream.
         cmd.env("CLAUDE_CODE_FORWARD_SUBAGENT_TEXT", "1");
-        // Host-resolved environment (a Cloud device's `ANTHROPIC_API_KEY`
-        // from the user's own key, `GH_TOKEN`, …). Never a Claude.ai
-        // subscription token: those stay inside the CLI's own login.
+        // Host-resolved environment (an account slot's settings, …). Never a
+        // Claude.ai subscription token: those stay inside the CLI's own login.
         crate::apply_run_env(&mut cmd, &request.env);
         // After the run's own environment: the run loop depends on these.
         // `session_state_changed` (`idle` = the turn is over) is the turn

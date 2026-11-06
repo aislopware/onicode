@@ -46,10 +46,7 @@ fn setup(cx: &mut TestAppContext) -> (Entity<Shell>, &mut VisualTestContext) {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -57,8 +54,9 @@ fn setup(cx: &mut TestAppContext) -> (Entity<Shell>, &mut VisualTestContext) {
             shell.settings.sidebar_organization = SidebarOrganization::InOneList;
             shell.reduced_motion = true;
             shell.state.update(cx, |state, _| {
-                state.workspace_scope = Some(WorkspaceScope::Local);
                 state.local_device_id = Some("local".into());
+                // Pins and sections live in the registry; this one has its row.
+                state.sidebar_preferences.initialized = true;
                 state.no_project = true;
                 state.chats = ["older", "newer"]
                     .into_iter()
@@ -223,7 +221,9 @@ fn add_chats(shell: &Entity<Shell>, cx: &mut VisualTestContext, ids: &[&str], ar
 fn rename_opens_a_collapsed_pinned_section_with_its_motion(cx: &mut TestAppContext) {
     let (shell, cx) = setup(cx);
     shell.update(cx, |shell, cx| {
-        shell.set_chat_pinned("older".into(), true, cx);
+        shell.state.update(cx, |state, _| {
+            state.sidebar_preferences.pinned_session_ids = vec!["older".into()];
+        });
         shell.pinned_open = false;
         cx.notify();
     });
@@ -341,28 +341,30 @@ fn rename_refuses_a_row_the_project_filter_hides(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn rename_expands_a_collapsed_custom_section(cx: &mut TestAppContext) {
-    use onicode_proto::SidebarSectionChange;
-
+    // Expanding is a registry write: an engine that takes it and never answers, so the
+    // expansion shows as the pending write's projection.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let _entered = runtime.enter();
+    let (out, _requests) = tokio::sync::mpsc::channel(16);
+    let (_replies, inbound) = tokio::sync::mpsc::channel(16);
+    let engine =
+        crate::state::EngineHandle::from_test_client(onicode_rpc::RpcClient::new(out, inbound));
     let (shell, cx) = setup(cx);
+    // The section as the registry delivers it: "older" in a collapsed "Work".
     shell.update(cx, |shell, cx| {
-        for change in [
-            SidebarSectionChange::Create {
+        shell.state.update(cx, |state, _| {
+            state.set_test_engine(engine);
+            state.sidebar_preferences.sections = vec![onicode_proto::SidebarSection {
                 id: "work".into(),
                 name: "Work".into(),
-            },
-            SidebarSectionChange::Assign {
-                session_id: "older".into(),
-                section_id: Some("work".into()),
-                after: None,
-                before: None,
-            },
-            SidebarSectionChange::Collapse {
-                id: "work".into(),
+                session_ids: vec!["older".into()],
                 collapsed: true,
-            },
-        ] {
-            assert!(shell.change_sidebar_section(change, cx));
-        }
+            }];
+        });
+        cx.notify();
     });
     redraw(cx);
 

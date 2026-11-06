@@ -121,15 +121,9 @@ struct DocPartJson {
     /// Capped inline tool diff (additive; pre-strip writers only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     diff: Option<serde_json::Value>,
-    /// Sidecar key of the full output (additive, docs/chat2-sync.md A1).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    output_ref: Option<String>,
     /// Full-output byte length (additive).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     output_bytes: Option<u64>,
-    /// Sidecar key of the full diff JSON (additive).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    diff_ref: Option<String>,
     /// Per-file diff stats (additive).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     diff_stats: Option<serde_json::Value>,
@@ -198,9 +192,7 @@ fn to_doc_part(part: &MessagePart) -> Result<DocPartJson, DocError> {
             resolved,
             output,
             diff,
-            output_ref,
             output_bytes,
-            diff_ref,
             diff_stats,
             subagent_ref,
             subagent_status,
@@ -217,9 +209,7 @@ fn to_doc_part(part: &MessagePart) -> Result<DocPartJson, DocError> {
             is_error: if *resolved { Some(*is_error) } else { None },
             output: output.clone(),
             diff: diff.as_ref().map(serde_json::to_value).transpose()?,
-            output_ref: output_ref.clone(),
             output_bytes: *output_bytes,
-            diff_ref: diff_ref.clone(),
             diff_stats: diff_stats.as_ref().map(serde_json::to_value).transpose()?,
             subagent_ref: subagent_ref.clone(),
             subagent_status: subagent_status.map(|s| {
@@ -308,9 +298,7 @@ fn from_doc_part(p: DocPartJson) -> MessagePart {
                 resolved: p.is_error.is_some(),
                 output: p.output,
                 diff: p.diff.and_then(|d| serde_json::from_value(d).ok()),
-                output_ref: p.output_ref,
                 output_bytes: p.output_bytes,
-                diff_ref: p.diff_ref,
                 diff_stats: p.diff_stats.and_then(|s| serde_json::from_value(s).ok()),
                 subagent_ref: p.subagent_ref,
                 subagent_status: p.subagent_status.as_deref().and_then(|s| match s {
@@ -1078,14 +1066,8 @@ fn push_part(parts: &LoroList, part: &MessagePart) -> Result<(), DocError> {
     if let Some(diff) = &doc_part.diff {
         map.insert("diff", loro_value_from_json(diff))?;
     }
-    if let Some(output_ref) = &doc_part.output_ref {
-        map.insert("outputRef", output_ref.as_str())?;
-    }
     if let Some(output_bytes) = doc_part.output_bytes {
         map.insert("outputBytes", output_bytes as i64)?;
-    }
-    if let Some(diff_ref) = &doc_part.diff_ref {
-        map.insert("diffRef", diff_ref.as_str())?;
     }
     if let Some(diff_stats) = &doc_part.diff_stats {
         map.insert("diffStats", loro_value_from_json(diff_stats))?;
@@ -1265,9 +1247,7 @@ fn salvage_part(part: &serde_json::Value, entry_id: &str, ix: usize) -> Option<M
                 .and_then(|x| x.as_str())
                 .map(str::to_owned),
             diff: None,
-            output_ref: None,
             output_bytes: None,
-            diff_ref: None,
             diff_stats: None,
             subagent_ref: None,
             subagent_status: None,
@@ -1564,14 +1544,8 @@ fn update_part_fields(map: &LoroMap, part: &MessagePart) -> Result<(), DocError>
     if let Some(diff) = &doc_part.diff {
         map.insert("diff", loro_value_from_json(diff))?;
     }
-    if let Some(output_ref) = &doc_part.output_ref {
-        map.insert("outputRef", output_ref.as_str())?;
-    }
     if let Some(output_bytes) = doc_part.output_bytes {
         map.insert("outputBytes", output_bytes as i64)?;
-    }
-    if let Some(diff_ref) = &doc_part.diff_ref {
-        map.insert("diffRef", diff_ref.as_str())?;
     }
     if let Some(diff_stats) = &doc_part.diff_stats {
         map.insert("diffStats", loro_value_from_json(diff_stats))?;
@@ -1891,9 +1865,7 @@ mod tests {
             resolved: true,
             output: None,
             diff: None,
-            output_ref: None,
             output_bytes: None,
-            diff_ref: None,
             diff_stats: None,
             subagent_ref: None,
             subagent_status: None,
@@ -1958,9 +1930,7 @@ mod tests {
             resolved: false,
             output: None,
             diff: None,
-            output_ref: None,
             output_bytes: None,
-            diff_ref: None,
             diff_stats: None,
             subagent_ref: None,
             subagent_status: None,
@@ -2013,9 +1983,7 @@ mod tests {
             resolved: true,
             output: None,
             diff: None,
-            output_ref: None,
             output_bytes: None,
-            diff_ref: None,
             diff_stats: None,
             subagent_ref: None,
             subagent_status: None,
@@ -2321,7 +2289,7 @@ mod tests {
     }
 
     /// The ToolResult resolution path goes through `update_part_fields` —
-    /// the stripped output summary, sidecar refs, and diff stats must survive
+    /// the stripped output summary and diff stats must survive
     /// the doc round trip (regression: output/diff were silently dropped
     /// there while `to_doc_part` carried them).
     #[test]
@@ -2356,7 +2324,6 @@ mod tests {
                 exit_code: None,
             },
         );
-        crate::parts::apply_sidecar_refs("chat-2", &mut folded);
         writer.sync(&folded).unwrap();
         writer.finish(&folded, MessageStatus::Complete).unwrap();
 
@@ -2364,23 +2331,16 @@ mod tests {
         match &entries[0].parts[0] {
             MessagePart::Tool {
                 output,
-                output_ref,
                 output_bytes,
                 diff,
-                diff_ref,
                 diff_stats,
                 ..
             } => {
                 // One-liner chips: the fold drops outputs entirely (journal
-                // only), so even a direct apply_sidecar_refs call has no
-                // output to key — diff stats still get their ref (this test
-                // calls apply_sidecar_refs directly; the live fold no longer
-                // does).
+                // only); diff stats survive.
                 assert_eq!(output.as_deref(), None);
-                assert_eq!(output_ref.as_deref(), None);
                 assert_eq!(*output_bytes, None);
                 assert!(diff.is_none(), "no inline diff text in the doc");
-                assert_eq!(diff_ref.as_deref(), Some("chat-2/t1.diff"));
                 let stats = diff_stats.as_ref().expect("stats survive");
                 assert_eq!(stats[0].path, "/w/a.rs");
                 assert_eq!((stats[0].additions, stats[0].deletions), (1, 1));
@@ -2478,9 +2438,7 @@ mod tests {
                     old_text: Some("old".into()),
                     new_text: "new".into(),
                 }),
-                output_ref: None,
                 output_bytes: None,
-                diff_ref: None,
                 diff_stats: None,
                 subagent_ref: None,
                 subagent_status: None,
@@ -2632,7 +2590,7 @@ mod tests {
 mod context_usage_tests {
     use super::*;
     #[test]
-    fn context_snapshot_survives_remote_import_restart_and_rebuild() {
+    fn context_snapshot_survives_remote_import_and_restart() {
         let host = SessionDoc::init("context-chat").unwrap();
         assert_eq!(host.context_usage(), None);
         host.update_context_usage(Some(150_000), Some(200_000))
@@ -2659,9 +2617,7 @@ mod context_usage_tests {
         );
         host.update_context_usage(None, Some(1_000_000)).unwrap();
         assert_eq!(host.context_usage().unwrap().tokens, Some(0));
-        let rebuilt = crate::rebuild_thin_doc(&host).unwrap().doc;
-        assert_eq!(rebuilt.context_usage(), host.context_usage());
-        rebuilt.clear_context_usage().unwrap();
-        assert_eq!(rebuilt.context_usage(), None);
+        host.clear_context_usage().unwrap();
+        assert_eq!(host.context_usage(), None);
     }
 }

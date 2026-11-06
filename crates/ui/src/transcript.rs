@@ -126,9 +126,6 @@ const TOOL_FOLD: motion::MotionSpec = motion::MotionSpec::new(140, motion::EASE_
 const TOOL_GROUP_SHIMMER_DURATION: Duration = Duration::from_millis(3_400);
 const TOOL_GROUP_SHIMMER_HALF_WIDTH: f32 = 0.36;
 const TOOL_GROUP_SHIMMER_STRIP_WIDTH: f32 = 2.0;
-/// A send waiting on its Cloud machine names that in the working line only
-/// after this long: a send from this device shows its setup chip by then.
-const CLOUD_BOOT_WORD_AFTER_MS: i64 = 1_500;
 const TOOL_ROW_REVEAL: motion::MotionSpec = motion::MotionSpec::new(360, motion::EASE_OUT_EXPO);
 /// The connector draws briskly, then eases into the branch tip so its arrival
 /// remains visible without feeling mechanically linear.
@@ -371,13 +368,6 @@ pub struct ToolItem {
     /// to one truncated line. Rendered above `detail` in the open card.
     /// Precomputed for the same reason as `detail`.
     pub invocation: Option<Arc<ToolDetail>>,
-    /// Sidecar key of the full output (chat2-sync A3) — the doc carries only
-    /// a one-line summary; expanding offers a lazy "Show full output" fetch.
-    pub output_ref: Option<SharedString>,
-    /// Full-output size, for the affordance label ("Show full output (12 KB)").
-    pub output_bytes: Option<u64>,
-    /// Sidecar key of the full diff (doc carries only per-file stats).
-    pub diff_ref: Option<SharedString>,
     /// The spawned SUBAGENT's doc id — the chip IS the index (there is no
     /// listing endpoint); with it the chip offers "Open subagent".
     pub subagent_ref: Option<SharedString>,
@@ -757,9 +747,6 @@ fn thought_item(part_id: &str, tree: &BlockTree, live: bool) -> ToolItem {
             })
         }),
         invocation: None,
-        output_ref: None,
-        output_bytes: None,
-        diff_ref: None,
         subagent_ref: None,
         subagent_status: None,
         subagent_tail: None,
@@ -847,7 +834,7 @@ pub fn tool_detail(
             return None;
         }
         // A transcript diff renders as one stacked element inside its row —
-        // cap it so a whole-file rewrite (or fetched full-diff blob) can't
+        // cap it so a whole-file rewrite can't
         // build tens of thousands of elements per frame. The changes pane
         // has no such cap; it virtualizes per line.
         crate::changes::truncate_file_lines(&mut file, DIFF_DETAIL_MAX_LINES);
@@ -1289,9 +1276,6 @@ fn tool_fingerprint(tools: &[ToolItem], auto_open: bool) -> u64 {
             }
             acc.extend_from_slice(&(*truncated_by as u32).to_le_bytes());
         }
-        // Sidecar refs arriving after the resolve tick must re-splice too —
-        // they add the fetch affordance without changing the detail payload.
-        acc.push(t.output_ref.is_some() as u8 | (t.diff_ref.is_some() as u8) << 1);
         // Subagent lifecycle mutates the chip in place (status flips, the
         // live tail grows) — hash it so the row re-splices on every change.
         acc.push(
@@ -1534,9 +1518,6 @@ pub fn rows_for_entry(
                 resolved,
                 output,
                 diff,
-                output_ref,
-                output_bytes,
-                diff_ref,
                 diff_stats,
                 subagent_ref,
                 subagent_status,
@@ -1587,9 +1568,6 @@ pub fn rows_for_entry(
                     detail: tool_detail(output.as_deref(), diff.as_ref(), diff_stats.as_deref())
                         .map(Arc::new),
                     invocation: call_block(call).map(Arc::new),
-                    output_ref: output_ref.clone().map(SharedString::from),
-                    output_bytes: *output_bytes,
-                    diff_ref: diff_ref.clone().map(SharedString::from),
                     subagent_ref: subagent_ref.clone().map(SharedString::from),
                     subagent_status: *subagent_status,
                     subagent_tail: subagent_tail.clone().map(SharedString::from),
@@ -2368,55 +2346,6 @@ struct ImageMenu {
 /// Spawn chips never expand, so they never preview images either.
 fn chip_has_images(tool: &ToolItem) -> bool {
     !tool.images.is_empty() && !is_spawn_link(tool)
-}
-
-/// Height of the "Show full output/diff" affordance row appended below an
-/// open detail whose full payload lives in the sidecar (chat2-sync A3).
-pub const BLOB_AFFORDANCE_HEIGHT: f32 = 24.0;
-
-/// What an open chip's [`BLOB_AFFORDANCE_HEIGHT`] row offers: a lazy sidecar
-/// fetch ("Show full output/diff"). One slot, so the analytic height sums
-/// stay a single `is_some` check.
-#[derive(Clone)]
-struct ChipAffordance {
-    blob_ref: SharedString,
-    label: SharedString,
-}
-
-/// Line cap for a FETCHED full output (a defensive ceiling, not a doc cap —
-/// the harness bounds outputs at 4KiB, so this is rarely reached).
-const FULL_OUTPUT_MAX_LINES: usize = 400;
-
-/// Build the upgraded detail from a fetched sidecar blob. Diff blobs parse
-/// the `ToolDiff` JSON through the same pipeline as inline diffs; output
-/// blobs render (near-)uncapped — fetching past the summary was the point.
-fn blob_detail(text: &str, is_diff: bool) -> Option<ToolDetail> {
-    if is_diff {
-        let diff: onicode_proto::ToolDiff = serde_json::from_str(text).ok()?;
-        return tool_detail(None, Some(&diff), None);
-    }
-    let mut lines: Vec<SharedString> = text.lines().map(output_line).collect();
-    while lines.last().is_some_and(|l| l.trim().is_empty()) {
-        lines.pop();
-    }
-    if lines.is_empty() {
-        return None;
-    }
-    let truncated_by = lines.len().saturating_sub(FULL_OUTPUT_MAX_LINES);
-    lines.truncate(FULL_OUTPUT_MAX_LINES);
-    Some(ToolDetail::Output {
-        lines,
-        truncated_by,
-    })
-}
-
-/// Compact byte size for the fetch affordance label ("812 B", "12 KB").
-fn format_kb(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{bytes} B")
-    } else {
-        format!("{} KB", bytes.div_ceil(1024))
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3563,27 +3492,8 @@ pub struct Transcript {
     visuals: HashMap<SharedString, Entity<crate::visuals::VisualFrame>>,
     /// Scheduled retry wake-ups for errored sources (the 2s→15s ladder).
     attachment_retries: HashMap<(String, String), Task<()>>,
-    /// Sidecar blob fetches keyed by doc ref (`chatId/partId[.diff]`,
-    /// chat2-sync A3). `Ready` holds the UPGRADED detail, built once on
-    /// arrival — render swaps it in per chip; rows never rebuild for it.
-    /// Deliberately NOT cleared on chat switch: refs are chat-qualified and a
-    /// fetched blob stays valid.
-    blob_details: HashMap<SharedString, BlobFetch>,
-    /// Monotonic fetch order per blob ref: when a tool has BOTH a diff and
-    /// an output blob fetched, the chip shows the one requested most
-    /// recently (click "Show full output" after a diff → see the output).
-    blob_fetch_order: HashMap<SharedString, u64>,
-    blob_fetch_counter: u64,
     _observe: Subscription,
     _text_changes: Subscription,
-}
-
-/// One sidecar blob fetch's lifecycle.
-enum BlobFetch {
-    Loading(#[allow(dead_code)] Task<()>),
-    /// Failed with the affordance re-armed as a retry.
-    Failed,
-    Ready(Arc<ToolDetail>),
 }
 
 /// Shell-facing events (the transcript itself hosts no surfaces).
@@ -3594,8 +3504,7 @@ pub enum TranscriptEvent {
     SignIn { chat_id: String },
     /// A spawn chip's "Open subagent" affordance: open the subagent's
     /// transcript as a right-pane tab. `chat_id` is the doc the chip lives
-    /// in (the frozen blob is keyed `{chat_id}/{doc_id}`); `frozen` means
-    /// the subagent finished — try the blob before watching the doc.
+    /// in; `frozen` means the subagent finished.
     OpenSubagent {
         chat_id: String,
         doc_id: String,
@@ -3880,9 +3789,6 @@ impl Transcript {
             reply_image_loads: HashMap::new(),
             visuals: HashMap::new(),
             attachment_retries: HashMap::new(),
-            blob_details: HashMap::new(),
-            blob_fetch_order: HashMap::new(),
-            blob_fetch_counter: 0,
             _observe: observe,
             _text_changes: text_changes,
         };
@@ -5675,60 +5581,6 @@ impl Transcript {
         rows
     }
 
-    /// Fetch a sidecar blob (full tool output or diff) and build its upgraded
-    /// [`ToolDetail`] once, off the render path. Re-entry while Loading/Ready
-    /// is a no-op; Failed re-arms as a retry (the affordance label says so).
-    fn spawn_blob_fetch(&mut self, blob_ref: SharedString, cx: &mut Context<Self>) {
-        // Rank BEFORE the already-fetched guard: clicking a Ready ref is the
-        // "show me this one again" toggle (recency bump + repaint, no
-        // re-fetch) — with both a diff and an output fetched, the two
-        // affordances must be able to trade places forever.
-        self.blob_fetch_counter += 1;
-        self.blob_fetch_order
-            .insert(blob_ref.clone(), self.blob_fetch_counter);
-        match self.blob_details.get(&blob_ref) {
-            Some(BlobFetch::Ready(_)) => {
-                cx.notify();
-                return;
-            }
-            Some(BlobFetch::Loading(_)) => return,
-            Some(BlobFetch::Failed) | None => {}
-        }
-        let Some(engine) = self.state.read(cx).engine().cloned() else {
-            return;
-        };
-        let is_diff = blob_ref.ends_with(".diff");
-        let ref_key = blob_ref.clone();
-        let task = cx.spawn(async move |this, cx| {
-            let reply = crate::attachments::call_with_timeout(
-                &engine,
-                cx.background_executor(),
-                onicode_rpc::methods::FETCH_TOOL_BLOB,
-                serde_json::json!({ "blobRef": ref_key.as_ref() }),
-                Duration::from_secs(20),
-            )
-            .await;
-            let fetched = match reply {
-                Ok(value) => {
-                    let text = value
-                        .get("text")
-                        .and_then(|t| t.as_str())
-                        .unwrap_or_default();
-                    blob_detail(text, is_diff)
-                        .map(|d| BlobFetch::Ready(Arc::new(d)))
-                        .unwrap_or(BlobFetch::Failed)
-                }
-                Err(_) => BlobFetch::Failed,
-            };
-            this.update(cx, |this, cx| {
-                this.blob_details.insert(ref_key, fetched);
-                cx.notify();
-            })
-            .ok();
-        });
-        self.blob_details.insert(blob_ref, BlobFetch::Loading(task));
-    }
-
     /// Expand/collapse one long user bubble. Heights come from the text's
     /// passive paint cache, never from transcript state, so this changes
     /// render-local fold state only and does not rebuild or splice rows.
@@ -6193,7 +6045,7 @@ impl Transcript {
     /// flow's `pending://` (bytes ship engine-side after the send; the host
     /// rewrites the ref to an absolute path once they land and the run
     /// starts) and the legacy echo's synthetic `pending/`. Percent sources, in
-    /// order: this attachment's own relay transfer (`WatchTransfers`, by the
+    /// order: this attachment's own peer transfer (`WatchTransfers`, by the
     /// uploadId its ref names — the leg that actually takes time), else the
     /// send-wide staging/legacy upload percent. Neither → no number, so a
     /// ring never shows one that isn't a real transfer position (2026-08-20
@@ -7246,7 +7098,7 @@ impl Transcript {
             return;
         };
         let local = self.state.read(cx).local_device_id.clone();
-        // Only the chat's host reads its folder; the relay forwards there.
+        // Only the chat's host reads its folder; the engine forwards there.
         let target =
             (local.as_deref() != Some(request.host.as_str())).then(|| request.host.clone());
         let claim = crate::attachments::AttachmentLoadGuard(key.clone());
@@ -7805,9 +7657,7 @@ impl Transcript {
         // `turn` (the turn's start, ms) keys the rolling word and timer, so a
         // new turn's labels appear fresh instead of rolling from the last
         // turn's final values.
-        let (sending, queued, elapsed_secs, seed, turn, booting) = if let Some(doc_id) =
-            &self.doc_override
-        {
+        let (sending, queued, elapsed_secs, seed, turn) = if let Some(doc_id) = &self.doc_override {
             // A subagent doc has no Session row — `indicator_for` would read
             // the PARENT chat's live state into this tab. Liveness rides the
             // doc itself instead: the sink's assistant entry streams until
@@ -7825,14 +7675,7 @@ impl Transcript {
                 return None;
             }
             let elapsed = (now.timestamp_millis() - last.created_at).max(0) / 1000;
-            (
-                false,
-                false,
-                elapsed,
-                flavour_seed(doc_id),
-                last.created_at,
-                None,
-            )
+            (false, false, elapsed, flavour_seed(doc_id), last.created_at)
         } else {
             let chat_id = self.chat_id.clone()?;
             // Failed-send state first: past the grace window the trailer IS
@@ -7855,66 +7698,37 @@ impl Transcript {
                         .into_any_element(),
                 );
             }
-            let (sending, queued, elapsed, turn, booting) = {
+            let (sending, queued, elapsed, turn) = {
                 let state = self.state.read(cx);
                 if state.indicator_for(&chat_id, now) != crate::state::Indicator::Working {
                     return None;
                 }
-                // The Cloud setup steps say what the send waits on; the
-                // line under them is the turn's working word, timed from
-                // the send — setting the machine up is part of the work —
-                // and keyed on it, so neither restarts when the machine's
-                // turn begins.
-                if let Some(sent) = state.cloud_setup_turn_started() {
-                    let elapsed = (now.timestamp_millis() - sent).max(0) / 1000;
-                    (false, false, elapsed, sent, None)
-                } else {
-                    // During the send→turn window the session row's `started_at`
-                    // still belongs to the PREVIOUS turn — a timer based on the
-                    // send counted the round-trip and then restarted when the
-                    // turn actually began (user report). Bridge it as "Sending…"
-                    // with no timer instead; the word + timer start with the
-                    // turn.
-                    let turn_started = state.session_for(&chat_id).and_then(|s| s.started_at);
-                    let send_started = state.pending_send_started(&chat_id, now);
-                    let sending = sending_bridge(send_started, turn_started);
-                    // A path that would hold the send: it is a durable local
-                    // write waiting on connectivity — say so instead of faking
-                    // progress. A syncing chat still delivers. (The overlay
-                    // holds while delivery is unconfirmed, so this line owns
-                    // the surface until the ack or the failed state.)
-                    let queued = sending && state.chat_link_at(&chat_id, now).send_would_queue();
-                    let elapsed = turn_started
-                        .map(|t| now.signed_duration_since(t).num_seconds().max(0))
-                        .unwrap_or(0);
-                    // While sending, the session row still carries the PREVIOUS
-                    // turn: the bridge keys on its own send instead, so it never
-                    // rolls out of that turn's word or an earlier send's.
-                    let turn = if sending { send_started } else { turn_started }
-                        .map_or(0, |t| t.timestamp_millis());
-                    // The send waits for the chat's own Cloud machine to come up.
-                    // (Past the beat in which this device's own send puts
-                    // up its setup chip, so the words never flash twice.)
-                    let booting = if sending
-                        && send_started.is_some_and(|t| {
-                            now.signed_duration_since(t).num_milliseconds()
-                                >= CLOUD_BOOT_WORD_AFTER_MS
-                        }) {
-                        state.cloud_machine_booting(&chat_id)
-                    } else {
-                        None
-                    };
-                    (sending, queued, elapsed, turn, booting)
-                }
+                // During the send→turn window the session row's `started_at`
+                // still belongs to the PREVIOUS turn — a timer based on the
+                // send counted the round-trip and then restarted when the
+                // turn actually began (user report). Bridge it as "Sending…"
+                // with no timer instead; the word + timer start with the
+                // turn.
+                let turn_started = state.session_for(&chat_id).and_then(|s| s.started_at);
+                let send_started = state.pending_send_started(&chat_id, now);
+                let sending = sending_bridge(send_started, turn_started);
+                // A path that would hold the send: it is a durable local
+                // write waiting on connectivity — say so instead of faking
+                // progress. A syncing chat still delivers. (The overlay
+                // holds while delivery is unconfirmed, so this line owns
+                // the surface until the ack or the failed state.)
+                let queued = sending && state.chat_link_at(&chat_id, now).send_would_queue();
+                let elapsed = turn_started
+                    .map(|t| now.signed_duration_since(t).num_seconds().max(0))
+                    .unwrap_or(0);
+                // While sending, the session row still carries the PREVIOUS
+                // turn: the bridge keys on its own send instead, so it never
+                // rolls out of that turn's word or an earlier send's.
+                let turn = if sending { send_started } else { turn_started }
+                    .map_or(0, |t| t.timestamp_millis());
+                (sending, queued, elapsed, turn)
             };
-            (
-                sending,
-                queued,
-                elapsed,
-                flavour_seed(&chat_id),
-                turn,
-                booting,
-            )
+            (sending, queued, elapsed, flavour_seed(&chat_id), turn)
         };
         if self.compact_mode && !sending && !queued && elapsed_secs > 0 {
             let entry_id = if let Some(doc_id) = &self.doc_override {
@@ -7938,13 +7752,6 @@ impl Transcript {
         }
         let word = if queued {
             "Queued — will send automatically"
-        } else if let Some(state) = booting {
-            // The send waits for the chat's own Cloud machine.
-            if state == onicode_proto::CloudState::Provisioning {
-                "Starting a Cloud machine"
-            } else {
-                "Waking the Cloud machine"
-            }
         } else if sending {
             "Sending"
         } else {
@@ -8820,10 +8627,7 @@ impl Transcript {
                 .release_row(row_id, Self::tool_images_of, cx);
             &[]
         };
-        // Chips render their EFFECTIVE detail: the precomputed doc-resident
-        // one, upgraded in place by a fetched sidecar blob (chat2-sync A3).
-        // Resolved per paint (a HashMap probe per chip) so fetched content
-        // needs no row rebuild — arrival is a cx.notify, like a fold toggle.
+        // Chips render their precomputed doc-resident detail.
         let details: Vec<Option<Arc<ToolDetail>>> = tools
             .iter()
             .map(|tool| {
@@ -8833,19 +8637,7 @@ impl Transcript {
                 if is_spawn_link(tool) {
                     return None;
                 }
-                // Among fetched blobs, the most recently REQUESTED one wins —
-                // a tool can carry both a diff and an output ref, and the
-                // user's last click decides which upgrade is showing.
-                let mut best: Option<(u64, Arc<ToolDetail>)> = None;
-                for blob_ref in [&tool.diff_ref, &tool.output_ref].into_iter().flatten() {
-                    if let Some(BlobFetch::Ready(detail)) = self.blob_details.get(blob_ref) {
-                        let order = self.blob_fetch_order.get(blob_ref).copied().unwrap_or(0);
-                        if best.as_ref().is_none_or(|(o, _)| order > *o) {
-                            best = Some((order, detail.clone()));
-                        }
-                    }
-                }
-                best.map(|(_, d)| d).or_else(|| tool.detail.clone())
+                tool.detail.clone()
             })
             .collect();
         // Full-invocation blocks — with them, EVERY chip expands: the click
@@ -8853,59 +8645,6 @@ impl Transcript {
         let invocations: Vec<Option<Arc<ToolDetail>>> = tools
             .iter()
             .map(|tool| tool.invocation.clone().filter(|_| !is_spawn_link(tool)))
-            .collect();
-        // Fetch affordance under each open detail whose full payload is still
-        // sidecar-only: `(ref, label)`. Diff offered first (the richer
-        // upgrade), then the output — a fetched ref hands the affordance to
-        // the NEXT unfetched one instead of retiring it (both must stay
-        // reachable when a tool has both).
-        let affordances: Vec<Option<ChipAffordance>> = tools
-            .iter()
-            .map(|tool| {
-                // The currently-displayed ref (same recency rule as
-                // `details` above): its affordance is spent; any OTHER
-                // Ready ref stays offered as a no-fetch toggle.
-                let shown: Option<&SharedString> = {
-                    let mut best: Option<(u64, &SharedString)> = None;
-                    for blob_ref in [&tool.diff_ref, &tool.output_ref].into_iter().flatten() {
-                        if matches!(self.blob_details.get(blob_ref), Some(BlobFetch::Ready(_))) {
-                            let order = self.blob_fetch_order.get(blob_ref).copied().unwrap_or(0);
-                            if best.is_none_or(|(o, _)| order > o) {
-                                best = Some((order, blob_ref));
-                            }
-                        }
-                    }
-                    best.map(|(_, r)| r)
-                };
-                let candidates = [
-                    (tool.diff_ref.as_ref(), "diff", None),
-                    (tool.output_ref.as_ref(), "output", tool.output_bytes),
-                ];
-                for (blob_ref, what, bytes) in candidates {
-                    let Some(blob_ref) = blob_ref else { continue };
-                    let label = match self.blob_details.get(blob_ref) {
-                        Some(BlobFetch::Ready(_)) => {
-                            if shown == Some(blob_ref) {
-                                continue;
-                            }
-                            format!("Show full {what}")
-                        }
-                        Some(BlobFetch::Loading(_)) => format!("Loading full {what}…"),
-                        Some(BlobFetch::Failed) => {
-                            format!("Couldn't load full {what} — tap to retry")
-                        }
-                        None => match bytes {
-                            Some(b) => format!("Show full {what} ({})", format_kb(b)),
-                            None => format!("Show full {what}"),
-                        },
-                    };
-                    return Some(ChipAffordance {
-                        blob_ref: blob_ref.clone(),
-                        label: SharedString::from(label),
-                    });
-                }
-                None
-            })
             .collect();
         // Which chips have their detail block open (render-local, analytic —
         // the FINAL state; a mid-tween detail already counts as its target).
@@ -8961,53 +8700,41 @@ impl Transcript {
         let row_heights: Vec<f32> = details
             .iter()
             .zip(&invocations)
-            .zip(&affordances)
             .zip(&detail_opens)
             .zip(&detail_folds)
             .zip(tools.iter())
-            .map(
-                |(((((detail, invocation), affordance), open), fold), tool)| {
-                    // A spawn link is always `subagent_chip`'s full card row,
-                    // even under a compact fold: budgeting it at the tree
-                    // row's height clipped the last cards off the fold.
-                    if is_spawn_link(tool) {
-                        return CHIP_HEIGHT;
-                    }
-                    let target = if *open {
-                        base_row_height
-                            + invocation.as_deref().map_or(0.0, detail_height)
-                            + if chip_has_images(tool) {
-                                TOOL_IMAGE_STRIP_HEIGHT
-                            } else {
-                                0.0
-                            }
-                            + detail.as_deref().map_or(0.0, detail_height)
-                            + if affordance.is_some() {
-                                BLOB_AFFORDANCE_HEIGHT
-                            } else {
-                                0.0
-                            }
-                    } else {
-                        base_row_height
-                    };
-                    if !cx.reduce_motion()
-                        && let Some(at) = fold.toggled_at
-                    {
-                        let t = TOOL_FOLD
-                            .curve
-                            .eval(at.elapsed().as_secs_f32() / TOOL_FOLD.total().as_secs_f32());
-                        if t < 1.0 {
-                            motion_active = true;
+            .map(|((((detail, invocation), open), fold), tool)| {
+                // A spawn link is always `subagent_chip`'s full card row,
+                // even under a compact fold: budgeting it at the tree
+                // row's height clipped the last cards off the fold.
+                if is_spawn_link(tool) {
+                    return CHIP_HEIGHT;
+                }
+                let target = if *open {
+                    base_row_height
+                        + invocation.as_deref().map_or(0.0, detail_height)
+                        + if chip_has_images(tool) {
+                            TOOL_IMAGE_STRIP_HEIGHT
+                        } else {
+                            0.0
                         }
-                        return motion::lerp(
-                            fold.from + base_row_height - CHIP_CARD_HEIGHT,
-                            target,
-                            t,
-                        );
+                        + detail.as_deref().map_or(0.0, detail_height)
+                } else {
+                    base_row_height
+                };
+                if !cx.reduce_motion()
+                    && let Some(at) = fold.toggled_at
+                {
+                    let t = TOOL_FOLD
+                        .curve
+                        .eval(at.elapsed().as_secs_f32() / TOOL_FOLD.total().as_secs_f32());
+                    if t < 1.0 {
+                        motion_active = true;
                     }
-                    target
-                },
-            )
+                    return motion::lerp(fold.from + base_row_height - CHIP_CARD_HEIGHT, target, t);
+                }
+                target
+            })
             .collect();
         let reduce_motion = cx.reduce_motion();
         let now = Instant::now();
@@ -9237,7 +8964,6 @@ impl Transcript {
                         reveal,
                     );
                 }
-                let affordance = affordances[ix].clone();
                 let open = detail_opens[ix];
                 let dfold = detail_folds[ix];
                 let key = SharedString::from(format!("{row_id}#d{ix}"));
@@ -9334,31 +9060,6 @@ impl Transcript {
                                 &format!("{key}-out"),
                                 theme,
                             ));
-                    }
-                    if let Some(ChipAffordance { blob_ref, label }) = affordance {
-                        let loading = matches!(
-                            self.blob_details.get(&blob_ref),
-                            Some(BlobFetch::Loading(_))
-                        );
-                        let mut row = div()
-                            .id(SharedString::from(format!("{key}-blob")))
-                            .h(px(BLOB_AFFORDANCE_HEIGHT))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .text_size(px(TOOL_TEXT_SIZE))
-                            .text_color(theme.text_faint)
-                            .child(label);
-                        if !loading {
-                            row = row
-                                .cursor_pointer()
-                                .hover(|s| s.text_color(theme.text_muted))
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.spawn_blob_fetch(blob_ref.clone(), cx);
-                                    cx.notify();
-                                }));
-                        }
-                        panel = panel.child(row);
                     }
                     card = card.child(panel);
                 }
@@ -10360,12 +10061,6 @@ fn input_chip(header: SharedString, outcome: &InputOutcome, theme: &Theme) -> An
 /// quiet monochrome character keeps the tile without shipping SVGs).
 /// The glyph for a tool call (onicode tool-chip.tsx `toolIcon`, Solar set).
 fn tool_icon_path(call: &ToolCall) -> &'static str {
-    // A Cloud machine's own setup: the machine, then its git steps.
-    match onicode_proto::cloud_setup_step(call) {
-        Some("clone" | "branch") => return crate::icons::GIT_BRANCH,
-        Some(_) => return crate::icons::CLOUD,
-        None => {}
-    }
     match call {
         ToolCall::Exec { .. } => crate::icons::TERMINAL,
         ToolCall::ReadFile { .. } | ToolCall::ApplyPatch { .. } => crate::icons::DOCUMENT,
@@ -13364,9 +13059,7 @@ mod tests {
             resolved: false,
             output: None,
             diff: None,
-            output_ref: None,
             output_bytes: None,
-            diff_ref: None,
             diff_stats: None,
             subagent_ref: None,
             subagent_status: None,
@@ -13791,7 +13484,6 @@ mod tests {
             child_kind: None,
             space_id: None,
             last_seen_at: None,
-            room_gen: None,
         };
         let state = cx.new(|_| {
             let mut state = AppState::new();
@@ -14561,9 +14253,7 @@ mod tests {
             resolved: true,
             output: None,
             diff: None,
-            output_ref: None,
             output_bytes: None,
-            diff_ref: None,
             diff_stats: None,
             subagent_ref: None,
             subagent_status: None,
@@ -14686,9 +14376,7 @@ mod tests {
             resolved: true,
             output: None,
             diff: None,
-            output_ref: None,
             output_bytes: None,
-            diff_ref: None,
             diff_stats: None,
             subagent_ref: Some(format!("chat--sub--{id}")),
             subagent_status: Some(SubagentStatus::Running),
@@ -17430,19 +17118,14 @@ mod tests {
         assert_eq!(lines[0].as_ref(), "    indented 0");
 
         // A minified megabyte line is cut on a char boundary before shaping,
-        // in the summary and in a fetched full output alike.
+        // in the summary.
         let long = format!("{}\nshort", "é".repeat(1024 * 1024));
-        for detail in [
-            tool_detail(Some(&long), None, None),
-            blob_detail(&long, false),
-        ] {
-            let Some(ToolDetail::Output { lines, .. }) = detail else {
-                panic!("expected output detail");
-            };
-            assert_eq!(lines[0].chars().count(), OUTPUT_LINE_MAX_CHARS + 1);
-            assert!(lines[0].ends_with("é…"));
-            assert_eq!(lines[1].as_ref(), "short");
-        }
+        let Some(ToolDetail::Output { lines, .. }) = tool_detail(Some(&long), None, None) else {
+            panic!("expected output detail");
+        };
+        assert_eq!(lines[0].chars().count(), OUTPUT_LINE_MAX_CHARS + 1);
+        assert!(lines[0].ends_with("é…"));
+        assert_eq!(lines[1].as_ref(), "short");
 
         // Nothing → no affordance.
         assert!(tool_detail(None, None, None).is_none());
@@ -17458,9 +17141,6 @@ mod tests {
             resolved: true,
             detail: None,
             invocation: None,
-            output_ref: None,
-            output_bytes: None,
-            diff_ref: None,
             subagent_ref: None,
             subagent_status: None,
             subagent_tail: None,
@@ -17478,9 +17158,6 @@ mod tests {
             resolved: true,
             detail: None,
             invocation: None,
-            output_ref: None,
-            output_bytes: None,
-            diff_ref: None,
             subagent_ref: None,
             subagent_status: None,
             subagent_tail: None,
@@ -17514,9 +17191,6 @@ mod tests {
                 resolved: true,
                 detail: None,
                 invocation: None,
-                output_ref: None,
-                output_bytes: None,
-                diff_ref: None,
                 subagent_ref: None,
                 subagent_status: None,
                 subagent_tail: None,
@@ -17532,9 +17206,6 @@ mod tests {
                 resolved: true,
                 detail: None,
                 invocation: None,
-                output_ref: None,
-                output_bytes: None,
-                diff_ref: None,
                 subagent_ref: None,
                 subagent_status: None,
                 subagent_tail: None,
@@ -17548,9 +17219,6 @@ mod tests {
                 resolved: true,
                 detail: None,
                 invocation: None,
-                output_ref: None,
-                output_bytes: None,
-                diff_ref: None,
                 subagent_ref: None,
                 subagent_status: None,
                 subagent_tail: None,
@@ -17724,9 +17392,6 @@ mod tests {
             resolved: true,
             detail: None,
             invocation: None,
-            output_ref: None,
-            output_bytes: None,
-            diff_ref: None,
             subagent_ref: None,
             subagent_status: None,
             subagent_tail: None,

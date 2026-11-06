@@ -221,7 +221,7 @@ impl TitleGenerator {
                 worktree: None,
                 env: Default::default(),
             };
-            // A Cloud device's credential broker supplies the CLI's login;
+            // The run's account environment supplies the CLI's login;
             // without one there is no title to generate.
             self.inner
                 .registry
@@ -481,8 +481,8 @@ mod tests {
         let registry = Arc::new(HarnessRegistry::new());
         let recorder = Arc::new(RecordingTitleHarness(Default::default()));
         registry.register(recorder.clone());
-        let core = crate::EngineCore::assemble(dir.path(), registry.clone(), HarnessId::Mock, None)
-            .unwrap();
+        let core =
+            crate::EngineCore::assemble(dir.path(), registry.clone(), HarnessId::Mock).unwrap();
         registry
             .set_title_settings(crate::registry::TitleSettings {
                 harness: Some(HarnessId::ClaudeCode),

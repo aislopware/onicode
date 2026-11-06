@@ -2,7 +2,7 @@
 
 ## Storage and scope
 
-Synced profiles store one `sidebarPins/{sessionId}` row per pin in the per-user/org registry. Independent `pinned` and `orderKey` fields use the existing per-field logical clocks. Moving a pin writes only its position; unpinning writes explicit false without deleting its row. A delayed move cannot re-pin an item. Concurrent moves of different pins survive independently; concurrent moves of the same pin resolve by their clocks. Pin operations never rewrite sessions or normal activity ordering.
+The registry stores one `sidebarPins/{sessionId}` row per pin. Independent `pinned` and `orderKey` fields use the existing per-field logical clocks. Moving a pin writes only its position; unpinning writes explicit false without deleting its row. A delayed move cannot re-pin an item. Concurrent moves of different pins survive independently; concurrent moves of the same pin resolve by their clocks. Pin operations never rewrite sessions or normal activity ordering.
 
 Local profiles retain profile-keyed device preferences. Remote profiles do not import local pin lists or older whole-list preferences from development versions of this PR. There is no pin migration, compatibility adapter or server cutover. Threads are unaffected; old development pins must be pinned again.
 
@@ -33,7 +33,6 @@ cargo test --locked -p zeron-proto --lib
 cargo test --locked -p zeron-doc --lib
 cargo test --locked -p zeron-engine --lib
 cargo test --locked -p zeron-ui --lib -- --test-threads=1
-cd edge && npm run typecheck && npm test
 ```
 
-Run `ZeronTests/PinnedSessionsTests` on an iOS simulator for Swift key parity, dense insertion, membership, persistence and ignored old preferences. Registry tests cover independent concurrent moves, move/unpin races, duplicated delivery, restarts and capacity overflow. Workerd tests verify single-pin writes and unchanged session activity on real SQLite. Native UI and RPC tests cover filtered movement, drag gaps, empty targets, animated returns, successful-drop animation suppression, serialization, failures, timeouts and late acknowledgements.
+Run `ZeronTests/PinnedSessionsTests` on an iOS simulator for Swift key parity, dense insertion, membership, persistence and ignored old preferences. Registry tests cover independent concurrent moves, move/unpin races, duplicated delivery, restarts and capacity overflow. Native UI and RPC tests cover filtered movement, drag gaps, empty targets, animated returns, successful-drop animation suppression, serialization, failures, timeouts and late acknowledgements.

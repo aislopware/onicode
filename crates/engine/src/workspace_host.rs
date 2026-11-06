@@ -23,15 +23,8 @@ use onicode_proto::{
 use onicode_sync::DocsStore;
 use tokio::sync::watch;
 
-use crate::edge::EdgeConfig;
 use crate::{EngineError, now_ms};
 
-/// Snapshot rows of the workspace docs the registry replaced; deleted on open.
-const LEGACY_SNAPSHOTS: [&str; 2] = ["workspace", "workspace2"];
-/// Org used when none is configured.
-pub const DEFAULT_ORG_ID: &str = "dev-org";
-/// User used when none is configured.
-pub const DEFAULT_USER_ID: &str = "dev-user";
 /// How often the device lists republish, so live peers' `lastSeenAt` keeps moving and a gone
 /// peer's badge goes stale.
 const PRESENCE_INTERVAL_MS: u64 = 15_000;
@@ -52,17 +45,6 @@ fn new_projectless_cwd(
     }
 }
 
-/// This device's advertised capabilities: the binary's, plus
-/// `cloud-session` on a Cloud session machine (device lists hide those and
-/// show the account's one Cloud device instead).
-fn device_capabilities() -> Vec<String> {
-    let mut capabilities = onicode_proto::capabilities::current();
-    if crate::runner::session().is_some() {
-        capabilities.push(onicode_proto::CLOUD_SESSION_CAPABILITY.to_string());
-    }
-    capabilities
-}
-
 #[derive(Debug, Clone)]
 pub struct WorkspaceHostConfig {
     pub device_id: String,
@@ -70,13 +52,6 @@ pub struct WorkspaceHostConfig {
     pub device_name: String,
     /// `std::env::consts::OS`-style platform string.
     pub platform: String,
-    pub org_id: String,
-    /// The signed-in user.
-    pub user_id: String,
-    /// Where account-scoped HTTP calls (Cloud, the vault) go; the registry never uses it.
-    pub edge: Option<EdgeConfig>,
-    /// The profile never syncs (`WorkspaceScope::Local`): the registry is not replicated.
-    pub local_only: bool,
 }
 
 struct WorkspaceHostInner {
@@ -176,10 +151,6 @@ impl WorkspaceHost {
                 .map_err(|e| EngineError::Other(format!("registry snapshot load failed: {e}")))?,
             None => RegistryDoc::new(&config.device_id),
         };
-        for legacy in LEGACY_SNAPSHOTS {
-            store.delete_snapshot(legacy).ok();
-        }
-
         // Boot: upsert our own device row. A user-set name (RenameDevice is LWW from
         // any device) survives restarts. The old fallback sentinel is repaired with
         // the platform-resolved name because it was never a user-selected name.
@@ -203,7 +174,7 @@ impl WorkspaceHost {
             // on the Devices page; workspace version — same for every crate).
             version: Some(env!("CARGO_PKG_VERSION").to_string()),
             cursor_sdk_version: Some(onicode_harness::CursorHarness::sdk_version().into()),
-            capabilities: device_capabilities(),
+            capabilities: onicode_proto::capabilities::current(),
         })?;
 
         let state = doc.read_all()?;
@@ -243,13 +214,7 @@ impl WorkspaceHost {
                 caught_up: Mutex::default(),
             }),
         };
-        // Persist at once: an edge-era snapshot was just folded into this replica's own rows,
-        // and must not fold again on a crash before the first debounced save.
-        if let Err(error) = host.inner.persist_snapshot() {
-            tracing::warn!(%error, "registry snapshot save failed");
-        }
-        // Reclaim free pages (a bloated store, or the pages a one-time
-        // registry compaction just freed) off the boot path. The store gates
+        // Reclaim the free pages of a bloated store off the boot path. The store gates
         // the VACUUM on its own thresholds, so ordinary boots only checkpoint.
         let store = host.inner.store.clone();
         tokio::task::spawn_blocking(move || store.reclaim_free_space());
@@ -258,15 +223,12 @@ impl WorkspaceHost {
     }
 
     /// Replicates the registry with the engines `links` reach, and derives presence from the
-    /// live links. Call once, when the tailnet is up; a local-only profile keeps its registry to
-    /// itself.
+    /// live links. Call once, when the tailnet is up.
     pub fn set_links(&self, links: Arc<PeerLinks>) {
         if self.inner.links.set(links.clone()).is_err() {
             return;
         }
-        if !self.inner.config.local_only {
-            tokio::spawn(crate::registry_server::keep(self.downgrade()));
-        }
+        tokio::spawn(crate::registry_server::keep(self.downgrade()));
         let weak = Arc::downgrade(&self.inner);
         let mut changes = links.subscribe_changes();
         tokio::spawn(async move {
@@ -314,16 +276,11 @@ impl WorkspaceHost {
     }
 
     /// Whether this replica's rows can be taken as the whole truth: it merged some peer's whole
-    /// registry this process, or no other device ever wrote to it, or it never syncs.
+    /// registry this process, or no other device ever wrote to it.
     /// Destructive repair (the orphan sweep) gates on this: a replica that has heard from no
     /// peer may be arbitrarily behind, and a row absent from it is no evidence of a deletion.
     pub fn registry_synced(&self) -> bool {
         self.inner.registry_synced()
-    }
-
-    /// The profile never syncs (`WorkspaceScope::Local`): connectivity is `Disabled`.
-    pub fn local_only(&self) -> bool {
-        self.inner.config.local_only
     }
 
     /// The peers whose whole registry this replica merged this process, sorted.
@@ -331,16 +288,6 @@ impl WorkspaceHost {
         let mut peers: Vec<String> = lock(&self.inner.caught_up).iter().cloned().collect();
         peers.sort();
         peers
-    }
-
-    /// Where account-scoped HTTP calls (Cloud, the vault) go; `None` on a local profile.
-    pub fn edge(&self) -> Option<&EdgeConfig> {
-        self.inner.config.edge.as_ref()
-    }
-
-    /// The workspace org (`/cloud/{orgId}` routes).
-    pub fn org_id(&self) -> &str {
-        &self.inner.config.org_id
     }
 
     // ── registry access helpers ─────────────────────────────────────────────
@@ -687,34 +634,27 @@ impl WorkspaceHost {
         cwd: Option<String>,
         parent_chat_id: Option<String>,
     ) -> Result<(), EngineError> {
-        self.create_chat_hosted(
+        self.create_chat_of_kind(
             chat_id,
             space_id,
             device_id,
-            None,
             config,
             cwd,
-            parent_chat_id,
-            None,
+            parent_chat_id.map(|parent| (parent, None)),
         )
     }
 
-    /// [`create_chat_with_parent`](Self::create_chat_with_parent) with an
-    /// explicit host: a chat run on Cloud is hosted by its session device,
-    /// not the device owning the project's folder, nor (for a side chat of a
-    /// Cloud chat with no project) the device that asked. `host: None` keeps
-    /// the project's owner, or the named device.
-    #[allow(clippy::too_many_arguments)]
-    pub fn create_chat_hosted(
+    /// [`create_chat_with_parent`](Self::create_chat_with_parent) recording
+    /// what the child is to its parent (a side chat or a subagent):
+    /// `parent` is the parent chat's id and the child's kind.
+    pub fn create_chat_of_kind(
         &self,
         chat_id: &str,
         space_id: Option<&str>,
         device_id: Option<&str>,
-        host: Option<&str>,
         config: Option<ChatConfig>,
         cwd: Option<String>,
-        parent_chat_id: Option<String>,
-        child_kind: Option<onicode_proto::ChildKind>,
+        parent: Option<(String, Option<onicode_proto::ChildKind>)>,
     ) -> Result<(), EngineError> {
         if self.read(|doc| doc.chat(chat_id))?.is_some() {
             return Ok(()); // idempotent: optimistic client retries never duplicate
@@ -726,13 +666,10 @@ impl WorkspaceHost {
             },
             None => None,
         };
-        let host_device = match (&space, device_id, host) {
-            // An explicit host always wins: a side chat of a Cloud chat runs
-            // on that machine, never on the computer that asked for it.
-            (_, _, Some(host)) => host.to_string(),
-            (Some(space), _, None) => space.device_id.clone(),
-            (None, Some(device_id), _) => device_id.to_string(),
-            (None, None, _) => {
+        let host_device = match (&space, device_id) {
+            (Some(space), _) => space.device_id.clone(),
+            (None, Some(device_id)) => device_id.to_string(),
+            (None, None) => {
                 return Err(EngineError::Other(
                     "createChat needs a spaceId or a deviceId".into(),
                 ));
@@ -750,7 +687,10 @@ impl WorkspaceHost {
             }
             None => cwd.unwrap_or_default(),
         };
-        let parent = parent_chat_id.filter(|p| !p.trim().is_empty());
+        let (parent, child_kind) = match parent {
+            Some((parent, kind)) if !parent.trim().is_empty() => (Some(parent), kind),
+            _ => (None, None),
+        };
         self.mutate(|doc| {
             doc.upsert_chat(&Chat {
                 id: chat_id.to_string(),
@@ -766,13 +706,12 @@ impl WorkspaceHost {
                 last_message_at: None,
                 created_at: Utc::now(),
                 harness_session_id: None,
-                room_gen: Some(2),
                 harness_session_cwd: None,
                 harness_session_harness: None,
                 space_id: space.as_ref().map(|s| s.id.clone()),
                 last_seen_at: None,
                 // (What a child is to its parent: only a child has a kind.)
-                child_kind: child_kind.filter(|_| parent.is_some()),
+                child_kind,
                 parent_chat_id: parent,
             })
         })?;
@@ -826,57 +765,6 @@ impl WorkspaceHost {
                 checkout_id: None,
                 repository_id: None,
                 github_repo: None,
-                icon: None,
-                created_at: Utc::now(),
-            })
-        })?;
-        Ok(())
-    }
-
-    /// A project that lives only on Cloud: owned by the logical Cloud device
-    /// (which has no engine to stamp it), so its GitHub repository is set
-    /// here. Every session in it runs on a Cloud machine cloning that
-    /// repository. Idempotent like [`Self::create_space`]; also a no-op when
-    /// Cloud already has a project for the repository.
-    pub fn create_cloud_space(
-        &self,
-        space_id: &str,
-        device_id: &str,
-        path: &str,
-        name: Option<String>,
-        github_repo: &str,
-    ) -> Result<(), EngineError> {
-        if !device_id.starts_with(onicode_proto::CLOUD_DEVICE_PREFIX) {
-            return Err(EngineError::Other(
-                "Only Cloud projects name their repository.".into(),
-            ));
-        }
-        let spaces = self.read(|doc| doc.read_spaces())?;
-        if spaces.iter().any(|s| {
-            s.id == space_id
-                || (s.device_id == device_id
-                    && (s.path == path
-                        || s.github_repo
-                            .as_deref()
-                            .is_some_and(|repo| repo.eq_ignore_ascii_case(github_repo))))
-        }) {
-            return Ok(());
-        }
-        self.mutate(|doc| {
-            doc.upsert_space(&Space {
-                id: space_id.to_string(),
-                device_id: device_id.to_string(),
-                path: path.to_string(),
-                name,
-                git_detected: true,
-                git_checked_at: Some(Utc::now()),
-                checkout_id: None,
-                // Groups with the clones of the repository on other devices.
-                repository_id: Some(onicode_proto::view::cloud_repository_id(
-                    &spaces,
-                    github_repo,
-                )),
-                github_repo: Some(github_repo.to_string()),
                 icon: None,
                 created_at: Utc::now(),
             })
@@ -943,55 +831,6 @@ impl WorkspaceHost {
             }
             None => Ok(false),
         }
-    }
-
-    /// Cloud projects of `github_repo` that still carry another identity
-    /// than `repository_id` (a full clone's `commit:<root>`) take it, so they
-    /// group with this device's clone. Cloud projects have no engine of their
-    /// own to stamp them; only ever toward the commit form, so a shallow clone
-    /// elsewhere (remote form) can't flip them back. Returns how many moved.
-    pub fn align_cloud_spaces(
-        &self,
-        github_repo: &str,
-        repository_id: &str,
-    ) -> Result<usize, EngineError> {
-        if !repository_id.starts_with("commit:") || repository_id["commit:".len()..].contains(':') {
-            return Ok(0);
-        }
-        let stale: Vec<Space> = self
-            .read(|doc| doc.read_spaces())?
-            .into_iter()
-            .filter(|s| s.device_id.starts_with(onicode_proto::CLOUD_DEVICE_PREFIX))
-            .filter(|s| {
-                s.github_repo
-                    .as_deref()
-                    .is_some_and(|repo| repo.eq_ignore_ascii_case(github_repo))
-            })
-            .filter(|s| {
-                s.repository_id.as_deref() != Some(repository_id)
-                    && !s
-                        .repository_id
-                        .as_deref()
-                        .is_some_and(|id| id.starts_with("commit:"))
-            })
-            .collect();
-        if stale.is_empty() {
-            return Ok(0);
-        }
-        self.mutate(|doc| {
-            for space in &stale {
-                doc.set_space_git(
-                    &space.id,
-                    space.git_detected,
-                    space.checkout_id.as_deref(),
-                    Some(repository_id),
-                    space.github_repo.as_deref(),
-                    space.git_checked_at.unwrap_or_else(Utc::now),
-                )?;
-            }
-            Ok::<_, onicode_doc::DocError>(true)
-        })?;
-        Ok(stale.len())
     }
 
     pub fn read_spaces(&self) -> Result<Vec<Space>, EngineError> {
@@ -1122,13 +961,9 @@ impl WorkspaceHostInner {
 
     fn publish_lists(&self, clock_tick: bool) {
         let registry_synced = self.registry_synced();
-        // Sidebar pins are viewport state. A Cloud device has no viewport, and
-        // peers refuse its writes to rows it doesn't own: reconciling here
-        // would rewrite the missing preferences row after every refused merge.
-        let owns_sidebar = self.config.platform != onicode_proto::CLOUD_PLATFORM;
         let snapshot = {
             let mut doc = lock(&self.reg);
-            match doc.reconcile_sidebar_pins(registry_synced && owns_sidebar) {
+            match doc.reconcile_sidebar_pins(registry_synced) {
                 Ok(true) => {
                     // Persist and replicate the cleanup like a user write.
                     self.bump_changed();
@@ -1220,7 +1055,7 @@ impl WorkspaceHostInner {
     }
 
     fn registry_synced(&self) -> bool {
-        if self.config.local_only || !lock(&self.caught_up).is_empty() {
+        if !lock(&self.caught_up).is_empty() {
             return true;
         }
         lock(&self.reg)
@@ -1373,10 +1208,6 @@ mod tests {
                 device_id: "test-device".into(),
                 device_name: "Test device".into(),
                 platform: "macos".into(),
-                org_id: "test-org".into(),
-                user_id: "test-user".into(),
-                edge: None,
-                local_only: false,
             },
         )
         .unwrap();
@@ -1433,10 +1264,6 @@ mod tests {
                 device_id: "test-device".into(),
                 device_name: "Test device".into(),
                 platform: "macos".into(),
-                org_id: "test-org".into(),
-                user_id: "test-user".into(),
-                edge: None,
-                local_only: false,
             },
         )
         .unwrap();
@@ -1463,10 +1290,6 @@ mod tests {
                 device_id: "test-device".into(),
                 device_name: "Test device".into(),
                 platform: "macos".into(),
-                org_id: "test-org".into(),
-                user_id: "test-user".into(),
-                edge: None,
-                local_only: false,
             },
         )
         .unwrap();
@@ -1524,68 +1347,6 @@ mod tests {
         assert!(collapsed.revision > sections.revision);
         assert!(collapsed.sections[0].collapsed);
         assert_eq!(*preferences.borrow(), collapsed);
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn boot_compaction_reclaims_the_freed_store_pages() {
-        use super::*;
-
-        let dir = tempfile::tempdir().unwrap();
-        let on_disk = || {
-            ["docs.sqlite3", "docs.sqlite3-wal"]
-                .iter()
-                .map(|f| std::fs::metadata(dir.path().join(f)).map_or(0, |m| m.len()))
-                .sum::<u64>()
-        };
-        // The store opens (and runs its own maintenance) BEFORE the registry
-        // shrinks, exactly as at boot.
-        let store = Arc::new(DocsStore::open(dir.path()).unwrap());
-        // An edge-era snapshot with ~40 MiB of never-acked writes, built as raw JSON.
-        let mut snapshot: serde_json::Value =
-            serde_json::from_slice(&RegistryDoc::new("test-device").to_bytes().unwrap()).unwrap();
-        snapshot["v"] = 1.into();
-        let preview = "x".repeat(8 * 1024);
-        snapshot["pending"] = (0..5_000)
-            .map(|i| {
-                serde_json::json!({
-                    "batch": format!("b-{i}"),
-                    "ops": [{
-                        "kind": "chats",
-                        "id": "chat-1",
-                        "op": "update",
-                        "set": { "lastMessagePreview": preview },
-                        "hlc": format!("{:013}-000000-test-device", i + 1),
-                    }],
-                })
-            })
-            .collect();
-        store
-            .save_snapshot(REGISTRY_DOC_ID, &serde_json::to_vec(&snapshot).unwrap())
-            .unwrap();
-        let bloated = on_disk();
-        assert!(bloated > 40 * 1024 * 1024, "{bloated}");
-
-        let _host = WorkspaceHost::open(
-            store.clone(),
-            WorkspaceHostConfig {
-                device_id: "test-device".into(),
-                device_name: "Test device".into(),
-                platform: "macos".into(),
-                org_id: "test-org".into(),
-                user_id: "test-user".into(),
-                edge: None,
-                local_only: true,
-            },
-        )
-        .unwrap();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        while on_disk() * 4 > bloated {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "store not reclaimed after the boot compaction"
-            );
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
     }
 
     #[test]

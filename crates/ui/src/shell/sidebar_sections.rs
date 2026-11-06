@@ -1,4 +1,4 @@
-//! Account-synced sections; local workspaces keep their settings on this device.
+//! Custom sidebar sections, kept in the replicated registry.
 use onicode_proto::{SidebarPinChange, SidebarSectionChange};
 
 use super::*;
@@ -26,7 +26,6 @@ fn section_drop_index(top: f32, heights: &[f32], from: usize) -> usize {
 }
 
 pub(super) struct SectionDialog {
-    profile: String,
     id: Option<String>,
     input: Entity<ComposerInput>,
     focus_pending: bool,
@@ -35,16 +34,8 @@ pub(super) struct SectionDialog {
 
 impl Shell {
     pub(super) fn active_sidebar_sections(&self, cx: &App) -> Vec<SidebarSection> {
-        let local = self.state.read(cx).workspace_scope == Some(WorkspaceScope::Local);
-        let mut sections = if local {
-            self.active_sidebar_pin_profile_key(cx)
-                .and_then(|key| self.settings.sidebar_sections_by_profile.get(&key).cloned())
-                .unwrap_or_default()
-        } else {
-            self.state.read(cx).sidebar_preferences.sections.clone()
-        };
-        if !local
-            && self.optimistic_sidebar_pins(cx).is_some()
+        let mut sections = self.state.read(cx).sidebar_preferences.sections.clone();
+        if self.optimistic_sidebar_pins(cx).is_some()
             && let Some(pending) = &self.sidebar_pin_write
         {
             for change in &pending.queue {
@@ -76,99 +67,19 @@ impl Shell {
         change: SidebarSectionChange,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(key) = self.active_sidebar_pin_profile_key(cx) else {
-            return false;
-        };
-        if self.state.read(cx).workspace_scope == Some(WorkspaceScope::Local) {
-            if let SidebarSectionChange::Assign {
-                session_id,
-                section_id,
-                ..
-            } = &change
-            {
-                if section_id
-                    .as_ref()
-                    .is_some_and(|id| !self.active_sidebar_sections(cx).iter().any(|s| &s.id == id))
-                {
-                    return false;
-                }
-                if let Some(pins) = self
-                    .settings
-                    .sidebar_pinned_session_ids_by_profile
-                    .get_mut(&key)
-                {
-                    // Clearing membership after a local pin must preserve the pin.
-                    if section_id.is_some() {
-                        pins.retain(|id| id != session_id);
-                    }
-                }
-            }
-            change.project(
-                self.settings
-                    .sidebar_sections_by_profile
-                    .entry(key)
-                    .or_default(),
+        if !self.state.read(cx).sidebar_preferences.can_edit() {
+            self.show_notice(
+                crate::toast::ToastKind::Error,
+                "Sidebar is still syncing. Try again shortly.",
+                cx,
             );
-            self.schedule_save(cx);
             cx.notify();
-            true
-        } else {
-            if !self.state.read(cx).sidebar_preferences.can_edit() {
-                self.show_notice(
-                    crate::toast::ToastKind::Error,
-                    "Sidebar is still syncing. Try again shortly.",
-                    cx,
-                );
-                cx.notify();
-                return false;
-            }
-            self.queue_sidebar_pin_write(key, SidebarPinChange::Section { change }, cx)
+            return false;
         }
-    }
-
-    pub(super) fn migrate_sidebar_sections(&mut self, cx: &mut Context<Self>) {
-        let state = self.state.read(cx);
-        if state.workspace_scope == Some(WorkspaceScope::Local) || !state.sidebar_preferences.synced
-        {
-            return;
-        }
-        let Some(engine) = state.engine().cloned() else {
-            return;
-        };
-        let Some(key) = self.active_sidebar_pin_profile_key(cx) else {
-            return;
-        };
-        if self
-            .sidebar_section_migration
-            .as_ref()
-            .is_some_and(|(profile, previous)| profile == &key && previous.same_connection(&engine))
-        {
-            return;
-        }
-        let Some(sections) = self
-            .settings
-            .sidebar_sections_by_profile
-            .get(&key)
-            .filter(|s| !s.is_empty())
-            .cloned()
-        else {
-            return;
-        };
-        if self.queue_sidebar_pin_write(
-            key.clone(),
-            SidebarPinChange::Section {
-                change: SidebarSectionChange::Import { sections },
-            },
-            cx,
-        ) {
-            self.sidebar_section_migration = Some((key, engine));
-        }
+        self.queue_sidebar_pin_write(SidebarPinChange::Section { change }, cx)
     }
 
     pub(super) fn open_section_dialog(&mut self, id: Option<String>, cx: &mut Context<Self>) {
-        let Some(profile) = self.active_sidebar_pin_profile_key(cx) else {
-            return;
-        };
         self.close_sidebar_view_menu(cx);
         self.section_menu = None;
         let name = self
@@ -187,7 +98,6 @@ impl Shell {
             }
         });
         self.section_dialog = Some(SectionDialog {
-            profile,
             id,
             input,
             focus_pending: true,
@@ -200,11 +110,6 @@ impl Shell {
         let Some(dialog) = self.section_dialog.as_ref() else {
             return;
         };
-        if self.active_sidebar_pin_profile_key(cx).as_ref() != Some(&dialog.profile) {
-            self.section_dialog = None;
-            cx.notify();
-            return;
-        }
         let name = dialog.input.read(cx).text().trim().to_string();
         if name.is_empty() || name.chars().count() > 120 {
             return;
@@ -448,17 +353,16 @@ impl Shell {
         )
     }
 
-    /// Sections reorder in this device's settings, or through an engine that
-    /// orders them: an older engine rejects the move outright.
+    /// Sections reorder through an engine that orders them: an older engine
+    /// rejects the move outright.
     pub(super) fn sidebar_sections_reorderable(&self, cx: &App) -> bool {
         let state = self.state.read(cx);
-        state.workspace_scope == Some(WorkspaceScope::Local)
-            || (state.sidebar_preferences.can_edit()
-                && state.engine().is_some_and(|engine| {
-                    engine
-                        .engine_info()
-                        .supports(onicode_proto::capabilities::SIDEBAR_SECTION_ORDER_V1)
-                }))
+        state.sidebar_preferences.can_edit()
+            && state.engine().is_some_and(|engine| {
+                engine
+                    .engine_info()
+                    .supports(onicode_proto::capabilities::SIDEBAR_SECTION_ORDER_V1)
+            })
     }
 
     /// `grab` is where the header was pressed, from its origin: the drag only
@@ -597,12 +501,10 @@ impl Shell {
         let Some(drag) = self.sidebar_section_drag.as_ref() else {
             return true;
         };
-        self.active_sidebar_pin_profile_key(cx).as_deref() == Some(&drag.payload.profile_key)
-            && self
-                .active_sidebar_sections(cx)
-                .iter()
-                .map(|section| &section.id)
-                .eq(drag.payload.ids.iter())
+        self.active_sidebar_sections(cx)
+            .iter()
+            .map(|section| &section.id)
+            .eq(drag.payload.ids.iter())
     }
 
     pub(super) fn finish_sidebar_section_drag(
@@ -951,10 +853,7 @@ mod tests {
                 EngineBootConfig {
                     data_dir: path.into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -965,47 +864,73 @@ mod tests {
     fn chat(id: &str) -> onicode_proto::Chat {
         serde_json::from_value(serde_json::json!({"id":id,"title":id,"deviceId":"local","archived":false,"createdAt":"2026-09-20T00:00:00Z"})).unwrap()
     }
-    fn prepare(shell: &mut Shell, cx: &mut Context<Shell>) {
+    /// An engine that takes requests and never answers: the sidebar's writes
+    /// stay pending, so it shows them projected over the registry rows.
+    /// Build it inside a tokio runtime; keep the channels alive.
+    fn pending_engine() -> (
+        crate::state::EngineHandle,
+        tokio::sync::mpsc::Receiver<String>,
+        tokio::sync::mpsc::Sender<String>,
+    ) {
+        let (out, requests) = tokio::sync::mpsc::channel(16);
+        let (replies, inbound) = tokio::sync::mpsc::channel(16);
+        (
+            crate::state::EngineHandle::from_test_client(onicode_rpc::RpcClient::new(out, inbound)),
+            requests,
+            replies,
+        )
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    fn prepare(shell: &mut Shell, engine: crate::state::EngineHandle, cx: &mut Context<Shell>) {
         shell.state.update(cx, |state, _| {
-            state.workspace_scope = Some(WorkspaceScope::Local);
             state.local_device_id = Some("local".into());
             state.chats_synced = true;
             state.chats = vec![chat("pin"), chat("regular"), chat("other")];
+            state.sidebar_preferences = onicode_proto::SidebarPreferencesState {
+                revision: 0,
+                synced: true,
+                initialized: true,
+                pinned_session_ids: vec!["pin".into()],
+                sections: vec![
+                    SidebarSection {
+                        id: "a".into(),
+                        name: "Focus".into(),
+                        session_ids: vec![],
+                        collapsed: false,
+                    },
+                    SidebarSection {
+                        id: "b".into(),
+                        name: "Later".into(),
+                        session_ids: vec![],
+                        collapsed: false,
+                    },
+                ],
+            };
+            state.set_test_engine(engine);
         });
         shell.settings.space_filter = None;
         shell.settings.sidebar_organization = SidebarOrganization::InOneList;
-        shell
-            .settings
-            .sidebar_pins_mut("local".into())
-            .push("pin".into());
-        shell.settings.sidebar_sections_by_profile.insert(
-            "local".into(),
-            vec![
-                SidebarSection {
-                    id: "a".into(),
-                    name: "Focus".into(),
-                    session_ids: vec![],
-                    collapsed: false,
-                },
-                SidebarSection {
-                    id: "b".into(),
-                    name: "Later".into(),
-                    session_ids: vec![],
-                    collapsed: false,
-                },
-            ],
-        );
     }
 
     #[gpui::test]
     fn sections_transfer_between_pins_sections_and_regular_without_duplicates(
         cx: &mut gpui::TestAppContext,
     ) {
+        let runtime = runtime();
+        let _guard = runtime.enter();
+        let (engine, _requests, _replies) = pending_engine();
         let dir = tempfile::tempdir().unwrap();
         let window = test_shell(cx, dir.path());
         window
             .update(cx, |shell, window, cx| {
-                prepare(shell, cx);
+                prepare(shell, engine, cx);
                 for (id, target) in [
                     ("pin", SidebarSessionDrop::Section("a".into())),
                     ("regular", SidebarSessionDrop::Section("a".into())),
@@ -1017,7 +942,6 @@ mod tests {
                         chat_id: id.into(),
                         visible_ids: std::sync::Arc::new(shell.active_sidebar_pins(cx)),
                         filter: None,
-                        profile_key: "local".into(),
                     };
                     shell.begin_sidebar_session_transfer(
                         &payload,
@@ -1070,11 +994,14 @@ mod tests {
     fn the_session_card_shows_beside_a_wide_transcript_and_opens_over_a_narrow_one(
         cx: &mut gpui::TestAppContext,
     ) {
+        let runtime = runtime();
+        let _guard = runtime.enter();
+        let (engine, _requests, _replies) = pending_engine();
         let dir = tempfile::tempdir().unwrap();
         let window = test_shell(cx, dir.path());
         window
             .update(cx, |shell, _, cx| {
-                prepare(shell, cx);
+                prepare(shell, engine, cx);
                 shell.debug_gate = Some(super::GatePhase::Ready);
                 shell.settings.sidebar_collapsed = true;
                 shell
@@ -1130,11 +1057,14 @@ mod tests {
 
     #[gpui::test]
     fn copying_from_the_copy_submenu_shows_a_toast(cx: &mut gpui::TestAppContext) {
+        let runtime = runtime();
+        let _guard = runtime.enter();
+        let (engine, _requests, _replies) = pending_engine();
         let dir = tempfile::tempdir().unwrap();
         let window = test_shell(cx, dir.path());
         window
             .update(cx, |shell, _, cx| {
-                prepare(shell, cx);
+                prepare(shell, engine, cx);
                 shell.debug_gate = Some(super::GatePhase::Ready);
                 shell.chat_menu.open(super::ChatMenuState {
                     chat_id: "regular".into(),
@@ -1162,11 +1092,14 @@ mod tests {
 
     #[gpui::test]
     fn sections_keep_placed_order_and_drags_reorder_them(cx: &mut gpui::TestAppContext) {
+        let runtime = runtime();
+        let _guard = runtime.enter();
+        let (engine, _requests, _replies) = pending_engine();
         let dir = tempfile::tempdir().unwrap();
         let window = test_shell(cx, dir.path());
         window
             .update(cx, |shell, window, cx| {
-                prepare(shell, cx);
+                prepare(shell, engine, cx);
                 shell.assign_sidebar_section("regular", Some("a"), cx);
                 shell.assign_sidebar_section("other", Some("a"), cx);
                 let members = |shell: &Shell, cx: &mut Context<Shell>| {
@@ -1184,7 +1117,6 @@ mod tests {
                         chat_id: "other".into(),
                         visible_ids: std::sync::Arc::new(shell.active_sidebar_pins(cx)),
                         filter: None,
-                        profile_key: "local".into(),
                     };
                     shell.begin_sidebar_session_transfer(
                         &payload,
@@ -1218,22 +1150,22 @@ mod tests {
     #[gpui::test]
     fn sections_reorder_by_dragging_their_header(cx: &mut gpui::TestAppContext) {
         use gpui::MouseButton;
+        let runtime = runtime();
+        let _guard = runtime.enter();
+        let (engine, _requests, _replies) = pending_engine();
         let dir = tempfile::tempdir().unwrap();
         let window = test_shell(cx, dir.path());
         window
             .update(cx, |shell, _, cx| {
-                prepare(shell, cx);
-                shell
-                    .settings
-                    .sidebar_sections_by_profile
-                    .get_mut("local")
-                    .unwrap()
-                    .push(SidebarSection {
+                prepare(shell, engine, cx);
+                shell.state.update(cx, |state, _| {
+                    state.sidebar_preferences.sections.push(SidebarSection {
                         id: "c".into(),
                         name: "Someday".into(),
                         session_ids: vec![],
                         collapsed: false,
-                    });
+                    })
+                });
                 shell.debug_gate = Some(super::GatePhase::Ready);
                 crate::motion::set_reduced_motion(cx, true);
             })
@@ -1308,12 +1240,15 @@ mod tests {
     }
 
     #[gpui::test]
-    fn sections_dialog_persistence_deletion_and_profile_isolation(cx: &mut gpui::TestAppContext) {
+    fn sections_dialog_creates_renames_collapses_and_deletes(cx: &mut gpui::TestAppContext) {
+        let runtime = runtime();
+        let _guard = runtime.enter();
+        let (engine, _requests, _replies) = pending_engine();
         let dir = tempfile::tempdir().unwrap();
         let window = test_shell(cx, dir.path());
         window
             .update(cx, |shell, _, cx| {
-                prepare(shell, cx);
+                prepare(shell, engine, cx);
                 shell.open_section_dialog(None, cx);
                 shell.submit_section_dialog(cx);
                 assert!(
@@ -1334,29 +1269,14 @@ mod tests {
                     shell.active_sidebar_sections(cx).last().unwrap().name,
                     "Today"
                 );
-                shell.settings.save(dir.path()).unwrap();
-                let loaded = crate::settings::UiSettings::load(dir.path());
-                assert_eq!(
-                    loaded.sidebar_sections_by_profile,
-                    shell.settings.sidebar_sections_by_profile
+                shell.change_sidebar_section(
+                    SidebarSectionChange::Collapse {
+                        id: created.id.clone(),
+                        collapsed: true,
+                    },
+                    cx,
                 );
-                shell
-                    .settings
-                    .sidebar_sections_by_profile
-                    .get_mut("local")
-                    .unwrap()
-                    .last_mut()
-                    .unwrap()
-                    .collapsed = true;
                 assert!(!shell.sidebar_visible_order(cx).contains(&"regular".into()));
-                shell.state.update(cx, |state, _| {
-                    state.workspace_scope = Some(WorkspaceScope::Synced)
-                });
-                assert!(shell.active_sidebar_sections(cx).is_empty());
-                shell.state.update(cx, |state, _| {
-                    state.workspace_scope = Some(WorkspaceScope::Local)
-                });
-                assert_eq!(shell.active_sidebar_sections(cx).len(), 3);
                 shell.delete_sidebar_section(&created.id, cx);
                 assert_eq!(shell.state.read(cx).chats.len(), 3);
                 assert!(shell.sidebar_visible_order(cx).contains(&"regular".into()));
@@ -1374,25 +1294,18 @@ mod tests {
     fn sections_archive_all_sends_every_request_and_reports_failures(
         cx: &mut gpui::TestAppContext,
     ) {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let runtime = runtime();
         let _guard = runtime.enter();
-        let (out, mut requests) = tokio::sync::mpsc::channel(16);
-        let (replies, inbound) = tokio::sync::mpsc::channel(16);
-        let engine =
-            crate::state::EngineHandle::from_test_client(onicode_rpc::RpcClient::new(out, inbound));
+        let (engine, mut requests, replies) = pending_engine();
         let dir = tempfile::tempdir().unwrap();
         let window = test_shell(cx, dir.path());
         window
             .update(cx, |shell, _, cx| {
-                prepare(shell, cx);
-                shell.assign_sidebar_section("regular", Some("a"), cx);
-                shell.assign_sidebar_section("other", Some("a"), cx);
-                shell
-                    .state
-                    .update(cx, |state, _| state.set_test_engine(engine));
+                prepare(shell, engine, cx);
+                shell.state.update(cx, |state, _| {
+                    state.sidebar_preferences.sections[0].session_ids =
+                        vec!["regular".into(), "other".into()];
+                });
                 shell.archive_sidebar_section("a", cx);
             })
             .unwrap();
@@ -1441,45 +1354,22 @@ mod tests {
     fn sections_remote_pin_rejection_restores_membership_and_old_ack_keeps_new_move(
         cx: &mut gpui::TestAppContext,
     ) {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let runtime = runtime();
         let _guard = runtime.enter();
-        let (out, _requests) = tokio::sync::mpsc::channel(16);
-        let (_replies, inbound) = tokio::sync::mpsc::channel(16);
-        let engine =
-            crate::state::EngineHandle::from_test_client(onicode_rpc::RpcClient::new(out, inbound));
+        let (engine, _requests, _replies) = pending_engine();
         let dir = tempfile::tempdir().unwrap();
         let window = test_shell(cx, dir.path());
         window
             .update(cx, |shell, _, cx| {
-                prepare(shell, cx);
+                prepare(shell, engine.clone(), cx);
+                let section = SidebarSection {
+                    id: "a".into(),
+                    name: "Focus".into(),
+                    session_ids: vec!["regular".into()],
+                    collapsed: false,
+                };
                 shell.state.update(cx, |state, _| {
-                    state.workspace_scope = Some(WorkspaceScope::Synced);
-                    state.auth = Some(onicode_proto::AuthState::SignedIn {
-                        user: onicode_proto::UserProfile {
-                            id: "user".into(),
-                            email: "test@example.test".into(),
-                            name: None,
-                        },
-                        org_id: Some("org".into()),
-                    });
-                    state.sidebar_preferences.initialized = true;
-                    state.set_test_engine(engine.clone());
-                });
-                let key = shell.active_sidebar_pin_profile_key(cx).unwrap();
-                shell.settings.sidebar_sections_by_profile.insert(
-                    key.clone(),
-                    vec![SidebarSection {
-                        id: "a".into(),
-                        name: "Focus".into(),
-                        session_ids: vec!["regular".into()],
-                        collapsed: false,
-                    }],
-                );
-                let section = shell.settings.sidebar_sections_by_profile[&key][0].clone();
-                shell.state.update(cx, |state, _| {
+                    state.sidebar_preferences.pinned_session_ids.clear();
                     state.sidebar_preferences.sections = vec![section.clone()];
                 });
                 let empty_section = SidebarSection {
@@ -1493,7 +1383,6 @@ mod tests {
                 };
                 shell.sidebar_pin_write = Some(super::super::sidebar_pins::PendingSidebarPins {
                     id: 1,
-                    profile_key: key.clone(),
                     engine: engine.clone(),
                     queue: std::collections::VecDeque::from([pin.clone()]),
                     unconfirmed: false,
@@ -1508,7 +1397,6 @@ mod tests {
                 assert!(shell.active_sidebar_pins(cx).is_empty());
                 shell.sidebar_pin_write = Some(super::super::sidebar_pins::PendingSidebarPins {
                     id: 2,
-                    profile_key: key.clone(),
                     engine: engine.clone(),
                     queue: std::collections::VecDeque::from([
                         pin.clone(),
@@ -1552,7 +1440,6 @@ mod tests {
                 );
                 shell.sidebar_pin_write = Some(super::super::sidebar_pins::PendingSidebarPins {
                     id: 3,
-                    profile_key: key.clone(),
                     engine: engine.clone(),
                     queue: std::collections::VecDeque::from([pin]),
                     unconfirmed: false,
@@ -1570,87 +1457,6 @@ mod tests {
                 );
                 assert!(shell.active_sidebar_sections(cx)[0].session_ids.is_empty());
                 assert_eq!(shell.active_sidebar_pins(cx), vec!["regular".to_string()]);
-            })
-            .unwrap();
-    }
-    #[gpui::test]
-    fn sections_migration_waits_for_sync_and_keeps_local_copy_until_ack(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let _guard = runtime.enter();
-        let (out, _requests) = tokio::sync::mpsc::channel(16);
-        let (_replies, inbound) = tokio::sync::mpsc::channel(16);
-        let engine =
-            crate::state::EngineHandle::from_test_client(onicode_rpc::RpcClient::new(out, inbound));
-        let dir = tempfile::tempdir().unwrap();
-        let window = test_shell(cx, dir.path());
-        window
-            .update(cx, |shell, _, cx| {
-                prepare(shell, cx);
-                shell.state.update(cx, |state, _| {
-                    state.workspace_scope = Some(WorkspaceScope::Synced);
-                    state.auth = Some(onicode_proto::AuthState::SignedIn {
-                        user: onicode_proto::UserProfile {
-                            id: "user".into(),
-                            email: "test@example.test".into(),
-                            name: None,
-                        },
-                        org_id: Some("org".into()),
-                    });
-                    state.set_test_engine(engine.clone());
-                });
-                let key = shell.active_sidebar_pin_profile_key(cx).unwrap();
-                let sections = shell.settings.sidebar_sections_by_profile["local"].clone();
-                shell
-                    .settings
-                    .sidebar_sections_by_profile
-                    .insert(key.clone(), sections.clone());
-                shell.migrate_sidebar_sections(cx);
-                assert!(
-                    shell.sidebar_pin_write.is_none(),
-                    "Wait for the authoritative snapshot"
-                );
-                shell
-                    .state
-                    .update(cx, |state, _| state.sidebar_preferences.synced = true);
-                shell.migrate_sidebar_sections(cx);
-                let id = shell.sidebar_pin_write.as_ref().unwrap().id;
-                shell.migrate_sidebar_sections(cx);
-                assert_eq!(shell.sidebar_pin_write.as_ref().unwrap().queue.len(), 1);
-                shell.finish_sidebar_pin_write(id, Err("disk full".into()), cx);
-                assert_eq!(shell.settings.sidebar_sections_by_profile[&key], sections);
-                // A reconnect/restart permits another idempotent attempt.
-                shell.sidebar_section_migration = None;
-                shell.migrate_sidebar_sections(cx);
-                let id = shell.sidebar_pin_write.as_ref().unwrap().id;
-                shell.finish_sidebar_pin_write(
-                    id,
-                    Ok(onicode_proto::SidebarPreferencesState {
-                        revision: 1,
-                        synced: true,
-                        initialized: true,
-                        pinned_session_ids: vec![],
-                        sections: sections.clone(),
-                    }),
-                    cx,
-                );
-                assert!(
-                    !shell
-                        .settings
-                        .sidebar_sections_by_profile
-                        .contains_key(&key)
-                );
-                assert_eq!(shell.active_sidebar_sections(cx), sections);
-                assert!(
-                    shell
-                        .settings
-                        .sidebar_sections_by_profile
-                        .contains_key("local")
-                );
             })
             .unwrap();
     }

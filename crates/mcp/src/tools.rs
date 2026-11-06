@@ -24,8 +24,6 @@ use crate::transcript::{RenderOptions, RenderedMessage, render_entries};
 
 /// Default and ceiling for the blocking waits.
 const MAX_BATCH: usize = 32;
-/// Cloud runs these agents (Codex and Claude Code): a Cloud chat's harness.
-const CLOUD_HARNESSES: &[HarnessId] = &[HarnessId::ClaudeCode, HarnessId::Codex];
 const DEFAULT_WAIT: Duration = Duration::from_secs(600);
 const MAX_WAIT: Duration = Duration::from_secs(3600);
 
@@ -67,7 +65,7 @@ fn catalog() -> Vec<ToolDef> {
     let mut tools = vec![
         ToolDef {
             name: "whoami",
-            description: "Which chat and device this server speaks for, plus the engine's workspace mode. Call this first when you need to know your own chat id.",
+            description: "Which chat and device this server speaks for. Call this first when you need to know your own chat id.",
             input_schema: json!({ "type": "object", "properties": {} }),
         },
         ToolDef {
@@ -118,7 +116,7 @@ fn catalog() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "create_chat",
-            description: "Create a child of your chat to delegate work to (kind subagent, the default when you speak from a chat or pass parent: listed under that chat's Subagents and in its transcript's subagent block), a side chat (kind side: only when the person should treat it as a side conversation of their own), or a standalone session (kind chat, no parent). Any connected provider works (see list_harnesses), whichever provider you run on. Delegation is one level deep: a chat that has a parent cannot create chats. With cloud, the chat runs on a Cloud machine of its own (Codex or Claude Code), from a Cloud chat or a project with a GitHub repository. Select a project and/or device; catalogs are validated on that host. Optionally send a first prompt and wait for the reply. For parallel delegation use create_chats, or launch with wait=false and wait only after all chats have started.",
+            description: "Create a child of your chat to delegate work to (kind subagent, the default when you speak from a chat or pass parent: listed under that chat's Subagents and in its transcript's subagent block), a side chat (kind side: only when the person should treat it as a side conversation of their own), or a standalone session (kind chat, no parent). Any connected provider works (see list_harnesses), whichever provider you run on. Delegation is one level deep: a chat that has a parent cannot create chats. Select a project and/or device; catalogs are validated on that host. Optionally send a first prompt and wait for the reply. For parallel delegation use create_chats, or launch with wait=false and wait only after all chats have started.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -135,7 +133,6 @@ fn catalog() -> Vec<ToolDef> {
                     "title": { "type": "string", "description": "Sidebar title. Otherwise the engine titles it from the first exchange." },
                     "branch": { "type": "string", "description": "Branch label to record on the chat." },
                     "cwd": { "type": "string", "description": "Working directory override (an existing worktree path). Defaults to the project folder." },
-                    "cloud": { "type": "boolean", "default": false, "description": "Run on a Cloud machine of its own (cloning the project's GitHub repository) instead of the project's device. From a Cloud chat, the child clones the same repository; without cloud it shares this machine." },
                     "prompt": { "type": "string", "description": "First message to send right away." },
                     "wait": { "type": "boolean", "default": false, "description": "With prompt: block until the first turn finishes and return the reply." },
                     "timeout_secs": { "type": "integer", "minimum": 1, "maximum": 3600, "default": 600 }
@@ -586,8 +583,6 @@ struct CreateChatArgs {
     title: Option<String>,
     branch: Option<String>,
     cwd: Option<String>,
-    #[serde(default)]
-    cloud: bool,
     prompt: Option<String>,
     #[serde(default)]
     wait: bool,
@@ -813,7 +808,6 @@ impl Tools {
     async fn whoami(&self) -> anyhow::Result<Value> {
         let origin = self.onicode.origin().clone();
         let local_device = self.onicode.local_device_id().await?;
-        let engine = self.onicode.engine_info().await.unwrap_or(Value::Null);
         let chat = match origin.chat_id.as_deref() {
             Some(id) => match self.onicode.resolve_chat(id).await {
                 Ok(chat) => {
@@ -829,7 +823,6 @@ impl Tools {
             "chat": chat,
             "originDeviceId": origin.device_id,
             "localDeviceId": local_device,
-            "workspaceScope": engine.get("workspaceScope").cloned().unwrap_or(Value::Null),
             "note": if origin.chat_id.is_some() {
                 "Messages you send are attributed to this chat; it cannot message itself."
             } else {
@@ -1050,16 +1043,6 @@ impl Tools {
             .await?;
         let harnesses = self.onicode.harnesses_on(Some(&device_id)).await?;
         let harness = match args.harness.as_deref() {
-            // Cloud runs its own agents, with your Cloud accounts.
-            Some(raw) if args.cloud => {
-                let id: HarnessId = parse_enum("harness", raw).map_err(anyhow::Error::msg)?;
-                anyhow::ensure!(
-                    CLOUD_HARNESSES.contains(&id),
-                    "Cloud runs Codex and Claude Code only"
-                );
-                id
-            }
-            None if args.cloud => CLOUD_HARNESSES[0],
             Some(raw) => {
                 let id: HarnessId = parse_enum("harness", raw).map_err(anyhow::Error::msg)?;
                 anyhow::ensure!(
@@ -1070,8 +1053,7 @@ impl Tools {
             }
             None => default_harness(&harnesses).with_context(|| format!("device {device_id}"))?,
         };
-        // A Cloud machine's catalog is checked when it runs, not here.
-        if let Some(model) = args.model.as_deref().filter(|_| !args.cloud) {
+        if let Some(model) = args.model.as_deref() {
             let models = self.onicode.models_on(harness, Some(&device_id)).await?;
             anyhow::ensure!(
                 models.iter().any(|m| m.id == model),
@@ -1109,13 +1091,8 @@ impl Tools {
                 asked_sandbox.label(),
             )
         });
-        // A Cloud machine's catalog is checked when it runs, not here; an
-        // engine predating modes lists none and runs with full access.
-        if let Some(info) = harnesses
-            .iter()
-            .find(|h| h.id == harness)
-            .filter(|_| !args.cloud)
-        {
+        // An engine predating modes lists none and runs with full access.
+        if let Some(info) = harnesses.iter().find(|h| h.id == harness) {
             let modes = &info.access_modes;
             anyhow::ensure!(
                 access.is_full_access() || modes.contains(&access),
@@ -1178,7 +1155,6 @@ impl Tools {
         // in agreement.
         if space.is_none()
             && cwd.is_none()
-            && !args.cloud
             && self.onicode.devices().await?.iter().any(|d| {
                 d.id == device_id
                     && d.capabilities
@@ -1194,22 +1170,7 @@ impl Tools {
         if let Some(cwd) = &cwd {
             mutate["cwd"] = json!(cwd);
         }
-        if args.cloud {
-            mutate["cloud"] = json!(true);
-        }
-        let created = self.onicode.mutate(mutate).await?;
-        // A Cloud chat's machine and checkout come back from the engine.
-        let (device_id, cwd) = if args.cloud {
-            (
-                created["deviceId"]
-                    .as_str()
-                    .map(str::to_owned)
-                    .context("the engine didn't name the Cloud machine")?,
-                created["cwd"].as_str().map(str::to_owned).or(cwd),
-            )
-        } else {
-            (device_id, cwd)
-        };
+        self.onicode.mutate(mutate).await?;
         if let Some(title) = args
             .title
             .as_deref()
@@ -1271,7 +1232,6 @@ impl Tools {
                 },
                 space_id: space.as_ref().map(|s| s.id.clone()),
                 last_seen_at: None,
-                room_gen: None,
             };
             let sent = self
                 .deliver(&chat, space.as_ref(), &harnesses, None, prompt, "run")
@@ -1816,9 +1776,6 @@ mod tests {
             let remote = params["targetDeviceId"] == "dev-remote";
             Ok(match method {
                 methods::LOCAL_DEVICE => RpcReply::Value(json!({ "deviceId": "dev-local" })),
-                methods::ENGINE_INFO => RpcReply::Value(json!({
-                    "deviceId": "dev-local", "workspaceScope": "local"
-                })),
                 methods::WATCH_DEVICES => stream(json!([{
                     "id": "dev-local", "name": "Laptop", "platform": "linux",
                     "lastSeenAt": null
@@ -1912,19 +1869,10 @@ mod tests {
                     RpcReply::Value(json!({ "id": "img:1", "name": params["name"] }))
                 }
                 methods::MUTATE | methods::QUEUE_COMMAND | methods::QUEUE_MESSAGE => {
-                    // A Cloud chat gets a machine of its own from the engine.
-                    let cloud_create = method == methods::MUTATE
-                        && params["op"] == "createChat"
-                        && params["cloud"] == true;
                     self.writes
                         .lock()
                         .unwrap()
                         .push((method.to_owned(), params));
-                    if cloud_create {
-                        return Ok(RpcReply::Value(json!({
-                            "ok": true, "deviceId": "cloud-child", "cwd": "/home/user/app",
-                        })));
-                    }
                     if method == methods::QUEUE_COMMAND
                         && let Some(barrier) = &self.dispatch_barrier
                     {
@@ -2569,38 +2517,6 @@ mod tests {
                 .iter()
                 .all(|(_, w)| w["parentChatId"] != "chat-beta-2")
         );
-    }
-
-    #[tokio::test]
-    async fn a_cloud_child_runs_on_its_own_machine_with_clouds_agents() {
-        let world = Arc::new(World::default());
-        let alpha = tools(world.clone(), origin("chat-alpha-1"));
-        let created = alpha
-            .call("create_chat", json!({"cloud": true}))
-            .await
-            .unwrap();
-        // The engine names the new machine and its checkout.
-        assert_eq!(created["deviceId"], "cloud-child");
-        assert_eq!(
-            created["harness"], "claude-code",
-            "Cloud's first agent by default"
-        );
-        let sent = world
-            .writes
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|(method, w)| method == methods::MUTATE && w["op"] == "createChat")
-            .map(|(_, w)| w.clone())
-            .unwrap();
-        assert_eq!(sent["cloud"], true);
-        assert_eq!(sent["parentChatId"], "chat-alpha-1");
-        // Only Cloud's agents.
-        let refused = alpha
-            .call("create_chat", json!({"cloud": true, "harness": "cursor"}))
-            .await
-            .unwrap_err();
-        assert!(refused.contains("Codex and Claude Code"), "{refused}");
     }
 
     #[tokio::test]

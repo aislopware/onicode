@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template for Onicode.app/Contents/Library/LoginItems/Onicode Desktop.app/Contents/Info.plist:
+     onicode-desktopd's helper bundle, which owns the Screen Recording and Accessibility grants
+     (docs/onicode/decisions/desktop-grants.md). Replace __VERSION__ before packaging; development
+     builds (scripts/run-macos-dev.sh) rewrite the bundle id and names. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Onicode Desktop</string>
+    <key>CFBundleExecutable</key>
+    <string>Onicode Desktop</string>
+    <key>CFBundleIconFile</key>
+    <string>onicode.icns</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.aislopware.onicode.desktop</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Onicode Desktop</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>__VERSION__</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>27.2</string>
+    <!-- No Dock icon and no menu bar: a background agent. -->
+    <key>LSUIElement</key>
+    <true/>
+    <!-- Purpose strings for the capture prompts that read one (system audio capture). The
+         Screen Recording and Accessibility lists take none: the guide explains those. -->
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Onicode Desktop shares this Mac's screen with your own devices on your tailnet when you open a remote desktop.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Onicode Desktop sends this Mac's sound with its screen to your own devices on your tailnet when you open a remote desktop.</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>

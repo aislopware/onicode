@@ -787,13 +787,7 @@ impl BrowserContext {
         #[cfg(target_os = "macos")]
         {
             use wry::WebViewExtDarwin;
-            let profile = profile::BrowserProfile::for_workspace(
-                data_dir,
-                Some(onicode_proto::WorkspaceScope::Local),
-                None,
-                Some(device),
-            )
-            .unwrap();
+            let profile = profile::BrowserProfile::for_device(data_dir, Some(device)).unwrap();
             eprintln!(
                 "Storage cleanup: invoke; main_thread={}",
                 objc2::MainThreadMarker::new().is_some()

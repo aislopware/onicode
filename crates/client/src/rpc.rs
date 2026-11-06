@@ -1,5 +1,5 @@
-//! Host RPC vocabulary: what a viewer asks an execution host over the
-//! device-room relay (catalogs, refs, folders, uploads, queue actions), and
+//! Host RPC vocabulary: what a viewer asks an execution host over its peer
+//! link (catalogs, refs, folders, uploads, queue actions), and
 //! the capability gates that decide whether to ask at all.
 
 use std::sync::Arc;

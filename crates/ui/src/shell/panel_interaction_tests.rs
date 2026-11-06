@@ -46,10 +46,7 @@ fn setup(cx: &mut TestAppContext) -> (tempfile::TempDir, Entity<Shell>, &mut Vis
             EngineBootConfig {
                 data_dir: dir.path().into(),
                 ipc_port: 0,
-                edge_url: String::new(),
-                edge_token: None,
-                org_id: None,
-                workos_client_id: None,
+                update_feed: String::new(),
                 default_harness: onicode_proto::HarnessId::Mock,
             },
             cx,

@@ -278,6 +278,34 @@ typedef void (*UniffiCallbackInterfaceVoiceSessionListenerMethod1)(uint64_t, Rus
     );
 
 #endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_DESKTOP_SINK_METHOD0
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_DESKTOP_SINK_METHOD0
+typedef void (*UniffiCallbackInterfaceDesktopSinkMethod0)(uint64_t, uint64_t, uint32_t, uint32_t, uint64_t, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_DESKTOP_SINK_METHOD1
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_DESKTOP_SINK_METHOD1
+typedef void (*UniffiCallbackInterfaceDesktopSinkMethod1)(uint64_t, uint64_t, uint64_t, uint32_t, uint32_t, uint64_t, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_DESKTOP_SINK_METHOD2
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_DESKTOP_SINK_METHOD2
+typedef void (*UniffiCallbackInterfaceDesktopSinkMethod2)(uint64_t, RustBuffer, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_DESKTOP_SINK_METHOD3
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_DESKTOP_SINK_METHOD3
+typedef void (*UniffiCallbackInterfaceDesktopSinkMethod3)(uint64_t, RustBuffer, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
 #ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_LAYOUT_LISTENER_METHOD0
 #define UNIFFI_FFIDEF_CALLBACK_INTERFACE_LAYOUT_LISTENER_METHOD0
 typedef void (*UniffiCallbackInterfaceLayoutListenerMethod0)(uint64_t, uint64_t, void* _Nonnull, 
@@ -362,6 +390,18 @@ typedef struct UniffiVTableCallbackInterfaceVoiceSessionListener {
     UniffiCallbackInterfaceVoiceSessionListenerMethod0 _Nonnull onVoiceState;
     UniffiCallbackInterfaceVoiceSessionListenerMethod1 _Nonnull onVoiceClosed;
 } UniffiVTableCallbackInterfaceVoiceSessionListener;
+
+#endif
+#ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_DESKTOP_SINK
+#define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_DESKTOP_SINK
+typedef struct UniffiVTableCallbackInterfaceDesktopSink {
+    UniffiCallbackInterfaceFree _Nonnull uniffiFree;
+    UniffiCallbackInterfaceClone _Nonnull uniffiClone;
+    UniffiCallbackInterfaceDesktopSinkMethod0 _Nonnull onPicture;
+    UniffiCallbackInterfaceDesktopSinkMethod1 _Nonnull onStripes;
+    UniffiCallbackInterfaceDesktopSinkMethod2 _Nonnull onState;
+    UniffiCallbackInterfaceDesktopSinkMethod3 _Nonnull onCursor;
+} UniffiVTableCallbackInterfaceDesktopSink;
 
 #endif
 #ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_LAYOUT_LISTENER
@@ -455,7 +495,7 @@ void uniffi_onicode_mobile_fn_free_coreclient(uint64_t handle, RustCallStatus *_
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_CONSTRUCTOR_CORECLIENT_NEW
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_CONSTRUCTOR_CORECLIENT_NEW
-uint64_t uniffi_onicode_mobile_fn_constructor_coreclient_new(RustBuffer config, RustBuffer credentials, uint64_t listener, RustCallStatus *_Nonnull out_status
+uint64_t uniffi_onicode_mobile_fn_constructor_coreclient_new(RustBuffer config, RustBuffer mode, uint64_t listener, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ARCHIVE_SESSION
@@ -481,11 +521,6 @@ RustBuffer uniffi_onicode_mobile_fn_method_coreclient_child_sessions(uint64_t pt
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CLOSE_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CLOSE_SESSION
 void uniffi_onicode_mobile_fn_method_coreclient_close_session(uint64_t ptr, RustBuffer chat_id, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CLOUD_MODELS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CLOUD_MODELS
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_cloud_models(uint64_t ptr, RustBuffer harness
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CONNECTIVITY
@@ -538,6 +573,11 @@ RustBuffer uniffi_onicode_mobile_fn_method_coreclient_device_id(uint64_t ptr, Ru
 RustBuffer uniffi_onicode_mobile_fn_method_coreclient_devices(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ENGINE_HOSTS
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ENGINE_HOSTS
+RustBuffer uniffi_onicode_mobile_fn_method_coreclient_engine_hosts(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_EXECUTION_DEVICES
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_EXECUTION_DEVICES
 RustBuffer uniffi_onicode_mobile_fn_method_coreclient_execution_devices(uint64_t ptr, RustCallStatus *_Nonnull out_status
@@ -551,6 +591,11 @@ RustBuffer uniffi_onicode_mobile_fn_method_coreclient_front_page(uint64_t ptr, R
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_IS_DEMO
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_IS_DEMO
 int8_t uniffi_onicode_mobile_fn_method_coreclient_is_demo(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_JOIN_ENGINES
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_JOIN_ENGINES
+void uniffi_onicode_mobile_fn_method_coreclient_join_engines(uint64_t ptr, RustBuffer hosts, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_LIST_FOLDERS
@@ -598,14 +643,14 @@ void uniffi_onicode_mobile_fn_method_coreclient_on_background(uint64_t ptr, Rust
 void uniffi_onicode_mobile_fn_method_coreclient_on_foreground(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ON_TAILNET
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ON_TAILNET
+int8_t uniffi_onicode_mobile_fn_method_coreclient_on_tailnet(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_OPEN_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_OPEN_SESSION
 uint64_t uniffi_onicode_mobile_fn_method_coreclient_open_session(uint64_t ptr, RustBuffer chat_id, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ORG_ID
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ORG_ID
-RustBuffer uniffi_onicode_mobile_fn_method_coreclient_org_id(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_PIN_SESSION
@@ -651,11 +696,6 @@ RustBuffer uniffi_onicode_mobile_fn_method_coreclient_pull_requests(uint64_t ptr
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_READ_ATTACHMENT
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_READ_ATTACHMENT
 uint64_t uniffi_onicode_mobile_fn_method_coreclient_read_attachment(uint64_t ptr, RustBuffer device_id, RustBuffer path
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_REGISTER_PUSH_TARGET
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_REGISTER_PUSH_TARGET
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_register_push_target(uint64_t ptr, RustBuffer token, RustBuffer environment, RustBuffer prefs
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_RENAME_PROJECT
@@ -738,24 +778,9 @@ void uniffi_onicode_mobile_fn_method_coreclient_unarchive_session(uint64_t ptr, 
 void uniffi_onicode_mobile_fn_method_coreclient_unpin_session(uint64_t ptr, RustBuffer chat_id, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_UNREGISTER_PUSH_TARGET
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_UNREGISTER_PUSH_TARGET
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_unregister_push_target(uint64_t ptr
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_UPDATE_TOKENS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_UPDATE_TOKENS
-void uniffi_onicode_mobile_fn_method_coreclient_update_tokens(uint64_t ptr, RustBuffer tokens, RustCallStatus *_Nonnull out_status
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_UPLOAD_ATTACHMENT
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_UPLOAD_ATTACHMENT
 uint64_t uniffi_onicode_mobile_fn_method_coreclient_upload_attachment(uint64_t ptr, RustBuffer device_id, RustBuffer name, RustBuffer data, RustBuffer progress
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_USER_ID
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_USER_ID
-RustBuffer uniffi_onicode_mobile_fn_method_coreclient_user_id(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_WARM_LINK
@@ -771,116 +796,6 @@ RustBuffer uniffi_onicode_mobile_fn_method_coreclient_workspace(uint64_t ptr, Ru
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_WORKSPACE_REVISION
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_WORKSPACE_REVISION
 uint64_t uniffi_onicode_mobile_fn_method_coreclient_workspace_revision(uint64_t ptr, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_BILLING_CHECKOUT
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_BILLING_CHECKOUT
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_billing_checkout(uint64_t ptr, RustBuffer kind, RustBuffer plan, RustBuffer packs
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_BILLING_PORTAL
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_BILLING_PORTAL
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_billing_portal(uint64_t ptr
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_BILLING_STATUS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_BILLING_STATUS
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_billing_status(uint64_t ptr
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CLOUD_ENABLE
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CLOUD_ENABLE
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_cloud_enable(uint64_t ptr
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CLOUD_SESSION_ACTION
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CLOUD_SESSION_ACTION
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_cloud_session_action(uint64_t ptr, RustBuffer chat_id, int8_t wake
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CLOUD_SESSIONS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CLOUD_SESSIONS
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_cloud_sessions(uint64_t ptr
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CLOUD_STATUS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CLOUD_STATUS
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_cloud_status(uint64_t ptr
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CREATE_CLOUD_PROJECT
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CREATE_CLOUD_PROJECT
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_create_cloud_project(uint64_t ptr, RustBuffer repo
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CREATE_CLOUD_SESSION
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CREATE_CLOUD_SESSION
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_create_cloud_session(uint64_t ptr, RustBuffer space_id, RustBuffer config, RustBuffer branch, RustBuffer title
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_GITHUB_BRANCHES
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_GITHUB_BRANCHES
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_github_branches(uint64_t ptr, RustBuffer repo
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_GITHUB_CONNECT_POLL
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_GITHUB_CONNECT_POLL
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_github_connect_poll(uint64_t ptr, RustBuffer flow_id
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_GITHUB_CONNECT_START
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_GITHUB_CONNECT_START
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_github_connect_start(uint64_t ptr
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_GITHUB_REPOS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_GITHUB_REPOS
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_github_repos(uint64_t ptr, RustBuffer query
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_PROVIDER_LOGIN_CANCEL
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_PROVIDER_LOGIN_CANCEL
-void uniffi_onicode_mobile_fn_method_coreclient_provider_login_cancel(uint64_t ptr, RustBuffer login_id, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_PROVIDER_LOGIN_FINISH
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_PROVIDER_LOGIN_FINISH
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_provider_login_finish(uint64_t ptr, RustBuffer login_id
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_PROVIDER_LOGIN_START
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_PROVIDER_LOGIN_START
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_provider_login_start(uint64_t ptr, RustBuffer provider, RustBuffer done_url
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_VAULT_ACCOUNTS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_VAULT_ACCOUNTS
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_vault_accounts(uint64_t ptr, RustBuffer provider
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_VAULT_ACTIVATE
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_VAULT_ACTIVATE
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_vault_activate(uint64_t ptr, RustBuffer provider, RustBuffer slot
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_VAULT_FORGET
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_VAULT_FORGET
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_vault_forget(uint64_t ptr, RustBuffer provider, RustBuffer slot
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_VAULT_PUT_API_KEY
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_VAULT_PUT_API_KEY
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_vault_put_api_key(uint64_t ptr, RustBuffer provider, RustBuffer key
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_VAULT_STATUS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_VAULT_STATUS
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_vault_status(uint64_t ptr
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_VAULT_USAGE
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_VAULT_USAGE
-uint64_t uniffi_onicode_mobile_fn_method_coreclient_vault_usage(uint64_t ptr, RustBuffer provider, RustBuffer slot
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_CREATE_SIDE_CHAT
@@ -1153,6 +1068,131 @@ void uniffi_onicode_mobile_fn_method_voicesessionlistener_on_voice_state(uint64_
 void uniffi_onicode_mobile_fn_method_voicesessionlistener_on_voice_closed(uint64_t ptr, RustBuffer reason, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_CLONE_DESKTOPSINK
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_CLONE_DESKTOPSINK
+uint64_t uniffi_onicode_mobile_fn_clone_desktopsink(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FREE_DESKTOPSINK
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FREE_DESKTOPSINK
+void uniffi_onicode_mobile_fn_free_desktopsink(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_INIT_CALLBACK_VTABLE_DESKTOPSINK
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_INIT_CALLBACK_VTABLE_DESKTOPSINK
+void uniffi_onicode_mobile_fn_init_callback_vtable_desktopsink(const UniffiVTableCallbackInterfaceDesktopSink* _Nonnull vtable
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPSINK_ON_PICTURE
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPSINK_ON_PICTURE
+void uniffi_onicode_mobile_fn_method_desktopsink_on_picture(uint64_t ptr, uint64_t pixel_buffer, uint32_t width, uint32_t height, uint64_t token, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPSINK_ON_STRIPES
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPSINK_ON_STRIPES
+void uniffi_onicode_mobile_fn_method_desktopsink_on_stripes(uint64_t ptr, uint64_t top, uint64_t lower, uint32_t top_rows, uint32_t lower_from, uint64_t token, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPSINK_ON_STATE
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPSINK_ON_STATE
+void uniffi_onicode_mobile_fn_method_desktopsink_on_state(uint64_t ptr, RustBuffer state, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPSINK_ON_CURSOR
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPSINK_ON_CURSOR
+void uniffi_onicode_mobile_fn_method_desktopsink_on_cursor(uint64_t ptr, RustBuffer cursor, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_CLONE_DESKTOPVIEWER
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_CLONE_DESKTOPVIEWER
+uint64_t uniffi_onicode_mobile_fn_clone_desktopviewer(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FREE_DESKTOPVIEWER
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FREE_DESKTOPVIEWER
+void uniffi_onicode_mobile_fn_free_desktopviewer(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_CONSTRUCTOR_DESKTOPVIEWER_NEW
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_CONSTRUCTOR_DESKTOPVIEWER_NEW
+uint64_t uniffi_onicode_mobile_fn_constructor_desktopviewer_new(uint64_t client, RustBuffer device_id, RustBuffer name, uint64_t sink, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_BUTTON
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_BUTTON
+void uniffi_onicode_mobile_fn_method_desktopviewer_button(uint64_t ptr, RustBuffer button, int8_t down, uint8_t clicks, uint16_t mods, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_CLICK
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_CLICK
+void uniffi_onicode_mobile_fn_method_desktopviewer_click(uint64_t ptr, RustBuffer button, uint8_t clicks, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_KEY
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_KEY
+void uniffi_onicode_mobile_fn_method_desktopviewer_key(uint64_t ptr, RustBuffer key, uint16_t mods, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_MAGNIFY
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_MAGNIFY
+void uniffi_onicode_mobile_fn_method_desktopviewer_magnify(uint64_t ptr, float delta, RustBuffer phase, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_OPEN_GUIDE
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_OPEN_GUIDE
+uint64_t uniffi_onicode_mobile_fn_method_desktopviewer_open_guide(uint64_t ptr, RustBuffer pane
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_POINTER_AT
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_POINTER_AT
+void uniffi_onicode_mobile_fn_method_desktopviewer_pointer_at(uint64_t ptr, float x, float y, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_POINTER_MOVED
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_POINTER_MOVED
+void uniffi_onicode_mobile_fn_method_desktopviewer_pointer_moved(uint64_t ptr, float dx, float dy, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_PRESENTED
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_PRESENTED
+void uniffi_onicode_mobile_fn_method_desktopviewer_presented(uint64_t ptr, uint64_t token, uint64_t ago_ns, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_SCROLL
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_SCROLL
+void uniffi_onicode_mobile_fn_method_desktopviewer_scroll(uint64_t ptr, float dx, float dy, RustBuffer phase, RustBuffer momentum, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_SET_SOUND
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_SET_SOUND
+void uniffi_onicode_mobile_fn_method_desktopviewer_set_sound(uint64_t ptr, int8_t on, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_SET_VIEW_SIZE
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_SET_VIEW_SIZE
+void uniffi_onicode_mobile_fn_method_desktopviewer_set_view_size(uint64_t ptr, float width, float height, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_START
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_START
+uint64_t uniffi_onicode_mobile_fn_method_desktopviewer_start(uint64_t ptr
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_STOP
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_STOP
+void uniffi_onicode_mobile_fn_method_desktopviewer_stop(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_TAKE_CONTROL
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_TAKE_CONTROL
+void uniffi_onicode_mobile_fn_method_desktopviewer_take_control(uint64_t ptr, int8_t take, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_TEXT
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_DESKTOPVIEWER_TEXT
+void uniffi_onicode_mobile_fn_method_desktopviewer_text(uint64_t ptr, RustBuffer text, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_CLONE_LAYOUTFRAME
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_CLONE_LAYOUTFRAME
 uint64_t uniffi_onicode_mobile_fn_clone_layoutframe(uint64_t handle, RustCallStatus *_Nonnull out_status
@@ -1320,7 +1360,7 @@ int8_t uniffi_onicode_mobile_fn_method_transcriptview_attach(uint64_t ptr, uint6
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_TRANSCRIPTVIEW_ATTACH_SUBAGENT
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_TRANSCRIPTVIEW_ATTACH_SUBAGENT
-int8_t uniffi_onicode_mobile_fn_method_transcriptview_attach_subagent(uint64_t ptr, uint64_t client, RustBuffer chat_id, RustBuffer doc_id, int8_t frozen, RustCallStatus *_Nonnull out_status
+int8_t uniffi_onicode_mobile_fn_method_transcriptview_attach_subagent(uint64_t ptr, uint64_t client, RustBuffer chat_id, RustBuffer doc_id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_TRANSCRIPTVIEW_CLOSE
@@ -1614,33 +1654,6 @@ RustBuffer uniffi_onicode_mobile_fn_func_core_version(RustCallStatus *_Nonnull o
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_AUTH_CALLBACK_SCHEME
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_AUTH_CALLBACK_SCHEME
-RustBuffer uniffi_onicode_mobile_fn_func_auth_callback_scheme(RustCallStatus *_Nonnull out_status
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_AUTH_EXCHANGE_CODE
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_AUTH_EXCHANGE_CODE
-uint64_t uniffi_onicode_mobile_fn_func_auth_exchange_code(RustBuffer edge_url, RustBuffer code
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_AUTH_LIST_ORGS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_AUTH_LIST_ORGS
-uint64_t uniffi_onicode_mobile_fn_func_auth_list_orgs(RustBuffer edge_url, RustBuffer access_token
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_AUTH_PRODUCTION_EDGE_URL
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_AUTH_PRODUCTION_EDGE_URL
-RustBuffer uniffi_onicode_mobile_fn_func_auth_production_edge_url(RustCallStatus *_Nonnull out_status
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_AUTH_REFRESH
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_AUTH_REFRESH
-uint64_t uniffi_onicode_mobile_fn_func_auth_refresh(RustBuffer edge_url, RustBuffer refresh_token, RustBuffer organization_id
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_FALLBACK_HARNESSES
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_FALLBACK_HARNESSES
 RustBuffer uniffi_onicode_mobile_fn_func_fallback_harnesses(RustCallStatus *_Nonnull out_status
@@ -1657,11 +1670,6 @@ RustBuffer uniffi_onicode_mobile_fn_func_fallback_models(RustBuffer harness, Rus
 RustBuffer uniffi_onicode_mobile_fn_func_harness_label(RustBuffer harness, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_JWT_EXPIRY
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_JWT_EXPIRY
-RustBuffer uniffi_onicode_mobile_fn_func_jwt_expiry(RustBuffer jwt, RustCallStatus *_Nonnull out_status
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_MAX_ATTACHMENT_BYTES
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_MAX_ATTACHMENT_BYTES
 uint64_t uniffi_onicode_mobile_fn_func_max_attachment_bytes(RustCallStatus *_Nonnull out_status
@@ -1671,11 +1679,6 @@ uint64_t uniffi_onicode_mobile_fn_func_max_attachment_bytes(RustCallStatus *_Non
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_MODEL_LABEL
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_MODEL_LABEL
 RustBuffer uniffi_onicode_mobile_fn_func_model_label(RustBuffer harness, RustBuffer model, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_PARSE_AUTH_CALLBACK
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_PARSE_AUTH_CALLBACK
-RustBuffer uniffi_onicode_mobile_fn_func_parse_auth_callback(RustBuffer url, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_PARSE_USER_MESSAGE
@@ -1702,11 +1705,6 @@ RustBuffer uniffi_onicode_mobile_fn_func_reasoning_label(RustBuffer level, RustC
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_RELATIVE_TIME_LABEL
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_RELATIVE_TIME_LABEL
 RustBuffer uniffi_onicode_mobile_fn_func_relative_time_label(int64_t at_ms, int64_t now_ms, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_WORKOS_AUTHORIZE_URL
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_WORKOS_AUTHORIZE_URL
-RustBuffer uniffi_onicode_mobile_fn_func_workos_authorize_url(RustBuffer state, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_AGENT_LOGIN_RULES
@@ -2023,36 +2021,6 @@ uint16_t uniffi_onicode_mobile_checksum_func_core_version(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_AUTH_CALLBACK_SCHEME
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_AUTH_CALLBACK_SCHEME
-uint16_t uniffi_onicode_mobile_checksum_func_auth_callback_scheme(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_AUTH_EXCHANGE_CODE
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_AUTH_EXCHANGE_CODE
-uint16_t uniffi_onicode_mobile_checksum_func_auth_exchange_code(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_AUTH_LIST_ORGS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_AUTH_LIST_ORGS
-uint16_t uniffi_onicode_mobile_checksum_func_auth_list_orgs(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_AUTH_PRODUCTION_EDGE_URL
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_AUTH_PRODUCTION_EDGE_URL
-uint16_t uniffi_onicode_mobile_checksum_func_auth_production_edge_url(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_AUTH_REFRESH
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_AUTH_REFRESH
-uint16_t uniffi_onicode_mobile_checksum_func_auth_refresh(void
-    
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_FALLBACK_HARNESSES
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_FALLBACK_HARNESSES
 uint16_t uniffi_onicode_mobile_checksum_func_fallback_harnesses(void
@@ -2071,12 +2039,6 @@ uint16_t uniffi_onicode_mobile_checksum_func_harness_label(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_JWT_EXPIRY
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_JWT_EXPIRY
-uint16_t uniffi_onicode_mobile_checksum_func_jwt_expiry(void
-    
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_MAX_ATTACHMENT_BYTES
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_MAX_ATTACHMENT_BYTES
 uint16_t uniffi_onicode_mobile_checksum_func_max_attachment_bytes(void
@@ -2086,12 +2048,6 @@ uint16_t uniffi_onicode_mobile_checksum_func_max_attachment_bytes(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_MODEL_LABEL
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_MODEL_LABEL
 uint16_t uniffi_onicode_mobile_checksum_func_model_label(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_PARSE_AUTH_CALLBACK
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_PARSE_AUTH_CALLBACK
-uint16_t uniffi_onicode_mobile_checksum_func_parse_auth_callback(void
     
 );
 #endif
@@ -2122,12 +2078,6 @@ uint16_t uniffi_onicode_mobile_checksum_func_reasoning_label(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_RELATIVE_TIME_LABEL
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_RELATIVE_TIME_LABEL
 uint16_t uniffi_onicode_mobile_checksum_func_relative_time_label(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_WORKOS_AUTHORIZE_URL
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_WORKOS_AUTHORIZE_URL
-uint16_t uniffi_onicode_mobile_checksum_func_workos_authorize_url(void
     
 );
 #endif
@@ -2227,12 +2177,6 @@ uint16_t uniffi_onicode_mobile_checksum_method_coreclient_close_session(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CLOUD_MODELS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CLOUD_MODELS
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_cloud_models(void
-    
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CONNECTIVITY
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CONNECTIVITY
 uint16_t uniffi_onicode_mobile_checksum_method_coreclient_connectivity(void
@@ -2293,6 +2237,12 @@ uint16_t uniffi_onicode_mobile_checksum_method_coreclient_devices(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_ENGINE_HOSTS
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_ENGINE_HOSTS
+uint16_t uniffi_onicode_mobile_checksum_method_coreclient_engine_hosts(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_EXECUTION_DEVICES
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_EXECUTION_DEVICES
 uint16_t uniffi_onicode_mobile_checksum_method_coreclient_execution_devices(void
@@ -2308,6 +2258,12 @@ uint16_t uniffi_onicode_mobile_checksum_method_coreclient_front_page(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_IS_DEMO
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_IS_DEMO
 uint16_t uniffi_onicode_mobile_checksum_method_coreclient_is_demo(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_JOIN_ENGINES
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_JOIN_ENGINES
+uint16_t uniffi_onicode_mobile_checksum_method_coreclient_join_engines(void
     
 );
 #endif
@@ -2365,15 +2321,15 @@ uint16_t uniffi_onicode_mobile_checksum_method_coreclient_on_foreground(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_OPEN_SESSION
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_OPEN_SESSION
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_open_session(void
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_ON_TAILNET
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_ON_TAILNET
+uint16_t uniffi_onicode_mobile_checksum_method_coreclient_on_tailnet(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_ORG_ID
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_ORG_ID
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_org_id(void
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_OPEN_SESSION
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_OPEN_SESSION
+uint16_t uniffi_onicode_mobile_checksum_method_coreclient_open_session(void
     
 );
 #endif
@@ -2428,12 +2384,6 @@ uint16_t uniffi_onicode_mobile_checksum_method_coreclient_pull_requests(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_READ_ATTACHMENT
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_READ_ATTACHMENT
 uint16_t uniffi_onicode_mobile_checksum_method_coreclient_read_attachment(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_REGISTER_PUSH_TARGET
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_REGISTER_PUSH_TARGET
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_register_push_target(void
     
 );
 #endif
@@ -2533,27 +2483,9 @@ uint16_t uniffi_onicode_mobile_checksum_method_coreclient_unpin_session(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_UNREGISTER_PUSH_TARGET
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_UNREGISTER_PUSH_TARGET
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_unregister_push_target(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_UPDATE_TOKENS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_UPDATE_TOKENS
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_update_tokens(void
-    
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_UPLOAD_ATTACHMENT
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_UPLOAD_ATTACHMENT
 uint16_t uniffi_onicode_mobile_checksum_method_coreclient_upload_attachment(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_USER_ID
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_USER_ID
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_user_id(void
     
 );
 #endif
@@ -2572,138 +2504,6 @@ uint16_t uniffi_onicode_mobile_checksum_method_coreclient_workspace(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_WORKSPACE_REVISION
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_WORKSPACE_REVISION
 uint16_t uniffi_onicode_mobile_checksum_method_coreclient_workspace_revision(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_BILLING_CHECKOUT
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_BILLING_CHECKOUT
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_billing_checkout(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_BILLING_PORTAL
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_BILLING_PORTAL
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_billing_portal(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_BILLING_STATUS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_BILLING_STATUS
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_billing_status(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CLOUD_ENABLE
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CLOUD_ENABLE
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_cloud_enable(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CLOUD_SESSION_ACTION
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CLOUD_SESSION_ACTION
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_cloud_session_action(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CLOUD_SESSIONS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CLOUD_SESSIONS
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_cloud_sessions(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CLOUD_STATUS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CLOUD_STATUS
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_cloud_status(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CREATE_CLOUD_PROJECT
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CREATE_CLOUD_PROJECT
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_create_cloud_project(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CREATE_CLOUD_SESSION
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_CREATE_CLOUD_SESSION
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_create_cloud_session(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_GITHUB_BRANCHES
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_GITHUB_BRANCHES
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_github_branches(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_GITHUB_CONNECT_POLL
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_GITHUB_CONNECT_POLL
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_github_connect_poll(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_GITHUB_CONNECT_START
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_GITHUB_CONNECT_START
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_github_connect_start(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_GITHUB_REPOS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_GITHUB_REPOS
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_github_repos(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_PROVIDER_LOGIN_CANCEL
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_PROVIDER_LOGIN_CANCEL
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_provider_login_cancel(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_PROVIDER_LOGIN_FINISH
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_PROVIDER_LOGIN_FINISH
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_provider_login_finish(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_PROVIDER_LOGIN_START
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_PROVIDER_LOGIN_START
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_provider_login_start(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_VAULT_ACCOUNTS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_VAULT_ACCOUNTS
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_vault_accounts(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_VAULT_ACTIVATE
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_VAULT_ACTIVATE
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_vault_activate(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_VAULT_FORGET
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_VAULT_FORGET
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_vault_forget(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_VAULT_PUT_API_KEY
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_VAULT_PUT_API_KEY
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_vault_put_api_key(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_VAULT_STATUS
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_VAULT_STATUS
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_vault_status(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_VAULT_USAGE
-#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_VAULT_USAGE
-uint16_t uniffi_onicode_mobile_checksum_method_coreclient_vault_usage(void
     
 );
 #endif
@@ -2950,6 +2750,120 @@ uint16_t uniffi_onicode_mobile_checksum_method_voicesessionlistener_on_voice_sta
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_VOICESESSIONLISTENER_ON_VOICE_CLOSED
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_VOICESESSIONLISTENER_ON_VOICE_CLOSED
 uint16_t uniffi_onicode_mobile_checksum_method_voicesessionlistener_on_voice_closed(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPSINK_ON_PICTURE
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPSINK_ON_PICTURE
+uint16_t uniffi_onicode_mobile_checksum_method_desktopsink_on_picture(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPSINK_ON_STRIPES
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPSINK_ON_STRIPES
+uint16_t uniffi_onicode_mobile_checksum_method_desktopsink_on_stripes(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPSINK_ON_STATE
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPSINK_ON_STATE
+uint16_t uniffi_onicode_mobile_checksum_method_desktopsink_on_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPSINK_ON_CURSOR
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPSINK_ON_CURSOR
+uint16_t uniffi_onicode_mobile_checksum_method_desktopsink_on_cursor(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_BUTTON
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_BUTTON
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_button(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_CLICK
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_CLICK
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_click(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_KEY
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_KEY
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_key(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_MAGNIFY
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_MAGNIFY
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_magnify(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_OPEN_GUIDE
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_OPEN_GUIDE
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_open_guide(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_POINTER_AT
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_POINTER_AT
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_pointer_at(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_POINTER_MOVED
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_POINTER_MOVED
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_pointer_moved(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_PRESENTED
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_PRESENTED
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_presented(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_SCROLL
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_SCROLL
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_scroll(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_SET_SOUND
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_SET_SOUND
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_set_sound(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_SET_VIEW_SIZE
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_SET_VIEW_SIZE
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_set_view_size(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_START
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_START
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_start(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_STOP
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_STOP
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_stop(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_TAKE_CONTROL
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_TAKE_CONTROL
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_take_control(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_TEXT
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_DESKTOPVIEWER_TEXT
+uint16_t uniffi_onicode_mobile_checksum_method_desktopviewer_text(void
     
 );
 #endif
@@ -3346,6 +3260,12 @@ uint16_t uniffi_onicode_mobile_checksum_constructor_captionfader_new(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_CONSTRUCTOR_CORECLIENT_NEW
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_CONSTRUCTOR_CORECLIENT_NEW
 uint16_t uniffi_onicode_mobile_checksum_constructor_coreclient_new(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_CONSTRUCTOR_DESKTOPVIEWER_NEW
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_CONSTRUCTOR_DESKTOPVIEWER_NEW
+uint16_t uniffi_onicode_mobile_checksum_constructor_desktopviewer_new(void
     
 );
 #endif

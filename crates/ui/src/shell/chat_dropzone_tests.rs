@@ -103,10 +103,7 @@ fn setup_with_shell(
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -115,7 +112,6 @@ fn setup_with_shell(
             // invoking the shell's disconnect cleanup of all side chats.
             shell._state_observation = cx.observe(&shell.state, |_, _, _| {});
             shell.state.update(cx, |state, _| {
-                state.workspace_scope = Some(WorkspaceScope::Local);
                 state.connection = ConnectionStatus::Ready;
                 state.local_device_id = Some("local".into());
                 state.no_project = true;

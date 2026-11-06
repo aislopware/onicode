@@ -11,9 +11,8 @@ use onicode_proto::{Chat, ChatConfig, SidebarPinChange, SidebarSectionChange};
 use tokio_util::sync::CancellationToken;
 
 use crate::attachments::{self, AttachmentCache};
-use crate::auth::TokenProvider;
 use crate::catalog::{self, HarnessInfo, ModelInfo};
-use crate::config::{AuthTokens, ClientConfig, Credentials};
+use crate::config::{ClientConfig, Mode};
 use crate::connectivity::{
     Connectivity, ConnectivityState, ConnectivityTracker, RawConnectivity, SendState,
 };
@@ -65,10 +64,8 @@ pub(crate) enum Backend {
 
 pub(crate) struct ClientInner {
     pub(crate) config: ClientConfig,
-    pub(crate) credentials: Credentials,
     pub(crate) events: Arc<EventPump>,
     pub(crate) workspace: WorkspaceStore,
-    pub(crate) tokens: TokenProvider,
     pub(crate) attachment_cache: AttachmentCache,
     backend: OnceLock<Backend>,
     sessions: Mutex<HashMap<String, Arc<SessionCore>>>,
@@ -79,18 +76,19 @@ pub(crate) struct ClientInner {
     foreground: AtomicBool,
     synced: AtomicBool,
     pub(crate) harness_catalogs: Mutex<HashMap<String, Vec<HarnessInfo>>>,
-    /// GitHub repositories Cloud reaches, as last read (lowercased
-    /// `owner/name`): starting a Cloud session needs one, and reading it
-    /// again would hold the new chat up.
-    pub(crate) cloud_repos: Mutex<HashMap<String, crate::cloud::CloudRepoRef>>,
     /// Terminals on other devices, over the peer links (the desktop engine
     /// runs the same hub).
     pub(crate) remote_terminals: onicode_term_link::remote::RemoteTerminals,
     /// The links to the user's engines on the tailnet, once the app has
     /// joined it ([`Client::set_peer_links`]).
     pub(crate) peer_links: OnceLock<Arc<onicode_peer::PeerLinks>>,
-    /// Wakes terminal streams waiting to reconnect (foreground, network back).
-    pub(crate) terminals_wake: Arc<tokio::sync::Notify>,
+    /// This device on the tailnet once it joined by itself ([`Client::join_tailnet`],
+    /// [`Client::join_engines`]): its endpoint and discovery, and the engine list it reads
+    /// when it has no `LocalAPI`.
+    pub(crate) node: Mutex<Option<crate::join::Node>>,
+    /// Notified when the links change (set, a new network path, the foreground):
+    /// every wait for a link starts over.
+    pub(crate) links_wake: Arc<tokio::sync::Notify>,
     /// When the app last went to the background.
     backgrounded_at: Mutex<Option<std::time::Instant>>,
 }
@@ -214,16 +212,6 @@ impl ClientInner {
     pub(crate) fn presence_changed(self: &Arc<Self>) {
         let Some(live) = self.live() else { return };
         if let Some(presence) = live.presence() {
-            let before = self.workspace.presence();
-            let now = now_ms();
-            for (device, at) in &presence {
-                let was_fresh = before
-                    .get(device)
-                    .is_some_and(|b| now - b < crate::connectivity::PRESENCE_FRESH_MS);
-                if !was_fresh && now - at < crate::connectivity::PRESENCE_FRESH_MS {
-                    live.relay.peer_alive(device);
-                }
-            }
             self.workspace.replace_presence(presence);
         }
         self.recompute_workspace();
@@ -238,7 +226,7 @@ impl ClientInner {
     pub(crate) fn reconcile_change_request_watches(self: &Arc<Self>) {
         let Some(live) = self.live() else { return };
         if !self.foreground.load(Ordering::Acquire) {
-            live.relay.stop_watches();
+            live.hosts.stop_watches();
             return;
         }
         let (state, _) = self.workspace.state();
@@ -250,7 +238,7 @@ impl ClientInner {
                 let source = c.source_context.as_ref()?;
                 let branch = source.branch.trim();
                 (!branch.is_empty() && !source.repo_root.is_empty()).then(|| {
-                    crate::live::relay::WatchKey {
+                    crate::live::hosts::WatchKey {
                         device_id: c.device_id.clone(),
                         cwd: source.repo_root.clone(),
                         branch: branch.to_owned(),
@@ -258,7 +246,7 @@ impl ClientInner {
                 })
             })
             .collect();
-        live.relay.reconcile_watches(self, targets);
+        live.hosts.reconcile_watches(self, targets);
     }
 
     /// The chat owes its host something: rescan the owed chats, so a closed session reopens
@@ -481,6 +469,39 @@ impl ClientInner {
         });
     }
 
+    /// The client's links to the user's engines: hosts, streams and terminals ride them from
+    /// now on. Set once.
+    pub(crate) fn set_peer_links(&self, links: Arc<onicode_peer::PeerLinks>) {
+        if self.peer_links.set(links).is_err() {
+            tracing::debug!("peer links were already set");
+        }
+        self.links_wake.notify_waiters();
+    }
+
+    /// Has the listed engines looked up again, if this device reads a list.
+    pub(crate) fn poke_engines(&self) {
+        if let Some(engines) = lock(&self.node).as_ref().and_then(|n| n.engines.as_ref()) {
+            engines.poke();
+        }
+    }
+
+    /// Joins the tailnet as `join` says, unless this client already holds links or is joining.
+    fn join(self: &Arc<Self>, join: crate::join::Join) -> Result<()> {
+        if self.is_demo() {
+            return Err(ClientError::Unsupported(
+                "the demo has no tailnet to join".into(),
+            ));
+        }
+        let mut node = lock(&self.node);
+        if node.is_some() || self.peer_links.get().is_some() {
+            return Err(ClientError::InvalidArgument(
+                "this client is already on the tailnet".into(),
+            ));
+        }
+        *node = Some(crate::join::Node::start(self, join));
+        Ok(())
+    }
+
     pub(crate) async fn host_rpc(
         self: &Arc<Self>,
         device_id: &str,
@@ -489,12 +510,12 @@ impl ClientInner {
     ) -> Result<serde_json::Value> {
         match self.backend() {
             Backend::Demo(demo) => demo.host_rpc(device_id, method, params).await,
-            Backend::Live(live) => live.relay.call(device_id, method, params).await,
+            Backend::Live(live) => live.hosts.call(device_id, method, params).await,
         }
     }
 
-    /// A host stream (terminal output, a subagent's transcript): the relay's
-    /// subscription live, the demo host's channel offline.
+    /// A host stream (terminal output, a subagent's transcript): a stream of
+    /// its own over the host's link live, the demo host's channel offline.
     pub(crate) async fn host_subscribe(
         self: &Arc<Self>,
         device_id: &str,
@@ -504,10 +525,10 @@ impl ClientInner {
         match self.backend() {
             Backend::Demo(demo) => demo.host_subscribe(device_id, method, params).await,
             Backend::Live(live) => live
-                .relay
+                .hosts
                 .subscribe(device_id, method, params)
                 .await
-                .map(crate::host_stream::HostStream::Live),
+                .map(crate::host_stream::HostStream::Peer),
         }
     }
 
@@ -556,7 +577,7 @@ impl ClientInner {
     }
 }
 
-/// One signed-in account (or Demo mode). Cheap to clone.
+/// One device's view of the user's engines (or Demo mode). Cheap to clone.
 #[derive(Clone)]
 pub struct Client {
     pub(crate) inner: Arc<ClientInner>,
@@ -576,33 +597,32 @@ impl Client {
     pub async fn voice_transport(
         &self,
         device_id: &str,
-    ) -> Result<Arc<onicode_voice_session::RpcTransport>> {
+    ) -> Result<Arc<onicode_voice_session::PeerTransport>> {
         let live = self.inner.live().ok_or_else(|| {
-            ClientError::Unsupported("remote voice requires a connected account".into())
+            ClientError::Unsupported("remote voice needs a computer on the tailnet".into())
         })?;
-        live.relay.voice_transport(device_id).await
+        live.hosts.voice_transport(device_id).await
     }
 
-    /// Sign-out/shutdown closes every call created by this client.
+    /// Shutdown closes every call created by this client.
     pub fn voice_cancellation(&self) -> CancellationToken {
         self.inner.cancel.child_token()
     }
 
     /// Build and start. Never blocks on the network: live mode hydrates from
-    /// `data_dir` and connects in the background; Demo seeds its dataset.
+    /// `data_dir` and syncs once it is on the tailnet; Demo seeds its dataset.
     pub fn new(
         config: ClientConfig,
-        credentials: Credentials,
+        mode: Mode,
         listener: Arc<dyn ClientListener>,
     ) -> Result<Self> {
         if config.device_id.trim().is_empty() {
             return Err(ClientError::InvalidArgument("device_id is required".into()));
         }
         let events = EventPump::new(listener);
-        let tokens = TokenProvider::new(&credentials, config.edge_base(), events.clone());
         // Live: restore the registry replica + open the docs store first, so
         // the very first snapshot renders the cached workspace (instant).
-        let (registry, store) = if credentials.is_demo() {
+        let (registry, store) = if mode.is_demo() {
             (RegistryDoc::new(config.device_id.clone()), None)
         } else {
             let (store, registry) = LiveBackend::open(&config.data_dir, &config.device_id)?;
@@ -611,14 +631,13 @@ impl Client {
         let inner = Arc::new(ClientInner {
             workspace: WorkspaceStore::new(registry),
             events: events.clone(),
-            tokens,
             attachment_cache: AttachmentCache::new(ATTACHMENT_CACHE_BYTES),
             backend: OnceLock::new(),
             sessions: Mutex::new(HashMap::new()),
             cancel: CancellationToken::new(),
             connectivity_tracker: Mutex::new(ConnectivityTracker::default()),
             connectivity: RwLock::new(Connectivity {
-                state: if credentials.is_demo() {
+                state: if mode.is_demo() {
                     ConnectivityState::Connected
                 } else {
                     ConnectivityState::Reconnecting
@@ -629,22 +648,21 @@ impl Client {
             foreground: AtomicBool::new(true),
             synced: AtomicBool::new(false),
             harness_catalogs: Mutex::new(HashMap::new()),
-            cloud_repos: Mutex::new(HashMap::new()),
             remote_terminals: Default::default(),
             peer_links: OnceLock::new(),
-            terminals_wake: Arc::new(tokio::sync::Notify::new()),
+            node: Mutex::new(None),
+            links_wake: Arc::new(tokio::sync::Notify::new()),
             backgrounded_at: Mutex::new(None),
-            credentials: credentials.clone(),
             config,
         });
-        let backend = match &credentials {
-            Credentials::Demo(options) => {
+        let backend = match &mode {
+            Mode::Demo(options) => {
                 let demo = DemoHost::new(&inner, options.clone());
                 demo.seed(&inner)?;
                 inner.synced.store(true, Ordering::Release);
                 Backend::Demo(demo)
             }
-            _ => Backend::Live(Box::new({
+            Mode::Live => Backend::Live(Box::new({
                 catalog::DiskCatalog::new(&inner.config.data_dir).warm_labels();
                 LiveBackend::new(
                     &inner,
@@ -695,15 +713,7 @@ impl Client {
         &self.inner.config.device_id
     }
 
-    pub fn user_id(&self) -> &str {
-        self.inner.credentials.user_id()
-    }
-
-    pub fn org_id(&self) -> &str {
-        self.inner.credentials.org_id()
-    }
-
-    /// Stop every background task (sign-out). Snapshots stay readable.
+    /// Stop every background task. Snapshots stay readable.
     pub fn shutdown(&self) {
         match self.inner.backend() {
             Backend::Demo(demo) => demo.stop(),
@@ -713,14 +723,13 @@ impl Client {
             }
         }
         self.inner.cancel.cancel();
+        if let Some(links) = self.inner.peer_links.get() {
+            links.shutdown();
+        }
+        lock(&self.inner.node).take();
         // Dropping the cores stops their rooms (each flushes its snapshot).
         lock(&self.inner.sessions).clear();
         self.inner.attachment_cache.clear();
-    }
-
-    /// The platform restored/re-signed a newer WorkOS pair.
-    pub fn update_tokens(&self, tokens: AuthTokens) {
-        self.inner.tokens.update_tokens(tokens);
     }
 
     // ── workspace reads ────────────────────────────────────────────────────
@@ -807,7 +816,6 @@ impl Client {
             harness_session_harness: None,
             space_id,
             last_seen_at: None,
-            room_gen: None,
             parent_chat_id: None,
             child_kind: None,
         };
@@ -842,7 +850,6 @@ impl Client {
         chat.harness_session_id = None;
         chat.harness_session_cwd = None;
         chat.harness_session_harness = None;
-        chat.room_gen = None;
         let id = chat.id.clone();
         self.inner.registry_write(|doc| doc.upsert_chat(&chat))?;
         Ok(id)
@@ -936,44 +943,9 @@ impl Client {
         self.chat_write(chat_id, |doc| doc.set_chat_config(chat_id, config))
     }
 
-    /// Remove the chat row (the doc itself stays on the edge).
+    /// Remove the chat row (its host keeps the doc).
     pub fn delete_session(&self, chat_id: &str) -> Result<()> {
-        let on_cloud = self
-            .inner
-            .workspace
-            .chat(chat_id)
-            .is_some_and(|chat| onicode_proto::is_cloud_device(&chat.device_id, ""));
-        // A Cloud chat's children on Cloud go with it: its delegates (each on
-        // a machine of its own, which would otherwise outlive the parent) and
-        // its side chats (on its machine, now gone).
-        let children: Vec<String> = if on_cloud {
-            let (state, _) = self.inner.workspace.state();
-            state
-                .chats
-                .iter()
-                .filter(|chat| {
-                    chat.parent_chat_id.as_deref() == Some(chat_id)
-                        && onicode_proto::is_cloud_device(&chat.device_id, "")
-                })
-                .map(|chat| chat.id.clone())
-                .collect()
-        } else {
-            Vec::new()
-        };
         self.chat_write(chat_id, |doc| doc.delete_chat(chat_id))?;
-        for child in &children {
-            if let Err(err) = self.chat_write(child, |doc| doc.delete_chat(child)) {
-                tracing::warn!(chat = %child, error = %err, "deleting a Cloud chat's child failed");
-            }
-            self.forget_local_session(child);
-        }
-        if on_cloud {
-            self.delete_cloud_machines(
-                std::iter::once(chat_id.to_owned())
-                    .chain(children)
-                    .collect(),
-            );
-        }
         self.forget_local_session(chat_id);
         Ok(())
     }
@@ -1171,7 +1143,7 @@ impl Client {
         // it will adopt later.
         if let Some(live) = self.inner.live() {
             let asked = live
-                .relay
+                .hosts
                 .call(
                     device_id,
                     onicode_rpc::methods::MUTATE,
@@ -1227,20 +1199,9 @@ impl Client {
 
     /// Delete a project and cascade its chats' rows.
     pub fn delete_project(&self, space_id: &str) -> Result<()> {
-        let mut cloud_chats = Vec::new();
-        let deleted = self.inner.registry_write(|doc| {
-            cloud_chats = doc
-                .read_chats()?
-                .into_iter()
-                .filter(|chat| {
-                    chat.space_id.as_deref() == Some(space_id)
-                        && onicode_proto::is_cloud_device(&chat.device_id, "")
-                })
-                .map(|chat| chat.id)
-                .collect();
-            doc.delete_space(space_id)
-        })?;
-        self.delete_cloud_machines(cloud_chats);
+        let deleted = self
+            .inner
+            .registry_write(|doc| doc.delete_space(space_id))?;
         let mut sessions = lock(&self.inner.sessions);
         for chat_id in deleted.chat_ids {
             sessions.remove(&chat_id);
@@ -1316,7 +1277,7 @@ impl Client {
             Backend::Live(live) => {
                 let cache = catalog::DiskCatalog::new(&self.inner.config.data_dir);
                 let reply = live
-                    .relay
+                    .hosts
                     .call(
                         device_id,
                         onicode_rpc::methods::LIST_HARNESSES,
@@ -1356,13 +1317,10 @@ impl Client {
     pub async fn list_models(&self, device_id: &str, harness: &str) -> Vec<ModelInfo> {
         match self.inner.backend() {
             Backend::Demo(demo) => demo.list_models(harness).await,
-            Backend::Live(_) if onicode_proto::is_cloud_device(device_id, "") => {
-                self.cloud_models(harness).await
-            }
             Backend::Live(live) => {
                 let cache = catalog::DiskCatalog::new(&self.inner.config.data_dir);
                 let reply = live
-                    .relay
+                    .hosts
                     .call(
                         device_id,
                         onicode_rpc::methods::LIST_MODELS,
@@ -1393,79 +1351,12 @@ impl Client {
         }
     }
 
-    // ── push notifications ────────────────────────────────────────────────
-
-    /// Ask for session notifications on this device: its APNs `token` (hex),
-    /// the APNs `environment` it came from ("production" | "sandbox"), and
-    /// which kinds to send. Re-register whenever any of them changes.
-    pub async fn register_push_target(
-        &self,
-        token: &str,
-        environment: &str,
-        prefs: PushPrefs,
-    ) -> Result<()> {
-        let Some(live) = self.inner.live() else {
-            return Ok(());
-        };
-        let url = crate::live::urls::registry_push_target(
-            &live.edge,
-            self.inner.credentials.org_id(),
-            &self.inner.config.device_id,
-        );
-        let token_value = self.inner.tokens.bearer().await?;
-        let body = serde_json::json!({
-            "token": token,
-            "environment": environment,
-            "prefs": { "done": prefs.done, "input": prefs.input, "failed": prefs.failed },
-        });
-        let response = crate::auth::http()
-            .post(url)
-            .bearer_auth(token_value)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| ClientError::Network(e.to_string()))?;
-        if !response.status().is_success() {
-            return Err(ClientError::HostError(format!(
-                "push registration http {}",
-                response.status()
-            )));
-        }
-        Ok(())
-    }
-
-    /// Stop notifications to this device (sign-out, turned off).
-    pub async fn unregister_push_target(&self) -> Result<()> {
-        let Some(live) = self.inner.live() else {
-            return Ok(());
-        };
-        let url = crate::live::urls::registry_push_target(
-            &live.edge,
-            self.inner.credentials.org_id(),
-            &self.inner.config.device_id,
-        );
-        let token_value = self.inner.tokens.bearer().await?;
-        let response = crate::auth::http()
-            .delete(url)
-            .bearer_auth(token_value)
-            .send()
-            .await
-            .map_err(|e| ClientError::Network(e.to_string()))?;
-        if !response.status().is_success() {
-            return Err(ClientError::HostError(format!(
-                "push removal http {}",
-                response.status()
-            )));
-        }
-        Ok(())
-    }
-
     pub async fn list_refs(&self, device_id: &str, repo_path: &str) -> Result<Vec<RepoRef>> {
         match self.inner.backend() {
             Backend::Demo(demo) => demo.list_refs(repo_path).await,
             Backend::Live(live) => {
                 let value = live
-                    .relay
+                    .hosts
                     .call(
                         device_id,
                         onicode_rpc::methods::LIST_REFS,
@@ -1512,7 +1403,7 @@ impl Client {
             }
             Backend::Live(live) => {
                 let value = live
-                    .relay
+                    .hosts
                     .call(
                         device_id,
                         onicode_rpc::methods::SEARCH_FILES,
@@ -1538,7 +1429,7 @@ impl Client {
                     None => serde_json::json!({}),
                 };
                 let value = live
-                    .relay
+                    .hosts
                     .call(device_id, onicode_rpc::methods::LIST_FOLDERS, params)
                     .await?;
                 serde_json::from_value(value).map_err(|e| ClientError::HostError(e.to_string()))
@@ -1551,7 +1442,7 @@ impl Client {
         match self.inner.backend() {
             Backend::Demo(demo) => demo.switch_ref(repo_path, ref_name).await,
             Backend::Live(live) => live
-                .relay
+                .hosts
                 .call(
                     device_id,
                     onicode_rpc::methods::SWITCH_REF,
@@ -1578,7 +1469,7 @@ impl Client {
                     params["spaceId"] = serde_json::Value::String(space_id.to_owned());
                 }
                 let value = live
-                    .relay
+                    .hosts
                     .call(device_id, onicode_rpc::methods::CREATE_WORKTREE, params)
                     .await?;
                 value
@@ -1612,7 +1503,7 @@ impl Client {
                 let upload_id = crate::new_id();
                 let file_name = attachments::upload_file_name(name);
                 let path = live
-                    .relay
+                    .hosts
                     .upload(device_id, &upload_id, &file_name, &data, progress)
                     .await?;
                 self.inner
@@ -1631,7 +1522,7 @@ impl Client {
         }
         let bytes = match self.inner.backend() {
             Backend::Demo(demo) => demo.read_attachment(path)?,
-            Backend::Live(live) => Arc::new(live.relay.read_attachment(device_id, path).await?),
+            Backend::Live(live) => Arc::new(live.hosts.read_attachment(device_id, path).await?),
         };
         self.inner
             .attachment_cache
@@ -1645,10 +1536,6 @@ impl Client {
     /// "unsatisfied" — ambiguity stays online.
     pub fn set_network_online(&self, online: bool) {
         let was = self.inner.path_online.swap(online, Ordering::AcqRel);
-        if !self.inner.is_demo() {
-            // Parks/un-parks every sync backoff in the process (onicode-sync).
-            onicode_sync::wake::set_path_online(online);
-        }
         if was != online {
             self.inner.recompute_connectivity();
             if online && let Some(live) = self.inner.live() {
@@ -1662,12 +1549,14 @@ impl Client {
     }
 
     /// The OS network path changed (another interface, a new address): the
-    /// links' paths may be gone, so every backoff ends and they redial now.
+    /// links' paths may be gone, so every backoff ends, they redial now and the
+    /// listed engines are looked up again.
     pub fn network_path_changed(&self) {
         if let Some(links) = self.inner.peer_links.get() {
             links.reset();
         }
-        self.inner.terminals_wake.notify_waiters();
+        self.inner.poke_engines();
+        self.inner.links_wake.notify_waiters();
     }
 
     /// Dial the device hosting `chat_id`, so a terminal opened on it next
@@ -1678,13 +1567,102 @@ impl Client {
         }
     }
 
-    /// Hand the client its links to the user's engines on the tailnet.
-    /// Terminals ride them; until then they wait. Set once.
+    /// Hand the client its links to the user's engines on the tailnet: every
+    /// host call, stream and terminal rides them; until then they wait. Set
+    /// once, here or by joining ([`Self::join_tailnet`], [`Self::join_engines`]).
     pub fn set_peer_links(&self, links: Arc<onicode_peer::PeerLinks>) {
-        if self.inner.peer_links.set(links).is_err() {
-            tracing::debug!("peer links were already set");
+        self.inner.set_peer_links(links);
+    }
+
+    /// Join the tailnet this machine's Tailscale daemon reports (macOS, Linux): find the
+    /// user's engines on it and link to each. Returns at once; until Tailscale is up the
+    /// client keeps trying, and host calls answer [`ClientError::HostUnavailable`].
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::Unsupported`] in the demo; [`ClientError::InvalidArgument`] when the
+    /// client is already on the tailnet.
+    pub fn join_tailnet(&self) -> Result<()> {
+        self.inner.join(crate::join::Join {
+            tailnet: Arc::new(onicode_tailnet::Relooking::system()),
+            sockets: Arc::new(onicode_peer::SystemSockets),
+            config: self.peer_config(),
+            engines: None,
+            follow_path: true,
+        })
+    }
+
+    /// Join the tailnet through the engines the person listed (`MagicDNS` names or tailnet
+    /// addresses), on a device with no Tailscale daemon to read (iOS: the Tailscale app keeps
+    /// it to itself). Called again, it lists `hosts` in place of the engines before and looks
+    /// them up now. Returns at once, like [`Self::join_tailnet`].
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::Unsupported`] in the demo; [`ClientError::InvalidArgument`] when the
+    /// client joined some other way.
+    pub fn join_engines(&self, hosts: Vec<String>) -> Result<()> {
+        let listed = lock(&self.inner.node)
+            .as_ref()
+            .and_then(|node| node.engines.clone());
+        if let Some(engines) = listed {
+            engines.set_hosts(hosts);
+            return Ok(());
         }
-        self.inner.terminals_wake.notify_waiters();
+        let engines = onicode_peer::EngineList::system(hosts);
+        self.inner.join(crate::join::Join {
+            tailnet: engines.clone(),
+            sockets: Arc::new(onicode_peer::SystemSockets),
+            config: self.peer_config(),
+            engines: Some(engines),
+            follow_path: true,
+        })
+    }
+
+    /// Join `tailnet`, binding through `sockets` as `config` says: a simulated tailnet in
+    /// tests. Returns at once, like [`Self::join_tailnet`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::join_tailnet`].
+    pub fn join_on(
+        &self,
+        tailnet: Arc<dyn onicode_tailnet::Tailnet>,
+        sockets: Arc<dyn onicode_peer::Sockets>,
+        config: onicode_peer::PeerConfig,
+    ) -> Result<()> {
+        self.inner.join(crate::join::Join {
+            tailnet,
+            sockets,
+            config,
+            engines: None,
+            follow_path: false,
+        })
+    }
+
+    /// The engines listed for [`Self::join_engines`], as cleaned up; empty when the client
+    /// reads no list.
+    pub fn engine_hosts(&self) -> Vec<String> {
+        lock(&self.inner.node)
+            .as_ref()
+            .and_then(|node| node.engines.as_ref())
+            .map(|engines| engines.hosts())
+            .unwrap_or_default()
+    }
+
+    /// Whether the client holds its links to the tailnet yet.
+    pub fn on_tailnet(&self) -> bool {
+        self.inner.peer_links.get().is_some()
+    }
+
+    /// This device on the tailnet: a viewer, by its app identity, on a port of its own so an
+    /// engine on the same machine keeps the engines' port.
+    fn peer_config(&self) -> onicode_peer::PeerConfig {
+        onicode_peer::PeerConfig::new(
+            self.inner.config.device_id.clone(),
+            onicode_net::Role::Viewer,
+        )
+        .on_ephemeral_port()
     }
 
     /// Takes what the hosts send on the client's links: the datagram copies
@@ -1693,9 +1671,9 @@ impl Client {
         Arc::new(self.inner.remote_terminals.clone())
     }
 
-    /// App returned to the foreground: resume ticking, probe the registry
-    /// and every open room (liveness is judged by protocol frames only),
-    /// restart PR watches.
+    /// App returned to the foreground: resume ticking, look up the listed
+    /// engines again, mirror the registry and every open room now, restart PR
+    /// watches.
     pub fn on_foreground(&self) {
         self.inner.foreground.store(true, Ordering::Release);
         let away = lock(&self.inner.backgrounded_at)
@@ -1707,12 +1685,11 @@ impl Client {
         {
             links.reset();
         }
-        self.inner.terminals_wake.notify_waiters();
+        self.inner.poke_engines();
+        self.inner.links_wake.notify_waiters();
         if let Some(live) = self.inner.live() {
             live.kick();
-            live.probe_health();
             self.kick_rooms();
-            live.relay.clear_unsupported();
             self.inner.reconcile_change_request_watches();
         }
         self.inner.tick();
@@ -1724,7 +1701,7 @@ impl Client {
         self.inner.foreground.store(false, Ordering::Release);
         *lock(&self.inner.backgrounded_at) = Some(std::time::Instant::now());
         if let Some(live) = self.inner.live() {
-            live.relay.stop_watches();
+            live.hosts.stop_watches();
             live.flush_registry(&self.inner);
             for core in self.inner.cores() {
                 core.flush();
@@ -1773,17 +1750,6 @@ pub(crate) fn ms(at: i64) -> chrono::DateTime<Utc> {
         .unwrap_or_else(Utc::now)
 }
 
-/// Which session notifications a device wants (the desktop's three).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PushPrefs {
-    /// A run finished.
-    pub done: bool,
-    /// A session is waiting on you (question / permission).
-    pub input: bool,
-    /// A run failed.
-    pub failed: bool,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1791,11 +1757,11 @@ mod tests {
     #[test]
     fn demo_renames_land_in_the_local_replica() {
         let dir = tempfile::tempdir().unwrap();
-        let mut config = ClientConfig::new("https://edge.invalid", dir.path());
+        let mut config = ClientConfig::new(dir.path());
         config.device_id = "ios-test".into();
         let client = Client::new(
             config,
-            Credentials::Demo(Default::default()),
+            Mode::Demo(Default::default()),
             Arc::new(crate::events::NullListener),
         )
         .unwrap();

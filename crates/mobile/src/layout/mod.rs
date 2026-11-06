@@ -541,19 +541,17 @@ impl TranscriptView {
     }
 
     /// Follow a subagent's transcript, read-only: `doc_id` (spawned in
-    /// `chat_id` — a chat, or a parent subagent's doc). `frozen`: it finished
-    /// (its uploaded copy first). Returns false when the chat is unknown.
+    /// `chat_id` — a chat, or a parent subagent's doc), running or finished.
+    /// Returns false when the chat is unknown.
     pub fn attach_subagent(
         &self,
         client: Arc<crate::client_ffi::CoreClient>,
         chat_id: String,
         doc_id: String,
-        frozen: bool,
     ) -> bool {
         let sink = Arc::new(SubagentInput(Mutex::new(self.tx.lock().unwrap().clone())));
-        let follow = crate::client_ffi::companions::follow_subagent(
-            &client, &chat_id, &doc_id, frozen, sink,
-        );
+        let follow =
+            crate::client_ffi::companions::follow_subagent(&client, &chat_id, &doc_id, sink);
         let attached = follow.is_some();
         *self.subagent.lock().unwrap() = follow;
         attached

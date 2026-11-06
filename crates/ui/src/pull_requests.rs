@@ -330,7 +330,7 @@ pub struct PullRequestsPage {
     /// error or skeleton state), so the rail reads the list's geometry.
     board_list_active: bool,
     _search_events: Subscription,
-    /// `None` keeps local calls direct; a value is forwarded by the relay.
+    /// `None` keeps local calls direct; a value is forwarded to that peer.
     target_device: Option<String>,
     items: Vec<ChangeRequestListItem>,
     view_items: Option<Rc<Vec<ChangeRequestListItem>>>,
@@ -1128,7 +1128,7 @@ impl PullRequestsPage {
                 "Choose repository".into()
             }
         });
-        let (projects, local, profile, selected_space) = {
+        let (projects, local, selected_space) = {
             let state = self.state.read(cx);
             let local = state.local_device_id.clone().or_else(|| {
                 state
@@ -1163,12 +1163,6 @@ impl PullRequestsPage {
                 (!checkouts.is_empty()).then_some((name, checkouts))
             })
             .collect();
-            let profile = match &state.auth {
-                Some(onicode_proto::AuthState::SignedIn { user, org_id }) => {
-                    Some(format!("{}:{org_id:?}", user.id))
-                }
-                _ => None,
-            };
             let selected_space = state
                 .spaces
                 .iter()
@@ -1183,19 +1177,16 @@ impl PullRequestsPage {
                         )
                 })
                 .cloned();
-            (projects, local, profile, selected_space)
+            (projects, local, selected_space)
         };
         let trigger_icon = match selected_space.as_ref() {
             Some(space) => div()
                 .size(px(16.0))
                 .flex_none()
-                .child(self.project_icons.render(
-                    &self.state,
-                    Some(space),
-                    profile.clone(),
-                    false,
-                    cx,
-                ))
+                .child(
+                    self.project_icons
+                        .render(&self.state, Some(space), false, cx),
+                )
                 .into_any_element(),
             None => icon(icons::FOLDER_WITH_FILES)
                 .size(px(14.0))
@@ -1291,13 +1282,9 @@ impl PullRequestsPage {
                         } else {
                             None
                         };
-                        let artwork = self.project_icons.render(
-                            &self.state,
-                            Some(&space),
-                            profile.clone(),
-                            selected,
-                            cx,
-                        );
+                        let artwork =
+                            self.project_icons
+                                .render(&self.state, Some(&space), selected, cx);
                         let id = format!("pr-project-{}", space.id);
                         let selector = id.clone();
                         let row = popover::picker_row(theme, selected, false, id.clone())
@@ -3773,7 +3760,6 @@ mod tests {
             child_kind: None,
             space_id: Some(space.into()),
             last_seen_at: None,
-            room_gen: None,
         }
     }
 

@@ -22,9 +22,7 @@ use gpui::{
     MouseUpEvent, NavigationDirection, Pixels, Point, Render, SharedString, Subscription, Task,
     Window, WindowControlArea, actions, div, px,
 };
-use gpui_tokio::Tokio;
-use onicode_engine::InstanceLock;
-use onicode_proto::{AuthState, ChatConfig, HarnessId, WorkspaceScope};
+use onicode_proto::{ChatConfig, HarnessId};
 use onicode_rpc::methods;
 
 use crate::changes::{Changes, ChangesEvent, DiscardWorkingTreeRequest};
@@ -41,8 +39,6 @@ use crate::pull_requests::PullRequestsPage;
 use crate::settings::accounts::AccountsPage;
 use crate::settings::appearance::{AppearancePage, AppearanceSettingsEvent};
 use crate::settings::archived::ArchivedPage;
-use crate::settings::billing::BillingPage;
-use crate::settings::cloud::CloudPage;
 use crate::settings::devices::DevicesPage;
 use crate::settings::files::{FilesSettingsEvent, FilesSettingsPage};
 use crate::settings::harnesses::HarnessesPage;
@@ -53,11 +49,10 @@ use crate::settings::{
     RIGHT_PANE_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SavePolicy, ShortcutId,
     SidebarOrganization, SidebarSort, TERMINAL_DEFAULT_HEIGHT, TERMINAL_MAX_VH,
     TERMINAL_MIN_HEIGHT, UiSettings, badge_combo, jump_hints_visible, modifier_send_hint_visible,
-    platform_combo, sidebar_pin_profile_key,
+    platform_combo,
 };
 use crate::state::{
-    AppState, ConnectionStatus, EngineBootConfig, EngineMode, GatePhase, Indicator, OrgRow,
-    format_time_ago, org_name_valid, parse_orgs, sort_memberships,
+    AppState, ConnectionStatus, EngineBootConfig, GatePhase, Indicator, format_time_ago,
 };
 use crate::terminal::panel::{TerminalPanel, ToggleTerminal, clamp_terminal_height};
 use crate::theme::Theme;
@@ -122,7 +117,7 @@ fn connection_pill_caption(conn: &onicode_proto::Connectivity) -> Option<(&'stat
     match conn.state {
         S::Disabled | S::Connected => None,
         S::Offline => Some(("Offline — sends are saved", true)),
-        S::Reconnecting => Some(("Reconnecting…", false)),
+        S::Reconnecting => Some(("Reaching your other machines…", false)),
     }
 }
 
@@ -615,10 +610,6 @@ fn localize_binding(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SettingsSection {
     Devices,
-    /// The user's Cloud device: lifecycle, its providers, GitHub.
-    Cloud,
-    /// Plan and credits for Cloud (Stripe).
-    Billing,
     /// Which harnesses the composer offers (enable/disable toggles) —
     /// labeled "Providers".
     Harnesses,
@@ -638,7 +629,7 @@ pub enum SettingsSection {
 
 impl SettingsSection {
     /// Sections shown in Settings. `Agents` is a legacy Accounts route alias.
-    pub const ALL: [SettingsSection; 12] = [
+    pub const ALL: [SettingsSection; 10] = [
         SettingsSection::General,
         SettingsSection::Appearance,
         SettingsSection::Notifications,
@@ -646,8 +637,6 @@ impl SettingsSection {
         SettingsSection::Shortcuts,
         SettingsSection::Harnesses,
         SettingsSection::Devices,
-        SettingsSection::Cloud,
-        SettingsSection::Billing,
         SettingsSection::Files,
         SettingsSection::Appshots,
         SettingsSection::Archived,
@@ -667,17 +656,6 @@ impl SettingsSection {
         self != Self::Agents && (self != Self::Appshots || crate::appshots::is_desktop())
     }
 
-    /// [`Self::visible_in_nav`], plus what depends on the account: Cloud
-    /// and Billing only when the account is offered Cloud.
-    fn shown_in_nav(self, cloud_offered: bool) -> bool {
-        self.visible_in_nav() && (!self.needs_account() || cloud_offered)
-    }
-
-    /// Pages about the signed-in account (they open General when signed out).
-    fn needs_account(self) -> bool {
-        matches!(self, Self::Cloud | Self::Billing)
-    }
-
     /// Where a generic "open Settings" lands for a remembered section: legacy
     /// aliases resolve to their page, and a section this build does not show
     /// (Appshots off macOS/Linux) falls back to General.
@@ -694,8 +672,6 @@ impl SettingsSection {
     fn slug(self) -> &'static str {
         match self {
             SettingsSection::Devices => "devices",
-            SettingsSection::Cloud => "cloud",
-            SettingsSection::Billing => "billing",
             SettingsSection::Harnesses => "providers",
             SettingsSection::Agents => "agents",
             SettingsSection::Appearance => "appearance",
@@ -713,8 +689,6 @@ impl SettingsSection {
     fn from_slug(slug: &str) -> Option<Self> {
         Some(match slug {
             "devices" => SettingsSection::Devices,
-            "cloud" => SettingsSection::Cloud,
-            "billing" => SettingsSection::Billing,
             "providers" | "harnesses" => SettingsSection::Harnesses,
             "agents" => SettingsSection::Agents,
             "appearance" => SettingsSection::Appearance,
@@ -740,8 +714,6 @@ impl SettingsSection {
     pub fn label(self) -> &'static str {
         match self {
             SettingsSection::Devices => "Devices",
-            SettingsSection::Cloud => "Cloud",
-            SettingsSection::Billing => "Billing",
             SettingsSection::Harnesses => "Providers",
             SettingsSection::Agents => "Accounts",
             SettingsSection::Appearance => "Appearance",
@@ -759,8 +731,6 @@ impl SettingsSection {
     fn icon(self) -> &'static str {
         match self {
             SettingsSection::Devices => icons::MONITOR,
-            SettingsSection::Cloud => icons::CLOUD,
-            SettingsSection::Billing => icons::WALLET,
             SettingsSection::Harnesses => icons::WIDGET,
             SettingsSection::Agents => icons::KEY_MINIMALISTIC,
             SettingsSection::Appearance => icons::TUNING,
@@ -1281,7 +1251,6 @@ struct SidebarSessionDrag {
     chat_id: String,
     visible_ids: std::sync::Arc<Vec<String>>,
     filter: Option<String>,
-    profile_key: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1360,7 +1329,6 @@ struct PinnedSessionDragState {
     prev_over: usize,
     epoch: usize,
     filter: Option<String>,
-    profile_key: String,
     pointer_y: Option<f32>,
     viewport_top: f32,
     viewport_bottom: f32,
@@ -1372,7 +1340,6 @@ struct PinnedSessionDragState {
 #[derive(Clone)]
 struct SidebarSectionDrag {
     section_id: String,
-    profile_key: String,
     /// The section order the drag started from.
     ids: std::sync::Arc<Vec<String>>,
 }
@@ -1635,87 +1602,6 @@ struct ChatRename {
     _blur: Option<Subscription>,
 }
 
-/// Account lifecycle owned by this process. Sign-in on a local workspace
-/// flows through the in-place switch wizard (offer → switch → import → done);
-/// `RestartPending` survives only as the fallback when the in-place swap
-/// fails and a full quit is the safe way out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SyncFlow {
-    Idle,
-    Enabling,
-    Canceling,
-    /// Signed in on a local runtime: the wizard's choice step (bring local
-    /// work / start fresh / later). `notice_open: false` = postponed, badge
-    /// in the account menu.
-    SwitchOffer {
-        notice_open: bool,
-    },
-    /// Stopping the local runtime and bootstrapping the synced one in-place.
-    Switching {
-        import: bool,
-    },
-    /// The one-time import stream is running on the new synced runtime.
-    Importing {
-        done: usize,
-        total: usize,
-    },
-    /// Import finished; the success step stays until dismissed.
-    ImportDone {
-        imported: usize,
-        skipped: usize,
-    },
-    /// The import stream reported errors or died early. Explicit retry step —
-    /// structural idempotence makes re-running safe (only missing rows copy).
-    /// Details ride `runtime_change_error`. `notice_open: false` = postponed:
-    /// the dialog is hidden but the failure stays pending, reachable through
-    /// the account menu — dismissal must never discard the only retry
-    /// entry point (under Synced scope the menu otherwise offers just
-    /// Sign out, and the local rows would be unreachable).
-    ImportFailed {
-        notice_open: bool,
-    },
-    RestartPending {
-        notice_open: bool,
-    },
-    SignOutConfirm,
-    SigningOut,
-    SignedOutRestartRequired,
-}
-
-impl SyncFlow {
-    /// States the in-place switch driver owns end-to-end — auth/scope edges
-    /// must not reset them while the runtime is being replaced under the UI.
-    fn is_switch_lifecycle(self) -> bool {
-        matches!(
-            self,
-            SyncFlow::Switching { .. }
-                | SyncFlow::Importing { .. }
-                | SyncFlow::ImportDone { .. }
-                | SyncFlow::ImportFailed { .. }
-        )
-    }
-
-    fn has_visible_overlay(self) -> bool {
-        match self {
-            SyncFlow::Idle
-            | SyncFlow::SwitchOffer { notice_open: false }
-            | SyncFlow::ImportFailed { notice_open: false }
-            | SyncFlow::RestartPending { notice_open: false }
-            | SyncFlow::SignedOutRestartRequired => false,
-            SyncFlow::Enabling
-            | SyncFlow::Canceling
-            | SyncFlow::SwitchOffer { notice_open: true }
-            | SyncFlow::Switching { .. }
-            | SyncFlow::Importing { .. }
-            | SyncFlow::ImportDone { .. }
-            | SyncFlow::ImportFailed { notice_open: true }
-            | SyncFlow::RestartPending { notice_open: true }
-            | SyncFlow::SignOutConfirm
-            | SyncFlow::SigningOut => true,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ShellEscapeOutcome {
     OtherKey,
@@ -1805,233 +1691,10 @@ fn resolve_shell_escape(
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AccountMenuAction {
-    EnableSync,
-    SyncInProgress,
-    /// Postponed switch wizard (or legacy restart fallback) — reopen it.
-    RestartPending,
-    SignOut,
-}
-
 #[derive(Debug, Clone)]
 enum DiscardWorkingTreeFlow {
     Confirm(DiscardWorkingTreeRequest),
     Failed(SharedString),
-}
-
-const RUNTIME_CHANGE_TIMEOUT: Duration = Duration::from_secs(10);
-const RUNTIME_CHANGE_POLL_INTERVAL: Duration = Duration::from_millis(50);
-
-/// Wait until a stopped daemon can no longer win the next bootstrap probe and
-/// has released the data directory for the replacement runtime.
-async fn wait_for_remote_engine_shutdown(
-    ipc_port: u16,
-    data_dir: &std::path::Path,
-    timeout: Duration,
-) -> Result<(), String> {
-    let deadline = tokio::time::Instant::now() + timeout;
-    loop {
-        let port_closed = !matches!(
-            tokio::time::timeout(
-                Duration::from_millis(200),
-                tokio::net::TcpStream::connect(("127.0.0.1", ipc_port)),
-            )
-            .await,
-            Ok(Ok(_))
-        );
-        if port_closed && InstanceLock::holder(data_dir).is_none() {
-            return Ok(());
-        }
-        if tokio::time::Instant::now() >= deadline {
-            return Err(format!(
-                "the daemon did not finish stopping within {} seconds",
-                timeout.as_secs()
-            ));
-        }
-        tokio::time::sleep(RUNTIME_CHANGE_POLL_INTERVAL).await;
-    }
-}
-
-/// Stop the engine that owns the synced profile and wait until a local runtime
-/// can safely acquire both its IPC port and data-directory lock.
-async fn stop_synced_runtime(
-    engine: crate::state::EngineHandle,
-    ipc_port: u16,
-    data_dir: &std::path::Path,
-) -> Result<(), String> {
-    let stop_error = if matches!(engine.mode(), EngineMode::Remote { .. }) {
-        engine
-            .client()
-            .call(methods::STOP_ENGINE, serde_json::json!({}))
-            .await
-            .err()
-            .map(|error| error.to_string())
-    } else {
-        None
-    };
-    engine.shutdown().await;
-    match wait_for_remote_engine_shutdown(ipc_port, data_dir, RUNTIME_CHANGE_TIMEOUT).await {
-        Ok(()) => Ok(()),
-        Err(error) => match stop_error {
-            Some(stop_error) => Err(format!("{stop_error}; {error}")),
-            None => Err(error),
-        },
-    }
-}
-
-/// What an import-summary stream item means for the wizard: `Ok((imported,
-/// skipped))` only when the engine reported zero errors; otherwise the
-/// user-facing failure message. Pure so the partial-failure path is testable.
-fn import_summary_outcome(item: &serde_json::Value) -> Result<(usize, usize), String> {
-    let count = |key: &str| item.get(key).and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-    let errors: Vec<&str> = item
-        .get("errors")
-        .and_then(|e| e.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
-        .unwrap_or_default();
-    if errors.is_empty() {
-        return Ok((count("importedChats"), count("skippedChats")));
-    }
-    let first = errors.first().copied().unwrap_or("unknown error");
-    Err(if errors.len() == 1 {
-        format!("{} imported, 1 failure: {first}", count("importedChats"))
-    } else {
-        format!(
-            "{} imported, {} failures — first: {first}",
-            count("importedChats"),
-            errors.len()
-        )
-    })
-}
-
-/// The offer step's description of what a switch would bring along, or `None`
-/// when the local profile holds nothing importable. Spaces count as work:
-/// a projects-only profile must get the import choice too.
-fn local_work_phrase(chats: usize, spaces: usize) -> Option<String> {
-    let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
-    match (chats, spaces) {
-        (0, 0) => None,
-        (c, 0) => Some(format!("the {}", plural(c, "session"))),
-        (0, s) => Some(format!("the {}", plural(s, "project"))),
-        (c, s) => Some(format!(
-            "the {} and {}",
-            plural(c, "session"),
-            plural(s, "project")
-        )),
-    }
-}
-
-fn account_menu_action(scope: Option<WorkspaceScope>, flow: SyncFlow) -> Option<AccountMenuAction> {
-    match scope {
-        Some(WorkspaceScope::Local) => match flow {
-            SyncFlow::Idle => Some(AccountMenuAction::EnableSync),
-            SyncFlow::Enabling | SyncFlow::Canceling => Some(AccountMenuAction::SyncInProgress),
-            SyncFlow::SwitchOffer { .. } | SyncFlow::RestartPending { .. } => {
-                Some(AccountMenuAction::RestartPending)
-            }
-            SyncFlow::ImportFailed { .. } => Some(AccountMenuAction::RestartPending),
-            SyncFlow::Switching { .. }
-            | SyncFlow::Importing { .. }
-            | SyncFlow::ImportDone { .. } => Some(AccountMenuAction::SyncInProgress),
-            SyncFlow::SignOutConfirm
-            | SyncFlow::SigningOut
-            | SyncFlow::SignedOutRestartRequired => None,
-        },
-        Some(WorkspaceScope::Synced) => match flow {
-            SyncFlow::SignedOutRestartRequired => None,
-            // A pending import failure must stay reachable: this is the only
-            // surface that can reopen the retry dialog on a synced runtime.
-            SyncFlow::ImportFailed { .. } => Some(AccountMenuAction::RestartPending),
-            _ if flow.is_switch_lifecycle() => Some(AccountMenuAction::SyncInProgress),
-            _ => Some(AccountMenuAction::SignOut),
-        },
-        Some(WorkspaceScope::Development) | None => None,
-    }
-}
-
-/// The sidebar footer's profile label and the account menu's identity line.
-/// Anything without a signed-in account reads "Local"; the menu carries the
-/// storage/sync detail.
-fn sidebar_account_identity(
-    scope: Option<WorkspaceScope>,
-    flow: SyncFlow,
-    user: Option<&onicode_proto::UserProfile>,
-) -> (SharedString, SharedString) {
-    match scope {
-        Some(WorkspaceScope::Local) => {
-            let identity = if matches!(flow, SyncFlow::RestartPending { .. }) {
-                "Sync ready after restart"
-            } else {
-                "Stored on this device"
-            };
-            ("Local".into(), identity.into())
-        }
-        Some(WorkspaceScope::Development) => {
-            ("Development".into(), "Authentication disabled".into())
-        }
-        Some(WorkspaceScope::Synced) | None => match user {
-            Some(user) => {
-                let name = user
-                    .name
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|name| !name.is_empty())
-                    .unwrap_or(&user.email);
-                (name.to_owned().into(), user.email.clone().into())
-            }
-            None => ("Local".into(), "Not signed in".into()),
-        },
-    }
-}
-
-fn sync_flow_after_auth(
-    flow: SyncFlow,
-    scope: Option<WorkspaceScope>,
-    auth: Option<&AuthState>,
-) -> SyncFlow {
-    match scope {
-        Some(WorkspaceScope::Local) => match (flow, auth) {
-            // The in-place switch owns its own lifecycle once started.
-            (flow, _) if flow.is_switch_lifecycle() => flow,
-            // AuthStatus belongs to the runtime, not to the Shell that opened
-            // the browser. Every attached viewport must advertise the pending
-            // profile switch once any of them completes sign-in.
-            (SyncFlow::SwitchOffer { .. }, Some(AuthState::SignedOut)) => SyncFlow::Idle,
-            (SyncFlow::RestartPending { .. }, Some(AuthState::SignedOut)) => SyncFlow::Idle,
-            (SyncFlow::Canceling, Some(AuthState::SignedIn { .. })) => flow,
-            (SyncFlow::SwitchOffer { .. }, Some(AuthState::SignedIn { .. })) => flow,
-            (SyncFlow::RestartPending { .. }, Some(AuthState::SignedIn { .. })) => flow,
-            (_, Some(AuthState::SignedIn { .. })) => SyncFlow::SwitchOffer { notice_open: true },
-            _ => flow,
-        },
-        Some(WorkspaceScope::Synced) => match auth {
-            // AuthStatus is shared by every viewport attached to the runtime.
-            // Once a synced store loses its credentials, every Shell must stop:
-            // letting another viewport sign in would authenticate a new account
-            // while the engine still serves the previous account's fixed store.
-            Some(AuthState::SignedOut) => SyncFlow::SignedOutRestartRequired,
-            _ => match flow {
-                SyncFlow::SignOutConfirm
-                | SyncFlow::SigningOut
-                | SyncFlow::SignedOutRestartRequired => flow,
-                flow if flow.is_switch_lifecycle() => flow,
-                _ => SyncFlow::Idle,
-            },
-        },
-        Some(WorkspaceScope::Development) => SyncFlow::Idle,
-        None => flow,
-    }
-}
-
-/// The "Create your workspace" gate (feature-inventory §1.2 OrgGate).
-struct OrgGateUi {
-    name_input: Entity<ComposerInput>,
-    orgs: Loadable<Vec<OrgRow>>,
-    submitting: bool,
-    error: Option<SharedString>,
-    task: Option<Task<()>>,
-    _events: Subscription,
 }
 
 /// One right-pane subagent tab: the doc it shows, its strip title, and the
@@ -2041,8 +1704,6 @@ struct SubagentTab {
     harness: Option<onicode_proto::HarnessId>,
     title: SharedString,
     transcript: Entity<Transcript>,
-    /// Keeps a frozen-blob fetch alive (it falls back to a live doc watch).
-    _fetch: Option<Task<()>>,
     /// Spawn chips INSIDE the subagent transcript open their own tabs.
     _events: Subscription,
 }
@@ -2083,7 +1744,6 @@ enum UpdatePromptButton {
 enum PendingExit {
     CloseWindow,
     Quit,
-    RuntimeChange,
     InstallUpdate(PathBuf),
 }
 
@@ -2226,10 +1886,6 @@ pub struct Shell {
     pull_request_cache:
         std::rc::Rc<std::cell::RefCell<crate::pull_request_detail::PullRequestCache>>,
     devices_page: Option<Entity<DevicesPage>>,
-    /// Rebuilt per visit and dropped on leaving, which stops its GitHub
-    /// polling and status re-checks.
-    cloud_page: Option<Entity<CloudPage>>,
-    billing_page: Option<Entity<BillingPage>>,
     archived_page: Option<Entity<ArchivedPage>>,
     appearance_page: Option<Entity<AppearancePage>>,
     files_settings_page: Option<Entity<FilesSettingsPage>>,
@@ -2259,7 +1915,6 @@ pub struct Shell {
     /// Space-row context menu (dropdown rows): (space id, window position).
     space_menu: popover::Popup<(String, Point<Pixels>)>,
     rename_space_dialog: Option<RenameSpaceDialog>,
-    sidebar_section_migration: Option<(String, crate::state::EngineHandle)>,
     section_dialog: Option<sidebar_sections::SectionDialog>,
     section_menu: Option<(String, Point<Pixels>)>,
     section_header_hover: Option<String>,
@@ -2343,28 +1998,13 @@ pub struct Shell {
     /// lifecycle ([`crate::app_update`]) moves. `None` when the app runs
     /// without a desktop checker (tests).
     _app_update_observation: Option<Subscription>,
-    org: Option<OrgGateUi>,
-    sync_flow: SyncFlow,
     /// First-run setup in place of the Ready shell; built on first Ready
     /// render from `onboarding_pending` (a fresh install, or
     /// `ONICODE_ONBOARDING=<step>`).
     onboarding: Option<Entity<crate::onboarding::Onboarding>>,
-    /// Chats whose explorer showed their Cloud machine asleep: once it is
-    /// up, what failed while it slept is listed again.
-    files_machine_down: std::collections::HashSet<String>,
     onboarding_pending: Option<crate::onboarding::Step>,
     _onboarding_subscriptions: Vec<Subscription>,
-    /// The sign-in gate's Log in opened the browser: the gate waits for it
-    /// the way the sync opt-in does, with a way to open it again.
-    gate_sign_in_waiting: bool,
     mutate_task: Option<Task<()>>,
-    auth_task: Option<Task<()>>,
-    runtime_change_task: Option<Task<()>>,
-    runtime_change_error: Option<SharedString>,
-    /// The one-time local→synced import stream (switch wizard progress step).
-    import_task: Option<Task<()>>,
-    /// Title of the chat the import stream is copying right now.
-    import_current: Option<SharedString>,
     /// Kept for the failed-gate "Retry" action.
     boot: EngineBootConfig,
     data_dir: PathBuf,
@@ -2689,15 +2329,15 @@ impl Shell {
         // More capture knobs of the same kind: `ONICODE_OPEN_DIALOG=rename|delete`
         // opens that dialog for the first chat once chats land; `=model` pops
         // the combined harness/model menu once the shell is Ready;
-        // `ONICODE_FORCE_GATE=signin|org|failed` renders that gate regardless of
-        // real auth state (display-only — for styling passes).
+        // `ONICODE_FORCE_GATE=failed` renders the failed gate regardless of
+        // the engine's state (display-only — for styling passes).
         let debug_dialog = std::env::var("ONICODE_OPEN_DIALOG").ok();
         // `ONICODE_DEMO_UPLOAD=<pct>:<image path>` fabricates an in-flight image
         // send on the selected chat (echo bubble + frozen thumbnail progress
         // ring) — display-only; a real upload can't be paused for a capture.
         let debug_upload = std::env::var("ONICODE_DEMO_UPLOAD").ok();
         // `ONICODE_ONBOARDING=<step>` opens first-run setup at that step
-        // (welcome, appearance, sync, providers, done) even when finished.
+        // (welcome, appearance, providers, done) even when finished.
         let onboarding_pending = std::env::var("ONICODE_ONBOARDING")
             .ok()
             .map(|step| crate::onboarding::Step::parse(&step))
@@ -2705,8 +2345,6 @@ impl Shell {
                 (!settings.onboarding_completed).then_some(crate::onboarding::Step::Welcome)
             });
         let debug_gate = match std::env::var("ONICODE_FORCE_GATE").ok().as_deref() {
-            Some("signin") => Some(GatePhase::SignIn),
-            Some("org") => Some(GatePhase::OrgGate),
             Some("failed") => Some(GatePhase::Failed(
                 "Could not reach the onicode engine on port 27901".into(),
             )),
@@ -2807,8 +2445,6 @@ impl Shell {
             pending_pull_request: None,
             pull_request_cache: Default::default(),
             devices_page: None,
-            cloud_page: None,
-            billing_page: None,
             archived_page: None,
             appearance_page: None,
             files_settings_page: None,
@@ -2830,7 +2466,6 @@ impl Shell {
             discard_working_tree_task: None,
             space_menu: popover::Popup::default(),
             rename_space_dialog: None,
-            sidebar_section_migration: None,
             section_dialog: None,
             section_menu: None,
             section_header_hover: None,
@@ -2881,19 +2516,10 @@ impl Shell {
             sidebar_notice: None,
             _app_update_observation: crate::app_update::AppUpdate::global(cx)
                 .map(|update| cx.observe(&update, |_, _, cx| cx.notify())),
-            org: None,
-            sync_flow: SyncFlow::Idle,
             onboarding: None,
-            files_machine_down: Default::default(),
             onboarding_pending,
             _onboarding_subscriptions: Vec::new(),
-            gate_sign_in_waiting: false,
             mutate_task: None,
-            auth_task: None,
-            runtime_change_task: None,
-            runtime_change_error: None,
-            import_task: None,
-            import_current: None,
             boot,
             data_dir,
             settings_base: settings::current(cx),
@@ -3048,47 +2674,6 @@ impl Shell {
         }
         if let Some(notice) = state.update(cx, |state, _| state.take_deep_link_notice()) {
             self.show_notice(crate::toast::ToastKind::Info, notice, cx);
-        }
-        let next_sync_flow = {
-            let state = state.read(cx);
-            sync_flow_after_auth(self.sync_flow, state.workspace_scope, state.auth.as_ref())
-        };
-        if next_sync_flow != self.sync_flow {
-            self.sync_flow = next_sync_flow;
-            if matches!(
-                self.sync_flow,
-                SyncFlow::RestartPending { .. } | SyncFlow::SwitchOffer { .. }
-            ) {
-                self.org = None;
-            }
-        }
-        // Logging in from setup means switching to the synced workspace;
-        // with no local work there's nothing to choose, so setup goes
-        // straight on instead of stopping at the offer.
-        if self.onboarding.is_some()
-            && self.sync_flow == (SyncFlow::SwitchOffer { notice_open: true })
-        {
-            let empty = {
-                let state = state.read(cx);
-                local_work_phrase(state.chats.len(), state.spaces.len()).is_none()
-            };
-            if empty {
-                self.start_synced_switch(false, cx);
-            }
-        }
-        // The in-place local→synced switch: once the replacement runtime is
-        // attached and Ready, kick the import (or finish) from here.
-        self.drive_sync_switch(cx);
-        let signed_out_synced = {
-            let state = state.read(cx);
-            state.workspace_scope == Some(WorkspaceScope::Synced)
-                && matches!(state.auth, Some(AuthState::SignedOut))
-        };
-        // AuthStatus is shared by every viewport. Whichever viewport owns the
-        // embedded runtime drains it; remote viewports request daemon shutdown
-        // and all of them independently reattach to the new local runtime.
-        if signed_out_synced && self.runtime_change_task.is_none() {
-            self.start_local_runtime_transition(false, cx);
         }
         // Capture knob: the add-space palette needs only the device registry.
         if self.debug_dialog.as_deref() == Some("add-space") && !state.read(cx).devices.is_empty() {
@@ -3258,7 +2843,7 @@ impl Shell {
                 {
                     let body = match connectivity {
                         onicode_proto::ConnectivityState::Offline => "Your device is offline",
-                        _ => "Onicode is trying to reconnect",
+                        _ => "Onicode is reaching your other machines",
                     };
                     crate::notify::post("Connection unavailable", body, None);
                 }
@@ -3391,7 +2976,7 @@ impl Shell {
             self.settings.space_filter = None;
             self.schedule_save(cx);
         }
-        self.reconcile_sidebar_pins(cx);
+        self.discard_stale_sidebar_pin_writes(cx);
         if !self.pinned_session_drag_is_valid(cx) {
             self.cancel_pinned_session_drag(cx);
         }
@@ -4138,15 +3723,10 @@ impl Shell {
     }
 
     fn sync_browser_profile(&mut self, cx: &mut Context<Self>) {
-        let browser_profile = {
-            let state = self.state.read(cx);
-            crate::browser::profile::BrowserProfile::for_workspace(
-                &self.data_dir,
-                state.workspace_scope,
-                state.auth.as_ref(),
-                state.local_device_id.as_deref(),
-            )
-        };
+        let browser_profile = crate::browser::profile::BrowserProfile::for_device(
+            &self.data_dir,
+            self.state.read(cx).local_device_id.as_deref(),
+        );
         if browser_profile != self.browser_profile {
             for browser in self.browsers.values() {
                 browser.update(cx, |browser, cx| browser.close(cx));
@@ -4623,8 +4203,7 @@ impl Shell {
     }
 
     /// An error card's "Log in": Providers, aimed at the device the chat
-    /// runs on (Cloud's logins for Cloud chats), with its agent open and the
-    /// sign-in started.
+    /// runs on, with its agent open and the sign-in started.
     fn sign_in_for_chat(&mut self, chat_id: &str, cx: &mut Context<Self>) {
         let (target, harness) = {
             let state = self.state.read(cx);
@@ -4634,9 +4213,7 @@ impl Shell {
             let Some(harness) = chat.config.as_ref().map(|config| config.harness) else {
                 return;
             };
-            let target = if onicode_proto::is_cloud_device(&chat.device_id, "") {
-                Some(onicode_proto::CLOUD_ACCOUNTS_DEVICE.to_string())
-            } else if state.local_device_id.as_deref() == Some(chat.device_id.as_str()) {
+            let target = if state.local_device_id.as_deref() == Some(chat.device_id.as_str()) {
                 None
             } else {
                 Some(chat.device_id.clone())
@@ -4653,9 +4230,8 @@ impl Shell {
     }
 
     /// A spawn chip's "Open subagent": focus the existing tab for that doc,
-    /// or open one. `frozen` (subagent done/failed) tries the uploaded
-    /// transcript blob first and falls back to the live doc watch; running
-    /// subagents watch the doc directly.
+    /// or open one watching the subagent's doc. A `frozen` one (done or
+    /// failed) reads top-down instead of following its streaming end.
     fn add_subagent_surface(
         &mut self,
         chat_id: String,
@@ -4709,13 +4285,8 @@ impl Shell {
             transcript.set_workspace_link_handler(links)
         });
         let events = cx.subscribe(&transcript, Self::on_transcript_event);
-        let fetch = if frozen {
-            self.spawn_subagent_snapshot_fetch(&chat_id, &doc_id, cx)
-        } else {
-            self.state
-                .update(cx, |s, cx| s.watch_subagent_doc(doc_id.clone(), cx));
-            None
-        };
+        self.state
+            .update(cx, |s, cx| s.watch_subagent_doc(doc_id.clone(), cx));
         self.subagent_tabs.insert(
             id,
             SubagentTab {
@@ -4723,7 +4294,6 @@ impl Shell {
                 harness,
                 title: title.into(),
                 transcript,
-                _fetch: fetch,
                 _events: events,
             },
         );
@@ -4733,69 +4303,6 @@ impl Shell {
             .or_default()
             .push(RightSurface::Subagent(id));
         self.set_right_active(RightSurface::Subagent(id), cx);
-    }
-
-    /// Fetch a finished subagent's frozen transcript blob
-    /// (`{chat_id}/{doc_id}`); on ANY failure fall back to watching the doc
-    /// — the blob upload is best-effort engine-side.
-    fn spawn_subagent_snapshot_fetch(
-        &self,
-        chat_id: &str,
-        doc_id: &str,
-        cx: &mut Context<Self>,
-    ) -> Option<Task<()>> {
-        let Some(engine) = self.state.read(cx).engine().cloned() else {
-            self.state
-                .update(cx, |s, cx| s.watch_subagent_doc(doc_id.to_string(), cx));
-            return None;
-        };
-        // Copied spawn chips retain their original subagent doc namespace.
-        let source_chat = doc_id
-            .split_once("--sub--")
-            .map(|(source, _)| source)
-            .unwrap_or(chat_id);
-        let blob_ref = format!("{source_chat}/{doc_id}");
-        let state = self.state.clone();
-        let doc_id = doc_id.to_string();
-        Some(cx.spawn(async move |_, cx| {
-            let reply = crate::attachments::call_with_timeout(
-                &engine,
-                cx.background_executor(),
-                methods::FETCH_TOOL_BLOB,
-                serde_json::json!({ "blobRef": blob_ref }),
-                Duration::from_secs(20),
-            )
-            .await;
-            let snapshot = cx
-                .background_executor()
-                .spawn(async move {
-                    let value = reply.ok()?;
-                    let entries: Vec<onicode_doc::SessionMessageEntry> =
-                        serde_json::from_str(value.get("text")?.as_str()?).ok()?;
-                    let update = onicode_doc::TranscriptUpdate {
-                        replay_baseline: Some(onicode_doc::TranscriptBaseline::capture(&entries)),
-                        frame: onicode_doc::TranscriptFrame::Reset { reset: entries },
-                        context_usage: None,
-                    };
-                    let prepared = crate::transcript::TranscriptPreparation::default()
-                        .prepare(&update)
-                        .ok()?;
-                    let onicode_doc::TranscriptFrame::Reset { reset } = update.frame else {
-                        unreachable!()
-                    };
-                    Some((reset, prepared))
-                })
-                .await;
-            state.update(cx, |s, cx| {
-                match snapshot {
-                    Some((entries, prepared)) => {
-                        s.set_prepared_subagent_snapshot(doc_id, entries, prepared);
-                    }
-                    None => s.watch_subagent_doc(doc_id, cx),
-                }
-                cx.notify();
-            });
-        }))
     }
 
     /// Snapshot the displayed order before closing tabs mutates it.
@@ -5628,12 +5135,8 @@ impl Shell {
     fn copy_onicode_conversation_link(&mut self, chat_id: &str, cx: &mut Context<Self>) {
         let link = {
             let state = self.state.read(cx);
-            crate::links::workspace_locator(
-                state.workspace_scope,
-                state.auth.as_ref(),
-                state.local_device_id.as_deref(),
-            )
-            .map(|workspace| crate::links::onicode_conversation_link(chat_id, &workspace))
+            crate::links::workspace_locator(state.local_device_id.as_deref())
+                .map(|workspace| crate::links::onicode_conversation_link(chat_id, &workspace))
         };
         if let Some(link) = link {
             cx.write_to_clipboard(ClipboardItem::new_string(link));
@@ -5749,30 +5252,12 @@ impl Shell {
     }
 
     pub(crate) fn open_settings(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
-        let mut section = section.canonical();
-        // Signed out, or not offered Cloud: no Cloud or billing to manage.
-        if section.needs_account() && !self.state.read(cx).cloud_offered() {
-            section = SettingsSection::General;
-        }
+        let section = section.canonical();
         self.command_palette = None;
         // Recreate per visit: the page's ListHarnesses load re-probes which
         // CLIs are installed, so installing one shows up on the next open.
         if section == SettingsSection::Harnesses {
             self.harnesses_page = None;
-        }
-        // Cloud status is read once per visit (re-picking the page it already
-        // shows is not a new visit: it would only flash).
-        if section == SettingsSection::Cloud
-            && self.route != Route::Settings(SettingsSection::Cloud)
-        {
-            self.cloud_page = None;
-        }
-        // Billing too: a fresh read per visit (it then follows open Stripe
-        // pages until they land).
-        if section == SettingsSection::Billing
-            && self.route != Route::Settings(SettingsSection::Billing)
-        {
-            self.billing_page = None;
         }
         if !matches!(self.route, Route::Settings(_)) {
             self.settings_focus_pending = true;
@@ -5806,7 +5291,7 @@ impl Shell {
     /// Whether a dialog or menu that Escape would close is open over Settings:
     /// [`Self::dismiss_settings_escape_surface`] without the dismissing.
     fn settings_escape_surface_open(&self, cx: &App) -> bool {
-        if self.sync_flow.has_visible_overlay() || self.user_menu.is_open() {
+        if self.user_menu.is_open() {
             return true;
         }
         let Route::Settings(section) = self.route else {
@@ -5836,12 +5321,9 @@ impl Shell {
     /// Escape bubbling out of the settings page. Focused controls — open
     /// dropdowns, the shortcut recorder, a dialog's own input — consume it
     /// before it gets here. What remains open without holding focus closes
-    /// first: the account menu, a sync prompt, then the routed page's dialog
-    /// or login flow. Returns whether one did; only then does Settings stay.
+    /// first: the account menu, then the routed page's dialog or login flow.
+    /// Returns whether one did; only then does Settings stay.
     fn dismiss_settings_escape_surface(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.sync_flow.has_visible_overlay() {
-            return true;
-        }
         if self.user_menu.is_open() {
             self.close_user_menu(cx);
             return true;
@@ -5989,26 +5471,6 @@ impl Shell {
                     self.devices_page = Some(cx.new(|cx| DevicesPage::new(state, cx)));
                 }
                 match &self.devices_page {
-                    Some(page) => page.clone().into_any_element(),
-                    None => Empty.into_any_element(),
-                }
-            }
-            SettingsSection::Cloud => {
-                if self.cloud_page.is_none() {
-                    let state = self.state.clone();
-                    self.cloud_page = Some(cx.new(|cx| CloudPage::new(state, cx)));
-                }
-                match &self.cloud_page {
-                    Some(page) => page.clone().into_any_element(),
-                    None => Empty.into_any_element(),
-                }
-            }
-            SettingsSection::Billing => {
-                if self.billing_page.is_none() {
-                    let state = self.state.clone();
-                    self.billing_page = Some(cx.new(|cx| BillingPage::new(state, cx)));
-                }
-                match &self.billing_page {
                     Some(page) => page.clone().into_any_element(),
                     None => Empty.into_any_element(),
                 }
@@ -6482,39 +5944,6 @@ impl Shell {
         cx.notify();
     }
 
-    fn reconcile_sidebar_pins(&mut self, cx: &mut Context<Self>) {
-        self.discard_stale_sidebar_pin_writes(cx);
-        self.migrate_sidebar_sections(cx);
-        let Some(profile_key) = self.active_sidebar_pin_profile_key(cx) else {
-            return;
-        };
-        let state = self.state.read(cx);
-        if state.workspace_scope == Some(WorkspaceScope::Local) {
-            if !state.chats_synced {
-                return;
-            }
-            let known = state.chats.iter().map(|chat| chat.id.clone()).collect();
-            let changed = self
-                .settings
-                .sidebar_pinned_session_ids_by_profile
-                .get_mut(&profile_key)
-                .is_some_and(|pins| spaces::retain_known_pins(pins, &known));
-            if changed {
-                self.schedule_save(cx);
-            }
-        }
-        // Remote pins come exclusively from per-pin registry records.
-    }
-
-    fn active_sidebar_pin_profile_key(&self, cx: &App) -> Option<String> {
-        let state = self.state.read(cx);
-        sidebar_pin_profile_key(
-            state.workspace_scope,
-            state.auth.as_ref(),
-            self.boot.org_id.as_deref(),
-        )
-    }
-
     fn active_sidebar_pins(&self, cx: &App) -> Vec<String> {
         let mut pins = self.raw_sidebar_pins(cx);
         let sections = self.active_sidebar_sections(cx);
@@ -6527,48 +5956,21 @@ impl Shell {
     }
 
     fn raw_sidebar_pins(&self, cx: &App) -> Vec<String> {
-        if let Some(pins) = self.optimistic_sidebar_pins(cx) {
-            return pins;
-        }
-        let state = self.state.read(cx);
-        match state.workspace_scope {
-            Some(WorkspaceScope::Local) => self
-                .active_sidebar_pin_profile_key(cx)
-                .map(|key| self.settings.sidebar_pins(&key).to_vec())
-                .unwrap_or_default(),
-            Some(WorkspaceScope::Synced | WorkspaceScope::Development) => {
-                state.sidebar_preferences.pinned_session_ids.clone()
-            }
-            None => Vec::new(),
-        }
+        self.optimistic_sidebar_pins(cx).unwrap_or_else(|| {
+            self.state
+                .read(cx)
+                .sidebar_preferences
+                .pinned_session_ids
+                .clone()
+        })
     }
 
-    fn sidebar_pins_for_profile(&self, profile_key: &str, cx: &App) -> Vec<String> {
-        if self.active_sidebar_pin_profile_key(cx).as_deref() != Some(profile_key) {
-            return Vec::new();
-        }
-        self.active_sidebar_pins(cx)
-    }
-
-    fn validate_sidebar_pin_change(
-        &mut self,
-        profile_key: &str,
-        pins: &[String],
-        cx: &mut Context<Self>,
-    ) -> bool {
-        if self.active_sidebar_pin_profile_key(cx).as_deref() != Some(profile_key) {
-            return false;
-        }
-        let state = self.state.read(cx);
-        let remote = matches!(
-            state.workspace_scope,
-            Some(WorkspaceScope::Synced | WorkspaceScope::Development)
-        );
-        let result = if remote && !state.sidebar_preferences.can_edit() {
-            Err("Pins are still syncing")
-        } else {
+    fn validate_sidebar_pin_change(&mut self, pins: &[String], cx: &mut Context<Self>) -> bool {
+        let result = if self.state.read(cx).sidebar_preferences.can_edit() {
             let current = self.active_sidebar_pins(cx);
             onicode_proto::validate_sidebar_pin_update(&current, pins)
+        } else {
+            Err("Pins are still syncing")
         };
         if let Err(message) = result {
             self.show_notice(crate::toast::ToastKind::Error, message, cx);
@@ -6580,44 +5982,22 @@ impl Shell {
 
     fn apply_sidebar_pin_change(
         &mut self,
-        profile_key: String,
         change: onicode_proto::SidebarPinChange,
         cx: &mut Context<Self>,
     ) -> bool {
         let mut pinned_session_ids = self.raw_sidebar_pins(cx);
         change.project(&mut pinned_session_ids);
-        if !self.validate_sidebar_pin_change(&profile_key, &pinned_session_ids, cx)
+        if !self.validate_sidebar_pin_change(&pinned_session_ids, cx)
             || self.raw_sidebar_pins(cx) == pinned_session_ids
         {
             return false;
         }
-        match self.state.read(cx).workspace_scope {
-            Some(WorkspaceScope::Local) => {
-                if pinned_session_ids.is_empty() {
-                    self.settings
-                        .sidebar_pinned_session_ids_by_profile
-                        .remove(&profile_key);
-                } else {
-                    self.settings
-                        .sidebar_pinned_session_ids_by_profile
-                        .insert(profile_key, pinned_session_ids);
-                }
-                self.schedule_save(cx);
-            }
-            Some(WorkspaceScope::Synced | WorkspaceScope::Development) => {
-                return self.queue_sidebar_pin_write(profile_key, change, cx);
-            }
-            None => return false,
-        }
-        true
+        self.queue_sidebar_pin_write(change, cx)
     }
 
     fn set_chat_pinned(&mut self, chat_id: String, pinned: bool, cx: &mut Context<Self>) {
         self.close_chat_menu(cx);
         self.cancel_pinned_session_drag(cx);
-        let Some(profile_key) = self.active_sidebar_pin_profile_key(cx) else {
-            return;
-        };
         if !self
             .state
             .read(cx)
@@ -6647,12 +6027,7 @@ impl Shell {
                 session_id: chat_id.clone(),
             }
         };
-        if self.apply_sidebar_pin_change(profile_key, change, cx)
-            && pinned
-            && self.state.read(cx).workspace_scope == Some(WorkspaceScope::Local)
-        {
-            self.assign_sidebar_section(&chat_id, None, cx);
-        }
+        self.apply_sidebar_pin_change(change, cx);
         cx.notify();
     }
 
@@ -6837,478 +6212,6 @@ impl Shell {
         cx.notify();
     }
 
-    fn request_sign_out(&mut self, cx: &mut Context<Self>) {
-        self.close_user_menu(cx);
-        if self.state.read(cx).workspace_scope != Some(WorkspaceScope::Synced) {
-            return;
-        }
-        self.sync_flow = SyncFlow::SignOutConfirm;
-        cx.notify();
-    }
-
-    fn confirm_sign_out(&mut self, cx: &mut Context<Self>) {
-        self.start_local_runtime_transition(true, cx);
-    }
-
-    fn start_local_runtime_transition(&mut self, sign_out: bool, cx: &mut Context<Self>) {
-        if self.runtime_change_task.is_some() {
-            return;
-        }
-        let Some(engine) = self.state.read(cx).engine().cloned() else {
-            self.runtime_change_error = Some("Engine not connected".into());
-            self.sync_flow = SyncFlow::SignedOutRestartRequired;
-            cx.notify();
-            return;
-        };
-        self.sync_flow = SyncFlow::SigningOut;
-        self.runtime_change_error = None;
-        self.state.update(cx, |state, _| state.expect_engine_exit());
-        let ipc_port = self.boot.ipc_port;
-        let data_dir = self.data_dir.clone();
-        let shutdown_dir = data_dir.clone();
-        let transition = Tokio::spawn(cx, async move {
-            if sign_out {
-                engine
-                    .client()
-                    .call(methods::SIGN_OUT, serde_json::json!({}))
-                    .await
-                    .map_err(|error| format!("Sign out failed: {error}"))?;
-            }
-            stop_synced_runtime(engine, ipc_port, &shutdown_dir).await
-        });
-        let state = self.state.clone();
-        let boot = self.boot.clone();
-        self.runtime_change_task = Some(cx.spawn(async move |this, cx| {
-            let result = match transition.await {
-                Ok(result) => result,
-                Err(error) => Err(error.to_string()),
-            };
-            this.update(cx, |shell, cx| {
-                shell.runtime_change_task = None;
-                match result {
-                    Ok(()) => {
-                        shell.sync_flow = SyncFlow::Idle;
-                        shell.runtime_change_error = None;
-                        shell.org = None;
-                        // An explicit sign-out returns to the workspace. The
-                        // boot-time fallback from a signed-out synced runtime
-                        // keeps an open Settings page (and `ONICODE_OPEN_ROUTE`).
-                        if sign_out {
-                            shell.set_route(Route::Chat, cx);
-                        }
-                        shell.space_boot_applied = false;
-                        state.update(cx, |state, cx| state.prepare_runtime_replacement(cx));
-                        AppState::bootstrap(state.clone(), boot, cx);
-                    }
-                    Err(error) => {
-                        shell.sync_flow = SyncFlow::SignedOutRestartRequired;
-                        shell.runtime_change_error = Some(error.into());
-                        cx.notify();
-                    }
-                }
-            })
-            .ok();
-        }));
-        cx.notify();
-    }
-
-    fn cancel_auth_setup(&mut self, cx: &mut Context<Self>) {
-        let local = self.state.read(cx).workspace_scope == Some(WorkspaceScope::Local);
-        let Some(engine) = self.state.read(cx).engine().cloned() else {
-            return;
-        };
-        let pending_auth = self.auth_task.take();
-        let pending_org = self.org.as_mut().and_then(|org| org.task.take());
-        if local {
-            self.sync_flow = SyncFlow::Canceling;
-        }
-        self.auth_task = Some(cx.spawn(async move |this, cx| {
-            // Do not race SignOut against an exchange or organization write
-            // that can still persist a session after credentials were cleared.
-            if let Some(task) = pending_auth {
-                task.await;
-            }
-            if let Some(task) = pending_org {
-                task.await;
-            }
-            let result = engine
-                .client()
-                .call(methods::SIGN_OUT, serde_json::json!({}))
-                .await;
-            this.update(cx, |shell, cx| {
-                match result {
-                    Ok(_) => {
-                        shell.org = None;
-                        if local {
-                            shell.sync_flow = SyncFlow::Idle;
-                        }
-                    }
-                    Err(err) => {
-                        if local {
-                            shell.sync_flow = SyncFlow::Enabling;
-                        }
-                        shell.show_notice(
-                            crate::toast::ToastKind::Error,
-                            format!("Could not cancel sign-in: {err}"),
-                            cx,
-                        );
-                    }
-                }
-                cx.notify();
-            })
-            .ok();
-        }));
-        cx.notify();
-    }
-
-    fn postpone_sync_restart(&mut self, cx: &mut Context<Self>) {
-        match self.sync_flow {
-            SyncFlow::RestartPending { .. } => {
-                self.sync_flow = SyncFlow::RestartPending { notice_open: false };
-            }
-            SyncFlow::SwitchOffer { .. } => {
-                self.sync_flow = SyncFlow::SwitchOffer { notice_open: false };
-            }
-            SyncFlow::ImportFailed { .. } => {
-                self.sync_flow = SyncFlow::ImportFailed { notice_open: false };
-            }
-            _ => return,
-        }
-        cx.notify();
-    }
-
-    fn reopen_sync_notice(&mut self, cx: &mut Context<Self>) {
-        self.close_user_menu(cx);
-        match self.sync_flow {
-            SyncFlow::RestartPending { .. } => {
-                self.sync_flow = SyncFlow::RestartPending { notice_open: true };
-            }
-            SyncFlow::SwitchOffer { .. } => {
-                self.sync_flow = SyncFlow::SwitchOffer { notice_open: true };
-            }
-            SyncFlow::ImportFailed { .. } => {
-                self.sync_flow = SyncFlow::ImportFailed { notice_open: true };
-            }
-            _ => return,
-        }
-        cx.notify();
-    }
-
-    /// The wizard's choice step chose a path: stop the local runtime, boot the
-    /// synced one in-place (mirror of the sign-out transition), then let
-    /// [`Self::drive_sync_switch`] run the import once the runtime is ready.
-    /// Failure falls back to the quit-and-reopen dialog — the local profile is
-    /// untouched, so the old path is always a safe exit.
-    fn start_synced_switch(&mut self, import: bool, cx: &mut Context<Self>) {
-        if self.runtime_change_task.is_some() {
-            return;
-        }
-        let Some(engine) = self.state.read(cx).engine().cloned() else {
-            self.runtime_change_error = Some("Engine not connected".into());
-            self.sync_flow = SyncFlow::RestartPending { notice_open: true };
-            cx.notify();
-            return;
-        };
-        self.sync_flow = SyncFlow::Switching { import };
-        self.runtime_change_error = None;
-        self.import_current = None;
-        self.state.update(cx, |state, _| state.expect_engine_exit());
-        let ipc_port = self.boot.ipc_port;
-        let data_dir = self.data_dir.clone();
-        let transition = Tokio::spawn(cx, async move {
-            stop_synced_runtime(engine, ipc_port, &data_dir).await
-        });
-        let state = self.state.clone();
-        let boot = self.boot.clone();
-        self.runtime_change_task = Some(cx.spawn(async move |this, cx| {
-            let result = match transition.await {
-                Ok(result) => result,
-                Err(error) => Err(error.to_string()),
-            };
-            this.update(cx, |shell, cx| {
-                shell.runtime_change_task = None;
-                match result {
-                    Ok(()) => {
-                        // Keep `Switching { import }`: the state observer sees
-                        // the replacement runtime reach Ready and advances the
-                        // wizard from there.
-                        shell.org = None;
-                        shell.set_route(Route::Chat, cx);
-                        shell.space_boot_applied = false;
-                        state.update(cx, |state, cx| state.prepare_runtime_replacement(cx));
-                        AppState::bootstrap(state.clone(), boot, cx);
-                    }
-                    Err(error) => {
-                        shell.sync_flow = SyncFlow::RestartPending { notice_open: true };
-                        shell.runtime_change_error = Some(error.into());
-                        cx.notify();
-                    }
-                }
-            })
-            .ok();
-        }));
-        cx.notify();
-    }
-
-    /// Advance the in-place switch when the replacement runtime lands: Ready +
-    /// Synced starts the import stream (or finishes immediately when the user
-    /// chose a fresh start); a runtime that comes back non-synced fell out of
-    /// the swap — surface the quit fallback rather than pretend.
-    fn drive_sync_switch(&mut self, cx: &mut Context<Self>) {
-        let SyncFlow::Switching { import } = self.sync_flow else {
-            return;
-        };
-        if self.runtime_change_task.is_some() {
-            return; // still stopping the local runtime
-        }
-        let (ready, scope) = {
-            let state = self.state.read(cx);
-            (
-                matches!(state.connection, ConnectionStatus::Ready),
-                state.workspace_scope,
-            )
-        };
-        if !ready {
-            if let ConnectionStatus::Failed(error) = &self.state.read(cx).connection {
-                self.sync_flow = SyncFlow::RestartPending { notice_open: true };
-                self.runtime_change_error = Some(error.clone().into());
-                cx.notify();
-            }
-            return;
-        }
-        match scope {
-            Some(WorkspaceScope::Synced) => {
-                if import {
-                    self.spawn_local_import(cx);
-                } else {
-                    self.sync_flow = SyncFlow::Idle;
-                    cx.notify();
-                }
-            }
-            Some(_) => {
-                self.sync_flow = SyncFlow::RestartPending { notice_open: true };
-                self.runtime_change_error =
-                    Some("The synced workspace did not come up — restart to finish.".into());
-                cx.notify();
-            }
-            None => {}
-        }
-    }
-
-    /// Subscribe to the engine's one-time import stream and mirror its
-    /// progress into the wizard.
-    fn spawn_local_import(&mut self, cx: &mut Context<Self>) {
-        if self.import_task.is_some() {
-            return;
-        }
-        let Some(engine) = self.state.read(cx).engine().cloned() else {
-            self.sync_flow = SyncFlow::RestartPending { notice_open: true };
-            self.runtime_change_error = Some("Engine not connected".into());
-            cx.notify();
-            return;
-        };
-        self.sync_flow = SyncFlow::Importing { done: 0, total: 0 };
-        self.runtime_change_error = None;
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<serde_json::Value>();
-        let stream = Tokio::spawn(cx, async move {
-            let mut items = engine
-                .client()
-                .subscribe(methods::IMPORT_LOCAL_WORKSPACE, serde_json::json!({}))
-                .await
-                .map_err(|error| error.to_string())?;
-            while let Some(item) = items.recv().await {
-                let _ = tx.send(item);
-            }
-            Ok::<(), String>(())
-        });
-        self.import_task = Some(cx.spawn(async move |this, cx| {
-            loop {
-                let item = rx.recv().await;
-                let ended = item.is_none();
-                this.update(cx, |shell, cx| {
-                    if let Some(item) = &item {
-                        shell.apply_import_event(item, cx);
-                    }
-                    if ended {
-                        shell.import_task = None;
-                        shell.import_current = None;
-                        // A stream that died before its summary is a failure —
-                        // offer the in-place retry (idempotent).
-                        if matches!(shell.sync_flow, SyncFlow::Importing { .. }) {
-                            shell.sync_flow = SyncFlow::ImportFailed { notice_open: true };
-                            shell.runtime_change_error =
-                                Some("The import stream ended before it finished.".into());
-                        }
-                        cx.notify();
-                    }
-                })
-                .ok();
-                if ended {
-                    break;
-                }
-            }
-            if let Ok(Err(error)) = stream.await {
-                this.update(cx, |shell, cx| {
-                    shell.import_task = None;
-                    if matches!(shell.sync_flow, SyncFlow::Importing { .. }) {
-                        shell.sync_flow = SyncFlow::ImportFailed { notice_open: true };
-                        shell.runtime_change_error = Some(error.into());
-                        cx.notify();
-                    }
-                })
-                .ok();
-            }
-        }));
-        cx.notify();
-    }
-
-    fn apply_import_event(&mut self, item: &serde_json::Value, cx: &mut Context<Self>) {
-        match item.get("kind").and_then(|k| k.as_str()) {
-            Some("start") => {
-                let total = item.get("chats").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                self.sync_flow = SyncFlow::Importing { done: 0, total };
-            }
-            Some("chat") => {
-                let index = item.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                let total = item.get("total").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                self.import_current = item
-                    .get("title")
-                    .and_then(|v| v.as_str())
-                    .map(|t| SharedString::from(t.to_string()));
-                self.sync_flow = SyncFlow::Importing { done: index, total };
-            }
-            Some("summary") => {
-                self.import_current = None;
-                // A summary with errors is a FAILED import, however normally
-                // the stream ended — never present a partial migration as
-                // complete (the engine keeps collecting per-item failures
-                // precisely so this can be surfaced).
-                match import_summary_outcome(item) {
-                    Ok((imported, skipped)) => {
-                        self.sync_flow = SyncFlow::ImportDone { imported, skipped };
-                    }
-                    Err(message) => {
-                        self.sync_flow = SyncFlow::ImportFailed { notice_open: true };
-                        self.runtime_change_error = Some(message.into());
-                    }
-                }
-            }
-            _ => return,
-        }
-        cx.notify();
-    }
-
-    fn quit_for_runtime_change(&mut self, cx: &mut Context<Self>) {
-        if !self.prepare_exit(PendingExit::RuntimeChange, cx) {
-            return;
-        }
-        let Some(engine) = self.state.read(cx).engine().cloned() else {
-            self.runtime_change_error = Some("Engine not connected".into());
-            cx.notify();
-            return;
-        };
-        if engine.mode() == EngineMode::InProcess {
-            crate::app_menus::quit_after_save(cx);
-            return;
-        }
-        if self.runtime_change_task.is_some() {
-            return;
-        }
-
-        self.runtime_change_error = None;
-        self.state.update(cx, |state, _| state.expect_engine_exit());
-        let ipc_port = self.boot.ipc_port;
-        let data_dir = self.data_dir.clone();
-        let shutdown = Tokio::spawn(cx, async move {
-            engine
-                .client()
-                .call(methods::STOP_ENGINE, serde_json::json!({}))
-                .await
-                .map_err(|err| err.to_string())?;
-            wait_for_remote_engine_shutdown(ipc_port, &data_dir, RUNTIME_CHANGE_TIMEOUT).await
-        });
-        self.runtime_change_task = Some(cx.spawn(async move |this, cx| {
-            let result = match shutdown.await {
-                Ok(result) => result,
-                Err(err) => Err(err.to_string()),
-            };
-            this.update(cx, |shell, cx| {
-                shell.runtime_change_task = None;
-                match result {
-                    Ok(_) => {
-                        if shell.prepare_quit(cx) {
-                            crate::app_menus::quit_after_save(cx);
-                        }
-                    },
-                    Err(err) => {
-                        shell.runtime_change_error = Some(format!(
-                            "Could not stop the remote engine: {err}. Run `onicode daemon stop`, then quit and reopen Onicode."
-                        ).into());
-                        cx.notify();
-                    }
-                }
-            })
-            .ok();
-        }));
-        cx.notify();
-    }
-
-    fn start_sign_in(&mut self, cx: &mut Context<Self>) {
-        let scope = self.state.read(cx).workspace_scope;
-        if scope == Some(WorkspaceScope::Development) {
-            return;
-        }
-        self.close_user_menu(cx);
-        if scope == Some(WorkspaceScope::Local) {
-            self.sync_flow = SyncFlow::Enabling;
-        } else {
-            self.gate_sign_in_waiting = true;
-        }
-        let Some(engine) = self.state.read(cx).engine().cloned() else {
-            return;
-        };
-        self.auth_task = Some(cx.spawn(async move |this, cx| {
-            let result = engine
-                .client()
-                .call(methods::SIGN_IN, serde_json::json!({}))
-                .await;
-            this.update(cx, |shell, cx| match result {
-                Ok(value) => {
-                    if let Some(url) = value.get("url").and_then(|u| u.as_str()) {
-                        cx.open_url(url);
-                    }
-                    cx.notify();
-                }
-                Err(err) => {
-                    if scope == Some(WorkspaceScope::Local) && shell.sync_flow == SyncFlow::Enabling
-                    {
-                        shell.sync_flow = SyncFlow::Idle;
-                    }
-                    shell.gate_sign_in_waiting = false;
-                    shell.show_notice(
-                        crate::toast::ToastKind::Error,
-                        format!("Sign in failed: {err}"),
-                        cx,
-                    );
-                    cx.notify();
-                }
-            })
-            .ok();
-        }));
-        cx.notify();
-    }
-
-    /// Back out of a sign-in that's waiting on the browser: the sync opt-in
-    /// clears its partial session; the gate just stops waiting.
-    fn cancel_sign_in_wait(&mut self, cx: &mut Context<Self>) {
-        if self.state.read(cx).workspace_scope == Some(WorkspaceScope::Local) {
-            self.cancel_auth_setup(cx);
-        } else {
-            self.gate_sign_in_waiting = false;
-            cx.notify();
-        }
-    }
-
     // ---- first-run setup ----
 
     fn ensure_onboarding(&mut self, cx: &mut Context<Self>) {
@@ -7323,7 +6226,6 @@ impl Shell {
         use crate::onboarding::OnboardingEvent;
         self._onboarding_subscriptions = vec![
             cx.subscribe(&onboarding, |this, _, event, cx| match *event {
-                OnboardingEvent::SignIn => this.start_sign_in(cx),
                 OnboardingEvent::Finish { add_project } => this.finish_onboarding(add_project, cx),
             }),
             // Setup renders inside this view, so its changes repaint here.
@@ -7333,22 +6235,15 @@ impl Shell {
     }
 
     /// The full-window page that stands in for the Ready shell: first-run
-    /// setup, the sign-in flow on its own, or the sign-in flow inside setup's
-    /// sync step (same progress, same frame).
+    /// setup.
     fn render_setup_page(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         self.ensure_onboarding(cx);
-        let slot = self.sign_in_slot(cx);
-        let parts = match (self.onboarding.clone(), slot) {
-            (Some(onboarding), slot) => {
-                onboarding.update(cx, |onboarding, cx| onboarding.page_parts(slot, window, cx))
-            }
-            (None, Some(slot)) => slot.into_page(),
-            (None, None) => return None,
-        };
+        let onboarding = self.onboarding.clone()?;
+        let parts = onboarding.update(cx, |onboarding, cx| onboarding.page_parts(window, cx));
         Some(crate::onboarding::render_page(parts, window))
     }
 
@@ -7361,462 +6256,6 @@ impl Shell {
         if add_project {
             self.open_add_space(cx);
         }
-        cx.notify();
-    }
-
-    // ---- sign-in pages ----
-
-    /// The sign-in flow's current step as a page slot — waiting on the
-    /// browser, creating a workspace, then moving to (and filling) the
-    /// synced workspace — or `None` when it has nothing to show. Signing
-    /// out stays a dialog.
-    fn sign_in_slot(&mut self, cx: &mut Context<Self>) -> Option<crate::onboarding::SignInSlot> {
-        use crate::onboarding::{SignInSlot, footer_row, ghost, heading, primary, status_block};
-        let theme = Theme::of(cx).for_settings_surface();
-        let needs_org = matches!(
-            self.state.read(cx).auth.as_ref(),
-            Some(AuthState::NeedsOrganization { .. })
-        );
-        if self.sync_flow == SyncFlow::Enabling {
-            return Some(if needs_org {
-                self.org_slot(cx)
-            } else {
-                self.waiting_slot(&theme, cx)
-            });
-        }
-        let remote_engine = self
-            .state
-            .read(cx)
-            .engine()
-            .is_some_and(|engine| matches!(engine.mode(), EngineMode::Remote { .. }));
-        let runtime_change_label = if self.runtime_change_task.is_some() {
-            "Stopping engine…"
-        } else if remote_engine {
-            "Stop daemon and quit"
-        } else {
-            "Quit Onicode"
-        };
-        let signed_in_email: Option<SharedString> = match self.state.read(cx).auth.as_ref() {
-            Some(AuthState::SignedIn { user, .. }) => Some(SharedString::from(user.email.clone())),
-            _ => None,
-        };
-        // Spaces count as local work too: a projects-only profile must get
-        // the import choice, not a bare "Switch now".
-        let (local_chats, local_spaces) = {
-            let state = self.state.read(cx);
-            (state.chats.len(), state.spaces.len())
-        };
-        let work_phrase = local_work_phrase(local_chats, local_spaces);
-        let spinner = |key: &'static str, _: &mut Context<Self>| {
-            crate::loaders::ring_spinner(key, 12.0, theme.text_muted).into_any_element()
-        };
-        let check = || {
-            icon(icons::CHECK)
-                .size(px(14.0))
-                .text_color(theme.accent)
-                .into_any_element()
-        };
-        let error_line = |error: Option<SharedString>| {
-            error.map(|error| {
-                div()
-                    .mt(px(12.0))
-                    .px(px(8.0))
-                    .text_size(crate::typography::ui_rems(12.0))
-                    .line_height(px(17.0))
-                    .text_color(theme.danger)
-                    .child(error)
-            })
-        };
-        let slot = match self.sync_flow {
-            SyncFlow::Canceling => SignInSlot {
-                key: "sign-in-canceling".into(),
-                body: div()
-                    .flex()
-                    .flex_col()
-                    .child(heading(
-                        &theme,
-                        "Canceling sign-in",
-                        "Removing the partial sign-in before going back.",
-                    ))
-                    .child(status_block(&theme, spinner("sign-in-canceling-spinner", cx), "Canceling…", false))
-                    .into_any_element(),
-                footer: footer_row(None, Vec::new()),
-            },
-            // ── in-place switch wizard ────────────────────────────────────
-            SyncFlow::SwitchOffer { notice_open: true } => {
-                let subtitle: SharedString = match &work_phrase {
-                    Some(phrase) => format!(
-                        "Bring {phrase} from this device into your synced workspace, or start it fresh."
-                    )
-                    .into(),
-                    None => "Onicode can switch to your synced workspace now.".into(),
-                };
-                let mut forward = Vec::new();
-                if work_phrase.is_some() {
-                    forward.push(
-                        ghost(&theme, "sync-switch-fresh", "Start fresh")
-                            .on_click(cx.listener(|this, _, _, cx| this.start_synced_switch(false, cx)))
-                            .into_any_element(),
-                    );
-                    forward.push(
-                        primary(&theme, "sync-switch-import", "Bring my work", true)
-                            .on_click(cx.listener(|this, _, _, cx| this.start_synced_switch(true, cx)))
-                            .into_any_element(),
-                    );
-                } else {
-                    forward.push(
-                        primary(&theme, "sync-switch-now", "Switch now", true)
-                            .on_click(cx.listener(|this, _, _, cx| this.start_synced_switch(false, cx)))
-                            .into_any_element(),
-                    );
-                }
-                SignInSlot {
-                    key: "sign-in-offer".into(),
-                    body: div()
-                        .flex()
-                        .flex_col()
-                        .child(heading(&theme, "Sync is ready", subtitle))
-                        .child(status_block(
-                            &theme,
-                            check(),
-                            match &signed_in_email {
-                                Some(email) => format!("Signed in as {email}"),
-                                None => "You're signed in".into(),
-                            },
-                            true,
-                        ))
-                        .into_any_element(),
-                    footer: footer_row(
-                        Some(
-                            ghost(&theme, "sync-switch-later", "Later")
-                                .on_click(cx.listener(|this, _, _, cx| this.postpone_sync_restart(cx))),
-                        ),
-                        forward,
-                    ),
-                }
-            }
-            SyncFlow::Switching { import } => SignInSlot {
-                key: "sign-in-switching".into(),
-                body: div()
-                    .flex()
-                    .flex_col()
-                    .child(heading(
-                        &theme,
-                        "Setting up sync",
-                        if import {
-                            "Handing the engine over to your account. Your local sessions come along next."
-                        } else {
-                            "Handing the engine over to your account."
-                        },
-                    ))
-                    .child(status_block(
-                        &theme,
-                        spinner("sign-in-switching-spinner", cx),
-                        "Switching to your synced workspace…",
-                        false,
-                    ))
-                    .into_any_element(),
-                footer: footer_row(None, Vec::new()),
-            },
-            SyncFlow::Importing { done, total } => {
-                let fraction = if total == 0 {
-                    0.0
-                } else {
-                    (done as f32 / total as f32).clamp(0.0, 1.0)
-                };
-                let label: SharedString = if total == 0 {
-                    "Looking for local sessions…".into()
-                } else {
-                    format!("Importing session {} of {total}", (done + 1).min(total)).into()
-                };
-                let current = self.import_current.clone();
-                SignInSlot {
-                    key: "sign-in-importing".into(),
-                    body: div()
-                        .flex()
-                        .flex_col()
-                        .child(heading(&theme, "Bringing your work over", label))
-                        .child(
-                            settings::widgets::section_card(&theme).mt(px(28.0)).child(
-                                settings::widgets::card_row(&theme, true)
-                                    .min_h(px(44.0))
-                                    .py(px(12.0))
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .flex()
-                                            .flex_col()
-                                            .gap(px(10.0))
-                                            .when_some(current, |el, current| {
-                                                el.child(
-                                                    div()
-                                                        .truncate()
-                                                        .text_size(crate::typography::ui_rems(12.5))
-                                                        .text_color(theme.text_muted)
-                                                        .child(current),
-                                                )
-                                            })
-                                            .child(
-                                                // Determinate progress: a hairline track with an accent fill.
-                                                div()
-                                                    .h(px(4.0))
-                                                    .w_full()
-                                                    .rounded(px(2.0))
-                                                    .bg(theme.wash(0.12))
-                                                    .child(
-                                                        div()
-                                                            .h_full()
-                                                            .rounded(px(2.0))
-                                                            .bg(theme.accent_strong)
-                                                            .w(gpui::relative(fraction.max(0.04))),
-                                                    ),
-                                            ),
-                                    ),
-                            ),
-                        )
-                        .into_any_element(),
-                    footer: footer_row(None, Vec::new()),
-                }
-            }
-            SyncFlow::ImportDone { imported, skipped } => {
-                let subtitle: SharedString = match (imported, skipped) {
-                    (0, 0) => "Your synced workspace is ready.".into(),
-                    (n, 0) => format!(
-                        "{n} session{} moved into your synced workspace.",
-                        if n == 1 { "" } else { "s" },
-                    )
-                    .into(),
-                    (n, s) => format!(
-                        "{n} session{} imported, {s} already present.",
-                        if n == 1 { "" } else { "s" },
-                    )
-                    .into(),
-                };
-                SignInSlot {
-                    key: "sign-in-imported".into(),
-                    body: heading(&theme, "Your work is synced", subtitle).into_any_element(),
-                    footer: footer_row(
-                        None,
-                        vec![
-                            primary(&theme, "sync-switch-done", "Continue", true)
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.sync_flow = SyncFlow::Idle;
-                                    cx.notify();
-                                }))
-                                .into_any_element(),
-                        ],
-                    ),
-                }
-            }
-            SyncFlow::ImportFailed { notice_open: true } => SignInSlot {
-                key: "sign-in-import-failed".into(),
-                body: div()
-                    .flex()
-                    .flex_col()
-                    .child(heading(
-                        &theme,
-                        "Import didn't finish",
-                        "Anything already imported is kept; retrying only copies what's missing.",
-                    ))
-                    .children(error_line(self.runtime_change_error.clone()))
-                    .into_any_element(),
-                footer: footer_row(
-                    Some(
-                        ghost(&theme, "import-failed-dismiss", "Later")
-                            .on_click(cx.listener(|this, _, _, cx| this.postpone_sync_restart(cx))),
-                    ),
-                    vec![
-                        primary(&theme, "import-failed-retry", "Retry import", true)
-                            .on_click(cx.listener(|this, _, _, cx| this.spawn_local_import(cx)))
-                            .into_any_element(),
-                    ],
-                ),
-            },
-            SyncFlow::RestartPending { notice_open: true } => SignInSlot {
-                key: "sign-in-restart".into(),
-                body: div()
-                    .flex()
-                    .flex_col()
-                    .child(heading(
-                        &theme,
-                        "Restart to finish",
-                        if remote_engine {
-                            "Onicode is using a background daemon. Stop it and quit Onicode, then reopen to start the synced workspace. Existing local sessions stay on this device and will not be uploaded."
-                        } else {
-                            "Quit and reopen Onicode to start the synced workspace. Existing local sessions stay on this device and will not be uploaded."
-                        },
-                    ))
-                    .children(error_line(self.runtime_change_error.clone()))
-                    .into_any_element(),
-                footer: footer_row(
-                    Some(
-                        ghost(&theme, "sync-restart-later", "Later")
-                            .on_click(cx.listener(|this, _, _, cx| this.postpone_sync_restart(cx))),
-                    ),
-                    vec![
-                        primary(&theme, "sync-restart-quit", runtime_change_label, true)
-                            .when(self.runtime_change_task.is_some(), |button| button.opacity(0.6))
-                            .on_click(cx.listener(|this, _, _, cx| this.quit_for_runtime_change(cx)))
-                            .into_any_element(),
-                    ],
-                ),
-            },
-            _ => return None,
-        };
-        Some(slot)
-    }
-
-    /// Log in opened the browser; this page holds until the signed-in edge
-    /// moves the flow on.
-    fn waiting_slot(
-        &mut self,
-        theme: &Theme,
-        cx: &mut Context<Self>,
-    ) -> crate::onboarding::SignInSlot {
-        use crate::onboarding::{SignInSlot, footer_row, ghost, heading, primary, status_block};
-        let spinner =
-            crate::loaders::ring_spinner("sign-in-waiting-spinner", 12.0, theme.text_muted)
-                .into_any_element();
-        SignInSlot {
-            key: "sign-in-waiting".into(),
-            body: div()
-                .flex()
-                .flex_col()
-                .child(heading(
-                    theme,
-                    "Finish logging in",
-                    "We opened your browser to log in to Onicode. Come back when you're done — this page moves on by itself.",
-                ))
-                .child(status_block(theme, spinner, "Waiting for your browser…", false))
-                .into_any_element(),
-            footer: footer_row(
-                Some(
-                    ghost(theme, "sync-enable-cancel", "Cancel")
-                        .on_click(cx.listener(|this, _, _, cx| this.cancel_sign_in_wait(cx))),
-                ),
-                vec![
-                    primary(theme, "sync-enable-open-browser", "Open browser again", true)
-                        .on_click(cx.listener(|this, _, _, cx| this.start_sign_in(cx)))
-                        .into_any_element(),
-                ],
-            ),
-        }
-    }
-
-    // ---- org gate ----
-
-    fn ensure_org_ui(&mut self, cx: &mut Context<Self>) {
-        if self.org.is_some() {
-            return;
-        }
-        let name_input = cx.new(|cx| {
-            ComposerInput::new("Workspace name", cx).with_accessibility_role(gpui::Role::TextInput)
-        });
-        let events = cx.subscribe(&name_input, |this: &mut Shell, _, event, cx| {
-            if matches!(event, ComposerInputEvent::Submitted) {
-                this.create_org(cx);
-            }
-        });
-        self.org = Some(OrgGateUi {
-            name_input,
-            orgs: Loadable::Idle,
-            submitting: false,
-            error: None,
-            task: None,
-            _events: events,
-        });
-        self.load_orgs(cx);
-    }
-
-    fn load_orgs(&mut self, cx: &mut Context<Self>) {
-        let Some(engine) = self.state.read(cx).engine().cloned() else {
-            return;
-        };
-        let Some(org) = self.org.as_mut() else { return };
-        org.orgs = Loadable::Loading;
-        org.task = Some(cx.spawn(async move |this, cx| {
-            let result = engine
-                .client()
-                .call(methods::LIST_ORGS, serde_json::json!({}))
-                .await;
-            this.update(cx, |shell, cx| {
-                if let Some(org) = shell.org.as_mut() {
-                    org.orgs = match result {
-                        Ok(value) => Loadable::Ready(sort_memberships(parse_orgs(&value))),
-                        Err(err) => Loadable::Error(err.to_string()),
-                    };
-                }
-                cx.notify();
-            })
-            .ok();
-        }));
-        cx.notify();
-    }
-
-    fn create_org(&mut self, cx: &mut Context<Self>) {
-        let Some(engine) = self.state.read(cx).engine().cloned() else {
-            return;
-        };
-        let Some(org) = self.org.as_mut() else { return };
-        if org.submitting {
-            return;
-        }
-        let name = org.name_input.read(cx).text().trim().to_string();
-        if !org_name_valid(&name) {
-            org.error = Some("Enter a workspace name".into());
-            cx.notify();
-            return;
-        }
-        org.submitting = true;
-        org.error = None;
-        org.task = Some(cx.spawn(async move |this, cx| {
-            let result = engine
-                .client()
-                .call(methods::CREATE_ORG, serde_json::json!({ "name": name }))
-                .await;
-            this.update(cx, |shell, cx| {
-                if let Some(org) = shell.org.as_mut() {
-                    org.submitting = false;
-                    if let Err(err) = result {
-                        org.error = Some(format!("{err}").into());
-                    }
-                    // Success: the AuthStatus stream flips to SignedIn and the
-                    // gate falls away on its own.
-                }
-                cx.notify();
-            })
-            .ok();
-        }));
-        cx.notify();
-    }
-
-    fn select_org(&mut self, organization_id: String, cx: &mut Context<Self>) {
-        let Some(engine) = self.state.read(cx).engine().cloned() else {
-            return;
-        };
-        let Some(org) = self.org.as_mut() else { return };
-        org.submitting = true;
-        org.error = None;
-        org.task = Some(cx.spawn(async move |this, cx| {
-            let result = engine
-                .client()
-                .call(
-                    methods::SELECT_ORG,
-                    serde_json::json!({ "organizationId": organization_id }),
-                )
-                .await;
-            this.update(cx, |shell, cx| {
-                if let Some(org) = shell.org.as_mut() {
-                    org.submitting = false;
-                    if let Err(err) = result {
-                        org.error = Some(format!("{err}").into());
-                    }
-                }
-                cx.notify();
-            })
-            .ok();
-        }));
         cx.notify();
     }
 
@@ -8327,7 +6766,7 @@ impl Shell {
 
     /// Onicode-drawn Linux caption controls, one overlay per populated side.
     /// Shell-level chrome: mounted at the root so they stay above the splash
-    /// and every auth/org/error gate.
+    /// and the error gate.
     fn render_linux_caption_controls(&self, window: &Window, cx: &App) -> Vec<AnyElement> {
         let Some(layout) = self.linux_captions else {
             return Vec::new();
@@ -8743,7 +7182,6 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let cloud_offered = self.state.read(cx).cloud_offered();
         settings::widgets::scroll_faded(
             "settings-nav-scroll",
             div()
@@ -8767,7 +7205,7 @@ impl Shell {
                         .children(
                             SettingsSection::ALL
                                 .into_iter()
-                                .filter(|item| item.shown_in_nav(cloud_offered))
+                                .filter(|item| item.visible_in_nav())
                                 .map(|item| {
                                     let index = SettingsSection::ALL
                                         .iter()
@@ -8807,7 +7245,7 @@ impl Shell {
                                         move |this, event: &gpui::KeyDownEvent, window, cx| {
                                             let items: Vec<_> = SettingsSection::ALL
                                                 .into_iter()
-                                                .filter(|s| s.shown_in_nav(cloud_offered))
+                                                .filter(|s| s.visible_in_nav())
                                                 .collect();
                                             let current =
                                                 items.iter().position(|s| *s == item).unwrap_or(0);
@@ -8911,16 +7349,6 @@ impl Shell {
         let remote = host
             .as_deref()
             .is_some_and(|host| self.state.read(cx).local_device_id.as_deref() != Some(host));
-        // A chat on a Cloud session machine wears the cloud, not the generic
-        // remote-device globe.
-        let remote_glyph = if host
-            .as_deref()
-            .is_some_and(|host| onicode_proto::is_cloud_device(host, ""))
-        {
-            icons::CLOUD
-        } else {
-            icons::REMOTE_SERVER
-        };
         let project_icon = (project_icon && search_query.is_none())
             .then(|| self.render_project_icon(&id, SIDEBAR_ACTIVE_HARNESS_ICON_SIZE, selected, cx));
         let corner_hovered = !preview && self.chat_status_hover.as_deref() == Some(row_id.as_str());
@@ -9075,7 +7503,7 @@ impl Shell {
                 .into_any_element()
         } else if compact {
             if remote {
-                icon(remote_glyph)
+                icon(icons::REMOTE_SERVER)
                     .size(px(SIDEBAR_ACTIVE_HARNESS_ICON_SIZE))
                     .text_color(theme.text_muted.opacity(0.5))
                     .into_any_element()
@@ -9506,7 +7934,7 @@ impl Shell {
                     })
                     .when(!compact && !show_label && remote, |el| {
                         el.child(
-                            icon(remote_glyph)
+                            icon(icons::REMOTE_SERVER)
                                 .size(px(SIDEBAR_ACTIVE_HARNESS_ICON_SIZE))
                                 .flex_none()
                                 .text_color(subline),
@@ -10785,12 +9213,24 @@ impl Shell {
             .into_any_element()
     }
 
+    /// The footer pill names this device; the menu says where its work lives.
     fn render_sidebar_footer(&mut self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-        let (user_line, menu_identity) = {
+        let user_line: SharedString = {
             let state = self.state.read(cx);
-            sidebar_account_identity(state.workspace_scope, self.sync_flow, state.auth_user())
+            state
+                .local_device_id
+                .as_deref()
+                .and_then(|id| state.device_name(id))
+                .unwrap_or("Local")
+                .to_owned()
+                .into()
         };
-        self.render_user_menu(user_line, menu_identity, theme, cx)
+        self.render_user_menu(
+            user_line,
+            "Shared with your machines on the tailnet".into(),
+            theme,
+            cx,
+        )
     }
 
     fn render_user_menu(
@@ -10804,7 +9244,6 @@ impl Shell {
         let pull_requests = self.render_pull_requests_button(theme, cx);
         let theme = &theme.for_popup();
         let open = self.user_menu.is_open();
-        let action = account_menu_action(self.state.read(cx).workspace_scope, self.sync_flow);
         // The profile pill hugs avatar + name (shrinking so long names fade
         // out); the gap between it and the settings button is not interactive.
         let initial: SharedString = user_line
@@ -10914,59 +9353,6 @@ impl Shell {
                         .truncate()
                         .child(menu_identity),
                 )
-                .when_some(action, |menu, action| {
-                    let row = match action {
-                        AccountMenuAction::EnableSync => {
-                            popover::menu_row(theme, false, "user-menu-enable-sync")
-                                .id("user-menu-enable-sync")
-                                .on_click(cx.listener(|this, _, _, cx| this.start_sign_in(cx)))
-                                .child(
-                                    icon(icons::GLOBAL)
-                                        .size(px(16.0))
-                                        .text_color(theme.text_muted),
-                                )
-                                .child(SharedString::from("Enable sync"))
-                                .into_any_element()
-                        }
-                        AccountMenuAction::SyncInProgress => {
-                            popover::menu_row(theme, false, "user-menu-sync-progress")
-                                .id("user-menu-sync-progress")
-                                .opacity(0.6)
-                                .child(
-                                    icon(icons::GLOBAL)
-                                        .size(px(16.0))
-                                        .text_color(theme.text_muted),
-                                )
-                                .child(SharedString::from("Sync setup in progress"))
-                                .into_any_element()
-                        }
-                        AccountMenuAction::RestartPending => {
-                            popover::menu_row(theme, false, "user-menu-sync-restart")
-                                .id("user-menu-sync-restart")
-                                .on_click(cx.listener(|this, _, _, cx| this.reopen_sync_notice(cx)))
-                                .child(
-                                    icon(icons::RESTART)
-                                        .size(px(16.0))
-                                        .text_color(theme.text_muted),
-                                )
-                                .child(SharedString::from("Finish sync setup"))
-                                .into_any_element()
-                        }
-                        AccountMenuAction::SignOut => {
-                            popover::menu_row(theme, false, "user-menu-signout")
-                                .id("user-menu-signout")
-                                .on_click(cx.listener(|this, _, _, cx| this.request_sign_out(cx)))
-                                .child(
-                                    icon(icons::LOGOUT_2)
-                                        .size(px(16.0))
-                                        .text_color(theme.text_muted),
-                                )
-                                .child(SharedString::from("Sign out"))
-                                .into_any_element()
-                        }
-                    };
-                    menu.child(row)
-                })
                 // macOS keeps "Check for Updates…" in the app menu under
                 // About; elsewhere there is no app menu, so it lives here.
                 .when(!cfg!(target_os = "macos"), |menu| {
@@ -11078,62 +9464,6 @@ impl Shell {
             .into_any_element()
     }
 
-    /// Signing out, as a dialog over the app. Every step of signing in is a
-    /// page instead ([`Self::sign_in_slot`]).
-    fn render_sync_overlay(
-        &mut self,
-        viewport: gpui::Size<Pixels>,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let theme = Theme::of(cx).for_popup();
-        let card = match self.sync_flow {
-            SyncFlow::SignOutConfirm => popover::dialog_card(&theme)
-                .child(popover::dialog_title(&theme, "Sign out?"))
-                .child(
-                    div().mt(px(6.0)).child(popover::dialog_body(
-                        &theme,
-                        "Onicode will remove your credentials, close the synced workspace, and continue in local mode.",
-                    )),
-                )
-                .child(
-                    div()
-                        .mt(px(16.0))
-                        .flex()
-                        .flex_row()
-                        .justify_end()
-                        .gap(px(8.0))
-                        .child(
-                            popover::btn_ghost(&theme, "Cancel", "signout-cancel")
-                                .id("signout-cancel")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.sync_flow = SyncFlow::Idle;
-                                    cx.notify();
-                                })),
-                        )
-                        .child(
-                            popover::btn_danger(&theme, "Sign out")
-                                .id("signout-confirm")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.confirm_sign_out(cx)
-                                })),
-                        ),
-                )
-                .into_any_element(),
-            SyncFlow::SigningOut => popover::dialog_card(&theme)
-                .child(popover::dialog_title(&theme, "Signing out…"))
-                .child(
-                    div().mt(px(6.0)).child(popover::dialog_body(
-                        &theme,
-                        "Removing account credentials and closing the synced workspace.",
-                    )),
-                )
-                .into_any_element(),
-            _ => return None,
-        };
-
-        Some(popover::modal("sync-lifecycle-dialog", viewport, card))
-    }
-
     fn active_changes(&self, cx: &App) -> Option<Entity<Changes>> {
         if !self.right_pane_shown(cx) {
             return None;
@@ -11150,8 +9480,7 @@ impl Shell {
         // Modals and context menus sit above the rest of the shell. Preserve
         // their existing behavior: only surfaces that already have a Cancel
         // path close here; the others remain explicit blockers.
-        if self.sync_flow.has_visible_overlay()
-            || self.delete_confirm.is_some()
+        if self.delete_confirm.is_some()
             || self.delete_space_confirm.is_some()
             || self.chat_menu.get().is_some()
             || self.space_menu.get().is_some()
@@ -11473,18 +9802,9 @@ impl Shell {
                     .and_then(|c| c.title.clone())
                     .unwrap_or_else(|| "New session".into()),
             );
-            // A Cloud chat's machine goes with it (the engine deletes it).
-            let on_cloud = chat.is_some_and(|c| onicode_proto::is_cloud_device(&c.device_id, ""));
-            let body = if on_cloud {
-                format!(
-                    "\u{201C}{title}\u{201D} and its Cloud machine will be permanently deleted, \
-                     with anything not pushed from it. This can\u{2019}t be undone."
-                )
-            } else {
-                format!(
-                    "\u{201C}{title}\u{201D} will be permanently deleted. This can\u{2019}t be undone."
-                )
-            };
+            let body = format!(
+                "\u{201C}{title}\u{201D} will be permanently deleted. This can\u{2019}t be undone."
+            );
             let card = popover::dialog_card(&theme)
                 .child(popover::dialog_title(&theme, "Delete session?"))
                 .child(div().mt(px(6.0)).child(popover::dialog_body(&theme, body)))
@@ -11578,9 +9898,6 @@ impl Shell {
             ));
         }
 
-        if let Some(sync) = self.render_sync_overlay(viewport, cx) {
-            overlays.push(sync);
-        }
         if let Some(update) = self.render_update_prompt(viewport, cx) {
             overlays.push(update);
         }
@@ -12673,89 +10990,6 @@ impl Shell {
             .into_any_element()
     }
 
-    fn render_signed_out_restart(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = Theme::of(cx).clone();
-        let runtime_change_label = if self.runtime_change_task.is_some() {
-            "Stopping engine…"
-        } else {
-            "Retry local mode"
-        };
-        let card = div()
-            .w(px(380.0))
-            .px(px(32.0))
-            .py(px(40.0))
-            .rounded(px(12.0))
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.surface_card)
-            .shadow_lg()
-            .flex()
-            .flex_col()
-            .items_center()
-            .text_center()
-            .child(
-                icon(icons::ONICODE_LOGO)
-                    .w(px(31.4))
-                    .h(px(36.0))
-                    .text_color(theme.text),
-            )
-            .child(
-                div()
-                    .mt(px(24.0))
-                    .text_size(crate::typography::ui_rems(18.0))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(theme.text)
-                    .child(SharedString::from("Signed out")),
-            )
-            .child(
-                div()
-                    .mt(px(6.0))
-                    .mb(px(24.0))
-                    .text_size(crate::typography::ui_rems(13.0))
-                    .line_height(px(19.0))
-                    .text_color(theme.text_muted)
-                    .child(SharedString::from(
-                        "Onicode removed your credentials but could not finish closing the previous synced workspace. Retry before continuing in local mode.",
-                    )),
-            )
-            .when_some(self.runtime_change_error.clone(), |card, error| {
-                card.child(
-                    div()
-                        .mb(px(16.0))
-                        .text_size(crate::typography::ui_rems(12.0))
-                        .line_height(px(17.0))
-                        .text_color(theme.danger)
-                        .child(error),
-                )
-            })
-            .child(
-                popover::btn_primary(&theme, runtime_change_label)
-                    .id("signed-out-quit")
-                    .when(self.runtime_change_task.is_some(), |button| {
-                        button.opacity(0.6)
-                    })
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.start_local_runtime_transition(false, cx)
-                    })),
-            );
-
-        div()
-            .absolute()
-            .inset_0()
-            .occlude()
-            .bg(theme.bg)
-            .child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(motion::fade_in("signed-out-restart", card)),
-            )
-            .into_any_element()
-    }
-
     fn close_right_plus(&mut self, cx: &mut Context<Self>) {
         if self.right_plus.begin_close() {
             popover::reap_popup(cx, |shell: &mut Self| &mut shell.right_plus);
@@ -13233,87 +11467,36 @@ impl Shell {
         cx.notify();
     }
 
-    fn render_gate_card(
+    /// The engine couldn't be reached or failed to open the profile: quiet
+    /// centered copy (onicode Gate `Failed`) and a Retry, since the native
+    /// engine doesn't self-redial.
+    fn render_failed_gate(
         &mut self,
-        phase: &GatePhase,
+        error: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = Theme::of(cx).for_settings_surface();
-        if *phase == GatePhase::SignIn && self.gate_sign_in_waiting {
-            let slot = self.waiting_slot(&theme, cx);
-            return crate::onboarding::render_page(slot.into_page(), window);
-        }
-        let (key, body): (&'static str, AnyElement) = match phase {
-            // Backend unreachable: quiet centered copy (onicode Gate `Failed`),
-            // plus a Retry affordance (the native engine doesn't self-redial).
-            GatePhase::Failed(error) => (
-                "gate-failed",
+        let body = div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .text_center()
+            .gap(px(Theme::SPACE_MD))
+            .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .text_center()
-                    .gap(px(Theme::SPACE_MD))
-                    .child(
-                        div()
-                            .text_size(crate::typography::ui_rems(14.0))
-                            .text_color(theme.text_muted)
-                            .child(SharedString::from(error.clone())),
-                    )
-                    .child(
-                        crate::onboarding::ghost(&theme, "retry-engine", "Retry")
-                            .on_click(cx.listener(|this, _, _, cx| this.retry_engine(cx))),
-                    )
-                    .into_any_element(),
-            ),
-            // Log in: the logo, "Log in to Onicode", the copy and a wide Log in
-            // button, centered on the window like the setup welcome.
-            _ => (
-                "gate-signin",
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .text_center()
-                    .child(
-                        icon(icons::ONICODE_LOGO)
-                            .w(px(31.4))
-                            .h(px(36.0))
-                            .text_color(theme.text),
-                    )
-                    .child(
-                        div()
-                            .mt(px(24.0))
-                            .text_size(crate::typography::ui_rems(22.0))
-                            .line_height(px(28.0))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(theme.text)
-                            .child(SharedString::from("Log in to Onicode")),
-                    )
-                    .child(
-                        div()
-                            .mt(px(8.0))
-                            .max_w(px(340.0))
-                            .text_size(crate::typography::ui_rems(13.0))
-                            .line_height(px(19.0))
-                            .text_color(theme.text_muted)
-                            .child(SharedString::from(
-                                "This opens your browser to finish logging in — you'll come right back.",
-                            )),
-                    )
-                    .child(
-                        div().mt(px(28.0)).w(px(320.0)).child(
-                            crate::onboarding::wide_button(&theme, "sign-in", "Log in")
-                                .on_click(cx.listener(|this, _, _, cx| this.start_sign_in(cx))),
-                        ),
-                    )
-                    .into_any_element(),
-            ),
-        };
+                    .text_size(crate::typography::ui_rems(14.0))
+                    .text_color(theme.text_muted)
+                    .child(SharedString::from(error.to_owned())),
+            )
+            .child(
+                crate::onboarding::ghost(&theme, "retry-engine", "Retry")
+                    .on_click(cx.listener(|this, _, _, cx| this.retry_engine(cx))),
+            )
+            .into_any_element();
         crate::onboarding::render_page(
             crate::onboarding::PageParts {
-                key: key.into(),
+                key: "gate-failed".into(),
                 header: None,
                 body,
                 footer: None,
@@ -13323,176 +11506,6 @@ impl Shell {
             },
             window,
         )
-    }
-
-    /// Organization onboarding used by the synced gate as a page of its own.
-    /// A local runtime shows it as a step of the sync opt-in instead
-    /// ([`Self::sign_in_slot`]).
-    fn render_org_gate(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let slot = self.org_slot(cx);
-        crate::onboarding::render_page(slot.into_page(), window)
-    }
-
-    /// The workspace step: name a new workspace, or continue in one you
-    /// belong to, with the account escape hatch on the left.
-    fn org_slot(&mut self, cx: &mut Context<Self>) -> crate::onboarding::SignInSlot {
-        use crate::onboarding::{SignInSlot, footer_row, ghost, heading, primary};
-        self.ensure_org_ui(cx);
-        let theme = Theme::of(cx).for_settings_surface();
-        let local_setup = self.state.read(cx).workspace_scope == Some(WorkspaceScope::Local);
-        let Some(org) = self.org.as_ref() else {
-            return SignInSlot {
-                key: "org-gate".into(),
-                body: Empty.into_any_element(),
-                footer: footer_row(None, Vec::new()),
-            };
-        };
-        let submitting = org.submitting;
-        let error = org.error.clone();
-        let name_input = org.name_input.clone();
-        let orgs = org.orgs.clone();
-
-        let email: Option<SharedString> = self
-            .state
-            .read(cx)
-            .auth_user()
-            .map(|u| u.email.clone().into());
-
-        let memberships: AnyElement = match &orgs {
-            Loadable::Idle | Loadable::Loading => div()
-                .mt(px(24.0))
-                .child(popover::skeleton_rows(
-                    "org-skeleton",
-                    &theme,
-                    2,
-                    cx.entity_id(),
-                    cx,
-                ))
-                .into_any_element(),
-            Loadable::Error(message) => div()
-                .mt(px(24.0))
-                .child(
-                    popover::error_row(&theme, message).child(
-                        div()
-                            .id("orgs-retry")
-                            .px(px(Theme::SPACE_SM))
-                            .py(px(3.0))
-                            .rounded(px(Theme::CONTROL_RADIUS))
-                            .border_1()
-                            .border_color(theme.border)
-                            .text_color(theme.text)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.glass_hover()))
-                            .on_click(cx.listener(|this, _, _, cx| this.load_orgs(cx)))
-                            .child(SharedString::from("Retry")),
-                    ),
-                )
-                .into_any_element(),
-            Loadable::Ready(rows) if rows.is_empty() => Empty.into_any_element(),
-            Loadable::Ready(rows) => settings::widgets::section(
-                &theme,
-                "Or continue in a workspace you belong to",
-                settings::widgets::section_card(&theme).mt_0().children(
-                    rows.iter().enumerate().map(|(ix, row)| {
-                        let org_id = row.organization_id.clone();
-                        div()
-                            .id(("org-row", ix))
-                            .when(submitting, |el| el.opacity(0.5))
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.wash(0.04)))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.select_org(org_id.clone(), cx);
-                            }))
-                            .child(
-                                settings::widgets::card_row(&theme, ix == 0)
-                                    .min_h(px(44.0))
-                                    .py(px(10.0))
-                                    .flex_nowrap()
-                                    .child(div().flex_1().min_w_0().child(
-                                        settings::widgets::row_title(&theme, row.name.clone()),
-                                    ))
-                                    .child(
-                                        icon(icons::ALT_ARROW_RIGHT)
-                                            .size(px(14.0))
-                                            .text_color(theme.text_muted),
-                                    ),
-                            )
-                    }),
-                ),
-            )
-            .into_any_element(),
-        };
-
-        let blurb: SharedString = match email {
-            Some(email) => format!(
-                "Onicode is organized around workspaces — create one for yourself or your team. Signed in as {email}."
-            )
-            .into(),
-            None => {
-                "Onicode is organized around workspaces — create one for yourself or your team."
-                    .into()
-            }
-        };
-        let body = div()
-            .flex()
-            .flex_col()
-            .child(heading(&theme, "Create your workspace", blurb))
-            .child(
-                div()
-                    .mt(px(24.0))
-                    .h(px(36.0))
-                    .flex()
-                    .items_center()
-                    .px(px(12.0))
-                    .rounded(px(8.0))
-                    .border_1()
-                    .border_color(theme.border)
-                    .bg(theme.input_bg)
-                    .text_size(crate::typography::ui_rems(13.0))
-                    .child(name_input),
-            )
-            .child(memberships)
-            .when_some(error, |el, message| {
-                el.child(
-                    div()
-                        .mt(px(12.0))
-                        .px(px(8.0))
-                        .text_size(crate::typography::ui_rems(12.0))
-                        .line_height(px(17.0))
-                        .text_color(theme.danger_muted.opacity(0.9)) // red-300
-                        .child(message),
-                )
-            })
-            .into_any_element();
-        let footer = footer_row(
-            Some(
-                ghost(
-                    &theme,
-                    "org-signout",
-                    if local_setup {
-                        "Cancel sync setup"
-                    } else {
-                        "Use a different account"
-                    },
-                )
-                .on_click(cx.listener(|this, _, _, cx| this.cancel_auth_setup(cx))),
-            ),
-            vec![
-                primary(
-                    &theme,
-                    "create-org",
-                    if submitting { "Creating…" } else { "Create" },
-                    !submitting,
-                )
-                .on_click(cx.listener(|this, _, _, cx| this.create_org(cx)))
-                .into_any_element(),
-            ],
-        );
-        SignInSlot {
-            key: "org-gate".into(),
-            body,
-            footer,
-        }
     }
 }
 
@@ -13727,15 +11740,6 @@ impl Render for Shell {
         }
         settings::wallpaper::preload(cx);
         self.sync_voice_stage(window, cx);
-        // Settings → Cloud lives only while shown: dropping it cancels a
-        // GitHub sign-in poll and its slow status re-checks.
-        if self.cloud_page.is_some() && self.route != Route::Settings(SettingsSection::Cloud) {
-            self.cloud_page = None;
-        }
-        // Leaving Billing stops its checks on open Stripe pages.
-        if self.billing_page.is_some() && self.route != Route::Settings(SettingsSection::Billing) {
-            self.billing_page = None;
-        }
         self.navigation_focus
             .remember(&self.shortcut_focus, window, cx);
         if let Some(command) = self.pending_workspace_command.take() {
@@ -13783,7 +11787,6 @@ impl Render for Shell {
                                     window.remove_window();
                                 }
                             }
-                            PendingExit::RuntimeChange => shell.quit_for_runtime_change(cx),
                             PendingExit::InstallUpdate(staged) => {
                                 shell.apply_staged_update(staged, cx)
                             }
@@ -13806,12 +11809,6 @@ impl Render for Shell {
         // The shell frost sits over native desktop blur on macOS.
         // Content surfaces add their own backgrounds over this shared tint.
         let (frost, text, font) = (theme.glass(), theme.text, theme.font_sans.clone());
-        let (workspace_scope, auth) = {
-            let state = self.state.read(cx);
-            (state.workspace_scope, state.auth.clone())
-        };
-        self.sync_flow = sync_flow_after_auth(self.sync_flow, workspace_scope, auth.as_ref());
-        let restart_required = self.sync_flow == SyncFlow::SignedOutRestartRequired;
         let gate = self
             .debug_gate
             .clone()
@@ -13824,7 +11821,6 @@ impl Render for Shell {
         self.track_horizontal_fit(cx);
         // The sidebar's render reconciles the card against its rows.
         if !matches!(gate, GatePhase::Ready)
-            || restart_required
             || matches!(self.route, Route::Settings(_))
             || self.sidebar_target() <= 0.0
         {
@@ -13833,7 +11829,6 @@ impl Render for Shell {
         self.suspend_hidden_right_images(cx);
         // After the fit tracking, which starts a fit exit this frame.
         let browser_active = matches!(gate, GatePhase::Ready)
-            && !restart_required
             && matches!(self.route, Route::Chat)
             // A pane the fit evicts keeps painting while it slides out.
             && (self.horizontal_fit().right || self.fit_exit_width(1).is_some())
@@ -13881,12 +11876,8 @@ impl Render for Shell {
                 |this: &mut Shell, window, cx| {
                     motion::window_activation_changed(window.is_window_active(), cx);
                     let active = window.is_window_active();
-                    this.state.update(cx, |state, cx| {
-                        state.set_viewport_focused(active, cx);
-                        if active {
-                            state.window_activated(cx);
-                        }
-                    });
+                    this.state
+                        .update(cx, |state, cx| state.set_viewport_focused(active, cx));
                     if window.is_window_active()
                         && let Some(update) = crate::app_update::AppUpdate::global(cx)
                     {
@@ -14201,16 +12192,7 @@ impl Render for Shell {
                 }
             }));
 
-        let render_gate = if restart_required {
-            GatePhase::Loading
-        } else {
-            gate.clone()
-        };
-        // The gate's wait for the browser ends with the gate.
-        if render_gate != GatePhase::SignIn {
-            self.gate_sign_in_waiting = false;
-        }
-        let root = match &render_gate {
+        let root = match &gate {
             GatePhase::Ready => 'ready: {
                 // Focus is a sync signal: on the rising edge of window
                 // activation, nudge every open room to verify liveness — a
@@ -14539,20 +12521,10 @@ impl Render for Shell {
                     .child(motion::fade_in("phase-app", page))
             }
             GatePhase::Loading => root, // splash overlay covers boot
-            GatePhase::OrgGate => {
-                let card = self.render_org_gate(window, cx);
+            GatePhase::Failed(error) => {
+                let card = self.render_failed_gate(error, window, cx);
                 root.child(card)
             }
-            phase @ (GatePhase::Failed(_) | GatePhase::SignIn) => {
-                let card = self.render_gate_card(phase, window, cx);
-                root.child(card)
-            }
-        };
-        let root = if restart_required {
-            let restart = self.render_signed_out_restart(cx);
-            root.child(restart)
-        } else {
-            root
         };
         // Toasts float over every phase and route.
         let root = root.child(self.toaster.clone());
@@ -14579,14 +12551,12 @@ impl Render for Shell {
         };
 
         // Caption controls are shell-level chrome, not Ready-page content:
-        // keep them above the splash and every auth/org/error gate as well as
+        // keep them above the splash and the error gate as well as
         // the full application. Gate pages also need a drag surface because
         // they do not render the unified tabs/settings titlebar — on Linux
         // the explicit `start_window_move` strip (the control-area hit-test is inert
         // there); macOS drags gate windows natively.
-        let root = if (!restart_required && matches!(gate, GatePhase::Ready))
-            || cfg!(target_os = "macos")
-        {
+        let root = if matches!(gate, GatePhase::Ready) || cfg!(target_os = "macos") {
             root
         } else {
             root.child(
@@ -14648,7 +12618,6 @@ mod tests {
             harness_session_harness: None,
             space_id: None,
             last_seen_at: None,
-            room_gen: None,
             parent_chat_id: None,
             child_kind: None,
         }
@@ -14715,7 +12684,7 @@ mod tests {
         conn.state = ConnectivityState::Reconnecting;
         assert_eq!(
             connection_pill_caption(&conn),
-            Some(("Reconnecting…", false))
+            Some(("Reaching your other machines…", false))
         );
         conn.state = ConnectivityState::Offline;
         assert_eq!(
@@ -15143,15 +13112,6 @@ mod tests {
     }
 
     #[test]
-    fn only_visible_sync_steps_block_escape() {
-        assert!(!SyncFlow::Idle.has_visible_overlay());
-        assert!(!SyncFlow::SwitchOffer { notice_open: false }.has_visible_overlay());
-        assert!(SyncFlow::SwitchOffer { notice_open: true }.has_visible_overlay());
-        assert!(SyncFlow::Importing { done: 1, total: 3 }.has_visible_overlay());
-        assert!(SyncFlow::SignOutConfirm.has_visible_overlay());
-    }
-
-    #[test]
     fn right_pane_takeover_control_reverses_direction() {
         assert_eq!(tabs::right_pane_expand_icon(false), icons::EXPAND_ARROWS);
         assert_eq!(tabs::right_pane_expand_icon(true), icons::COLLAPSE_ARROWS);
@@ -15244,369 +13204,6 @@ mod tests {
         assert_eq!(
             stable_panel_content_width(conversation, Some((takeover, conversation))),
             conversation
-        );
-    }
-
-    #[tokio::test]
-    async fn remote_shutdown_waits_for_ipc_release() {
-        let dir = tempfile::tempdir().unwrap();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let release = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            drop(listener);
-        });
-
-        wait_for_remote_engine_shutdown(port, dir.path(), Duration::from_secs(2))
-            .await
-            .unwrap();
-        release.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn signed_out_synced_runtime_stops_and_reboots_local() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("session.json"),
-            r#"{"refreshToken":"still-valid","user":{"id":"user_1","email":"u@example.com"},"orgId":"org_1"}"#,
-        )
-        .unwrap();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-        let boot = EngineBootConfig {
-            data_dir: dir.path().to_path_buf(),
-            ipc_port: port,
-            edge_url: "http://127.0.0.1:1".into(),
-            edge_token: None,
-            org_id: None,
-            workos_client_id: Some("client_test".into()),
-            default_harness: onicode_proto::HarnessId::Mock,
-        };
-        let synced = crate::state::EngineHandle::bootstrap(boot.clone())
-            .await
-            .expect("saved session opens its synced profile");
-        assert_eq!(synced.engine_info().workspace_scope, WorkspaceScope::Synced);
-
-        synced
-            .client()
-            .call(methods::SIGN_OUT, serde_json::json!({}))
-            .await
-            .expect("sign out clears credentials");
-        stop_synced_runtime(synced, port, dir.path())
-            .await
-            .expect("synced runtime drains and releases ownership");
-
-        assert!(!dir.path().join("session.json").exists());
-        let local = crate::state::EngineHandle::bootstrap(boot)
-            .await
-            .expect("same process can continue locally");
-        assert_eq!(local.engine_info().workspace_scope, WorkspaceScope::Local);
-        local.shutdown().await;
-    }
-
-    #[tokio::test]
-    async fn remote_shutdown_waits_for_engine_lock_release() {
-        let dir = tempfile::tempdir().unwrap();
-        let lock = InstanceLock::acquire(dir.path()).unwrap();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-        let lock_released = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let released_by_task = lock_released.clone();
-        let release = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            drop(lock);
-            released_by_task.store(true, std::sync::atomic::Ordering::SeqCst);
-        });
-
-        wait_for_remote_engine_shutdown(port, dir.path(), Duration::from_secs(2))
-            .await
-            .unwrap();
-        assert!(lock_released.load(std::sync::atomic::Ordering::SeqCst));
-        release.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn remote_shutdown_times_out_while_ipc_remains_open() {
-        let dir = tempfile::tempdir().unwrap();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-
-        let error = wait_for_remote_engine_shutdown(port, dir.path(), Duration::from_millis(100))
-            .await
-            .unwrap_err();
-
-        assert!(error.contains("did not finish stopping"));
-        drop(listener);
-    }
-
-    #[test]
-    fn account_actions_follow_the_attached_workspace_scope() {
-        assert_eq!(
-            account_menu_action(Some(WorkspaceScope::Local), SyncFlow::Idle),
-            Some(AccountMenuAction::EnableSync)
-        );
-        assert_eq!(
-            account_menu_action(Some(WorkspaceScope::Synced), SyncFlow::Idle),
-            Some(AccountMenuAction::SignOut)
-        );
-        assert_eq!(
-            account_menu_action(Some(WorkspaceScope::Development), SyncFlow::Idle),
-            None
-        );
-    }
-
-    #[test]
-    fn sidebar_footer_names_the_account_or_falls_back_to_local() {
-        let named = onicode_proto::UserProfile {
-            id: "u".into(),
-            email: "wing@example.com".into(),
-            name: Some("Wing".into()),
-        };
-        let unnamed = onicode_proto::UserProfile {
-            name: Some("  ".into()),
-            ..named.clone()
-        };
-        let label = |scope, user| sidebar_account_identity(scope, SyncFlow::Idle, user).0;
-        assert_eq!(label(Some(WorkspaceScope::Synced), Some(&named)), "Wing");
-        assert_eq!(
-            label(Some(WorkspaceScope::Synced), Some(&unnamed)),
-            "wing@example.com"
-        );
-        assert_eq!(label(None, None), "Local");
-        assert_eq!(label(Some(WorkspaceScope::Synced), None), "Local");
-        // Local-only storage stays "Local" even with a cached profile.
-        assert_eq!(label(Some(WorkspaceScope::Local), Some(&named)), "Local");
-    }
-
-    #[test]
-    fn local_sign_in_offers_the_in_place_switch() {
-        let signed_in = AuthState::SignedIn {
-            user: onicode_proto::UserProfile {
-                id: "user-1".into(),
-                email: "user@example.com".into(),
-                name: None,
-            },
-            org_id: Some("org-1".into()),
-        };
-
-        assert_eq!(
-            sync_flow_after_auth(
-                SyncFlow::Enabling,
-                Some(WorkspaceScope::Local),
-                Some(&signed_in),
-            ),
-            SyncFlow::SwitchOffer { notice_open: true }
-        );
-        assert_eq!(
-            sync_flow_after_auth(
-                SyncFlow::Idle,
-                Some(WorkspaceScope::Local),
-                Some(&signed_in),
-            ),
-            SyncFlow::SwitchOffer { notice_open: true },
-            "another viewport derives the pending switch from AuthStatus"
-        );
-        assert_eq!(
-            sync_flow_after_auth(
-                SyncFlow::SwitchOffer { notice_open: false },
-                Some(WorkspaceScope::Local),
-                Some(&signed_in),
-            ),
-            SyncFlow::SwitchOffer { notice_open: false },
-            "shared auth updates do not reopen a postponed wizard"
-        );
-        assert_eq!(
-            sync_flow_after_auth(
-                SyncFlow::RestartPending { notice_open: false },
-                Some(WorkspaceScope::Local),
-                Some(&signed_in),
-            ),
-            SyncFlow::RestartPending { notice_open: false },
-            "the quit fallback survives shared auth updates too"
-        );
-        assert_eq!(
-            account_menu_action(
-                Some(WorkspaceScope::Local),
-                SyncFlow::SwitchOffer { notice_open: false },
-            ),
-            Some(AccountMenuAction::RestartPending)
-        );
-        for notice_open in [true, false] {
-            assert_eq!(
-                sync_flow_after_auth(
-                    SyncFlow::SwitchOffer { notice_open },
-                    Some(WorkspaceScope::Local),
-                    Some(&AuthState::SignedOut),
-                ),
-                SyncFlow::Idle,
-                "revoked credentials cancel the pending switch"
-            );
-        }
-    }
-
-    #[test]
-    fn import_summary_errors_are_a_failure_not_a_success() {
-        // Clean summary → done with counts.
-        let clean = serde_json::json!({
-            "kind": "summary", "importedChats": 2, "skippedChats": 1, "errors": []
-        });
-        assert_eq!(import_summary_outcome(&clean), Ok((2, 1)));
-
-        // Any error means the wizard must NOT say "all set" — partial
-        // migrations surface as an explicit failure with the first cause.
-        let partial = serde_json::json!({
-            "kind": "summary", "importedChats": 1, "skippedChats": 0,
-            "errors": ["chat c2: journal copy failed"]
-        });
-        let message = import_summary_outcome(&partial).expect_err("errors must fail");
-        assert!(message.contains("journal copy failed"), "{message}");
-        assert!(message.contains("1 imported"), "{message}");
-
-        let many = serde_json::json!({
-            "kind": "summary", "importedChats": 0, "skippedChats": 0,
-            "errors": ["a", "b", "c"]
-        });
-        let message = import_summary_outcome(&many).expect_err("errors must fail");
-        assert!(message.contains("3 failures"), "{message}");
-
-        // A summary missing the errors field entirely (older engine) is
-        // treated as clean rather than failing every import.
-        let legacy = serde_json::json!({ "kind": "summary", "importedChats": 4 });
-        assert_eq!(import_summary_outcome(&legacy), Ok((4, 0)));
-    }
-
-    #[test]
-    fn spaces_only_local_work_still_gets_the_import_offer() {
-        assert_eq!(local_work_phrase(0, 0), None, "nothing to bring");
-        assert_eq!(local_work_phrase(2, 0).as_deref(), Some("the 2 sessions"));
-        assert_eq!(
-            local_work_phrase(0, 1).as_deref(),
-            Some("the 1 project"),
-            "a projects-only profile must be offered the import, not a bare switch"
-        );
-        assert_eq!(
-            local_work_phrase(1, 2).as_deref(),
-            Some("the 1 session and 2 projects")
-        );
-    }
-
-    #[test]
-    fn dismissed_import_failure_stays_reachable_on_a_synced_runtime() {
-        let signed_in = AuthState::SignedIn {
-            user: onicode_proto::UserProfile {
-                id: "user-1".into(),
-                email: "user@example.com".into(),
-                name: None,
-            },
-            org_id: Some("org-1".into()),
-        };
-
-        // "Later" postpones the failure notice; it must not evaporate.
-        let dismissed = SyncFlow::ImportFailed { notice_open: false };
-        assert_eq!(
-            sync_flow_after_auth(dismissed, Some(WorkspaceScope::Synced), Some(&signed_in)),
-            dismissed,
-            "a postponed import failure survives auth/scope updates"
-        );
-
-        // …and the account menu on the SYNCED runtime still exposes the
-        // re-entry point. This is the whole point: after the switch there is
-        // no local runtime left to re-derive an offer from, so this menu row
-        // is the only path back to the retry dialog.
-        assert_eq!(
-            account_menu_action(Some(WorkspaceScope::Synced), dismissed),
-            Some(AccountMenuAction::RestartPending),
-            "retry must remain reachable after dismissal"
-        );
-        assert_eq!(
-            account_menu_action(
-                Some(WorkspaceScope::Synced),
-                SyncFlow::ImportFailed { notice_open: true },
-            ),
-            Some(AccountMenuAction::RestartPending)
-        );
-
-        // Resolving the failure restores the normal synced menu.
-        assert_eq!(
-            account_menu_action(Some(WorkspaceScope::Synced), SyncFlow::Idle),
-            Some(AccountMenuAction::SignOut)
-        );
-    }
-
-    #[test]
-    fn switch_lifecycle_survives_the_runtime_replacement_window() {
-        let signed_in = AuthState::SignedIn {
-            user: onicode_proto::UserProfile {
-                id: "user-1".into(),
-                email: "user@example.com".into(),
-                name: None,
-            },
-            org_id: Some("org-1".into()),
-        };
-        for flow in [
-            SyncFlow::Switching { import: true },
-            SyncFlow::Importing { done: 1, total: 3 },
-            SyncFlow::ImportDone {
-                imported: 3,
-                skipped: 0,
-            },
-            SyncFlow::ImportFailed { notice_open: true },
-            SyncFlow::ImportFailed { notice_open: false },
-        ] {
-            // Local (before the stop), detached (mid-replacement), and synced
-            // (replacement runtime up): the driver owns these states — auth
-            // and scope edges must never reset them.
-            assert_eq!(
-                sync_flow_after_auth(flow, Some(WorkspaceScope::Local), Some(&signed_in)),
-                flow
-            );
-            assert_eq!(sync_flow_after_auth(flow, None, None), flow);
-            assert_eq!(
-                sync_flow_after_auth(flow, Some(WorkspaceScope::Synced), Some(&signed_in)),
-                flow
-            );
-        }
-    }
-
-    #[test]
-    fn synced_sign_out_blocks_every_viewport_and_cannot_switch_accounts() {
-        let signed_in_as_another_user = AuthState::SignedIn {
-            user: onicode_proto::UserProfile {
-                id: "user-2".into(),
-                email: "other@example.com".into(),
-                name: None,
-            },
-            org_id: Some("org-2".into()),
-        };
-
-        assert_eq!(
-            sync_flow_after_auth(
-                SyncFlow::SigningOut,
-                Some(WorkspaceScope::Synced),
-                Some(&AuthState::SignedOut),
-            ),
-            SyncFlow::SignedOutRestartRequired,
-            "the viewport that requested sign-out is blocked by AuthStatus"
-        );
-        assert_eq!(
-            sync_flow_after_auth(
-                SyncFlow::Idle,
-                Some(WorkspaceScope::Synced),
-                Some(&AuthState::SignedOut),
-            ),
-            SyncFlow::SignedOutRestartRequired,
-            "another viewport observing the same runtime is also blocked"
-        );
-        assert_eq!(
-            sync_flow_after_auth(
-                SyncFlow::SignedOutRestartRequired,
-                Some(WorkspaceScope::Synced),
-                Some(&signed_in_as_another_user),
-            ),
-            SyncFlow::SignedOutRestartRequired,
-            "new credentials cannot reopen the previous account's store"
         );
     }
 
@@ -15822,10 +13419,7 @@ mod tests {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -16127,10 +13721,7 @@ mod exit_regressions {
         let boot = EngineBootConfig {
             data_dir: dir.path().into(),
             ipc_port: 0,
-            edge_url: "http://127.0.0.1:1".into(),
-            edge_token: None,
-            org_id: None,
-            workos_client_id: None,
+            update_feed: String::new(),
             default_harness: onicode_proto::HarnessId::Mock,
         };
         for (connection, expected) in [
@@ -16180,10 +13771,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -16252,10 +13840,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -16357,10 +13942,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -16534,10 +14116,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -16603,10 +14182,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -16677,10 +14253,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -16729,10 +14302,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -16811,10 +14381,7 @@ mod exit_regressions {
                     EngineBootConfig {
                         data_dir: dir.path().into(),
                         ipc_port: 0,
-                        edge_url: "http://127.0.0.1:1".into(),
-                        edge_token: None,
-                        org_id: None,
-                        workos_client_id: None,
+                        update_feed: String::new(),
                         default_harness: onicode_proto::HarnessId::Mock,
                     },
                     cx,
@@ -16870,10 +14437,7 @@ mod exit_regressions {
                     EngineBootConfig {
                         data_dir: dir.path().into(),
                         ipc_port: 0,
-                        edge_url: "http://127.0.0.1:1".into(),
-                        edge_token: None,
-                        org_id: None,
-                        workos_client_id: None,
+                        update_feed: String::new(),
                         default_harness: onicode_proto::HarnessId::Mock,
                     },
                     cx,
@@ -16936,10 +14500,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir,
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -17196,10 +14757,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -17381,10 +14939,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -17484,10 +15039,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -17569,10 +15121,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -17650,10 +15199,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -17724,10 +15270,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -17770,7 +15313,6 @@ mod exit_regressions {
                         child_kind: None,
                         space_id: Some("other".into()),
                         last_seen_at: None,
-                        room_gen: None,
                     }]);
                     state.select_space(Some("mine".into()), cx);
                 });
@@ -17812,10 +15354,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -17876,10 +15415,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -17935,10 +15471,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -18071,10 +15604,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -18181,10 +15711,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -18302,10 +15829,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -18400,10 +15924,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -18413,7 +15934,6 @@ mod exit_regressions {
             .update(cx, |shell, window, cx| {
                 shell.active_chat = "session".into();
                 shell.state.update(cx, |state, _| {
-                    state.workspace_scope = Some(onicode_proto::WorkspaceScope::Local);
                     state.local_device_id = Some("device-a".into());
                 });
                 // Selecting the identity happens before navigation, without requiring a render.
@@ -18454,7 +15974,7 @@ mod exit_regressions {
                     Some(cx.new(|cx| PullRequestsPage::new(shell.state.clone(), cx)));
                 shell
                     .state
-                    .update(cx, |state, _| state.workspace_scope = None);
+                    .update(cx, |state, _| state.local_device_id = None);
                 shell.sync_browser_profile(cx);
                 assert!(shell.browser_profile.is_none());
                 assert!(shell.browsers.is_empty());
@@ -18482,10 +16002,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -18560,10 +16077,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -18658,10 +16172,7 @@ mod exit_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -18703,12 +16214,6 @@ mod exit_regressions {
             window
                 .update(cx, |shell, _, cx| {
                     assert!(matches!(shell.pending_exit, Some(PendingExit::CloseWindow)));
-                    shell.quit_for_runtime_change(cx);
-                    assert!(matches!(
-                        shell.pending_exit,
-                        Some(PendingExit::RuntimeChange)
-                    ));
-                    assert!(shell.runtime_change_task.is_none());
                     shell.apply_staged_update(PathBuf::from("must-not-install"), cx);
                     assert!(matches!(
                         shell.pending_exit,
@@ -18843,10 +16348,7 @@ mod right_tab_mouse_regressions {
                     EngineBootConfig {
                         data_dir: dir.path().into(),
                         ipc_port: 0,
-                        edge_url: "http://127.0.0.1:1".into(),
-                        edge_token: None,
-                        org_id: None,
-                        workos_client_id: None,
+                        update_feed: String::new(),
                         default_harness: onicode_proto::HarnessId::Mock,
                     },
                     cx,
@@ -19363,10 +16865,7 @@ mod settings_modal_regressions {
                 EngineBootConfig {
                     data_dir: dir.path().into(),
                     ipc_port: 0,
-                    edge_url: "http://127.0.0.1:1".into(),
-                    edge_token: None,
-                    org_id: None,
-                    workos_client_id: None,
+                    update_feed: String::new(),
                     default_harness: onicode_proto::HarnessId::Mock,
                 },
                 cx,
@@ -19374,11 +16873,6 @@ mod settings_modal_regressions {
         });
         window
             .update(cx, |shell, _, cx| {
-                // Signed out, Cloud has nothing to manage: its link opens General.
-                shell.open_settings(SettingsSection::Cloud, cx);
-                assert_eq!(shell.route, Route::Settings(SettingsSection::General));
-                shell.close_settings(cx);
-                sign_in(&shell.state, cx);
                 let history = shell.nav.current().clone();
                 let selected = shell.state.read(cx).selected_chat.clone();
                 for section in SettingsSection::ALL {
@@ -19434,10 +16928,7 @@ mod settings_modal_regressions {
             EngineBootConfig {
                 data_dir: dir.into(),
                 ipc_port: 0,
-                edge_url: "http://127.0.0.1:1".into(),
-                edge_token: None,
-                org_id: None,
-                workos_client_id: None,
+                update_feed: String::new(),
                 default_harness: onicode_proto::HarnessId::Mock,
             },
             cx,
@@ -19483,8 +16974,6 @@ mod settings_modal_regressions {
         );
         for (route, section) in [
             ("settings/devices", SettingsSection::Devices),
-            ("settings/cloud", SettingsSection::Cloud),
-            ("settings/billing", SettingsSection::Billing),
             ("settings/providers", SettingsSection::Harnesses),
             ("settings/agents", SettingsSection::Harnesses),
             ("settings/harnesses", SettingsSection::Harnesses),
@@ -19517,7 +17006,6 @@ mod settings_modal_regressions {
             let mut shell = test_shell(dir.path(), cx);
             shell.settings.sidebar_organization = SidebarOrganization::InOneList;
             shell.state.update(cx, |state, _| {
-                state.workspace_scope = Some(WorkspaceScope::Local);
                 state.local_device_id = Some("local".into());
                 state.chats = ["older", "newer"]
                     .into_iter()
@@ -19574,7 +17062,6 @@ mod settings_modal_regressions {
             let mut shell = test_shell(dir.path(), cx);
             shell.settings.sidebar_organization = SidebarOrganization::InOneList;
             shell.state.update(cx, |state, _| {
-                state.workspace_scope = Some(WorkspaceScope::Local);
                 state.local_device_id = Some("local".into());
                 state.chats = ["older", "newer"]
                     .into_iter()
@@ -19758,7 +17245,6 @@ mod settings_modal_regressions {
             shell.reduced_motion = true;
             shell.settings.sidebar_organization = SidebarOrganization::InOneList;
             shell.state.update(cx, |state, cx| {
-                state.workspace_scope = Some(WorkspaceScope::Local);
                 state.local_device_id = Some("local".into());
                 state.chats = ["older", "newer"]
                     .into_iter()
@@ -19852,77 +17338,6 @@ mod settings_modal_regressions {
             // The settings sidebar stays usable beside the stage.
             assert_eq!(f32::from(stage.origin.x), shell.settings.sidebar_width);
         });
-    }
-
-    /// Signed in to an organization the edge offers Cloud (Cloud's settings
-    /// need both).
-    fn sign_in(state: &Entity<AppState>, cx: &mut App) {
-        state.update(cx, |state, _| {
-            state.auth = Some(onicode_proto::AuthState::SignedIn {
-                user: onicode_proto::UserProfile {
-                    id: "user-a".into(),
-                    email: "user@example.com".into(),
-                    name: None,
-                },
-                org_id: Some("org-a".into()),
-            });
-            state.cloud_status = Some(onicode_proto::CloudStatus {
-                available: true,
-                ..Default::default()
-            });
-        });
-    }
-
-    /// Settings → Cloud is rebuilt per visit and dropped on leaving, which is
-    /// what stops its GitHub polling and status re-checks.
-    #[gpui::test]
-    fn cloud_settings_page_lives_only_while_shown(cx: &mut TestAppContext) {
-        let dir = tempfile::tempdir().unwrap();
-        init_settings_test(settings::UiSettings::default(), dir.path(), cx);
-        let (shell, cx) = cx.add_window_view(|_, cx| test_shell(dir.path(), cx));
-        shell.update(cx, |shell, cx| {
-            shell.debug_gate = Some(GatePhase::Ready);
-            sign_in(&shell.state, cx);
-            shell.open_settings(SettingsSection::Cloud, cx)
-        });
-        cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear(cx));
-        let first = shell.read_with(cx, |shell, _| {
-            assert_eq!(shell.route, Route::Settings(SettingsSection::Cloud));
-            shell.cloud_page.clone().expect("Cloud page mounts")
-        });
-        shell.update(cx, |shell, cx| {
-            shell.open_settings(SettingsSection::Devices, cx)
-        });
-        cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear(cx));
-        shell.read_with(cx, |shell, _| assert!(shell.cloud_page.is_none()));
-        shell.update(cx, |shell, cx| {
-            shell.open_settings(SettingsSection::Cloud, cx)
-        });
-        cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear(cx));
-        let second = shell.read_with(cx, |shell, _| {
-            let second = shell.cloud_page.clone().expect("Cloud page remounts");
-            assert_ne!(first.entity_id(), second.entity_id());
-            second
-        });
-        // Picking Cloud again while it shows keeps the page (no flash).
-        shell.update(cx, |shell, cx| {
-            shell.open_settings(SettingsSection::Cloud, cx)
-        });
-        cx.run_until_parked();
-        shell.read_with(cx, |shell, _| {
-            assert_eq!(
-                shell.cloud_page.as_ref().map(|page| page.entity_id()),
-                Some(second.entity_id())
-            );
-        });
-        drop((first, second));
-        shell.update(cx, |shell, cx| shell.close_settings(cx));
-        cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear(cx));
-        shell.read_with(cx, |shell, _| assert!(shell.cloud_page.is_none()));
     }
 
     #[gpui::test]

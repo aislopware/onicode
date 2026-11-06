@@ -12,7 +12,7 @@ upstream = "zeronsh/zeron"
 branch = "main"
 remote = "upstream"
 checkout = "onicode"
-base = "1b86c41c8fe3a4314fa1035aae4bfe099c0a1f3b"
+base = "51e1469d36662b6473c7c8142297a1ffa9952f07"
 base_date = "2026-11-06"
 every_minutes = 0
 # zeron's own release, CI and edge plumbing is not onicode's; the app, engine and agent code is.
@@ -32,7 +32,7 @@ upstream = "longbridge/gpui-kit"
 branch = "main"
 fork = "aislopware/gpui-kit"
 checkout = "forks/gpui-kit"
-base = "6309631aae1748ae0d05ac1f3ff2dd6ca379cb85"
+base = "b881cadb7cf7c43b579f60bdac496460ab2f6276"
 base_date = "2026-11-06"
 every_minutes = 0
 
@@ -42,7 +42,7 @@ every_minutes = 0
 upstream = "zed-industries/zed"
 branch = "main"
 checkout = "../slopty/.research/zed-main"
-base = "145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
+base = "0018500a6a6df7fa79bd4ca91561cf3eec3e1e3d"
 base_date = "2026-11-06"
 every_minutes = 240
 pulls = false
@@ -202,7 +202,7 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "f49ae52079859e9cfff41ed92dd935d022a2da0b"
+base = "e3fe1ade2ca4cfcea0c192317beefa38c0ff1b5a"
 base_date = "2026-11-06"
 every_minutes = 60
 pulls = false

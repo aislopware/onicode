@@ -8,9 +8,9 @@
 //! the caller's:
 //!   - no subcommand: open the window ([`Launch::Window`]);
 //!   - a subcommand that runs the engine's code here ([`EngineCommand`]: `headless`, `engine`,
-//!     `login`, `logout`, `status`, `sync`, `quiesce`, `mcp`). A binary that links the engine runs
-//!     it itself ([`Engines::InProcess`], `onicode_app::run_engine_command`); an interface that
-//!     doesn't hands the whole command line to the engine helper beside it ([`Engines::Helper`]:
+//!     `status`, `sync`, `mcp`). A binary that links the engine runs it itself
+//!     ([`Engines::InProcess`], `onicode_app::run_engine_command`); an interface that doesn't hands
+//!     the whole command line to the engine helper beside it ([`Engines::Helper`]:
 //!     `Contents/MacOS/Onicode Engine` in a macOS bundle), which replaces this process and runs it
 //!     there.
 
@@ -21,10 +21,7 @@ pub mod paths;
 pub mod update_cli;
 
 use clap::{CommandFactory as _, FromArgMatches as _, Parser, Subcommand};
-pub use env::{
-    DEFAULT_EDGE_URL, DEFAULT_IPC_PORT, DEFAULT_WORKOS_CLIENT_ID, edge_url_from_env, ipc_port_from,
-    ipc_port_from_env, workos_client_id_from_env,
-};
+pub use env::{DEFAULT_IPC_PORT, ipc_port_from, ipc_port_from_env, update_feed_from_env};
 pub use logging::{RotatingLog, init_logging, long_running_setup, open_log_file};
 
 #[derive(Parser)]
@@ -43,27 +40,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run the engine without a UI (local-only unless a saved session enables sync).
+    /// Run the engine without a UI.
     Headless,
     /// The desktop app's background engine (`onicode-engine` where it ships
     /// separately): started by the app, it keeps sessions running with the
     /// app closed.
     #[command(hide = true)]
     Engine,
-    /// Sign in and enable sync on the next engine start.
-    Login,
-    /// Remove the saved session and return to local-only on the next start.
-    Logout,
-    /// Show workspace mode, optional auth, and engine status.
+    /// Show the data dir, whether the engine runs, and the update feed.
     Status,
-    /// Live sync introspection from the running engine: per-room connection
-    /// state, last pushed-frame/ack ages, rejoin/probe/resync counters.
+    /// Live sync introspection from the running engine: the registry's and
+    /// each open chat's standing with their peers.
     Sync,
-    /// Cloud sleep handshake: ask the running engine to start no new work.
-    /// Exits 0 when quiesced, 75 when busy (a turn in flight, a message
-    /// waiting) — the edge then keeps the machine awake.
-    #[command(hide = true)]
-    Quiesce,
     #[cfg(target_os = "linux")]
     /// Trigger an Appshot in the running headed instance (desktop shortcut fallback).
     Appshot,
@@ -109,11 +97,8 @@ enum DaemonCommand {
 pub enum EngineCommand {
     Headless,
     Engine,
-    Login,
-    Logout,
     Status,
     Sync,
-    Quiesce,
     Mcp,
 }
 
@@ -195,11 +180,8 @@ pub fn run(version: &'static str, engines: Engines) -> Launch {
     match cli.command {
         Some(Command::Headless) => engine(EngineCommand::Headless),
         Some(Command::Engine) => engine(EngineCommand::Engine),
-        Some(Command::Login) => engine(EngineCommand::Login),
-        Some(Command::Logout) => engine(EngineCommand::Logout),
         Some(Command::Status) => engine(EngineCommand::Status),
         Some(Command::Sync) => engine(EngineCommand::Sync),
-        Some(Command::Quiesce) => engine(EngineCommand::Quiesce),
         Some(Command::Mcp) => engine(EngineCommand::Mcp),
         #[cfg(target_os = "linux")]
         Some(Command::Appshot) => Launch::Appshot,
@@ -207,7 +189,7 @@ pub fn run(version: &'static str, engines: Engines) -> Launch {
             tokio::runtime::Runtime::new()
                 .map_err(anyhow::Error::from)
                 .and_then(|runtime| {
-                    runtime.block_on(update_cli::update(&edge_url_from_env(), check))
+                    runtime.block_on(update_cli::update(&update_feed_from_env(), check))
                 }),
         ),
         Some(Command::UpdateWatchdog) => Launch::Done(onicode_update::transaction::run_watchdog()),
@@ -229,14 +211,7 @@ impl Command {
     /// Whether it runs the engine's code ([`EngineCommand`]).
     fn runs_engine(&self) -> bool {
         match self {
-            Self::Headless
-            | Self::Engine
-            | Self::Login
-            | Self::Logout
-            | Self::Status
-            | Self::Sync
-            | Self::Quiesce
-            | Self::Mcp => true,
+            Self::Headless | Self::Engine | Self::Status | Self::Sync | Self::Mcp => true,
             #[cfg(target_os = "linux")]
             Self::Appshot => false,
             Self::Update { .. } | Self::UpdateWatchdog | Self::Daemon { .. } => false,
@@ -297,11 +272,8 @@ mod tests {
         for expected in [
             &["headless"][..],
             &["engine"],
-            &["login"],
-            &["logout"],
             &["status"],
             &["sync"],
-            &["quiesce"],
             &["mcp"],
             &["daemon", "install"],
             &["update"],
@@ -326,11 +298,8 @@ mod tests {
         for args in [
             &["headless"][..],
             &["engine"],
-            &["login"],
-            &["logout"],
             &["status"],
             &["sync"],
-            &["quiesce"],
             &["mcp"],
         ] {
             assert!(parse(args).unwrap().runs_engine(), "{args:?}");

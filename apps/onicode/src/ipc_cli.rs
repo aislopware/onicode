@@ -1,36 +1,49 @@
-//! `onicode sync` and `onicode quiesce`: the running engine's sync state and the
-//! Cloud sleep handshake, over its local IPC.
+//! `onicode status` and `onicode sync`: the engine on this device and its sync with its peers,
+//! over its local IPC.
 
-/// `onicode sync`: dial the running engine's IPC and print per-room sync state.
-/// The introspection surface every 2026-08 incident was missing — "is this
-/// device's workspace room actually receiving?" as a one-liner.
-/// `onicode quiesce`'s exit status when the engine is busy (EX_TEMPFAIL); the
-/// edge's sleep workflow reads it (`QUIESCE_BUSY_EXIT`).
-const QUIESCE_BUSY_EXIT: i32 = 75;
+use std::path::Path;
 
-pub async fn quiesce_cli(ipc_port: u16, data_dir: &std::path::Path) -> anyhow::Result<()> {
-    let client = onicode_rpc::connect_ipc(ipc_port, Some(data_dir))
-        .await
-        .map_err(|e| anyhow::anyhow!("no engine listening on 127.0.0.1:{ipc_port} ({e})"))?;
-    let reply = client
-        .call(
-            onicode_rpc::methods::QUIESCE_FOR_SLEEP,
-            serde_json::json!({}),
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("QuiesceForSleep failed: {e}"))?;
-    if reply["quiesced"].as_bool() == Some(true) {
-        println!("quiesced");
-        return Ok(());
+use onicode_engine::{EngineConfig, InstanceLock};
+
+/// `onicode status`: where the engine keeps its data, and whether it runs and listens.
+pub async fn status_cli(config: &EngineConfig) -> anyhow::Result<()> {
+    println!("Data dir: {}", config.data_dir.display());
+    match InstanceLock::holder(&config.data_dir) {
+        Some(pid) => println!("Engine:   running (pid {pid})"),
+        None => println!("Engine:   not running"),
     }
-    eprintln!(
-        "busy: {}",
-        reply["busy"].as_str().unwrap_or("the engine is busy")
+    match engine_info(config.ipc_port, &config.data_dir).await {
+        Some(info) => {
+            println!("IPC:      listening on 127.0.0.1:{}", config.ipc_port);
+            println!("Device:   {}", info.device_id);
+        }
+        None => println!("IPC:      not listening on 127.0.0.1:{}", config.ipc_port),
+    }
+    println!(
+        "Updates:  {}",
+        if config.update_feed.is_empty() {
+            "off (no ONICODE_UPDATE_FEED)"
+        } else {
+            config.update_feed.as_str()
+        }
     );
-    std::process::exit(QUIESCE_BUSY_EXIT);
+    Ok(())
 }
 
-pub async fn sync_cli(ipc_port: u16, data_dir: &std::path::Path) -> anyhow::Result<()> {
+async fn engine_info(ipc_port: u16, data_dir: &Path) -> Option<onicode_engine::EngineInfo> {
+    let client = onicode_rpc::connect_ipc(ipc_port, Some(data_dir))
+        .await
+        .ok()?;
+    let value = client
+        .call(onicode_rpc::methods::ENGINE_INFO, serde_json::json!({}))
+        .await
+        .ok()?;
+    serde_json::from_value(value).ok()
+}
+
+/// `onicode sync`: dial the running engine's IPC and print how its registry and each open chat
+/// stand with their peers.
+pub async fn sync_cli(ipc_port: u16, data_dir: &Path) -> anyhow::Result<()> {
     let client = onicode_rpc::connect_ipc(ipc_port, Some(data_dir))
         .await
         .map_err(|e| {
@@ -42,59 +55,32 @@ pub async fn sync_cli(ipc_port: u16, data_dir: &std::path::Path) -> anyhow::Resu
         .call(onicode_rpc::methods::SYNC_STATUS, serde_json::json!({}))
         .await
         .map_err(|e| anyhow::anyhow!("SyncStatus failed: {e}"))?;
-    let now = status.get("nowMs").and_then(|v| v.as_i64()).unwrap_or(0);
-    let age = |ms: i64| -> String {
-        if ms <= 0 {
-            return "never".into();
-        }
-        let s = (now - ms).max(0) / 1000;
-        if s >= 3600 {
-            format!("{}h{}m ago", s / 3600, (s % 3600) / 60)
-        } else if s >= 60 {
-            format!("{}m{}s ago", s / 60, s % 60)
-        } else {
-            format!("{s}s ago")
-        }
-    };
-    let room_line = |room: Option<&serde_json::Value>| -> String {
-        let Some(room) = room else {
-            return "no room (dialing or edge-less)".into();
-        };
-        let get = |k: &str| room.get(k).and_then(|v| v.as_i64()).unwrap_or(0);
-        // REJECTED is loud and only shown when nonzero: rejected writes with
-        // a fresh-looking room is exactly the latched-session wedge
-        // (2026-08-04) this readout previously masked.
-        let rejected = get("rejected");
-        format!(
-            "{} pushed {} · acked {} · rejoins {} probes {} resyncs {} drops {}{}",
-            if room.get("connected").and_then(|v| v.as_bool()) == Some(true) {
-                "connected ·"
-            } else {
-                "DISCONNECTED ·"
-            },
-            age(get("lastPushedMs")),
-            age(get("lastAckMs")),
-            get("rejoins"),
-            get("probes"),
-            get("fullResyncs"),
-            get("disconnects"),
-            if rejected > 0 {
-                format!(" REJECTED {rejected}")
-            } else {
-                String::new()
-            },
-        )
-    };
-    println!(
-        "Device:    {}",
-        status
-            .get("deviceId")
+    let text = |value: &serde_json::Value, key: &str| -> String {
+        value
+            .get(key)
             .and_then(|v| v.as_str())
             .unwrap_or("?")
-    );
+            .to_owned()
+    };
+    println!("Device:    {}", text(&status, "deviceId"));
+    let workspace = status.get("workspace").cloned().unwrap_or_default();
+    let peers: Vec<&str> = workspace
+        .get("caughtUpWith")
+        .and_then(|v| v.as_array())
+        .map(|peers| peers.iter().filter_map(|p| p.as_str()).collect())
+        .unwrap_or_default();
     println!(
-        "Workspace: {}",
-        room_line(status.get("workspace").filter(|v| !v.is_null()))
+        "Workspace: {}{}",
+        if workspace.get("synced").and_then(|v| v.as_bool()) == Some(true) {
+            "synced"
+        } else {
+            "NOT SYNCED"
+        },
+        if peers.is_empty() {
+            String::new()
+        } else {
+            format!(" · caught up with {}", peers.join(", "))
+        }
     );
     let chats = status
         .get("chats")
@@ -104,49 +90,22 @@ pub async fn sync_cli(ipc_port: u16, data_dir: &std::path::Path) -> anyhow::Resu
     if chats.is_empty() {
         println!("Chats:     none open");
     }
-    // Chat rooms speak chat2: cursor/head tell "am I caught up?", pending
-    // tells "did my writes leave?", resets/rejected are the loud tells.
-    let chat_line = |room: Option<&serde_json::Value>| -> String {
-        let Some(room) = room else {
-            return "no room (dialing or edge-less)".into();
-        };
-        let get = |k: &str| room.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-        let resets = get("serverResets");
-        let rejected = get("rejected");
-        format!(
-            "{} cursor {}/{} · pending {} · rows {} ({}KB) · rejoins {} drops {}{}{}",
-            if room.get("connected").and_then(|v| v.as_bool()) == Some(true) {
-                "connected ·"
-            } else {
-                "DISCONNECTED ·"
-            },
-            get("cursor"),
-            get("headSeq"),
-            get("pendingPushes"),
-            get("rowCount"),
-            get("rowBytes") / 1024,
-            get("rejoins"),
-            get("disconnects"),
-            if resets > 0 {
-                format!(" RESETS {resets}")
-            } else {
-                String::new()
-            },
-            if rejected > 0 {
-                format!(" REJECTED {rejected}")
-            } else {
-                String::new()
-            },
-        )
-    };
     for chat in &chats {
+        let id = text(chat, "chatId");
+        let host = chat
+            .get("host")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown host");
+        let live = chat.get("hostLive").and_then(|v| v.as_bool()) == Some(true);
+        let unacked = chat
+            .get("unackedWrites")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         println!(
-            "Chat {}: {}",
-            chat.get("chatId")
-                .and_then(|v| v.as_str())
-                .map(|s| &s[..s.len().min(8)])
-                .unwrap_or("?"),
-            chat_line(chat.get("room").filter(|v| !v.is_null()))
+            "Chat {}: {} · host {host}{} · unacked {unacked}",
+            id.get(..8).unwrap_or(&id),
+            text(chat, "state"),
+            if live { " (live)" } else { "" },
         );
     }
     Ok(())

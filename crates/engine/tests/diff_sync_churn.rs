@@ -51,7 +51,6 @@ fn assemble(dir: &Path) -> EngineCore {
         dir,
         Arc::new(HarnessRegistry::new()),
         onicode_proto::HarnessId::Mock,
-        None,
     )
     .expect("engine assembles")
 }
@@ -178,7 +177,6 @@ async fn chat_flap_keeps_entry_and_sustained_absence_removes_it() {
         core.repos.clone(),
         core.workspace.clone(),
         &core.device_id,
-        None,
         Duration::from_millis(300),
     );
     core.workspace
@@ -251,7 +249,6 @@ async fn deleted_checkout_is_evicted_after_grace() {
         core.repos.clone(),
         core.workspace.clone(),
         &core.device_id,
-        None,
         Duration::from_millis(300),
     );
     core.workspace
@@ -347,7 +344,6 @@ async fn archived_chats_get_no_entry_and_archiving_drops_it() {
         core.repos.clone(),
         core.workspace.clone(),
         &core.device_id,
-        None,
         Duration::from_secs(3600),
     );
     for (space, dir) in [("space-live", &live_dir), ("space-arch", &archived_dir)] {
@@ -455,7 +451,6 @@ async fn open_archived_chat_is_tracked_until_interest_lapses() {
         core.repos.clone(),
         core.workspace.clone(),
         &core.device_id,
-        None,
         Duration::from_secs(3600),
         Duration::from_millis(300),
     );
@@ -528,7 +523,6 @@ async fn discard_works_for_an_untracked_checkout() {
         core.repos.clone(),
         core.workspace.clone(),
         &core.device_id,
-        None,
         Duration::from_secs(3600),
     );
     let identity = core.repos.checkout_identity(&dir).await.expect("identity");
@@ -569,7 +563,6 @@ async fn orphaned_entry_skips_captures_and_catches_up_on_return() {
         core.repos.clone(),
         core.workspace.clone(),
         &core.device_id,
-        None,
         Duration::from_secs(3600),
     );
     core.workspace

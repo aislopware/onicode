@@ -139,7 +139,7 @@ fn engine(dir: &std::path::Path) -> (EngineCore, Runs) {
     let runs = harness.runs.clone();
     let registry = HarnessRegistry::new();
     registry.register(Arc::new(harness));
-    let core = EngineCore::assemble(&dir.join("data"), Arc::new(registry), HarnessId::Mock, None)
+    let core = EngineCore::assemble(&dir.join("data"), Arc::new(registry), HarnessId::Mock)
         .expect("engine core assembles");
     (core, runs)
 }

@@ -28,8 +28,8 @@ use gpui_tokio::Tokio;
 use onicode_doc::{SessionMessageEntry, TranscriptDesync, TranscriptFrame};
 use onicode_engine::{EngineConfig, EngineRuntime, InstanceLock};
 use onicode_proto::{
-    AuthState, ChangeRequestSummary, Chat, ChatIndicator, CheckoutChangeRequestStatus, Device,
-    EngineInfo, HarnessId, Session, SidebarPreferencesState, Space, WorkspaceScope,
+    ChangeRequestSummary, Chat, ChatIndicator, CheckoutChangeRequestStatus, Device, EngineInfo,
+    HarnessId, Session, SidebarPreferencesState, Space,
 };
 use onicode_rpc::{RpcClient, RpcError, RpcService, memory_client, methods};
 use serde::de::DeserializeOwned;
@@ -95,14 +95,8 @@ pub struct EngineBootConfig {
     pub data_dir: PathBuf,
     /// Localhost IPC port to probe / serve.
     pub ipc_port: u16,
-    /// Edge base URL for the embedded engine.
-    pub edge_url: String,
-    /// Bearer for edge room joins; `None` runs offline.
-    pub edge_token: Option<String>,
-    /// Workspace org override for explicit dev-mode runs.
-    pub org_id: Option<String>,
-    /// WorkOS client id for production authentication.
-    pub workos_client_id: Option<String>,
+    /// Release feed the embedded engine's updater reads.
+    pub update_feed: String,
     /// Harness for doc-command runs until per-chat config lands (M4).
     pub default_harness: HarnessId,
 }
@@ -140,7 +134,6 @@ struct InProcessEngine {
     service: Arc<dyn RpcService>,
     runtime: Arc<tokio::sync::Mutex<Option<EngineRuntime>>>,
     boot_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    refresh_task: tokio::task::JoinHandle<()>,
     /// Serves this engine to other viewports over the IPC port. `None` when the
     /// port was already taken — the window still works over its own transport.
     ipc_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -178,15 +171,7 @@ impl EngineBackend for InProcessEngine {
             // listener is closed before bootstrap reports an assembly failure.
             let _ = ipc.await;
         }
-        // As the background engine does: no token refresh may be mid-exchange
-        // when another engine takes over the session file (single-use token).
-        self.refresh_task.abort();
         if let Some(runtime) = self.runtime.lock().await.take() {
-            runtime
-                .core()
-                .auth()
-                .quiesce_refresh(std::time::Duration::from_secs(10))
-                .await;
             runtime.shutdown().await;
         }
     }
@@ -302,12 +287,9 @@ impl EngineHandle {
 
         let engine_config = EngineConfig {
             data_dir: config.data_dir,
-            edge_url: config.edge_url,
-            edge_token: config.edge_token,
             ipc_port: config.ipc_port,
             default_harness: config.default_harness,
-            org_id: config.org_id,
-            workos_client_id: config.workos_client_id,
+            update_feed: config.update_feed,
             // The app joins the tailnet; this crate's tests never do.
             peers: !cfg!(test),
         };
@@ -351,8 +333,8 @@ impl EngineHandle {
         // Serve the same service on the IPC port so a terminal viewport can
         // attach to this window's engine with no setup. Deliberately the
         // *deferred* service, not the assembled one: a viewport that connects
-        // during cloud onboarding gets EngineInfo and AuthRpc immediately, and
-        // its data subscriptions wait exactly as this window's do.
+        // while the profile opens gets EngineInfo immediately, and its data
+        // subscriptions wait exactly as this window's do.
         //
         // Best-effort — losing the bind race with another engine costs other
         // viewports, not this one.
@@ -383,20 +365,15 @@ impl EngineHandle {
                 service,
                 runtime: deferred.runtime.clone(),
                 boot_task: tokio::sync::Mutex::new(Some(boot_task)),
-                refresh_task: deferred.refresh_task,
                 ipc_task: tokio::sync::Mutex::new(ipc_task),
                 client,
             }),
             engine_info: deferred.engine_info,
             deferred_state: Some(state_rx.clone()),
         };
-        // Local, development, and already-resolved synced profiles need no
-        // authentication UI while assembling. Keep the viewport Connecting
-        // until their stores and journals are actually open, and surface a
-        // boot failure through the existing bootstrap error path.
-        if deferred.profile_is_resolved
-            && let Err(message) = wait_for_deferred_engine(&mut state_rx).await
-        {
+        // Keep the viewport Connecting until the profile's stores and journals
+        // are open, and surface a boot failure through the bootstrap error path.
+        if let Err(message) = wait_for_deferred_engine(&mut state_rx).await {
             handle.shutdown().await;
             return Err(anyhow::anyhow!(message));
         }
@@ -491,13 +468,6 @@ impl EngineHandle {
                             .await
                         {
                             Ok(_) => DeferredEngineState::Ready,
-                            // EngineReady was added after EngineInfo. An older daemon
-                            // that does not expose the barrier is already assembled.
-                            Err(RpcError::UnknownMethod(method))
-                                if method == methods::ENGINE_READY =>
-                            {
-                                DeferredEngineState::Ready
-                            }
                             Err(err) => DeferredEngineState::Failed(err.to_string()),
                         };
                         state_tx.send_replace(state);
@@ -545,7 +515,6 @@ impl EngineHandle {
             }),
             engine_info: EngineInfo {
                 device_id: "local".into(),
-                workspace_scope: WorkspaceScope::Local,
                 cursor_sdk_version: None,
                 // What a current engine advertises.
                 capabilities: onicode_proto::capabilities::CURRENT
@@ -588,33 +557,11 @@ impl EngineHandle {
     }
 }
 
-/// Query the current protocol first, with a conservative fallback for daemons
-/// from before `EngineInfo` existed. Old daemons are always treated as synced.
+/// The engine's identity.
 async fn query_engine_info(client: &RpcClient) -> Result<EngineInfo, RpcError> {
-    match client
+    client
         .call_as(methods::ENGINE_INFO, serde_json::json!({}))
         .await
-    {
-        Ok(info) => Ok(info),
-        Err(RpcError::UnknownMethod(method)) if method == methods::ENGINE_INFO => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct LocalDevice {
-                device_id: String,
-            }
-            let legacy: LocalDevice = client
-                .call_as(methods::LOCAL_DEVICE, serde_json::json!({}))
-                .await?;
-            Ok(EngineInfo {
-                device_id: legacy.device_id,
-                workspace_scope: WorkspaceScope::Synced,
-                cursor_sdk_version: None,
-                capabilities: Vec::new(),
-                build: None,
-            })
-        }
-        Err(err) => Err(err),
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -628,8 +575,7 @@ async fn query_engine_info(client: &RpcClient) -> Result<EngineInfo, RpcError> {
 pub use onicode_proto::view::{
     ChatGroup, ConnectionStatus, GatePhase, Indicator, SESSION_STALE_MS, attention_rank,
     chat_location, display_status, effective_indicator, format_time_ago, gate_phase, group_chats,
-    parse_auth_state, project_label, running_subagents, sort_active, sort_chats, sort_spaces,
-    sort_tabs,
+    project_label, running_subagents, sort_active, sort_chats, sort_spaces, sort_tabs,
 };
 
 /// What a session row shows that ticks with the clock rather than with its
@@ -640,43 +586,6 @@ fn session_presence(session: &Session, now: DateTime<Utc>) -> (Indicator, u32) {
         effective_indicator(Some(session), now),
         running_subagents(Some(session), now),
     )
-}
-
-// ---------------------------------------------------------------------------
-// Org gate (pure)
-// ---------------------------------------------------------------------------
-
-/// One org membership row (tolerant local mirror of the engine's ListOrgs
-/// reply — `{orgs: [{id, organizationId, name}]}`).
-#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OrgRow {
-    pub organization_id: String,
-    pub name: String,
-}
-
-/// Parse a ListOrgs reply tolerantly (accepts a bare array too).
-pub fn parse_orgs(value: &serde_json::Value) -> Vec<OrgRow> {
-    let list = value.get("orgs").unwrap_or(value);
-    serde_json::from_value(list.clone()).unwrap_or_default()
-}
-
-/// Workspace names must be non-empty (trimmed) and reasonably short.
-pub fn org_name_valid(name: &str) -> bool {
-    let trimmed = name.trim();
-    !trimmed.is_empty() && trimmed.chars().count() <= 64
-}
-
-/// Memberships sorted by name (case-insensitive), deduped by organization id.
-pub fn sort_memberships(mut orgs: Vec<OrgRow>) -> Vec<OrgRow> {
-    orgs.sort_by(|a, b| {
-        a.name
-            .to_lowercase()
-            .cmp(&b.name.to_lowercase())
-            .then_with(|| a.name.cmp(&b.name))
-    });
-    orgs.dedup_by(|a, b| a.organization_id == b.organization_id);
-    orgs
 }
 
 // ---------------------------------------------------------------------------
@@ -715,8 +624,7 @@ impl PendingSend {
     /// with a completion the send has not seen, no settled row when a turn
     /// was in flight at send time, no outcome older than the send, and no
     /// interrupted one, which a restart stamps on the turn it cut off. A
-    /// restarted host, or a Cloud machine waking, comes back with no
-    /// completion at all, which counts.
+    /// restarted host comes back with no completion at all, which counts.
     fn adopted_by(&self, session: &Session, now: DateTime<Utc>) -> bool {
         use onicode_proto::SessionStatus::{AwaitingInput, Errored, Idle, Working};
         let before = self.row_before.as_ref();
@@ -763,8 +671,7 @@ pub const SYNC_STALLED_AFTER_MS: i64 = 35_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChatLink {
     pub sync: LinkSync,
-    /// The host's presence went dark. Cloud machines that sleep or wake
-    /// answer on their own and never count ([`crate::cloud::Presence::warns`]).
+    /// The host's presence went dark.
     pub host_unreachable: bool,
 }
 
@@ -838,23 +745,6 @@ struct SyncClock {
     /// that never delivers always ends up stalled instead of spinning.
     began: DateTime<Utc>,
 }
-
-/// The Cloud setup placeholder's step while the machine comes up; the
-/// machine's own first step ("Started a machine") replaces it in place.
-const CLOUD_STARTING_STEP: &str = "Starting a machine";
-const CLOUD_WAKING_STEP: &str = "Waking the machine";
-/// The setup step once Cloud refused to start or wake the machine for lack
-/// of credits. The message stays queued: credits added, the machine starts
-/// and runs it.
-const CLOUD_NO_CREDITS_STEP: &str = "Out of Cloud credits";
-
-/// How often Cloud's status (credits above all) is re-read while attached,
-/// and how stale it may be when a window comes forward.
-const CLOUD_STATUS_POLL: std::time::Duration = std::time::Duration::from_secs(120);
-const CLOUD_STATUS_FOCUS_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(30);
-/// A Cloud read that failed is tried again this soon (unknown credits let
-/// sends through).
-const CLOUD_STATUS_RETRY: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// The one-shot timer behind [`AppState::watch_clock_transitions`].
 #[derive(Default)]
@@ -934,21 +824,8 @@ pub(crate) struct CanvasTarget {
 /// Root application state. Reducer methods (`apply_*`, `Self::session_for`, …)
 /// are plain `&mut self` functions so tests construct the struct directly; gpui
 /// glue (`Self::bootstrap`, `Self::select_chat`) layers subscriptions on top.
-/// How long a requested wake reads as waking before the machine has to
-/// answer for itself: a cold start is well under this.
-const CLOUD_WAKE_GRACE: std::time::Duration = std::time::Duration::from_secs(180);
-
-/// The least time between session-list re-reads prompted by a surface that
-/// couldn't reach its Cloud machine (it retries every couple of seconds).
-const CLOUD_RECHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(8);
-
 pub struct AppState {
     pub connection: ConnectionStatus,
-    /// Fixed data boundary of the attached engine. Authentication may change
-    /// in place, but changing this scope requires assembling a new runtime.
-    pub workspace_scope: Option<WorkspaceScope>,
-    /// Auth stream value; `None` until the engine reports one (M4).
-    pub auth: Option<AuthState>,
     pub devices: Vec<Device>,
     // Last published device presentation. Heartbeats refresh the underlying
     // timestamps without invalidating every view when no displayed value changed.
@@ -956,7 +833,7 @@ pub struct AppState {
     // Presence ticks also retire stale remote session indicators. Remember
     // their last published appearance even when the device rows stay online.
     session_presence_presentation: Vec<(Indicator, u32)>,
-    /// Live edge posture (WatchConnectivity): drives the connection pill,
+    /// Live peer posture (WatchConnectivity): drives the connection pill,
     /// composer honesty ("will queue"), and the Queued send badges.
     pub connectivity: onicode_proto::Connectivity,
     /// Whether this runtime's connectivity watch has delivered its first
@@ -977,8 +854,7 @@ pub struct AppState {
     /// no registry row, no doc, until its first send.
     unsaved_side_chat: bool,
     pub sessions: Vec<Session>,
-    /// Synced user/org sidebar pin state. Local workspaces deliberately ignore
-    /// this and continue reading their device-local settings entry.
+    /// Sidebar pin state, replicated with the profile.
     pub sidebar_preferences: SidebarPreferencesState,
     session_presentation: Option<Vec<Session>>,
     /// The project the new-session canvas mints into. Healed by
@@ -1038,7 +914,7 @@ pub struct AppState {
     /// The in-flight send's attachment upload, when it has one.
     upload_progress: Option<UploadProgress>,
     /// Engine-side queued-attachment transfers by uploadId (`WatchTransfers`
-    /// snapshots): real relay-leg progress for the sending thumbnail's
+    /// snapshots): real peer-transfer progress for the sending thumbnail's
     /// percent ring, present exactly while bytes are moving.
     transfers: HashMap<String, (u64, u64)>,
     /// Written by the changes pane, read by the composer.
@@ -1053,29 +929,6 @@ pub struct AppState {
     /// Device-local agent CLI update lifecycle. Unlike `ListHarnesses`, this
     /// standing stream may be backed by subprocess and network probes.
     pub harness_updates: Vec<onicode_proto::HarnessUpdateStatus>,
-    /// Last `CloudStatus` any surface fetched (Settings → Cloud, Devices,
-    /// New project). Fetched on open and after actions — never polled — so
-    /// device lists can say "Asleep" instead of "Offline" for Cloud.
-    pub cloud_status: Option<onicode_proto::CloudStatus>,
-    /// Every Cloud session and its machine's state, read on focus, chat
-    /// selection and page open — and every few seconds only while one is
-    /// being set up, woken or deleted ([`Self::refresh_cloud_sessions`]).
-    pub cloud_sessions: Option<onicode_proto::CloudSessions>,
-    cloud_sessions_task: Option<Task<()>>,
-    /// Sessions (by their chat id) someone asked to wake, and when: the
-    /// machine reads as waking until its own heartbeat arrives, rather than
-    /// asleep again while the session list catches up.
-    cloud_wakes: HashMap<String, std::time::Instant>,
-    /// When a surface that couldn't reach a Cloud machine last had the
-    /// session list re-read ([`Self::recheck_cloud_machine`]).
-    cloud_recheck_at: Option<std::time::Instant>,
-    /// The GitHub repositories Cloud reaches (the Onicode GitHub App's
-    /// installations): a project whose repository is here can run a session
-    /// on Cloud. `None` = Cloud off, GitHub not connected, or not read yet.
-    pub cloud_repos: Option<Vec<onicode_proto::GithubRepo>>,
-    cloud_repos_task: Option<Task<()>>,
-    /// A [`Self::refresh_cloud_repos`] read is in flight (its button spins).
-    cloud_repos_refreshing: bool,
     /// Data directory (`ui-settings.json`, `composer-defaults.json`); set at
     /// bootstrap so child views can persist small preference files.
     pub data_dir: Option<PathBuf>,
@@ -1086,16 +939,9 @@ pub struct AppState {
     /// How the current engine was reached, kept to reconnect with.
     boot_config: Option<EngineBootConfig>,
     /// Watches the engine connection; a separate engine going away (crash,
-    /// restart into an update, sign-out elsewhere) reconnects — starting it
-    /// again when nothing serves the port.
+    /// restart into an update) reconnects — starting it again when nothing
+    /// serves the port.
     connection_task: Option<Task<()>>,
-    /// The next engine exit is ours (sign-out, a workspace switch): the shell
-    /// replaces the runtime itself.
-    engine_exit_expected: bool,
-    /// When Cloud's status was last read, and the reads under way.
-    cloud_status_read_at: Option<std::time::Instant>,
-    cloud_status_task: Option<Task<()>>,
-    cloud_recheck_task: Option<Task<()>>,
     /// When separate engines went away unasked, recently (respawn backoff).
     engine_losses: Vec<std::time::Instant>,
     /// The pending respawn after a loss.
@@ -1170,8 +1016,6 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             connection: ConnectionStatus::Connecting,
-            workspace_scope: None,
-            auth: None,
             devices: Vec::new(),
             device_presentation: None,
             session_presence_presentation: Vec::new(),
@@ -1207,24 +1051,12 @@ impl AppState {
             review_comment_flushes: HashMap::new(),
             local_device_id: None,
             harness_updates: Vec::new(),
-            cloud_status: None,
-            cloud_sessions: None,
-            cloud_sessions_task: None,
-            cloud_wakes: HashMap::new(),
-            cloud_recheck_at: None,
-            cloud_repos: None,
-            cloud_repos_task: None,
-            cloud_repos_refreshing: false,
             data_dir: None,
             clock: ClockTransitions::default(),
             engine: None,
             watch_tasks: Vec::new(),
             boot_config: None,
             connection_task: None,
-            engine_exit_expected: false,
-            cloud_status_read_at: None,
-            cloud_status_task: None,
-            cloud_recheck_task: None,
             engine_losses: Vec::new(),
             reconnect_task: None,
             viewport_id: uuid::Uuid::new_v4().to_string(),
@@ -1727,7 +1559,7 @@ impl AppState {
         };
         ChatLink {
             sync,
-            host_unreachable: self.device_presence(&chat.device_id, now).warns(),
+            host_unreachable: !self.device_online(&chat.device_id, now),
         }
     }
 
@@ -1746,7 +1578,7 @@ impl AppState {
                 S::Reconnecting => LinkSync::Reconnecting,
                 S::Disabled | S::Connected => LinkSync::Live,
             },
-            host_unreachable: self.device_presence(device_id, now).warns(),
+            host_unreachable: !self.device_online(device_id, now),
         }
     }
 
@@ -1811,11 +1643,9 @@ impl AppState {
     }
 
     fn apply_devices_at(&mut self, mut devices: Vec<Device>, now: DateTime<Utc>) -> bool {
-        // A local-only workspace has no remote device identity to distinguish.
-        // Keep the engine's legacy sentinel out of the UI while preserving real
-        // hostnames and user-assigned device names.
-        if self.workspace_scope == Some(WorkspaceScope::Local)
-            && let Some(local_id) = self.local_device_id.as_deref()
+        // Keep the engine's unnamed-device sentinel out of the UI while
+        // preserving real hostnames and user-assigned device names.
+        if let Some(local_id) = self.local_device_id.as_deref()
             && let Some(device) = devices.iter_mut().find(|device| device.id == local_id)
             && device.name == "unknown-device"
         {
@@ -1885,39 +1715,6 @@ impl AppState {
         true
     }
 
-    pub fn apply_auth(&mut self, auth: AuthState) -> bool {
-        if self.auth.as_ref() == Some(&auth) {
-            return false;
-        }
-        self.auth = Some(auth);
-        true
-    }
-
-    /// Tolerant AuthStatus frame reducer (see [`parse_auth_state`]).
-    pub fn apply_auth_value(&mut self, value: serde_json::Value) -> bool {
-        match parse_auth_state(&value) {
-            Some(auth) => self.apply_auth(auth),
-            None => {
-                tracing::warn!("dropping unrecognized AuthStatus frame");
-                false
-            }
-        }
-    }
-
-    /// Signed in (Cloud is per account; whether this account can use it is
-    /// `CloudStatus::available`).
-    pub fn signed_in(&self) -> bool {
-        matches!(self.auth, Some(AuthState::SignedIn { .. }))
-    }
-
-    /// The signed-in user, if the engine reports one.
-    pub fn auth_user(&self) -> Option<&onicode_proto::UserProfile> {
-        match self.auth.as_ref()? {
-            AuthState::SignedIn { user, .. } | AuthState::NeedsOrganization { user } => Some(user),
-            AuthState::SignedOut => None,
-        }
-    }
-
     pub fn apply_transcript(&mut self, entries: Vec<SessionMessageEntry>) {
         if let Some(id) = &self.selected_chat {
             self.prepared_transcripts.remove(id);
@@ -1929,9 +1726,7 @@ impl AppState {
         self.ack_pending_send_from_transcript();
     }
 
-    /// Doc frames supersede optimistic echoes carrying the same id. A Cloud
-    /// setup placeholder also goes once the doc moved past its message
-    /// without the machine's setup entry (the machine was already up).
+    /// Doc frames supersede optimistic echoes carrying the same id.
     fn settle_echoes(&mut self) {
         let Some(chat_id) = self.selected_chat.as_deref() else {
             return;
@@ -1940,18 +1735,7 @@ impl AppState {
             return;
         };
         let transcript = &self.transcript;
-        echoes.retain(|echo| {
-            if transcript.iter().any(|e| e.id == echo.id) {
-                return false;
-            }
-            let Some(message_id) = onicode_proto::cloud_setup_message_id(&echo.id) else {
-                return true;
-            };
-            transcript
-                .iter()
-                .position(|e| e.id == message_id)
-                .is_none_or(|ix| ix + 1 == transcript.len())
-        });
+        echoes.retain(|echo| !transcript.iter().any(|e| e.id == echo.id));
     }
 
     /// Apply a `WatchDocMessages` delta frame in place. `Err` = this copy has
@@ -2101,20 +1885,6 @@ impl AppState {
         self.sub_transcripts.insert(doc_id, entries);
     }
 
-    pub(crate) fn set_prepared_subagent_snapshot(
-        &mut self,
-        doc_id: String,
-        entries: Vec<SessionMessageEntry>,
-        prepared: Arc<crate::transcript::PreparedTranscript>,
-    ) {
-        self.transcript_revision = self.transcript_revision.wrapping_add(1);
-        self.sub_watch_tasks.remove(&doc_id);
-        self.transcript_baselines
-            .insert(doc_id.clone(), prepared.navigation_baseline.clone());
-        self.prepared_transcripts.insert(doc_id.clone(), prepared);
-        self.sub_transcripts.insert(doc_id, entries);
-    }
-
     /// Add an optimistic user echo (composer send path).
     pub fn push_echo(&mut self, chat_id: &str, entry: SessionMessageEntry) {
         let echoes = self.echoes.entry(chat_id.to_string()).or_default();
@@ -2122,129 +1892,6 @@ impl AppState {
             echoes.push(entry);
             self.transcript_revision = self.transcript_revision.wrapping_add(1);
         }
-    }
-
-    /// The send of `message_id` brings `chat_id`'s Cloud machine up (`waking`
-    /// a sleeping one): show the first setup step under it right away. The
-    /// machine's own setup entry replaces it in place once it boots
-    /// (`onicode_proto::cloud_setup_entry_id`), with the steps that follow.
-    pub fn push_cloud_setup_echo(
-        &mut self,
-        chat_id: &str,
-        message_id: &str,
-        created_at: i64,
-        waking: bool,
-    ) {
-        // Pushed a beat after the send: the machine may already have written
-        // its own setup entry, or (already up) moved past the message.
-        let entry_id = onicode_proto::cloud_setup_entry_id(message_id);
-        if self.selected_chat.as_deref() == Some(chat_id)
-            && (self.transcript.iter().any(|e| e.id == entry_id)
-                || self
-                    .transcript
-                    .iter()
-                    .position(|e| e.id == message_id)
-                    .is_some_and(|ix| ix + 1 < self.transcript.len()))
-        {
-            return;
-        }
-        // Worded and shaped like the machine's own first step ("Started a
-        // machine"), which replaces it in place: no Cloud-step input, since
-        // the doc keeps none on the machine's, so both draw alike.
-        let name = if waking {
-            CLOUD_WAKING_STEP
-        } else {
-            CLOUD_STARTING_STEP
-        };
-        self.push_echo(
-            chat_id,
-            SessionMessageEntry {
-                id: entry_id,
-                role: onicode_doc::MessageRole::Assistant,
-                parts: vec![onicode_doc::MessagePart::Tool {
-                    id: onicode_proto::cloud_setup_part_id(message_id, "machine"),
-                    call: onicode_proto::ToolCall::Unknown {
-                        name: name.into(),
-                        input: None,
-                    },
-                    is_error: false,
-                    resolved: false,
-                    output: None,
-                    diff: None,
-                    output_ref: None,
-                    output_bytes: None,
-                    diff_ref: None,
-                    diff_stats: None,
-                    subagent_ref: None,
-                    subagent_status: None,
-                    subagent_tail: None,
-                    exit_code: None,
-                    output_truncated: false,
-                    output_lines: None,
-                }],
-                created_at: created_at + 1,
-                device_id: "local".into(),
-                status: Some(onicode_doc::MessageStatus::Streaming),
-                continuation_of: None,
-                duration_ms: None,
-            },
-        );
-        // The machine may have failed before this placeholder arrived.
-        self.settle_failed_cloud_setups();
-    }
-
-    /// The selected chat's latest message — an unconfirmed echo first, since
-    /// it is newer than anything the transcript holds — with the Cloud setup
-    /// entry it brought up, if it had to start or wake a machine. Setup
-    /// entry ids derive from their message's, so finding one is enough.
-    fn latest_cloud_setup(&self) -> Option<(&SessionMessageEntry, Option<&SessionMessageEntry>)> {
-        let user = onicode_doc::MessageRole::User;
-        let message = self
-            .pending_echoes()
-            .iter()
-            .rev()
-            .find(|entry| entry.role == user)
-            .or_else(|| {
-                self.transcript
-                    .iter()
-                    .rev()
-                    .find(|entry| entry.role == user)
-            })?;
-        let setup_id = onicode_proto::cloud_setup_entry_id(&message.id);
-        let setup = self
-            .pending_echoes()
-            .iter()
-            .chain(&self.transcript)
-            .find(|entry| entry.id == setup_id);
-        Some((message, setup))
-    }
-
-    /// The selected chat's current turn is a Cloud setup still under way:
-    /// the placeholder, or the machine's setup entry (which carries on as
-    /// the turn's answer) still streaming.
-    pub fn cloud_setup_streaming(&self) -> bool {
-        self.latest_cloud_setup().is_some_and(|(_, setup)| {
-            setup.is_some_and(|setup| setup.status == Some(onicode_doc::MessageStatus::Streaming))
-        })
-    }
-
-    /// When the send that brought the selected chat's Cloud machine up was
-    /// made (ms), while that setup belongs to the current turn — the app's
-    /// placeholder or the machine's own steps after the latest message.
-    /// Setting the machine up is part of the work, so the turn's timer counts
-    /// from the send, and keeps that base once the turn itself starts. A
-    /// newer message to a machine already up has none.
-    pub fn cloud_setup_turn_started(&self) -> Option<i64> {
-        let (message, setup) = self.latest_cloud_setup()?;
-        setup.map(|_| message.created_at)
-    }
-
-    /// The selected chat shows a Cloud setup placeholder (it says what the
-    /// send waits on, so the working line under it doesn't repeat it).
-    pub fn cloud_setup_echo_pending(&self) -> bool {
-        self.pending_echoes()
-            .iter()
-            .any(|echo| onicode_proto::cloud_setup_message_id(&echo.id).is_some())
     }
 
     /// Drop an echo (send failed — the prompt returns to the draft).
@@ -2330,7 +1977,7 @@ impl AppState {
         Some(((done * 100) / progress.total).min(99) as u8)
     }
 
-    /// A `WatchTransfers` snapshot: the engine-side relay leg's in-flight
+    /// A `WatchTransfers` snapshot: the engine-side peer leg's in-flight
     /// queued-attachment transfers, replacing the whole set each frame.
     pub fn apply_transfers(&mut self, transfers: Vec<onicode_proto::TransferProgress>) -> bool {
         let transfers: HashMap<_, _> = transfers
@@ -2344,7 +1991,7 @@ impl AppState {
         true
     }
 
-    /// Percent of one queued attachment's relay transfer, by the uploadId
+    /// Percent of one queued attachment's peer transfer, by the uploadId
     /// its `pending://{uploadId}/…` ref names. Same 99-clamp as
     /// [`Self::upload_progress_percent`]: the last point belongs to the
     /// commit, so "100% but still spinning" never shows. `None` when no
@@ -2367,7 +2014,6 @@ impl AppState {
         self.pending_sends.get(chat_id).is_some_and(|p| {
             now.signed_duration_since(p.started).num_milliseconds() <= UNDELIVERED_GRACE_MS
                 || self.chat_link_at(chat_id, now).delivery_unconfirmed()
-                || self.cloud_machine_booting(chat_id).is_some()
         })
     }
 
@@ -2380,11 +2026,10 @@ impl AppState {
     pub fn send_undelivered(&self, chat_id: &str, now: DateTime<Utc>) -> bool {
         self.pending_sends.get(chat_id).is_some_and(|p| {
             now.signed_duration_since(p.started).num_milliseconds() > UNDELIVERED_GRACE_MS
-        }) && self.cloud_machine_booting(chat_id).is_none()
-            && !matches!(
-                self.chat_link_at(chat_id, now).sync,
-                LinkSync::Syncing { .. }
-            )
+        }) && !matches!(
+            self.chat_link_at(chat_id, now).sync,
+            LinkSync::Syncing { .. }
+        )
     }
 
     /// Retry pressed: restart the grace clock so the overlay returns to its
@@ -2406,7 +2051,6 @@ impl AppState {
             .filter(|p| {
                 now.signed_duration_since(p.started).num_milliseconds() <= UNDELIVERED_GRACE_MS
                     || self.chat_link_at(chat_id, now).delivery_unconfirmed()
-                    || self.cloud_machine_booting(chat_id).is_some()
             })
             .map(|p| p.started)
     }
@@ -2617,73 +2261,10 @@ impl AppState {
     }
 
     pub fn device_name(&self, device_id: &str) -> Option<&str> {
-        let device = self.devices.iter().find(|d| d.id == device_id);
-        // A session's machine is shown as the Cloud it belongs to.
-        if self.is_cloud_session_device(device_id) {
-            return Some(
-                self.cloud_account_device()
-                    .map_or(crate::cloud::CLOUD_LABEL, |d| d.name.as_str()),
-            );
-        }
-        // The logical Cloud device (Cloud projects live there) has no
-        // registry row of its own.
-        if device.is_none()
-            && self
-                .cloud_status
-                .as_ref()
-                .and_then(|status| status.device_id.as_deref())
-                == Some(device_id)
-        {
-            return Some(crate::cloud::CLOUD_LABEL);
-        }
-        device.map(|d| d.name.as_str())
-    }
-
-    /// Devices for lists and pickers: Cloud's per-session machines are
-    /// hidden; the logical Cloud device stands for them.
-    pub fn listed_devices(&self) -> impl Iterator<Item = &Device> {
-        self.devices.iter().filter(|d| crate::cloud::is_listed(d))
-    }
-
-    /// Devices the Providers page lists by name. Cloud is one extra entry
-    /// there (its accounts live in the vault), never its session machines.
-    pub fn provider_devices(&self) -> impl Iterator<Item = &Device> {
-        self.listed_devices().filter(|d| !crate::cloud::is_cloud(d))
-    }
-
-    /// The device a list shows for `device_id`: a session machine is shown
-    /// as the logical Cloud device it belongs to.
-    pub fn listed_device_id(&self, device_id: &str) -> String {
-        if self.is_cloud_session_device(device_id) {
-            let account = self
-                .cloud_account_device()
-                .map(|d| d.id.clone())
-                .or_else(|| self.cloud_status.as_ref().and_then(|s| s.device_id.clone()));
-            if let Some(account) = account {
-                return account;
-            }
-        }
-        device_id.to_string()
-    }
-
-    /// The logical Cloud device's registry row, when Cloud is on.
-    pub fn cloud_account_device(&self) -> Option<&Device> {
-        self.devices
-            .iter()
-            .find(|d| crate::cloud::is_cloud_account(d))
-    }
-
-    /// A session machine: by its registry capability, or (before its engine
-    /// has registered) by a session naming it.
-    pub fn is_cloud_session_device(&self, device_id: &str) -> bool {
         self.devices
             .iter()
             .find(|d| d.id == device_id)
-            .is_some_and(crate::cloud::is_cloud_session_device)
-            || self
-                .cloud_sessions
-                .as_ref()
-                .is_some_and(|s| s.sessions.iter().any(|x| x.device_id == device_id))
+            .map(|d| d.name.as_str())
     }
 
     /// Host-presence check: is this device's 15s presence heartbeat fresh?
@@ -2700,491 +2281,12 @@ impl AppState {
         }
     }
 
-    /// [`Self::device_online`] refined for Cloud. The logical Cloud device
-    /// reads from the account (on while Cloud is enabled); a session machine
-    /// from its session (a stopped one is "Asleep" — it wakes when its chat
-    /// is sent to — not "Offline").
-    pub fn device_presence(&self, device_id: &str, now: DateTime<Utc>) -> crate::cloud::Presence {
-        use crate::cloud::Presence;
-        let device = self.devices.iter().find(|d| d.id == device_id);
-        let is_account = device.is_some_and(crate::cloud::is_cloud_account)
-            || self
-                .cloud_status
-                .as_ref()
-                .and_then(|s| s.device_id.as_deref())
-                == Some(device_id);
-        if is_account {
-            return crate::cloud::account_presence(self.cloud_status.as_ref());
-        }
-        let online = self.device_online(device_id, now);
-        if self.is_cloud_session_device(device_id) || device.is_some_and(crate::cloud::is_cloud) {
-            let session = self
-                .cloud_sessions
-                .as_ref()
-                .and_then(|s| s.sessions.iter().find(|x| x.device_id == device_id));
-            let mut presence = crate::cloud::session_presence(device.is_some() && online, session);
-            // Machines sleep on their own when idle, and the session list is
-            // only re-read while one settles: a "ready" machine whose
-            // heartbeat stopped has gone to sleep, not lost its connection.
-            if presence == Presence::Online && device.is_some() && !online {
-                presence = Presence::Asleep;
-            }
-            // A wake was asked for and the list hasn't caught up yet.
-            if presence == Presence::Asleep
-                && session.is_some_and(|session| {
-                    self.cloud_wakes
-                        .get(&session.chat_id)
-                        .is_some_and(|at| at.elapsed() < CLOUD_WAKE_GRACE)
-                })
-            {
-                presence = Presence::Waking;
-            }
-            return presence;
-        }
-        if online {
-            Presence::Online
-        } else {
-            Presence::Offline
-        }
-    }
-
-    /// Publish a fresh `CloudStatus`; observers repaint only on change.
-    pub fn set_cloud_status(&mut self, status: onicode_proto::CloudStatus, cx: &mut Context<Self>) {
-        self.cloud_status_read_at = Some(std::time::Instant::now());
-        let out_of_credits = crate::cloud::out_of_credits(&status);
-        if self.cloud_status.as_ref() != Some(&status) {
-            self.cloud_status = Some(status);
-            cx.notify();
-        }
-        if out_of_credits && self.block_cloud_setups_for_credits() {
-            crate::cloud::show_out_of_credits(
-                "You're out of Cloud credits. Your message will send once you add some.",
-                cx,
-            );
-            cx.notify();
-        }
-    }
-
-    /// Cloud refused (or will refuse) to start or wake a machine for lack of
-    /// credits: every send still waiting on one says so instead of "Waking
-    /// the machine" forever, and stops reading as working. The message
-    /// stays queued for when credits are added. True when any changed.
-    fn block_cloud_setups_for_credits(&mut self) -> bool {
-        let mut blocked = Vec::new();
-        for (chat_id, echoes) in &mut self.echoes {
-            for entry in echoes.iter_mut() {
-                if onicode_proto::cloud_setup_message_id(&entry.id).is_none() {
-                    continue;
-                }
-                let mut changed = false;
-                for part in &mut entry.parts {
-                    if let onicode_doc::MessagePart::Tool {
-                        call: onicode_proto::ToolCall::Unknown { name, .. },
-                        is_error,
-                        resolved,
-                        ..
-                    } = part
-                        && (name == CLOUD_WAKING_STEP || name == CLOUD_STARTING_STEP)
-                    {
-                        *name = CLOUD_NO_CREDITS_STEP.into();
-                        *is_error = true;
-                        *resolved = true;
-                        changed = true;
-                    }
-                }
-                if changed {
-                    // Not streaming any more: the turn isn't under way.
-                    entry.status = Some(onicode_doc::MessageStatus::Complete);
-                    blocked.push(chat_id.clone());
-                }
-            }
-        }
-        for chat_id in &blocked {
-            self.pending_sends.remove(chat_id);
-        }
-        if !blocked.is_empty() {
-            self.transcript_revision = self.transcript_revision.wrapping_add(1);
-        }
-        !blocked.is_empty()
-    }
-
-    /// Re-read Cloud's status (credits above all), nothing else. A failed
-    /// read is retried soon: unknown credits let a Cloud send through.
-    pub fn refresh_cloud_status(&mut self, cx: &mut Context<Self>) {
-        let Some(engine) = self.engine.clone() else {
-            return;
-        };
-        if !self.signed_in() {
-            return;
-        }
-        self.cloud_status_task = Some(cx.spawn(async move |this, cx| {
-            let status = crate::cloud::fetch_status(engine).await;
-            this.update(cx, |state, cx| match status {
-                Ok(status) => state.set_cloud_status(status, cx),
-                Err(error) => {
-                    tracing::debug!(%error, "Cloud status read failed; retrying");
-                    state.cloud_status_task = Some(cx.spawn(async move |this, cx| {
-                        cx.background_executor().timer(CLOUD_STATUS_RETRY).await;
-                        this.update(cx, |state, cx| state.refresh_cloud_status(cx))
-                            .ok();
-                    }));
-                }
-            })
-            .ok();
-        }));
-    }
-
-    /// Re-read Cloud's status when the last read is older than `max_age`.
-    pub fn refresh_cloud_status_if_stale(
-        &mut self,
-        max_age: std::time::Duration,
-        cx: &mut Context<Self>,
-    ) {
-        if self
-            .cloud_status_read_at
-            .is_some_and(|at| at.elapsed() < max_age)
-        {
-            return;
-        }
-        self.refresh_cloud_status(cx);
-    }
-
-    /// A window came forward: credits may have run out (or been added)
-    /// while it was away.
-    pub fn window_activated(&mut self, cx: &mut Context<Self>) {
-        self.refresh_cloud_status_if_stale(CLOUD_STATUS_FOCUS_MAX_AGE, cx);
-    }
-
-    /// A send is starting or waking a Cloud machine: read the credits now,
-    /// and again once the edge has had its say on the wake.
-    pub fn recheck_cloud_credits(&mut self, cx: &mut Context<Self>) {
-        const AFTER_WAKE: std::time::Duration = std::time::Duration::from_secs(5);
-        self.refresh_cloud_status(cx);
-        self.cloud_recheck_task = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(AFTER_WAKE).await;
-            this.update(cx, |state, cx| state.refresh_cloud_status(cx))
-                .ok();
-        }));
-    }
-
-    /// Whether Cloud is on for this account (its logical device exists).
-    /// Cloud is on for this account — never while signed out, whatever a
-    /// stale status says.
-    /// Signed in, and the edge offers this account Cloud (`CLOUD_ACCESS`):
-    /// Cloud and Billing in Settings, the Cloud checkout, Cloud projects.
-    /// False until the status arrives.
-    pub fn cloud_offered(&self) -> bool {
-        self.signed_in() && self.cloud_status.as_ref().is_some_and(|s| s.available)
-    }
-
-    /// [`Self::cloud_offered`], but true while the status is still unknown
-    /// (setup keeps its GitHub step until the edge says otherwise).
-    pub fn cloud_maybe_offered(&self) -> bool {
-        self.signed_in() && self.cloud_status.as_ref().is_none_or(|s| s.available)
-    }
-
-    pub fn cloud_enabled(&self) -> bool {
-        self.cloud_offered()
-            && (self
-                .cloud_status
-                .as_ref()
-                .is_some_and(crate::cloud::account_enabled)
-                || self.cloud_account_device().is_some())
-    }
-
-    /// The Cloud session `chat_id` runs in — its own, or for a side chat its
-    /// parent's (same machine) — when the chat is hosted on Cloud.
-    pub fn chat_cloud_session(&self, chat_id: &str) -> Option<&onicode_proto::CloudSession> {
-        let sessions = self.cloud_sessions.as_ref()?;
-        let device_id = self
-            .chats
-            .iter()
-            .find(|c| c.id == chat_id)
-            .map_or("", |c| c.device_id.as_str());
-        crate::cloud::session_for(sessions, chat_id, device_id)
-    }
-
-    /// A send to `chat_id` is waiting for its Cloud machine to be set up or
-    /// woken: delivered (queued for the machine), not failed — the machine
-    /// picks it up as soon as it is up. `None` once the machine runs, or when
-    /// it failed (that is a real delivery problem).
-    pub fn cloud_machine_booting(&self, chat_id: &str) -> Option<onicode_proto::CloudState> {
-        use onicode_proto::CloudState;
-        self.chat_machine_down(chat_id)
-            .map(|(_, state)| state)
-            .filter(|state| {
-                matches!(
-                    state,
-                    CloudState::Provisioning
-                        | CloudState::Starting
-                        | CloudState::Sleeping
-                        | CloudState::Stopping
-                )
-            })
-    }
-
-    /// Whether a send is waiting on a Cloud machine (keeps the session poll
-    /// running until the machine is up).
-    fn send_waits_on_cloud(&self) -> bool {
-        self.pending_sends
-            .keys()
-            .any(|chat_id| self.cloud_machine_booting(chat_id).is_some())
-    }
-
-    /// When `chat_id`'s Cloud machine isn't running: the session to wake
-    /// (its chat id) and its state. Files, terminals and changes show a Wake
-    /// button then instead of dialing a machine that won't answer.
-    pub fn chat_machine_down(&self, chat_id: &str) -> Option<(String, onicode_proto::CloudState)> {
-        use onicode_proto::CloudState;
-        let chat = self.chats.iter().find(|c| c.id == chat_id)?;
-        if !self.is_cloud_session_device(&chat.device_id) {
-            return None;
-        }
-        let known = self.devices.iter().any(|d| d.id == chat.device_id);
-        let heartbeat = known && self.device_online(&chat.device_id, Utc::now());
-        let waking = |session: &str| {
-            self.cloud_wakes
-                .get(session)
-                .is_some_and(|at| at.elapsed() < CLOUD_WAKE_GRACE)
-        };
-        let (session, state) = match self.chat_cloud_session(chat_id) {
-            // The session list is only re-read while a machine settles, so
-            // one that went to sleep on its own still reads "ready": its
-            // stopped heartbeat says otherwise.
-            Some(session) if session.state == CloudState::Ready => {
-                if heartbeat || !known {
-                    return None;
-                }
-                (session.chat_id.clone(), CloudState::Sleeping)
-            }
-            Some(session) => (session.chat_id.clone(), session.state),
-            // No session read yet: trust a fresh heartbeat, else asleep.
-            None if heartbeat => return None,
-            None => (
-                chat.parent_chat_id
-                    .clone()
-                    .unwrap_or_else(|| chat.id.clone()),
-                CloudState::Sleeping,
-            ),
-        };
-        // A wake was asked for and the list hasn't caught up yet.
-        let state = match state {
-            CloudState::Sleeping | CloudState::Stopping if waking(&session) => CloudState::Starting,
-            state => state,
-        };
-        Some((session, state))
-    }
-
-    /// A surface (files, git status) couldn't reach `chat_id`'s host. When
-    /// that host is a Cloud machine, re-read the session list: it says at
-    /// once that the machine is stopping or asleep, where its heartbeat
-    /// takes over a minute to go stale. At most every few seconds.
-    pub fn recheck_cloud_machine(&mut self, chat_id: &str, cx: &mut Context<Self>) {
-        let on_cloud = self
-            .chats
-            .iter()
-            .find(|c| c.id == chat_id)
-            .is_some_and(|chat| self.is_cloud_session_device(&chat.device_id));
-        if !on_cloud
-            || self
-                .cloud_recheck_at
-                .is_some_and(|at| at.elapsed() < CLOUD_RECHECK_INTERVAL)
-        {
-            return;
-        }
-        self.cloud_recheck_at = Some(std::time::Instant::now());
-        self.refresh_cloud_sessions(cx);
-    }
-
-    /// Wake a sleeping Cloud session (by its chat id). It reads as waking at
-    /// once; the session list is followed until the machine is up.
-    pub fn wake_cloud_session(&mut self, session_chat_id: String, cx: &mut Context<Self>) {
-        let Some(engine) = self.engine.clone() else {
-            return;
-        };
-        if self
-            .cloud_wakes
-            .get(&session_chat_id)
-            .is_some_and(|at| at.elapsed() < CLOUD_WAKE_GRACE)
-        {
-            return;
-        }
-        self.cloud_wakes
-            .insert(session_chat_id.clone(), std::time::Instant::now());
-        cx.notify();
-        cx.spawn(async move |this, cx| {
-            let result = engine
-                .client()
-                .call_as::<onicode_proto::CloudSession>(
-                    onicode_rpc::methods::CLOUD_SESSION_WAKE,
-                    serde_json::json!({ "chatId": session_chat_id }),
-                )
-                .await;
-            this.update(cx, |state, cx| match result {
-                Ok(session) => {
-                    let mut sessions = state.cloud_sessions.clone().unwrap_or_default();
-                    sessions.sessions.retain(|s| s.chat_id != session.chat_id);
-                    sessions.sessions.push(session);
-                    state.set_cloud_sessions(sessions, cx);
-                    state.refresh_cloud_sessions(cx);
-                }
-                Err(error) => {
-                    state.cloud_wakes.remove(&session_chat_id);
-                    crate::toast::show(
-                        cx,
-                        crate::toast::ToastKind::Error,
-                        format!("Couldn't wake the Cloud agent: {error}"),
-                    );
-                    cx.notify();
-                }
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    /// Publish fresh sessions; observers repaint only on change.
-    pub fn set_cloud_sessions(
-        &mut self,
-        sessions: onicode_proto::CloudSessions,
-        cx: &mut Context<Self>,
-    ) {
-        if self.cloud_sessions.as_ref() != Some(&sessions) {
-            self.cloud_sessions = Some(sessions);
-            self.settle_failed_cloud_setups();
-            cx.notify();
-        }
-    }
-
-    /// A chat whose Cloud machine couldn't be set up or woken: the setup
-    /// step shown under its send turns into that failure, with the reason.
-    /// Otherwise it would spin forever — only the machine itself, once up,
-    /// replaces it. The send keeps its own course: no longer booting, it
-    /// reads as not delivered, with Retry.
-    fn settle_failed_cloud_setups(&mut self) {
-        use onicode_doc::{MessagePart, MessageStatus};
-        let failed: Vec<(String, String)> = self
-            .echoes
-            .keys()
-            .filter_map(|chat_id| {
-                let session = self.chat_cloud_session(chat_id)?;
-                (session.state == onicode_proto::CloudState::Error).then(|| {
-                    (
-                        chat_id.clone(),
-                        session
-                            .error
-                            .clone()
-                            .unwrap_or_else(|| "Something went wrong with Cloud.".into()),
-                    )
-                })
-            })
-            .collect();
-        for (chat_id, error) in failed {
-            let Some(echoes) = self.echoes.get_mut(&chat_id) else {
-                continue;
-            };
-            let mut settled = false;
-            for echo in echoes.iter_mut().filter(|echo| {
-                onicode_proto::cloud_setup_message_id(&echo.id).is_some()
-                    && echo.status == Some(MessageStatus::Streaming)
-            }) {
-                echo.status = Some(MessageStatus::Complete);
-                for part in &mut echo.parts {
-                    if let MessagePart::Tool {
-                        call: onicode_proto::ToolCall::Unknown { name, .. },
-                        is_error,
-                        resolved,
-                        output,
-                        ..
-                    } = part
-                    {
-                        *name = if name == CLOUD_WAKING_STEP {
-                            "Couldn't wake the machine"
-                        } else {
-                            "Couldn't start a machine"
-                        }
-                        .into();
-                        *is_error = true;
-                        *resolved = true;
-                        *output = Some(error.clone());
-                    }
-                }
-                settled = true;
-            }
-            if settled {
-                self.transcript_revision = self.transcript_revision.wrapping_add(1);
-            }
-        }
-    }
-
-    /// Fold one session (a wake/sleep/delete reply) in, and follow it while
-    /// it settles.
-    pub fn apply_cloud_session(
-        &mut self,
-        session: onicode_proto::CloudSession,
-        cx: &mut Context<Self>,
-    ) {
-        let sessions = self
-            .cloud_sessions
-            .get_or_insert_with(|| onicode_proto::CloudSessions {
-                sessions: Vec::new(),
-                available: true,
-            });
-        match sessions
-            .sessions
-            .iter_mut()
-            .find(|s| s.chat_id == session.chat_id)
-        {
-            Some(existing) => *existing = session,
-            None => sessions.sessions.push(session),
-        }
-        self.settle_failed_cloud_setups();
-        cx.notify();
-        self.refresh_cloud_sessions(cx);
-    }
-
-    /// Read every Cloud session once — then again every
-    /// [`crate::cloud::SESSION_POLL`] only while one is being set up, woken
-    /// or deleted. Never runs for an account without Cloud.
-    pub fn refresh_cloud_sessions(&mut self, cx: &mut Context<Self>) {
-        if !self.cloud_enabled() {
-            return;
-        }
-        let Some(engine) = self.engine.clone() else {
-            return;
-        };
-        self.cloud_sessions_task = Some(cx.spawn(async move |this, cx| {
-            loop {
-                let result = crate::cloud::fetch_sessions(engine.clone()).await;
-                let settling = this
-                    .update(cx, |state, cx| {
-                        if let Ok(sessions) = result {
-                            state.set_cloud_sessions(sessions, cx);
-                        }
-                        state
-                            .cloud_sessions
-                            .as_ref()
-                            .is_some_and(crate::cloud::any_session_settling)
-                            || state.send_waits_on_cloud()
-                    })
-                    .unwrap_or(false);
-                if !settling {
-                    break;
-                }
-                cx.background_executor()
-                    .timer(crate::cloud::SESSION_POLL)
-                    .await;
-            }
-        }));
-    }
-
     /// The "@ device" tag for a space — shared by the space pickers' rows,
     /// the sidebar filter trigger, and the composer's space chip. Returns
     /// `(tag, offline)`; staleness renders as a disconnected GLYPH at the
-    /// call sites (user request), never words in the tag. A sleeping Cloud
-    /// device is not stale — it wakes when a chat opens there.
+    /// call sites (user request), never words in the tag.
     pub fn space_device_tag(&self, space: &Space, now: DateTime<Utc>) -> (String, bool) {
-        let offline = self.device_presence(&space.device_id, now).warns();
+        let offline = !self.device_online(&space.device_id, now);
         let device = self
             .device_name(&space.device_id)
             .unwrap_or("Unknown device");
@@ -3330,12 +2432,6 @@ impl AppState {
     /// derived separately by `display_status_for`, including terminal reports.
     pub fn indicator_for(&self, chat_id: &str, now: DateTime<Utc>) -> Indicator {
         if self.send_pending(chat_id, now) {
-            return Indicator::Working;
-        }
-        // A Cloud turn's setup streams into the entry that becomes its answer:
-        // working throughout, though the send is acked (the machine wrote the
-        // message back) a beat before its session row reads Working.
-        if self.selected_chat.as_deref() == Some(chat_id) && self.cloud_setup_streaming() {
             return Indicator::Working;
         }
         onicode_proto::view::native_indicator(self.session_for(chat_id), now)
@@ -3497,7 +2593,7 @@ impl AppState {
     }
 
     pub fn gate(&self) -> GatePhase {
-        gate_phase(&self.connection, self.workspace_scope, self.auth.as_ref())
+        gate_phase(&self.connection)
     }
 
     pub fn engine(&self) -> Option<&EngineHandle> {
@@ -3507,53 +2603,6 @@ impl AppState {
     #[cfg(test)]
     pub(crate) fn set_test_engine(&mut self, handle: EngineHandle) {
         self.engine = Some(handle);
-    }
-
-    /// Drop every account-scoped view and subscription after its runtime has
-    /// stopped. The next bootstrap must never render rows from the previous
-    /// account while the local profile is opening.
-    pub fn prepare_runtime_replacement(&mut self, cx: &mut Context<Self>) {
-        self.engine = None;
-        self.watch_tasks.clear();
-        self.transcript_task = None;
-        self.change_request_tasks.clear();
-        self.change_requests = ChangeRequestClientState::default();
-        self.connection = ConnectionStatus::Connecting;
-        self.workspace_scope = None;
-        self.auth = None;
-        self.devices.clear();
-        self.device_presentation = None;
-        self.session_presence_presentation.clear();
-        self.spaces.clear();
-        self.chats.clear();
-        self.pending_side_chat = None;
-        self.unsaved_side_chat = false;
-        self.sessions.clear();
-        self.sidebar_preferences = SidebarPreferencesState::default();
-        self.session_presentation = None;
-        self.selected_space = None;
-        self.no_project = false;
-        self.selected_device = None;
-        self.canvas_target = None;
-        self.selected_chat = None;
-        self.auto_selected = false;
-        self.chats_synced = false;
-        self.spaces_synced = false;
-        self.transcript.clear();
-        self.transcript_baselines.clear();
-        self.transcript_cache.clear();
-        self.prepared_transcripts.clear();
-        self.context_usage = None;
-        self.transcript_revision = self.transcript_revision.wrapping_add(1);
-        self.transcript_replayed = false;
-        self.echoes.clear();
-        self.pending_sends.clear();
-        self.upload_progress = None;
-        self.transfers.clear();
-        self.sync_clocks.clear();
-        self.local_device_id = None;
-        self.link_roots_revision = self.link_roots_revision.wrapping_add(1);
-        cx.notify();
     }
 
     /// Independent selection and transcript subscriptions over the same engine.
@@ -3693,23 +2742,15 @@ impl AppState {
         let data_dir = config.data_dir.clone();
         state.update(cx, |s, cx| {
             s.connection = ConnectionStatus::Connecting;
-            s.workspace_scope = None;
-            s.auth = None;
             s.data_dir = Some(data_dir);
             s.boot_config = Some(config.clone());
-            // A deliberate start (launch, Retry, a runtime switch) begins
+            // A deliberate start (launch, Retry) begins
             // the respawn backoff afresh.
             s.engine_losses.clear();
             s.reconnect_task = None;
             cx.notify();
         });
         Self::connect(state, config, cx);
-    }
-
-    /// The next engine exit is the shell's doing (it stops the engine to
-    /// replace the runtime): don't reconnect on it.
-    pub fn expect_engine_exit(&mut self) {
-        self.engine_exit_expected = true;
     }
 
     /// A separate engine went away unasked: reconnect — the bootstrap probe
@@ -3720,7 +2761,7 @@ impl AppState {
             .engine
             .as_ref()
             .is_some_and(|engine| engine.same_connection(handle));
-        if !current || self.engine_exit_expected {
+        if !current {
             return;
         }
         let Some(config) = self.boot_config.clone() else {
@@ -3764,12 +2805,7 @@ impl AppState {
                 let Some(state) = this.upgrade() else {
                     return;
                 };
-                // The shell may have replaced the runtime meanwhile.
-                let still_down = {
-                    let state = state.read(cx);
-                    state.engine.is_none() && !state.engine_exit_expected
-                };
-                if still_down {
+                if state.read(cx).engine.is_none() {
                     Self::connect(state, config, cx);
                 }
             });
@@ -3870,8 +2906,8 @@ impl AppState {
     }
 
     /// Wire the connected engine: mark Ready and start the standing watches.
-    /// Methods the engine doesn't serve yet (chats/devices/auth land with the
-    /// workspace doc in M4) fail their subscribe and are skipped gracefully.
+    /// Methods the engine doesn't serve fail their subscribe and are skipped
+    /// gracefully.
     fn attach_engine(&mut self, handle: EngineHandle, cx: &mut Context<Self>) {
         // The attachment notification precedes the first connectivity frame.
         // Make that bootstrap gap explicit so the shell resets its alert
@@ -3880,14 +2916,12 @@ impl AppState {
         let engine_info = handle.engine_info();
         let supports_harness_updates =
             engine_info.supports(onicode_proto::capabilities::HARNESS_UPDATES_V1);
-        self.workspace_scope = Some(engine_info.workspace_scope);
         self.local_device_id = Some(engine_info.device_id.clone());
         self.link_roots_revision = self.link_roots_revision.wrapping_add(1);
         if !supports_harness_updates {
             self.harness_updates.clear();
         }
         self.engine = Some(handle.clone());
-        self.engine_exit_expected = false;
         let watched = handle.clone();
         self.connection_task = Some(cx.spawn(async move |this, cx| {
             watched.closed().await;
@@ -3937,13 +2971,6 @@ impl AppState {
                 methods::WATCH_SPACES,
                 AppState::apply_spaces,
             ),
-            // Auth frames parse tolerantly — engine and proto tags differ today.
-            spawn_watch(
-                cx,
-                handle.clone(),
-                methods::AUTH_STATUS,
-                AppState::apply_auth_value,
-            ),
             spawn_local_device_probe(cx, handle.clone()),
         ]);
         if supports_harness_updates {
@@ -3954,23 +2981,6 @@ impl AppState {
                 AppState::apply_harness_updates,
             ));
         }
-        // Credits change on their own (use, renewals, purchases elsewhere):
-        // keep the status the composer's Cloud gate reads current.
-        watch_tasks.push(cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor().timer(CLOUD_STATUS_POLL).await;
-                if this
-                    .update(cx, |state, cx| {
-                        if state.cloud_enabled() {
-                            state.refresh_cloud_status(cx);
-                        }
-                    })
-                    .is_err()
-                {
-                    return;
-                }
-            }
-        }));
         self.watch_tasks = watch_tasks;
         self.reconcile_change_request_watches(cx);
         // EngineInfo is part of the attachment boundary: views must know which
@@ -3987,111 +2997,7 @@ impl AppState {
                 self.queue_task = Some(spawn_queue_watch(cx, handle, chat_id));
             }
         }
-        // Whether this account can run sessions on Cloud, and on which
-        // repositories (the checkout picker's Cloud option).
-        self.refresh_cloud(cx);
         cx.notify();
-    }
-
-    /// Read Cloud's status, then — when it is on — the repositories it
-    /// reaches. Best effort: an account without Cloud just has no option.
-    pub fn refresh_cloud(&mut self, cx: &mut Context<Self>) {
-        let Some(engine) = self.engine.clone() else {
-            return;
-        };
-        self.cloud_repos_task = Some(cx.spawn(async move |this, cx| {
-            // A failed read (offline, the edge failing for a moment) is tried
-            // again: until it answers, Cloud reads as not offered, and
-            // nothing else would ask again until a restart.
-            let mut delay = std::time::Duration::from_secs(30);
-            let mut status = loop {
-                match crate::cloud::fetch_status(engine.clone()).await {
-                    Ok(status) => break status,
-                    Err(_) => {
-                        cx.background_executor().timer(delay).await;
-                        delay = (delay * 2).min(std::time::Duration::from_secs(300));
-                    }
-                }
-            };
-            // Cloud is part of every signed-in account: one not set up yet
-            // is set up now. Nothing runs (or bills) until a chat does.
-            if status.available
-                && status.state == onicode_proto::CloudState::Off
-                && let Ok(on) = engine
-                    .client()
-                    .call_as::<onicode_proto::CloudStatus>(
-                        onicode_rpc::methods::CLOUD_ENABLE,
-                        serde_json::json!({}),
-                    )
-                    .await
-            {
-                status = on;
-            }
-            let enabled = crate::cloud::account_enabled(&status);
-            this.update(cx, |state, cx| {
-                state.set_cloud_status(status, cx);
-                if enabled {
-                    state.refresh_cloud_repos(cx);
-                } else if state.cloud_repos.take().is_some() {
-                    cx.notify();
-                }
-            })
-            .ok();
-        }));
-    }
-
-    /// Re-read the repositories Cloud reaches (Cloud turned on, GitHub
-    /// connected, the GitHub App installed somewhere new).
-    pub fn refresh_cloud_repos(&mut self, cx: &mut Context<Self>) {
-        let Some(engine) = self.engine.clone() else {
-            return;
-        };
-        if !self.cloud_enabled() {
-            return;
-        }
-        self.cloud_repos_refreshing = true;
-        cx.notify();
-        self.cloud_repos_task = Some(cx.spawn(async move |this, cx| {
-            #[derive(serde::Deserialize)]
-            struct Listing {
-                #[serde(default)]
-                repos: Vec<onicode_proto::GithubRepo>,
-            }
-            let repos = engine
-                .client()
-                .call_as::<Listing>(methods::LIST_GITHUB_REPOS, serde_json::json!({}))
-                .await;
-            this.update(cx, |state, cx| {
-                state.cloud_repos_refreshing = false;
-                // A failed read keeps what was known.
-                if let Ok(listing) = repos {
-                    state.cloud_repos = Some(listing.repos);
-                }
-                cx.notify();
-            })
-            .ok();
-        }));
-    }
-
-    pub fn cloud_repos_refreshing(&self) -> bool {
-        self.cloud_repos_refreshing
-    }
-
-    /// The Cloud repository a project's GitHub origin names, when Cloud
-    /// reaches it — the checkout picker then offers Cloud.
-    pub fn cloud_repo_for(
-        &self,
-        space: &onicode_proto::Space,
-    ) -> Option<&onicode_proto::GithubRepo> {
-        // Cloud is offered only while it is on.
-        if !self.cloud_enabled() {
-            return None;
-        }
-        let name = space.github_repo.as_deref()?;
-        self.cloud_repos
-            .as_ref()?
-            .iter()
-            .find(|repo| repo.full_name.eq_ignore_ascii_case(name))
     }
 
     fn reconcile_change_request_watches(&mut self, cx: &mut Context<Self>) {
@@ -4149,11 +3055,7 @@ impl AppState {
         let Some(link) = self.pending_deep_link.clone() else {
             return false;
         };
-        let Some(locator) = crate::links::workspace_locator(
-            self.workspace_scope,
-            self.auth.as_ref(),
-            self.local_device_id.as_deref(),
-        ) else {
+        let Some(locator) = crate::links::workspace_locator(self.local_device_id.as_deref()) else {
             return false;
         };
         if locator != link.workspace {
@@ -4445,8 +3347,8 @@ impl AppState {
     }
 }
 
-/// Observe assembly after an early attach (cloud onboarding or another viewport
-/// reaching the embedded engine over IPC). Data subscriptions wait on the same
+/// Observe assembly after an early attach (another viewport reaching the
+/// embedded engine over IPC). Data subscriptions wait on the same
 /// result, but their individual errors are not authoritative: older engines may
 /// legitimately omit a watch method. Only the assembly result may fail the
 /// whole connection.
@@ -5008,7 +3910,7 @@ mod tests {
     use onicode_engine::{EngineCore, default_registry};
     // `SessionStatus` is only needed to build the fixtures below — the module
     // itself derives everything through `onicode_proto::view`.
-    use onicode_proto::{DoneStatus, SessionStatus, UserProfile};
+    use onicode_proto::{DoneStatus, SessionStatus};
     use onicode_rpc::RpcReply;
 
     use super::*;
@@ -5019,14 +3921,56 @@ mod tests {
         listener.local_addr().unwrap().port()
     }
 
-    /// A free port below the ephemeral range (49152+ on macOS and Linux's
-    /// default 32768+ both start above it). A port `free_port` just released
-    /// is often handed out again as the source port of the next outgoing
-    /// connection, so a probe that connects to it can connect to itself and
-    /// hold the port. A port outside that range is never a source port.
-    /// A port below the ephemeral range, reserved from every other test process while the
-    /// returned lock lives: nextest runs each test in its own process, so a bind probe alone
-    /// lets a concurrent test take the same port before this one listens on it.
+    /// Whether a descriptor of this process listens on `port`: the IPC listener a bootstrap
+    /// binds is one of them until it is closed.
+    fn listening_here(port: u16) -> bool {
+        // SAFETY: `getdtablesize` has no preconditions.
+        let table = unsafe { libc::getdtablesize() };
+        (0..table).any(|fd| {
+            let mut listening: libc::c_int = 0;
+            let mut len = libc::socklen_t::try_from(std::mem::size_of::<libc::c_int>()).unwrap();
+            // SAFETY: any number may be asked; on success the kernel writes at most `len`
+            // bytes into `listening`, which is that large.
+            let asked = unsafe {
+                libc::getsockopt(
+                    fd,
+                    libc::SOL_SOCKET,
+                    libc::SO_ACCEPTCONN,
+                    (&raw mut listening).cast(),
+                    &raw mut len,
+                )
+            };
+            if asked != 0 || listening == 0 {
+                return false;
+            }
+            // SAFETY: `sockaddr_storage` is plain data; all zeroes is a valid value.
+            let mut addr: libc::sockaddr_storage = unsafe { std::mem::zeroed() };
+            let mut addr_len =
+                libc::socklen_t::try_from(std::mem::size_of::<libc::sockaddr_storage>()).unwrap();
+            // SAFETY: the kernel writes at most `addr_len` bytes into `addr`, which is that large.
+            if unsafe { libc::getsockname(fd, (&raw mut addr).cast(), &raw mut addr_len) } != 0 {
+                return false;
+            }
+            match i32::from(addr.ss_family) {
+                libc::AF_INET => {
+                    // SAFETY: the family says the storage holds a `sockaddr_in`.
+                    let v4 = unsafe { &*(&raw const addr).cast::<libc::sockaddr_in>() };
+                    u16::from_be(v4.sin_port) == port
+                }
+                libc::AF_INET6 => {
+                    // SAFETY: the family says the storage holds a `sockaddr_in6`.
+                    let v6 = unsafe { &*(&raw const addr).cast::<libc::sockaddr_in6>() };
+                    u16::from_be(v6.sin6_port) == port
+                }
+                _ => false,
+            }
+        })
+    }
+
+    /// A port below the ephemeral range (49152+ on macOS, 32768+ by default on Linux), so it is
+    /// never the source port of an outgoing connection, reserved from every other test process
+    /// while the returned lock lives: nextest runs each test in its own process, so a bind probe
+    /// alone lets a concurrent test take the same port before this one listens on it.
     async fn free_port_outside_ephemeral_range() -> (u16, std::fs::File) {
         let start = 20_000 + (std::process::id() % 10_000) as u16;
         for offset in 0..2_000u16 {
@@ -5044,24 +3988,6 @@ mod tests {
             }
         }
         panic!("no free port in 20000..32000");
-    }
-
-    struct LegacyIdentityRpc;
-
-    #[async_trait]
-    impl RpcService for LegacyIdentityRpc {
-        async fn handle(
-            &self,
-            method: &str,
-            _params: serde_json::Value,
-        ) -> Result<RpcReply, RpcError> {
-            match method {
-                methods::LOCAL_DEVICE => {
-                    RpcReply::value(&serde_json::json!({ "deviceId": "legacy-device" }))
-                }
-                other => Err(RpcError::UnknownMethod(other.into())),
-            }
-        }
     }
 
     struct DeferredIdentityRpc {
@@ -5091,72 +4017,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_daemon_identity_falls_back_to_synced_scope() {
-        let client = memory_client(Arc::new(LegacyIdentityRpc));
-
-        let info = query_engine_info(&client).await.unwrap();
-
-        assert_eq!(info.device_id, "legacy-device");
-        assert_eq!(info.workspace_scope, WorkspaceScope::Synced);
-        assert_eq!(
-            gate_phase(
-                &ConnectionStatus::Ready,
-                Some(info.workspace_scope),
-                Some(&AuthState::SignedOut),
-            ),
-            GatePhase::SignIn
-        );
-    }
-
-    #[tokio::test]
-    async fn remote_viewport_treats_legacy_daemon_as_ready() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let dir = tempfile::tempdir().unwrap();
-        // The viewport reads the daemon's IPC bearer from its data dir.
-        let token = onicode_rpc::ipc_auth::issue_token(dir.path()).unwrap();
-        let server = tokio::spawn(onicode_rpc::serve_ws_listener(
-            listener,
-            Arc::new(LegacyIdentityRpc),
-            token,
-        ));
-        let handle = EngineHandle::bootstrap(EngineBootConfig {
-            data_dir: dir.path().to_path_buf(),
-            ipc_port: port,
-            edge_url: "http://127.0.0.1:1".into(),
-            edge_token: None,
-            org_id: None,
-            workos_client_id: None,
-            default_harness: HarnessId::Mock,
-        })
-        .await
-        .expect("legacy daemon remains attachable");
-
-        let mut deferred = handle
-            .deferred_state()
-            .expect("remote viewport tracks readiness");
-        tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            wait_for_deferred_engine(&mut deferred),
-        )
-        .await
-        .expect("legacy readiness fallback completes")
-        .expect("unknown EngineReady means the old daemon is assembled");
-
-        handle.shutdown().await;
-        server.abort();
-    }
-
-    #[tokio::test]
     async fn bootstrap_embeds_engine_when_port_is_free() {
         let dir = tempfile::tempdir().unwrap();
         let handle = EngineHandle::bootstrap(EngineBootConfig {
             data_dir: dir.path().to_path_buf(),
             ipc_port: free_port().await,
-            edge_url: "http://127.0.0.1:1".into(),
-            edge_token: None, // offline
-            org_id: None,
-            workos_client_id: None,
+            update_feed: String::new(),
             default_harness: HarnessId::Mock,
         })
         .await
@@ -5183,7 +4049,7 @@ mod tests {
     #[tokio::test]
     async fn bootstrap_reports_local_assembly_failure_before_returning_a_handle() {
         let dir = tempfile::tempdir().unwrap();
-        onicode_engine::EngineProfile::local(dir.path()).unwrap();
+        // The local profile's store is a directory; a file in its place is a corrupt store.
         std::fs::create_dir(dir.path().join("profiles")).unwrap();
         std::fs::write(dir.path().join("profiles/local"), b"not a directory").unwrap();
         let (port, _reserved) = free_port_outside_ephemeral_range().await;
@@ -5191,10 +4057,7 @@ mod tests {
         let error = match EngineHandle::bootstrap(EngineBootConfig {
             data_dir: dir.path().to_path_buf(),
             ipc_port: port,
-            edge_url: "http://127.0.0.1:1".into(),
-            edge_token: None,
-            org_id: None,
-            workos_client_id: Some("client_test".into()),
+            update_feed: String::new(),
             default_harness: HarnessId::Mock,
         })
         .await
@@ -5207,23 +4070,12 @@ mod tests {
         };
 
         assert!(!format!("{error:#}").is_empty());
-        // Probe the port the way the next bootstrap does (`attach_to_daemon`
-        // connects): a live listener completes the handshake from its backlog
-        // whether or not anyone accepts, so a refusal means nothing listens.
-        // No other test process listens on the reserved port, and it is below the
-        // ephemeral range, so the connect can never be its own source port and self-connect.
-        //
-        // Not a rebind: on macOS a just-closed listener's PCB can stay in the
-        // local-port table until the kernel disposes of it, and `bind` counts
-        // it as in use (AddrInUse, no holder in lsof) while connection lookup
-        // already treats it as gone. That timing is the kernel's, not this
-        // code's, and it failed most runs.
-        let probe = tokio::net::TcpStream::connect(("127.0.0.1", port)).await;
+        // Asked of this process's own descriptors, not of the port: a connect probe also
+        // reaches whatever else on the machine listens there (another job on a shared CI Mac
+        // did), and a rebind trips over macOS keeping a just-closed listener's PCB.
         assert!(
-            probe
-                .as_ref()
-                .is_err_and(|err| err.kind() == std::io::ErrorKind::ConnectionRefused),
-            "failed bootstrap must release the IPC listener: {probe:?}"
+            !listening_here(port),
+            "failed bootstrap must release the IPC listener on {port}"
         );
     }
 
@@ -5250,7 +4102,6 @@ mod tests {
             Arc::new(DeferredIdentityRpc {
                 engine_info: EngineInfo {
                     device_id: "owner-device".into(),
-                    workspace_scope: WorkspaceScope::Local,
                     cursor_sdk_version: None,
                     capabilities: onicode_proto::capabilities::current(),
                     build: None,
@@ -5263,10 +4114,7 @@ mod tests {
         let handle = EngineHandle::bootstrap(EngineBootConfig {
             data_dir: dir.path().to_path_buf(),
             ipc_port: port,
-            edge_url: "http://127.0.0.1:1".into(),
-            edge_token: None,
-            org_id: None,
-            workos_client_id: None,
+            update_feed: String::new(),
             default_harness: HarnessId::Mock,
         })
         .await
@@ -5301,10 +4149,7 @@ mod tests {
         let handle = EngineHandle::bootstrap(EngineBootConfig {
             data_dir: dir.path().to_path_buf(),
             ipc_port: port,
-            edge_url: "http://127.0.0.1:1".into(),
-            edge_token: None, // offline
-            org_id: None,
-            workos_client_id: None,
+            update_feed: String::new(),
             default_harness: HarnessId::Mock,
         })
         .await
@@ -5341,19 +4186,15 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_bootstraps_elect_one_embedded_engine() {
-        // Two viewports of one app booting at once (the Local-switch restart
-        // path): both used to probe a closed port, both embedded, and one lost
-        // the data-dir lock. The bootstrap gate must elect exactly one owner
+        // Two viewports of one app booting at once: both used to probe a closed port, both
+        // embedded, and one lost the data-dir lock. The bootstrap gate must elect exactly one owner
         // and turn the other into a plain remote attach.
         let dir = tempfile::tempdir().unwrap();
         let port = free_port().await;
         let config = EngineBootConfig {
             data_dir: dir.path().to_path_buf(),
             ipc_port: port,
-            edge_url: "http://127.0.0.1:1".into(),
-            edge_token: None, // offline
-            org_id: None,
-            workos_client_id: None,
+            update_feed: String::new(),
             default_harness: HarnessId::Mock,
         };
         let (a, b) = tokio::join!(
@@ -5459,10 +4300,7 @@ mod tests {
         let handle = EngineHandle::bootstrap(EngineBootConfig {
             data_dir: dir.path().to_path_buf(),
             ipc_port: port,
-            edge_url: "http://127.0.0.1:1".into(),
-            edge_token: None,
-            org_id: None,
-            workos_client_id: None,
+            update_feed: String::new(),
             default_harness: HarnessId::Mock,
         })
         .await
@@ -5481,21 +4319,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn production_bootstrap_opens_local_data_without_sign_in() {
+    async fn bootstrap_opens_the_local_profile() {
         let dir = tempfile::tempdir().unwrap();
         let handle = EngineHandle::bootstrap(EngineBootConfig {
             data_dir: dir.path().to_path_buf(),
             ipc_port: free_port().await,
-            edge_url: "http://127.0.0.1:1".into(),
-            edge_token: None,
-            org_id: None,
-            workos_client_id: Some("client_test".into()),
+            update_feed: String::new(),
             default_harness: HarnessId::Mock,
         })
         .await
         .unwrap();
 
-        assert_eq!(handle.engine_info().workspace_scope, WorkspaceScope::Local);
         let info: EngineInfo = handle
             .client()
             .call_as(methods::ENGINE_INFO, serde_json::json!({}))
@@ -5503,116 +4337,13 @@ mod tests {
             .unwrap();
         assert_eq!(info, *handle.engine_info());
 
-        let mut auth = handle
-            .client()
-            .subscribe(methods::AUTH_STATUS, serde_json::json!({}))
-            .await
-            .unwrap();
-        assert_eq!(
-            parse_auth_state(&auth.recv().await.unwrap()),
-            Some(AuthState::SignedOut)
-        );
         let harnesses = handle
             .client()
             .call(methods::LIST_HARNESSES, serde_json::json!({}))
             .await
             .expect("local data RPC is immediately available");
         assert!(harnesses.as_array().is_some_and(|items| !items.is_empty()));
-        assert!(
-            !dir.path().join("orgs/dev-org/dev-user").exists(),
-            "production boot must not create dev-user data"
-        );
         assert!(dir.path().join("profiles/local").is_dir());
-        handle.shutdown().await;
-    }
-
-    #[tokio::test]
-    async fn engine_info_is_available_while_cloud_onboarding_is_deferred() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("session.json"),
-            r#"{"refreshToken":"saved","user":{"id":"user_1","email":"u@example.com"}}"#,
-        )
-        .unwrap();
-        let handle = EngineHandle::bootstrap(EngineBootConfig {
-            data_dir: dir.path().to_path_buf(),
-            ipc_port: free_port().await,
-            edge_url: "http://127.0.0.1:1".into(),
-            edge_token: None,
-            org_id: None,
-            workos_client_id: Some("client_test".into()),
-            default_harness: HarnessId::Mock,
-        })
-        .await
-        .unwrap();
-
-        assert!(matches!(
-            handle
-                .deferred_state()
-                .expect("embedded lifecycle")
-                .borrow()
-                .clone(),
-            // A saved session with no organization: the account's setup
-            // isn't finished (the engine waits on it as it waits to assemble).
-            DeferredEngineState::Onboarding
-        ));
-        // The app's onboarding wait sees it as still waiting, not failed.
-        let mut deferred = handle.deferred_state().expect("embedded lifecycle");
-        assert!(
-            tokio::time::timeout(
-                std::time::Duration::from_millis(100),
-                wait_for_deferred_engine(&mut deferred)
-            )
-            .await
-            .is_err(),
-            "onboarding is a wait, never an error"
-        );
-
-        let info: EngineInfo = handle
-            .client()
-            .call_as(methods::ENGINE_INFO, serde_json::json!({}))
-            .await
-            .expect("EngineInfo bypasses deferred cloud stores");
-        assert_eq!(info.workspace_scope, WorkspaceScope::Synced);
-        assert!(
-            tokio::time::timeout(
-                std::time::Duration::from_millis(100),
-                handle
-                    .client()
-                    .call(methods::LIST_HARNESSES, serde_json::json!({})),
-            )
-            .await
-            .is_err(),
-            "cloud data waits for organization onboarding"
-        );
-        // What this app asks during onboarding waits, never errors: its
-        // watch streams and data calls.
-        for method in [
-            methods::WATCH_CHATS,
-            methods::WATCH_DEVICES,
-            methods::WATCH_SPACES,
-            methods::WATCH_SESSIONS,
-        ] {
-            assert!(
-                tokio::time::timeout(
-                    std::time::Duration::from_millis(100),
-                    handle.client().call(method, serde_json::json!({})),
-                )
-                .await
-                .is_err(),
-                "{method} waits for organization onboarding"
-            );
-        }
-        let auth = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            handle
-                .client()
-                .subscribe(methods::AUTH_STATUS, serde_json::json!({})),
-        )
-        .await
-        .expect("AuthStatus answers during onboarding");
-        assert!(auth.is_ok(), "{:?}", auth.err());
-        assert!(!dir.path().join("orgs").exists());
         handle.shutdown().await;
     }
 
@@ -5624,7 +4355,6 @@ mod tests {
             daemon_dir.path(),
             Arc::new(default_registry()),
             HarnessId::Mock,
-            None,
         )
         .unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -5642,10 +4372,7 @@ mod tests {
         let handle = EngineHandle::bootstrap(EngineBootConfig {
             data_dir: ui_dir.path().to_path_buf(),
             ipc_port: port,
-            edge_url: "http://127.0.0.1:1".into(),
-            edge_token: None,
-            org_id: None,
-            workos_client_id: None,
+            update_feed: String::new(),
             default_harness: HarnessId::Mock,
         })
         .await
@@ -5655,10 +4382,6 @@ mod tests {
             EngineMode::Remote {
                 url: format!("ws://127.0.0.1:{port}")
             }
-        );
-        assert_eq!(
-            handle.engine_info().workspace_scope,
-            WorkspaceScope::Development
         );
         let harnesses = handle
             .client()
@@ -5699,7 +4422,6 @@ mod tests {
             child_kind: None,
             space_id: None,
             last_seen_at: None,
-            room_gen: None,
         }
     }
 
@@ -5864,7 +4586,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn transcript_revisit_cache_is_bounded_and_account_scoped(cx: &mut gpui::TestAppContext) {
+    fn transcript_revisit_cache_is_bounded(cx: &mut gpui::TestAppContext) {
         let state = cx.new(|_| AppState::new());
         state.update(cx, |state, cx| {
             for i in 0..20 {
@@ -5881,13 +4603,6 @@ mod tests {
                 1,
                 "deleted chats leave no cached rows"
             );
-            state.prepare_runtime_replacement(cx);
-            state.select_chat(Some("chat-19".into()), cx);
-            assert!(
-                state.transcript.is_empty(),
-                "account replacement must clear cached content"
-            );
-            assert!(state.transcript_cache.is_empty());
         });
     }
 
@@ -5918,7 +4633,6 @@ mod tests {
         state.selected_chat = Some("c".into());
         let initial = state.transcript_revision;
         state.apply_transfers(Vec::new());
-        state.apply_auth(AuthState::SignedOut);
         assert_eq!(
             state.transcript_revision, initial,
             "unrelated notifications are inert"
@@ -5970,29 +4684,6 @@ mod tests {
             cursor_sdk_version: None,
             capabilities: Vec::new(),
         }
-    }
-
-    #[test]
-    fn a_ready_cloud_machine_that_stopped_answering_is_asleep() {
-        use crate::cloud::Presence;
-        let mut state = AppState::new();
-        let now = Utc::now();
-        let mut machine = device("cloud-s", "Cloud");
-        machine.capabilities = vec![onicode_proto::CLOUD_SESSION_CAPABILITY.into()];
-        machine.last_seen_at = Some(now);
-        state.devices = vec![machine];
-        state.cloud_sessions = Some(
-            serde_json::from_value(serde_json::json!({
-                "available": true,
-                "sessions": [{ "chatId": "chat", "deviceId": "cloud-s", "spaceId": "space", "state": "ready", "createdAt": 0 }]
-            }))
-            .unwrap(),
-        );
-        assert_eq!(state.device_presence("cloud-s", now), Presence::Online);
-        // Idle machines sleep on their own; the cached list still says ready.
-        let later = now + TimeDelta::minutes(10);
-        assert_eq!(state.device_presence("cloud-s", later), Presence::Asleep);
-        assert!(!state.device_presence("cloud-s", later).warns());
     }
 
     #[test]
@@ -6092,9 +4783,8 @@ mod tests {
     }
 
     #[test]
-    fn local_workspace_hides_the_unknown_device_sentinel() {
+    fn the_local_device_hides_the_unknown_device_sentinel() {
         let mut state = AppState::new();
-        state.workspace_scope = Some(WorkspaceScope::Local);
         state.local_device_id = Some("local".into());
 
         state.apply_devices(vec![
@@ -6439,7 +5129,7 @@ mod tests {
 
     #[test]
     fn a_restarted_host_adopts_with_no_completion_but_not_on_its_recovery() {
-        // A host engine restart (a Cloud machine waking, too) starts its rows
+        // A host engine restart starts its rows
         // over: the send's turn comes back with no completion marker at all,
         // after a finished turn or a stopped one.
         let sent = Utc::now();
@@ -6532,256 +5222,6 @@ mod tests {
         let other = turn("b", SessionStatus::Working, Some(later), later);
         s.apply_sessions_at(vec![other], later);
         assert!(s.send_undelivered("a", later));
-    }
-
-    #[gpui::test]
-    fn an_unreachable_cloud_host_rereads_sessions_at_most_every_few_seconds(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let state = cx.new(|_| {
-            let mut s = AppState::new();
-            let mut cloud = chat("c", 0, Some(10));
-            cloud.device_id = "cloud-s1".into();
-            let mut local = chat("l", 0, Some(10));
-            local.device_id = "mac".into();
-            s.chats = vec![cloud, local];
-            let mut machine = device("cloud-s1", "Cloud");
-            machine.capabilities = vec![onicode_proto::CLOUD_SESSION_CAPABILITY.into()];
-            s.devices = vec![machine];
-            s
-        });
-        state.update(cx, |s, cx| {
-            s.recheck_cloud_machine("l", cx);
-            assert!(s.cloud_recheck_at.is_none(), "not a Cloud machine");
-            s.recheck_cloud_machine("c", cx);
-            let first = s.cloud_recheck_at.expect("re-read");
-            s.recheck_cloud_machine("c", cx);
-            assert_eq!(s.cloud_recheck_at, Some(first), "throttled");
-        });
-    }
-
-    #[test]
-    fn a_cloud_machine_that_went_quiet_is_down_and_a_wake_reads_as_waking() {
-        use onicode_proto::{CloudSessions, CloudState};
-        let now = Utc::now();
-        let mut s = AppState::new();
-        let mut c = chat("c", 0, Some(10));
-        c.device_id = "cloud-s1".into();
-        s.chats = vec![c];
-        let mut machine = device("cloud-s1", "Cloud");
-        machine.capabilities = vec![onicode_proto::CLOUD_SESSION_CAPABILITY.into()];
-        machine.last_seen_at = Some(now);
-        s.devices = vec![machine];
-        s.cloud_sessions = Some(CloudSessions {
-            sessions: vec![
-                serde_json::from_value(serde_json::json!({
-                    "chatId": "c", "deviceId": "cloud-s1", "spaceId": "sp",
-                    "state": "ready", "createdAt": 0
-                }))
-                .unwrap(),
-            ],
-            available: true,
-        });
-        assert_eq!(s.chat_machine_down("c"), None, "ready and answering");
-        // It slept on its own: the list still says ready, the heartbeat stopped.
-        s.devices[0].last_seen_at = Some(now - TimeDelta::minutes(10));
-        assert_eq!(
-            s.chat_machine_down("c"),
-            Some(("c".into(), CloudState::Sleeping))
-        );
-        // Wake asked for: waking until the machine answers.
-        s.cloud_wakes.insert("c".into(), std::time::Instant::now());
-        assert_eq!(
-            s.chat_machine_down("c"),
-            Some(("c".into(), CloudState::Starting))
-        );
-        assert_eq!(
-            s.device_presence("cloud-s1", Utc::now()),
-            crate::cloud::Presence::Waking
-        );
-        s.devices[0].last_seen_at = Some(Utc::now());
-        assert_eq!(s.chat_machine_down("c"), None, "up again");
-    }
-
-    #[test]
-    fn a_send_waiting_on_a_booting_cloud_machine_is_pending_not_undelivered() {
-        use onicode_proto::{CloudSession, CloudSessions, CloudState};
-        let now = Utc::now();
-        let later = now + TimeDelta::milliseconds(UNDELIVERED_GRACE_MS + 1);
-        let mut s = AppState::new();
-        let mut c = chat("c", 0, Some(10));
-        c.device_id = "cloud-s1".into();
-        s.chats = vec![c];
-        let session = |state| CloudSession {
-            chat_id: "c".into(),
-            device_id: "cloud-s1".into(),
-            space_id: "sp".into(),
-            repo: Some("acme/app".into()),
-            path: Some("/home/user/app".into()),
-            state,
-            error: None,
-            failed_action: None,
-            last_active_at: None,
-            created_at: 0,
-        };
-        s.begin_pending_send("c", "m1", now);
-        for state in [
-            CloudState::Provisioning,
-            CloudState::Starting,
-            CloudState::Sleeping,
-        ] {
-            s.cloud_sessions = Some(CloudSessions {
-                sessions: vec![session(state)],
-                available: true,
-            });
-            assert_eq!(s.cloud_machine_booting("c"), Some(state));
-            assert!(s.send_pending("c", later), "{state:?}");
-            assert!(!s.send_undelivered("c", later), "{state:?}");
-        }
-        // A machine that failed is a real delivery problem.
-        s.cloud_sessions = Some(CloudSessions {
-            sessions: vec![session(CloudState::Error)],
-            available: true,
-        });
-        assert_eq!(s.cloud_machine_booting("c"), None);
-        assert!(s.send_undelivered("c", later));
-    }
-
-    #[test]
-    fn a_cloud_turn_stays_working_while_its_setup_streams() {
-        let entry = |id: &str, role, status| SessionMessageEntry {
-            id: id.into(),
-            role,
-            parts: Vec::new(),
-            created_at: 1,
-            device_id: "d".into(),
-            status,
-            continuation_of: None,
-            duration_ms: None,
-        };
-        let user = onicode_doc::MessageRole::User;
-        let assistant = onicode_doc::MessageRole::Assistant;
-        let now = Utc::now();
-        let mut s = AppState::new();
-        s.selected_chat = Some("c".into());
-        // The machine wrote the message back and is on its setup; no
-        // session row says Working yet.
-        s.apply_transcript(vec![
-            entry("m1", user, None),
-            entry(
-                "m1.cloud-setup",
-                assistant,
-                Some(onicode_doc::MessageStatus::Streaming),
-            ),
-        ]);
-        assert_eq!(s.indicator_for("c", now), Indicator::Working);
-        // Finished: the session row speaks for itself again.
-        s.apply_transcript(vec![
-            entry("m1", user, None),
-            entry(
-                "m1.cloud-setup",
-                assistant,
-                Some(onicode_doc::MessageStatus::Complete),
-            ),
-        ]);
-        assert_ne!(s.indicator_for("c", now), Indicator::Working);
-    }
-
-    #[test]
-    fn a_cloud_turn_is_timed_from_the_send_that_started_its_machine() {
-        let entry = |id: &str, role, created_at| SessionMessageEntry {
-            id: id.into(),
-            role,
-            parts: Vec::new(),
-            created_at,
-            device_id: "d".into(),
-            status: None,
-            continuation_of: None,
-            duration_ms: None,
-        };
-        let user = onicode_doc::MessageRole::User;
-        let assistant = onicode_doc::MessageRole::Assistant;
-        let mut s = AppState::new();
-        s.selected_chat = Some("c".into());
-        // An ordinary turn: no Cloud setup, no base.
-        s.apply_transcript(vec![entry("m0", user, 10)]);
-        assert_eq!(s.cloud_setup_turn_started(), None);
-        // Sent at 1000 to a machine that has to start: the placeholder.
-        s.push_echo("c", entry("m1", user, 1_000));
-        s.push_cloud_setup_echo("c", "m1", 1_000, false);
-        assert_eq!(s.cloud_setup_turn_started(), Some(1_000));
-        // The machine's own steps, then its turn: still the send.
-        s.apply_transcript(vec![
-            entry("m0", user, 10),
-            entry("m1", user, 1_000),
-            entry("m1.cloud-setup", assistant, 9_000),
-            entry("a1", assistant, 12_000),
-        ]);
-        assert_eq!(s.cloud_setup_turn_started(), Some(1_000));
-        // The next message, still only an echo, goes to the machine already
-        // up: no base, not the earlier turn's send.
-        s.push_echo("c", entry("m2", user, 20_000));
-        assert_eq!(s.cloud_setup_turn_started(), None);
-        // And once the host wrote it back.
-        s.apply_transcript(vec![
-            entry("m1", user, 1_000),
-            entry("m1.cloud-setup", assistant, 9_000),
-            entry("m2", user, 20_000),
-        ]);
-        assert_eq!(s.cloud_setup_turn_started(), None);
-    }
-
-    #[test]
-    fn a_cloud_machine_that_failed_settles_its_setup_step() {
-        use onicode_proto::{CloudSession, CloudSessions, CloudState};
-        let mut s = AppState::new();
-        let mut c = chat("c", 0, Some(10));
-        c.device_id = "cloud-s1".into();
-        s.chats = vec![c];
-        s.selected_chat = Some("c".into());
-        let session = |state, error: Option<&str>| CloudSessions {
-            sessions: vec![CloudSession {
-                chat_id: "c".into(),
-                device_id: "cloud-s1".into(),
-                space_id: "sp".into(),
-                repo: Some("acme/app".into()),
-                path: Some("/home/user/app".into()),
-                state,
-                error: error.map(String::from),
-                failed_action: None,
-                last_active_at: None,
-                created_at: 0,
-            }],
-            available: true,
-        };
-        s.cloud_sessions = Some(session(CloudState::Provisioning, None));
-        s.push_cloud_setup_echo("c", "m1", 0, false);
-        let step = |s: &AppState| match &s.pending_echoes()[0].parts[0] {
-            onicode_doc::MessagePart::Tool {
-                call: onicode_proto::ToolCall::Unknown { name, .. },
-                is_error,
-                output,
-                ..
-            } => (name.clone(), *is_error, output.clone()),
-            other => panic!("{other:?}"),
-        };
-        // Still being set up: the step spins.
-        assert_eq!(step(&s), ("Starting a machine".into(), false, None));
-        // Failed: the step says so, with the reason.
-        s.cloud_sessions = Some(session(CloudState::Error, Some("No room")));
-        s.settle_failed_cloud_setups();
-        assert_eq!(
-            step(&s),
-            (
-                "Couldn't start a machine".into(),
-                true,
-                Some("No room".into())
-            )
-        );
-        assert_eq!(
-            s.pending_echoes()[0].status,
-            Some(onicode_doc::MessageStatus::Complete)
-        );
     }
 
     #[test]
@@ -7590,7 +6030,7 @@ mod tests {
     }
 
     #[test]
-    fn identical_transfer_auth_and_harness_frames_report_no_change() {
+    fn identical_transfer_and_harness_frames_report_no_change() {
         use onicode_proto::{HarnessUpdatePhase, HarnessUpdateStatus, TransferProgress};
         let mut state = AppState::new();
         assert!(!state.apply_transfers(vec![]));
@@ -7605,17 +6045,6 @@ mod tests {
         assert!(state.apply_transfers(vec![progress(20)]));
         assert_eq!(state.transfer_percent("u1"), Some(20));
         assert!(state.apply_transfers(vec![]));
-
-        assert!(state.apply_auth(AuthState::SignedOut));
-        assert!(!state.apply_auth_value(serde_json::json!({ "state": "signedOut" })));
-        let user = UserProfile {
-            id: "u".into(),
-            email: "w@example.com".into(),
-            name: None,
-        };
-        assert!(state.apply_auth(AuthState::NeedsOrganization { user: user.clone() }));
-        assert!(!state.apply_auth(AuthState::NeedsOrganization { user }));
-        assert!(!state.apply_auth_value(serde_json::json!({ "bogus": true })));
 
         let status = |phase| HarnessUpdateStatus {
             harness: HarnessId::Codex,
@@ -7886,124 +6315,6 @@ mod tests {
     }
 
     #[test]
-    fn a_cloud_setup_placeholder_hands_off_to_the_machine_entry_or_goes() {
-        let entry = |id: &str, role| SessionMessageEntry {
-            id: id.into(),
-            role,
-            parts: vec![],
-            created_at: 0,
-            device_id: "d".into(),
-            status: None,
-            continuation_of: None,
-            duration_ms: None,
-        };
-        let user = onicode_doc::MessageRole::User;
-        let assistant = onicode_doc::MessageRole::Assistant;
-        let mut state = AppState::new();
-        state.selected_chat = Some("c1".into());
-        state.push_echo("c1", entry("m1", user));
-        state.push_cloud_setup_echo("c1", "m1", 0, false);
-        assert!(state.cloud_setup_echo_pending());
-        let placeholder = &state.pending_echoes()[1];
-        assert_eq!(placeholder.id, "m1.cloud-setup");
-        let onicode_doc::MessagePart::Tool {
-            id, call, resolved, ..
-        } = &placeholder.parts[0]
-        else {
-            panic!("{:?}", placeholder.parts)
-        };
-        assert_eq!(id, "m1.cloud-machine");
-        // Shaped like the machine's own step, which the doc keeps no input on.
-        assert_eq!(
-            call,
-            &onicode_proto::ToolCall::Unknown {
-                name: "Starting a machine".into(),
-                input: None,
-            }
-        );
-        assert!(!resolved);
-        // The host wrote the message: the machine is still coming up.
-        state.apply_transcript(vec![entry("m1", user)]);
-        assert!(state.cloud_setup_echo_pending());
-        // Its setup entry takes over (same ids).
-        state.apply_transcript(vec![entry("m1", user), entry("m1.cloud-setup", assistant)]);
-        assert!(!state.cloud_setup_echo_pending());
-        // A machine that was already up answers without one: the
-        // placeholder still goes.
-        state.push_echo("c1", entry("m2", user));
-        state.push_cloud_setup_echo("c1", "m2", 0, true);
-        state.apply_transcript(vec![entry("m2", user)]);
-        assert!(state.cloud_setup_echo_pending());
-        state.apply_transcript(vec![entry("m2", user), entry("a2", assistant)]);
-        assert!(!state.cloud_setup_echo_pending());
-        // The placeholder lands a beat after the send: never once the machine
-        // has written its own setup entry or already answered.
-        state.apply_transcript(vec![
-            entry("m1", user),
-            entry("m1.cloud-setup", assistant),
-            entry("m2", user),
-            entry("a2", assistant),
-        ]);
-        state.push_cloud_setup_echo("c1", "m1", 0, false);
-        state.push_cloud_setup_echo("c1", "m2", 0, true);
-        assert!(!state.cloud_setup_echo_pending());
-    }
-
-    #[test]
-    fn a_wake_refused_for_credits_says_so_and_stops_working() {
-        let mut state = AppState::new();
-        state.selected_chat = Some("c1".into());
-        state.push_echo(
-            "c1",
-            SessionMessageEntry {
-                id: "m1".into(),
-                role: onicode_doc::MessageRole::User,
-                parts: vec![],
-                created_at: 0,
-                device_id: "d".into(),
-                status: None,
-                continuation_of: None,
-                duration_ms: None,
-            },
-        );
-        state.push_cloud_setup_echo("c1", "m1", 0, true);
-        state.begin_pending_send("c1", "m1", chrono::Utc::now());
-        assert!(state.send_pending("c1", chrono::Utc::now()));
-        assert!(state.cloud_setup_streaming());
-        assert!(state.block_cloud_setups_for_credits());
-        // Neither the overlay nor the placeholder keeps the chat Working.
-        assert_eq!(
-            state.indicator_for("c1", chrono::Utc::now()),
-            Indicator::None
-        );
-        let step = state.echoes["c1"]
-            .iter()
-            .find(|entry| entry.id == onicode_proto::cloud_setup_entry_id("m1"))
-            .expect("placeholder");
-        let onicode_doc::MessagePart::Tool {
-            call,
-            is_error,
-            resolved,
-            ..
-        } = &step.parts[0]
-        else {
-            panic!("{:?}", step.parts)
-        };
-        assert_eq!(
-            call,
-            &onicode_proto::ToolCall::Unknown {
-                name: CLOUD_NO_CREDITS_STEP.into(),
-                input: None,
-            }
-        );
-        assert!(*is_error && *resolved);
-        // No more "working" for a send that can't run yet.
-        assert!(!state.send_pending("c1", chrono::Utc::now()));
-        // Once said, it isn't said again (one toast per send).
-        assert!(!state.block_cloud_setups_for_credits());
-    }
-
-    #[test]
     fn transcript_replay_barrier_requires_the_opening_reset() {
         let mut state = AppState::new();
         assert!(!state.transcript_replayed);
@@ -8026,115 +6337,15 @@ mod tests {
 
     #[test]
     fn gate_phases() {
-        let user = UserProfile {
-            id: "u".into(),
-            email: "w@example.com".into(),
-            name: None,
-        };
         assert_eq!(
-            gate_phase(&ConnectionStatus::Connecting, None, None),
+            gate_phase(&ConnectionStatus::Connecting),
             GatePhase::Loading
         );
         assert_eq!(
-            gate_phase(&ConnectionStatus::Failed("boom".into()), None, None),
+            gate_phase(&ConnectionStatus::Failed("boom".into())),
             GatePhase::Failed("boom".into())
         );
-        assert_eq!(
-            gate_phase(
-                &ConnectionStatus::Ready,
-                Some(WorkspaceScope::Local),
-                Some(&AuthState::SignedOut),
-            ),
-            GatePhase::Ready
-        );
-        assert_eq!(
-            gate_phase(
-                &ConnectionStatus::Ready,
-                Some(WorkspaceScope::Synced),
-                Some(&AuthState::SignedOut),
-            ),
-            GatePhase::SignIn
-        );
-        assert_eq!(
-            gate_phase(
-                &ConnectionStatus::Ready,
-                Some(WorkspaceScope::Synced),
-                Some(&AuthState::SignedIn {
-                    user: user.clone(),
-                    org_id: None
-                })
-            ),
-            GatePhase::Ready
-        );
-        // No org yet → org gate.
-        assert_eq!(
-            gate_phase(
-                &ConnectionStatus::Ready,
-                Some(WorkspaceScope::Synced),
-                Some(&AuthState::NeedsOrganization { user })
-            ),
-            GatePhase::OrgGate
-        );
-    }
-
-    #[test]
-    fn auth_changes_do_not_change_a_local_runtime_scope_or_watches() {
-        let mut state = AppState::new();
-        state.workspace_scope = Some(WorkspaceScope::Local);
-        state.watch_tasks.push(Task::ready(()));
-
-        state.apply_auth(AuthState::NeedsOrganization {
-            user: UserProfile {
-                id: "u".into(),
-                email: "w@example.com".into(),
-                name: None,
-            },
-        });
-        assert_eq!(state.workspace_scope, Some(WorkspaceScope::Local));
-        assert_eq!(state.watch_tasks.len(), 1);
-
-        state.apply_auth(AuthState::SignedIn {
-            user: UserProfile {
-                id: "u".into(),
-                email: "w@example.com".into(),
-                name: None,
-            },
-            org_id: Some("org-1".into()),
-        });
-        assert_eq!(state.workspace_scope, Some(WorkspaceScope::Local));
-        assert_eq!(state.watch_tasks.len(), 1);
-    }
-
-    #[test]
-    fn auth_frames_parse_both_wire_shapes() {
-        // Proto shape.
-        let proto = serde_json::json!({ "state": "signedOut" });
-        assert_eq!(parse_auth_state(&proto), Some(AuthState::SignedOut));
-        // Engine shape (`_tag`, PascalCase, orgId).
-        let engine = serde_json::json!({
-            "_tag": "SignedIn",
-            "user": { "id": "u1", "email": "w@example.com" },
-            "orgId": "org-1",
-        });
-        let Some(AuthState::SignedIn { user, org_id }) = parse_auth_state(&engine) else {
-            panic!("expected SignedIn");
-        };
-        assert_eq!(user.email, "w@example.com");
-        assert_eq!(org_id.as_deref(), Some("org-1"));
-        let needs = serde_json::json!({
-            "_tag": "NeedsOrganization",
-            "user": { "id": "u1", "email": "w@example.com", "name": "W" },
-        });
-        assert!(matches!(
-            parse_auth_state(&needs),
-            Some(AuthState::NeedsOrganization { .. })
-        ));
-        // Garbage → None (frame dropped, not a crash).
-        assert_eq!(
-            parse_auth_state(&serde_json::json!({ "_tag": "Wat" })),
-            None
-        );
-        assert_eq!(parse_auth_state(&serde_json::json!(42)), None);
+        assert_eq!(gate_phase(&ConnectionStatus::Ready), GatePhase::Ready);
     }
 
     fn chat_with_cwd(id: &str, created_min: i64, cwd: Option<&str>) -> Chat {
@@ -8221,36 +6432,6 @@ mod tests {
             c.cwd = Some(cwd.into());
             assert_eq!(chat_location(&c), None);
         }
-    }
-
-    #[test]
-    fn org_gate_reducers() {
-        assert!(org_name_valid("Acme"));
-        assert!(org_name_valid("  padded  "));
-        assert!(!org_name_valid(""));
-        assert!(!org_name_valid("   "));
-        assert!(!org_name_valid(&"x".repeat(65)));
-
-        let rows = parse_orgs(&serde_json::json!({ "orgs": [
-            { "id": "m2", "organizationId": "o2", "name": "beta" },
-            { "id": "m1", "organizationId": "o1", "name": "Alpha" },
-            { "id": "m3", "organizationId": "o1", "name": "Alpha" },
-        ]}));
-        assert_eq!(rows.len(), 3);
-        let sorted = sort_memberships(rows);
-        let names: Vec<&str> = sorted.iter().map(|o| o.name.as_str()).collect();
-        assert_eq!(
-            names,
-            ["Alpha", "beta"],
-            "case-insensitive sort + dedupe by org id"
-        );
-        // Bare-array replies parse too; garbage yields empty.
-        assert_eq!(
-            parse_orgs(&serde_json::json!([{ "id": "m", "organizationId": "o", "name": "n" }]))
-                .len(),
-            1
-        );
-        assert!(parse_orgs(&serde_json::json!("nope")).is_empty());
     }
 
     #[test]
@@ -8714,32 +6895,6 @@ mod tests {
         let later = t0 + TimeDelta::minutes(5);
         assert_eq!(s.chat_link_at("c-remote", later), ChatLink::LIVE);
         assert!(s.sync_clocks.is_empty());
-    }
-
-    /// A sleeping or waking Cloud machine answers the send itself: never
-    /// "Queued", never "can't reach".
-    #[test]
-    fn sleeping_cloud_machine_is_not_queued() {
-        let t0 = clock_epoch();
-        let mut s = remote_chat_state(t0);
-        s.apply_connectivity_at(
-            connectivity(onicode_proto::ChatSyncState::Synced, true, true),
-            t0,
-        );
-        // A session machine whose heartbeat stopped has gone to sleep.
-        s.devices[0].capabilities = vec![onicode_proto::CLOUD_SESSION_CAPABILITY.into()];
-        s.devices[0].last_seen_at = Some(t0 - TimeDelta::minutes(30));
-        assert!(matches!(
-            s.device_presence("remote", t0),
-            crate::cloud::Presence::Asleep | crate::cloud::Presence::Waking
-        ));
-        assert_eq!(s.chat_link_at("c-remote", t0), ChatLink::LIVE);
-        s.begin_pending_send("c-remote", "m", t0);
-        assert!(!s.send_queued("c-remote", t0));
-        // A plain device that went dark is unreachable.
-        s.devices[0].capabilities.clear();
-        assert!(s.chat_link_at("c-remote", t0).host_unreachable);
-        assert!(s.send_queued("c-remote", t0));
     }
 
     #[gpui::test]

@@ -9,6 +9,9 @@ description = "Remote-desktop media transport policy: the media wire, datagram p
 [dependencies]
 bytes.workspace = true
 reed-solomon-simd.workspace = true
+# The wire's plain types (codec, chroma, reports, stream ids) ride the control stream too
+# (`onicode-desktop-proto`).
+serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 zerocopy.workspace = true
@@ -18,6 +21,8 @@ zerocopy.workspace = true
 arbitrary.workspace = true
 # The wire's channel and datagram budget are checked against the transport's.
 onicode-net.workspace = true
+# The packetize and reassemble cost measurements (ignored; run by hand).
+onicode-desktop-testkit.workspace = true
 pretty_assertions.workspace = true
 proptest.workspace = true
 

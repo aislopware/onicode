@@ -343,7 +343,7 @@ async fn follow(
     let mut backoff = Duration::from_millis(400);
     loop {
         let Some(inner) = weak.upgrade() else { return };
-        let wake = inner.terminals_wake.clone();
+        let wake = inner.links_wake.clone();
         let subscribed = tokio::select! {
             () = cancel.cancelled() => return,
             subscribed = subscribe(inner, &info, last_seq) => subscribed,

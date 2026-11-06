@@ -43,8 +43,6 @@ env = os.environ | {
     "WAYLAND_DISPLAY": "",
     "ONICODE_IPC_PORT": args.ipc_port,
     "ONICODE_HARNESS": "mock",
-    "ONICODE_WORKOS_CLIENT_ID": "",
-    "ONICODE_EDGE_URL": "http://127.0.0.1:1",
     "ONICODE_DATA_DIR": str(out),
     "RUST_LOG": "warn",
     "LP_NUM_THREADS": "4",

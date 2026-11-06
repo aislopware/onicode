@@ -7,11 +7,10 @@
 //! - [`Caller::Agent`]: a `onicode mcp` server the engine injected into an agent's run, holding the
 //!   agent-scoped token (`{data_dir}/ipc-token-agent`). It reaches only what the MCP tools need
 //!   ([`crate::agent_allowed`]); nothing that grants power.
-//! - [`Caller::Peer`]: another device, through the device-room relay ([`crate::local_only`] keeps
-//!   credentials local).
+//! - [`Caller::Peer`]: another device, over a peer link ([`crate::serve_carried`]).
 //!
 //! The gates that matter are enforced by method at the transport guards
-//! themselves (the WS server's agent guard, the relay's guard), so they
+//! themselves (the WS server's agent guard, the carrier's guard), so they
 //! never depend on this value surviving a hop. This task-local exists for
 //! finer checks and for the record: read it at dispatch entry, before any
 //! `tokio::spawn` (a spawned task starts with no caller, i.e. `Local`).
@@ -25,8 +24,8 @@ pub enum Caller {
     /// Local IPC with the agent-scoped token. `chat` is the chat the MCP
     /// server says it serves (`x-onicode-chat`): claimed, for the record only.
     Agent { chat: Option<String> },
-    /// Another device through the device-room relay. The relay doesn't say
-    /// which device yet, so `device` is `None` until it does.
+    /// Another device over a peer link: `device` is the device-id its hello
+    /// gave, `None` when the carrier was served without one.
     Peer { device: Option<String> },
 }
 

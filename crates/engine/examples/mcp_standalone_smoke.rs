@@ -20,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
     std::fs::write(dir.path().join("device-id"), "smoke-device")?;
     let registry = HarnessRegistry::new();
     registry.register(Arc::new(SmokeHarness));
-    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Codex, None)?;
+    let core = EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Codex)?;
     core.workspace.create_space(
         "smoke-project",
         "smoke-device",

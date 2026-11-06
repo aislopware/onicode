@@ -595,9 +595,8 @@ pub struct RunRequest {
     /// no Onicode tools; title runs never carry it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp: Option<McpServer>,
-    /// Host-resolved environment for the spawned agent process (credential
-    /// broker secrets on a Cloud device: `CODEX_HOME`, `GH_TOKEN`,
-    /// `ANTHROPIC_API_KEY`, …). Filled by the HOST right before the request
+    /// Host-resolved environment for the spawned agent process (an added
+    /// agent's own keys, `CODEX_HOME`, …). Filled by the HOST right before the request
     /// reaches the harness; every driver applies it to the child it spawns.
     /// `serde(skip)` in BOTH directions: secrets must never ride the command
     /// plane, the session doc, the run journal, or a log line — and a remote

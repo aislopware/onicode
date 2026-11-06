@@ -1,0 +1,14 @@
+[package]
+name = "onicode-desktop-testkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "What the remote-desktop crates' tests measure with: live-test skips, percentiles, process counters, benches, the SoC's media counters and a counting allocator"
+
+[dependencies]
+libc.workspace = true
+
+# The SoC's media and graphics counters over a span (`soc`), read through IOReport.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-foundation.workspace = true

@@ -25,8 +25,7 @@ needs no history, only the latest `ToolCall::Todo` part.
 - `done` is unchanged and stays authoritative for completion.
 - `status` (`pending | inProgress | completed`) is additive and serde-defaulted. It
   is written **only for an in-progress item**, so every other item serializes
-  byte-for-byte as before and old builds, iOS and the TS edge
-  (`edge/src/session-doc`) ignore it. A missing or unrecognised value derives from
+  byte-for-byte as before and old builds ignore it. A missing or unrecognised value derives from
   `done`; an unknown future status never fails the whole tool call.
 - Use `TodoItem::new(text, status)` to keep `done` and `status` consistent and
   `item.status()` to read the effective value.

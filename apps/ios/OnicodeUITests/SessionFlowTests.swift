@@ -182,49 +182,9 @@ final class SessionFlowTests: XCTestCase {
         snapshot(app, "link-opened")
     }
 
-    /// Settings turns notifications on (system prompt), and tapping a
-    /// session notification opens that session. The notification is sent
-    /// from the host (`xcrun simctl push`, same payload as the edge) once the
-    /// test signals it's in the background via /tmp/onicode-push-ready.
-    func testNotificationTapOpensSession() throws {
-        // Needs a host-side sender (see the comment above); skip without one.
-        try XCTSkipUnless(FileManager.default.fileExists(atPath: "/tmp/onicode-push-host"), "no host push sender")
-        let ready = "/tmp/onicode-push-ready"
-        try? FileManager.default.removeItem(atPath: ready)
-        let app = launch()
-        XCTAssertTrue(app.buttons["bottom-settings"].waitForExistence(timeout: 10))
-        app.buttons["bottom-settings"].tap()
-        let toggle = app.switches["toggle-notify:enabled"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        if (toggle.value as? String) != "1" {
-            toggle.tap()
-            let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-            let allow = springboard.buttons["Allow"]
-            if allow.waitForExistence(timeout: 5) { allow.tap() }
-        }
-        XCTAssertTrue(app.switches["toggle-notify:done"].waitForExistence(timeout: 5), "kinds shown once on")
-        snapshot(app, "notification-settings")
-        XCUIDevice.shared.press(.home)
-        FileManager.default.createFile(atPath: ready, contents: Data())
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let banner = springboard.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS 'Run finished'")
-        ).firstMatch
-        guard banner.waitForExistence(timeout: 45) else {
-            throw XCTSkip("no notification delivered (host didn't push)")
-        }
-        banner.tap()
-        XCTAssertTrue(
-            app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Wrangler deploy hygiene'")).firstMatch
-                .waitForExistence(timeout: 10), "tapped session opened")
-        snapshot(app, "notification-opened")
-    }
-
     /// An unknown chat stays on Sessions and reports the failed open.
-    /// `-route` calls the same AppRouter.openSession entry point as a push
-    /// tap, without needing APNs or a host-side sender. This reproduces the
-    /// failed-open path, not the original notification's delivery or
-    /// the sync timing that may have made its chat unavailable.
+    /// `-route` calls the same AppRouter.openSession entry point as any other
+    /// way into a chat.
     func testUnknownChatRouteReturnsToSessions() {
         let chatId = "missing-notification-chat-\(UUID().uuidString)"
         let app = launch(["-route", "chat:\(chatId)"])
@@ -491,7 +451,7 @@ final class SessionFlowTests: XCTestCase {
     }
 
     /// Regression: the model chip read "Claude Code" (the harness) until the
-    /// host's model list came back over the relay.
+    /// host's model list came back over its link.
     func testModelChipNamesAModelAtOnce() {
         let app = launch(["-route", "new"])
         let chip = app.buttons["composer-chip-model"]

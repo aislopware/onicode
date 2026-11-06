@@ -97,7 +97,7 @@ The original 67-unit/six-UI pass did not cover the rapid transitions that expose
 these regressions; the added checks specifically exercise those transitions.
 
 All interaction data is the offline demo dataset. This pass does not claim
-physical-device performance, live host/edge delivery, or attachment transfer
+physical-device performance, live host delivery, or attachment transfer
 coverage beyond the existing protocol tests.
 
 ## Tool-group disclosure motion

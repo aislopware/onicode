@@ -333,13 +333,8 @@ impl Shell {
             .find(|chat| chat.id == chat_id)
             .and_then(|chat| state.space_for_chat(chat))
             .cloned();
-        self.project_icons.render(
-            &self.state,
-            space.as_ref(),
-            self.active_sidebar_pin_profile_key(cx),
-            selected,
-            cx,
-        )
+        self.project_icons
+            .render(&self.state, space.as_ref(), selected, cx)
     }
 }
 
@@ -355,7 +350,6 @@ impl ProjectIcons {
         &self,
         state: &Entity<AppState>,
         space: Option<&onicode_proto::Space>,
-        profile: Option<String>,
         selected: bool,
         cx: &mut Context<V>,
     ) -> AnyElement {
@@ -389,8 +383,8 @@ impl ProjectIcons {
             return monogram(&name, &seed, selected, Theme::of(cx));
         };
         let key = format!(
-            "{:?}:{:?}:{}:{:?}:{}",
-            profile, context.target_device_id, context.cwd, context.checkout_id, name
+            "{:?}:{}:{:?}:{}",
+            context.target_device_id, context.cwd, context.checkout_id, name
         );
         let engine = state.engine().cloned();
         // Don't cache a remote miss before a connection exists.

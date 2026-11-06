@@ -64,11 +64,8 @@ pub fn app_path(app_exe: &Path) -> PathBuf {
 pub struct LaunchConfig {
     pub data_dir: PathBuf,
     pub ipc_port: u16,
-    pub edge_url: String,
-    /// `None` selects development auth.
-    pub workos_client_id: Option<String>,
-    pub edge_token: Option<String>,
-    pub org_id: Option<String>,
+    /// The release feed the engine's updater reads; empty leaves it off.
+    pub update_feed: String,
 }
 
 /// Start the background engine for `config`, detached from the app: its
@@ -81,19 +78,7 @@ pub fn launch(config: &LaunchConfig, app_exe: &Path) -> std::io::Result<Child> {
         .env(APP_ENV, app_path(app_exe))
         .env("ONICODE_DATA_DIR", &config.data_dir)
         .env("ONICODE_IPC_PORT", config.ipc_port.to_string())
-        .env("ONICODE_EDGE_URL", &config.edge_url)
-        // Empty selects development auth, exactly as `None` does in-process.
-        .env(
-            "ONICODE_WORKOS_CLIENT_ID",
-            config.workos_client_id.as_deref().unwrap_or(""),
-        );
-    match &config.edge_token {
-        Some(token) => command.env("ONICODE_EDGE_TOKEN", token),
-        None => command.env_remove("ONICODE_EDGE_TOKEN"),
-    };
-    if let Some(org) = &config.org_id {
-        command.env("ONICODE_ORG_ID", org);
-    }
+        .env("ONICODE_UPDATE_FEED", &config.update_feed);
     spawn_detached(&mut command)
 }
 

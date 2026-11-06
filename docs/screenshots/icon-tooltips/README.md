@@ -14,9 +14,9 @@ window with `render_to_image`. Images are uncropped; the PNGs were re-deflated
 losslessly.
 
 Everything shown is synthetic: the `fieldnotes` project and its edits, the
-session, the "Studio Mac" device, the account "Ana", and the "Ridge at dawn"
-background. The model catalog, pull requests, Billing and Cloud come from faked
-engine replies; nothing reached GitHub, Stripe or an account. The voice error is
+session, the "Studio Mac" device and the "Ridge at dawn" background. The model
+catalog and pull requests come from faked engine replies; nothing reached
+GitHub. The voice error is
 the app's own message: the start failed before any audio device opened.
 
 | File | Button | Tooltip |
@@ -38,10 +38,6 @@ the app's own message: the start failed before any audio device opened.
 | `background-close.png` | × on Adjust background | Close |
 | `background-zoom-out.png` | − beside the zoom slider | Zoom out |
 | `background-zoom-in.png` | + beside the zoom slider | Zoom in |
-| `billing-fewer-packs.png` | − on the extra-credit packs | Fewer packs |
-| `billing-more-packs.png` | + on the extra-credit packs | More packs |
-| `cloud-repositories-refresh.png` | Refresh beside Choose on GitHub | Check repositories again |
-| `cloud-copy-code.png` | GitHub device-code chip | Copy code |
 | `providers-refresh.png` | Refresh beside the device menu | Check for agents and updates |
 | `action-icon.png` | An icon choice in Add action | Test |
 | `section-dialog-close.png` | × on New section | Close |

@@ -30,16 +30,12 @@ fn native_subagents_error(error: onicode_rpc::RpcError) -> String {
 
 impl HarnessesPage {
     /// Read the target device's native subagent preferences, or with `set`
-    /// switch one agent's. Cloud has none: its machines use the defaults.
+    /// switch one agent's.
     pub(super) fn request_native_subagents(
         &mut self,
         set: Option<(HarnessId, bool)>,
         cx: &mut Context<Self>,
     ) {
-        if self.targets_cloud() {
-            self.native_subagents = Loadable::Idle;
-            return;
-        }
         let Some(engine) = self.state.read(cx).engine().cloned() else {
             return;
         };
@@ -119,7 +115,7 @@ impl HarnessesPage {
 
     /// What `harness`'s Delegation row shows: whether the switch reads on,
     /// whether it can be flipped, and its line. `None` hides the section:
-    /// not loaded yet, Cloud, or an agent whose native subagents can't be
+    /// not loaded yet, or an agent whose native subagents can't be
     /// switched ([`onicode_harness::switches_native_subagents`]).
     fn native_subagents_row(&self, harness: HarnessId) -> Option<(bool, bool, String)> {
         match &self.native_subagents {

@@ -72,7 +72,7 @@ final class NativeVoiceMedia: VoiceMediaListener {
     }
 
     func muteLocally(_ muted: Bool) {
-        // UI mute never waits for the Rust control queue or the relay.
+        // UI mute never waits for the Rust control queue or the host.
         guard !closed, activated else { return }
         try? peer.setMuted(muted)
     }

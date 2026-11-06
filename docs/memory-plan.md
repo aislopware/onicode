@@ -105,7 +105,7 @@ viewer-laptop steady state ≈ gpui baseline + selected chat ≈ 150–250MB, fl
   `HighlightStore` to viewport±K rows (today they grow with every row ever
   scrolled past, freed only on chat switch).
 - **Shallow snapshots** (deferred, correctness-sensitive): client-side trim to
-  the edge's compaction frontier would cut in-memory doc 2.5–4× → ~1×; needs
+  the host's compaction frontier would cut in-memory doc 2.5–4× → ~1×; needs
   the stale-peer story (`room.rs:132` gives up rather than rebuilding).
 - **Tail-first cold open** (`materialize_tail` exists unwired,
   `schema.rs:738`): paint last-64 for never-opened remote chats while the doc

@@ -188,8 +188,8 @@ struct RunHandle {
     /// has claimed it since: if the shutdown is what ends it, the next boot
     /// picks it back up (see [`Inner::mark_shutdown_cut`]).
     shutdown_cut: std::sync::atomic::AtomicBool,
-    /// The credential the run started with (a Cloud device's broker; `None`
-    /// elsewhere): a parked session whose account has since changed is
+    /// The credential the run started with (the account environment's; `None`
+    /// when unknown): a parked session whose account has since changed is
     /// replaced before its next turn.
     credential: Option<String>,
     /// The CLI binary the runtime was launched from ([`binary_identity`]): a
@@ -250,9 +250,6 @@ struct Inner {
     device_id: String,
     /// The engine is shutting down: dying runs re-dispatch nothing.
     shutting_down: std::sync::atomic::AtomicBool,
-    /// A shutdown marks the turns it cuts off for pick-up on the next boot
-    /// (cleared by [`SessionsEngine::forgo_revival`]).
-    revive_after_shutdown: std::sync::atomic::AtomicBool,
     /// Per chat: the recovery re-dispatch on its way (see
     /// [`SessionsEngine::recover_stale`]), claimed by its message's dispatch.
     revivals: Mutex<HashMap<String, Revival>>,
@@ -339,7 +336,6 @@ impl SessionsEngine {
                 voice: crate::voice::VoiceManager::default(),
                 device_id,
                 shutting_down: std::sync::atomic::AtomicBool::new(false),
-                revive_after_shutdown: std::sync::atomic::AtomicBool::new(true),
                 revivals: Mutex::new(HashMap::new()),
                 cancelled_sends: Mutex::new(HashMap::new()),
                 user_stops: Mutex::new(HashMap::new()),
@@ -584,8 +580,7 @@ impl SessionsEngine {
         })?
     }
 
-    /// How many chats have a turn in flight (the Cloud runner heartbeat's
-    /// `activeRuns`).
+    /// How many chats have a turn in flight.
     pub fn active_count(&self) -> usize {
         lock(&self.inner.statuses)
             .values()
@@ -881,7 +876,7 @@ impl SessionsEngine {
                     Err(EngineError::Other("incompatible live runtime".into()))
                 };
             }
-            // A parked session started with another account (Cloud), from a
+            // A parked session started with another account, from a
             // CLI binary since updated, or with native subagents since
             // switched: replace it.
             let route = if self
@@ -1258,8 +1253,8 @@ impl SessionsEngine {
     }
 
     /// Whether a session parked between turns started with a credential other
-    /// than the one a run would use now (the Cloud account was switched, or
-    /// its token rotated). Never mid-turn or with background work still
+    /// than the one a run would use now (the account was switched, or its
+    /// token rotated). Never mid-turn or with background work still
     /// running, and never on an unknown credential.
     async fn credential_changed(
         &self,
@@ -1945,16 +1940,12 @@ impl SessionsEngine {
             .shutting_down
             .store(true, std::sync::atomic::Ordering::Release);
         self.inner.voice.retire();
-        if self
-            .inner
-            .revive_after_shutdown
-            .load(std::sync::atomic::Ordering::Acquire)
+        let working: Vec<String> = lock(&self.inner.statuses)
+            .values()
+            .filter(|session| session.status == SessionStatus::Working)
+            .map(|session| session.chat_id.clone())
+            .collect();
         {
-            let working: Vec<String> = lock(&self.inner.statuses)
-                .values()
-                .filter(|session| session.status == SessionStatus::Working)
-                .map(|session| session.chat_id.clone())
-                .collect();
             let runs = lock(&self.inner.runs);
             for chat_id in working {
                 if let Some(run) = runs
@@ -1965,17 +1956,6 @@ impl SessionsEngine {
                         .store(true, std::sync::atomic::Ordering::Release);
                 }
             }
-        } else {
-            // A sign-out stops every turn, like the user's Stop. Each is
-            // marked before any is terminated: an engine killed partway
-            // through the loop below must not leave the chats it never
-            // reached reading as crashed (and revived at the next sign-in).
-            let live: Vec<String> = lock(&self.inner.runs).keys().cloned().collect();
-            for chat_id in live {
-                if self.turn_in_flight(&chat_id) {
-                    self.inner.journal.note_user_stop(&chat_id);
-                }
-            }
         }
         let chats: Vec<String> = lock(&self.inner.runs).keys().cloned().collect();
         for chat_id in chats {
@@ -1983,16 +1963,6 @@ impl SessionsEngine {
                 tracing::warn!(chat = %chat_id, error = %err, "shutdown interrupt failed");
             }
         }
-    }
-
-    /// The engine is going down because its account signed out: the turns
-    /// the coming [`Self::shutdown`] cuts off stay ended, rather than
-    /// starting again when the account next signs in. Sign-out is the user
-    /// ending the session, like a Stop.
-    pub fn forgo_revival(&self) {
-        self.inner
-            .revive_after_shutdown
-            .store(false, std::sync::atomic::Ordering::Release);
     }
 
     fn is_live(&self, chat_id: &str, run_id: &str) -> bool {
@@ -2718,11 +2688,7 @@ impl Inner {
     /// End a start retry that will not run (see `dispatch_inner`): its turn
     /// ends interrupted, and is marked for the next boot when it was the
     /// shutdown, not a Stop, that overtook it.
-    fn abandon_retry(&self, chat_id: &str, cut_by_shutdown: bool) {
-        let cut = cut_by_shutdown
-            && self
-                .revive_after_shutdown
-                .load(std::sync::atomic::Ordering::Acquire);
+    fn abandon_retry(&self, chat_id: &str, cut: bool) {
         if cut {
             self.journal.note_shutdown_interrupt(chat_id, now_ms());
         }
@@ -3250,10 +3216,10 @@ fn is_active(session: &Session) -> bool {
 
 // ── subagent docs ───────────────────────────────────────────────────────────
 
-/// The per-subagent doc id: `{chatId}--sub--{suffix}`. Constrained by the
-/// edge's `ID_RE` (`^[A-Za-z0-9_-]{1,128}$` — the same id names the ChatRoom
-/// `chat2/{id}/ws` and the frozen blob `blob/{chatId}/{id}`): a clean, short
-/// tool-use id rides verbatim; anything unclean or over budget hashes.
+/// The per-subagent doc id: `{chatId}--sub--{suffix}`, within
+/// `^[A-Za-z0-9_-]{1,128}$` (doc ids name store rows and peer streams): a
+/// clean, short tool-use id rides verbatim; anything unclean or over budget
+/// hashes.
 pub(crate) fn subagent_doc_id(chat_id: &str, tool_use_id: &str) -> String {
     let clean = tool_use_id
         .chars()
@@ -3397,9 +3363,8 @@ impl SubagentSink {
         self.dirty = false;
     }
 
-    /// Final flush + entry finalize; returns the transcript JSON for the
-    /// frozen blob (entries as the client renders them).
-    fn finish(mut self, device_id: &str, status: MessageStatus) -> Option<String> {
+    /// Final flush + entry finalize.
+    fn finish(mut self, device_id: &str, status: MessageStatus) {
         let rendered = render_parts(&self.folded);
         let finished = match self.entry_index {
             Some(ix) => SegmentWriter::resume(&self.doc, ix, std::mem::take(&mut self.written))
@@ -3415,8 +3380,6 @@ impl SubagentSink {
         if let Err(err) = finished {
             tracing::warn!(doc = %self.doc_id, error = %err, "subagent sink finish failed");
         }
-        let entries = onicode_doc::join_continuation_entries(self.doc.read_entries().ok()?);
-        serde_json::to_string(&entries).ok()
     }
 }
 
@@ -3446,9 +3409,7 @@ fn render_parts(parts: &[MessagePart]) -> Vec<MessagePart> {
                 resolved,
                 output,
                 diff,
-                output_ref,
                 output_bytes,
-                diff_ref,
                 diff_stats,
                 subagent_ref,
                 subagent_status,
@@ -3461,15 +3422,12 @@ fn render_parts(parts: &[MessagePart]) -> Vec<MessagePart> {
                 call: sanitize_tool_call(call),
                 is_error: *is_error,
                 resolved: *resolved,
-                // Output summaries, diff stats, and sidecar refs are
-                // deliberately kept: unlike raw tool inputs they are the
-                // transcript's record of what happened, and the strip already
+                // Output summaries and diff stats are deliberately kept: unlike raw tool inputs
+                // they are the transcript's record of what happened, and the strip already
                 // bounded them (docs/chat2-sync.md A1).
                 output: output.clone(),
                 diff: diff.clone(),
-                output_ref: output_ref.clone(),
                 output_bytes: *output_bytes,
-                diff_ref: diff_ref.clone(),
                 diff_stats: diff_stats.clone(),
                 subagent_ref: subagent_ref.clone(),
                 subagent_status: *subagent_status,
@@ -3728,53 +3686,6 @@ async fn drive_run(
     let mut entry_id = new_id();
     let mut segment_started = now_ms();
     let mut writer: Option<SegmentWriter<'_>> = None;
-    // A Cloud session machine's own setup (started or woke, cloning,
-    // checked out) opens its first answer after it boots, as tool chips
-    // under the message that brought it up, updated live while the clone
-    // runs; the harness starts once the checkout is ready. The entry id is
-    // derived from that message so the sender's placeholder chip (its
-    // optimistic echo) is replaced in place.
-    if crate::runner::setup_pending() {
-        let user_id = resume_state.user_message_id.clone();
-        entry_id = onicode_proto::cloud_setup_entry_id(&user_id);
-        let sent_at = doc_ref.read_entries().ok().and_then(|entries| {
-            entries
-                .iter()
-                .find(|entry| entry.id == user_id)
-                .map(|entry| entry.created_at)
-        });
-        let waited = sent_at.map(|sent| {
-            std::time::Duration::from_millis(now_ms().saturating_sub(sent).max(0) as u64)
-        });
-        let mut changes = crate::runner::watch_setup();
-        loop {
-            let (parts, done) = crate::runner::setup_snapshot(&user_id, waited);
-            folded = parts;
-            if let Err(err) = sync_segment(
-                doc_ref,
-                &mut writer,
-                &entry_id,
-                &device_id,
-                segment_started,
-                &folded,
-            ) {
-                tracing::warn!(chat = %chat_id, error = %err, "cloud setup steps write failed");
-            }
-            if done {
-                break;
-            }
-            tokio::select! {
-                changed = changes.changed() => if changed.is_err() { break },
-                _ = controls.interrupt.cancelled() => break,
-            }
-        }
-        // The turn began at the send, not when this machine got to it:
-        // "Worked for" counts the machine's setup too.
-        if let (Some(writer), Some(sent)) = (writer.as_mut(), sent_at) {
-            writer.count_duration_from(sent);
-        }
-        crate::runner::mark_setup_shown();
-    }
     let prepared = if harness_id == HarnessId::Cursor {
         cursor_unstarted_history(
             &doc,
@@ -3815,7 +3726,7 @@ async fn drive_run(
                     onicode_proto::ORIGIN_ENV.into(),
                     onicode_proto::chat_origin(&chat_id),
                 );
-                // Host-resolved spawn env (a Cloud device's credential broker);
+                // Host-resolved spawn env (an account's credentials);
                 // `RunRequest::env` is serde-skipped, never persisted.
                 match inner
                     .registry
@@ -3892,7 +3803,7 @@ async fn drive_run(
                 || inner
                     .shutting_down
                     .load(std::sync::atomic::Ordering::Acquire);
-            // A Cloud machine's setup chips close here; a retry runs without them.
+            // The open segment closes here; a retry runs without it.
             if writer.is_some()
                 && let Err(err) = finish_segment(
                     doc_ref,
@@ -4565,24 +4476,8 @@ async fn drive_run(
                     };
                     let sink = subagents.remove(parent_tool_use_id).expect("checked");
                     inner.set_running_subagents(&chat_id, subagents.len());
-                    let doc_id = sink.doc_id.clone();
-                    // FREEZE: the finished transcript uploads as a static R2
-                    // blob (`blob/{chatId}/{subDocId}`) so viewers of
-                    // finished subagents never wake the doc's room; dropping
-                    // the sink unpins the doc for the LRU and the room
-                    // idles. The live doc remains the fallback.
-                    if let Some(json) = sink.finish(&device_id, status)
-                        && let Some(host) = inner.doc_host()
-                    {
-                        host.upload_tool_sidecar(
-                            &chat_id,
-                            onicode_doc::SidecarPayload {
-                                part_id: doc_id,
-                                output: Some(json),
-                                diff: None,
-                            },
-                        );
-                    }
+                    // Dropping the finished sink unpins the doc for the LRU.
+                    sink.finish(&device_id, status);
                 }
             }
             continue;
@@ -4968,13 +4863,9 @@ async fn drive_run(
         // background re-invocations) must not wipe the segment being written.
         let skip_fold = matches!(&event, AgentEvent::SessionStarted { .. }) && !folded.is_empty();
         if !skip_fold {
+            // The fold's summary/stats are the doc's whole record; full
+            // outputs live only in the host's run journal (`ReadToolOutput`).
             fold_event_into_parts(&mut folded, &event);
-            // R2 sidecar PARKED (2026-08-10, product call): the fold's
-            // summary/stats ARE the doc's whole record — no refs stamped, no
-            // uploads. Full outputs survive only in the host's local run
-            // journal. To reintroduce: `onicode_doc::sidecar_payload(&event)`
-            // → `apply_sidecar_refs` → `doc_host.upload_tool_sidecar`, all
-            // still in place and tested.
         }
 
         if let AgentEvent::Done { status, .. } = &event {
@@ -5125,20 +5016,8 @@ async fn drive_run(
     // Any subagent still streaming when the run ends freezes as-is: the
     // parent process is gone, so nothing more can arrive on this stream.
     for (parent_id, sink) in subagents.drain() {
-        let doc_id = sink.doc_id.clone();
         let _ = doc_ref.update_subagent_chip(&parent_id, None, Some("failed"), None);
-        if let Some(json) = sink.finish(&device_id, MessageStatus::Aborted)
-            && let Some(host) = inner.doc_host()
-        {
-            host.upload_tool_sidecar(
-                &chat_id,
-                onicode_doc::SidecarPayload {
-                    part_id: doc_id,
-                    output: Some(json),
-                    diff: None,
-                },
-            );
-        }
+        sink.finish(&device_id, MessageStatus::Aborted);
     }
     inner.set_running_subagents(&chat_id, 0);
     // The runtime is gone, and its background processes with it.
@@ -5651,7 +5530,6 @@ mod tests {
             crate::EngineProfile::local(temp.path()).unwrap(),
             Arc::new(registry),
             HarnessId::Codex,
-            None,
         )
         .unwrap();
         core.workspace
@@ -5839,7 +5717,6 @@ mod tests {
             crate::doc_host::DocHostConfig {
                 device_id: "dev-test".into(),
                 default_harness: HarnessId::Mock,
-                edge: None,
             },
         );
         let handle = host.open("chat-sub-flush--sub--t1").unwrap();
@@ -5923,8 +5800,7 @@ mod tests {
         }));
         let dir = tempfile::tempdir().unwrap();
         let core =
-            crate::EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock, None)
-                .unwrap();
+            crate::EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock).unwrap();
         let chat = "chat-sink-spin";
         core.sessions
             .dispatch(chat, HarnessId::Mock, request(), None)
@@ -5996,8 +5872,7 @@ mod tests {
         }));
         let dir = tempfile::tempdir().unwrap();
         let core =
-            crate::EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock, None)
-                .unwrap();
+            crate::EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock).unwrap();
         let chat = "chat-lanes";
         core.sessions
             .dispatch(chat, HarnessId::Mock, request(), None)

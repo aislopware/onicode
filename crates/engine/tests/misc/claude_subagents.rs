@@ -46,10 +46,9 @@ fn assemble(dir: &Path) -> (EngineCore, EngineProfile) {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../harness/tests/fixtures/fake-claude.sh");
     let registry = Arc::new(HarnessRegistry::new());
     registry.register(Arc::new(ClaudeHarness::new().with_executable(fixture)));
-    let profile = EngineProfile::development(dir, "test-org", "test-user");
-    let core =
-        EngineCore::assemble_with_profile(profile.clone(), registry, HarnessId::ClaudeCode, None)
-            .unwrap();
+    let profile = EngineProfile::local(dir).unwrap();
+    let core = EngineCore::assemble_with_profile(profile.clone(), registry, HarnessId::ClaudeCode)
+        .unwrap();
     (core, profile)
 }
 

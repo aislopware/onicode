@@ -8,7 +8,7 @@
 //! `{uploads_root}/{id8}-{name}` and returns the absolute path, which the
 //! composer appends to the prompt so the agent can read the file from disk.
 //! Attachments live only on the host device — every read proxies through the
-//! owning device via `ReadAttachmentChunk`; nothing is mirrored to the edge.
+//! owning device via `ReadAttachmentChunk`; nothing is mirrored elsewhere.
 //!
 //! `read_chunk` serves attachments back in 45KB base64 chunks. Path jail:
 //! only files under the uploads dir or a workspace-known chat cwd are readable
@@ -103,10 +103,6 @@ struct UploadsInner {
     dir: PathBuf,
     /// Chunk staging (`{uploads_root}/tmp/{uploadId}/`).
     tmp: PathBuf,
-    /// Historical roots accepted for reads only. Writes and staging never use
-    /// them. RwLock: a local-profile import adds its source root at runtime so
-    /// imported transcripts resolve without an engine restart.
-    read_only_roots: std::sync::RwLock<Vec<PathBuf>>,
 }
 
 #[derive(Clone)]
@@ -122,21 +118,10 @@ impl Uploads {
 
     /// Use an already-resolved profile uploads directory.
     pub fn from_root(dir: &Path) -> Self {
-        Self::from_root_with_fallback(dir, None)
-    }
-
-    /// Use a profile root for all writes and an optional legacy read-only root.
-    pub fn from_root_with_fallback(dir: &Path, legacy_read_root: Option<&Path>) -> Self {
         Self {
             inner: Arc::new(UploadsInner {
                 tmp: dir.join("tmp"),
                 dir: dir.to_path_buf(),
-                read_only_roots: std::sync::RwLock::new(
-                    legacy_read_root
-                        .into_iter()
-                        .map(Path::to_path_buf)
-                        .collect(),
-                ),
             }),
         }
     }
@@ -144,20 +129,6 @@ impl Uploads {
     /// The durable uploads dir (a path-jail root).
     pub fn dir(&self) -> &Path {
         &self.inner.dir
-    }
-
-    /// Accept `root` for reads from now on (idempotent). Profile import calls
-    /// this so transcripts that embed absolute paths under the local profile's
-    /// uploads root keep resolving after the switch to a synced profile.
-    pub fn add_read_only_root(&self, root: &Path) {
-        let mut roots = self
-            .inner
-            .read_only_roots
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !roots.iter().any(|r| r == root) {
-            roots.push(root.to_path_buf());
-        }
     }
 
     /// Stage one base64 chunk. Positional (`seq`) writes are IDEMPOTENT: a client
@@ -335,14 +306,7 @@ impl Uploads {
         } else {
             path
         };
-        let read_roots = self
-            .inner
-            .read_only_roots
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
         let roots: Vec<&Path> = std::iter::once(self.inner.dir.as_path())
-            .chain(read_roots.iter().map(PathBuf::as_path))
             .chain(extra_roots.iter().map(PathBuf::as_path))
             .collect();
         let resolved = jail(path, &roots).ok_or_else(outside)?;

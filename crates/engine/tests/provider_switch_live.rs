@@ -117,7 +117,6 @@ async fn a_conversation_moves_from_claude_to_codex_and_back_keeping_its_context(
         data.path(),
         std::sync::Arc::new(default_registry()),
         HarnessId::ClaudeCode,
-        None,
     )
     .unwrap();
     core.workspace

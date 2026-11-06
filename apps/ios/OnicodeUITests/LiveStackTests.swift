@@ -1,22 +1,20 @@
 import XCTest
 
-/// Against a real stack: `wrangler dev` edge (AUTH_MODE=dev) + a headless
-/// engine running the mock harness, both as alice@org1. Skipped unless
-/// `TEST_RUNNER_ONICODE_LIVE_EDGE=http://localhost:<port>` is set:
+/// Against a real engine: a headless engine running the mock harness on a
+/// computer on this Mac's tailnet, reached by its tailnet name or address.
+/// Skipped unless `TEST_RUNNER_ONICODE_LIVE_ENGINE=<host>` is set:
 ///
-///   (cd edge && npx wrangler dev --port 27650 --var AUTH_MODE:dev) &
-///   ONICODE_DATA_DIR=/tmp/e ONICODE_IPC_PORT=27811 ONICODE_EDGE_URL=http://localhost:27650 \
-///     ONICODE_EDGE_TOKEN=alice@org1 ONICODE_ORG_ID=org1 ONICODE_HARNESS=mock onicode headless &
-///   TEST_RUNNER_ONICODE_LIVE_EDGE=http://localhost:27650 xcodebuild test \
+///   ONICODE_DATA_DIR=/tmp/e ONICODE_HARNESS=mock onicode headless &
+///   TEST_RUNNER_ONICODE_LIVE_ENGINE=studio xcodebuild test \
 ///     -only-testing:OnicodeUITests/LiveStackTests …
 final class LiveStackTests: XCTestCase {
     func testSendRoundTripsThroughRealEngine() throws {
-        let edge = try XCTUnwrap(
-            ProcessInfo.processInfo.environment["ONICODE_LIVE_EDGE"], "set TEST_RUNNER_ONICODE_LIVE_EDGE")
+        let engine = try XCTUnwrap(
+            ProcessInfo.processInfo.environment["ONICODE_LIVE_ENGINE"], "set TEST_RUNNER_ONICODE_LIVE_ENGINE")
         let app = XCUIApplication()
         // The draft's harness wins over the engine's ONICODE_HARNESS default:
         // pin the mock so the test never starts a real agent.
-        app.launchArguments = ["-signedout", "-dev", "alice", "org1", "-edge", edge, "-harness", "mock"]
+        app.launchArguments = ["-engines", engine, "-harness", "mock"]
         app.launch()
 
         let accessory = app.buttons["new-session"]
@@ -28,7 +26,7 @@ final class LiveStackTests: XCTestCase {
         app.buttons["composer-send"].tap()
 
         // The engine adopts the command (echo keeps its id) and the mock
-        // harness replies through the chat2 room.
+        // harness replies through the chat's room on the peer link.
         let echo = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'You: hello from the phone'"))
             .firstMatch
         XCTAssertTrue(echo.waitForExistence(timeout: 10))

@@ -12,12 +12,8 @@
 //!   devices' workspace session rows
 //! - `Mutate {op, …}` → `{ok}` — workspace entity mutations (createChat, renameChat,
 //!   setChatArchived, deleteChat, renameDevice, markChatSeen)
-//! - `EngineInfo` → `{deviceId, workspaceScope}` — this runtime's fixed identity and data boundary
-//!   (never forwarded)
+//! - `EngineInfo` → `{deviceId, …}` — this runtime's fixed identity (never forwarded)
 //! - `LocalDevice` → `{deviceId}` — legacy engine identity (never forwarded)
-//! - AuthRpc (feature-inventory §2): `AuthStatus` (stream), `SignIn`/`SignInHeadless` → `{url}`,
-//!   `CompleteSignIn {code}`, `SignOut`, `ListOrgs`, `CreateOrg {name}`, `SelectOrg
-//!   {organizationId}`
 //! - Repos (§3.5): `ListRepos`, `AddRepo {path}`, `CloneRepo {url}`, `CreateRepo {name}`,
 //!   `ListBranches {repoPath}` (default branch first), `ListFolders {path?}`, `CreateWorktree
 //!   {repoPath, branch}`, `DeleteWorktree {repoPath, worktreePath}`; `WatchCheckoutDiffs` → stream
@@ -26,8 +22,7 @@
 //!   hash-guarded writes, and a checkout-scoped filesystem change stream.
 //! - Terminals (§3.4): `OpenTerminal {chatId, cols, rows, cwd?}` → `TerminalSession`,
 //!   `SubscribeTerminal {terminalId, afterSeq?}` → stream of `TerminalEvent` (replay then live
-//!   tail), `WriteTerminal {terminalId, data}`, `ResizeTerminal`, `CloseTerminal`. M5 is
-//!   single-user local: per-user owner checks land with real multi-account auth in M6.
+//!   tail), `WriteTerminal {terminalId, data}`, `ResizeTerminal`, `CloseTerminal`.
 //! - Agent accounts (§3.7): `ListAgentAccounts {forceUsage?}` → `AgentAccountsSnapshot`,
 //!   `ActivateAgentAccount`/`ForgetAgentAccount` `{harness, accountId}` → snapshot,
 //!   `StartAgentLogin {harness}` → `{loginId, url, mode}`, `CompleteAgentLogin {loginId, code}` →
@@ -45,7 +40,7 @@
 //!
 //! ## Device-addressed routing (`targetDeviceId`, feature-inventory §2.1)
 //!
-//! ControlRpc methods are relay-forwardable: params may carry `targetDeviceId`. When it
+//! ControlRpc methods are forwardable: params may carry `targetDeviceId`. When it
 //! names another device, the call is forwarded verbatim over that device's tailnet link
 //! ([`onicode_peer::PeerLinks`]): the remote engine sees its own id and handles locally, so
 //! the forward can never loop. Streaming methods are proxied by re-subscribing remotely and
@@ -67,14 +62,13 @@ use futures::stream::BoxStream;
 use onicode_doc::{MessagePart, SessionCommandPayload};
 use onicode_proto::{
     AgentEvent, ChatConfig, CreateWorktreeOutcome, EngineInfo, HarnessId, HarnessUpdatePolicy,
-    ProjectActionDraft, Space, ToolCall, WorkspaceScope,
+    ProjectActionDraft, Space, ToolCall,
 };
 use onicode_rpc::{RpcError, RpcReply, RpcService, capability_errors, methods, parse_params};
 use serde::Deserialize;
 use tokio::sync::watch;
 
 use crate::agent_accounts::AgentAccounts;
-use crate::auth::Auth;
 use crate::change_requests::CheckoutChangeRequests;
 use crate::diff_sync::CheckoutDiffSync;
 use crate::doc_host::DocHost;
@@ -653,22 +647,6 @@ fn decode_visual_assets(
     Ok(out)
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct FetchToolBlobParams {
-    /// Doc-resident sidecar ref (`{chatId}/{partId}` or `…​.diff`).
-    blob_ref: String,
-}
-
-/// Where a Cloud chat runs: its session device and that machine's checkout.
-struct CloudHost {
-    device_id: String,
-    cwd: Option<String>,
-    /// The edge wrote the chat's row (a delegate started from a Cloud
-    /// machine, which may only write rows it hosts).
-    row_written: bool,
-}
-
 /// The Mutate surface (feature-inventory §2 DataRpc), tagged by `op`.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase")]
@@ -702,10 +680,6 @@ enum MutateParams {
         /// unknown kind reads as none (a side chat).
         #[serde(default, deserialize_with = "onicode_proto::lenient_child_kind")]
         child_kind: Option<onicode_proto::ChildKind>,
-        /// Run on Cloud (the checkout picker's Cloud): the chat gets its own
-        /// Cloud machine, cloning the project's GitHub repository.
-        #[serde(default)]
-        cloud: bool,
     },
     /// Create a space (device + folder pair). Idempotent by id; a live
     /// duplicate `(deviceId, path)` no-ops. `gitDetected` is seeded from the
@@ -719,11 +693,6 @@ enum MutateParams {
         name: Option<String>,
         #[serde(default)]
         git_detected: bool,
-        /// A Cloud project (`deviceId` the logical Cloud device): the GitHub
-        /// repository (`owner/name`) its sessions clone. Ignored elsewhere —
-        /// a device stamps its own folders.
-        #[serde(default)]
-        github_repo: Option<String>,
     },
     /// LWW display-name set; `name: None` clears back to basename(path).
     #[serde(rename_all = "camelCase")]
@@ -814,13 +783,9 @@ pub struct EngineRpc {
     diff_sync: CheckoutDiffSync,
     uploads: Uploads,
     agent_accounts: AgentAccounts,
-    auth: Option<Auth>,
     links: Option<std::sync::Arc<onicode_peer::PeerLinks>>,
     updater: Option<onicode_update::Updater>,
     harness_updates: Option<crate::harness_updates::HarnessUpdateCoordinator>,
-    local_import: Option<crate::local_import::LocalImporter>,
-    /// Cloud runner only: vault grants (ListGithubRepos, credentialed CloneRepo).
-    credentials: Option<crate::credentials::CredentialBroker>,
     /// Viewports' window focus, for desktop banners.
     viewport_focus: crate::desktop_notify::ViewportFocus,
     engine_info: EngineInfo,
@@ -841,12 +806,10 @@ impl EngineRpc {
         diff_sync: CheckoutDiffSync,
         uploads: Uploads,
         agent_accounts: AgentAccounts,
-        workspace_scope: WorkspaceScope,
     ) -> Self {
         sessions.track_terminal_activity(terminals.clone(), workspace.clone());
         let engine_info = EngineInfo {
             device_id: doc_host.device_id().to_string(),
-            workspace_scope,
             cursor_sdk_version: Some(onicode_harness::CursorHarness::sdk_version().into()),
             capabilities: {
                 let mut capabilities = onicode_proto::capabilities::current();
@@ -876,12 +839,9 @@ impl EngineRpc {
             diff_sync,
             uploads,
             agent_accounts,
-            auth: None,
             links: None,
             updater: None,
             harness_updates: None,
-            local_import: None,
-            credentials: None,
             viewport_focus: Default::default(),
             engine_info,
         }
@@ -901,13 +861,7 @@ impl EngineRpc {
         self
     }
 
-    /// Attach the auth service (AuthStatus + AuthRpc mutations).
-    pub fn with_auth(mut self, auth: Auth) -> Self {
-        self.auth = Some(auth);
-        self
-    }
-
-    /// Attach the peer link cache — enables `targetDeviceId` relay forwarding.
+    /// Attach the peer links — enables `targetDeviceId` forwarding.
     pub fn with_links(mut self, links: std::sync::Arc<onicode_peer::PeerLinks>) -> Self {
         self.links = Some(links);
         self
@@ -933,58 +887,14 @@ impl EngineRpc {
         self
     }
 
-    /// Attach the local→synced profile importer (synced runtimes only).
-    pub fn with_local_import(mut self, importer: crate::local_import::LocalImporter) -> Self {
-        self.local_import = Some(importer);
-        self
-    }
-
     #[cfg(test)]
     pub(crate) fn with_github(mut self, github: GitHubCli) -> Self {
         self.github = github;
         self
     }
 
-    /// Attach the Cloud runner's credential broker.
-    pub fn with_credentials(mut self, broker: crate::credentials::CredentialBroker) -> Self {
-        self.credentials = Some(broker);
-        self
-    }
-
-    fn auth(&self) -> Result<&Auth, RpcError> {
-        self.auth
-            .as_ref()
-            .ok_or_else(|| RpcError::Failed("auth unavailable".into()))
-    }
-
-    /// The edge client the IPC-only Cloud / vault methods act through, as the
-    /// signed-in user of this runtime's organization — or the unavailable
-    /// stand-in (local profile, development without an edge, signed out, no
-    /// organization), which answers without any network call.
-    fn cloud(&self) -> crate::cloud_client::CloudClient {
-        use crate::cloud_client::CloudClient;
-        if self.engine_info.workspace_scope == WorkspaceScope::Local {
-            return CloudClient::unavailable();
-        }
-        let Some(edge) = self.workspace.edge() else {
-            return CloudClient::unavailable();
-        };
-        let org_id = match &self.auth {
-            Some(auth) if auth.workos_enabled() => match auth.state() {
-                crate::auth::AuthState::SignedIn {
-                    org_id: Some(org_id),
-                    ..
-                } => org_id,
-                _ => return CloudClient::unavailable(),
-            },
-            // Development bearer: the profile's org scopes every room.
-            _ => self.workspace.org_id().to_string(),
-        };
-        CloudClient::new(edge.url.clone(), org_id, edge.token.clone())
-    }
-
     /// Whether the engine hosting `chat_id` can switch its provider: this one
-    /// can; a peer (a Cloud machine included) says so on its device row.
+    /// can; a peer says so on its device row.
     fn host_switches_providers(&self, chat_id: &str) -> bool {
         let Some(device_id) = self
             .workspace
@@ -1004,261 +914,6 @@ impl EngineRpc {
             })
     }
 
-    /// A deleted Cloud chat takes its machine with it (and whatever is
-    /// uncommitted there): otherwise the sandbox outlives every way to reach
-    /// it. Best-effort and in the background — the chat is already gone. A
-    /// chat with no machine of its own (a side chat in its parent's) has no
-    /// session to delete, and the edge says so.
-    fn delete_cloud_machines(&self, chat_ids: Vec<String>) {
-        if chat_ids.is_empty() {
-            return;
-        }
-        let cloud = self.cloud();
-        tokio::spawn(async move {
-            for chat_id in chat_ids {
-                match cloud.delete_session(&chat_id).await {
-                    Ok(_) => tracing::info!(chat = %chat_id, "deleted chat's Cloud machine"),
-                    Err(err) => {
-                        tracing::warn!(chat = %chat_id, error = %err, "Cloud machine not deleted")
-                    }
-                }
-            }
-        });
-    }
-
-    /// The logical Cloud device (no engine; the edge writes its row with the
-    /// `cloud-account` capability), as opposed to a session's device.
-    fn is_cloud_account_device(&self, device_id: &str) -> bool {
-        if crate::cloud_accounts::is_cloud_accounts_target(device_id) {
-            return true;
-        }
-        self.workspace.read_devices().is_ok_and(|devices| {
-            devices.iter().any(|d| {
-                d.id == device_id
-                    && d.capabilities
-                        .iter()
-                        .any(|c| c == onicode_proto::CLOUD_ACCOUNT_CAPABILITY)
-            })
-        })
-    }
-
-    /// Requests aimed at a Cloud device that this engine answers itself:
-    /// harness and model catalogs come from this engine's own catalog
-    /// restricted to Cloud's harnesses (every session machine has both CLIs),
-    /// so opening a composer never dials — let alone wakes — a sandbox. The
-    /// logical Cloud device has no engine: its skill/command catalogs are the
-    /// global ones, and anything else fails fast. `None` = forward as usual.
-    async fn answer_for_cloud(
-        &self,
-        target: &str,
-        method: &str,
-        params: &serde_json::Value,
-    ) -> Option<Result<RpcReply, RpcError>> {
-        let account = self.is_cloud_account_device(target);
-        let local = |drop: &[&str]| {
-            let mut params = params.clone();
-            if let Some(map) = params.as_object_mut() {
-                for key in ["targetDeviceId"].iter().chain(drop) {
-                    map.remove(*key);
-                }
-            }
-            params
-        };
-        match method {
-            methods::LIST_HARNESSES => {
-                // Enabled = Cloud has an account to run it with (unknown
-                // while the vault can't be read: then every one is).
-                let ready = crate::cloud_accounts::ready_harnesses(&self.cloud()).await;
-                let descriptors: Vec<_> = self
-                    .registry
-                    .descriptors()
-                    .into_iter()
-                    .filter(|d| crate::registry::CLOUD_HARNESS_IDS.contains(&d.id))
-                    .map(|mut d| {
-                        d.installed = true;
-                        d.enabled = Some(ready.as_ref().is_none_or(|ready| ready.contains(&d.id)));
-                        d
-                    })
-                    .collect();
-                Some(RpcReply::value(&descriptors))
-            }
-            methods::LIST_MODELS => {
-                let p: ListModelsParams = match parse_params(local(&[])) {
-                    Ok(p) => p,
-                    Err(e) => return Some(Err(e)),
-                };
-                if !crate::registry::CLOUD_HARNESS_IDS.contains(&p.harness) {
-                    return Some(Err(RpcError::Failed(
-                        "Cloud runs Codex and Claude Code only".into(),
-                    )));
-                }
-                Some(self.handle(method, local(&[])).await)
-            }
-            methods::LIST_SKILLS | methods::LIST_COMMANDS if account => Some(
-                self.handle(method, local(&["chatId", "spaceId", "path"]))
-                    .await,
-            ),
-            _ if account => Some(Err(RpcError::Failed(
-                crate::cloud_client::ACCOUNT_DEVICE_HAS_NO_ENGINE.into(),
-            ))),
-            _ => None,
-        }
-    }
-
-    /// `ListCloudBranches {repo, defaultBranch?}`: the branches a Cloud
-    /// session of `repo` can start from — GitHub's, through the user's
-    /// connection — the default first and marked current.
-    async fn cloud_branches(&self, params: serde_json::Value) -> Result<RpcReply, RpcError> {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct P {
-            repo: String,
-            #[serde(default)]
-            default_branch: Option<String>,
-        }
-        let p: P = parse_params(params)?;
-        let mut names = self
-            .cloud()
-            .github_branches(&p.repo)
-            .await
-            .map_err(|e| RpcError::Failed(e.to_string()))?;
-        if let Some(default) = &p.default_branch {
-            names.sort_by_key(|name| name != default);
-            if !names.contains(default) {
-                names.insert(0, default.clone());
-            }
-        }
-        let refs: Vec<onicode_proto::RepoRef> = names
-            .into_iter()
-            .map(|name| onicode_proto::RepoRef {
-                current: p.default_branch.as_deref() == Some(name.as_str()),
-                name,
-                worktree_path: None,
-            })
-            .collect();
-        RpcReply::value(&refs)
-    }
-
-    /// Where a chat runs when it runs on Cloud: its own new session machine
-    /// (minted by the edge, idempotent per chat) cloning the project's GitHub
-    /// repository — or, for a side chat whose parent runs on a session
-    /// machine, that same machine (they share files). `None` = not Cloud;
-    /// create normally.
-    async fn cloud_chat_host(
-        &self,
-        chat_id: &str,
-        space_id: Option<&str>,
-        parent_chat_id: Option<&str>,
-        branch: Option<&str>,
-        cloud: bool,
-        config: Option<&ChatConfig>,
-    ) -> Result<Option<CloudHost>, RpcError> {
-        let failed = |e: crate::EngineError| RpcError::Failed(e.to_string());
-        let on_cloud = |device_id: &str| device_id.starts_with(onicode_proto::CLOUD_DEVICE_PREFIX);
-        // A side chat of a Cloud chat shares its machine (and files), unless
-        // it asks for a Cloud session of its own.
-        if !cloud
-            && let Some(parent) = parent_chat_id
-            && let Some(parent) = self.workspace.chat(parent).map_err(failed)?
-            && on_cloud(&parent.device_id)
-        {
-            return Ok(Some(CloudHost {
-                device_id: parent.device_id,
-                cwd: parent.cwd,
-                row_written: false,
-            }));
-        }
-        if !cloud {
-            return Ok(None);
-        }
-        if let Some(existing) = self.workspace.chat(chat_id).map_err(failed)?
-            && on_cloud(&existing.device_id)
-        {
-            return Ok(Some(CloudHost {
-                device_id: existing.device_id,
-                cwd: existing.cwd,
-                // A Cloud machine may not write a delegate's row (the edge did).
-                row_written: crate::runner::session().is_some(),
-            }));
-        }
-        // On a Cloud machine: a delegate of the chat this machine runs, on a
-        // machine of its own (the edge clones the parent's repository and
-        // writes the delegate's row — a machine writes only rows it hosts).
-        if let Some(session) = crate::runner::session() {
-            let parent = parent_chat_id.ok_or_else(|| {
-                RpcError::Failed(
-                    "A Cloud machine starts Cloud chats only as children of its chat.".into(),
-                )
-            })?;
-            if parent != session.chat_id {
-                return Err(RpcError::Failed(
-                    "A Cloud machine starts Cloud chats only as children of the chat it runs."
-                        .into(),
-                ));
-            }
-            let started = self
-                .cloud()
-                .create_child_session(chat_id, parent, branch, config)
-                .await
-                .map_err(|e| RpcError::Failed(format!("Couldn't start a Cloud session: {e}")))?;
-            self.await_chat_row(chat_id).await?;
-            return Ok(Some(CloudHost {
-                device_id: started.device_id,
-                cwd: started.path,
-                row_written: true,
-            }));
-        }
-        let space_id =
-            space_id.ok_or_else(|| RpcError::Failed("Cloud sessions run in a project.".into()))?;
-        let space = self
-            .workspace
-            .space(space_id)
-            .map_err(failed)?
-            .ok_or_else(|| RpcError::Failed("That project no longer exists.".into()))?;
-        let full_name = space.github_repo.ok_or_else(|| {
-            RpcError::Failed("This project has no GitHub repository for Cloud to clone.".into())
-        })?;
-        let cloud_client = self.cloud();
-        let repo = cloud_client
-            .github_repos(Some(&full_name))
-            .await
-            .map_err(failed)?
-            .into_iter()
-            .find(|repo| repo.full_name.eq_ignore_ascii_case(&full_name))
-            .ok_or_else(|| {
-                RpcError::Failed(format!(
-                    "Cloud can't reach {full_name} — install the Onicode GitHub App on it in Settings → Cloud."
-                ))
-            })?;
-        let session = cloud_client
-            .create_session(chat_id, space_id, &repo, branch)
-            .await
-            .map_err(|e| RpcError::Failed(format!("Couldn't start a Cloud session: {e}")))?;
-        Ok(Some(CloudHost {
-            device_id: session.device_id,
-            cwd: session.path,
-            row_written: false,
-        }))
-    }
-
-    /// Wait for a chat row written elsewhere (the edge, for a delegate) to
-    /// reach this engine's registry, so what follows — a first prompt, a
-    /// title — finds it.
-    async fn await_chat_row(&self, chat_id: &str) -> Result<(), RpcError> {
-        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
-        loop {
-            if self.workspace.chat(chat_id).ok().flatten().is_some() {
-                return Ok(());
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Err(RpcError::Failed(
-                    "The Cloud session started, but its chat hasn't synced here yet; try again shortly.".into(),
-                ));
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-    }
-
     fn updater(&self) -> Result<&onicode_update::Updater, RpcError> {
         self.updater
             .as_ref()
@@ -1271,12 +926,6 @@ impl EngineRpc {
         self.harness_updates
             .as_ref()
             .ok_or_else(|| RpcError::Failed("agent updates unavailable".into()))
-    }
-
-    fn local_importer(&self) -> Result<&crate::local_import::LocalImporter, RpcError> {
-        self.local_import
-            .as_ref()
-            .ok_or_else(|| RpcError::Failed("local import requires a synced workspace".into()))
     }
 
     fn local_project_action_space(&self, space_id: &str) -> Result<Space, RpcError> {
@@ -1605,7 +1254,7 @@ impl EngineRpc {
         }
     }
 
-    /// Forward a device-addressed call over the target device's relay. On transport
+    /// Forward a device-addressed call over the target device's tailnet link. On transport
     /// failure the cached link is invalidated so the next call re-dials.
     /// Another device's `UpdateStatus`, followed through its restarts: whoever
     /// asked is there to see how an update ends, and updating is what takes that
@@ -1866,22 +1515,19 @@ impl EngineRpc {
                 cwd,
                 parent_chat_id,
                 child_kind,
-                cloud: _,
             } => {
                 // A voice orchestrator is hidden, so the chats it creates are
                 // the user's top-level sessions rather than its side chats.
                 let parent_chat_id = parent_chat_id
                     .filter(|parent| !onicode_proto::voice::is_orchestrator_chat(parent));
                 self.workspace
-                    .create_chat_hosted(
+                    .create_chat_of_kind(
                         &chat_id,
                         space_id.as_deref(),
                         device_id.as_deref(),
-                        None,
                         config,
                         cwd,
-                        parent_chat_id,
-                        child_kind,
+                        parent_chat_id.map(|parent| (parent, child_kind)),
                     )
                     .map_err(failed)?;
                 if let Some(branch) = branch.as_deref().filter(|b| !b.is_empty()) {
@@ -1897,17 +1543,10 @@ impl EngineRpc {
                 path,
                 name,
                 git_detected,
-                github_repo,
-            } => match github_repo {
-                Some(repo) if device_id.starts_with(onicode_proto::CLOUD_DEVICE_PREFIX) => self
-                    .workspace
-                    .create_cloud_space(&space_id, &device_id, &path, name, &repo)
-                    .map_err(failed),
-                _ => self
-                    .workspace
-                    .create_space(&space_id, &device_id, &path, name, git_detected)
-                    .map_err(failed),
-            },
+            } => self
+                .workspace
+                .create_space(&space_id, &device_id, &path, name, git_detected)
+                .map_err(failed),
             MutateParams::RenameSpace { space_id, name } => self
                 .workspace
                 .rename_space(&space_id, name.as_deref())
@@ -1925,38 +1564,7 @@ impl EngineRpc {
                 }
             }
             MutateParams::DeleteSpace { space_id } => {
-                let chats = self.workspace.read_chats().unwrap_or_default();
-                let mut cloud_chats: Vec<String> = chats
-                    .iter()
-                    .filter(|chat| {
-                        chat.space_id.as_deref() == Some(space_id.as_str())
-                            && onicode_proto::is_cloud_device(&chat.device_id, "")
-                    })
-                    .map(|chat| chat.id.clone())
-                    .collect();
-                // Their children on Cloud with no project of their own (side
-                // chats on a deleted machine, delegates) go with them.
-                let orphans: Vec<String> = chats
-                    .iter()
-                    .filter(|chat| {
-                        chat.space_id.is_none()
-                            && onicode_proto::is_cloud_device(&chat.device_id, "")
-                            && chat
-                                .parent_chat_id
-                                .as_ref()
-                                .is_some_and(|parent| cloud_chats.contains(parent))
-                    })
-                    .map(|chat| chat.id.clone())
-                    .collect();
                 let deleted = self.workspace.delete_space(&space_id).map_err(failed)?;
-                for orphan in &orphans {
-                    if let Err(err) = self.workspace.delete_chat(orphan) {
-                        tracing::warn!(chat = %orphan, error = %err, "deleting a Cloud chat's child failed");
-                    }
-                    self.doc_host.purge_chat(orphan);
-                }
-                cloud_chats.extend(orphans);
-                self.delete_cloud_machines(cloud_chats);
                 // Best-effort teardown of live runs we host for the deleted chats
                 // (the doc rows are already tombstoned; a straggler run would only
                 // write into an orphaned session doc).
@@ -2044,42 +1652,9 @@ impl EngineRpc {
                     .map(drop)
             }
             MutateParams::DeleteChat { chat_id } => {
-                let on_cloud = self
-                    .workspace
-                    .chat(&chat_id)
-                    .ok()
-                    .flatten()
-                    .is_some_and(|chat| onicode_proto::is_cloud_device(&chat.device_id, ""));
-                // A Cloud chat's children on Cloud go with it: its delegates
-                // (each on a machine of its own, which would otherwise outlive
-                // the parent) and its side chats (on its machine, now gone).
-                let children: Vec<String> = if on_cloud {
-                    self.workspace
-                        .read_chats()
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter(|chat| {
-                            chat.parent_chat_id.as_deref() == Some(chat_id.as_str())
-                                && onicode_proto::is_cloud_device(&chat.device_id, "")
-                        })
-                        .map(|chat| chat.id)
-                        .collect()
-                } else {
-                    Vec::new()
-                };
                 self.voice.retire_chat(&chat_id);
                 self.workspace.delete_chat(&chat_id).map_err(failed)?;
                 self.doc_host.purge_chat(&chat_id);
-                for child in &children {
-                    self.voice.retire_chat(child);
-                    if let Err(err) = self.workspace.delete_chat(child) {
-                        tracing::warn!(chat = %child, error = %err, "deleting a Cloud chat's child failed");
-                    }
-                    self.doc_host.purge_chat(child);
-                }
-                if on_cloud {
-                    self.delete_cloud_machines(std::iter::once(chat_id).chain(children).collect());
-                }
                 Ok(())
             }
             MutateParams::RenameDevice { device_id, name } => self
@@ -2196,8 +1771,7 @@ where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<(), onicode_harness::HarnessError>>,
 {
-    // A Cloud device registers only Codex + Claude Code; installing anything
-    // else would put a CLI on it that nothing may run (or probe).
+    // An unregistered harness has nothing that may run (or probe) its CLI.
     if !registry.is_registered(harness) {
         return Err(RpcError::Failed(format!(
             "{harness:?} is not available on this device"
@@ -2306,8 +1880,6 @@ fn forwardable(method: &str) -> bool {
             | methods::LIST_REPOS
             | methods::ADD_REPO
             | methods::CLONE_REPO
-            // Answered by the Cloud device, which holds the GitHub grant.
-            | methods::LIST_GITHUB_REPOS
             | methods::CREATE_REPO
             | methods::LIST_BRANCHES
             | methods::LIST_REFS
@@ -2366,6 +1938,10 @@ fn forwardable(method: &str) -> bool {
             | methods::RESIZE_TERMINAL
             | methods::CLOSE_TERMINAL
             | methods::TERMINAL_STATUS
+            // A Mac's desktop is brokered by that Mac's engine.
+            | methods::OPEN_DESKTOP
+            | methods::DESKTOP_GRANTS
+            | methods::DESKTOP_OPEN_GUIDE
             // Agent accounts are per-device CLI logins (the device switcher
             // retargets which device's logins are shown).
             | methods::LIST_AGENT_ACCOUNTS
@@ -2552,164 +2128,6 @@ async fn opening_doc_messages_stream(
         .boxed())
 }
 
-/// Authentication-only RPC surface used while the headed app is waiting for a
-/// production WorkOS session. Keeping this independent from [`EngineRpc`] lets
-/// the UI show its sign-in and organization gates before identity-scoped Loro
-/// stores are opened.
-#[derive(Clone)]
-pub struct AuthRpc {
-    auth: Auth,
-}
-
-impl AuthRpc {
-    pub fn new(auth: Auth) -> Self {
-        Self { auth }
-    }
-
-    pub fn handles(method: &str) -> bool {
-        matches!(
-            method,
-            methods::AUTH_STATUS
-                | methods::SIGN_IN
-                | methods::SIGN_IN_HEADLESS
-                | methods::COMPLETE_SIGN_IN
-                | methods::SIGN_OUT
-                | methods::ACCESS_TOKEN
-                | methods::STEP_UP
-                | methods::DELETE_ACCOUNT
-                | methods::LIST_ORGS
-                | methods::CREATE_ORG
-                | methods::SELECT_ORG
-        )
-    }
-}
-
-#[async_trait]
-impl RpcService for AuthRpc {
-    async fn handle(&self, method: &str, params: serde_json::Value) -> Result<RpcReply, RpcError> {
-        match method {
-            methods::AUTH_STATUS => Ok(RpcReply::Stream(watch_stream(self.auth.watch_state()))),
-            methods::SIGN_IN => {
-                // `{screenHint?, fresh?}`; absent (the desktop app's `{}`),
-                // the hosted page opens as it always has.
-                let options: crate::auth::SignInOptions = if params.is_null() {
-                    Default::default()
-                } else {
-                    parse_params(params)?
-                };
-                let url = self
-                    .auth
-                    .start_sign_in_with(options)
-                    .await
-                    .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&serde_json::json!({ "url": url }))
-            }
-            methods::ACCESS_TOKEN => {
-                // Local IPC only: the relay refuses it (`onicode_rpc::local_only`).
-                let (token, expires_at) = self
-                    .auth
-                    .access_token_with_expiry()
-                    .await
-                    .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&serde_json::json!({ "token": token, "expiresAt": expires_at }))
-            }
-            // Local IPC, the app's token only (agents and the relay are
-            // refused before here): a fresh interactive sign-in whose ticket
-            // stays in the engine, then the deletion it allows (R16).
-            methods::STEP_UP => {
-                let url = self
-                    .auth
-                    .start_step_up()
-                    .await
-                    .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&serde_json::json!({ "url": url }))
-            }
-            methods::DELETE_ACCOUNT => {
-                #[derive(Deserialize)]
-                struct P {
-                    confirm: String,
-                }
-                let p: P = parse_params(params)?;
-                // Answered, not failed: `{ok: true}`, or `{ok: false, error:
-                // <code>, message, organization?}` with a stable code
-                // ([`crate::auth::DeleteAccountError::code`]).
-                match self.auth.delete_account(&p.confirm).await {
-                    Ok(()) => RpcReply::value(&serde_json::json!({ "ok": true })),
-                    Err(error) => {
-                        let mut reply = serde_json::json!({
-                            "ok": false,
-                            "error": error.code(),
-                            "message": error.to_string(),
-                        });
-                        if let crate::auth::DeleteAccountError::Refused {
-                            organization: Some(org),
-                            ..
-                        } = &error
-                        {
-                            reply["organization"] = serde_json::json!(org);
-                        }
-                        RpcReply::value(&reply)
-                    }
-                }
-            }
-            methods::SIGN_IN_HEADLESS => {
-                let url = self.auth.start_headless_sign_in();
-                RpcReply::value(&serde_json::json!({ "url": url }))
-            }
-            methods::COMPLETE_SIGN_IN => {
-                #[derive(Deserialize)]
-                struct P {
-                    code: String,
-                }
-                let p: P = parse_params(params)?;
-                self.auth
-                    .complete_sign_in(&p.code)
-                    .await
-                    .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&serde_json::json!({ "ok": true }))
-            }
-            methods::SIGN_OUT => {
-                self.auth.sign_out();
-                RpcReply::value(&serde_json::json!({ "ok": true }))
-            }
-            methods::LIST_ORGS => {
-                let orgs = self
-                    .auth
-                    .list_orgs()
-                    .await
-                    .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&serde_json::json!({ "orgs": orgs }))
-            }
-            methods::CREATE_ORG => {
-                #[derive(Deserialize)]
-                struct P {
-                    name: String,
-                }
-                let p: P = parse_params(params)?;
-                self.auth
-                    .create_org(&p.name)
-                    .await
-                    .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&serde_json::json!({ "ok": true }))
-            }
-            methods::SELECT_ORG => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                struct P {
-                    organization_id: String,
-                }
-                let p: P = parse_params(params)?;
-                self.auth
-                    .select_org(&p.organization_id)
-                    .await
-                    .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&serde_json::json!({ "ok": true }))
-            }
-            _ => Err(RpcError::UnknownMethod(method.to_string())),
-        }
-    }
-}
-
 #[async_trait]
 impl RpcService for EngineRpc {
     async fn handle(&self, method: &str, params: serde_json::Value) -> Result<RpcReply, RpcError> {
@@ -2717,30 +2135,12 @@ impl RpcService for EngineRpc {
         // set, attributed by Onicode (rpc/agent_gate.rs). Before forwarding.
         let params = self.agent_gate(method, params)?;
         // Device-addressed routing: forward calls that target another device over its
-        // relay. The target compares the id to its own, so forwards cannot loop.
+        // tailnet link. The target compares the id to its own, so forwards cannot loop.
         if forwardable(method)
             && let Some(target) = params.get("targetDeviceId").and_then(|v| v.as_str())
             && target != self.doc_host.device_id()
         {
             let target = target.to_string();
-            // Settings → Providers' Cloud: its logins live in the vault.
-            if crate::cloud_accounts::is_cloud_accounts_target(&target)
-                && crate::cloud_accounts::handles(method)
-            {
-                return Box::pin(crate::cloud_accounts::dispatch(
-                    self.cloud(),
-                    self.agent_accounts.clone(),
-                    method,
-                    params,
-                ))
-                .await;
-            }
-            if (target.starts_with(onicode_proto::CLOUD_DEVICE_PREFIX)
-                || crate::cloud_accounts::is_cloud_accounts_target(&target))
-                && let Some(reply) = self.answer_for_cloud(&target, method, &params).await
-            {
-                return reply;
-            }
             if matches!(
                 method,
                 methods::START_AGENT_LOGIN
@@ -2769,9 +2169,7 @@ impl RpcService for EngineRpc {
         }
         if matches!(
             method,
-            methods::SIGN_OUT
-                | methods::SELECT_ORG
-                | methods::COMPLETE_AGENT_LOGIN
+            methods::COMPLETE_AGENT_LOGIN
                 | methods::ACTIVATE_AGENT_ACCOUNT
                 | methods::FORGET_AGENT_ACCOUNT
         ) {
@@ -2779,11 +2177,6 @@ impl RpcService for EngineRpc {
         }
         if voice_remote::handles(method) {
             return self.voice_remote(method, params).await;
-        }
-        if AuthRpc::handles(method) {
-            return AuthRpc::new(self.auth()?.clone())
-                .handle(method, params)
-                .await;
         }
         if crate::acp_registry::handles(method) {
             return Box::pin(crate::acp_registry::dispatch(
@@ -2794,21 +2187,8 @@ impl RpcService for EngineRpc {
             ))
             .await;
         }
-        // Cloud device + credential vault: IPC-only (never in `forwardable`),
-        // acting for this runtime's signed-in user against the edge. Boxed so
-        // its state stays out of this dispatcher's already-large frame.
-        if crate::cloud_client::handles(method) {
-            return Box::pin(crate::cloud_client::dispatch(
-                self.cloud(),
-                &self.agent_accounts,
-                method,
-                params,
-            ))
-            .await;
-        }
         match method {
             methods::ENGINE_INFO => RpcReply::value(&self.engine_info),
-            methods::LIST_CLOUD_BRANCHES => Box::pin(self.cloud_branches(params)).await,
             methods::ENGINE_READY => RpcReply::value(&serde_json::json!({ "ready": true })),
             methods::LIST_HARNESSES => {
                 RpcReply::value(&self.registry.descriptors_for(include_registry(&params)))
@@ -3024,9 +2404,8 @@ impl RpcService for EngineRpc {
                 chat.last_seen_at = None;
                 chat.harness_session_id = None;
                 chat.harness_session_cwd = None;
-                chat.room_gen = Some(2);
-                // Missing rows open on chat2. Persist history before publishing
-                // the registry row so a crash cannot leave a discoverable empty fork.
+                // Persist history before publishing the registry row so a crash
+                // cannot leave a discoverable empty fork.
                 let target = self.doc_host.open(&chat.id).map_err(failed)?;
                 let existing = target
                     .doc()
@@ -3297,13 +2676,6 @@ impl RpcService for EngineRpc {
                 RpcReply::value(&serde_json::json!({ "sent": sent }))
             }
             methods::PROBE_SYNC => {
-                // Focus probes remain cheap. An explicit Retry may also allow
-                // one fresh, shared auth attempt before its cooldown expires.
-                if params.get("retry").and_then(serde_json::Value::as_bool) == Some(true)
-                    && let Some(auth) = &self.auth
-                {
-                    auth.retry_refresh();
-                }
                 // Cut every backoff short: links redial, and followers retry on the change.
                 if let Some(links) = &self.links {
                     links.reset();
@@ -3416,42 +2788,6 @@ impl RpcService for EngineRpc {
             methods::LOCAL_DEVICE => {
                 RpcReply::value(&serde_json::json!({ "deviceId": self.doc_host.device_id() }))
             }
-            methods::LOCAL_IMPORT_STATUS => {
-                let importer = self.local_importer()?.clone();
-                let status = tokio::task::spawn_blocking(move || importer.status())
-                    .await
-                    .map_err(|e| RpcError::Failed(e.to_string()))?
-                    .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&status)
-            }
-            methods::IMPORT_LOCAL_WORKSPACE => {
-                let importer = self.local_importer()?.clone();
-                // Progress rides an unbounded channel: the importer is
-                // blocking (sqlite + fs) and must never wedge on a slow
-                // viewer; items are tiny and bounded by the chat count.
-                let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<serde_json::Value>();
-                tokio::task::spawn_blocking(move || {
-                    let emit = |event: crate::local_import::ImportEvent| {
-                        if let Ok(item) = serde_json::to_value(&event) {
-                            let _ = tx.send(item);
-                        }
-                    };
-                    if let Err(err) = importer.run(emit) {
-                        tracing::error!(error = %err, "local import failed");
-                        let _ = tx.send(serde_json::json!({
-                            "kind": "summary",
-                            "importedChats": 0, "importedSpaces": 0,
-                            "skippedChats": 0, "skippedSpaces": 0,
-                            "journalsCopied": 0, "ledgerRowsMerged": 0,
-                            "errors": [format!("{err}")],
-                        }));
-                    }
-                    // tx drops here — the stream ends after the summary item.
-                });
-                Ok(RpcReply::Stream(Box::pin(futures::stream::poll_fn(
-                    move |cx| rx.poll_recv(cx),
-                ))))
-            }
             methods::UPDATE_STATUS => Ok(RpcReply::Stream(watch_stream(self.updater()?.watch()))),
             methods::APPLY_UPDATE => {
                 let applied = self
@@ -3525,57 +2861,6 @@ impl RpcService for EngineRpc {
             }
             methods::MUTATE => {
                 let p: MutateParams = parse_params(params)?;
-                if let MutateParams::CreateChat {
-                    chat_id,
-                    space_id,
-                    device_id,
-                    config,
-                    branch,
-                    cwd,
-                    parent_chat_id,
-                    child_kind,
-                    cloud,
-                } = &p
-                    && let Some(host) = Box::pin(self.cloud_chat_host(
-                        chat_id,
-                        space_id.as_deref(),
-                        parent_chat_id.as_deref(),
-                        branch.as_deref().filter(|b| !b.is_empty()),
-                        *cloud,
-                        config.as_ref(),
-                    ))
-                    .await?
-                {
-                    if host.row_written {
-                        return RpcReply::value(&serde_json::json!({
-                            "ok": true, "deviceId": host.device_id, "cwd": host.cwd,
-                        }));
-                    }
-                    let failed = |e: crate::EngineError| RpcError::Failed(e.to_string());
-                    // The machine's checkout, not the project's folder on the
-                    // computer it lives on.
-                    let cwd = host.cwd.clone().or_else(|| cwd.clone());
-                    self.workspace
-                        .create_chat_hosted(
-                            chat_id,
-                            space_id.as_deref(),
-                            device_id.as_deref(),
-                            Some(&host.device_id),
-                            config.clone(),
-                            cwd.clone(),
-                            parent_chat_id.clone(),
-                            *child_kind,
-                        )
-                        .map_err(failed)?;
-                    if let Some(branch) = branch.as_deref().filter(|b| !b.is_empty()) {
-                        self.workspace
-                            .set_chat_branch(chat_id, branch)
-                            .map_err(failed)?;
-                    }
-                    return RpcReply::value(&serde_json::json!({
-                        "ok": true, "deviceId": host.device_id, "cwd": cwd,
-                    }));
-                }
                 let sidebar_pins = matches!(&p, MutateParams::ChangeSidebarPin { .. });
                 self.mutate(p)?;
                 if sidebar_pins {
@@ -4134,31 +3419,6 @@ impl RpcService for EngineRpc {
                     .map_err(|e| RpcError::Failed(e.to_string()))?;
                 RpcReply::value(&repo)
             }
-            methods::LIST_GITHUB_REPOS => {
-                #[derive(Deserialize, Default)]
-                #[serde(default)]
-                struct P {
-                    query: Option<String>,
-                }
-                let p: P = if params.is_null() {
-                    P::default()
-                } else {
-                    parse_params(params)?
-                };
-                // A session machine lists with its own grant; any other device
-                // asks the edge, whose vault calls GitHub without the token
-                // ever leaving it.
-                let repos = match &self.credentials {
-                    Some(broker) => broker
-                        .list_github_repos(p.query.as_deref())
-                        .await
-                        .map_err(RpcError::Failed)?,
-                    None => Box::pin(self.cloud().github_repos(p.query.as_deref()))
-                        .await
-                        .map_err(|e| RpcError::Failed(e.to_string()))?,
-                };
-                RpcReply::value(&serde_json::json!({ "repos": repos }))
-            }
             methods::CLONE_REPO => {
                 #[derive(Deserialize)]
                 struct P {
@@ -4168,12 +3428,6 @@ impl RpcService for EngineRpc {
                     parent: Option<String>,
                 }
                 let p: P = parse_params(params)?;
-                // Cloud: wire the GitHub grant into git's credential helper
-                // first, so private repositories clone.
-                let no_credentials = match &self.credentials {
-                    Some(broker) => broker.ensure_git_credentials().await.err(),
-                    None => None,
-                };
                 let cloned = match p
                     .parent
                     .as_deref()
@@ -4182,12 +3436,7 @@ impl RpcService for EngineRpc {
                     Some(parent) => self.repos.clone_repo_in(&p.url, parent).await,
                     None => self.repos.clone_repo(&p.url).await,
                 };
-                let repo = cloned.map_err(|e| {
-                    let github = no_credentials
-                        .map(|reason| format!(" (no GitHub access: {reason})"))
-                        .unwrap_or_default();
-                    RpcError::Failed(format!("{e}{github}"))
-                })?;
+                let repo = cloned.map_err(|e| RpcError::Failed(e.to_string()))?;
                 RpcReply::value(&repo)
             }
             methods::CREATE_REPO => {
@@ -4762,6 +4011,9 @@ impl RpcService for EngineRpc {
                     .map_err(|e| RpcError::Failed(e.to_string()))?;
                 RpcReply::value(&serde_json::json!({ "ok": true }))
             }
+            methods::OPEN_DESKTOP | methods::DESKTOP_GRANTS | methods::DESKTOP_OPEN_GUIDE => {
+                crate::desktop::handle(self.repos.data_dir(), method, params).await
+            }
             methods::TERMINAL_STATUS => {
                 let p: TerminalIdParams = parse_params(params)?;
                 let status = self
@@ -5057,15 +4309,6 @@ impl RpcService for EngineRpc {
                     "bytes": image.size,
                 }))
             }
-            methods::FETCH_TOOL_BLOB => {
-                let p: FetchToolBlobParams = parse_params(params)?;
-                let text = self
-                    .doc_host
-                    .fetch_tool_blob(&p.blob_ref)
-                    .await
-                    .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&serde_json::json!({ "text": text }))
-            }
             other => Err(RpcError::UnknownMethod(other.to_string())),
         }
     }
@@ -5082,7 +4325,6 @@ mod tests {
             crate::EngineProfile::local(temp.path()).unwrap(),
             std::sync::Arc::new(HarnessRegistry::new()),
             HarnessId::Codex,
-            None,
         )
         .unwrap();
         let first = core.rpc_service();
@@ -5106,7 +4348,6 @@ mod tests {
             crate::EngineProfile::local(temp.path()).unwrap(),
             std::sync::Arc::new(HarnessRegistry::new()),
             HarnessId::Codex,
-            None,
         )
         .unwrap();
         let rpc = core.rpc_service();
@@ -5136,7 +4377,6 @@ mod tests {
             crate::EngineProfile::local(temp.path()).unwrap(),
             std::sync::Arc::new(HarnessRegistry::new()),
             HarnessId::Codex,
-            None,
         )
         .unwrap();
         let rpc = core.rpc_service();
@@ -5178,7 +4418,6 @@ mod tests {
             crate::EngineProfile::local(temp.path()).unwrap(),
             std::sync::Arc::new(HarnessRegistry::new()),
             HarnessId::Codex,
-            None,
         )
         .unwrap();
         let rpc = core.rpc_service();
@@ -5266,13 +4505,9 @@ mod tests {
             std::path::PathBuf::from(std::env::var_os("ONICODE_INSTALL_FIXTURE_CHILD").unwrap());
         let registry = Arc::new(HarnessRegistry::new());
         registry.register(Arc::new(onicode_harness::CodexHarness::new()));
-        let core = crate::EngineCore::assemble(
-            &root.join("engine"),
-            registry.clone(),
-            HarnessId::Codex,
-            None,
-        )
-        .unwrap();
+        let core =
+            crate::EngineCore::assemble(&root.join("engine"), registry.clone(), HarnessId::Codex)
+                .unwrap();
         let rpc = core.rpc_service();
         let params = serde_json::json!({"harness": "codex"});
         assert!(!registry.descriptors()[0].installed);
@@ -5490,7 +4725,6 @@ mod tests {
             DocHostConfig {
                 device_id: "viewer".into(),
                 default_harness: onicode_proto::HarnessId::Mock,
-                edge: None,
             },
         );
         let handle = host.open("whale").unwrap();
@@ -5625,8 +4859,6 @@ mod tests {
         assert!(!forwardable(methods::FOCUS_CHAT));
         assert!(!forwardable(methods::ENGINE_INFO));
         assert!(!forwardable(methods::ENGINE_READY));
-        // The bearer is for local clients only, never a remote device's ask.
-        assert!(!forwardable(methods::ACCESS_TOKEN));
         assert!(forwardable(methods::QUEUE_COMMAND));
         assert!(forwardable(methods::SEARCH_FILES));
         assert!(forwardable(methods::SEARCH_GIT_HISTORY));
@@ -5767,7 +4999,7 @@ mod tests {
         std::fs::create_dir_all(scratch_root.join("2026-10-25-a1b2c3d4")).unwrap();
         let data_dirs = [
             data.clone(),
-            data.join("orgs").join("o").join("u").join("uploads"),
+            data.join("profiles").join("local").join("uploads"),
             scratch_root.clone(),
         ];
         let folder =
@@ -5927,7 +5159,6 @@ mod context_usage_tests {
             DocHostConfig {
                 device_id: "viewer".into(),
                 default_harness: onicode_proto::HarnessId::Mock,
-                edge: None,
             },
         );
         let handle = host.open("replay-chat").unwrap();
@@ -6054,7 +5285,6 @@ mod context_usage_tests {
             DocHostConfig {
                 device_id: "host".into(),
                 default_harness: onicode_proto::HarnessId::Mock,
-                edge: None,
             },
         );
         let handle = host.open("interleaved").unwrap();
@@ -6134,7 +5364,6 @@ mod context_usage_tests {
             DocHostConfig {
                 device_id: "viewer".into(),
                 default_harness: onicode_proto::HarnessId::Mock,
-                edge: None,
             },
         );
         let handle = host.open("cached-replay").unwrap();
@@ -6227,7 +5456,6 @@ mod context_usage_tests {
             DocHostConfig {
                 device_id: "viewer".into(),
                 default_harness: onicode_proto::HarnessId::Mock,
-                edge: None,
             },
         );
         let handle = host.open("reopen").unwrap();
