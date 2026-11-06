@@ -1,5 +1,5 @@
 //! Updates for Windows installs — the per-user installer
-//! (`dist/windows/onicode.iss`) and the portable zip. Both place
+//! (`packaging/windows/onicode.iss`) and the portable zip. Both place
 //! `onicode-update.json` beside `onicode.exe`; source builds remain unmanaged.
 use std::io::Read;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
@@ -25,7 +25,7 @@ const INCOMING: &str = ".onicode-update-incoming.exe";
 /// engine (`onicode.exe engine`) compares it with its own to restart into the
 /// new image once idle.
 const VERSION_FILE: &str = "onicode-version";
-/// The installer's uninstall entry (`AppId` in `dist/windows/onicode.iss`, plus
+/// The installer's uninstall entry (`AppId` in `packaging/windows/onicode.iss`, plus
 /// Inno Setup's `_is1` suffix). Settings → Apps reads `DisplayVersion` here.
 const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{AD5DEC34-E254-467B-8F24-8127EBAF4DA6}_is1";
 

@@ -2826,7 +2826,7 @@ mod tests {
 
     #[test]
     fn bundle_version_reads_the_packaged_plist() {
-        let template = include_str!("../../../dist/macos/Info.plist");
+        let template = include_str!("../../../packaging/macos/Info.plist");
         let plist = template.replace("__VERSION__", "0.3.1");
         assert_eq!(plist_string(&plist, "CFBundleShortVersionString").as_deref(), Some("0.3.1"));
         // Packaging names the engine it bundles.
@@ -2961,7 +2961,7 @@ mod tests {
         std::fs::create_dir_all(bundle.join("Contents")).unwrap();
         std::fs::write(
             bundle.join("Contents/Info.plist"),
-            include_str!("../../../dist/macos/Info.plist").replace("__VERSION__", "0.4.1"),
+            include_str!("../../../packaging/macos/Info.plist").replace("__VERSION__", "0.4.1"),
         )
         .unwrap();
         assert_eq!(

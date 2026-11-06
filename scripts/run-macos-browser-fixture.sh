@@ -8,7 +8,7 @@ BUNDLE="$(mktemp -d "${TMPDIR:-/tmp}/onicode-browser-fixture.XXXXXX")/Fixture.ap
 trap 'rm -r "$(dirname "$BUNDLE")"' EXIT
 mkdir -p "$BUNDLE/Contents/MacOS"
 cp "$BINARY" "$BUNDLE/Contents/MacOS/fixture"
-sed 's/__VERSION__/1.0.0/g' "$ROOT/dist/macos/Info.plist" > "$BUNDLE/Contents/Info.plist"
+sed 's/__VERSION__/1.0.0/g' "$ROOT/packaging/macos/Info.plist" > "$BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleExecutable fixture' "$BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier sh.onicode.browser-fixture' "$BUNDLE/Contents/Info.plist"
 "$BUNDLE/Contents/MacOS/fixture" "$@"

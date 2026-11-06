@@ -30,7 +30,7 @@ install -m 755 "$ROOT/target/release/onicode" "$APP/Contents/MacOS/onicode"
 # The background engine the app starts (sessions keep running with the app
 # closed); its own process, named for Activity Monitor.
 install -m 755 "$ROOT/target/release/onicode-engine" "$APP/Contents/MacOS/Onicode Engine"
-sed "s/__VERSION__/$VERSION/" "$ROOT/dist/macos/Info.plist" >"$APP/Contents/Info.plist"
+sed "s/__VERSION__/$VERSION/" "$ROOT/packaging/macos/Info.plist" >"$APP/Contents/Info.plist"
 mkdir -p "$APP/Contents/Resources/licenses/fonts"
 cp "$ROOT/crates/ui/assets/fonts/licenses/"* "$APP/Contents/Resources/licenses/fonts/"
 cp "$ROOT/THIRD_PARTY_NOTICES.md" "$ROOT/LICENSE" "$APP/Contents/Resources/licenses/"
@@ -39,14 +39,14 @@ mkdir -p "$APP/Contents/Resources/licenses"
 cp "$ROOT/crates/voice/NOTICE.md" "$APP/Contents/Resources/licenses"/parakeet-v3.txt
 
 # Icon: iconset from the pre-masked macOS icon (squircle + margins + shadow
-# baked into dist/macos/icon-1024.png — sips can't alpha-mask, so the mask is
-# applied ahead of time; dist/onicode.png stays the full-bleed shared artwork).
+# baked into packaging/macos/icon-1024.png — sips can't alpha-mask, so the mask is
+# applied ahead of time; packaging/onicode.png stays the full-bleed shared artwork).
 ICONSET="$OUT_DIR/onicode.iconset"
 rm -rf "$ICONSET" && mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do
-  sips -z "$size" "$size" "$ROOT/dist/macos/icon-1024.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+  sips -z "$size" "$size" "$ROOT/packaging/macos/icon-1024.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
   retina=$((size * 2))
-  sips -z "$retina" "$retina" "$ROOT/dist/macos/icon-1024.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+  sips -z "$retina" "$retina" "$ROOT/packaging/macos/icon-1024.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/onicode.icns"
 rm -rf "$ICONSET"
@@ -55,12 +55,12 @@ if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
   # Hardened runtime + secure timestamp are both notarization requirements.
   # (No --deep: Apple deprecated it. Nested code is signed first, inside out:
   # the engine, then the bundle that seals it.)
-  codesign --entitlements "$ROOT/dist/macos/Onicode.entitlements" --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" --identifier dev.aislopware.onicode.engine "$APP/Contents/MacOS/Onicode Engine"
-  codesign --entitlements "$ROOT/dist/macos/Onicode.entitlements" --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP"
+  codesign --entitlements "$ROOT/packaging/macos/Onicode.entitlements" --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" --identifier dev.aislopware.onicode.engine "$APP/Contents/MacOS/Onicode Engine"
+  codesign --entitlements "$ROOT/packaging/macos/Onicode.entitlements" --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP"
 else
   # Ad-hoc signature so the app launches on Apple silicon (Gatekeeper still
   # requires right-click → Open on first launch without notarization).
-  codesign --deep --force --entitlements "$ROOT/dist/macos/Onicode.entitlements" --sign - "$APP"
+  codesign --deep --force --entitlements "$ROOT/packaging/macos/Onicode.entitlements" --sign - "$APP"
 fi
 
 # notarize <path>: submit to Apple and wait for the verdict. A rejection may
@@ -100,8 +100,8 @@ python3 -c 'import dmgbuild' 2>/dev/null ||
 # Pair the 1x/2x background renders into a hidpi tiff so the artwork stays
 # crisp on retina displays.
 BG_TIFF="$OUT_DIR/dmg-background.tiff"
-tiffutil -cathidpicheck "$ROOT/dist/macos/dmg-background.png" \
-  "$ROOT/dist/macos/dmg-background@2x.png" -out "$BG_TIFF" >/dev/null 2>&1
+tiffutil -cathidpicheck "$ROOT/packaging/macos/dmg-background.png" \
+  "$ROOT/packaging/macos/dmg-background@2x.png" -out "$BG_TIFF" >/dev/null 2>&1
 
 APP="$APP" DMG="$DMG" BG_TIFF="$BG_TIFF" python3 - <<'PY'
 import os

@@ -1,0 +1,82 @@
+# What onicode builds on, where it stands on each upstream, and how often to look.
+# `scripts/upstream/watch.py` reads this, reports what moved since `base` (head commits and pull
+# requests), and never applies anything: a change is adopted by reading it and porting its intent
+# (docs/onicode/upstream.md), then `base` here moves in the same commit.
+#
+# `checkout`: the local clone, relative to the parent of this repository.
+# `paths`: only changes under these count (the upstream lands far more than onicode uses).
+# `every_minutes`: how often the watcher asks; 0 means every round.
+
+[zeron]
+upstream = "zeronsh/zeron"
+branch = "main"
+remote = "upstream"
+checkout = "onicode"
+base = "e55b9f52f156c5c3d48c2f47262d04b698f8a468"
+base_date = "2026-11-05"
+every_minutes = 0
+# zeron's own release, CI and edge plumbing is not onicode's; the app, engine and agent code is.
+paths = ["crates/", "apps/zeron/", "apps/ios/", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml"]
+
+[gpui-fast]
+upstream = "longbridge/gpui-fast"
+branch = "main"
+fork = "aislopware/gpui-fast"
+checkout = "forks/gpui-fast"
+base = "7fcd37e6ef8caf212e484d5a8e4cd971dad690e1"
+base_date = "2026-10-31"
+every_minutes = 0
+
+[gpui-kit]
+upstream = "longbridge/gpui-kit"
+branch = "main"
+fork = "aislopware/gpui-kit"
+checkout = "forks/gpui-kit"
+base = "944803984cf0ba3111861d6e1aa9d6265c109ff9"
+base_date = "2026-10-29"
+every_minutes = 0
+
+# gpui-fast imports zed through its vendor procedure; zed merges hundreds of PRs a week, so only
+# the gpui crates count and the watcher asks every few hours.
+[zed]
+upstream = "zed-industries/zed"
+branch = "main"
+checkout = "../slopty/.research/zed-main"
+base = "4a6121bb0f10c6e8037b741b7dc0a4cd639ae289"
+base_date = "2026-11-06"
+every_minutes = 240
+pulls = false
+paths = ["crates/gpui/", "crates/gpui_macos/", "crates/gpui_apple/", "crates/gpui_ios/", "crates/gpui_macros/",
+         "crates/gpui_platform/", "crates/gpui_tokio/", "crates/sum_tree/", "crates/refineable/"]
+
+# The terminal: libghostty-vt only, so only what it builds from counts.
+[ghostty]
+upstream = "ghostty-org/ghostty"
+branch = "main"
+fork = "aislopware/ghostty"
+checkout = "forks/ghostty"
+base = "66af4c7458db7e19ae7adb44aa7054879be58b6b"
+base_date = "2026-11-05"
+every_minutes = 0
+paths = ["src/terminal/", "src/lib_vt.zig", "include/ghostty/", "src/simd/", "src/unicode/", "src/input/",
+         "src/build/GhosttyLibVt.zig", "build.zig", "build.zig.zon", "src/datastruct/", "src/lib/",
+         "src/fastmem.zig", "src/quirks.zig", "src/os/string_encoding.zig"]
+
+[libghostty-rs]
+upstream = "Uzaaft/libghostty-rs"
+branch = "master"
+fork = "aislopware/libghostty-rs"
+checkout = "forks/libghostty-rs"
+base = "575ed6b8ceb79ffaf247ecf7e34333876b0d5be4"
+base_date = "2026-10-30"
+every_minutes = 0
+
+# Vendored with onicode's patches (the notes in vendor/noq-proto); a bump re-applies them by hand.
+[noq]
+upstream = "n0-computer/noq"
+branch = "main"
+vendored = "vendor/noq-proto"
+base = "04807b674cff617cbac323256416dc4779ccf7c2"
+base_date = "2026-11-06"
+every_minutes = 0
+paths = ["noq-proto/", "noq-udp/"]

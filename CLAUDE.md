@@ -8,6 +8,8 @@ A native control plane for coding agents: many clients drive many servers peer t
   makes it better.
 - Changes from upstream and from the forks (gpui-fast, ghostty, libghostty-rs, noq) are ported by intent: an agent
   reads each change, judges it, and re-implements what helps. Never a git merge or rebase.
+- `scripts/upstream/watch.py` reports what moved; check it at least every 30 minutes and adopt per
+  `docs/onicode/upstream.md`.
 
 ## Architecture rules
 

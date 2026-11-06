@@ -24,7 +24,7 @@ Pull requests, `main` and the merge queue all go through one workflow,
 | iOS core (Linux) | app or mobile core changed | app or mobile core changed |
 | iOS simulator | the app, `crates/mobile` or `crates/client` changed | with iOS core |
 | Windows tests, macOS | only when the change looks platform specific | when their files change |
-| Windows packaging (`app`) | `apps/zeron`, `dist/windows`, packaging scripts, `crates/update` | with Windows tests |
+| Windows packaging (`app`) | `apps/zeron`, `packaging/windows`, packaging scripts, `crates/update` | with Windows tests |
 | macOS browser / preview fixtures | browser, preview or edge code changed | always |
 | Linux browser fixture | nightly or `ci:full` only | nightly or manual run only |
 | Android APK | the Android app or `crates/mobile` changed | when its files change |

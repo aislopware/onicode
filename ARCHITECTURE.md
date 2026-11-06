@@ -324,7 +324,7 @@ Status legend: ✅ shipped · 🟡 shipped with named gaps (see `docs/PARITY.md`
   attachment UI (engine upload RPCs exist), Cursor harness.
 - 🟡 **M6 Polish** — wire reconciliation (proto AuthState on the wire, `LocalDevice`),
   two-device e2e smoke, keyboard map, clippy/fmt sweep, Linux packaging
-  (`scripts/package-linux.sh` + release profile), macOS bundling config (`dist/macos/`,
+  (`scripts/package-linux.sh` + release profile), macOS bundling config (`packaging/macos/`,
   not executed — needs a Mac). Gaps: prefers-reduced-motion, engine hardening
   (instance lock, watchdogs), edge production deploy.
 

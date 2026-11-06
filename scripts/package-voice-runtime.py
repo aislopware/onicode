@@ -96,7 +96,7 @@ def install(package, destination, target=None):
     with tempfile.TemporaryDirectory(dir=destination.parent) as temporary:
         stage = Path(temporary) / 'voice'
         shutil.copytree(source, stage)
-        shutil.copyfile(Path(__file__).resolve().parents[1] / "dist/voice/Codex-LICENSE.txt", stage / "licenses/Codex-LICENSE.txt")
+        shutil.copyfile(Path(__file__).resolve().parents[1] / "packaging/voice/Codex-LICENSE.txt", stage / "licenses/Codex-LICENSE.txt")
         # Ship the runtime byte-for-byte: upstream already signs the helper and
         # every library with OpenAI's Developer ID, hardened runtime and a
         # secure timestamp, so re-signing would only downgrade them.

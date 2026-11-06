@@ -65,14 +65,14 @@ SUITE_INPUTS: dict[str, list[str]] = {
     "cursor": [".github/workflows/cursor-compatibility.yml", "scripts/*cursor-sdk*", "crates/harness/src/cursor/**"],
     "edge": [".github/workflows/preview-tests.yml", "edge/**"],
     "installer": [".github/workflows/linux-installer.yml", "edge/src/install.sh", "scripts/package-linux.sh",
-                  "scripts/test-linux-desktop-entry.sh", "dist/onicode.desktop", "dist/onicode.png",
+                  "scripts/test-linux-desktop-entry.sh", "packaging/onicode.desktop", "packaging/onicode.png",
                   "scripts/ci/apt-install.sh"],
-    "voice": [".github/workflows/voice-tests.yml", "dist/voice/**", "scripts/package-voice-runtime.py",
+    "voice": [".github/workflows/voice-tests.yml", "packaging/voice/**", "scripts/package-voice-runtime.py",
               "scripts/codex-voice-remote-smoke.py", "scripts/tests/*voice*"] + LINUX_SETUP + NEXTEST,
-    "windows": [".github/workflows/windows.yml", "dist/windows/**", "scripts/test-windows-*.ps1",
+    "windows": [".github/workflows/windows.yml", "packaging/windows/**", "scripts/test-windows-*.ps1",
                 "scripts/package-windows.ps1", ".github/actions/windows-ci-setup/**"] + NEXTEST,
     "macos": [".github/workflows/macos.yml", "edge/**", "scripts/run-macos-browser-fixture.sh",
-              "scripts/test-browser-storage.py", "dist/macos/**", "scripts/ci/run-macos-fixture.sh"] + NEXTEST,
+              "scripts/test-browser-storage.py", "packaging/macos/**", "scripts/ci/run-macos-fixture.sh"] + NEXTEST,
     "frame_source": [".github/workflows/macos.yml"],
     "ios": [".github/workflows/macos.yml", "apps/ios/**", "scripts/ios/**"],
     "android": [".github/workflows/android.yml", "apps/android/**", "scripts/android/**",
@@ -99,7 +99,7 @@ RELATIVE_PATH = re.compile(r'"/?((?:\.\./)+[^"\\\n{}./][^"\\\n{}]*)"')
 # Paths the scan cannot follow: the package directory's parent reached in code.
 # A suite whose sources do this reads the whole workspace (fail closed).
 UNFOLLOWABLE = re.compile(r'CARGO_MANIFEST_DIR[^;]{0,200}?(?:\.parent\(\)|\.ancestors\(\)|join\(\s*"\.\.")')
-EVERYTHING = ["crates/**", "apps/**", "scripts/**", "dist/**", "edge/**"]
+EVERYTHING = ["crates/**", "apps/**", "scripts/**", "packaging/**", "edge/**"]
 DEPENDENCY_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
 
 

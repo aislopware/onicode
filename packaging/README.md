@@ -50,14 +50,14 @@ installed builds can update into Onicode. CI runs this on tags
    mkdir -p Onicode.app/Contents/{MacOS,Resources}
    cp onicode Onicode.app/Contents/MacOS/onicode
    sed "s/__VERSION__/$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')/" \
-     dist/macos/Info.plist > Onicode.app/Contents/Info.plist
+     packaging/macos/Info.plist > Onicode.app/Contents/Info.plist
    ```
-3. Icon: generate `onicode.icns` from `dist/macos/icon-1024.png` (the macOS-shaped
+3. Icon: generate `onicode.icns` from `packaging/macos/icon-1024.png` (the macOS-shaped
    variant of the artwork — squircle mask, margins, and shadow pre-baked, since
    `sips` can't apply an alpha mask) and place it at
    `Onicode.app/Contents/Resources/onicode.icns`:
    ```sh
-   mkdir onicode.iconset && sips -z 256 256 dist/macos/icon-1024.png --out onicode.iconset/icon_256x256.png
+   mkdir onicode.iconset && sips -z 256 256 packaging/macos/icon-1024.png --out onicode.iconset/icon_256x256.png
    iconutil -c icns onicode.iconset -o Onicode.app/Contents/Resources/onicode.icns
    ```
 4. Sign + notarize (required for distribution):
@@ -77,7 +77,7 @@ installed builds can update into Onicode. CI runs this on tags
 Produces, under `target/package/`:
 
 - `onicode-<version>-windows-<arch>-setup.exe` — the per-user installer built
-  from `dist/windows/onicode.iss` with Inno Setup 6
+  from `packaging/windows/onicode.iss` with Inno Setup 6
 - `onicode-<version>-windows-<arch>.zip` — the portable package
 - `onicode-<version>-windows-<arch>.exe` — the bare executable the in-app
   updater downloads

@@ -163,7 +163,7 @@ Data flow:
   are hidden from the sidebar but are not deleted when a call ends.
 - Usage is billed to the user's Codex plan or credits by OpenAI.
 
-The microphone purpose strings (`dist/macos/Info*.plist`,
+The microphone purpose strings (`packaging/macos/Info*.plist`,
 `apps/ios/Zeron/Info.plist`) state that voice sessions stream audio to OpenAI;
 dictation stays on device.
 

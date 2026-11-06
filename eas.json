@@ -6,7 +6,7 @@
       "environment": "preview",
       "macos": {
         "artifact": "zip",
-        "entitlements": "dist/macos/Onicode.entitlements"
+        "entitlements": "packaging/macos/Onicode.entitlements"
       },
       "custom": {
         "macos": {

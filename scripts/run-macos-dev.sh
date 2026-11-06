@@ -44,7 +44,7 @@ mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$DATA_DIR"
 TARGET_DIR="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')"
 install -m 755 "$TARGET_DIR/debug/onicode" "$CONTENTS/MacOS/onicode"
 install -m 755 "$TARGET_DIR/debug/onicode-engine" "$ENGINE"
-sed "s/__VERSION__/$VERSION/g" "$ROOT/dist/macos/Info-dev.plist" >"$CONTENTS/Info.plist"
+sed "s/__VERSION__/$VERSION/g" "$ROOT/packaging/macos/Info-dev.plist" >"$CONTENTS/Info.plist"
 plutil -replace CFBundleIdentifier -string "$BUNDLE_ID" "$CONTENTS/Info.plist"
 plutil -replace LSEnvironment.ONICODE_DATA_DIR -string "$DATA_DIR" "$CONTENTS/Info.plist"
 plutil -replace LSEnvironment.ONICODE_IPC_PORT -string "$IPC_PORT" "$CONTENTS/Info.plist"
@@ -66,9 +66,9 @@ if [[ ! -f "$CONTENTS/Resources/onicode.icns" ]]; then
   ICONSET="$DEV_ROOT/onicode-dev.iconset"
   mkdir -p "$ICONSET"
   for size in 16 32 128 256 512; do
-    sips -z "$size" "$size" "$ROOT/dist/macos/icon-1024.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+    sips -z "$size" "$size" "$ROOT/packaging/macos/icon-1024.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
     retina=$((size * 2))
-    sips -z "$retina" "$retina" "$ROOT/dist/macos/icon-1024.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+    sips -z "$retina" "$retina" "$ROOT/packaging/macos/icon-1024.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
   done
   iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/onicode.icns"
 fi
@@ -82,11 +82,11 @@ if [[ -z "$IDENTITY" ]]; then
 fi
 # Inside out: the engine first, then the bundle that seals it.
 if [[ -n "$IDENTITY" ]]; then
-  codesign --entitlements "$ROOT/dist/macos/Onicode.entitlements" --force --sign "$IDENTITY" --identifier "$BUNDLE_ID.engine" "$ENGINE"
-  codesign --entitlements "$ROOT/dist/macos/Onicode.entitlements" --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP"
+  codesign --entitlements "$ROOT/packaging/macos/Onicode.entitlements" --force --sign "$IDENTITY" --identifier "$BUNDLE_ID.engine" "$ENGINE"
+  codesign --entitlements "$ROOT/packaging/macos/Onicode.entitlements" --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP"
 else
-  codesign --entitlements "$ROOT/dist/macos/Onicode.entitlements" --force --sign - --identifier "$BUNDLE_ID.engine" "$ENGINE"
-  codesign --entitlements "$ROOT/dist/macos/Onicode.entitlements" --force --sign - --identifier "$BUNDLE_ID" "$APP"
+  codesign --entitlements "$ROOT/packaging/macos/Onicode.entitlements" --force --sign - --identifier "$BUNDLE_ID.engine" "$ENGINE"
+  codesign --entitlements "$ROOT/packaging/macos/Onicode.entitlements" --force --sign - --identifier "$BUNDLE_ID" "$APP"
   echo "warning: no Apple Development signing identity found; macOS may ask for permissions again after a rebuild" >&2
 fi
 

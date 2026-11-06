@@ -1,7 +1,7 @@
 # Windows development
 
 Windows supports native x64 and ARM64 source builds, a per-user installer,
-and portable release ZIPs. The installer (`dist/windows/zeron.iss`, Inno
+and portable release ZIPs. The installer (`packaging/windows/zeron.iss`, Inno
 Setup 6) installs into `%LOCALAPPDATA%\Programs\Zeron` without elevation,
 registers the Start menu entry, the `zeron://` link handler, and the Settings →
 Apps uninstall entry. Both release packages carry `zeron-update.json` beside

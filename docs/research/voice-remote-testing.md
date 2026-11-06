@@ -27,7 +27,7 @@ ZERON_DEV_BUILD_ONLY=1 ./scripts/run-macos-dev.sh
 
 To test a client without Codex, or a specific helper build, set
 `ZERON_VOICE_MEDIA_DIR` to a runtime projected by
-`scripts/package-voice-runtime.py` (see [its notes](../../dist/voice/README.md)).
+`scripts/package-voice-runtime.py` (see [its notes](../../packaging/voice/README.md)).
 It must be a `codex-resources/voice` directory containing `zeron-runtime.json`.
 
 Open `target/macos-dev/Zeron Dev.app`, select **Settings → Voice → Codex voice
