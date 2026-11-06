@@ -39,7 +39,8 @@ mac:
     - if [ -z "$SHA" ]; then sw_vers; xcodebuild -version; xcrun metal --version; zig version; df -h /Volumes/CICache; exit 0; fi
     # The same artifacts whatever the caller's environment: nothing that changes rustc's arguments
     # or wraps it.
-    - unset RUSTC_WRAPPER RUSTFLAGS CARGO_BUILD_RUSTFLAGS ${!CARGO_TERM_@}
+    # The guest's shell is zsh: no bash-only expansions here.
+    - unset RUSTC_WRAPPER RUSTFLAGS CARGO_BUILD_RUSTFLAGS; for v in $(env | sed -n 's/^\(CARGO_TERM_[A-Z_]*\)=.*/\1/p'); do unset "$v"; done
     - export PATH=$CARGO_HOME/bin:$PATH
     - test -d $C/src/.git || git clone --filter=blob:none https://github.com/aislopware/onicode $C/src
     - git -C $C/src fetch --no-tags origin "$SHA" && git -C $C/src checkout -qf --detach "$SHA" && git -C $C/src clean -ffdq

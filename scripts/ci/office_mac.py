@@ -3,7 +3,7 @@
 
     office_mac.py serve              poll GitHub and run the lanes (the launch agent)
     office_mac.py run SHA LANE       run one lane for one commit now and print its log tail
-    office_mac.py install            install and start the launch agent on this Mac
+    office_mac.py install            install (or update) and start the launch agent on this Mac
 
 GitLab (gitlab.jmango360.com) refuses authenticated calls from outside the office network, so GitHub's
 hosted runners cannot start these jobs. This poller runs on a Mac inside the network instead: it watches
@@ -25,6 +25,7 @@ import datetime as dt
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -153,7 +154,9 @@ def first_failure(job: int) -> str:
         if isinstance(log_text, str):
             for line in log_text.splitlines():
                 clean = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-                if re.search(r"^(FAIL |error(\[|:)|.*panicked at|\S+ failed)", clean):
+                if re.search(
+                    r"(?i)(^FAIL |error(\[|:)|panicked at|bad substitution|command not found|exited with)", clean
+                ):
                     return clean[:90]
     return "see the job log"
 
@@ -194,8 +197,26 @@ def heads() -> list[tuple[str, str | None]]:
 
 def has_status(sha: str, context: str) -> bool:
     """Whether some poller already claimed this lane for this commit."""
+    return latest_status(sha, context) is not None
+
+
+def latest_status(sha: str, context: str) -> dict | None:
+    """Return the newest status of `context` on the commit (GitHub lists newest first)."""
     statuses = github(f"/commits/{sha}/statuses?per_page=100")
-    return any(s["context"] == context for s in statuses)
+    return next((s for s in statuses if s["context"] == context), None)
+
+
+def watch_job(job_id: int) -> tuple[str, str, str]:
+    """Wait for a GitLab job that is already running and return its (state, description, url)."""
+    job = gitlab(f"/jobs/{job_id}")
+    while job["status"] not in DONE:
+        time.sleep(POLL)
+        job = gitlab(f"/jobs/{job_id}")
+    mac = (job.get("runner") or {}).get("description", "an office Mac")
+    took = f"{(job.get('duration') or 0) / 60:.0f} min on {mac}"
+    if job["status"] == "success":
+        return "success", f"passed in {took}", job["web_url"]
+    return DONE[job["status"]], f"{job['status']}: {first_failure(job['id'])} ({took})", job["web_url"]
 
 
 def status(sha: str, lane: str, state: str, description: str, url: str = "") -> None:
@@ -207,12 +228,16 @@ def status(sha: str, lane: str, state: str, description: str, url: str = "") -> 
     log(f"{sha[:8]} {lane}: {state} {description}")
 
 
-def lane_thread(sha: str, lane: str, running: set[str]) -> None:
-    """Run one claimed lane and report it; never let an error leave the status pending."""
+def lane_thread(sha: str, lane: str, running: set[str], url_of_pending: str = "") -> None:
+    """Run one claimed lane (or follow its job after a restart) and report it; never leave it pending."""
     try:
-        state, description, url = run_lane(
-            sha, lane, lambda url, mac: status(sha, lane, "pending", f"running on {mac}", url)
-        )
+        resume = re.search(r"/jobs/(\d+)$", url_of_pending) if url_of_pending else None
+        if resume:
+            state, description, url = watch_job(int(resume.group(1)))
+        else:
+            state, description, url = run_lane(
+                sha, lane, lambda url, mac: status(sha, lane, "pending", f"running on {mac}", url)
+            )
         status(sha, lane, state, description, url)
     except Exception as err:  # noqa: BLE001 - report any failure on the commit rather than die silently
         with contextlib.suppress(Exception):
@@ -228,6 +253,32 @@ def load_state() -> dict:
     return {}
 
 
+def claimable(sha: str, base: str | None, running: set[str]) -> list[tuple[str, str]]:
+    """Return the head's lanes that need a run, resuming any a restarted poller left pending."""
+    work = []
+    files = None
+    for lane in SUITES:
+        key = f"{sha}:{lane}"
+        if key in running:
+            continue
+        latest = latest_status(sha, f"office-mac/{lane}")
+        if latest and latest["state"] == "pending":
+            # Claimed by a poller that has since restarted: follow its job, or run it again.
+            running.add(key)
+            args = (sha, lane, running, latest.get("target_url") or "")
+            threading.Thread(target=lane_thread, args=args, daemon=True).start()
+            log(f"{sha[:8]} {lane}: resumed")
+            continue
+        if latest or "nightly" in lane:
+            continue
+        files = files if files is not None else touched(base, sha)
+        if not affected(lane, files):
+            status(sha, lane, "success", "not affected by this change")
+            continue
+        work.append((sha, lane))
+    return work
+
+
 def serve() -> None:
     """Poll forever: claim each untested head's lanes, run them in parallel, report statuses."""
     running: set[str] = set()
@@ -235,21 +286,10 @@ def serve() -> None:
     log("office-mac poller started")
     while True:
         try:
-            work = []
-            for sha, base in heads():
-                files = None
-                for lane in ("mac", "ios"):
-                    key = f"{sha}:{lane}"
-                    if key in running or has_status(sha, f"office-mac/{lane}"):
-                        continue
-                    files = files if files is not None else touched(base, sha)
-                    if not affected(lane, files):
-                        status(sha, lane, "success", "not affected by this change")
-                        continue
-                    work.append((sha, lane))
+            work = [lane for sha, base in heads() for lane in claimable(sha, base, running)]
             now = dt.datetime.now().astimezone()
             today = now.date().isoformat()
-            if now.hour >= NIGHTLY_HOUR and state.get("nightly") != today:
+            if NIGHTLY_HOUR <= now.hour < NIGHTLY_HOUR + 4 and state.get("nightly") != today:
                 main = heads()[0][0]
                 work += [(main, "nightly"), (main, "ios-nightly")]
                 state["nightly"] = today
@@ -268,7 +308,11 @@ def install() -> None:
     """Install the launch agent that runs `serve` at login and keeps it alive."""
     agent = Path.home() / f"Library/LaunchAgents/{LABEL}.plist"
     logfile = Path.home() / "Library/Logs/onicode-ci.log"
-    script = Path(__file__).resolve()
+    # Background processes may not read external volumes (where the checkout may live), so the agent runs a
+    # copy; `install` again after the script changes.
+    script = STATE.parent / "office_mac.py"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(Path(__file__).resolve(), script)
     path = os.environ.get("PATH", "/usr/bin:/bin")
     agent.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
