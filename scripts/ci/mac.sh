@@ -1,39 +1,71 @@
 #!/usr/bin/env bash
-# The macOS lane: the app build and the macOS-native tests. CI runs it on a GitLab office Mac
-# (scripts/ci/gitlab-bridge.py, a warm target on /Volumes/CICache) or, when neither office Mac
-# is free, on a hosted macos runner (cold, advisory).
+# The main test lane, on a GitLab office Mac (scripts/ci/gitlab-bridge.py) in the onicode/macos-27-ci guest,
+# with a warm target on /Volumes/CICache (scripts/ci/office-mac.gitlab-ci.yml). macOS and iOS are the
+# platforms tested thoroughly; Linux gets only the static and clippy jobs.
 #
-#   mac.sh pr        the app binaries and the macOS-native tests
-#   mac.sh nightly   the same, then the whole workspace under the default nextest profile
+#   mac.sh pr           clippy for macOS, the app binaries, every test under the ci nextest profile, and
+#                       cargo-mutants on the lines the branch changed
+#   mac.sh nightly      the same build and tests under the default profile, then coverage (the number that
+#                       counts), Miri, a mutants shard, cargo-hack and the fuzz targets (scripts/ci/gates.sh)
+#   mac.sh ios-pr       scripts/ci/ios.sh pr: the iOS lane, from the same pipeline
+#   mac.sh ios-nightly  scripts/ci/ios.sh nightly
+#   mac.sh warm         the guest's versions, and the toolchain and registry onto the cache; builds nothing
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 suite="${1:-pr}"
+case "$suite" in
+  pr | nightly | warm) ;;
+  ios-pr | ios-nightly) exec scripts/ci/ios.sh "${suite#ios-}" ;;
+  *)
+    echo "mac.sh: unknown suite $suite" >&2
+    exit 2
+    ;;
+esac
 
-NEXTEST_VERSION=0.9.146
-if ! cargo nextest --version 2>/dev/null | grep -q "$NEXTEST_VERSION"; then
-  bin="${CARGO_HOME:-$HOME/.cargo}/bin"
-  mkdir -p "$bin"
-  curl --proto '=https' --tlsv1.2 -fsSL --retry 5 \
-    "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-$NEXTEST_VERSION/cargo-nextest-$NEXTEST_VERSION-universal-apple-darwin.tar.gz" |
-    tar -xzf - -C "$bin" cargo-nextest
+# gpui-fast compiles its Metal shaders at build time, with Xcode's Metal toolchain, a separate
+# component that the CI image bakes in. Fail here rather than deep in a build script.
+if ! xcrun metal --version >/dev/null 2>&1; then
+  echo "mac.sh: no Metal toolchain (xcodebuild -downloadComponent MetalToolchain; the CI image has it)" >&2
+  exit 1
+fi
+
+if [[ "$suite" = warm ]]; then
+  sw_vers
+  xcodebuild -version
+  xcrun metal --version
+  zig version
+  df -h .
+  cargo fetch --locked
+  exit 0
+fi
+
+. scripts/dev/tools.env
+if ! cargo nextest --version 2>/dev/null | grep -q "$NEXTEST"; then
+  scripts/ci/install-nextest.sh
 fi
 
 export CARGO_PROFILE_DEV_DEBUG=0
-nextest=(cargo nextest run --config-file scripts/ci/nextest.toml --locked --no-fail-fast)
+# Every build here has the shape of `cargo t` (.cargo/config.toml): the whole workspace with one
+# feature set, so the app build, the tests and clippy share one set of artifacts in the warm target
+# (a `-p` or another feature set re-resolves features and rebuilds dependencies). Tests are picked
+# with filters, never with `-p`.
+cargo lint
+cargo build --locked --workspace --bins --features onicode-harness/native-fixture
 
-cargo build --locked -p onicode --bins
+if [[ "$suite" = pr ]]; then
+  NEXTEST_PROFILE=ci cargo t --locked --config-file scripts/ci/nextest.toml
+  scripts/ci/gates.sh mutants-diff
+  exit 0
+fi
 
-# onicode-text's coretext tests are macOS-only; the ui filters cover native font geometry,
-# notifications and attachment staging, whose paths and file metadata are platform-specific.
-"${nextest[@]}" -p onicode-update -p onicode-preview -p onicode-ui -p onicode-text -p onicode \
-  --lib --bins --tests \
-  -E 'package(onicode-update) | package(onicode-preview) | binary_id(onicode-text::coretext) | binary_id(onicode::cli)
-      | (binary_id(onicode-ui) & (test(native_diff_font_geometry) | test(/notify::tests::/) | test(/^attachments::tests::/)
-         | test(/composer::attachment_chip_tests::/) | test(/shell::chat_dropzone_tests::/)
-         | test(=queue::tests::queue_rows_label_attachment_chips_and_file_only_sends)
-         | test(=transcript::tests::user_bubbles_project_attachment_chips_in_place_of_the_strip)
-         | test(=transcript::tests::sent_chips_show_upload_progress_until_their_bytes_land)))'
-
-if [ "$suite" = nightly ]; then
-  NEXTEST_PROFILE=default "${nextest[@]}" --workspace --lib --bins
+# Every gate runs, and the job fails if any did.
+failed=()
+gate() { "$@" || failed+=("$*"); }
+gate env NEXTEST_PROFILE=default cargo t --locked --config-file scripts/ci/nextest.toml
+for g in coverage miri mutants-shard hack fuzz; do
+  gate scripts/ci/gates.sh "$g"
+done
+if ((${#failed[@]} > 0)); then
+  printf 'mac.sh: failed: %s\n' "${failed[@]}" >&2
+  exit 1
 fi

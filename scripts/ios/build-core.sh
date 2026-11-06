@@ -20,7 +20,10 @@ PLATFORM="${1:-${PLATFORM_NAME:-iphonesimulator}}"
 case "$PLATFORM" in
   iphonesimulator) TARGET=aarch64-apple-ios-sim ;;
   iphoneos) TARGET=aarch64-apple-ios ;;
-  *) echo "error: unsupported platform $PLATFORM" >&2; exit 1 ;;
+  *)
+    echo "error: unsupported platform $PLATFORM" >&2
+    exit 1
+    ;;
 esac
 PROFILE=mobile
 if [[ "${CONFIGURATION:-Debug}" == "Release" ]]; then PROFILE=mobile-dist; fi
@@ -48,7 +51,7 @@ run_cargo() {
   env -i HOME="$HOME" USER="${USER:-}" TERM="${TERM:-dumb}" \
     ${KEEP[@]+"${KEEP[@]}"} \
     PATH="$CARGO_DIRS:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
-    IPHONEOS_DEPLOYMENT_TARGET=26.0 \
+    IPHONEOS_DEPLOYMENT_TARGET=27.2 \
     CARGO_TARGET_DIR="$ROOT/target" \
     cargo "$@"
 }
@@ -65,7 +68,10 @@ GEN="$OUT/gen"
 cp "$GEN/onicode_coreFFI.h" "$OUT/include/onicode_coreFFI.h"
 cp "$GEN/onicode_coreFFI.modulemap" "$OUT/include/module.modulemap"
 # Only touch the committed files when they changed so Xcode doesn't recompile them.
-refresh() { mkdir -p "$(dirname "$2")"; cmp -s "$1" "$2" || cp "$1" "$2"; }
+refresh() {
+  mkdir -p "$(dirname "$2")"
+  cmp -s "$1" "$2" || cp "$1" "$2"
+}
 refresh "$GEN/onicode_core.swift" "$ROOT/apps/ios/Onicode/Core/Generated/onicode_core.swift"
 refresh "$GEN/onicode_coreFFI.h" "$ROOT/apps/ios/CoreFFI/onicode_coreFFI.h"
 refresh "$GEN/onicode_coreFFI.modulemap" "$ROOT/apps/ios/CoreFFI/module.modulemap"

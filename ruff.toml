@@ -1,0 +1,63 @@
+# ruff (scripts/dev/check.sh static, the static CI job, pre-commit): every rule, minus the ones that fight
+# `ruff format` and one side of each docstring-style pair. Anything else is a per-file ignore with its reason.
+line-length = 120
+# The oldest python3 these meet: macOS's /usr/bin/python3 (3.9) on the office Macs; CI has 3.12.
+target-version = "py39"
+
+# Dev tools that need a newer Python: tomllib (3.11), ExceptionGroup and add_note (3.11), hashlib.file_digest
+# (3.11) and tarfile's extraction filters (3.12).
+[per-file-target-version]
+"scripts/upstream/watch.py" = "py311"
+"scripts/test-browser-storage.py" = "py311"
+"scripts/package-voice-runtime.py" = "py312"
+"scripts/tests/test_voice_packaging.py" = "py312"
+
+[format]
+quote-style = "double"
+docstring-code-format = true
+
+[lint]
+select = ["ALL"]
+ignore = [
+    # Conflict with the formatter (https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules).
+    "COM812",
+    "ISC001",
+    "W191",
+    "E111",
+    "E114",
+    "E117",
+    "D206",
+    "D300",
+    "Q000",
+    "Q001",
+    "Q002",
+    "Q003",
+    # One side of each docstring pair: no blank line before a class docstring (D211), summary on the first
+    # line (D212).
+    "D203",
+    "D213",
+    # The repository's LICENSE covers every file; no file carries its own header.
+    "CPY001",
+]
+
+[lint.per-file-ignores]
+# Fixture servers, dev and CI scripts are command-line programs: stdout is their interface, they run fixed
+# argv lists of known tools, and they are scripts rather than an importable package.
+"crates/*/tests/fixtures/**/*.py" = ["T201", "S603", "S607", "INP001"]
+"scripts/**/*.py" = ["T201", "S603", "S607", "INP001"]
+# Test suites: assert is the check, and a test's name says what it checks, so test classes and methods need
+# no docstring. The suites are unittest (`python3 -m unittest`, no pytest dependency), so the pytest-style
+# rules do not apply. Their /tmp paths are inputs to the code under test, never written.
+"scripts/tests/*.py" = ["S101", "S108", "PT009", "PT027"]
+"scripts/tests/test_*.py" = ["D101", "D102"]
+"scripts/test-update-cursor-sdk.py" = ["S101", "PT009", "PT027", "D101", "D102"]
+# Smoke drivers and probes: assert is the check.
+"scripts/test-browser-storage.py" = ["S101"]
+"scripts/codex-voice-smoke.py" = ["S101"]
+"scripts/cursor-cli-history-probe.py" = ["S101"]
+"scripts/acp-starve-repro.py" = ["S101"]
+
+[lint.flake8-annotations]
+mypy-init-return = false
+suppress-dummy-args = false
+allow-star-arg-any = false

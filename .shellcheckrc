@@ -1,0 +1,6 @@
+# shellcheck (scripts/dev/check.sh static, the static CI job, pre-commit): every optional check on.
+enable=all
+external-sources=true
+source-path=SCRIPTDIR
+# require-variable-braces: pure style (`$x` vs `${x}`), no class of bug, ~1750 hits.
+disable=SC2250

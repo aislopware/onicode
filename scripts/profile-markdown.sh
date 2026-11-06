@@ -12,19 +12,27 @@ bench_dir=$(mktemp -d)
 trap 'rm -rf "$bench_dir"' EXIT
 for module in parser mend; do
   if [[ -n "${3:-}" ]]; then
-    git -C "$root" show "$3:crates/ui/src/markdown/$module.rs" > "$bench_dir/$module.rs"
+    git -C "$root" show "$3:crates/ui/src/markdown/$module.rs" >"$bench_dir/$module.rs"
   else
     cp "$root/crates/ui/src/markdown/$module.rs" "$bench_dir/$module.rs"
   fi
 done
-cat > "$bench_dir/main.rs" <<EOF
+cat >"$bench_dir/main.rs" <<EOF
 mod markdown {
     #[path = "$bench_dir/mend.rs"] pub mod mend;
     #[path = "$bench_dir/parser.rs"] pub mod parser;
 }
 include!("$root/scripts/markdown-profile.rs");
 EOF
-cmark=$(ls -t "$deps"/libpulldown_cmark-*.rlib | head -1)
+# The newest build of pulldown-cmark.
+cmark=""
+for rlib in "$deps"/libpulldown_cmark-*.rlib; do
+  [[ -z "$cmark" || "$rlib" -nt "$cmark" ]] && cmark=$rlib
+done
+[[ -f "$cmark" ]] || {
+  echo "no pulldown-cmark rlib in $deps" >&2
+  exit 1
+}
 rustc --edition=2024 -O -Awarnings -L "dependency=$deps" \
   --extern "pulldown_cmark=$cmark" "$bench_dir/main.rs" -o "$bench_dir/profile"
 "$bench_dir/profile" "$source_text"

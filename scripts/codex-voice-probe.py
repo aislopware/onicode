@@ -1,28 +1,39 @@
 #!/usr/bin/env python3
 """Bounded, read-only native Codex voice probe. Never starts inference/audio."""
+
 import asyncio
+import contextlib
 import json
 import shutil
 
 METHODS = (
-    ("initialize", {"clientInfo": {"name": "onicode-voice-probe", "version": "1"},
-                    "capabilities": {"experimentalApi": True}}),
+    (
+        "initialize",
+        {"clientInfo": {"name": "onicode-voice-probe", "version": "1"}, "capabilities": {"experimentalApi": True}},
+    ),
     ("account/read", {"refreshToken": False}),
     ("account/rateLimits/read", {}),
     ("thread/realtime/listVoices", {}),
 )
 
-async def probe():
+
+async def probe() -> None:
+    """Ask a local Codex app server which voice methods it supports and print the answers."""
     executable = shutil.which("codex")
     if not executable:
-        raise RuntimeError("Codex is not installed")
+        msg = "Codex is not installed"
+        raise RuntimeError(msg)
     child = await asyncio.create_subprocess_exec(
-        executable, "app-server", stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        limit=256 * 1024)
+        executable,
+        "app-server",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        limit=256 * 1024,
+    )
     pending = {}
 
-    async def read():
+    async def read() -> None:
         try:
             while line := await child.stdout.readline():
                 message = json.loads(line)
@@ -40,8 +51,7 @@ async def probe():
         for identifier, (method, params) in enumerate(METHODS, 1):
             future = asyncio.get_running_loop().create_future()
             pending[identifier] = future
-            child.stdin.write((json.dumps({"id": identifier, "method": method,
-                                         "params": params}) + "\n").encode())
+            child.stdin.write((json.dumps({"id": identifier, "method": method, "params": params}) + "\n").encode())
             await child.stdin.drain()
             try:
                 message = await asyncio.wait_for(future, timeout=8)
@@ -59,16 +69,20 @@ async def probe():
     finally:
         reader.cancel()
         await asyncio.gather(reader, return_exceptions=True)
-        if child.returncode is None:
-            try:
-                child.terminate()
-            except ProcessLookupError:
-                pass
-            try:
-                await asyncio.wait_for(child.wait(), 2)
-            except asyncio.TimeoutError:
-                child.kill()
-                await child.wait()
+        await stop(child)
+
+
+async def stop(child: asyncio.subprocess.Process) -> None:
+    """Terminate the app server, killing it after two seconds."""
+    if child.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            child.terminate()
+        try:
+            await asyncio.wait_for(child.wait(), 2)
+        except asyncio.TimeoutError:
+            child.kill()
+            await child.wait()
+
 
 if __name__ == "__main__":
     asyncio.run(probe())

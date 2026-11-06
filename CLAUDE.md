@@ -19,7 +19,8 @@ A native control plane for coding agents: many clients drive many servers peer t
 
 ## Checks
 
-- `scripts/dev/check.sh` runs fmt, clippy and the tests; `build`, `lint` or `test '<nextest filter>'` run one part.
+- `scripts/dev/check.sh` runs every check; `static` (no compiling, safe beside a build), `fmt`, `lint`, `doc` or
+  `test '<nextest filter>'` run one part. `scripts/dev/setup.sh` installs the pinned tools and git hooks.
   It keeps one warm target dir on the internal SSD (`scripts/dev/env.sh`); select tests with a filter, not `-p`.
 - Subagents edit a whole batch without building or testing; the lead runs the checks once per batch.
 

@@ -11,20 +11,34 @@ import tempfile
 import uuid
 
 
-def main():
+def main() -> None:
+    """Run eight resumed turns, then ask for every token back in order."""
     tokens = [f"CLI-{uuid.uuid4()}" for _ in range(8)]
     session = None
     with tempfile.TemporaryDirectory(prefix="cursor-cli-history-") as workspace:
-        def send(prompt):
+
+        def send(prompt: str) -> str:
+            """Send one turn on the session, resuming it after the first."""
             nonlocal session
             args = [
-                "cursor-agent", "--workspace", workspace, "--trust",
-                "--model", "muse-spark-1.3", "--print", "--output-format", "json",
+                "cursor-agent",
+                "--workspace",
+                workspace,
+                "--trust",
+                "--model",
+                "muse-spark-1.3",
+                "--print",
+                "--output-format",
+                "json",
             ]
             if session:
                 args += ["--resume", session]
             response = subprocess.run(
-                args + [prompt], capture_output=True, text=True, timeout=120,
+                [*args, prompt],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
             )
             assert response.returncode == 0, response.stderr[-1000:]
             result = json.loads(response.stdout)
@@ -38,24 +52,35 @@ def main():
             prompt = f"Remember token {token}. Reply with this token"
             if i:
                 prompt += " and the token from the immediately previous user message"
-            prompt += (
-                ". Do not use tools or files. Retain all tokens in conversation history."
-            )
+            prompt += ". Do not use tools or files. Retain all tokens in conversation history."
             answer = send(prompt)
             assert token in answer, f"turn {i}: current token missing"
             if i:
                 assert tokens[i - 1] in answer, f"turn {i}: previous token missing"
-            print(json.dumps({
-                "nativeCliTurn": i + 1, "previousAndCurrentRecalled": True,
-            }), flush=True)
+            print(
+                json.dumps(
+                    {
+                        "nativeCliTurn": i + 1,
+                        "previousAndCurrentRecalled": True,
+                    }
+                ),
+                flush=True,
+            )
 
         answer = send("List every CLI token from all user messages in order. No tools.")
         offset = 0
         for token in tokens:
             offset = answer.index(token, offset) + len(token)
-        print(json.dumps({
-            "nativeCliHistoryTokens": len(tokens), "resumed": True, "failures": 0,
-        }), flush=True)
+        print(
+            json.dumps(
+                {
+                    "nativeCliHistoryTokens": len(tokens),
+                    "resumed": True,
+                    "failures": 0,
+                }
+            ),
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,16 @@
+# cargo-mutants (scripts/ci/gates.sh). Each mutant builds with `cargo t`'s workspace shape and runs the whole
+# workspace's tests under nextest, so the warm target serves every mutant.
+test_tool = "nextest"
+test_workspace = true
+features = ["onicode-harness/native-fixture"]
+additional_cargo_test_args = ["--config-file", "scripts/ci/nextest.toml"]
+# Test code, fixtures, examples and generated code are not mutated.
+exclude_globs = [
+    "**/tests/**",
+    "**/tests.rs",
+    "**/*_tests.rs",
+    "**/examples/**",
+    "**/benches/**",
+    "crates/mobile-bindgen/**",
+    "vendor/**",
+]

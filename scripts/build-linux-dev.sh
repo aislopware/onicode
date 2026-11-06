@@ -59,5 +59,6 @@ mv "$OUT/onicode.linux-x86_64" "$STAGE/onicode"
 mv "$OUT/onicode-engine.linux-x86_64" "$STAGE/onicode-engine"
 tar -czf "$STAGE.tar.gz" -C "$OUT" "$(basename "$STAGE")"
 rm -rf "$STAGE"
-echo "$VERSION" > "$OUT/latest.txt"
-echo "built $STAGE.tar.gz ($(du -h "$STAGE.tar.gz" | cut -f1))"
+echo "$VERSION" >"$OUT/latest.txt"
+size=$(du -h "$STAGE.tar.gz" | cut -f1)
+echo "built $STAGE.tar.gz ($size)"

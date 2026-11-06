@@ -1,17 +1,18 @@
 name: CI
 
-# Pull requests, main and the nightly run.
+# Pull requests, main and the nightly run. macOS and iOS are tested thoroughly on the office Macs; Linux gets
+# the cheap gates only; nothing else is a target.
 #
-#   lint      rustfmt and clippy, warnings denied
-#   core      every non-UI Rust test on Linux (scripts/ci/test-core.sh)
-#   ui        onicode-ui and its headless layout tests on Linux
-#   ios-core  the mobile core's tests and the generated Swift bindings
-#   mac       scripts/ci/mac.sh on a GitLab office Mac (warm, incremental), or on a hosted macOS
-#             runner when neither is free or the run has no secrets (fork pull requests)
+#   static    every checker that builds nothing (scripts/dev/check.sh static, fmt, deps)
+#   lint      clippy for Linux, so cfg(linux) code still compiles, and rustdoc, warnings denied
+#   mac       scripts/ci/mac.sh on a GitLab office Mac (macOS 27.2 guest, warm, incremental): clippy for macOS,
+#             every test, and diff-scoped mutants; nightly adds coverage, Miri, a mutants shard, cargo-hack
+#             and the fuzz targets
+#   ios       scripts/ci/ios.sh on an office Mac: the mobile core, binding drift, OnicodeTests on a simulator
 #   result    "CI result", the one check to require
 #
-# Pull requests and main use the `ci` nextest profile (slow and soak tests left out); nightly runs
-# everything, the release profile and the whole workspace on the office Mac.
+# Hosted macOS runners cannot run onicode (macOS 27.2 and later only). Fork pull requests get no secrets,
+# so mac and ios skip with a notice and untrusted code never reaches the shared CICache.
 
 on:
   pull_request:
@@ -30,148 +31,141 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  NEXTEST_PROFILE: ${{ github.event_name == 'schedule' && 'default' || 'ci' }}
-  ONICODE_STRESS_ROUNDS: ${{ github.event_name == 'schedule' && '100' || '14' }}
 
 jobs:
   changes:
+    name: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
       rust: ${{ steps.diff.outputs.rust }}
       ios: ${{ steps.diff.outputs.ios }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - id: diff
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          EVENT: ${{ github.event_name }}
         run: |
-          if [ "${{ github.event_name }}" != pull_request ] && [ "${{ github.event_name }}" != push ] \
-            || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+          if { [ "$EVENT" != pull_request ] && [ "$EVENT" != push ]; } || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             echo "rust=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           files=$(git diff --name-only "$BASE" HEAD)
           echo "$files"
           if echo "$files" | grep -qvE '^(docs/|.*\.md$|LICENSE|\.research/)'; then rust=true; else rust=false; fi
-          if echo "$files" | grep -qE '^(apps/ios/|crates/(mobile|client|text|markdown)/|Cargo\.lock)'; then ios=true; else ios=false; fi
+          # The iOS lane: the app, the crates the mobile core links (every crate but the desktop-only ones),
+          # the toolchain and the CI scripts.
+          desktop='^crates/(ui|engine|harness|preview|preview-label|cli|launch|notify|update|audio|mcp|rpc)/|^apps/onicode/'
+          ios_paths='^(apps/ios/|crates/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|scripts/ios/|scripts/ci/|\.github/)'
+          if echo "$files" | grep -vE "$desktop" | grep -qE "$ios_paths"; then ios=true; else ios=false; fi
           echo "rust=$rust" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"
 
+  static:
+    name: static
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Tool versions
+        run: grep -E '^[A-Z0-9_]+=' scripts/dev/tools.env >> "$GITHUB_ENV"
+      # install-action checks each binary against the SHA-256 in its manifest; the action itself is pinned by
+      # commit and the tools by version (scripts/dev/tools.env).
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: >-
+            typos@${{ env.TYPOS }},taplo@${{ env.TAPLO }},shellcheck@${{ env.SHELLCHECK }},shfmt@${{ env.SHFMT }},
+            zizmor@${{ env.ZIZMOR }},cargo-deny@${{ env.CARGO_DENY }},cargo-shear@${{ env.CARGO_SHEAR }}
+      - name: ruff, actionlint and swiftlint
+        run: scripts/ci/install-static-tools.sh
+      - name: Nightly rustfmt
+        run: rustup toolchain install "$RUST_NIGHTLY" --profile minimal --component rustfmt
+      - name: Checkers
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || 'HEAD^' }}
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/dev/check.sh static
+      - name: rustfmt
+        run: scripts/dev/check.sh fmt
+      - name: cargo-deny and cargo-shear
+        run: scripts/dev/check.sh deps
+
   lint:
+    name: lint
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: ./.github/actions/linux-ci
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # actionlint 1.7.12, the newest, cannot parse the self-repository form `$/` yet.
+      - uses: ./.github/actions/linux-ci # zizmor: ignore[self-repository]
         with:
           rust-cache: lint
           save-rust-cache: 'true'
           apt-cache: ui
-          apt-packages: &gui-packages >-
+          apt-packages: >-
             libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-dev libxcb1-dev libx11-xcb-dev
             libfontconfig1-dev libfreetype-dev libasound2-dev libvulkan-dev pkg-config cmake
             libwebkit2gtk-4.1-dev libjson-glib-dev
-      - run: cargo fmt --all --check
-      - run: cargo lint --locked
+      - run: cargo lint
+      - name: rustdoc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked --no-deps --workspace --features onicode-harness/native-fixture
 
-  core:
+  # The office Macs only take trusted code: fork pull requests get no secrets, so they never touch the shared
+  # CICache. Both lanes move their secrets into the office-mac environment.
+  mac:
+    name: mac
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    environment: office-mac
+    timeout-minutes: ${{ github.event_name == 'schedule' && 260 || 90 }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: ./.github/actions/linux-ci
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          rust-cache: core
-          save-rust-cache: 'true'
-      - run: scripts/ci/test-core.sh
-      - name: Release profile (nightly)
-        if: github.event_name == 'schedule'
-        run: scripts/ci/test-core.sh --cargo-profile release
+          persist-credentials: false
+      - env:
+          GITLAB_TRIGGER_TOKEN: ${{ secrets.GITLAB_TRIGGER_TOKEN }}
+          GITLAB_READ_TOKEN: ${{ secrets.GITLAB_READ_TOKEN }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SUITE: ${{ github.event_name == 'schedule' && 'nightly' || 'pr' }}
+        run: |
+          if [ -z "$GITLAB_TRIGGER_TOKEN" ]; then echo "::notice::no office Mac secrets (fork pull request): macOS lane skipped"; exit 0; fi
+          python3 scripts/ci/gitlab-bridge.py "$SHA" "$SUITE"
 
-  ui:
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: ./.github/actions/linux-ci
-        with:
-          rust-cache: ui
-          save-rust-cache: 'true'
-          apt-cache: ui
-          apt-packages: *gui-packages
-      - run: cargo nextest run --config-file scripts/ci/nextest.toml --locked --no-fail-fast -p onicode-ui --lib
-
-  ios-core:
+  ios:
+    name: ios
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    environment: office-mac
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: ./.github/actions/linux-ci
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          rust-cache: ios-core
-          save-rust-cache: 'true'
-      - run: cargo nextest run --config-file scripts/ci/nextest.toml --locked --no-fail-fast -p onicode-text -p onicode-markdown -p onicode-client -p onicode-mobile
-      - name: Generated bindings are current
-        run: |
-          cargo build --locked -p onicode-mobile --lib
-          cargo build --locked -p onicode-mobile --bin uniffi-bindgen --features bindgen
-          target/debug/uniffi-bindgen generate --library target/debug/libonicode_mobile.so \
-            --language swift --out-dir "$RUNNER_TEMP/gen" >/dev/null
-          diff -u apps/ios/Onicode/Core/Generated/onicode_core.swift "$RUNNER_TEMP/gen/onicode_core.swift"
-          diff -u apps/ios/CoreFFI/onicode_coreFFI.h "$RUNNER_TEMP/gen/onicode_coreFFI.h"
-          diff -u apps/ios/CoreFFI/module.modulemap "$RUNNER_TEMP/gen/onicode_coreFFI.modulemap"
-
-  # Office Macs only for trusted code: fork pull requests get no secrets, so they never touch the
-  # shared CICache and go straight to the hosted fallback.
-  mac:
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    outputs:
-      fallback: ${{ steps.office.outputs.fallback }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - id: office
-        env:
+          persist-credentials: false
+      - env:
           GITLAB_TRIGGER_TOKEN: ${{ secrets.GITLAB_TRIGGER_TOKEN }}
           GITLAB_READ_TOKEN: ${{ secrets.GITLAB_READ_TOKEN }}
-          SUITE: ${{ github.event_name == 'schedule' && 'nightly' || 'pr' }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SUITE: ${{ github.event_name == 'schedule' && 'ios-nightly' || 'ios-pr' }}
         run: |
-          if [ -z "$GITLAB_TRIGGER_TOKEN" ]; then echo "fallback=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          set +e
-          python3 scripts/ci/gitlab-bridge.py "${{ github.event.pull_request.head.sha || github.sha }}" "$SUITE"
-          code=$?
-          if [ $code = 3 ]; then echo "fallback=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          exit $code
-
-  mac-hosted:
-    needs: mac
-    if: needs.mac.outputs.fallback == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          prefix-key: ci-macos-v1
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          cache-on-failure: true
-      - run: scripts/ci/mac.sh pr
+          if [ -z "$GITLAB_TRIGGER_TOKEN" ]; then echo "::notice::no office Mac secrets (fork pull request): iOS lane skipped"; exit 0; fi
+          python3 scripts/ci/gitlab-bridge.py "$SHA" "$SUITE"
 
   result:
     name: CI result
-    needs: [changes, lint, core, ui, ios-core, mac, mac-hosted]
+    needs: [changes, static, lint, mac, ios]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 3
@@ -180,5 +174,5 @@ jobs:
           FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
           RESULTS: ${{ toJSON(needs) }}
         run: |
-          echo "$RESULTS" | python3 -c 'import json,sys; [print(k.ljust(11), v["result"]) for k, v in json.load(sys.stdin).items()]'
+          echo "$RESULTS" | python3 -c 'import json,sys; [print(k.ljust(8), v["result"]) for k, v in json.load(sys.stdin).items()]'
           test "$FAILED" = false

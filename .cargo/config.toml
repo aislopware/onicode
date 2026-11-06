@@ -2,5 +2,5 @@
 # (a different `-p` or feature set rebuilds dependencies and duplicates artifacts). Select tests with
 # nextest's `-E 'rdeps(crate)'`, not `-p`.
 [alias]
-t = "nextest run --workspace --lib --bins --tests --features onicode-harness/native-fixture"
-lint = "clippy --workspace --all-targets --features onicode-harness/native-fixture -- -D warnings"
+t = "nextest run --no-tests=fail --workspace --lib --bins --tests --features onicode-harness/native-fixture"
+lint = "clippy --locked --workspace --all-targets --features onicode-harness/native-fixture -- -D warnings"

@@ -4,20 +4,22 @@
 Linux: xvfb-run -a python3 scripts/test-browser-storage.py --helper /path/to/onicode-webkit
 Native shell (Linux/macOS): python3 scripts/test-browser-storage.py --fixture /path/to/browser-fixture
 """
+
+from __future__ import annotations
+
 import argparse
 import http.server
 import json
 import os
-from pathlib import Path
 import queue
 import struct
-import sys
 import subprocess
+import sys
 import tempfile
 import threading
 import time
+from pathlib import Path
 from urllib.parse import urlparse
-
 
 PAGE = r"""<!doctype html><title>Storage fixture</title><script>
 (async () => {
@@ -74,86 +76,100 @@ PAGE = r"""<!doctype html><title>Storage fixture</title><script>
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
+    """Serve the storage page per mode, the HttpOnly cookie, and the cookies the browser sent."""
+
+    def do_GET(self) -> None:
+        """Answer one request."""
         mode = urlparse(self.path).path
         self.send_response(200)
-        self.send_header('Cache-Control', 'no-store')
-        if mode == '/cookies':
-            body = json.dumps(self.headers.get('Cookie', '')).encode()
-            self.send_header('Content-Type', 'application/json')
+        self.send_header("Cache-Control", "no-store")
+        if mode == "/cookies":
+            body = json.dumps(self.headers.get("Cookie", "")).encode()
+            self.send_header("Content-Type", "application/json")
         else:
             body = PAGE.encode()
-            self.send_header('Content-Type', 'text/html')
-            if mode in ('/write', '/delete'):
-                age = 3600 if mode == '/write' else 0
-                self.send_header('Set-Cookie', f'httpOnlyToken=fixture; Path=/; HttpOnly; SameSite=Lax; Max-Age={age}')
-        self.send_header('Content-Length', str(len(body)))
+            self.send_header("Content-Type", "text/html")
+            if mode in ("/write", "/delete"):
+                age = 3600 if mode == "/write" else 0
+                self.send_header("Set-Cookie", f"httpOnlyToken=fixture; Path=/; HttpOnly; SameSite=Lax; Max-Age={age}")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, *_):
-        pass
+    def log_message(self, *_: object) -> None:
+        """Keep the test output quiet."""
 
 
 class Helper:
-    def __init__(self, binary, profile, expect_error=False):
-        self.process = subprocess.Popen([binary, '--profile', str(profile)], stdin=subprocess.PIPE,
-                                        stdout=subprocess.PIPE)
+    """The onicode-webkit helper on one profile, driven over its framed stdio protocol."""
+
+    def __init__(self, binary: str, profile: Path, *, expect_error: bool = False) -> None:
+        """Start the helper; with `expect_error`, check it refuses the profile and exits."""
+        self.process = subprocess.Popen(
+            [binary, "--profile", str(profile)], stdin=subprocess.PIPE, stdout=subprocess.PIPE
+        )
         self.events = queue.Queue()
         self.thread = threading.Thread(target=self.receive, daemon=True)
         self.thread.start()
         kind, _, data = self.events.get(timeout=15)
         if expect_error:
-            assert kind == b'E', (kind, data)
+            assert kind == b"E", (kind, data)
             assert self.process.wait(timeout=5) != 0
             self.process.stdin.close()
             self.process.stdout.close()
             return
-        if kind != b'R':
+        if kind != b"R":
             self.process.kill()
             self.process.wait()
-            raise AssertionError(('helper startup failed', kind, data))
+            raise AssertionError(("helper startup failed", kind, data))
 
-    def receive(self):
-        def read(length):
+    def receive(self) -> None:
+        """Queue each event frame until the helper exits."""
+
+        def read(length: int) -> bytes:
             data = bytearray()
             while len(data) < length:
                 part = self.process.stdout.read(length - len(data))
                 if not part:
-                    raise EOFError()
+                    raise EOFError
                 data.extend(part)
             return bytes(data)
+
         try:
             while True:
-                kind, page, length = struct.unpack('<cII', read(9))
+                kind, page, length = struct.unpack("<cII", read(9))
                 self.events.put((kind, page, read(length)))
         except EOFError:
-            self.events.put((b'X', 0, b'helper exited'))
+            self.events.put((b"X", 0, b"helper exited"))
 
-    def command(self, **command):
+    def command(self, **command: object) -> None:
+        """Send one command frame."""
         data = json.dumps(command).encode()
-        self.process.stdin.write(struct.pack('<I', len(data)) + data)
+        self.process.stdin.write(struct.pack("<I", len(data)) + data)
         self.process.stdin.flush()
 
-    def page(self, page, url):
-        self.command(cmd='create', id=page)
-        self.command(cmd='load', id=page, url=url)
+    def page(self, page: int, url: str) -> None:
+        """Open `url` in a new page and wait for the storage check to pass."""
+        self.command(cmd="create", id=page)
+        self.command(cmd="load", id=page, url=url)
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
-            kind, identity, data = self.events.get(timeout=max(.1, deadline - time.monotonic()))
-            if kind == b'X':
+            kind, identity, data = self.events.get(timeout=max(0.1, deadline - time.monotonic()))
+            if kind == b"X":
                 raise AssertionError(data)
-            if kind != b'S' or identity != page:
+            if kind != b"S" or identity != page:
                 continue
             state = json.loads(data)
-            assert not state.get('error'), state
-            title = state.get('title', '')
-            assert not title.startswith('storage:fail:'), title
-            if title == 'storage:pass':
+            assert not state.get("error"), state
+            title = state.get("title", "")
+            assert not title.startswith("storage:fail:"), title
+            if title == "storage:pass":
                 return
-        raise AssertionError('storage page timed out')
+        msg = "storage page timed out"
+        raise AssertionError(msg)
 
-    def close(self):
+    def close(self) -> None:
+        """Close stdin and expect a clean exit."""
         self.process.stdin.close()  # production shutdown uses EOF, too
         try:
             assert self.process.wait(timeout=5) == 0
@@ -166,91 +182,124 @@ class Helper:
             self.process.stdout.close()
 
 
-def main():
+def run(args: argparse.Namespace, root: Path, origin: str, profile: str, mode: str) -> None:
+    """Load the page for `mode` on `profile`, in the helper or the native fixture."""
+    if args.helper:
+        browser = Helper(args.helper, root / profile)
+        try:
+            browser.page(1, origin + "/" + mode)
+            if mode == "write":
+                time.sleep(2.2)  # expire the short-lived cookie
+                browser.command(cmd="close", id=1)
+                browser.page(2, origin + "/read")
+        finally:
+            browser.close()
+    else:
+        env = dict(
+            os.environ,
+            ONICODE_BROWSER_STORAGE_ROOT=str(root),
+            ONICODE_BROWSER_STORAGE_PROFILE=profile,
+            ONICODE_BROWSER_STORAGE_URL=origin + "/" + mode,
+        )
+        captures = root / f"{profile}-{mode}"
+        result_file = captures / "storage-result.json"
+        result_file.unlink(missing_ok=True)
+        command = [str(Path(args.fixture).resolve()), str(captures)]
+        if os.uname().sysname == "Darwin":
+            command[:0] = ["bash", str(Path(__file__).resolve().parent / "run-macos-browser-fixture.sh")]
+        subprocess.run(command, env=env, check=True, timeout=60)
+        assert json.loads(result_file.read_text()) == {
+            "profile": profile,
+            "url": origin + "/" + mode,
+            "status": "pass",
+        }, f"missing or invalid storage result for {profile}: {mode}"
+    print(f"PASS {profile}: {mode}", flush=True)
+
+
+def cleanup(fixture: str, root: Path) -> list[Exception]:
+    """Clear every synthetic macOS profile, trying them all; the failures."""
+    errors = []
+    for profile in ("a", "a-other", "b"):
+        env = dict(
+            os.environ,
+            ONICODE_BROWSER_STORAGE_ROOT=str(root),
+            ONICODE_BROWSER_STORAGE_PROFILE=profile,
+            ONICODE_BROWSER_STORAGE_URL="cleanup",
+        )
+        captures = root / f"{profile}-cleanup"
+        result_file = captures / "storage-result.json"
+        try:
+            subprocess.run(
+                [
+                    "bash",
+                    str(Path(__file__).resolve().parent / "run-macos-browser-fixture.sh"),
+                    str(Path(fixture).resolve()),
+                    str(captures),
+                ],
+                env=env,
+                check=True,
+                timeout=60,
+            )
+            assert json.loads(result_file.read_text()) == {
+                "profile": profile,
+                "url": "cleanup",
+                "status": "pass",
+            }, f"missing or invalid cleanup result for {profile}"
+            print(f"PASS cleanup: {profile}", flush=True)
+        except (subprocess.SubprocessError, OSError, ValueError, AssertionError) as error:
+            errors.append(error)
+            print(f"FAIL cleanup: {profile}: {error}", file=sys.stderr, flush=True)
+    return errors
+
+
+def main() -> None:
+    """Run the storage scenarios and, for the helper, the profile locking and permission checks."""
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--helper', type=str)
-    group.add_argument('--fixture', type=str)
+    group.add_argument("--helper", type=str)
+    group.add_argument("--fixture", type=str)
     args = parser.parse_args()
-    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    origin = f'http://127.0.0.1:{server.server_port}'
-    with tempfile.TemporaryDirectory(prefix='onicode-browser-storage-') as temporary:
+    origin = f"http://127.0.0.1:{server.server_port}"
+    with tempfile.TemporaryDirectory(prefix="onicode-browser-storage-") as temporary:
         root = Path(temporary)
-        def run(profile, mode):
-            if args.helper:
-                browser = Helper(args.helper, root / profile)
-                try:
-                    browser.page(1, origin + '/' + mode)
-                    if mode == 'write':
-                        time.sleep(2.2)  # expire the short-lived cookie
-                        browser.command(cmd='close', id=1)
-                        browser.page(2, origin + '/read')
-                finally:
-                    browser.close()
-            else:
-                env = dict(os.environ, ONICODE_BROWSER_STORAGE_ROOT=str(root),
-                           ONICODE_BROWSER_STORAGE_PROFILE=profile,
-                           ONICODE_BROWSER_STORAGE_URL=origin + '/' + mode)
-                captures = root / f'{profile}-{mode}'
-                result_file = captures / 'storage-result.json'
-                result_file.unlink(missing_ok=True)
-                command = [str(Path(args.fixture).resolve()), str(captures)]
-                if os.uname().sysname == 'Darwin':
-                    command[:0] = ['bash', str(Path(__file__).resolve().parent / 'run-macos-browser-fixture.sh')]
-                subprocess.run(command, env=env, check=True, timeout=60)
-                assert json.loads(result_file.read_text()) == {
-                    'profile': profile, 'url': origin + '/' + mode, 'status': 'pass'
-                }, f'missing or invalid storage result for {profile}: {mode}'
-            print(f'PASS {profile}: {mode}', flush=True)
-
         try:
-            for profile, mode in [('a', 'write'), ('a', 'read'), ('b', 'empty'),
-                                  ('a', 'read'), ('a', 'delete'), ('a', 'empty')]:
-                run(profile, mode)
+            for profile, mode in [
+                ("a", "write"),
+                ("a", "read"),
+                ("b", "empty"),
+                ("a", "read"),
+                ("a", "delete"),
+                ("a", "empty"),
+            ]:
+                run(args, root, origin, profile, mode)
             if args.helper:
-                browser = Helper(args.helper, root / 'a')
+                browser = Helper(args.helper, root / "a")
                 try:
-                    Helper(args.helper, root / 'a', expect_error=True)
-                    other = Helper(args.helper, root / 'b')
+                    Helper(args.helper, root / "a", expect_error=True)
+                    other = Helper(args.helper, root / "b")
                     other.close()
                 finally:
                     browser.close()
-                bad = root / 'not-a-directory'
-                bad.write_text('storage must fail')
+                bad = root / "not-a-directory"
+                bad.write_text("storage must fail")
                 Helper(args.helper, bad, expect_error=True)
-                assert (root / 'a' / 'cookies.sqlite').stat().st_mode & 0o077 == 0
-                print('PASS profile locking, independent profiles, storage errors, file permissions', flush=True)
+                assert (root / "a" / "cookies.sqlite").stat().st_mode & 0o077 == 0
+                print("PASS profile locking, independent profiles, storage errors, file permissions", flush=True)
         finally:
             # Cleanup must attempt every synthetic profile without replacing the test failure.
             primary_error = sys.exc_info()[1]
-            cleanup_errors = []
-            if args.fixture and os.uname().sysname == 'Darwin':
-                for profile in ('a', 'a-other', 'b'):
-                    env = dict(os.environ, ONICODE_BROWSER_STORAGE_ROOT=str(root),
-                               ONICODE_BROWSER_STORAGE_PROFILE=profile,
-                               ONICODE_BROWSER_STORAGE_URL='cleanup')
-                    captures = root / f'{profile}-cleanup'
-                    result_file = captures / 'storage-result.json'
-                    try:
-                        subprocess.run(['bash', str(Path(__file__).resolve().parent / 'run-macos-browser-fixture.sh'),
-                                        str(Path(args.fixture).resolve()), str(captures)],
-                                       env=env, check=True, timeout=60)
-                        assert json.loads(result_file.read_text()) == {
-                            'profile': profile, 'url': 'cleanup', 'status': 'pass'
-                        }, f'missing or invalid cleanup result for {profile}'
-                        print(f'PASS cleanup: {profile}', flush=True)
-                    except Exception as error:
-                        cleanup_errors.append(error)
-                        print(f'FAIL cleanup: {profile}: {error}', file=sys.stderr, flush=True)
+            cleanup_errors = cleanup(args.fixture, root) if args.fixture and os.uname().sysname == "Darwin" else []
             server.shutdown()
             server.server_close()
             if cleanup_errors:
                 if primary_error is not None:
-                    primary_error.add_note(f'Profile cleanup also failed: {cleanup_errors!r}')
+                    primary_error.add_note(f"Profile cleanup also failed: {cleanup_errors!r}")
                 else:
-                    raise ExceptionGroup('Profile cleanup failed', cleanup_errors)
+                    msg = "Profile cleanup failed"
+                    raise ExceptionGroup(msg, cleanup_errors)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

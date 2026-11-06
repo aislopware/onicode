@@ -15,13 +15,16 @@ when changing the artwork.
 Usage: python3 scripts/dmg-background.py
 """
 
-import os
+from __future__ import annotations
+
+import math
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FONT = os.path.join(ROOT, "crates/ui/assets/fonts/GeistMono.ttf")
-OUT = os.path.join(ROOT, "packaging/macos")
+ROOT = Path(__file__).absolute().parents[1]
+FONT = ROOT / "crates/ui/assets/fonts/GeistMono.ttf"
+OUT = ROOT / "packaging/macos"
 
 # Window geometry in points; must match the dmgbuild settings in
 # scripts/package-macos.sh.
@@ -29,7 +32,7 @@ W, H = 660, 400
 
 BG = (6, 4, 10)  # --bg
 PURPLE = (139, 92, 246)  # --purple
-RAMP = [" ", " ", " ", ".", ":", ">", "~", "×", "*", "#"]
+RAMP = [" ", " ", " ", ".", ":", ">", "~", "\N{MULTIPLICATION SIGN}", "*", "#"]
 
 # Landing cell is 12x14 css px with a 10px font; the dmg window is smaller
 # than the closing section, so the hands render at reduced scale.
@@ -121,23 +124,24 @@ HAND_UP = """000000000011011000020000000000003230000202000000
 000100000020200202035533003330033036777055404222"""
 
 
-def field(x, y, t):
-    import math
-
+def field(x: float, y: float, t: float) -> float:
+    """Sample the landing page's drifting noise field, in 0..1."""
     a, b = x * 0.55, y * 0.35
-    v = math.sin(a + 2.1 * math.sin(b * 0.9 + t) + t * 0.7) * math.cos(
-        b - 1.7 * math.sin(a * 0.6 - t * 0.8)
-    )
+    v = math.sin(a + 2.1 * math.sin(b * 0.9 + t) + t * 0.7) * math.cos(b - 1.7 * math.sin(a * 0.6 - t * 0.8))
     return 0.5 + 0.5 * v
 
 
-def draw_hand(draw, font, data, ox, px, py, s):
-    """Paint one hand with its top-left cell at point (px, py).
+def draw_hand(
+    canvas: tuple[ImageDraw.ImageDraw, ImageFont.FreeTypeFont, int], data: str, ox: int, at: tuple[float, float]
+) -> None:
+    """Paint one hand with its top-left cell at point `at`, on a canvas at pixel scale s.
 
     Alpha fades near the window's top and bottom edges — the same visual as
     the landing's css mask, but window-relative so cropped hands dissolve
     into the edges instead of vanishing.
     """
+    draw, font, s = canvas
+    px, py = at
     grid = data.split("\n")
     for y, row in enumerate(grid):
         pos = (py + y * CH) / H
@@ -156,10 +160,10 @@ def draw_hand(draw, font, data, ox, px, py, s):
             cx, cy = (px + x * CW + 2 * SCALE) * s, (py + y * CH + 2 * SCALE) * s
             if cx < -CW * s or cy < -CH * s or cx > W * s or cy > H * s:
                 continue
-            draw.text((cx, cy), g, font=font, fill=PURPLE + (round(alpha * 255),))
+            draw.text((cx, cy), g, font=font, fill=(*PURPLE, round(alpha * 255)))
 
 
-def render(s, path):
+def render(s: int, path: Path) -> None:
     """Render the full background at pixel scale s (1 or 2)."""
     img = Image.new("RGB", (W * s, H * s), BG)
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -169,8 +173,8 @@ def render(s, path):
     # hand-down descends from the top-left, fingers reaching toward the app
     # icon; hand-up rises behind Applications on the right — the same
     # corner-to-corner pairing as the landing closing section.
-    draw_hand(draw, font, HAND_DOWN, 101, -70, -30, s)
-    draw_hand(draw, font, HAND_UP, 811, 390, 130, s)
+    draw_hand((draw, font, s), HAND_DOWN, 101, (-70, -30))
+    draw_hand((draw, font, s), HAND_UP, 811, (390, 130))
 
     # drag hint: a run of ramp chevrons between the two icons, brightening
     # toward Applications.
@@ -178,13 +182,16 @@ def render(s, path):
     for i, cx in enumerate(range(285, 386, 25)):
         alpha = 0.28 + i * 0.13
         draw.text(
-            (cx * s, 188 * s), "›", font=chev, fill=PURPLE + (round(alpha * 255),)
+            (cx * s, 188 * s),
+            "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}",
+            font=chev,
+            fill=(*PURPLE, round(alpha * 255)),
         )
 
     img.paste(layer, (0, 0), layer)
     img.save(path)
-    print(f"wrote {os.path.relpath(path, ROOT)} ({img.size[0]}x{img.size[1]})")
+    print(f"wrote {path.relative_to(ROOT)} ({img.size[0]}x{img.size[1]})")
 
 
-render(1, os.path.join(OUT, "dmg-background.png"))
-render(2, os.path.join(OUT, "dmg-background@2x.png"))
+render(1, OUT / "dmg-background.png")
+render(2, OUT / "dmg-background@2x.png")

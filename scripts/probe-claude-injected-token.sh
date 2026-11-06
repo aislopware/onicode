@@ -64,10 +64,19 @@ subscription="${CLAUDE_PROBE_SUBSCRIPTION:-max}"
 claude_bin="${CLAUDE_BIN:-claude}"
 turn_timeout=180
 
-command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 2; }
-command -v "$claude_bin" >/dev/null || { echo "claude CLI not found ($claude_bin)" >&2; exit 2; }
-echo "claude: $("$claude_bin" --version 2>/dev/null || echo unknown)"
-echo "token 1: ${#token1} chars; token 2: ${#token2} chars$([ "$token1" = "$token2" ] && echo ' (same token)')"
+command -v python3 >/dev/null || {
+  echo "python3 is required" >&2
+  exit 2
+}
+command -v "$claude_bin" >/dev/null || {
+  echo "claude CLI not found ($claude_bin)" >&2
+  exit 2
+}
+version=$("$claude_bin" --version 2>/dev/null || echo unknown)
+echo "claude: $version"
+same=""
+[[ "$token1" = "$token2" ]] && same=' (same token)'
+echo "token 1: ${#token1} chars; token 2: ${#token2} chars$same"
 
 now_ms() { python3 -c 'import time; print(int(time.time() * 1000))'; }
 
@@ -99,12 +108,12 @@ send_turn() {
 # wait_result N — wait for the Nth `result` frame; print its verdict line.
 wait_result() {
   local n="$1" deadline=$((SECONDS + turn_timeout))
-  while [ "$(grep -c '"type":"result"' "$out" 2>/dev/null || true)" -lt "$n" ]; do
+  while [[ "$(grep -c '"type":"result"' "$out" 2>/dev/null || true)" -lt "$n" ]]; do
     if ! kill -0 "$pid" 2>/dev/null; then
       echo "claude exited before turn $n finished"
       return 1
     fi
-    if [ "$SECONDS" -ge "$deadline" ]; then
+    if [[ "$SECONDS" -ge "$deadline" ]]; then
       echo "timed out waiting for turn $n"
       return 1
     fi
@@ -132,8 +141,10 @@ run_mode() {
 
   # `env` takes every -u before any NAME=value.
   local -a env_args=(-u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN)
-  if [ "$which" = file ]; then
-    write_credentials "$cfg" "$token1" $(($(now_ms) + expires_in * 1000))
+  local now err_tail
+  if [[ "$which" = file ]]; then
+    now=$(now_ms)
+    write_credentials "$cfg" "$token1" $((now + expires_in * 1000))
     env_args+=(-u CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CONFIG_DIR="$cfg")
   else
     env_args+=(CLAUDE_CONFIG_DIR="$cfg" CLAUDE_CODE_OAUTH_TOKEN="$token1")
@@ -146,19 +157,23 @@ run_mode() {
 
   echo "[$which] turn 1…"
   send_turn 1
+  # shellcheck disable=SC2310 # wait_result's status is the verdict
   if ! wait_result 1; then
-    echo "[$which] FAIL: turn 1 did not succeed — check the token (stderr: $(tail -c 300 "$work/err.log" | tr '\n' ' '))"
+    err_tail=$(tail -c 300 "$work/err.log" | tr '\n' ' ' || true)
+    echo "[$which] FAIL: turn 1 did not succeed — check the token (stderr: $err_tail)"
     return 1
   fi
 
-  if [ "$which" = file ]; then
+  if [[ "$which" = file ]]; then
     echo "[$which] waiting ${expires_in}s + 15s for the injected token's expiresAt to pass…"
     sleep $((expires_in + 15))
-    write_credentials "$cfg" "$token2" $(($(now_ms) + 3600 * 1000))
+    now=$(now_ms)
+    write_credentials "$cfg" "$token2" $((now + 3600 * 1000))
     echo "[$which] rewrote .credentials.json with token 2"
   else
-    write_credentials "$cfg" "$token2" $(($(now_ms) + 3600 * 1000))
-    if [ "$env_wait" -gt 0 ]; then
+    now=$(now_ms)
+    write_credentials "$cfg" "$token2" $((now + 3600 * 1000))
+    if [[ "$env_wait" -gt 0 ]]; then
       echo "[$which] wrote token 2 to .credentials.json; waiting ${env_wait}s for token 1 to stop working…"
       sleep "$env_wait"
     else
@@ -169,27 +184,30 @@ run_mode() {
 
   echo "[$which] turn 2…"
   send_turn 2
+  # shellcheck disable=SC2310 # wait_result's status is the verdict
   if wait_result 2; then
     echo "[$which] PASS: the running process kept working with the rewritten credential"
     return 0
   fi
-  echo "[$which] FAIL: turn 2 failed (stderr tail: $(tail -c 300 "$work/err.log" | tr '\n' ' '))"
+  err_tail=$(tail -c 300 "$work/err.log" | tr '\n' ' ' || true)
+  echo "[$which] FAIL: turn 2 failed (stderr tail: $err_tail)"
   return 1
 }
 
 cleanup() {
   exec 3>&- 2>/dev/null || true
-  [ -n "${pid:-}" ] && kill "$pid" 2>/dev/null || true
-  [ -n "${work:-}" ] && rm -rf "$work"
+  [[ -n "${pid:-}" ]] && kill "$pid" 2>/dev/null || true
+  [[ -n "${work:-}" ]] && rm -rf "$work"
 }
 
 trap cleanup EXIT INT TERM
 status=0
 modes=("$mode")
-[ "$mode" = both ] && modes=(file env)
+[[ "$mode" = both ]] && modes=(file env)
 for m in "${modes[@]}"; do
   pid=""
   work=""
+  # shellcheck disable=SC2310 # a failed mode is recorded and the next one still runs
   if run_mode "$m"; then :; else status=1; fi
   cleanup
 done

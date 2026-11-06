@@ -18,10 +18,13 @@ printf '%s\n' force-unsafe-io 'path-exclude=/usr/share/doc/*' 'path-exclude=/usr
 sudo rm -f /var/lib/man-db/auto-update
 
 APT=(-y -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::Languages=none
-     -o "Dir::Cache::archives=$dir" -o APT::Sandbox::User=root -o DPkg::Lock::Timeout=120)
-[ "${APT_RECOMMENDS:-0}" = 1 ] || APT+=(--no-install-recommends)
+  -o "Dir::Cache::archives=$dir" -o APT::Sandbox::User=root -o DPkg::Lock::Timeout=120)
+[[ "${APT_RECOMMENDS:-0}" = 1 ]] || APT+=(--no-install-recommends)
 
-log "cached debs: $(ls "$dir"/*.deb 2>/dev/null | wc -l)"
+shopt -s nullglob
+cached=("$dir"/*.deb)
+shopt -u nullglob
+log "cached debs: ${#cached[@]}"
 log "update"
 # Only Ubuntu packages are needed; unrelated runner repositories can be out of sync.
 sudo timeout 120 apt-get update -qq -o Acquire::Retries=3 -o Acquire::http::Timeout=15 \
@@ -31,9 +34,15 @@ ok=0
 for attempt in 1 2 3 4; do
   log "download attempt $attempt"
   sudo timeout 150 apt-get install "${APT[@]}" --download-only "$@" 2>&1 | ts
-  if [ "${PIPESTATUS[0]}" = 0 ]; then ok=1; break; fi
+  if [[ "${PIPESTATUS[0]}" = 0 ]]; then
+    ok=1
+    break
+  fi
 done
-[ "$ok" = 1 ] || { log "download failed"; exit 1; }
+[[ "$ok" = 1 ]] || {
+  log "download failed"
+  exit 1
+}
 log "install"
 sudo apt-get install "${APT[@]}" -qq "$@" 2>&1 | ts
 rc=${PIPESTATUS[0]}

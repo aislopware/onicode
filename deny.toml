@@ -1,0 +1,202 @@
+# cargo-deny (scripts/dev/check.sh deny, the static CI job). Needs a settled Cargo.lock; builds nothing.
+
+[graph]
+# The platforms onicode builds for: the macOS and iOS apps, and Linux for the cursory clippy lane.
+targets = [
+    "aarch64-apple-darwin",
+    "aarch64-apple-ios",
+    "aarch64-apple-ios-sim",
+    "x86_64-unknown-linux-gnu",
+]
+all-features = true
+
+[advisories]
+unmaintained = "all"
+unsound = "all"
+yanked = "deny"
+# Each ignored advisory names its id and why it cannot reach onicode.
+ignore = []
+
+[licenses]
+# Matched to the crates in Cargo.lock and THIRD_PARTY_NOTICES.md. A new license is a decision: add it here
+# and to the notices in the same change.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "bzip2-1.0.6",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MPL-2.0",
+    "NCSA",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.93
+unused-allowed-license = "deny"
+include-dev = true
+
+[licenses.private]
+# The workspace's own crates (publish = false) are MIT by LICENSE.
+ignore = true
+
+# webrtc-audio-processing ships WebRTC's BSD-3-Clause text as COPYING without a license field.
+[[licenses.clarify]]
+crate = "webrtc-audio-processing"
+expression = "BSD-3-Clause"
+license-files = []
+
+[[licenses.clarify]]
+crate = "webrtc-audio-processing-config"
+expression = "BSD-3-Clause"
+license-files = []
+
+[[licenses.clarify]]
+crate = "webrtc-audio-processing-sys"
+expression = "BSD-3-Clause"
+license-files = []
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+deny = [
+    # rustls everywhere. ort-sys's build-time ONNX Runtime download (ureq) is the one door to native-tls.
+    { crate = "native-tls", wrappers = ["ureq"], reason = "rustls everywhere; no system OpenSSL" },
+    { crate = "openssl", wrappers = ["native-tls"], reason = "rustls everywhere; no system OpenSSL" },
+    { crate = "openssl-sys", wrappers = ["native-tls", "openssl"], reason = "rustls everywhere; no system OpenSSL" },
+]
+# Duplicates in the graph today. The list only shrinks: drop an entry when its duplicate goes, and a new
+# duplicate fails until one side moves. cargo-deny warns about an entry that no longer matches.
+skip = [
+    { crate = "accesskit_consumer@0.36.0", reason = "via accesskit_atspi_common" },
+    { crate = "asn1-rs@0.6.2", reason = "via der-parser, oid-registry, x509-parser" },
+    { crate = "asn1-rs-derive@0.5.1", reason = "via asn1-rs" },
+    { crate = "atspi@0.29.0", reason = "via accesskit_unix" },
+    { crate = "atspi-common@0.13.0", reason = "via accesskit_atspi_common, atspi, atspi-proxies" },
+    { crate = "atspi-proxies@0.13.0", reason = "via atspi" },
+    { crate = "base64@0.13.1", reason = "via gltf, spm_precompiled" },
+    { crate = "base64@0.22.1", reason = "via alacritty_terminal, hdrhistogram, hyper-util and more" },
+    { crate = "bindgen@0.71.1", reason = "via gpui, media" },
+    { crate = "bit-set@0.8.0", reason = "via dom_query, proptest" },
+    { crate = "bit-vec@0.8.0", reason = "via bit-set, proptest" },
+    { crate = "bitflags@1.3.2", reason = "via cocoa, cocoa-foundation, core-graphics and more" },
+    { crate = "block2@0.5.1", reason = "via objc2-app-kit, objc2-core-data, objc2-core-image and more" },
+    { crate = "chacha20@0.9.1", reason = "via chacha20poly1305" },
+    { crate = "cocoa@0.25.0", reason = "via zed-scap" },
+    { crate = "cocoa-foundation@0.1.2", reason = "via cocoa" },
+    { crate = "convert_case@0.10.0", reason = "via derive_more-impl" },
+    { crate = "core-foundation@0.9.4", reason = "via cocoa, cocoa-foundation, core-graphics and more" },
+    { crate = "core-graphics@0.23.2", reason = "via cocoa" },
+    { crate = "core-graphics-types@0.1.3", reason = "via cocoa-foundation, core-graphics, core-graphics-helmer-fork" },
+    { crate = "cpal@0.17.3", reason = "via onicode-voice" },
+    { crate = "cpufeatures@0.2.17", reason = "via aes, chacha20, curve25519-dalek and more" },
+    { crate = "der@0.7.10", reason = "via ecdsa, pkcs8, sec1 and more" },
+    { crate = "der-parser@9.0.0", reason = "via rtc-dtls, x509-parser" },
+    { crate = "dirs@5.0.1", reason = "via fff-search" },
+    { crate = "dirs-sys@0.4.1", reason = "via dirs" },
+    { crate = "embedded-io@0.4.0", reason = "via postcard" },
+    { crate = "enum-as-inner@0.5.1", reason = "via loro-delta" },
+    { crate = "foldhash@0.1.5", reason = "via hashbrown" },
+    { crate = "font-types@0.11.3", reason = "via read-fonts" },
+    { crate = "foreign-types@0.3.2", reason = "via openssl" },
+    { crate = "foreign-types-shared@0.1.1", reason = "via foreign-types" },
+    { crate = "getrandom@0.2.17", reason = "via const-random-macro, loro-internal, rand_core and more" },
+    { crate = "getrandom@0.3.4", reason = "via ahash, gpui, rand_core and more" },
+    { crate = "hash32@0.2.1", reason = "via heapless" },
+    { crate = "hashbrown@0.14.5", reason = "via hashlink, zed-xim" },
+    { crate = "hashbrown@0.15.5", reason = "via gpu-descriptor, onicode-text" },
+    { crate = "hashbrown@0.16.1", reason = "via accesskit_consumer, accesskit_macos and more" },
+    { crate = "heapless@0.7.17", reason = "via postcard" },
+    { crate = "heapless@0.8.0", reason = "via loro-delta" },
+    { crate = "heck@0.4.1", reason = "via cbindgen, enum-as-inner, glib-macros" },
+    { crate = "inotify@0.10.2", reason = "via notify" },
+    { crate = "itertools@0.10.5", reason = "via criterion, criterion-plot" },
+    { crate = "itertools@0.11.0", reason = "via generic-btree, serde_columnar" },
+    { crate = "itertools@0.12.1", reason = "via bindgen, loro-internal" },
+    { crate = "jni@0.21.1", reason = "via cpal, wry" },
+    { crate = "jni-sys@0.3.1", reason = "via jni, ndk, ndk-sys" },
+    { crate = "json5@0.4.1", reason = "via onicode-theme" },
+    { crate = "linux-raw-sys@0.4.15", reason = "via rustix" },
+    { crate = "mach2@0.5.0", reason = "via cpal, gpui, gpui_macos" },
+    { crate = "memoffset@0.6.5", reason = "via nix" },
+    { crate = "nix@0.25.1", reason = "via portable-pty" },
+    { crate = "nom@7.1.3", reason = "via asn1-rs, cexpr, der-parser and more" },
+    { crate = "notify@7.0.0", reason = "via onicode-engine" },
+    { crate = "notify-types@1.0.1", reason = "via notify" },
+    { crate = "objc2@0.5.2", reason = "via accesskit_macos, block2, objc2-app-kit and more" },
+    { crate = "objc2-app-kit@0.2.2", reason = "via accesskit_macos" },
+    { crate = "objc2-core-data@0.2.2", reason = "via objc2-app-kit" },
+    { crate = "objc2-core-image@0.2.2", reason = "via objc2-app-kit" },
+    { crate = "objc2-foundation@0.2.2", reason = "via accesskit_macos, objc2-app-kit, objc2-core-data and more" },
+    { crate = "objc2-metal@0.2.2", reason = "via objc2-core-image, objc2-quartz-core" },
+    { crate = "objc2-quartz-core@0.2.2", reason = "via objc2-app-kit" },
+    { crate = "object@0.37.3", reason = "via backtrace" },
+    { crate = "oid-registry@0.7.1", reason = "via x509-parser" },
+    { crate = "pastey@0.1.1", reason = "via av-scenechange" },
+    { crate = "pem-rfc7468@0.7.0", reason = "via der, elliptic-curve" },
+    { crate = "phf@0.11.3", reason = "via doxygen-rs" },
+    { crate = "phf_generator@0.11.3", reason = "via phf_macros" },
+    { crate = "phf_macros@0.11.3", reason = "via phf" },
+    { crate = "phf_shared@0.11.3", reason = "via phf, phf_generator, phf_macros" },
+    { crate = "png@0.17.16", reason = "via tiny-skia" },
+    { crate = "pollster@0.2.5", reason = "via postage" },
+    { crate = "proc-macro-crate@1.3.1", reason = "via gtk3-macros" },
+    { crate = "proc-macro-crate@2.0.0", reason = "via glib-macros" },
+    { crate = "quick-error@1.2.3", reason = "via rusty-fork" },
+    { crate = "quinn-udp@0.5.15", reason = "via quinn" },
+    { crate = "r-efi@5.3.0", reason = "via getrandom" },
+    { crate = "rand@0.8.7", reason = "via loro-internal, loro_fractional_index, phf_generator and more" },
+    { crate = "rand@0.9.5", reason = "via gpui, num-bigint-dig and more" },
+    { crate = "rand_chacha@0.3.1", reason = "via rand" },
+    { crate = "rand_core@0.6.4", reason = "via crypto-bigint, crypto-common, elliptic-curve and more" },
+    { crate = "rand_core@0.9.5", reason = "via rand, rand_chacha, rand_xorshift" },
+    { crate = "read-fonts@0.37.0", reason = "via harfrust, skrifa" },
+    { crate = "redox_users@0.4.6", reason = "via dirs-sys" },
+    { crate = "roxmltree@0.20.0", reason = "via fontconfig-parser" },
+    { crate = "rustc-hash@1.1.0", reason = "via naga, wgpu-core" },
+    { crate = "rustix@0.38.44", reason = "via which" },
+    { crate = "serde_spanned@0.6.9", reason = "via toml, toml_edit" },
+    { crate = "shlex@1.3.0", reason = "via bindgen" },
+    { crate = "skrifa@0.40.0", reason = "via cosmic-text" },
+    { crate = "spin@0.9.9", reason = "via flume, heapless" },
+    { crate = "syn@1.0.109", reason = "via enum-as-inner, proc-macro-error" },
+    { crate = "syn@2.0.119", reason = "via arg_enum_proc_macro, asn1-rs-derive, asn1-rs-impl and more" },
+    { crate = "thiserror@1.0.69", reason = "via asn1-rs, cairo-rs, filedescriptor and more" },
+    { crate = "thiserror-impl@1.0.69", reason = "via thiserror" },
+    { crate = "toml@0.8.23", reason = "via cbindgen, onicode-engine, system-deps" },
+    { crate = "toml_datetime@0.6.11", reason = "via toml, toml_edit" },
+    { crate = "toml_edit@0.19.15", reason = "via proc-macro-crate" },
+    { crate = "toml_edit@0.20.7", reason = "via proc-macro-crate" },
+    { crate = "toml_edit@0.22.27", reason = "via toml" },
+    { crate = "webpki-roots@0.26.11", reason = "via tokio-tungstenite" },
+    { crate = "winnow@0.5.40", reason = "via toml_edit" },
+    { crate = "winnow@0.7.15", reason = "via toml_edit" },
+    { crate = "x11rb@0.13.2", reason = "via gpui_linux, x11-clipboard, zed-xim" },
+    { crate = "x11rb-protocol@0.13.2", reason = "via x11rb" },
+    { crate = "x509-parser@0.16.0", reason = "via rtc-dtls" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+required-git-spec = "rev"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Every git dependency is a pinned rev. The forks onicode owns live under aislopware; the rest are named
+# one by one until they move there (docs/onicode/upstream.md).
+allow-git = [
+    "https://github.com/zeronsh/zui",
+    "https://github.com/zeronsh/gpui-component",
+    "https://github.com/zed-industries/font-kit",
+    "https://github.com/zed-industries/scap",
+    "https://github.com/zed-industries/xim-rs.git",
+    "https://github.com/proptest-rs/proptest",
+]
+
+[sources.allow-org]
+github = ["aislopware"]

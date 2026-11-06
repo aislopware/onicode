@@ -19,6 +19,6 @@ rm -rf "$DIR"
 mkdir -p "$DIR"
 echo "▸ opening a fresh install (data in $DIR)"
 # Embedded: the throwaway install's engine ends with the window.
-exec env ONICODE_DATA_DIR="$DIR/data" ONICODE_IPC_PORT=$IPC ONICODE_EMBED_ENGINE=1 \
+exec env ONICODE_DATA_DIR="$DIR/data" ONICODE_IPC_PORT="$IPC" ONICODE_EMBED_ENGINE=1 \
   ${1:+ONICODE_ONBOARDING=$1} RUST_LOG=warn \
   ./target/debug/onicode

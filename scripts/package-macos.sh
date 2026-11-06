@@ -93,9 +93,9 @@ echo "packaged: $APP_TARBALL"
 # ascii-hands artwork (committed renders from scripts/dmg-background.py).
 # dmgbuild writes the .DS_Store (background, icon view, icon positions)
 # directly — no Finder scripting, so it also works on headless CI runners.
-python3 -c 'import dmgbuild' 2>/dev/null ||
-  python3 -m pip install --quiet --user dmgbuild 2>/dev/null ||
-  python3 -m pip install --quiet --user --break-system-packages dmgbuild
+python3 -c 'import dmgbuild' 2>/dev/null \
+  || python3 -m pip install --quiet --user dmgbuild 2>/dev/null \
+  || python3 -m pip install --quiet --user --break-system-packages dmgbuild
 
 # Pair the 1x/2x background renders into a hidpi tiff so the artwork stays
 # crisp on retina displays.

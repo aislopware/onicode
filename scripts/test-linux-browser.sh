@@ -43,18 +43,21 @@ record_fixture() {
   "$binary" "$output/$mode" >"$output/$mode/fixture.log" 2>&1 &
   fixture_pid=$!
   processes+=("$fixture_pid")
-  if [ -z "$capture_window" ]; then
+  if [[ -z "$capture_window" ]]; then
     for _ in $(seq 1 150); do
       capture_window="$(xdotool search --onlyvisible --pid "$fixture_pid" 2>/dev/null | head -1 || true)"
-      [ -n "$capture_window" ] && break
-      kill -0 "$fixture_pid" 2>/dev/null || { cat "$output/$mode/fixture.log"; return 1; }
+      [[ -n "$capture_window" ]] && break
+      kill -0 "$fixture_pid" 2>/dev/null || {
+        cat "$output/$mode/fixture.log"
+        return 1
+      }
       sleep .1
     done
   fi
-  [ -n "$capture_window" ]
+  [[ -n "$capture_window" ]]
   local codec="${BROWSER_FIXTURE_VIDEO_CODEC:-libx264}"
   local -a encoding=(-c:v "$codec")
-  if [ "$codec" = libx264 ]; then
+  if [[ "$codec" = libx264 ]]; then
     encoding+=(-preset veryfast -crf 20)
   else
     encoding+=(-q:v 4)
@@ -69,20 +72,22 @@ record_fixture() {
   kill -INT "$video_pid" 2>/dev/null || true
   wait "$video_pid" || true # X11 grab may end when the fixture closes its window.
   cat "$output/$mode/fixture.log"
-  [ "$result" -eq 0 ]
+  [[ "$result" -eq 0 ]]
   test -f "$output/$mode/result.txt"
   test -f "$output/$mode/linux-results.json"
   ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of json "$output/$mode/browser.mp4"
 }
-export WAYLAND_DISPLAY= GDK_BACKEND=x11
+export WAYLAND_DISPLAY='' GDK_BACKEND=x11
 record_fixture x11
 export WAYLAND_DISPLAY=onicode-browser-test GDK_BACKEND=wayland
 weston --backend=x11 --renderer=pixman --shell=kiosk-shell.so --socket="$WAYLAND_DISPLAY" \
   --idle-time=0 --width=1000 --height=680 >"$output/weston.log" 2>&1 &
 processes+=("$!")
 for _ in $(seq 1 100); do
-  [ -S "$runtime/$WAYLAND_DISPLAY" ] && break
+  [[ -S "$runtime/$WAYLAND_DISPLAY" ]] && break
   sleep .1
 done
-export ONICODE_BROWSER_CAPTURE_WINDOW="$(xdotool search --class weston | head -1)"
+# Empty when weston has no window yet: record_fixture then looks up the fixture's own window.
+capture_window=$(xdotool search --class weston | head -1 || true)
+export ONICODE_BROWSER_CAPTURE_WINDOW="$capture_window"
 record_fixture wayland "$ONICODE_BROWSER_CAPTURE_WINDOW"

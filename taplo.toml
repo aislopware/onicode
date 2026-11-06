@@ -1,0 +1,25 @@
+# taplo formats and checks every TOML file in the repository, Cargo manifests included.
+include = ["**/*.toml"]
+exclude = ["vendor/**", "target/**", ".research/**", "**/node_modules/**"]
+
+[formatting]
+column_width = 120
+indent_string = "    "
+array_trailing_comma = true
+array_auto_expand = true
+array_auto_collapse = true
+compact_arrays = true
+compact_inline_tables = false
+inline_table_expand = true
+trailing_newline = true
+align_comments = false
+# Key order carries meaning (Cargo sections, grouped dependencies with their comments).
+reorder_keys = false
+reorder_arrays = false
+allowed_blank_lines = 1
+
+# Lists of rules and words read better one per line.
+[[rule]]
+include = ["deny.toml", "_typos.toml", "ruff.toml"]
+[rule.formatting]
+array_auto_collapse = false

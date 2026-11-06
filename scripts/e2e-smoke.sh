@@ -30,6 +30,7 @@ A_PID=""
 B_PID=""
 STATUS=1
 
+# shellcheck disable=SC2329 # run by the EXIT trap below
 cleanup() {
   for pid in "$A_PID" "$B_PID"; do
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
@@ -46,9 +47,12 @@ cleanup() {
   [[ -n "$EDGE_PID" ]] && kill -9 -- -"$EDGE_PID" 2>/dev/null || true
   rm -rf "$A_DIR" "$B_DIR"
   if [[ "$STATUS" -ne 0 ]]; then
-    echo "--- engine A log (tail) ---"; tail -n 40 "$LOG_DIR/engine-a.log" 2>/dev/null || true
-    echo "--- engine B log (tail) ---"; tail -n 40 "$LOG_DIR/engine-b.log" 2>/dev/null || true
-    echo "--- edge log (tail) ---"; tail -n 40 "$LOG_DIR/edge.log" 2>/dev/null || true
+    echo "--- engine A log (tail) ---"
+    tail -n 40 "$LOG_DIR/engine-a.log" 2>/dev/null || true
+    echo "--- engine B log (tail) ---"
+    tail -n 40 "$LOG_DIR/engine-b.log" 2>/dev/null || true
+    echo "--- edge log (tail) ---"
+    tail -n 40 "$LOG_DIR/edge.log" 2>/dev/null || true
   fi
   if [[ "${ONICODE_E2E_KEEP_LOGS:-0}" != "1" ]]; then
     rm -rf "$LOG_DIR"
@@ -59,7 +63,8 @@ cleanup() {
 trap cleanup EXIT
 
 wait_for() { # wait_for <description> <timeout_s> <command...>
-  local what="$1" timeout="$2"; shift 2
+  local what="$1" timeout="$2"
+  shift 2
   local waited=0
   until "$@" >/dev/null 2>&1; do
     sleep 1
@@ -107,8 +112,10 @@ start_engine() { # start_engine <data_dir> <ipc_port> <name> <log>
     "$ONICODE" headless >"$4" 2>&1 &
 }
 
-start_engine "$A_DIR" "$A_PORT" "e2e-device-a" "$LOG_DIR/engine-a.log"; A_PID=$!
-start_engine "$B_DIR" "$B_PORT" "e2e-device-b" "$LOG_DIR/engine-b.log"; B_PID=$!
+start_engine "$A_DIR" "$A_PORT" "e2e-device-a" "$LOG_DIR/engine-a.log"
+A_PID=$!
+start_engine "$B_DIR" "$B_PORT" "e2e-device-b" "$LOG_DIR/engine-b.log"
+B_PID=$!
 
 wait_for "engine A ipc :$A_PORT" 60 bash -c "exec 3<>/dev/tcp/127.0.0.1/$A_PORT"
 wait_for "engine B ipc :$B_PORT" 60 bash -c "exec 3<>/dev/tcp/127.0.0.1/$B_PORT"

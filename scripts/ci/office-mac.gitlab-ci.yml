@@ -1,28 +1,56 @@
 # The .gitlab-ci.yml of the GitLab project cong.tran/onicode-ci, kept here so it is reviewed with
 # the code; copy it there when it changes. scripts/ci/gitlab-bridge.py triggers it with SHA, SUITE
-# and MAC_TAG. The source, toolchain and target live on the Mac's persistent /Volumes/CICache at
-# the same path every run, so cargo stays warm and incremental; the job itself is
-# scripts/ci/mac.sh at that commit.
+# and MAC_TAG; without a SHA the job only brings the image onto the Mac and prints its versions.
+# The source, toolchain, registry and target live on the Mac's persistent /Volumes/CICache at the
+# same path every run, so cargo stays warm and incremental; the job itself is scripts/ci/mac.sh at
+# that commit.
+#
+# Project variables: ONICODE_ZOT_USER and ONICODE_ZOT_SECRET (masked), Zot's read-only account
+# onicode-runners.
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "trigger"'
 
 mac:
   tags: [$MAC_TAG]
-  image: ghcr.io/cirruslabs/macos-tahoe-xcode:26.5
+  # macOS 27.2 with Xcode 27.2, its Metal toolchain and the iOS 27.2 simulator, zig, cargo-nextest,
+  # cargo-sweep and rustup (no toolchain), on Zot on office-1, the office LAN's registry. Pinned by
+  # digest; rebuilt only when a pin changes (docs/onicode/ci.md).
+  image: zot.jmango360.dev/onicode/macos-27-ci@sha256:baed0cbe5eebf89f538bfe683f3c47251fd8f43987396716dd8d32b78ccc4e8d
   interruptible: true
-  timeout: 30m
+  # The nightly suite (coverage, Miri, a mutants shard, cargo-hack); pull requests finish well inside the
+  # GitHub job's 90 minutes.
+  timeout: 4h
   resource_group: onicode-$MAC_TAG
   variables:
     GIT_STRATEGY: none
+    # Pinned by digest, so a held copy is the image: pull only when absent.
     TART_EXECUTOR_ALWAYS_PULL: "false"
+    # Zot ends a request after 60 s and tart resumes a broken layer from its last byte five times,
+    # so a layer must get a fifth of itself a minute: three at once on the Mac mini's 11 MB/s.
+    TART_EXECUTOR_PULL_CONCURRENCY: "3"
+    TART_REGISTRY_USERNAME: $ONICODE_ZOT_USER
+    TART_REGISTRY_PASSWORD: $ONICODE_ZOT_SECRET
+    C: /Volumes/CICache/onicode
+    CARGO_HOME: /Volumes/CICache/onicode/cargo
+    RUSTUP_HOME: /Volumes/CICache/onicode/rustup
+    CARGO_TARGET_DIR: /Volumes/CICache/onicode/target
+    CARGO_INCREMENTAL: "1"
   script:
-    - export C=/Volumes/CICache/onicode
-    - export CARGO_HOME=$C/cargo RUSTUP_HOME=$C/rustup CARGO_TARGET_DIR=$C/target CARGO_INCREMENTAL=1
-    - export PATH=$C/cargo/bin:$PATH
-    - test -x $C/cargo/bin/rustup || (curl -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain none)
+    - if [ -z "$SHA" ]; then sw_vers; xcodebuild -version; xcrun metal --version; zig version; df -h /Volumes/CICache; exit 0; fi
+    # The same artifacts whatever the caller's environment: nothing that changes rustc's arguments
+    # or wraps it.
+    - unset RUSTC_WRAPPER RUSTFLAGS CARGO_BUILD_RUSTFLAGS ${!CARGO_TERM_@}
+    - export PATH=$CARGO_HOME/bin:$PATH
     - test -d $C/src/.git || git clone --filter=blob:none https://github.com/aislopware/onicode $C/src
     - git -C $C/src fetch --no-tags origin "$SHA" && git -C $C/src checkout -qf --detach "$SHA" && git -C $C/src clean -ffdq
-    # CICache is shared with other projects: keep onicode's target under 60 GB.
-    - du -sg $C/target 2>/dev/null | awk '$1 > 60 { exit 1 }' || rm -rf $C/target
-    - cd $C/src && scripts/ci/mac.sh "$SUITE"
+    - cd $C/src
+    # rust-toolchain.toml's toolchain onto the cache, a new stable in place of the old, with the
+    # iOS targets the mobile core builds for.
+    - rustup set auto-self-update disable && rustup toolchain install
+    - rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+    # CICache is shared with other projects: hold onicode's target under 60 GB without wiping it.
+    # The units an older toolchain built go first, then the least recently used, down to 45 GB.
+    - test ! -d $CARGO_TARGET_DIR || cargo sweep --installed
+    - du -sm $CARGO_TARGET_DIR 2>/dev/null | awk '$1 > 60000 { exit 1 }' || cargo sweep --maxsize 45GB
+    - scripts/ci/mac.sh "$SUITE"

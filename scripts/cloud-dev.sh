@@ -58,7 +58,11 @@ BEARER="$USER_ID@$ORG_ID"
 EDGE="http://127.0.0.1:$EDGE_PORT"
 WRANGLER_PATTERN="wrangler dev -c wrangler.jsonc -c vault/wrangler.jsonc --port $EDGE_PORT"
 
-case "$MODE" in local | boat) ;; *) echo "MODE must be local or boat" >&2; exit 1 ;; esac
+case "$MODE" in local | boat) ;; *)
+  echo "MODE must be local or boat" >&2
+  exit 1
+  ;;
+esac
 grep -q '^VAULT_KEK=' "$ROOT/edge/vault/.dev.vars" 2>/dev/null || {
   echo "edge/vault/.dev.vars needs VAULT_KEK (see edge/vault/README.md)" >&2
   exit 1
@@ -74,7 +78,10 @@ if [[ "$MODE" == boat ]]; then
     echo "MODE=boat needs a Linux build: run scripts/build-linux-dev.sh" >&2
     exit 1
   }
-  command -v cloudflared >/dev/null || { echo "MODE=boat needs cloudflared" >&2; exit 1; }
+  command -v cloudflared >/dev/null || {
+    echo "MODE=boat needs cloudflared" >&2
+    exit 1
+  }
 fi
 for port in $EDGE_PORT $GUI_PORT; do
   if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
@@ -84,10 +91,14 @@ for port in $EDGE_PORT $GUI_PORT; do
 done
 mkdir -p "$STATE/gui" "$STATE/projects" "$STATE/sessions" "$STATE/bin"
 
-log() { printf '[cloud-dev %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
+log() {
+  local ts
+  ts=$(date +%H:%M:%S)
+  printf '[cloud-dev %s] %s\n' "$ts" "$*"
+}
 session_ids() {
-  curl -s "$EDGE/cloud/$ORG_ID/sessions" -H "Authorization: Bearer $BEARER" |
-    python3 -c 'import sys,json; [print(s["chatId"]) for s in json.load(sys.stdin).get("sessions", [])]' 2>/dev/null || true
+  curl -s "$EDGE/cloud/$ORG_ID/sessions" -H "Authorization: Bearer $BEARER" \
+    | python3 -c 'import sys,json; [print(s["chatId"]) for s in json.load(sys.stdin).get("sessions", [])]' 2>/dev/null || true
 }
 GUI_PID=""
 TUNNEL_PID=""
@@ -101,17 +112,22 @@ cleanup() {
       curl -s -X DELETE "$EDGE/cloud/$ORG_ID/sessions/$chat" -H "Authorization: Bearer $BEARER" >/dev/null || true
     done
     for _ in $(seq 1 60); do
-      [[ -z "$(session_ids)" ]] && break
+      left=$(session_ids)
+      [[ -z "$left" ]] && break
       sleep 3
     done
-    log "session machines left: $(session_ids | wc -l | tr -d ' ')"
+    left=$(session_ids | wc -l | tr -d ' ')
+    log "session machines left: $left"
   fi
   for pidfile in "$STATE"/sessions/*/pid; do
     [[ -f "$pidfile" ]] && kill "$(cat "$pidfile")" 2>/dev/null || true
   done
   if [[ -n "$GUI_PID" ]]; then
     kill "$GUI_PID" 2>/dev/null || true
-    for _ in 1 2 3 4 5; do kill -0 "$GUI_PID" 2>/dev/null || break; sleep 1; done
+    for _ in 1 2 3 4 5; do
+      kill -0 "$GUI_PID" 2>/dev/null || break
+      sleep 1
+    done
     kill -9 "$GUI_PID" 2>/dev/null || true
   fi
   [[ -n "$TUNNEL_PID" ]] && kill "$TUNNEL_PID" 2>/dev/null || true
@@ -121,7 +137,7 @@ trap cleanup EXIT
 trap 'exit 0' INT TERM
 
 log "building onicode"
-(cd "$ROOT" && cargo build -q -p onicode --bin onicode) > "$STATE/build.log" 2>&1 || {
+(cd "$ROOT" && cargo build -q -p onicode --bin onicode) >"$STATE/build.log" 2>&1 || {
   tail -40 "$STATE/build.log"
   exit 1
 }
@@ -133,17 +149,23 @@ if [[ "$MODE" == boat ]]; then
   log "release $VERSION into the local edge's release bucket"
   for file in "$ROOT/target/package-dev/latest.txt" "$TARBALL"; do
     (cd "$ROOT/edge" && npx wrangler r2 object put "comet-native-releases/$(basename "$file")" \
-      --file "$file" --local -c wrangler.jsonc) >> "$STATE/r2.log" 2>&1 || { tail -20 "$STATE/r2.log"; exit 1; }
+      --file "$file" --local -c wrangler.jsonc) >>"$STATE/r2.log" 2>&1 || {
+      tail -20 "$STATE/r2.log"
+      exit 1
+    }
   done
   log "tunnel to :$EDGE_PORT"
-  cloudflared tunnel --no-autoupdate --url "$EDGE" > "$STATE/tunnel.log" 2>&1 &
+  cloudflared tunnel --no-autoupdate --url "$EDGE" >"$STATE/tunnel.log" 2>&1 &
   TUNNEL_PID=$!
   for _ in $(seq 1 60); do
     SANDBOX_EDGE="$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$STATE/tunnel.log" | head -1 || true)"
     [[ -n "$SANDBOX_EDGE" ]] && break
     sleep 1
   done
-  [[ -n "$SANDBOX_EDGE" ]] || { tail -20 "$STATE/tunnel.log"; exit 1; }
+  [[ -n "$SANDBOX_EDGE" ]] || {
+    tail -20 "$STATE/tunnel.log"
+    exit 1
+  }
   log "sandboxes reach the edge at $SANDBOX_EDGE"
 fi
 
@@ -151,7 +173,7 @@ fi
 local_vars=()
 [[ "$MODE" == local ]] && local_vars=(--var "CLOUD_PROJECTS_ROOT:$STATE/projects")
 # The tunnel is public: the operator token is random per run.
-(umask 077 && openssl rand -hex 24 > "$STATE/admin-token")
+(umask 077 && openssl rand -hex 24 >"$STATE/admin-token")
 local_vars+=(--var "ADMIN_TOKEN:$(cat "$STATE/admin-token")" --var "CLOUD_STARTING_CREDITS:600")
 log "edge + vault on :$EDGE_PORT ($PROVIDER sandboxes)"
 # --local-upstream: requests reach the Worker as this address, not the first
@@ -159,9 +181,15 @@ log "edge + vault on :$EDGE_PORT ($PROVIDER sandboxes)"
 # origin — Checkout and the billing portal's way back — come back here.
 (cd "$ROOT/edge" && npx wrangler dev -c wrangler.jsonc -c vault/wrangler.jsonc --port "$EDGE_PORT" \
   --ip 127.0.0.1 --local-upstream "127.0.0.1:$EDGE_PORT" --var AUTH_MODE:dev --var "SANDBOX_PROVIDER:$PROVIDER" --var "CLOUD_EDGE_URL:$SANDBOX_EDGE" \
-  ${local_vars[@]+"${local_vars[@]}"} > "$STATE/wrangler.log" 2>&1 &)
-for _ in $(seq 1 90); do curl -sf "$EDGE/health" >/dev/null && break; sleep 2; done
-curl -sf "$EDGE/health" >/dev/null || { tail -30 "$STATE/wrangler.log"; exit 1; }
+  ${local_vars[@]+"${local_vars[@]}"} >"$STATE/wrangler.log" 2>&1 &)
+for _ in $(seq 1 90); do
+  curl -sf "$EDGE/health" >/dev/null && break
+  sleep 2
+done
+curl -sf "$EDGE/health" >/dev/null || {
+  tail -30 "$STATE/wrangler.log"
+  exit 1
+}
 if [[ "$MODE" == boat ]]; then
   # A fresh quick-tunnel hostname can take a minute or two to resolve.
   for _ in $(seq 1 90); do
@@ -169,7 +197,10 @@ if [[ "$MODE" == boat ]]; then
     [[ "$served" == "$VERSION" ]] && break
     sleep 2
   done
-  [[ "$served" == "$VERSION" ]] || { echo "the tunnel doesn't serve release $VERSION (got '$served')" >&2; exit 1; }
+  [[ "$served" == "$VERSION" ]] || {
+    echo "the tunnel doesn't serve release $VERSION (got '$served')" >&2
+    exit 1
+  }
   log "the tunnel serves release $VERSION"
 fi
 
@@ -179,8 +210,10 @@ gui_env=(ONICODE_DATA_DIR="$STATE/gui/data" ONICODE_IPC_PORT="$GUI_PORT" ONICODE
   ONICODE_OPEN_ROUTE="${OPEN_ROUTE:-settings/cloud}" ONICODE_NO_LOGIN_SHELL=1 RUST_LOG="${GUI_RUST_LOG:-warn}"
   # The engine lives and dies with this window (cleanup kills GUI_PID).
   ONICODE_EMBED_ENGINE=1)
-(cd "$STATE/gui" && env "${gui_env[@]}" "$ROOT/target/debug/onicode" > "$STATE/gui/ui.log" 2>&1 &
-  echo $! > "$STATE/gui/pid")
+(
+  cd "$STATE/gui" && env "${gui_env[@]}" "$ROOT/target/debug/onicode" >"$STATE/gui/ui.log" 2>&1 &
+  echo $! >"$STATE/gui/pid"
+)
 GUI_PID="$(cat "$STATE/gui/pid")"
 
 if [[ "$MODE" == boat ]]; then
@@ -195,7 +228,7 @@ try:
         print(s["chatId"][:8] + " " + s["state"] + error)
 except Exception:
     pass' 2>/dev/null || true)"
-    [[ "$now" != "$last" && -n "$now" ]] && log "sessions: $(tr '\n' ';' <<< "$now")"
+    [[ "$now" != "$last" && -n "$now" ]] && log "sessions: ${now//$'\n'/;}"
     last="$now"
     sleep 5
   done
@@ -206,7 +239,7 @@ fi
 # Local session machines have no keychain (real ones run Linux): CLIs that
 # look one up through `security` are told "not found" / "failed" and fall
 # back to their credential files, instead of macOS asking to create one.
-cat > "$STATE/bin/security" <<'SECURITY'
+cat >"$STATE/bin/security" <<'SECURITY'
 #!/bin/sh
 case "$1" in find-generic-password | find-internet-password | delete-generic-password) exit 44 ;; esac
 exit 1
@@ -214,7 +247,12 @@ SECURITY
 chmod +x "$STATE/bin/security"
 
 next_port="$SESSION_PORT_BASE"
-alive() { [[ -f "$1/pid" ]] && kill -0 "$(cat "$1/pid")" 2>/dev/null; }
+alive() {
+  [[ -f "$1/pid" ]] || return 1
+  local pid
+  pid=$(<"$1/pid")
+  kill -0 "$pid" 2>/dev/null
+}
 
 # A session machine: the sandbox's own env (enrollment, chat, repository,
 # branch, path), its own HOME and data dir, so credentials and git config
@@ -224,18 +262,25 @@ start_session() {
   mkdir -p "$dir/home" "$dir/data"
   if [[ ! -f "$dir/port" ]]; then
     while lsof -nP -iTCP:"$next_port" -sTCP:LISTEN >/dev/null 2>&1; do next_port=$((next_port + 1)); done
-    echo "$next_port" > "$dir/port"
+    echo "$next_port" >"$dir/port"
     next_port=$((next_port + 1))
   fi
+  local port
+  port=$(<"$dir/port")
   local -a env_args=()
-  while IFS= read -r line; do env_args+=("$line"); done < "$dir/env"
+  while IFS= read -r line; do env_args+=("$line"); done <"$dir/env"
   # GIT_CONFIG_NOSYSTEM: like a clean Linux sandbox, no system git helper
   # (Apple git's osxkeychain) — this machine's keychain is never touched.
-  (cd "$dir" && env -i PATH="$STATE/bin:$PATH" HOME="$dir/home" USER="$USER" GIT_CONFIG_NOSYSTEM=1 \
-    ONICODE_NO_LOGIN_SHELL=1 ONICODE_DATA_DIR="$dir/data" \
-    ONICODE_IPC_PORT="$(cat "$dir/port")" RUST_LOG=info "${env_args[@]}" \
-    "$ROOT/target/debug/onicode" headless >> "$dir/engine.log" 2>&1 & echo $! > "$dir/pid")
-  log "session machine up: chat $(grep '^ONICODE_CLOUD_CHAT=' "$dir/env" | cut -d= -f2) ($id, :$(cat "$dir/port"), log $dir/engine.log)"
+  (
+    cd "$dir" && env -i PATH="$STATE/bin:$PATH" HOME="$dir/home" USER="$USER" GIT_CONFIG_NOSYSTEM=1 \
+      ONICODE_NO_LOGIN_SHELL=1 ONICODE_DATA_DIR="$dir/data" \
+      ONICODE_IPC_PORT="$port" RUST_LOG=info "${env_args[@]}" \
+      "$ROOT/target/debug/onicode" headless >>"$dir/engine.log" 2>&1 &
+    echo $! >"$dir/pid"
+  )
+  local chat
+  chat=$(grep '^ONICODE_CLOUD_CHAT=' "$dir/env" | cut -d= -f2 || true)
+  log "session machine up: chat $chat ($id, :$port, log $dir/engine.log)"
 }
 
 stop_session() {
@@ -246,6 +291,7 @@ stop_session() {
 }
 
 log "ready — use the Onicode window; Ctrl-C to stop"
+# shellcheck disable=SC2310 # alive is a predicate: its status is the answer
 while kill -0 "$GUI_PID" 2>/dev/null; do
   # One line per session sandbox: "<id> <state>"; env written once.
   sandboxes="$(curl -sf "$EDGE/dev/cloud/fake-sandboxes" -H "Authorization: Bearer $BEARER" | python3 -c "
@@ -270,11 +316,11 @@ for s in json.load(sys.stdin).get('sandboxes', []):
       provisioning | ready) alive "$dir" || start_session "$id" ;;
       *) if alive "$dir"; then stop_session "$id"; fi ;;
     esac
-  done <<< "$sandboxes"
+  done <<<"$sandboxes"
   # A sandbox that vanished (deleted) stops too.
   for dir in "$STATE"/sessions/*/; do
     id="$(basename "$dir")"
-    if alive "$dir" && ! grep -q "^$id " <<< "$sandboxes"; then stop_session "$id"; fi
+    if alive "$dir" && ! grep -q "^$id " <<<"$sandboxes"; then stop_session "$id"; fi
   done
   sleep 2
 done

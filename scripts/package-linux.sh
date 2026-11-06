@@ -116,8 +116,14 @@ install_desktop_entry() {
       Icon=*) printf 'Icon=%s\n' "$icon_val" ;;
       *) printf '%s\n' "$line" ;;
     esac
-  done <"$src/onicode.desktop" >"$entry_tmp" || { rm -f "$entry_tmp"; return 1; }
-  mv -f "$entry_tmp" "$apps_dir/onicode.desktop" || { rm -f "$entry_tmp"; return 1; }
+  done <"$src/onicode.desktop" >"$entry_tmp" || {
+    rm -f "$entry_tmp"
+    return 1
+  }
+  mv -f "$entry_tmp" "$apps_dir/onicode.desktop" || {
+    rm -f "$entry_tmp"
+    return 1
+  }
   cp "$src/onicode.png" "$icon_dir/.onicode.png.$$" \
     && mv -f "$icon_dir/.onicode.png.$$" "$icon_dir/onicode.png" || return 1
 

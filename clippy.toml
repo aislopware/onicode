@@ -1,0 +1,42 @@
+# Settings for the lints in [workspace.lints.clippy] (.research/static-checks/rust-lints.md). Every
+# setting here tunes a lint that is off today, so this file alone changes nothing `cargo lint` reports.
+
+# Tests may unwrap, expect, panic, index and print; production code may not.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-print-in-tests = true
+allow-dbg-in-tests = false
+
+warn-on-all-wildcard-imports = true
+
+# Futures bigger than this go behind Box::pin (large_futures).
+future-size-threshold = 16384
+
+# Names doc_markdown accepts without backticks, on top of clippy's own list.
+doc-valid-idents = [
+    "..",
+    "macOS",
+    "iOS",
+    "iPadOS",
+    "tvOS",
+    "visionOS",
+    "AppKit",
+    "UIKit",
+    "SwiftUI",
+    "CoreText",
+    "CoreAudio",
+    "ScreenCaptureKit",
+    "VideoToolbox",
+    "WebKit",
+    "WebRTC",
+    "WebSocket",
+    "UniFFI",
+    "LocalAPI",
+    "OpenAI",
+    "OpenCode",
+    "QUIC",
+    "GPUI",
+    "TestFlight",
+]

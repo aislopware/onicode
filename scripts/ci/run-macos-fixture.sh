@@ -17,22 +17,31 @@ ATTEMPT_TIMEOUT="${FIXTURE_ATTEMPT_TIMEOUT:-70}"
 
 # macOS has no coreutils `timeout`; do it in bash.
 run_with_timeout() {
-  local secs=$1; shift
+  local secs=$1
+  shift
   "$@" &
   local pid=$!
-  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null; sleep 3; kill -KILL "$pid" 2>/dev/null ) &
+  (
+    sleep "$secs"
+    kill -TERM "$pid" 2>/dev/null
+    sleep 3
+    kill -KILL "$pid" 2>/dev/null
+  ) &
   local watchdog=$!
-  wait "$pid"; local rc=$?
-  kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null
-  return $rc
+  wait "$pid"
+  local rc=$?
+  kill "$watchdog" 2>/dev/null
+  wait "$watchdog" 2>/dev/null
+  return "$rc"
 }
 
 for attempt in $(seq 1 "$ATTEMPTS"); do
-  rm -rf "$OUT"; mkdir -p "$OUT"
+  rm -rf "$OUT"
+  mkdir -p "$OUT"
   echo "=== $(basename "$BINARY") attempt $attempt/$ATTEMPTS ==="
   if run_with_timeout "$ATTEMPT_TIMEOUT" bash "$ROOT/scripts/run-macos-browser-fixture.sh" "$BINARY" "$OUT" && test -f "$OUT/result.txt"; then
     echo "$(basename "$BINARY") passed on attempt $attempt"
-    [ "$attempt" -gt 1 ] && echo "::warning::$(basename "$BINARY") needed $attempt attempts (flaky on this runner)"
+    [[ "$attempt" -gt 1 ]] && echo "::warning::$(basename "$BINARY") needed $attempt attempts (flaky on this runner)"
     exit 0
   fi
   echo "::warning::$(basename "$BINARY") attempt $attempt failed"

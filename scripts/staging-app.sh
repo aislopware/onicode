@@ -27,15 +27,18 @@ export ONICODE_CALLBACK_PORT="${ONICODE_CALLBACK_PORT:-27642}"
 # One valid Apple Development identity by hash: several certificates share a
 # name, which `codesign` refuses as ambiguous (revoked ones are skipped).
 if [[ -z "${ONICODE_DEV_CODESIGN_IDENTITY:-}" ]]; then
-  ONICODE_DEV_CODESIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null |
-    awk '/Apple Development/ && !/REVOKED/ { print $2; exit }')"
+  ONICODE_DEV_CODESIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+    | awk '/Apple Development/ && !/REVOKED/ { print $2; exit }')"
   export ONICODE_DEV_CODESIGN_IDENTITY="${ONICODE_DEV_CODESIGN_IDENTITY:--}"
 fi
 
 health="$(curl -fsS --max-time 10 "$ONICODE_EDGE_URL/health" || true)"
 case "$health" in
   *'"ok":true'*) ;;
-  *) echo "staging edge not answering at $ONICODE_EDGE_URL ($health)" >&2; exit 1 ;;
+  *)
+    echo "staging edge not answering at $ONICODE_EDGE_URL ($health)" >&2
+    exit 1
+    ;;
 esac
 echo "staging: $ONICODE_EDGE_URL · data $ONICODE_DEV_DATA_DIR · engine :$ONICODE_DEV_IPC_PORT" >&2
 exec "$ROOT/scripts/run-macos-dev.sh" "$@"

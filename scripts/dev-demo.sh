@@ -26,13 +26,16 @@ echo "▸ building (first run takes a few minutes)…"
 cargo build -p onicode -q
 
 echo "▸ starting engine daemon on :$IPC"
-env ONICODE_DATA_DIR="$DAEMON_DIR" ONICODE_IPC_PORT=$IPC ONICODE_HARNESS=mock \
+env ONICODE_DATA_DIR="$DAEMON_DIR" ONICODE_IPC_PORT="$IPC" ONICODE_HARNESS=mock \
   ${DELAY:+ONICODE_MOCK_DELAY_MS=$DELAY} RUST_LOG=warn \
   ./target/debug/onicode headless &
 DAEMON_PID=$!
 trap 'kill $DAEMON_PID 2>/dev/null || true' EXIT
 for _ in $(seq 1 40); do
-  (exec 3<>/dev/tcp/127.0.0.1/$IPC) 2>/dev/null && { exec 3>&-; break; }
+  (exec 3<>"/dev/tcp/127.0.0.1/$IPC") 2>/dev/null && {
+    exec 3>&-
+    break
+  }
   sleep 0.25
 done
 
@@ -45,28 +48,33 @@ if [[ ! -f "$DAEMON_DIR/.demo-seeded" ]]; then
   # a folder already registered keeps its first space, so each is listed once.
   declare -A SPACES=()
   for project in onicode marigold flint; do
-    sid=$(uuidgen | tr 'A-Z' 'a-z')
+    sid=$(uuidgen | tr '[:upper:]' '[:lower:]')
     mkdir -p "$PROJECTS_DIR/$project"
     probe Mutate "{\"op\":\"createSpace\",\"spaceId\":\"$sid\",\"deviceId\":\"$DEV\",\"path\":\"$PROJECTS_DIR/$project\"}" >/dev/null
     SPACES[$project]="$sid"
   done
   seed() { # title project branch age_hours run
-    local id; id=$(uuidgen | tr 'A-Z' 'a-z')
+    local id
+    id=$(uuidgen | tr '[:upper:]' '[:lower:]')
     local sid="${SPACES[$2]}"
     probe Mutate "{\"op\":\"createChat\",\"chatId\":\"$id\",\"spaceId\":\"$sid\",\"config\":{\"harness\":\"mock\",\"model\":\"fable-5\",\"reasoning\":null,\"sandbox\":\"workspace-write\"}}" >/dev/null
     probe Mutate "{\"op\":\"renameChat\",\"chatId\":\"$id\",\"title\":\"$1\"}" >/dev/null
     probe Mutate "{\"op\":\"setChatBranch\",\"chatId\":\"$id\",\"branch\":\"$3\"}" >/dev/null
     if [[ "$5" == run ]]; then
-      probe QueueCommand "{\"chatId\":\"$id\",\"command\":{\"kind\":\"run\",\"messageId\":\"$(uuidgen)\",\"request\":{\"prompt\":\"Walk me through the streaming pipeline\",\"model\":null,\"reasoning\":null,\"modelOptions\":{},\"cwd\":\"/tmp\",\"sandbox\":\"workspace-write\",\"autoApprove\":true,\"resume\":null}}}" >/dev/null
+      local message
+      message=$(uuidgen)
+      probe QueueCommand "{\"chatId\":\"$id\",\"command\":{\"kind\":\"run\",\"messageId\":\"$message\",\"request\":{\"prompt\":\"Walk me through the streaming pipeline\",\"model\":null,\"reasoning\":null,\"modelOptions\":{},\"cwd\":\"/tmp\",\"sandbox\":\"workspace-write\",\"autoApprove\":true,\"resume\":null}}}" >/dev/null
       sleep 1
     fi
-    probe Mutate "{\"op\":\"setChatActivity\",\"chatId\":\"$id\",\"lastMessageAt\":$(( ($(date +%s) - $4*3600) * 1000 ))}" >/dev/null
+    local now
+    now=$(date +%s)
+    probe Mutate "{\"op\":\"setChatActivity\",\"chatId\":\"$id\",\"lastMessageAt\":$(((now - $4 * 3600) * 1000))}" >/dev/null
   }
-  seed "Native Onicode Rust Rewrite"    onicode onicode/main                 0  run
-  seed "Fix the Frost Date Lookup"    marigold     onicode/frost-date-lookup           2  run
-  seed "Print Seed Packet Labels"     marigold     onicode/seed-packet-labels          26 skip
-  seed "Initial Context Exploration"  onicode        onicode/initial-context-exploration 14 skip
-  seed "Audit Ledger Rounding"        flint        flint/main                        48 skip
+  seed "Native Onicode Rust Rewrite" onicode onicode/main 0 run
+  seed "Fix the Frost Date Lookup" marigold onicode/frost-date-lookup 2 run
+  seed "Print Seed Packet Labels" marigold onicode/seed-packet-labels 26 skip
+  seed "Initial Context Exploration" onicode onicode/initial-context-exploration 14 skip
+  seed "Audit Ledger Rounding" flint flint/main 48 skip
   touch "$DAEMON_DIR/.demo-seeded"
 fi
 
@@ -76,20 +84,22 @@ FANOUT_ID_FILE="$DAEMON_DIR/.fanout-chat"
 if [[ ! -f "$FANOUT_ID_FILE" ]]; then
   echo "▸ seeding the fan-out session"
   DEV=$(probe LocalDevice '{}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["deviceId"])')
-  sid=$(uuidgen | tr 'A-Z' 'a-z')
+  sid=$(uuidgen | tr '[:upper:]' '[:lower:]')
   mkdir -p "$PROJECTS_DIR/scouts"
   probe Mutate "{\"op\":\"createSpace\",\"spaceId\":\"$sid\",\"deviceId\":\"$DEV\",\"path\":\"$PROJECTS_DIR/scouts\"}" >/dev/null
-  fanout=$(uuidgen | tr 'A-Z' 'a-z')
+  fanout=$(uuidgen | tr '[:upper:]' '[:lower:]')
   probe Mutate "{\"op\":\"createChat\",\"chatId\":\"$fanout\",\"spaceId\":\"$sid\",\"config\":{\"harness\":\"mock\",\"model\":\"fable-5\",\"reasoning\":null,\"sandbox\":\"workspace-write\"}}" >/dev/null
   probe Mutate "{\"op\":\"renameChat\",\"chatId\":\"$fanout\",\"title\":\"Fan Out Forty Scouts\"}" >/dev/null
   for title in "Investigate the cadence regression" "Draft the migration notes" "Review the relay retry budget"; do
-    side=$(uuidgen | tr 'A-Z' 'a-z')
+    side=$(uuidgen | tr '[:upper:]' '[:lower:]')
     probe Mutate "{\"op\":\"createChat\",\"chatId\":\"$side\",\"spaceId\":\"$sid\",\"parentChatId\":\"$fanout\",\"config\":{\"harness\":\"mock\",\"model\":\"fable-5\",\"reasoning\":null,\"sandbox\":\"workspace-write\"}}" >/dev/null
     probe Mutate "{\"op\":\"renameChat\",\"chatId\":\"$side\",\"title\":\"$title\"}" >/dev/null
   done
-  echo "$fanout" > "$FANOUT_ID_FILE"
+  echo "$fanout" >"$FANOUT_ID_FILE"
 fi
-probe QueueCommand "{\"chatId\":\"$(cat "$FANOUT_ID_FILE")\",\"command\":{\"kind\":\"run\",\"messageId\":\"$(uuidgen)\",\"request\":{\"prompt\":\"/fanout 40\",\"model\":null,\"reasoning\":null,\"modelOptions\":{},\"cwd\":\"/tmp\",\"sandbox\":\"workspace-write\",\"autoApprove\":true,\"resume\":null}}}" >/dev/null
+fanout=$(cat "$FANOUT_ID_FILE")
+message=$(uuidgen)
+probe QueueCommand "{\"chatId\":\"$fanout\",\"command\":{\"kind\":\"run\",\"messageId\":\"$message\",\"request\":{\"prompt\":\"/fanout 40\",\"model\":null,\"reasoning\":null,\"modelOptions\":{},\"cwd\":\"/tmp\",\"sandbox\":\"workspace-write\",\"autoApprove\":true,\"resume\":null}}}" >/dev/null
 
 echo "▸ opening onicode (composer is live — type into it; --slow shows streaming)"
 echo "  'Fan Out Forty Scouts' settles a subagent every 2.5s; send '/fanout 40' to replay"

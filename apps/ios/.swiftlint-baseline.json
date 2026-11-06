@@ -1,0 +1,1952 @@
+[
+  {
+    "violation": {
+      "location": {
+        "file": "apps/ios/Onicode/App/AppModel.swift",
+        "line": 8,
+        "character": 7
+      },
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 682 lines",
+      "severity": "error",
+      "ruleIdentifier": "type_body_length",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleName": "Type Body Length"
+    },
+    "text": "final class AppModel {"
+  },
+  {
+    "violation": {
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "severity": "error",
+      "ruleName": "Cyclomatic Complexity",
+      "reason": "Function should have complexity 10 or less; currently complexity is 11",
+      "location": {
+        "file": "apps/ios/Onicode/App/AppModel.swift",
+        "character": 13,
+        "line": 416
+      }
+    },
+    "text": "    private func refreshWorkspace() {"
+  },
+  {
+    "violation": {
+      "reason": "File should contain 400 lines or less: currently contains 995",
+      "location": {
+        "character": 1,
+        "file": "apps/ios/Onicode/App/AppModel.swift",
+        "line": 995
+      },
+      "ruleName": "File Length",
+      "ruleIdentifier": "file_length",
+      "ruleDescription": "Files should not span too many lines.",
+      "severity": "error"
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "ruleIdentifier": "cyclomatic_complexity",
+      "reason": "Function should have complexity 10 or less; currently complexity is 17",
+      "location": {
+        "file": "apps/ios/Onicode/App/SceneDelegate.swift",
+        "character": 5,
+        "line": 7
+      },
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "error"
+    },
+    "text": "    func scene("
+  },
+  {
+    "violation": {
+      "ruleIdentifier": "function_body_length",
+      "location": {
+        "line": 7,
+        "file": "apps/ios/Onicode/App/SceneDelegate.swift",
+        "character": 5
+      },
+      "ruleDescription": "Function bodies should not span too many lines",
+      "severity": "error",
+      "ruleName": "Function Body Length",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 75 lines"
+    },
+    "text": "    func scene("
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "reason": "Function should have complexity 10 or less; currently complexity is 11",
+      "ruleName": "Cyclomatic Complexity",
+      "location": {
+        "character": 24,
+        "line": 118,
+        "file": "apps/ios/Onicode/App/SceneDelegate.swift"
+      }
+    },
+    "text": "    @MainActor private func openCloudRoute(_ route: String) {"
+  },
+  {
+    "violation": {
+      "ruleDescription": "Type bodies should not span too many lines",
+      "severity": "error",
+      "ruleName": "Type Body Length",
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 435 lines",
+      "ruleIdentifier": "type_body_length",
+      "location": {
+        "file": "apps/ios/Onicode/Cloud/AgentAccountsViewController.swift",
+        "line": 11,
+        "character": 7
+      }
+    },
+    "text": "final class AgentAccountsViewController: UITableViewController {"
+  },
+  {
+    "text": "    func run(",
+    "violation": {
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "severity": "error",
+      "location": {
+        "file": "apps/ios/Onicode/Cloud/AgentAccountsViewController.swift",
+        "line": 524,
+        "character": 5
+      },
+      "ruleName": "Cyclomatic Complexity",
+      "reason": "Function should have complexity 10 or less; currently complexity is 11",
+      "ruleIdentifier": "cyclomatic_complexity"
+    }
+  },
+  {
+    "text": "    func run(",
+    "violation": {
+      "ruleIdentifier": "function_parameter_count",
+      "severity": "error",
+      "reason": "Function should have 5 parameters or less: it currently has 6",
+      "ruleName": "Function Parameter Count",
+      "location": {
+        "character": 5,
+        "line": 524,
+        "file": "apps/ios/Onicode/Cloud/AgentAccountsViewController.swift"
+      },
+      "ruleDescription": "Number of function parameters should be low."
+    }
+  },
+  {
+    "text": "    func configure(",
+    "violation": {
+      "ruleName": "Function Body Length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "location": {
+        "file": "apps/ios/Onicode/Cloud/AgentAccountsViewController.swift",
+        "character": 5,
+        "line": 688
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 68 lines",
+      "ruleIdentifier": "function_body_length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    func configure(",
+    "violation": {
+      "severity": "error",
+      "location": {
+        "character": 5,
+        "file": "apps/ios/Onicode/Cloud/AgentAccountsViewController.swift",
+        "line": 688
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 7",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleName": "Function Parameter Count"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "reason": "File should contain 400 lines or less: currently contains 818",
+      "location": {
+        "file": "apps/ios/Onicode/Cloud/AgentAccountsViewController.swift",
+        "character": 1,
+        "line": 818
+      },
+      "ruleDescription": "Files should not span too many lines.",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "final class BillingViewController: UIViewController, SFSafariViewControllerDelegate {",
+    "violation": {
+      "ruleDescription": "Type bodies should not span too many lines",
+      "severity": "error",
+      "location": {
+        "character": 7,
+        "line": 7,
+        "file": "apps/ios/Onicode/Cloud/BillingViewController.swift"
+      },
+      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 340 lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length"
+    }
+  },
+  {
+    "text": "    init(plan: BillingPlanInfo, current: Bool, hours: String, action: UIButton) {",
+    "violation": {
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
+      "location": {
+        "file": "apps/ios/Onicode/Cloud/BillingViewController.swift",
+        "character": 5,
+        "line": 475
+      },
+      "severity": "error"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "apps/ios/Onicode/Cloud/BillingViewController.swift",
+        "line": 599
+      },
+      "ruleIdentifier": "file_length",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleName": "File Length",
+      "severity": "error",
+      "reason": "File should contain 400 lines or less: currently contains 599"
+    }
+  },
+  {
+    "text": "    private func emptyView() -> UIView {",
+    "violation": {
+      "severity": "error",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 52 lines",
+      "ruleIdentifier": "function_body_length",
+      "location": {
+        "file": "apps/ios/Onicode/Cloud/CloudRepoPickerViewController.swift",
+        "line": 65,
+        "character": 13
+      },
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length"
+    }
+  },
+  {
+    "text": "    override func viewDidLoad() {",
+    "violation": {
+      "severity": "error",
+      "ruleIdentifier": "function_body_length",
+      "location": {
+        "character": 14,
+        "file": "apps/ios/Onicode/Cloud/CloudSettingsViewController.swift",
+        "line": 34
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 77 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length"
+    }
+  },
+  {
+    "text": "    private func reload() {",
+    "violation": {
+      "ruleDescription": "Function bodies should not span too many lines",
+      "location": {
+        "character": 13,
+        "line": 115,
+        "file": "apps/ios/Onicode/Cloud/CloudSettingsViewController.swift"
+      },
+      "ruleName": "Function Body Length",
+      "severity": "error",
+      "ruleIdentifier": "function_body_length",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 61 lines"
+    }
+  },
+  {
+    "text": "final class CloudStore {",
+    "violation": {
+      "ruleDescription": "Type bodies should not span too many lines",
+      "location": {
+        "character": 7,
+        "line": 8,
+        "file": "apps/ios/Onicode/Cloud/CloudStore.swift"
+      },
+      "ruleName": "Type Body Length",
+      "severity": "error",
+      "ruleIdentifier": "type_body_length",
+      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 290 lines"
+    }
+  },
+  {
+    "text": "    func refresh() {",
+    "violation": {
+      "severity": "error",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleName": "Cyclomatic Complexity",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "location": {
+        "line": 160,
+        "file": "apps/ios/Onicode/Cloud/CloudStore.swift",
+        "character": 5
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 11"
+    }
+  },
+  {
+    "text": "    func refresh() {",
+    "violation": {
+      "location": {
+        "file": "apps/ios/Onicode/Cloud/CloudStore.swift",
+        "line": 160,
+        "character": 5
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "severity": "error",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "line": 406,
+        "file": "apps/ios/Onicode/Cloud/CloudStore.swift"
+      },
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "reason": "File should contain 400 lines or less: currently contains 406",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    override func viewDidLoad() {",
+    "violation": {
+      "ruleName": "Function Body Length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "severity": "error",
+      "location": {
+        "line": 40,
+        "file": "apps/ios/Onicode/Cloud/GitHubConnectViewController.swift",
+        "character": 14
+      },
+      "ruleIdentifier": "function_body_length",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 57 lines"
+    }
+  },
+  {
+    "text": "final class OnboardingViewController: UIViewController {",
+    "violation": {
+      "location": {
+        "character": 7,
+        "file": "apps/ios/Onicode/Cloud/OnboardingViewController.swift",
+        "line": 9
+      },
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 601 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "severity": "error",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length"
+    }
+  },
+  {
+    "text": "    private func render(animated: Bool) {",
+    "violation": {
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleName": "Cyclomatic Complexity",
+      "location": {
+        "file": "apps/ios/Onicode/Cloud/OnboardingViewController.swift",
+        "character": 13,
+        "line": 151
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 12",
+      "severity": "error",
+      "ruleIdentifier": "cyclomatic_complexity"
+    }
+  },
+  {
+    "text": "    private func renderFooter() {",
+    "violation": {
+      "ruleIdentifier": "cyclomatic_complexity",
+      "severity": "error",
+      "location": {
+        "line": 221,
+        "file": "apps/ios/Onicode/Cloud/OnboardingViewController.swift",
+        "character": 13
+      },
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleName": "Cyclomatic Complexity",
+      "reason": "Function should have complexity 10 or less; currently complexity is 13"
+    }
+  },
+  {
+    "text": "    private func appearancePage() -> UIView {",
+    "violation": {
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 66 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "location": {
+        "file": "apps/ios/Onicode/Cloud/OnboardingViewController.swift",
+        "line": 271,
+        "character": 13
+      },
+      "ruleName": "Function Body Length",
+      "ruleIdentifier": "function_body_length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    private func donePage() -> UIView {",
+    "violation": {
+      "ruleDescription": "Function bodies should not span too many lines",
+      "location": {
+        "character": 13,
+        "line": 461,
+        "file": "apps/ios/Onicode/Cloud/OnboardingViewController.swift"
+      },
+      "ruleName": "Function Body Length",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 80 lines",
+      "ruleIdentifier": "function_body_length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "ruleIdentifier": "file_length",
+      "ruleDescription": "Files should not span too many lines.",
+      "reason": "File should contain 400 lines or less: currently contains 740",
+      "location": {
+        "character": 1,
+        "line": 740,
+        "file": "apps/ios/Onicode/Cloud/OnboardingViewController.swift"
+      },
+      "severity": "error",
+      "ruleName": "File Length"
+    }
+  },
+  {
+    "text": "final class ProvidersViewController: UIViewController, UICollectionViewDelegate {",
+    "violation": {
+      "severity": "error",
+      "ruleName": "Type Body Length",
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 421 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "location": {
+        "file": "apps/ios/Onicode/Cloud/ProvidersViewController.swift",
+        "line": 7,
+        "character": 7
+      }
+    }
+  },
+  {
+    "text": "    override func viewDidLoad() {",
+    "violation": {
+      "severity": "error",
+      "ruleName": "Cyclomatic Complexity",
+      "reason": "Function should have complexity 10 or less; currently complexity is 12",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "location": {
+        "file": "apps/ios/Onicode/Cloud/ProvidersViewController.swift",
+        "line": 79,
+        "character": 14
+      }
+    }
+  },
+  {
+    "violation": {
+      "ruleName": "Function Body Length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 114 lines",
+      "severity": "error",
+      "ruleIdentifier": "function_body_length",
+      "location": {
+        "line": 79,
+        "file": "apps/ios/Onicode/Cloud/ProvidersViewController.swift",
+        "character": 14
+      }
+    },
+    "text": "    override func viewDidLoad() {"
+  },
+  {
+    "violation": {
+      "location": {
+        "character": 1,
+        "line": 480,
+        "file": "apps/ios/Onicode/Cloud/ProvidersViewController.swift"
+      },
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleName": "File Length",
+      "ruleIdentifier": "file_length",
+      "severity": "error",
+      "reason": "File should contain 400 lines or less: currently contains 480"
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 332 lines",
+      "location": {
+        "line": 7,
+        "file": "apps/ios/Onicode/Companions/CompanionsViewController.swift",
+        "character": 7
+      },
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    },
+    "text": "final class CompanionsViewController: UIViewController, UICollectionViewDelegate {"
+  },
+  {
+    "violation": {
+      "ruleName": "Cyclomatic Complexity",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "severity": "error",
+      "location": {
+        "character": 14,
+        "line": 64,
+        "file": "apps/ios/Onicode/Companions/CompanionsViewController.swift"
+      },
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "reason": "Function should have complexity 10 or less; currently complexity is 14"
+    },
+    "text": "    override func viewDidLoad() {"
+  },
+  {
+    "violation": {
+      "location": {
+        "file": "apps/ios/Onicode/Companions/CompanionsViewController.swift",
+        "line": 64,
+        "character": 14
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 78 lines",
+      "ruleName": "Function Body Length",
+      "ruleIdentifier": "function_body_length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "severity": "error"
+    },
+    "text": "    override func viewDidLoad() {"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleDescription": "Files should not span too many lines.",
+      "location": {
+        "file": "apps/ios/Onicode/Companions/CompanionsViewController.swift",
+        "line": 602,
+        "character": 1
+      },
+      "ruleName": "File Length",
+      "reason": "File should contain 400 lines or less: currently contains 602",
+      "ruleIdentifier": "file_length"
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "ruleName": "Function Body Length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 58 lines",
+      "severity": "error",
+      "ruleIdentifier": "function_body_length",
+      "location": {
+        "line": 40,
+        "file": "apps/ios/Onicode/Companions/SubagentViewController.swift",
+        "character": 14
+      }
+    },
+    "text": "    override func viewDidLoad() {"
+  },
+  {
+    "violation": {
+      "reason": "Function should have 5 parameters or less: it currently has 7",
+      "location": {
+        "file": "apps/ios/Onicode/Companions/TerminalGlyphs.swift",
+        "line": 16,
+        "character": 12
+      },
+      "severity": "error",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleName": "Function Parameter Count"
+    },
+    "text": "    static func draw("
+  },
+  {
+    "violation": {
+      "ruleName": "Cyclomatic Complexity",
+      "reason": "Function should have complexity 10 or less; currently complexity is 12",
+      "location": {
+        "line": 41,
+        "character": 13,
+        "file": "apps/ios/Onicode/Companions/TerminalGlyphs.swift"
+      },
+      "severity": "error",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleDescription": "Complexity of function bodies should be limited."
+    },
+    "text": "    private static func block(_ v: UInt32, _ r: CGRect, _ ctx: CGContext, _ snap: (CGFloat) -> CGFloat) {"
+  },
+  {
+    "violation": {
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "error",
+      "reason": "Function should have complexity 10 or less; currently complexity is 12",
+      "location": {
+        "line": 95,
+        "character": 13,
+        "file": "apps/ios/Onicode/Companions/TerminalGlyphs.swift"
+      },
+      "ruleDescription": "Complexity of function bodies should be limited."
+    },
+    "text": "    private static func box(_ v: UInt32, _ r: CGRect, _ ctx: CGContext, _ snap: (CGFloat) -> CGFloat, _ scale: CGFloat)"
+  },
+  {
+    "violation": {
+      "location": {
+        "file": "apps/ios/Onicode/Companions/TerminalGlyphs.swift",
+        "line": 95,
+        "character": 20
+      },
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 124 lines",
+      "ruleIdentifier": "function_body_length",
+      "severity": "error"
+    },
+    "text": "    private static func box(_ v: UInt32, _ r: CGRect, _ ctx: CGContext, _ snap: (CGFloat) -> CGFloat, _ scale: CGFloat)"
+  },
+  {
+    "violation": {
+      "location": {
+        "file": "apps/ios/Onicode/Companions/TerminalKeyBar.swift",
+        "line": 36,
+        "character": 5
+      },
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length",
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 55 lines",
+      "ruleIdentifier": "function_body_length",
+      "severity": "error"
+    },
+    "text": "    init() {"
+  },
+  {
+    "violation": {
+      "location": {
+        "line": 11,
+        "character": 7,
+        "file": "apps/ios/Onicode/Companions/TerminalView.swift"
+      },
+      "ruleDescription": "Type bodies should not span too many lines",
+      "severity": "error",
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 415 lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length"
+    },
+    "text": "final class TerminalView: UIScrollView, UIKeyInput, UITextInputTraits, UIScrollViewDelegate,"
+  },
+  {
+    "violation": {
+      "reason": "Function should have complexity 10 or less; currently complexity is 16",
+      "severity": "error",
+      "ruleName": "Cyclomatic Complexity",
+      "location": {
+        "line": 477,
+        "file": "apps/ios/Onicode/Companions/TerminalView.swift",
+        "character": 13
+      },
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleDescription": "Complexity of function bodies should be limited."
+    },
+    "text": "    private func handle(_ key: UIKey) -> Bool {"
+  },
+  {
+    "violation": {
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "severity": "error",
+      "ruleName": "Cyclomatic Complexity",
+      "reason": "Function should have complexity 10 or less; currently complexity is 19",
+      "location": {
+        "character": 14,
+        "line": 576,
+        "file": "apps/ios/Onicode/Companions/TerminalView.swift"
+      },
+      "ruleIdentifier": "cyclomatic_complexity"
+    },
+    "text": "    override func draw(_ rect: CGRect) {"
+  },
+  {
+    "violation": {
+      "ruleName": "Function Body Length",
+      "severity": "error",
+      "location": {
+        "character": 14,
+        "line": 576,
+        "file": "apps/ios/Onicode/Companions/TerminalView.swift"
+      },
+      "ruleIdentifier": "function_body_length",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 87 lines",
+      "ruleDescription": "Function bodies should not span too many lines"
+    },
+    "text": "    override func draw(_ rect: CGRect) {"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleName": "File Length",
+      "ruleDescription": "Files should not span too many lines.",
+      "reason": "File should contain 400 lines or less: currently contains 673",
+      "location": {
+        "character": 1,
+        "file": "apps/ios/Onicode/Companions/TerminalView.swift",
+        "line": 673
+      },
+      "ruleIdentifier": "file_length"
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "location": {
+        "file": "apps/ios/Onicode/Companions/TerminalViewController.swift",
+        "line": 7,
+        "character": 7
+      },
+      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 328 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    },
+    "text": "final class TerminalViewController: UIViewController {"
+  },
+  {
+    "violation": {
+      "reason": "File should contain 400 lines or less: currently contains 446",
+      "location": {
+        "character": 1,
+        "file": "apps/ios/Onicode/Companions/TerminalViewController.swift",
+        "line": 446
+      },
+      "ruleName": "File Length",
+      "ruleIdentifier": "file_length",
+      "ruleDescription": "Files should not span too many lines.",
+      "severity": "error"
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "ruleName": "Type Body Length",
+      "location": {
+        "file": "apps/ios/Onicode/Composer/ComposerBar.swift",
+        "character": 7,
+        "line": 41
+      },
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 576 lines",
+      "severity": "error",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length"
+    },
+    "text": "final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate {"
+  },
+  {
+    "violation": {
+      "location": {
+        "file": "apps/ios/Onicode/Composer/ComposerBar.swift",
+        "line": 137,
+        "character": 13
+      },
+      "ruleIdentifier": "function_body_length",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 130 lines",
+      "ruleName": "Function Body Length",
+      "severity": "error",
+      "ruleDescription": "Function bodies should not span too many lines"
+    },
+    "text": "    private func build() {"
+  },
+  {
+    "violation": {
+      "ruleIdentifier": "function_body_length",
+      "severity": "error",
+      "location": {
+        "line": 606,
+        "file": "apps/ios/Onicode/Composer/ComposerBar.swift",
+        "character": 13
+      },
+      "ruleDescription": "Function bodies should not span too many lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 68 lines",
+      "ruleName": "Function Body Length"
+    },
+    "text": "    private func refreshAction(animated: Bool) {"
+  },
+  {
+    "violation": {
+      "reason": "File should contain 400 lines or less: currently contains 716",
+      "ruleDescription": "Files should not span too many lines.",
+      "severity": "error",
+      "location": {
+        "line": 716,
+        "character": 1,
+        "file": "apps/ios/Onicode/Composer/ComposerBar.swift"
+      },
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length"
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 90 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "severity": "error",
+      "location": {
+        "line": 25,
+        "character": 14,
+        "file": "apps/ios/Onicode/Composer/QuestionPanel.swift"
+      },
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length"
+    },
+    "text": "    override init(frame: CGRect) {"
+  },
+  {
+    "violation": {
+      "ruleIdentifier": "function_body_length",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 70 lines",
+      "ruleName": "Function Body Length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "severity": "error",
+      "location": {
+        "file": "apps/ios/Onicode/Composer/QuestionPanel.swift",
+        "line": 322,
+        "character": 13
+      }
+    },
+    "text": "    private func row(_ item: SessionChrome.QueuedItem, index: Int, count: Int) -> UIView {"
+  },
+  {
+    "violation": {
+      "reason": "Function should have complexity 10 or less; currently complexity is 12",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "error",
+      "location": {
+        "file": "apps/ios/Onicode/Debug/TerminalProbe.swift",
+        "line": 45,
+        "character": 13
+      },
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity"
+    },
+    "text": "    private static func run(app: AppModel, router: AppRouter?) async {"
+  },
+  {
+    "violation": {
+      "ruleName": "Function Body Length",
+      "location": {
+        "character": 20,
+        "line": 45,
+        "file": "apps/ios/Onicode/Debug/TerminalProbe.swift"
+      },
+      "ruleIdentifier": "function_body_length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "severity": "error",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 92 lines"
+    },
+    "text": "    private static func run(app: AppModel, router: AppRouter?) async {"
+  },
+  {
+    "violation": {
+      "ruleName": "Function Body Length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "severity": "error",
+      "location": {
+        "file": "apps/ios/Onicode/Debug/TranscriptLabViewController.swift",
+        "line": 16,
+        "character": 14
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 63 lines"
+    },
+    "text": "    override func viewDidLoad() {"
+  },
+  {
+    "violation": {
+      "reason": "Enum body should span 250 lines or less excluding comments and whitespace: currently spans 276 lines",
+      "location": {
+        "line": 120,
+        "file": "apps/ios/Onicode/Design/BrandMarks.swift",
+        "character": 1
+      },
+      "ruleIdentifier": "type_body_length",
+      "severity": "error",
+      "ruleName": "Type Body Length",
+      "ruleDescription": "Type bodies should not span too many lines"
+    },
+    "text": "enum SVGPathParser {"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleName": "Cyclomatic Complexity",
+      "reason": "Function should have complexity 10 or less; currently complexity is 23",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "location": {
+        "line": 121,
+        "character": 5,
+        "file": "apps/ios/Onicode/Design/BrandMarks.swift"
+      }
+    },
+    "text": "    static func path(from data: String) -> Path {"
+  },
+  {
+    "violation": {
+      "location": {
+        "character": 12,
+        "line": 121,
+        "file": "apps/ios/Onicode/Design/BrandMarks.swift"
+      },
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "error",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 108 lines",
+      "ruleDescription": "Function bodies should not span too many lines"
+    },
+    "text": "    static func path(from data: String) -> Path {"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "location": {
+        "character": 9,
+        "file": "apps/ios/Onicode/Design/BrandMarks.swift",
+        "line": 238
+      },
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "reason": "Function should have complexity 10 or less; currently complexity is 11",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity"
+    },
+    "text": "        init?(_ c: Character) {"
+  },
+  {
+    "violation": {
+      "ruleName": "Function Body Length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "severity": "error",
+      "location": {
+        "file": "apps/ios/Onicode/Design/BrandMarks.swift",
+        "line": 256,
+        "character": 20
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 66 lines",
+      "ruleIdentifier": "function_body_length"
+    },
+    "text": "    private static func addArc("
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleName": "Function Parameter Count",
+      "location": {
+        "file": "apps/ios/Onicode/Design/BrandMarks.swift",
+        "line": 256,
+        "character": 20
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 8",
+      "ruleIdentifier": "function_parameter_count"
+    },
+    "text": "    private static func addArc("
+  },
+  {
+    "violation": {
+      "ruleName": "File Length",
+      "ruleIdentifier": "file_length",
+      "location": {
+        "file": "apps/ios/Onicode/Design/BrandMarks.swift",
+        "character": 1,
+        "line": 442
+      },
+      "severity": "error",
+      "reason": "File should contain 400 lines or less: currently contains 442",
+      "ruleDescription": "Files should not span too many lines."
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "ruleName": "Cyclomatic Complexity",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "location": {
+        "file": "apps/ios/Onicode/Design/Palette.swift",
+        "character": 5,
+        "line": 49
+      },
+      "severity": "error",
+      "reason": "Function should have complexity 10 or less; currently complexity is 45",
+      "ruleDescription": "Complexity of function bodies should be limited."
+    },
+    "text": "    static func color(_ role: ColorRole) -> UIColor {"
+  },
+  {
+    "text": "    private static func rgba(_ image: CGImage, maxSide: CGFloat) -> (Data, Int, Int)? {",
+    "violation": {
+      "ruleIdentifier": "large_tuple",
+      "location": {
+        "character": 69,
+        "file": "apps/ios/Onicode/Design/Wallpaper.swift",
+        "line": 220
+      },
+      "severity": "error",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "reason": "Tuples should have at most 2 members",
+      "ruleName": "Large Tuple"
+    }
+  },
+  {
+    "text": "final class CoreSessionSource: SessionSource {",
+    "violation": {
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 418 lines",
+      "severity": "error",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "location": {
+        "character": 7,
+        "line": 5,
+        "file": "apps/ios/Onicode/Session/CoreSessionSource.swift"
+      },
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length"
+    }
+  },
+  {
+    "text": "    private func refresh() {",
+    "violation": {
+      "location": {
+        "line": 70,
+        "file": "apps/ios/Onicode/Session/CoreSessionSource.swift",
+        "character": 13
+      },
+      "ruleIdentifier": "cyclomatic_complexity",
+      "reason": "Function should have complexity 10 or less; currently complexity is 25",
+      "severity": "error",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleName": "Cyclomatic Complexity"
+    }
+  },
+  {
+    "text": "    private func refresh() {",
+    "violation": {
+      "ruleName": "Function Body Length",
+      "location": {
+        "file": "apps/ios/Onicode/Session/CoreSessionSource.swift",
+        "line": 70,
+        "character": 13
+      },
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 108 lines",
+      "severity": "error",
+      "ruleIdentifier": "function_body_length",
+      "ruleDescription": "Function bodies should not span too many lines"
+    }
+  },
+  {
+    "text": "    func modelPicker() -> UIViewController? {",
+    "violation": {
+      "ruleIdentifier": "function_body_length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "location": {
+        "file": "apps/ios/Onicode/Session/CoreSessionSource.swift",
+        "line": 333,
+        "character": 5
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 59 lines",
+      "severity": "error",
+      "ruleName": "Function Body Length"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleName": "File Length",
+      "severity": "error",
+      "ruleIdentifier": "file_length",
+      "location": {
+        "character": 1,
+        "file": "apps/ios/Onicode/Session/CoreSessionSource.swift",
+        "line": 494
+      },
+      "reason": "File should contain 400 lines or less: currently contains 494"
+    }
+  },
+  {
+    "text": "    private static func animate(",
+    "violation": {
+      "ruleDescription": "Number of function parameters should be low.",
+      "severity": "error",
+      "reason": "Function should have 5 parameters or less: it currently has 6",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "location": {
+        "file": "apps/ios/Onicode/Session/DraftHandoff.swift",
+        "line": 86,
+        "character": 20
+      }
+    }
+  },
+  {
+    "text": "    private func buildHeader() {",
+    "violation": {
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 55 lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "location": {
+        "line": 142,
+        "character": 13,
+        "file": "apps/ios/Onicode/Session/ModelPickerViewController.swift"
+      },
+      "severity": "error",
+      "ruleName": "Function Body Length"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "ruleName": "File Length",
+      "severity": "error",
+      "ruleIdentifier": "file_length",
+      "location": {
+        "character": 1,
+        "line": 890,
+        "file": "apps/ios/Onicode/Session/ModelPickerViewController.swift"
+      },
+      "reason": "File should contain 400 lines or less: currently contains 890",
+      "ruleDescription": "Files should not span too many lines."
+    }
+  },
+  {
+    "text": "final class NewSessionViewController: UIViewController, UIGestureRecognizerDelegate {",
+    "violation": {
+      "severity": "error",
+      "ruleName": "Type Body Length",
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 515 lines",
+      "location": {
+        "character": 7,
+        "file": "apps/ios/Onicode/Session/NewSessionViewController.swift",
+        "line": 56
+      },
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length"
+    }
+  },
+  {
+    "text": "    override func viewDidLoad() {",
+    "violation": {
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length",
+      "location": {
+        "character": 14,
+        "file": "apps/ios/Onicode/Session/NewSessionViewController.swift",
+        "line": 113
+      },
+      "ruleIdentifier": "function_body_length",
+      "severity": "error",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 94 lines"
+    }
+  },
+  {
+    "text": "    private func projectMenu() -> UIMenu {",
+    "violation": {
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length",
+      "location": {
+        "character": 13,
+        "file": "apps/ios/Onicode/Session/NewSessionViewController.swift",
+        "line": 385
+      },
+      "ruleIdentifier": "function_body_length",
+      "severity": "error",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 71 lines"
+    }
+  },
+  {
+    "text": "    private func branchMenu() -> UIMenu {",
+    "violation": {
+      "ruleDescription": "Function bodies should not span too many lines",
+      "location": {
+        "file": "apps/ios/Onicode/Session/NewSessionViewController.swift",
+        "line": 531,
+        "character": 13
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 54 lines",
+      "severity": "error",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "ruleName": "File Length",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "severity": "error",
+      "location": {
+        "line": 738,
+        "file": "apps/ios/Onicode/Session/NewSessionViewController.swift",
+        "character": 1
+      },
+      "reason": "File should contain 400 lines or less: currently contains 738"
+    }
+  },
+  {
+    "text": "final class MoreViewController: UIViewController, UICollectionViewDelegate {",
+    "violation": {
+      "ruleDescription": "Type bodies should not span too many lines",
+      "location": {
+        "line": 6,
+        "file": "apps/ios/Onicode/Shell/MoreViewController.swift",
+        "character": 7
+      },
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 371 lines",
+      "severity": "error",
+      "ruleName": "Type Body Length",
+      "ruleIdentifier": "type_body_length"
+    }
+  },
+  {
+    "text": "    override func viewDidLoad() {",
+    "violation": {
+      "severity": "error",
+      "location": {
+        "line": 39,
+        "character": 14,
+        "file": "apps/ios/Onicode/Shell/MoreViewController.swift"
+      },
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length",
+      "ruleIdentifier": "function_body_length",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 73 lines"
+    }
+  },
+  {
+    "text": "    private func reload() {",
+    "violation": {
+      "ruleName": "Function Body Length",
+      "ruleIdentifier": "function_body_length",
+      "severity": "error",
+      "location": {
+        "file": "apps/ios/Onicode/Shell/MoreViewController.swift",
+        "line": 218,
+        "character": 13
+      },
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 105 lines",
+      "ruleDescription": "Function bodies should not span too many lines"
+    }
+  },
+  {
+    "text": "    func collectionView(_ collectionView: UICollectionView, didSelectItemAt path: IndexPath) {",
+    "violation": {
+      "severity": "error",
+      "location": {
+        "file": "apps/ios/Onicode/Shell/MoreViewController.swift",
+        "character": 5,
+        "line": 328
+      },
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "reason": "Function should have complexity 10 or less; currently complexity is 17",
+      "ruleDescription": "Complexity of function bodies should be limited."
+    }
+  },
+  {
+    "text": "    func collectionView(_ collectionView: UICollectionView, didSelectItemAt path: IndexPath) {",
+    "violation": {
+      "ruleDescription": "Function bodies should not span too many lines",
+      "location": {
+        "character": 5,
+        "line": 328,
+        "file": "apps/ios/Onicode/Shell/MoreViewController.swift"
+      },
+      "ruleIdentifier": "function_body_length",
+      "severity": "error",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 73 lines",
+      "ruleName": "Function Body Length"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "ruleIdentifier": "file_length",
+      "severity": "error",
+      "location": {
+        "file": "apps/ios/Onicode/Shell/MoreViewController.swift",
+        "line": 403,
+        "character": 1
+      },
+      "ruleName": "File Length",
+      "reason": "File should contain 400 lines or less: currently contains 403",
+      "ruleDescription": "Files should not span too many lines."
+    }
+  },
+  {
+    "text": "    override func viewDidLoad() {",
+    "violation": {
+      "severity": "error",
+      "ruleIdentifier": "function_body_length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length",
+      "location": {
+        "line": 28,
+        "file": "apps/ios/Onicode/Threads/NewProjectViewController.swift",
+        "character": 14
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 74 lines"
+    }
+  },
+  {
+    "text": "    static func corner(_ vm: SessionRowVM) -> (word: String, color: UIColor, glyph: StatusGlyph.Kind)? {",
+    "violation": {
+      "location": {
+        "character": 47,
+        "file": "apps/ios/Onicode/Threads/SessionCell.swift",
+        "line": 99
+      },
+      "reason": "Tuples should have at most 2 members",
+      "ruleIdentifier": "large_tuple",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "ruleName": "Large Tuple",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    func configure(_ vm: SessionRowVM) {",
+    "violation": {
+      "ruleIdentifier": "function_body_length",
+      "location": {
+        "character": 5,
+        "line": 110,
+        "file": "apps/ios/Onicode/Threads/SessionCell.swift"
+      },
+      "ruleDescription": "Function bodies should not span too many lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 53 lines",
+      "ruleName": "Function Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "class SessionListController: UIViewController, UICollectionViewDelegate {",
+    "violation": {
+      "ruleIdentifier": "type_body_length",
+      "location": {
+        "character": 1,
+        "line": 6,
+        "file": "apps/ios/Onicode/Threads/SessionListController.swift"
+      },
+      "ruleDescription": "Type bodies should not span too many lines",
+      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 324 lines",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    override func viewDidLoad() {",
+    "violation": {
+      "ruleName": "Function Body Length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "severity": "error",
+      "location": {
+        "character": 14,
+        "line": 51,
+        "file": "apps/ios/Onicode/Threads/SessionListController.swift"
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 68 lines",
+      "ruleIdentifier": "function_body_length"
+    }
+  },
+  {
+    "text": "    func buildSections() -> [(id: String, header: String?, folders: [FolderRowVM], sessions: [SessionRowVM])] { [] }",
+    "violation": {
+      "location": {
+        "file": "apps/ios/Onicode/Threads/SessionListController.swift",
+        "line": 129,
+        "character": 30
+      },
+      "ruleIdentifier": "large_tuple",
+      "ruleName": "Large Tuple",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "severity": "error",
+      "reason": "Tuples should have at most 2 members"
+    }
+  },
+  {
+    "text": "    private func dropSlot(for id: String, at path: IndexPath) -> (",
+    "violation": {
+      "reason": "Tuples should have at most 2 members",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "ruleIdentifier": "large_tuple",
+      "ruleName": "Large Tuple",
+      "location": {
+        "file": "apps/ios/Onicode/Threads/SessionListController.swift",
+        "character": 66,
+        "line": 475
+      },
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    override func buildSections() -> [(id: String, header: String?, folders: [FolderRowVM], sessions: [SessionRowVM])] {",
+    "violation": {
+      "location": {
+        "line": 542,
+        "character": 39,
+        "file": "apps/ios/Onicode/Threads/SessionListController.swift"
+      },
+      "ruleIdentifier": "large_tuple",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "severity": "error",
+      "reason": "Tuples should have at most 2 members",
+      "ruleName": "Large Tuple"
+    }
+  },
+  {
+    "text": "        var out: [(id: String, header: String?, folders: [FolderRowVM], sessions: [SessionRowVM])] = []",
+    "violation": {
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "ruleName": "Large Tuple",
+      "severity": "error",
+      "location": {
+        "character": 19,
+        "line": 546,
+        "file": "apps/ios/Onicode/Threads/SessionListController.swift"
+      },
+      "ruleIdentifier": "large_tuple",
+      "reason": "Tuples should have at most 2 members"
+    }
+  },
+  {
+    "text": "    override func buildSections() -> [(id: String, header: String?, folders: [FolderRowVM], sessions: [SessionRowVM])] {",
+    "violation": {
+      "location": {
+        "character": 39,
+        "file": "apps/ios/Onicode/Threads/SessionListController.swift",
+        "line": 700
+      },
+      "severity": "error",
+      "reason": "Tuples should have at most 2 members",
+      "ruleIdentifier": "large_tuple",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "ruleName": "Large Tuple"
+    }
+  },
+  {
+    "text": "    override func buildSections() -> [(id: String, header: String?, folders: [FolderRowVM], sessions: [SessionRowVM])] {",
+    "violation": {
+      "reason": "Tuples should have at most 2 members",
+      "ruleName": "Large Tuple",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "severity": "error",
+      "ruleIdentifier": "large_tuple",
+      "location": {
+        "line": 776,
+        "character": 39,
+        "file": "apps/ios/Onicode/Threads/SessionListController.swift"
+      }
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "error",
+      "ruleDescription": "Files should not span too many lines.",
+      "location": {
+        "line": 779,
+        "character": 1,
+        "file": "apps/ios/Onicode/Threads/SessionListController.swift"
+      },
+      "reason": "File should contain 400 lines or less: currently contains 779"
+    }
+  },
+  {
+    "text": "    init(display: RowDisplay, fonts: StyleFonts) {",
+    "violation": {
+      "severity": "error",
+      "location": {
+        "line": 24,
+        "file": "apps/ios/Onicode/Transcript/RowModel.swift",
+        "character": 5
+      },
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 54 lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length"
+    }
+  },
+  {
+    "text": "    func draw(layer: Int, in ctx: CGContext, traits: UITraitCollection, hairline: CGFloat, pass: Pass = .all) {",
+    "violation": {
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "error",
+      "location": {
+        "character": 5,
+        "line": 195,
+        "file": "apps/ios/Onicode/Transcript/RowModel.swift"
+      },
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "reason": "Function should have complexity 10 or less; currently complexity is 26"
+    }
+  },
+  {
+    "text": "    func draw(layer: Int, in ctx: CGContext, traits: UITraitCollection, hairline: CGFloat, pass: Pass = .all) {",
+    "violation": {
+      "ruleIdentifier": "function_body_length",
+      "severity": "error",
+      "location": {
+        "line": 195,
+        "character": 5,
+        "file": "apps/ios/Onicode/Transcript/RowModel.swift"
+      },
+      "ruleName": "Function Body Length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 66 lines"
+    }
+  },
+  {
+    "text": "final class RowView: UIView {",
+    "violation": {
+      "ruleIdentifier": "type_body_length",
+      "severity": "error",
+      "location": {
+        "line": 52,
+        "character": 7,
+        "file": "apps/ios/Onicode/Transcript/RowView.swift"
+      },
+      "ruleName": "Type Body Length",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 324 lines"
+    }
+  },
+  {
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "apps/ios/Onicode/Transcript/RowView.swift",
+        "line": 135
+      },
+      "severity": "error",
+      "reason": "Function should have complexity 10 or less; currently complexity is 14",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity"
+    },
+    "text": "    func configure(_ model: RowModel, kind: RowKind) {"
+  },
+  {
+    "violation": {
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length",
+      "location": {
+        "line": 135,
+        "file": "apps/ios/Onicode/Transcript/RowView.swift",
+        "character": 5
+      },
+      "ruleIdentifier": "function_body_length",
+      "severity": "error",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 82 lines"
+    },
+    "text": "    func configure(_ model: RowModel, kind: RowKind) {"
+  },
+  {
+    "violation": {
+      "reason": "Function should have complexity 10 or less; currently complexity is 27",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "error",
+      "location": {
+        "line": 224,
+        "file": "apps/ios/Onicode/Transcript/RowView.swift",
+        "character": 13
+      },
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleDescription": "Complexity of function bodies should be limited."
+    },
+    "text": "    private func layoutWidgets(_ d: RowDisplay, model: RowModel) {"
+  },
+  {
+    "violation": {
+      "location": {
+        "file": "apps/ios/Onicode/Transcript/RowView.swift",
+        "character": 13,
+        "line": 224
+      },
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 144 lines",
+      "severity": "error",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "ruleDescription": "Function bodies should not span too many lines"
+    },
+    "text": "    private func layoutWidgets(_ d: RowDisplay, model: RowModel) {"
+  },
+  {
+    "violation": {
+      "ruleDescription": "Files should not span too many lines.",
+      "reason": "File should contain 400 lines or less: currently contains 624",
+      "severity": "error",
+      "ruleName": "File Length",
+      "ruleIdentifier": "file_length",
+      "location": {
+        "file": "apps/ios/Onicode/Transcript/RowView.swift",
+        "line": 624,
+        "character": 1
+      }
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "reason": "Tuples should have at most 2 members",
+      "ruleIdentifier": "large_tuple",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "severity": "error",
+      "ruleName": "Large Tuple",
+      "location": {
+        "line": 109,
+        "character": 40,
+        "file": "apps/ios/Onicode/Transcript/ToolViews.swift"
+      }
+    },
+    "text": "    private func segments(_ i: Int) -> (incoming: UIBezierPath, branch: UIBezierPath, continuation: UIBezierPath?) {"
+  },
+  {
+    "violation": {
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleName": "Type Body Length",
+      "location": {
+        "file": "apps/ios/Onicode/Transcript/TranscriptListView.swift",
+        "line": 86,
+        "character": 7
+      },
+      "severity": "error",
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 546 lines",
+      "ruleIdentifier": "type_body_length"
+    },
+    "text": "final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDelegate {"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleName": "Cyclomatic Complexity",
+      "location": {
+        "line": 404,
+        "character": 5,
+        "file": "apps/ios/Onicode/Transcript/TranscriptListView.swift"
+      },
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "reason": "Function should have complexity 10 or less; currently complexity is 13",
+      "ruleIdentifier": "cyclomatic_complexity"
+    },
+    "text": "    func apply(_ frame: LayoutFrame) {"
+  },
+  {
+    "violation": {
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "error",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "location": {
+        "character": 13,
+        "file": "apps/ios/Onicode/Transcript/TranscriptListView.swift",
+        "line": 471
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 15"
+    },
+    "text": "    private func layoutRows(animation: UIViewPropertyAnimator? = nil) {"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "location": {
+        "character": 13,
+        "file": "apps/ios/Onicode/Transcript/TranscriptListView.swift",
+        "line": 471
+      },
+      "ruleIdentifier": "function_body_length",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 73 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length"
+    },
+    "text": "    private func layoutRows(animation: UIViewPropertyAnimator? = nil) {"
+  },
+  {
+    "violation": {
+      "reason": "File should contain 400 lines or less: currently contains 873",
+      "ruleIdentifier": "file_length",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleName": "File Length",
+      "severity": "error",
+      "location": {
+        "file": "apps/ios/Onicode/Transcript/TranscriptListView.swift",
+        "line": 873,
+        "character": 1
+      }
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "reason": "Function should have complexity 10 or less; currently complexity is 13",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "error",
+      "location": {
+        "file": "apps/ios/Onicode/Transcript/VisualView.swift",
+        "line": 258,
+        "character": 5
+      }
+    },
+    "text": "    static func draw(_ paint: VisualPaint, in ctx: CGContext, fonts: StyleFonts) {"
+  },
+  {
+    "violation": {
+      "location": {
+        "character": 12,
+        "line": 258,
+        "file": "apps/ios/Onicode/Transcript/VisualView.swift"
+      },
+      "ruleIdentifier": "function_body_length",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 59 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length",
+      "severity": "error"
+    },
+    "text": "    static func draw(_ paint: VisualPaint, in ctx: CGContext, fonts: StyleFonts) {"
+  },
+  {
+    "violation": {
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "reason": "File should contain 400 lines or less: currently contains 549",
+      "location": {
+        "file": "apps/ios/Onicode/Transcript/VisualView.swift",
+        "line": 549,
+        "character": 1
+      },
+      "severity": "error"
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "ruleName": "Function Body Length",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 54 lines",
+      "location": {
+        "line": 28,
+        "character": 5,
+        "file": "apps/ios/Onicode/Voice/CodexVoicePeer.swift"
+      },
+      "ruleIdentifier": "function_body_length",
+      "severity": "error",
+      "ruleDescription": "Function bodies should not span too many lines"
+    },
+    "text": "    func prepare() async throws {"
+  },
+  {
+    "violation": {
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "error",
+      "reason": "Function should have complexity 10 or less; currently complexity is 14",
+      "location": {
+        "line": 27,
+        "file": "apps/ios/Onicode/Voice/NativeVoiceMedia.swift",
+        "character": 13
+      }
+    },
+    "text": "    private func perform(_ request: VoiceMediaRequest) {"
+  },
+  {
+    "violation": {
+      "ruleName": "Type Body Length",
+      "location": {
+        "line": 9,
+        "file": "apps/ios/Onicode/Voice/RemoteVoiceController.swift",
+        "character": 7
+      },
+      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 263 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "severity": "error"
+    },
+    "text": "final class RemoteVoiceController {"
+  },
+  {
+    "violation": {
+      "ruleName": "Large Tuple",
+      "severity": "error",
+      "reason": "Tuples should have at most 2 members",
+      "location": {
+        "character": 22,
+        "file": "apps/ios/Onicode/Voice/RemoteVoiceController.swift",
+        "line": 288
+      },
+      "ruleIdentifier": "large_tuple",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead."
+    },
+    "text": "        let script: [(VoiceOrb, VoiceCallWork, String, VoiceSpeaker?)] = ["
+  },
+  {
+    "violation": {
+      "location": {
+        "file": "apps/ios/Onicode/Voice/VoiceControls.swift",
+        "character": 14,
+        "line": 22
+      },
+      "ruleDescription": "Function bodies should not span too many lines",
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 85 lines",
+      "ruleIdentifier": "function_body_length",
+      "severity": "error",
+      "ruleName": "Function Body Length"
+    },
+    "text": "    override init(frame: CGRect) {"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleName": "Type Body Length",
+      "location": {
+        "file": "apps/ios/Onicode/Voice/VoiceStageViewController.swift",
+        "character": 7,
+        "line": 8
+      },
+      "ruleIdentifier": "type_body_length",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 323 lines"
+    },
+    "text": "final class VoiceStageViewController: UIViewController {"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "ruleIdentifier": "large_tuple",
+      "location": {
+        "line": 24,
+        "file": "apps/ios/Onicode/Voice/VoiceStageViewController.swift",
+        "character": 32
+      },
+      "reason": "Tuples should have at most 2 members",
+      "ruleName": "Large Tuple"
+    },
+    "text": "    private var captionSource: (item: String?, text: String, user: Bool) = (nil, \"\", false)"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 113 lines",
+      "location": {
+        "character": 14,
+        "line": 70,
+        "file": "apps/ios/Onicode/Voice/VoiceStageViewController.swift"
+      },
+      "ruleIdentifier": "function_body_length"
+    },
+    "text": "    override func viewDidLoad() {"
+  },
+  {
+    "violation": {
+      "ruleName": "File Length",
+      "location": {
+        "file": "apps/ios/Onicode/Voice/VoiceStageViewController.swift",
+        "line": 475,
+        "character": 1
+      },
+      "severity": "error",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "reason": "File should contain 400 lines or less: currently contains 475"
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "ruleName": "Function Body Length",
+      "location": {
+        "file": "apps/ios/Onicode/Voice/VoiceViewController.swift",
+        "line": 34,
+        "character": 14
+      },
+      "severity": "error",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 85 lines"
+    },
+    "text": "    override func viewDidLoad() {"
+  },
+  {
+    "violation": {
+      "ruleIdentifier": "function_body_length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 52 lines",
+      "ruleName": "Function Body Length",
+      "severity": "error",
+      "location": {
+        "line": 146,
+        "file": "apps/ios/Onicode/Voice/VoiceViewController.swift",
+        "character": 13
+      }
+    },
+    "text": "    private func reload() {"
+  },
+  {
+    "violation": {
+      "ruleDescription": "Type bodies should not span too many lines",
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 773 lines",
+      "ruleIdentifier": "type_body_length",
+      "severity": "error",
+      "location": {
+        "line": 5,
+        "file": "apps/ios/OnicodeUITests/SessionFlowTests.swift",
+        "character": 7
+      },
+      "ruleName": "Type Body Length"
+    },
+    "text": "final class SessionFlowTests: XCTestCase {"
+  },
+  {
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "apps/ios/OnicodeUITests/SessionFlowTests.swift",
+        "line": 907
+      },
+      "reason": "File should contain 400 lines or less: currently contains 907",
+      "severity": "error",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length"
+    },
+    "text": "}"
+  }
+]

@@ -15,7 +15,7 @@ edge/public/
 .agents
 .claude/settings.local.json
 .claude/worktrees/
-/scripts/**/__pycache__/
+__pycache__/
 .dev.vars
 .dev.vars.*
 

@@ -1,0 +1,34 @@
+# Editors and shfmt read this; rustfmt, taplo, ruff and swift-format have their own configs that agree with it.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 120
+
+[*.rs]
+# rustfmt's max_width.
+max_line_length = 100
+
+[*.{sh,bash}]
+indent_size = 2
+# shfmt: -i 2 -ci -bn
+switch_case_indent = true
+binary_next_line = true
+
+[*.{yml,yaml,json,jsonc,ts,mjs,cjs,js}]
+indent_size = 2
+
+[*.md]
+# Two trailing spaces are a hard line break.
+trim_trailing_whitespace = false
+
+[*.pbxproj]
+indent_style = tab
+
+[{vendor/**,apps/ios/Onicode/Core/Generated/**,apps/ios/CoreFFI/**}]
+ignore = true
