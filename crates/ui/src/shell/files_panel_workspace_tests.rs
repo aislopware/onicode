@@ -117,7 +117,6 @@ fn files_panel_workspace_navigation_and_external_updates() {
                 &directory.path().join("engine"),
                 Arc::new(onicode_engine::default_registry()),
                 onicode_proto::HarnessId::Mock,
-                None,
             )
         })
         .unwrap();
