@@ -3,7 +3,6 @@
   "build": {
     "production": {
       "channel": "production",
-      "environment": "production",
       "macos": {
         "artifact": "zip",
         "entitlements": "dist/macos/Onicode.entitlements"
