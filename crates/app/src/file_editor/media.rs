@@ -4,7 +4,7 @@ use gpui::{
     Bounds, ClipboardEntry, ClipboardItem, ExternalPaths, ImageSource, MouseButton, Point,
     RenderImage, ScrollHandle, ScrollWheelEvent, canvas, fill, point, size,
 };
-use onicode_protocol::files::{Bytes, ImageFile};
+use onicode_protocol::files::ImageFile;
 
 use super::*;
 use crate::popover::{Anchor, AnchorSlot, Menu, MenuAction, MenuEvent, menu_popover};
@@ -28,7 +28,7 @@ pub(super) fn prepare_image(image: ImageFile) -> Result<ImageFile, String> {
             .TIFFRepresentation()
             .ok_or("Couldn’t decode this image")?;
         return Ok(ImageFile {
-            bytes: Bytes(data.to_vec()),
+            bytes: onicode_protocol::files::Bytes(data.to_vec()),
             format: "tiff".into(),
             width: dimensions.width as u32,
             height: dimensions.height as u32,
