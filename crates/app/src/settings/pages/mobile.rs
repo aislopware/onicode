@@ -1090,6 +1090,9 @@ fn pairing_backdrop(classic: bool) -> impl IntoElement {
     canvas(
         |_, _, _| {},
         move |bounds, _, window, _| {
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            let _ = classic;
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             let light = content(1.).l < 0.5;
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             let fill = if classic || light {
