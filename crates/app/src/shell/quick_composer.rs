@@ -177,27 +177,41 @@ impl Shell {
         let account = crate::accounts::get(cx)
             .map(|a| a.read(cx).selected(launch.kind, &launch.cwd))
             .unwrap_or_default();
-        let work = cx.background_executor().spawn(async move {
-            let store = locked(&store)?;
-            let summary = store.create(choice.kind.id(), &choice.cwd)?;
-            let settings = onicode_core::agent::Settings {
-                account,
-                model: choice.model,
-                access: choice.access,
-                effort: choice.effort,
-                fast: choice.fast,
-                new_worktree: choice.new_worktree,
-                worktree_base: choice.worktree_base,
-                worktree_cwd: choice.worktree_cwd,
-                ..Default::default()
-            };
-            store.save_agent_settings(summary.id, &settings)?;
-            let attachments = store.adopt_attachments(
-                summary.id,
-                &crate::quick_composer::paste_staging_dir(),
-                attachments,
-                &choice.staged_attachments,
-            )?;
+        let settings = onicode_core::agent::Settings {
+            account,
+            model: choice.model,
+            access: choice.access,
+            effort: choice.effort,
+            fast: choice.fast,
+            new_worktree: choice.new_worktree,
+            worktree_base: choice.worktree_base,
+            worktree_cwd: choice.worktree_cwd,
+            ..Default::default()
+        };
+        let created = self.create_in_engine(
+            choice.kind.id(),
+            &choice.cwd,
+            None,
+            onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
+            cx,
+        );
+        let staged = choice.staged_attachments;
+        let work = cx.spawn(async move |_, cx| {
+            let (summary, _) = created.await?;
+            let id = summary.id;
+            // The pasted files move into the session's attachments folder: files, which stay
+            // the app's until they move into the engine (engine.md, migration step 5).
+            let attachments = cx
+                .background_executor()
+                .spawn(async move {
+                    locked(&store)?.adopt_attachments(
+                        id,
+                        &crate::quick_composer::paste_staging_dir(),
+                        attachments,
+                        &staged,
+                    )
+                })
+                .await?;
             Ok::<_, String>((summary, settings, attachments))
         });
         cx.spawn(async move |this, cx| {

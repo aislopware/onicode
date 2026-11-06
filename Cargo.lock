@@ -4568,6 +4568,7 @@ dependencies = [
  "base64 0.22.1",
  "block2 0.6.2",
  "chrono",
+ "futures",
  "gpui",
  "gpui_apple",
  "gpui_platform",
@@ -4576,13 +4577,14 @@ dependencies = [
  "log",
  "mermaid-rs-renderer",
  "mimalloc",
- "notify",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "objc2-user-notifications",
  "onicode-core",
  "onicode-engine",
+ "onicode-protocol",
+ "onicode-rpc",
  "onicode-update",
  "parking_lot",
  "pulldown-cmark",
@@ -4845,8 +4847,18 @@ name = "onicode-engine"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "async-trait",
+ "futures",
+ "notify",
  "onicode-core",
+ "onicode-protocol",
+ "onicode-rpc",
+ "proptest",
+ "serde",
  "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -4968,6 +4980,7 @@ dependencies = [
 name = "onicode-protocol"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "onicode-core",
  "proptest",
  "serde",

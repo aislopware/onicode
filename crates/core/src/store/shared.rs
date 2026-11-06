@@ -23,12 +23,14 @@ pub(super) struct Shared {
     columns: HashSet<String>,
     ids: RefCell<HashMap<i64, String>>,
     extras: RefCell<BTreeMap<String, String>>,
-    extras_db: Option<Connection>,
+    pub(super) extras_db: Option<Connection>,
     snapshots: RefCell<HashMap<i64, HistoryRevision>>,
     queues: RefCell<HashMap<i64, String>>,
     account_source: RefCell<Option<crate::accounts::Book>>,
     preferences: std::sync::Arc<crate::desktop_preferences::DesktopPreferences>,
     read_only: bool,
+    /// Session uids and processed ops when there is no sidecar to keep them in (`:memory:`).
+    pub(super) ledger: RefCell<super::engine_ledger::MemoryLedger>,
 }
 
 /// A revision guard, rather than another owned copy of every rich source block.
@@ -298,6 +300,7 @@ impl Store {
                     )
                 }),
                 read_only,
+                ledger: RefCell::default(),
             }),
         };
         // Register only identities here. No blocks_json is read at startup.

@@ -1,32 +1,13 @@
 //! Orchestrator's reviewed plans create real native sessions. Dependencies and
-//! overlapping file scopes gate dispatch; approvals stay in each worker's chat.
-use onicode_core::agent::Settings;
-use onicode_core::orchestration::{self, Plan, Task};
+//! overlapping file scopes gate dispatch (the engine's `orchestration::Run`); approvals stay in
+//! each worker's chat. Workers are created with `CreateSession`, and the lead's summary is kept
+//! with `SaveOrchestration`.
+use onicode_core::orchestration::{self, Plan};
+use onicode_engine::workspace::orchestration::{Run, check_scope};
+use onicode_protocol::workspace::{NewSession, SaveOrchestration};
 
 use super::*;
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum State {
-    Pending,
-    Starting,
-    Running,
-    Done,
-    Failed,
-    Blocked,
-}
 
-struct Assignment {
-    task: Task,
-    session: Option<i64>,
-    state: State,
-    report: String,
-}
-pub(super) struct Run {
-    cwd: String,
-    provider: String,
-    settings: Settings,
-    tasks: Vec<Assignment>,
-    stopped: bool,
-}
 impl Shell {
     pub(super) fn observe_orchestration(
         &mut self,
@@ -74,49 +55,20 @@ impl Shell {
             cx.notify();
             return;
         }
-        let mut settings = conversation.settings.clone();
-        settings.plan = false;
-        settings.orchestrator = false;
-        settings.operator = false;
-        settings.operator_enabled = false;
-        settings.handoff = None;
-        settings.turns.clear();
-        settings.environment.clear();
-        settings.attachments.clear();
-        let provider = conversation.summary.provider.clone();
-        let tasks = plan
-            .tasks
-            .into_iter()
-            .map(|task| Assignment {
-                task,
-                session: None,
-                state: State::Pending,
-                report: String::new(),
-            })
-            .collect();
-        self.orchestrations.insert(
-            lead,
-            Run {
-                cwd,
-                provider,
-                settings,
-                tasks,
-                stopped: false,
-            },
+        let run = Run::new(
+            plan,
+            cwd,
+            conversation.summary.provider.clone(),
+            conversation.settings.clone(),
         );
+        self.orchestrations.insert(lead, run);
         self.schedule_orchestration(lead, cx);
     }
 
     fn stop_orchestration(&mut self, lead: i64, cx: &mut Context<Self>) {
         if let Some(run) = self.orchestrations.get_mut(&lead) {
-            run.stopped = true;
-            for task in &mut run.tasks {
-                if matches!(task.state, State::Pending | State::Starting) {
-                    task.state = State::Blocked;
-                }
-                if task.state == State::Running
-                    && let Some(view) = task.session.and_then(|id| self.sessions.get(&id))
-                {
+            for session in run.stop() {
+                if let Some(view) = self.sessions.get(&session) {
                     view.update(cx, |v, cx| v.stop_if_busy(cx));
                 }
             }
@@ -131,21 +83,17 @@ impl Shell {
             .filter(|(lead, run)| **lead == id || run.tasks.iter().any(|t| t.session == Some(id)))
             .map(|(lead, _)| *lead)
             .collect();
+        let finished = self
+            .sessions
+            .get(&id)
+            .map(|view| view.read(cx))
+            .filter(|view| !view.busy)
+            .map(|view| view.external_outcome(cx));
         for lead in leads {
-            if let Some(run) = self.orchestrations.get_mut(&lead) {
-                for task in &mut run.tasks {
-                    if task.session == Some(id)
-                        && task.state == State::Running
-                        && let Some(view) = self.sessions.get(&id)
-                    {
-                        let view = view.read(cx);
-                        if !view.busy {
-                            let (success, report) = view.external_outcome(cx);
-                            task.report = report;
-                            task.state = if success { State::Done } else { State::Failed };
-                        }
-                    }
-                }
+            if let Some(run) = self.orchestrations.get_mut(&lead)
+                && let Some((success, report)) = finished.clone()
+            {
+                run.worker_finished(id, success, report);
             }
             self.schedule_orchestration(lead, cx);
         }
@@ -155,156 +103,27 @@ impl Shell {
         let Some(run) = self.orchestrations.get_mut(&lead) else {
             return;
         };
-        // Failed dependencies transitively block their dependants.
-        loop {
-            let failed: HashSet<_> = run
-                .tasks
-                .iter()
-                .filter(|t| matches!(t.state, State::Failed | State::Blocked))
-                .map(|t| t.task.id.clone())
-                .collect();
-            let mut changed = false;
-            for task in &mut run.tasks {
-                if task.state == State::Pending
-                    && task.task.depends_on.iter().any(|id| failed.contains(id))
-                {
-                    task.state = State::Blocked;
-                    changed = true;
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
-        let mut occupied: Vec<Vec<String>> = run
-            .tasks
-            .iter()
-            .filter(|t| matches!(t.state, State::Starting | State::Running))
-            .map(|t| t.task.files.clone())
-            .collect();
-        let completed: HashSet<_> = run
-            .tasks
-            .iter()
-            .filter(|t| t.state == State::Done)
-            .map(|t| t.task.id.clone())
-            .collect();
-        let reports = run
-            .tasks
-            .iter()
-            .filter(|t| t.state == State::Done)
-            .map(|t| format!("{}: {}", t.task.title, t.report))
-            .collect::<Vec<_>>()
-            .join("\n\n");
-        let mut jobs = Vec::new();
-        if !run.stopped {
-            for (ix, task) in run.tasks.iter_mut().enumerate() {
-                if occupied.len() >= 4 {
-                    break;
-                }
-                if task.state != State::Pending
-                    || !task.task.depends_on.iter().all(|id| completed.contains(id))
-                    || occupied
-                        .iter()
-                        .any(|files| orchestration::overlaps(files, &task.task.files))
-                {
-                    continue;
-                }
-                task.state = State::Starting;
-                occupied.push(task.task.files.clone());
-                jobs.push((
-                    ix,
-                    task.task.clone(),
-                    run.cwd.clone(),
-                    run.provider.clone(),
-                    run.settings.clone(),
-                    reports.clone(),
-                ));
-            }
-        }
-        let done = run
-            .tasks
-            .iter()
-            .all(|t| matches!(t.state, State::Done | State::Failed | State::Blocked));
-        let progress = run
-            .tasks
-            .iter()
-            .map(|t| {
-                format!(
-                    "{}: {}{}",
-                    t.task.title,
-                    match t.state {
-                        State::Pending => "waiting",
-                        State::Starting => "starting",
-                        State::Running => "working",
-                        State::Done => "done",
-                        State::Failed => "failed",
-                        State::Blocked => "blocked",
-                    },
-                    t.session
-                        .map(|id| format!(" (session {id})"))
-                        .unwrap_or_default()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+        let jobs = run.schedule();
+        let done = run.done();
+        let progress = run.progress();
+        let summary = run.summary();
+        let stopped = run.stopped;
+        let reports = run.reports();
         // The sidebar lists the lead's agents from this, during and after the run.
-        let summary = orchestration::Summary {
-            live: !done,
-            tasks: run
-                .tasks
-                .iter()
-                .map(|t| orchestration::SummaryTask {
-                    session: t.session,
-                    title: t.task.title.clone(),
-                    provider: run.provider.clone(),
-                    model: run.settings.model.clone(),
-                    status: match t.state {
-                        State::Pending | State::Starting => "queued",
-                        State::Running => "running",
-                        State::Done => "completed",
-                        State::Failed => "failed",
-                        State::Blocked => "blocked",
-                    }
-                    .into(),
-                })
-                .collect(),
-        };
         if self.orchestration_summaries.get(&lead) != Some(&summary) {
-            let store = self.store.clone();
-            let saved = summary.clone();
-            cx.background_executor()
-                .spawn(async move {
-                    let _ = locked(&store).and_then(|s| s.save_orchestration_summary(lead, &saved));
-                })
-                .detach();
-            self.orchestration_summaries.insert(lead, summary);
+            self.orchestration_summaries.insert(lead, summary.clone());
+            self.workspace_write::<SaveOrchestration>(
+                "save the orchestration",
+                SaveOrchestration { lead, summary },
+                None,
+                cx,
+            );
             self.invalidate_chrome(cx);
         }
-        let Some(run) = self.orchestrations.get_mut(&lead) else {
-            return;
-        };
         if let Some(view) = self.sessions.get(&lead) {
             view.update(cx, |v, cx| v.set_orchestration_progress(Some(progress), cx));
         }
         if done {
-            let stopped = run.stopped;
-            let reports = run
-                .tasks
-                .iter()
-                .map(|t| {
-                    format!(
-                        "{} [{}]\n{}",
-                        t.task.title,
-                        if t.state == State::Done {
-                            "completed"
-                        } else {
-                            "incomplete"
-                        },
-                        t.report
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n\n");
             let ready = self
                 .sessions
                 .get(&lead)
@@ -322,56 +141,55 @@ impl Shell {
                 }
             }
         }
-        for (ix, task, cwd, provider, mut settings, reports) in jobs {
-            let store = self.store.clone();
-            let project = self.sessions[&lead].read(cx).summary.cwd.clone();
-            let work = cx.background_executor().spawn(async move {
-                let root = std::path::Path::new(&cwd)
-                    .canonicalize()
-                    .map_err(|e| e.to_string())?;
-                // Existing symlink parents must not redirect an assignment outside the checkout.
-                for file in &task.files {
-                    let mut path = root.join(file);
-                    while !path.exists() {
-                        if !path.pop() {
-                            break;
-                        }
-                    }
-                    if !path
-                        .canonicalize()
-                        .map_err(|e| e.to_string())?
-                        .starts_with(&root)
-                    {
-                        return Err(format!("Assignment scope escapes the checkout: {file}"));
-                    }
-                }
-                let store = locked(&store)?;
-                let mut summary = store.create(&provider, &project)?;
-                summary.title = format!("Agent · {}", task.title);
-                store.title(summary.id, &summary.title)?;
-                settings.worktree_cwd = Some(cwd);
-                store.save_agent_settings(summary.id, &settings)?;
-                Ok::<_, String>((
-                    summary,
-                    settings,
-                    orchestration::worker_prompt(&task, &reports),
-                ))
-            });
+        let Some(project) = self
+            .sessions
+            .get(&lead)
+            .map(|view| view.read(cx).summary.cwd.clone())
+        else {
+            return;
+        };
+        for job in jobs {
+            let index = job.index;
+            let mut settings = job.settings;
+            settings.worktree_cwd = Some(job.cwd.clone());
+            let prompt = orchestration::worker_prompt(&job.task, &job.reports);
+            let files = job.task.files.clone();
+            let cwd = job.cwd.clone();
+            let provider = job.provider.clone();
+            let title = format!("Agent · {}", job.task.title);
+            let project = project.clone();
             cx.spawn(async move |this, cx| {
-                let result = work.await;
+                // Existing symlink parents must not redirect an assignment outside the checkout.
+                let scope = cx
+                    .background_spawn(async move { check_scope(&cwd, &files) })
+                    .await;
+                let created = match scope {
+                    Ok(()) => {
+                        let Ok(work) = this.update(cx, |this, cx| {
+                            this.create_in_engine(
+                                &provider,
+                                &project,
+                                Some(title),
+                                NewSession::Settings(Box::new(settings.clone())),
+                                cx,
+                            )
+                        }) else {
+                            return;
+                        };
+                        work.await
+                    }
+                    Err(error) => Err(error),
+                };
                 let _ = this.update(cx, |this, cx| {
-                    match result {
-                        Ok((summary, settings, prompt)) => {
+                    match created {
+                        Ok((summary, _)) => {
                             let id = summary.id;
                             this.add(summary, cx);
-                            let start = this.orchestrations.get(&lead).is_some_and(|run| {
-                                !run.stopped && run.tasks[ix].state == State::Starting
-                            });
+                            let start = this
+                                .orchestrations
+                                .get_mut(&lead)
+                                .is_some_and(|run| run.worker_created(index, id));
                             if start {
-                                if let Some(run) = this.orchestrations.get_mut(&lead) {
-                                    run.tasks[ix].session = Some(id);
-                                    run.tasks[ix].state = State::Running;
-                                }
                                 this.sessions[&id].update(cx, |v, cx| {
                                     v.install_transfer(settings, Some(prompt), cx)
                                 });
@@ -379,8 +197,7 @@ impl Shell {
                         }
                         Err(error) => {
                             if let Some(run) = this.orchestrations.get_mut(&lead) {
-                                run.tasks[ix].state = State::Failed;
-                                run.tasks[ix].report = error;
+                                run.worker_failed(index, error);
                             }
                         }
                     }
@@ -397,6 +214,9 @@ impl Shell {
 #[cfg(test)]
 mod tests {
     use gpui::TestAppContext;
+    use onicode_core::agent::Settings;
+    use onicode_core::orchestration::Task;
+    use onicode_engine::workspace::orchestration::TaskState;
 
     use super::*;
     #[gpui::test]
@@ -433,12 +253,12 @@ mod tests {
                 assert_eq!(
                     run.tasks
                         .iter()
-                        .filter(|t| t.state == State::Starting)
+                        .filter(|t| t.state == TaskState::Starting)
                         .count(),
                     4
                 );
                 assert!(
-                    run.tasks[1].state == State::Pending,
+                    run.tasks[1].state == TaskState::Pending,
                     "overlapping src/main.rs waits for src"
                 );
                 shell.stop_orchestration(lead, cx);

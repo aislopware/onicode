@@ -1,8 +1,10 @@
 //! GitChangesPanel.tsx in the inset layout: the Changes header with branch
 //! actions, the commit box, sync and pull-request actions, and the staged
-//! and unstaged files as a list or a tree. Every Git call runs off-thread,
-//! one mutation at a time per checkout.
+//! and unstaged files as a list or a tree. Every Git call goes through the
+//! app's engine, one mutation at a time per checkout; staging, unstaging and
+//! discarding show in the same frame and settle with the engine's reply.
 use std::collections::HashSet;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,11 +17,18 @@ use gpui::{
 };
 use onicode_core::agent::{AccessMode, Settings};
 use onicode_core::provider::{self, Event, Kind, Request};
-use onicode_core::scm::{self, ChangedFile, DiffIndex, Pr};
+use onicode_core::scm;
+use onicode_protocol::git::{
+    self as git_calls, ChangedFile, Commit, CommitContext, CreatePr, DiffIndex, Discard,
+    HeadMessage, Pr, PrContext, PrStatus, Pull, Push, RangeContext, Stage, StageTarget,
+    StagedContext, Unstage,
+};
+use onicode_protocol::{OpId, Outcome, Rejection};
 use serde::{Deserialize, Serialize};
 
+use crate::engine_client::{self, Engine};
 use crate::file_icons::file_type_icon;
-use crate::git_status::{GitChanged, ProjectGit};
+use crate::git_status::{GitChanged, GitEcho, ProjectGit};
 use crate::input::{self, Input};
 use crate::popover::{
     Align, Anchor, AnchorSlot, Menu, MenuAction, MenuEvent, MenuItem, MenuStyle, menu_popover,
@@ -347,10 +356,13 @@ impl Changes {
             self.pr = None;
             return;
         }
-        let path = PathBuf::from(&self.cwd);
-        let work = cx
-            .background_executor()
-            .spawn(async move { scm::pr_status(&path) });
+        let work = engine_client::local(cx).call::<PrStatus>(
+            None,
+            PrStatus {
+                checkout: self.cwd.clone(),
+            },
+        );
+        let work = cx.background_executor().spawn(work);
         cx.spawn(async move |this, cx| {
             let pr = work.await.ok().flatten();
             let _ = this.update(cx, |this, cx| {
@@ -470,11 +482,18 @@ impl Changes {
             .spawn(async move { matches!(answer.await, Ok(0)) })
     }
 
-    /// Runs `work` against the checkout with `busy` held, then rereads.
+    /// The engine's calls, and the checkout they name.
+    fn engine(&self, cx: &mut App) -> (Engine, String) {
+        (engine_client::local(cx), self.cwd.clone())
+    }
+
+    /// Runs the engine call `work` with `busy` held, showing `echo` until it
+    /// settles, then rereads. Nothing is sent while another call is busy.
     fn run_git(
         &mut self,
         busy: String,
-        work: impl FnOnce(PathBuf) -> Result<(), String> + Send + 'static,
+        echo: Option<(OpId, GitEcho)>,
+        work: impl Future<Output = Result<(), String>> + Send + 'static,
         then: impl FnOnce(&mut Self, &mut Window, &mut Context<Self>) + 'static,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -483,13 +502,19 @@ impl Changes {
             return;
         }
         self.busy = Some(busy);
+        let op = echo.as_ref().map(|(op, _)| *op);
+        if let Some((op, echo)) = echo {
+            self.git.update(cx, |git, cx| git.echo(op, echo, cx));
+        }
         cx.notify();
-        let path = PathBuf::from(&self.cwd);
-        let task = cx.background_executor().spawn(async move { work(path) });
+        let task = cx.background_executor().spawn(work);
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.busy = None;
+                if let Some(op) = op {
+                    this.git.update(cx, |git, cx| git.settle(op, cx));
+                }
                 this.mutated(cx);
                 match result {
                     Ok(()) => then(this, window, cx),
@@ -513,17 +538,38 @@ impl Changes {
         }
         let relative = file.relative.clone();
         let start = move |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
-            this.run_git(
-                relative.clone(),
-                move |path| match action {
-                    FileAction::Stage => scm::stage_file(&path, &relative),
-                    FileAction::Unstage => scm::unstage_file(&path, &relative),
-                    FileAction::Discard => scm::discard_file(&path, &relative),
-                },
-                |_, _, _| {},
-                window,
-                cx,
-            );
+            let (engine, checkout) = this.engine(cx);
+            let op = OpId::new();
+            let path = Some(relative.clone());
+            let echo = match action {
+                FileAction::Stage => GitEcho::Stage(path),
+                FileAction::Unstage => GitEcho::Unstage(path),
+                FileAction::Discard => GitEcho::Discard(path),
+            };
+            let target = relative.clone();
+            let work = async move {
+                applied(match action {
+                    FileAction::Stage => {
+                        let target = StageTarget::Path(target);
+                        engine
+                            .call::<Stage>(Some(op), Stage { checkout, target })
+                            .await
+                    }
+                    FileAction::Unstage => {
+                        let path = Some(target);
+                        engine
+                            .call::<Unstage>(Some(op), Unstage { checkout, path })
+                            .await
+                    }
+                    FileAction::Discard => {
+                        let path = Some(target);
+                        engine
+                            .call::<Discard>(Some(op), Discard { checkout, path })
+                            .await
+                    }
+                })
+            };
+            this.run_git(relative, Some((op, echo)), work, |_, _, _| {}, window, cx);
         };
         if action != FileAction::Discard {
             start(self, window, cx);
@@ -559,17 +605,46 @@ impl Changes {
             FileAction::Discard => "discard",
         };
         let start = move |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
-            this.run_git(
-                key.into(),
-                move |path| match action {
-                    FileAction::Stage => scm::stage_all(&path),
-                    FileAction::Unstage => scm::unstage_all(&path),
-                    FileAction::Discard => scm::discard_all(&path),
-                },
-                |_, _, _| {},
-                window,
-                cx,
-            );
+            let (engine, checkout) = this.engine(cx);
+            let op = OpId::new();
+            let echo = match action {
+                FileAction::Stage => GitEcho::Stage(None),
+                FileAction::Unstage => GitEcho::Unstage(None),
+                FileAction::Discard => GitEcho::Discard(None),
+            };
+            let work = async move {
+                applied(match action {
+                    FileAction::Stage => {
+                        let target = StageTarget::All;
+                        engine
+                            .call::<Stage>(Some(op), Stage { checkout, target })
+                            .await
+                    }
+                    FileAction::Unstage => {
+                        engine
+                            .call::<Unstage>(
+                                Some(op),
+                                Unstage {
+                                    checkout,
+                                    path: None,
+                                },
+                            )
+                            .await
+                    }
+                    FileAction::Discard => {
+                        engine
+                            .call::<Discard>(
+                                Some(op),
+                                Discard {
+                                    checkout,
+                                    path: None,
+                                },
+                            )
+                            .await
+                    }
+                })
+            };
+            this.run_git(key.into(), Some((op, echo)), work, |_, _, _| {}, window, cx);
         };
         if action != FileAction::Discard {
             start(self, window, cx);
@@ -615,19 +690,27 @@ impl Changes {
         cx: &mut Context<Self>,
     ) {
         let key = format!("{}:{relative}", if stage { "stage" } else { "unstage" });
-        self.run_git(
-            key,
-            move |path| {
-                if stage {
-                    scm::stage_file(&path, &relative)
-                } else {
-                    scm::unstage_file(&path, &relative)
-                }
-            },
-            |_, _, _| {},
-            window,
-            cx,
-        );
+        let (engine, checkout) = self.engine(cx);
+        let op = OpId::new();
+        let echo = if stage {
+            GitEcho::Stage(Some(relative.clone()))
+        } else {
+            GitEcho::Unstage(Some(relative.clone()))
+        };
+        let work = async move {
+            applied(if stage {
+                let target = StageTarget::Path(relative);
+                engine
+                    .call::<Stage>(Some(op), Stage { checkout, target })
+                    .await
+            } else {
+                let path = Some(relative);
+                engine
+                    .call::<Unstage>(Some(op), Unstage { checkout, path })
+                    .await
+            })
+        };
+        self.run_git(key, Some((op, echo)), work, |_, _, _| {}, window, cx);
     }
 
     fn pull(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -636,9 +719,12 @@ impl Changes {
             return;
         }
         self.status = None;
+        let (engine, checkout) = self.engine(cx);
+        let work = engine.call::<Pull>(Some(OpId::new()), Pull { checkout });
         self.run_git(
             "pull".into(),
-            |path| scm::pull(&path),
+            None,
+            async move { applied(work.await) },
             |this, _, cx| this.set_status("Pull complete", cx),
             window,
             cx,
@@ -680,11 +766,15 @@ impl Changes {
         self.generate_cancel = Some(cancel.clone());
         self.busy = Some("generate".into());
         cx.notify();
-        let cwd = PathBuf::from(&self.cwd);
+        let (engine, checkout) = self.engine(cx);
+        let cwd = PathBuf::from(&checkout);
+        let context = engine.call::<CommitContext>(None, CommitContext { checkout });
         let flag = cancel.clone();
-        let work = cx
-            .background_executor()
-            .spawn(async move { generate_commit_message(harness, cwd, flag) });
+        // The engine reads what is staged; the provider writes from it here.
+        let work = cx.background_executor().spawn(async move {
+            let context = context.await?;
+            write_commit_message(harness, cwd, &context, flag)
+        });
         cx.spawn_in(window, async move |this, cx| {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -708,10 +798,9 @@ impl Changes {
             cx.notify();
             return;
         }
-        let path = PathBuf::from(&self.cwd);
-        let work = cx
-            .background_executor()
-            .spawn(async move { scm::head_message(&path) });
+        let (engine, checkout) = self.engine(cx);
+        let work = engine.call::<HeadMessage>(None, HeadMessage { checkout });
+        let work = cx.background_executor().spawn(work);
         cx.spawn_in(window, async move |this, cx| {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| match result {
@@ -798,15 +887,20 @@ impl Changes {
         let message = self.message.read(cx).content.to_string();
         let amend = self.amend.is_some();
         let pr = create_pr.then(|| self.text_harness(cx));
+        let (engine, checkout) = self.engine(cx);
+        let work = engine.call::<Commit>(
+            Some(OpId::new()),
+            Commit {
+                checkout,
+                message,
+                amend,
+                push: push || create_pr,
+            },
+        );
         self.run_git(
             if create_pr { "pr" } else { "commit" }.into(),
-            move |path| {
-                scm::commit(&path, &message, amend)?;
-                if push || create_pr {
-                    scm::push(&path)?;
-                }
-                Ok(())
-            },
+            None,
+            async move { applied(work.await) },
             move |this, window, cx| {
                 this.amend = None;
                 this.message
@@ -829,10 +923,10 @@ impl Changes {
     ) {
         self.busy = Some("pr".into());
         cx.notify();
-        let cwd = PathBuf::from(&self.cwd);
+        let (engine, checkout) = self.engine(cx);
         let work = cx
             .background_executor()
-            .spawn(async move { create_pr_blocking(harness, &cwd) });
+            .spawn(create_pull_request(engine, checkout, harness));
         cx.spawn_in(window, async move |this, cx| {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -850,9 +944,12 @@ impl Changes {
     }
 
     fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (engine, checkout) = self.engine(cx);
+        let work = engine.call::<git_calls::Sync>(Some(OpId::new()), git_calls::Sync { checkout });
         self.run_git(
             "sync".into(),
-            |path| scm::sync(&path),
+            None,
+            async move { applied(work.await) },
             |this, _, cx| this.load_pr(cx),
             window,
             cx,
@@ -885,9 +982,12 @@ impl Changes {
             }
             let _ = this.update_in(cx, |this, window, cx| {
                 if ahead {
+                    let (engine, checkout) = this.engine(cx);
+                    let work = engine.call::<Push>(Some(OpId::new()), Push { checkout });
                     this.run_git(
                         "pr".into(),
-                        |path| scm::push(&path),
+                        None,
+                        async move { applied(work.await) },
                         move |this, window, cx| this.open_created_pr(harness, window, cx),
                         window,
                         cx,
@@ -1845,15 +1945,36 @@ pub(crate) fn pick_text_harness(
         })
 }
 
+/// A mutating call's reply as the panel takes it: applied, or the alert it
+/// shows.
+fn applied(reply: Result<Outcome, String>) -> Result<(), String> {
+    match reply? {
+        Outcome::Applied => Ok(()),
+        Outcome::Rejected(Rejection::Denied(reason)) => Err(reason),
+        Outcome::Rejected(rejection) => Err(format!("Not applied: {rejection:?}")),
+    }
+}
+
 /// generateCommitMessage: a message for the staged changes, written by a
-/// read-only turn of `kind`. Blocking.
+/// read-only turn of `kind`. Blocking. The phone's Changes page reads the
+/// staged changes in place; the desktop's panel asks its engine.
 pub(crate) fn generate_commit_message(
     harness: TextHarness,
     cwd: PathBuf,
     cancel: Arc<AtomicBool>,
 ) -> Result<String, String> {
-    let kind = harness.0;
     let context = scm::staged_context(&cwd)?;
+    write_commit_message(harness, cwd, &context, cancel)
+}
+
+/// The provider's commit message for `context`, the staged changes. Blocking.
+fn write_commit_message(
+    harness: TextHarness,
+    cwd: PathBuf,
+    context: &StagedContext,
+    cancel: Arc<AtomicBool>,
+) -> Result<String, String> {
+    let kind = harness.0;
     let prompt =
         scm::commit_message_prompt(context.branch.as_deref(), &context.summary, &context.patch);
     let output = text_prompt(harness, cwd, prompt, cancel)?;
@@ -1877,17 +1998,57 @@ pub(crate) fn generate_commit_message(
 }
 
 /// generatePrContent, falling back to the commits, then `gh pr create`; the
-/// new pull request's URL. Blocking.
+/// new pull request's URL. Blocking. The phone's Changes page runs Git in
+/// place; the desktop's panel goes through [`create_pull_request`].
 pub(crate) fn create_pr_blocking(
     harness: Option<TextHarness>,
     cwd: &std::path::Path,
 ) -> Result<String, String> {
     let range = scm::range_context(cwd)?;
+    let (title, body) = write_pr_content(harness, cwd.to_path_buf(), &range);
+    scm::pr_create(cwd, &title, &body, &range.base, &range.head)
+}
+
+/// generatePrContent through the engine: it reads the branch's range, the
+/// provider writes the title and body here (off the main thread), and the
+/// engine opens the pull request. The new pull request's URL.
+async fn create_pull_request(
+    engine: Engine,
+    checkout: String,
+    harness: Option<TextHarness>,
+) -> Result<String, String> {
+    let range = engine
+        .call::<PrContext>(
+            None,
+            PrContext {
+                checkout: checkout.clone(),
+            },
+        )
+        .await?;
+    let cwd = PathBuf::from(&checkout);
+    let (title, body) = write_pr_content(harness, cwd, &range);
+    let create = CreatePr {
+        checkout,
+        title,
+        body,
+        base: range.base,
+        head: range.head,
+    };
+    engine.call::<CreatePr>(Some(OpId::new()), create).await
+}
+
+/// The provider's pull request title and body for `range`, else its first
+/// commit and its commits. Blocking.
+fn write_pr_content(
+    harness: Option<TextHarness>,
+    cwd: PathBuf,
+    range: &RangeContext,
+) -> (String, String) {
     let parsed = harness.and_then(|harness| {
         let output = text_prompt(
             harness,
-            cwd.to_path_buf(),
-            scm::pr_content_prompt(&range),
+            cwd,
+            scm::pr_content_prompt(range),
             Arc::new(AtomicBool::new(false)),
         )
         .ok()?;
@@ -1904,7 +2065,7 @@ pub(crate) fn create_pr_blocking(
         .map(|(_, b)| b)
         .filter(|b| !b.is_empty())
         .unwrap_or_else(|| range.commit_summary.trim().to_owned());
-    scm::pr_create(cwd, &title, &body, &range.base, &range.head)
+    (title, body)
 }
 
 /// A read-only one-shot turn, as the React text harness runs: the final

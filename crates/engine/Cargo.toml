@@ -8,5 +8,23 @@ description = "onicode's engine: the work behind every viewer, starting with the
 
 [dependencies]
 async-channel = "2"
+# The Session group's service (`session::SessionService`).
+async-trait.workspace = true
+# The hub's spawned work and its watch streams; `executor` drives `ThreadSpawn`.
+futures.workspace = true
+# The Files and Git watches' platform file watch (FSEvents on macOS).
+notify = "8.2"
 onicode-core.workspace = true
+onicode-protocol.workspace = true
+onicode-rpc.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+# Only `sync`: a watcher's wake-up and a deferred receipt, on whichever executor polls them.
+tokio = { workspace = true, features = ["sync"] }
+uuid.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true
+# `rt` and `macros`: the service's tests drive `memory_client` on a current-thread runtime.
+tokio = { workspace = true, features = ["sync", "rt", "macros"] }

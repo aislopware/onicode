@@ -276,12 +276,19 @@ fn operator_children_are_visible_durable_and_do_not_navigate_by_default(cx: &mut
             );
             assert!(view.has_saved_draft());
             assert!(!view.busy);
+            let state = shell.mirror.state();
+            let started = state
+                .sessions
+                .iter()
+                .find(|summary| summary.session.id == child);
+            let started = started.expect("the engine lists the session the operator started");
+            assert_eq!(started.started_by, Some(caller));
+            // The draft is the session's follow-up queue, which the conversation still saves.
             let db = locked(&shell.store).unwrap();
             assert_eq!(
                 db.follow_ups(child).unwrap().draft.unwrap().text,
                 "Review this project"
             );
-            assert_eq!(db.started_links().unwrap()[&child], caller);
             assert!(db.draft_sessions().unwrap().contains(&child));
         })
         .unwrap();
@@ -376,16 +383,9 @@ fn operator_archive_delete_and_folder_actions_settle_after_persistence(cx: &mut 
                     .values()
                     .all(|g| g.folder_of(deleted).is_none())
             );
-            let db = locked(&shell.store).unwrap();
-            assert!(
-                db.sessions()
-                    .unwrap()
-                    .iter()
-                    .find(|s| s.id == archived)
-                    .unwrap()
-                    .archived
-            );
-            assert!(!db.sessions().unwrap().iter().any(|s| s.id == deleted));
+            let saved = &shell.mirror;
+            assert!(saved.session(archived).unwrap().archived);
+            assert!(saved.session(deleted).is_none());
         })
         .unwrap();
     assert!(
@@ -525,8 +525,9 @@ fn operator_creates_selects_and_validates_real_worktrees(cx: &mut TestAppContext
         "Fixture",
     ]);
     let project = project.to_string_lossy().into_owned();
-    let store = Arc::new(Mutex::new(Store::open(&root.join("native.db")).unwrap()));
-    let caller = locked(&store).unwrap().create("codex", &project).unwrap();
+    let store = Store::open(&root.join("native.db")).unwrap();
+    let caller = store.create("codex", &project).unwrap();
+    let store = Arc::new(Mutex::new(store));
     let id = caller.id;
     let window = cx.update(|cx| {
         cx.open_window(Default::default(), |_, cx| {
@@ -602,9 +603,7 @@ fn operator_creates_selects_and_validates_real_worktrees(cx: &mut TestAppContext
         })
         .unwrap();
     let before = window
-        .update(cx, |shell, _, _| {
-            locked(&shell.store).unwrap().sessions().unwrap().len()
-        })
+        .update(cx, |shell, _, _| shell.mirror.state().sessions.len())
         .unwrap();
     assert!(
         call(
@@ -619,10 +618,7 @@ fn operator_creates_selects_and_validates_real_worktrees(cx: &mut TestAppContext
     );
     window
         .update(cx, |shell, _, _| {
-            assert_eq!(
-                locked(&shell.store).unwrap().sessions().unwrap().len(),
-                before
-            )
+            assert_eq!(shell.mirror.state().sessions.len(), before)
         })
         .unwrap();
     std::fs::remove_dir_all(root).unwrap();

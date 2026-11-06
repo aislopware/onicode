@@ -113,18 +113,18 @@ impl Shell {
         settings.operator_enabled = false;
         settings.revision = 0;
         let cwd = current.summary.cwd.clone();
-        let store = self.store.clone();
         let revision = self.navigation_revision;
-        let work = cx.background_executor().spawn(async move {
-            let store = locked(&store)?;
-            let summary = store.create(kind.id(), &cwd)?;
-            store.save_agent_settings(summary.id, &settings)?;
-            Ok::<_, String>((summary, settings))
-        });
+        let work = self.create_in_engine(
+            kind.id(),
+            &cwd,
+            None,
+            onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| match result {
-                Ok((summary, settings)) => {
+                Ok((summary, _)) => {
                     let id = summary.id;
                     this.add(summary, cx);
                     this.sessions[&id].update(cx, |v, cx| v.install_transfer(settings, None, cx));
@@ -182,12 +182,14 @@ mod tests {
                         text: "Finish the integration".into(),
                         first: true,
                         sent_at: None,
+                        id: None,
                     },
                     Row {
                         role: "assistant".into(),
                         text: "The integration is partly implemented".into(),
                         first: true,
                         sent_at: None,
+                        id: None,
                     },
                 ];
                 if limited {
@@ -198,6 +200,7 @@ mod tests {
                         text: "rate_limit".into(),
                         first: true,
                         sent_at: None,
+                        id: None,
                     });
                 }
                 {
@@ -249,10 +252,7 @@ mod tests {
         window
             .update(cx, |shell, _, cx| {
                 assert_eq!(shell.sessions.len(), original_count);
-                assert_eq!(
-                    locked(&shell.store).unwrap().sessions().unwrap().len(),
-                    original_count
-                );
+                assert_eq!(shell.mirror.state().sessions.len(), original_count);
                 assert_eq!(shell.workspace.active, active);
                 assert_eq!(shell.workspace.tabs.len(), tab_count);
                 let view = shell.sessions[&id].read(cx);

@@ -1038,7 +1038,16 @@ impl Shell {
                 if let Some(view) = self.sessions.get(&id) {
                     view.update(cx, |v, cx| v.rename(title.clone(), cx));
                 }
-                self.store_write("rename the session", cx, move |s| s.title(id, &title));
+                self.workspace_write::<onicode_protocol::workspace::Rename>(
+                    "rename the session",
+                    onicode_protocol::workspace::Rename {
+                        session: id,
+                        title,
+                        expected: None,
+                    },
+                    None,
+                    cx,
+                );
                 self.invalidate_chrome(cx);
                 cx.notify();
                 Ok(reply)
@@ -1163,7 +1172,7 @@ impl Shell {
             };
             let store = locked(&store)?;
             let summary = store.create(kind.id(), &cwd)?;
-            let mut settings = session_loading::new_session_settings(
+            let mut settings = onicode_engine::workspace::new_session_settings(
                 store
                     .desktop_preferences()
                     .and_then(|preferences| preferences.session_defaults(kind.id(), &cwd)),

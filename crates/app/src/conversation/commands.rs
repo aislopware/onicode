@@ -108,18 +108,10 @@ impl Conversation {
         if self.settings.worktree_removed || self.preparing_worktree || !self.loaded {
             return;
         }
-        match locked(&self.store).and_then(|store| store.edit_recovery_reason(self.summary.id)) {
-            Ok(Some(reason)) => {
-                self.status = reason;
-                cx.notify();
-                return;
-            }
-            Err(error) => {
-                self.status = error;
-                cx.notify();
-                return;
-            }
-            Ok(None) => {}
+        if let Some(reason) = self.edit_recovery.clone() {
+            self.status = reason;
+            cx.notify();
+            return;
         }
         self.attach_account(cx);
         let mut settings = self.settings.clone();
@@ -150,6 +142,7 @@ impl Conversation {
             text: serde_json::to_string(&compact_tool).unwrap(),
             first: true,
             sent_at: Some(onicode_core::time::now_ms()),
+            id: None,
         };
         self.transcript.update(cx, |view, cx| {
             view.patch(compact_start, vec![compact_row.clone()], cx);

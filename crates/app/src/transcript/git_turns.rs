@@ -688,6 +688,7 @@ mod tests {
             text,
             first: true,
             sent_at: None,
+            id: None,
         }
     }
 

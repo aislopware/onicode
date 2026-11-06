@@ -1,6 +1,6 @@
 //! UI batches stay responsive while the shared JSON transcript is saved at a
 //! bounded cadence. Delivery receipts and settled turns always flush immediately.
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::*;
 
@@ -262,7 +262,7 @@ mod tests {
         let mut summary = locked(&store).unwrap().sessions().unwrap().pop().unwrap();
         // Even a regression in cancellation must never launch a real provider.
         summary.provider = "invalid-test-provider".into();
-        let (tx, rx) = async_channel::bounded(8);
+        let (tx, rx) = async_channel::unbounded();
         let (_control, controls) = std::sync::mpsc::channel();
         run_turn(
             summary,
@@ -290,7 +290,7 @@ mod tests {
     fn rejected_preflight_preserves_existing_history_without_a_provider_launch() {
         let (store, id, transcript) = conversation();
         let summary = locked(&store).unwrap().sessions().unwrap().pop().unwrap();
-        let (tx, rx) = async_channel::bounded(2);
+        let (tx, rx) = async_channel::unbounded();
         let (_control, controls) = std::sync::mpsc::channel();
         run_turn(
             summary,
@@ -356,7 +356,7 @@ mod tests {
         summary.provider = "invalid-test-provider".into();
         let id = summary.id;
         let store = Arc::new(Mutex::new(store));
-        let (tx, rx) = async_channel::bounded(8);
+        let (tx, rx) = async_channel::unbounded();
         let (_control, controls) = std::sync::mpsc::channel();
         run_turn(
             summary,

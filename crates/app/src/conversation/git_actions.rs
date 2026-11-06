@@ -4,6 +4,8 @@
 //! alone. The agent, not Onicode's edit log, decides which changes are its.
 //! Once a step lands the pill moves on: staged work offers Commit, and an
 //! unpushed commit offers Push.
+use onicode_protocol::git::{ReadSessionChanges, SessionGit};
+
 use super::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -176,18 +178,20 @@ impl Conversation {
             return;
         }
         let cwd = self.execution_cwd().to_owned();
-        let work_cwd = cwd.clone();
-        let paths = self.session_edits.clone();
         let commit =
             crate::transcript::git_turns::latest_commit(self.transcript.read(cx).source_rows());
-        let work = cx.background_executor().spawn(async move {
-            let cwd = Path::new(&work_cwd);
-            let changes = onicode_core::git::session_changes(cwd, &paths);
-            let unpushed = commit.is_some_and(|commit| onicode_core::git::unpushed(cwd, &commit));
-            (changes, unpushed)
-        });
+        let read = crate::engine_client::local(cx).call::<ReadSessionChanges>(
+            None,
+            ReadSessionChanges {
+                checkout: cwd.clone(),
+                paths: self.session_edits.clone(),
+                commit,
+            },
+        );
+        let work = cx.background_executor().spawn(read);
         cx.spawn(async move |this, cx| {
-            let (changes, unpushed) = work.await;
+            // A checkout the engine cannot read has nothing of the session's to offer.
+            let SessionGit { changes, unpushed } = work.await.unwrap_or_default();
             let _ = this.update(cx, |this, cx| {
                 if this.session_edits_generation == generation
                     && this.execution_cwd() == cwd
@@ -497,6 +501,7 @@ mod tests {
             text,
             first: true,
             sent_at: None,
+            id: None,
         };
         store
             .write_rows(
@@ -657,6 +662,7 @@ mod tests {
             text: text.into(),
             first: true,
             sent_at: None,
+            id: None,
         };
         store
             .write_rows(

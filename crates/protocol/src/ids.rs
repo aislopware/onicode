@@ -2,6 +2,7 @@
 //! UUIDv7, minted by whoever creates the thing (usually the viewer), so a new chat, a sent prompt
 //! or a queued message has its final id before any byte leaves.
 use std::fmt;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -41,6 +42,15 @@ macro_rules! uuid_id {
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 fmt::Display::fmt(&self.0, f)
+            }
+        }
+
+        impl FromStr for $name {
+            type Err = uuid::Error;
+
+            /// The id its `Display` wrote.
+            fn from_str(text: &str) -> Result<Self, Self::Err> {
+                Uuid::parse_str(text).map(Self)
             }
         }
     };

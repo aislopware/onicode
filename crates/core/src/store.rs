@@ -12,6 +12,7 @@ pub use session_metadata::{MobileSessionMetadata, SessionSidebarMetadata};
 mod session_preview;
 pub use session_preview::SessionPreviewData;
 mod edit;
+mod engine_ledger;
 mod shared;
 mod side_threads;
 mod thread_files;
@@ -24,7 +25,7 @@ pub use side_threads::DesktopSideThread;
 
 use crate::transcript::{Row, Transcript};
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Session {
     pub id: i64,
     pub title: String,
@@ -40,7 +41,7 @@ pub struct Session {
 }
 
 /// A session's pending or delivered reminder.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Reminder {
     pub session_id: i64,
     /// Unix milliseconds.
@@ -131,6 +132,8 @@ impl Store {
             ("archived", "INTEGER NOT NULL DEFAULT 0"),
             ("pinned", "INTEGER NOT NULL DEFAULT 0"),
             ("work_item", "TEXT"),
+            // The session's protocol id, minted by the engine on first use (engine.md "Ids").
+            ("uid", "TEXT"),
         ] {
             if !columns.iter().any(|name| name == column) {
                 conn.execute(
@@ -140,6 +143,15 @@ impl Store {
                 .map_err(|e| e.to_string())?;
             }
         }
+        // SQLite adds no constraint with a column, so the uid's uniqueness is an index. The
+        // engine's ledger of processed mutating calls rides beside it.
+        conn.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS native_sessions_uid ON native_sessions(uid);
+             CREATE TABLE IF NOT EXISTS ops(op TEXT PRIMARY KEY, session TEXT NOT NULL,
+               receipt TEXT NOT NULL, at INTEGER NOT NULL);
+             CREATE INDEX IF NOT EXISTS ops_at ON ops(at);",
+        )
+        .map_err(|e| e.to_string())?;
         let has_sent_at = conn
             .prepare("PRAGMA table_info(native_rows)")
             .map_err(|e| e.to_string())?
@@ -325,11 +337,11 @@ impl Store {
         Ok(())
     }
 
-    pub fn save_note(&self, note: &crate::response::Note) -> Result<(), String> {
+    pub fn save_note(&self, note: &crate::response::ResponseNote) -> Result<(), String> {
         self.save_response_note(note)
     }
 
-    pub fn notes(&self) -> Result<Vec<crate::response::Note>, String> {
+    pub fn notes(&self) -> Result<Vec<crate::response::ResponseNote>, String> {
         Ok(self
             .list_notes()?
             .into_iter()
@@ -343,7 +355,7 @@ impl Store {
                             .flatten()
                     })
                     .unwrap_or(0);
-                crate::response::Note {
+                crate::response::ResponseNote {
                     id: note
                         .id
                         .strip_prefix("gpui-note-")
@@ -361,7 +373,7 @@ impl Store {
 
     /// Read-only fallback for early native settings; list_notes owns merging it
     /// with the desktop table, so this must never call the notes facade.
-    fn legacy_notes(&self) -> Result<Vec<crate::response::Note>, String> {
+    fn legacy_notes(&self) -> Result<Vec<crate::response::ResponseNote>, String> {
         let mut query = self
             .conn
             .prepare("SELECT value FROM native_settings WHERE key LIKE 'note:%' ORDER BY key DESC")
@@ -752,6 +764,7 @@ impl Store {
                     sent_at: r
                         .get::<_, Option<i64>>(3)?
                         .and_then(|at| u64::try_from(at).ok()),
+                    id: None,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -1229,6 +1242,7 @@ mod tests {
                     text: "Keep my conversation".into(),
                     first: true,
                     sent_at: None,
+                    id: None,
                 }],
             )
             .unwrap();
@@ -1297,6 +1311,7 @@ mod tests {
             text: "Keep this conversation".into(),
             first: true,
             sent_at: None,
+            id: None,
         }];
         store.write_rows(session.id, 0, &rows).unwrap();
         store.provider_id(session.id, "resume-this-thread").unwrap();

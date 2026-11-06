@@ -330,37 +330,20 @@ impl Shell {
             }
             return;
         }
-        let store = self.store.clone();
-        let revision = self.navigation_revision;
-        let work = cx.background_executor().spawn(async move {
-            locked(&store)?
-                .sessions()?
-                .into_iter()
-                .find(|s| s.id == id)
-                .ok_or_else(|| "Conversation no longer exists".to_owned())
-        });
-        cx.spawn(async move |this, cx| {
-            let result = work.await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                if this.navigation_revision != revision {
-                    return;
+        // A session the shell has not listed yet, as the engine holds it.
+        match self.mirror.session(id) {
+            Some(summary) => {
+                self.add(summary, cx);
+                self.open(id, window, cx);
+                if let Some((row, query)) = jump {
+                    self.sessions[&id].update(cx, |v, cx| v.reveal_search(row, query, cx));
                 }
-                match result {
-                    Ok(summary) => {
-                        this.add(summary, cx);
-                        this.open(id, window, cx);
-                        if let Some((row, query)) = jump {
-                            this.sessions[&id].update(cx, |v, cx| v.reveal_search(row, query, cx));
-                        }
-                    }
-                    Err(error) => {
-                        this.error = Some(error);
-                        cx.notify();
-                    }
-                }
-            });
-        })
-        .detach();
+            }
+            None => {
+                self.error = Some("Conversation no longer exists".into());
+                cx.notify();
+            }
+        }
     }
 
     pub(super) fn sync_search_session(&mut self, id: i64, cx: &mut Context<Self>) {
@@ -451,10 +434,12 @@ mod tests {
         window
             .update(cx, |shell, w, cx| {
                 for _ in 0..10 {
-                    let summary = locked(&shell.store)
-                        .unwrap()
-                        .create("codex", &shell.workspace.project)
-                        .unwrap();
+                    let summary = crate::engine_client::create_for_test(
+                        &shell.store,
+                        "codex",
+                        &shell.workspace.project,
+                        cx,
+                    );
                     let id = summary.id;
                     shell.add(summary, cx);
                     shell.open(id, w, cx);

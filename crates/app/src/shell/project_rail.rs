@@ -2064,6 +2064,7 @@ mod tests {
                                     text: "Streaming output".into(),
                                     first: true,
                                     sent_at: None,
+                                    id: None,
                                 }],
                                 cx,
                             )

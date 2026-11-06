@@ -2,6 +2,8 @@
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
+use onicode_protocol::workspace::{ReminderChange, SetReminder};
+
 use super::*;
 use crate::notifications::app_update::{
     self, AppUpdateEvent, InstalledUpdateNotice, WhatsNew, WhatsNewEvent,
@@ -233,7 +235,11 @@ impl Shell {
                     expected_due_at,
                     due_at,
                 } => this.snooze_notification_reminder(*session_id, *expected_due_at, *due_at, cx),
-                reminders::Action::Retry => this.reload_notification_reminders(cx),
+                // The mirror already shows the engine's reminders; a retry clears the error.
+                reminders::Action::Retry => {
+                    this.notification_state.reminder_error = None;
+                    this.invalidate_chrome(cx);
+                }
                 reminders::Action::OpenSettings => {
                     cx.spawn(async move |this, cx| {
                         let _ = this.update_in(cx, |this, window, cx| {
@@ -318,7 +324,6 @@ impl Shell {
                         for target in platform::drain_clicks() {
                             this.open_notice_target(target, cx);
                         }
-                        this.poll_reminders(cx);
                         this.poll_linked_activity(cx);
                         // Scheduled mutes expire without a preference change;
                         // redraw when one does, not on every tick.
@@ -714,13 +719,6 @@ impl Shell {
         expected: u64,
         cx: &mut Context<Self>,
     ) {
-        let removed = self
-            .reminders
-            .iter()
-            .find(|r| r.session_id == id && r.due_at == expected)
-            .cloned();
-        self.reminders
-            .retain(|r| !(r.session_id == id && r.due_at == expected));
         platform::dismiss(
             &Target::Reminder {
                 session_id: id,
@@ -728,32 +726,24 @@ impl Shell {
             }
             .tag(0),
         );
-        let store = self.store.clone();
-        let previous = self.group_writes.take();
-        self.group_writes = Some(cx.spawn(async move |this, cx| {
-            if let Some(previous) = previous {
-                previous.await;
-            }
-            let work = cx.background_executor().spawn(async move {
-                locked(&store).and_then(|s| s.clear_reminders(&[id], Some(expected)))
-            });
-            let result = work.await;
-            let _ = this.update(cx, |this, cx| {
-                match result {
-                    Err(error) => {
-                        if let Some(removed) = removed
-                            && !this.reminders.iter().any(|r| r.session_id == id)
-                        {
-                            this.reminders.push(removed);
-                        }
-                        this.notification_state.reminder_error = Some(error);
-                    }
-                    Ok(()) => this.notification_state.reminder_error = None,
-                }
-                this.invalidate_chrome(cx);
-                cx.notify();
-            });
-        }));
+        let echo = Box::new(move |shell: &mut Self, _: &mut Context<Self>| {
+            shell
+                .reminders
+                .retain(|r| !(r.session_id == id && r.due_at == expected));
+        });
+        self.workspace_call::<SetReminder>(
+            SetReminder {
+                sessions: vec![id],
+                change: ReminderChange::Clear {
+                    expected: Some(expected),
+                },
+            },
+            Some(echo),
+            cx,
+            |this, reply, _| {
+                this.notification_state.reminder_error = reply.err();
+            },
+        );
         self.invalidate_chrome(cx);
         cx.notify();
     }
@@ -772,17 +762,16 @@ impl Shell {
         {
             return;
         }
-        let store = self.store.clone();
-        let previous = self.group_writes.take();
-        self.group_writes = Some(cx.spawn(async move |this, cx| {
-            if let Some(previous) = previous {
-                previous.await;
-            }
-            let work = cx.background_executor().spawn(async move {
-                locked(&store).and_then(|s| s.snooze_reminder_if(id, expected, due_at))
-            });
-            let result = work.await;
-            let _ = this.update(cx, |this, cx| match result {
+        // The engine moves the occurrence only while it is still the one due at `expected`;
+        // the mirror then shows whichever it holds.
+        self.workspace_call::<SetReminder>(
+            SetReminder {
+                sessions: vec![id],
+                change: ReminderChange::Snooze { expected, due_at },
+            },
+            None,
+            cx,
+            move |this, reply, _| match reply {
                 Ok(_) => {
                     platform::dismiss(
                         &Target::Reminder {
@@ -792,45 +781,10 @@ impl Shell {
                         .tag(0),
                     );
                     this.notification_state.reminder_error = None;
-                    this.reload_notification_reminders(cx);
                 }
-                Err(error) => {
-                    this.notification_state.reminder_error = Some(error);
-                    cx.notify();
-                }
-            });
-        }));
-    }
-
-    fn reload_notification_reminders(&mut self, cx: &mut Context<Self>) {
-        let expected_snapshot = self.reminders.clone();
-        let store = self.store.clone();
-        let previous = self.group_writes.take();
-        self.group_writes = Some(cx.spawn(async move |this, cx| {
-            if let Some(previous) = previous {
-                previous.await;
-            }
-            let work = cx
-                .background_executor()
-                .spawn(async move { locked(&store).and_then(|s| s.reminders()) });
-            let result = work.await;
-            let _ = this.update(cx, |this, cx| {
-                match result {
-                    Ok(reminders) => {
-                        // Preserve a newer optimistic schedule/cancel while its
-                        // ordered write waits behind this reload operation.
-                        if this.reminders == expected_snapshot {
-                            this.reminders = reminders;
-                        }
-                        this.notification_state.reminder_error = None;
-                        this.poll_reminders(cx);
-                    }
-                    Err(error) => this.notification_state.reminder_error = Some(error),
-                }
-                this.invalidate_chrome(cx);
-                cx.notify();
-            });
-        }));
+                Err(error) => this.notification_state.reminder_error = Some(error),
+            },
+        );
     }
 
     pub(super) fn open_whats_new(&mut self, version: String, cx: &mut Context<Self>) {

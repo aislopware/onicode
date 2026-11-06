@@ -19,7 +19,7 @@ pub struct Target {
     pub settings: std::collections::HashMap<String, String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Note {
+pub struct ResponseNote {
     pub id: u64,
     pub title: String,
     pub body: String,
@@ -245,36 +245,42 @@ mod tests {
                 text: "Check the footer".into(),
                 first: true,
                 sent_at: None,
+                id: None,
             },
             Row {
                 role: "assistant".into(),
                 text: "I’ll inspect ".into(),
                 first: true,
                 sent_at: None,
+                id: None,
             },
             Row {
                 role: "assistant".into(),
                 text: "the footer.".into(),
                 first: false,
                 sent_at: None,
+                id: None,
             },
             Row {
                 role: "reasoning".into(),
                 text: "Private reasoning".into(),
                 first: true,
                 sent_at: None,
+                id: None,
             },
             Row {
                 role: "tool".into(),
                 text: "Tool output".into(),
                 first: true,
                 sent_at: None,
+                id: None,
             },
             Row {
                 role: "assistant".into(),
                 text: "**The footer is ready.**\n\n```rust\nlet ready = true;\n```".into(),
                 first: true,
                 sent_at: None,
+                id: None,
             },
         ];
         assert_eq!(

@@ -8,7 +8,7 @@ use crate::files::list_project_files_sync_cancellable;
 const MAX_MATCHES: usize = 500;
 const MAX_FILE_BYTES: u64 = 512 * 1024;
 const MAX_GIT_GREP_BYTES: usize = 4 * 1024 * 1024;
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchOptions {
     pub cwd: String,

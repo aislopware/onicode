@@ -15,11 +15,30 @@ use std::path::PathBuf;
 
 use onicode_protocol::agent::AccessMode;
 use onicode_protocol::engine::{EngineInfo, Hello, StopEngine, UpdateEngine};
+use onicode_protocol::files::{
+    Create, DeletePath, Destination, Entries, ListDir, ListDrives, Move, PathKind, Read,
+    SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths, Stat, WatchDir,
+    Write,
+};
+use onicode_protocol::git::{
+    Branches, ChangeSet, Commit, CommitContext, CreateBranch, CreatePr, CreateWorktree, Diff,
+    Discard, FileDiff, HeadMessage, History, NewWorktree, PrContext, PrStatus, Pull, Push,
+    ReadCheckpoint, ReadSessionChanges, ReadStatus, Refs, RemoveWorktree, Restore,
+    RestoreCheckpoint, Stage, StageTarget, Switch, Sync, Unstage, WatchGit, Worktrees,
+};
 use onicode_protocol::provider::Kind;
+use onicode_protocol::search::Target;
 use onicode_protocol::session::{
     Answer, Btw, Configure, Decide, EditLastTurn, Fork, KeepQuestionOpen, QueueChange, QueueEdit,
-    ReadTranscript, Rewind, Send, SendNow, Steer, SteerNow, Stop, SwitchProvider, Verdict,
-    WatchSession,
+    ReadBtw, ReadSession, ReadTranscript, RecallLastTurn, Rewind, SaveBtw, SaveQueue, Send,
+    SendNow, Steer, SteerNow, Stop, StopBtw, SwitchProvider, Verdict, WatchSession,
+};
+use onicode_protocol::transcript::Row;
+use onicode_protocol::workspace::{
+    Archive, ClaimInboxEvents, CreateNote, CreateSession, Delete, DeleteNote, FinishAutomationRun,
+    GenerateTitle, ListNotes, MarkSeen, NameWorktree, NewSession, Pin, PrepareAutomationRun,
+    PreviewSession, ReminderChange, Rename, SaveGroups, SaveOrchestration, SaveResponseNote,
+    SearchSessions, SetReminder, SetWorkItem, UpsertNote, WatchWorkspace,
 };
 use onicode_protocol::{
     Call, Cursor, Item, METHODS, MessageId, Method, MethodKind, OpId, PROTOCOL, Rejection, Routed,
@@ -52,6 +71,16 @@ impl Shapes {
         tracer
             .trace_value(&mut samples, &TerminalId::new())
             .unwrap();
+        // A row's echo id is a bare Uuid, so the row itself is the sample, every field set so none
+        // is skipped.
+        let row = Row {
+            role: "user".into(),
+            text: String::new(),
+            first: true,
+            sent_at: Some(1),
+            id: Some(uuid::Uuid::now_v7()),
+        };
+        tracer.trace_value(&mut samples, &row).unwrap();
         Self {
             tracer,
             samples,
@@ -132,13 +161,31 @@ fn digest(format: &Format, registry: &Registry) -> String {
     let format = serde_json::to_value(format).unwrap();
     let mut reached = BTreeMap::new();
     reach(&format, registry, &mut reached);
-    let text = serde_json::to_string(&(format, reached)).unwrap();
+    let text = serde_json::to_string(&sorted(&serde_json::json!([format, reached]))).unwrap();
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     for byte in text.bytes() {
         hash ^= u64::from(byte);
         hash = hash.wrapping_mul(0x0100_0000_01b3);
     }
     format!("{hash:016x}")
+}
+
+/// `value` with every object's keys in order, whether or not serde_json keeps insertion order
+/// (its `preserve_order` feature, which other crates of the workspace turn on).
+fn sorted(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<_> = map.keys().collect();
+            keys.sort_unstable();
+            Value::Object(
+                keys.into_iter()
+                    .map(|key| (key.clone(), sorted(&map[key])))
+                    .collect(),
+            )
+        }
+        Value::Array(items) => Value::Array(items.iter().map(sorted).collect()),
+        other => other.clone(),
+    }
 }
 
 /// Collects the containers `value` names (`{"TYPENAME": name}`), and the ones they name.
@@ -193,6 +240,79 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<Btw>();
     shapes.call::<SwitchProvider>();
     shapes.call::<ReadTranscript>();
+    shapes.call::<ReadSession>();
+    shapes.call::<SaveQueue>();
+    shapes.call::<RecallLastTurn>();
+    shapes.call::<ReadBtw>();
+    shapes.call::<SaveBtw>();
+    shapes.call::<StopBtw>();
+    // Workspace.
+    shapes.watch::<WatchWorkspace>();
+    shapes.call::<CreateSession>();
+    shapes.call::<Rename>();
+    shapes.call::<Archive>();
+    shapes.call::<Pin>();
+    shapes.call::<Delete>();
+    shapes.call::<SetWorkItem>();
+    shapes.call::<SetReminder>();
+    shapes.call::<SaveGroups>();
+    shapes.call::<SearchSessions>();
+    shapes.call::<PreviewSession>();
+    shapes.call::<MarkSeen>();
+    shapes.call::<SaveOrchestration>();
+    shapes.call::<GenerateTitle>();
+    shapes.call::<NameWorktree>();
+    shapes.call::<ListNotes>();
+    shapes.call::<CreateNote>();
+    shapes.call::<UpsertNote>();
+    shapes.call::<DeleteNote>();
+    shapes.call::<SaveResponseNote>();
+    shapes.call::<PrepareAutomationRun>();
+    shapes.call::<FinishAutomationRun>();
+    shapes.call::<ClaimInboxEvents>();
+    // Files.
+    shapes.watch::<WatchDir>();
+    shapes.call::<ListDir>();
+    shapes.call::<Stat>();
+    shapes.call::<Read>();
+    shapes.call::<Write>();
+    shapes.call::<Create>();
+    shapes.call::<Move>();
+    shapes.call::<DeletePath>();
+    shapes.call::<SearchPaths>();
+    shapes.call::<SearchContent>();
+    shapes.call::<ListDrives>();
+    shapes.call::<SearchHomeFolders>();
+    shapes.call::<SaveAttachments>();
+    shapes.call::<SaveNoteImages>();
+    // Git.
+    shapes.watch::<WatchGit>();
+    shapes.call::<ReadStatus>();
+    shapes.call::<Diff>();
+    shapes.call::<FileDiff>();
+    shapes.call::<Branches>();
+    shapes.call::<Refs>();
+    shapes.call::<History>();
+    shapes.call::<Switch>();
+    shapes.call::<CreateBranch>();
+    shapes.call::<Stage>();
+    shapes.call::<Unstage>();
+    shapes.call::<Discard>();
+    shapes.call::<Commit>();
+    shapes.call::<Push>();
+    shapes.call::<Pull>();
+    shapes.call::<Sync>();
+    shapes.call::<HeadMessage>();
+    shapes.call::<CommitContext>();
+    shapes.call::<PrContext>();
+    shapes.call::<PrStatus>();
+    shapes.call::<CreatePr>();
+    shapes.call::<Worktrees>();
+    shapes.call::<CreateWorktree>();
+    shapes.call::<RemoveWorktree>();
+    shapes.call::<ReadCheckpoint>();
+    shapes.call::<RestoreCheckpoint>();
+    shapes.call::<ReadSessionChanges>();
     // What every call and watch travels in.
     shapes.envelope::<Cursor>("Cursor");
     shapes.envelope::<Item<(), ()>>("Item");
@@ -202,6 +322,16 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.variants::<QueueChange>();
     shapes.variants::<Kind>();
     shapes.variants::<AccessMode>();
+    shapes.variants::<NewSession>();
+    shapes.variants::<ReminderChange>();
+    shapes.variants::<Target>();
+    shapes.variants::<Entries>();
+    shapes.variants::<PathKind>();
+    shapes.variants::<Destination>();
+    shapes.variants::<ChangeSet>();
+    shapes.variants::<StageTarget>();
+    shapes.variants::<NewWorktree>();
+    shapes.variants::<Restore>();
     shapes.table()
 }
 

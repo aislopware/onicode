@@ -33,7 +33,7 @@ impl Scope {
         matches!(self, Self::All | Self::Files)
     }
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Target {
     Conversation(i64),
     Message {
@@ -46,7 +46,7 @@ pub enum Target {
     },
     Project(String),
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Hit {
     pub id: String,
     pub target: Target,

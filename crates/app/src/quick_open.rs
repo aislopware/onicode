@@ -1,16 +1,14 @@
 //! Cmd+P's project-file search and `>` command palette.
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use gpui::prelude::*;
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, Focusable, Role, Subscription, Window, div, px,
 };
 use onicode_core::composer;
 use onicode_core::files::ProjectFile;
+use onicode_protocol::files::SearchPaths;
 
-use crate::input;
 use crate::theme::*;
+use crate::{engine_client, input};
 
 #[derive(Clone, Copy)]
 pub(crate) enum Command {
@@ -65,18 +63,12 @@ pub(crate) struct QuickOpen {
     scroll: gpui::ScrollHandle,
     loading: bool,
     error: Option<String>,
-    cancel: Arc<AtomicBool>,
     _changed: Subscription,
 }
 impl EventEmitter<Picked> for QuickOpen {}
 impl Focusable for QuickOpen {
     fn focus_handle(&self, cx: &gpui::App) -> FocusHandle {
         self.search.focus_handle(cx)
-    }
-}
-impl Drop for QuickOpen {
-    fn drop(&mut self) {
-        self.cancel.store(true, Ordering::Relaxed);
     }
 }
 impl QuickOpen {
@@ -97,17 +89,20 @@ impl QuickOpen {
             this.rank(cx);
             cx.notify();
         });
-        let cancel = Arc::new(AtomicBool::new(false));
-        let flag = cancel.clone();
-        let work = cx.background_executor().spawn(async move {
-            onicode_core::files::list_project_files_sync_cancellable(&cwd, Some(&flag))
-        });
+        // One Quick Open at a time: opening it again stops the last listing.
+        let listing = engine_client::local(cx).call::<SearchPaths>(
+            None,
+            SearchPaths {
+                root: cwd,
+                search: "quick-open".into(),
+            },
+        );
         cx.spawn(async move |this, cx| {
-            let result = work.await;
+            let result = listing.await;
             let _ = this.update(cx, |this, cx| {
                 this.loading = false;
                 match result {
-                    Ok(files) => this.files = files,
+                    Ok(listed) => this.files = listed.files,
                     Err(e) => this.error = Some(e),
                 };
                 this.rank(cx);
@@ -123,7 +118,6 @@ impl QuickOpen {
             scroll: gpui::ScrollHandle::new(),
             loading: true,
             error: None,
-            cancel,
             _changed: changed,
         };
         this.rank(cx);

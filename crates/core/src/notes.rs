@@ -116,6 +116,63 @@ impl Note {
     }
 }
 
+/// A new note's id, minted by whoever creates the note so it opens before the engine answers.
+#[must_use]
+pub fn new_id() -> String {
+    format!(
+        "note-{}-{:016x}",
+        crate::time::now_ms(),
+        rand::random::<u64>()
+    )
+}
+
+/// Lowercase ASCII words of `title` joined by single hyphens, untruncated.
+pub(crate) fn slug_words(title: &str) -> String {
+    let mut out = String::new();
+    let mut dash = false;
+    for ch in title.chars() {
+        let c = ch.to_ascii_lowercase();
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            dash = false;
+        } else if !out.is_empty() && !dash {
+            out.push('-');
+            dash = true;
+        }
+    }
+    out.trim_end_matches('-').to_string()
+}
+
+pub(crate) fn slugify(title: &str) -> String {
+    let words = slug_words(title);
+    let slug = words[..words.len().min(48)].trim_end_matches('-');
+    if slug.is_empty() {
+        "note".into()
+    } else {
+        slug.into()
+    }
+}
+
+/// The slugs a note titled `title` may take, in the order the store tries them.
+pub(crate) fn slug_candidates(title: &str) -> impl Iterator<Item = String> {
+    let base = slugify(title);
+    (0..1000).map(move |index| {
+        if index == 0 {
+            base.clone()
+        } else {
+            format!("{base}-{}", index + 1)
+        }
+    })
+}
+
+/// The slug a new note titled `title` takes when the slugs `taken` are all the store holds: what
+/// a viewer shows of a note it created before the engine answers.
+pub fn free_slug(title: &str, taken: impl Fn(&str) -> bool) -> String {
+    slug_candidates(title)
+        .find(|slug| !taken(slug))
+        .unwrap_or_else(|| format!("{}-{}", slugify(title), crate::time::now_ms()))
+}
+
 pub fn is_project(cwd: &str) -> bool {
     let path = crate::files::path_key(cwd);
     if path.trim().is_empty()
@@ -268,7 +325,7 @@ pub fn slugs_in_text(text: &str) -> Vec<String> {
     result
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NoteImageAsset {
     pub name: String,
     pub markdown_path: String,

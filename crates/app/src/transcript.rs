@@ -579,6 +579,7 @@ impl TranscriptView {
                 text,
                 first: true,
                 sent_at: None,
+                id: None,
             }],
             cx,
         );
@@ -1741,6 +1742,7 @@ impl TranscriptView {
                     .to_string(),
                 first: true,
                 sent_at: None,
+                id: None,
             });
         }
         submitted.begin("assistant");
@@ -4533,6 +4535,7 @@ mod scroll_tests {
             text: text.into(),
             first: true,
             sent_at: None,
+            id: None,
         }
     }
     fn settle(view: &mut TranscriptView, cx: &mut Context<TranscriptView>) {

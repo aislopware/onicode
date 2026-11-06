@@ -9,8 +9,10 @@ use gpui::{
     Window, div, px,
 };
 use onicode_core::files::path_key;
-use onicode_core::git::{self, Snapshot};
+use onicode_core::git::Snapshot;
 use onicode_engine::turn::{Database, locked};
+use onicode_protocol::OpId;
+use onicode_protocol::git::{CreateWorktree, NewWorktree};
 
 use crate::theme::*;
 use crate::{input, popover};
@@ -159,10 +161,7 @@ impl WorktreeSwitcher {
         });
         let state = crate::git_cache::get(&cwd);
         let tabs = tab_stats(&sessions, None, &cwd);
-        let folder = cwd.clone();
-        let work = cx
-            .background_executor()
-            .spawn(async move { crate::git_cache::load(Path::new(&folder)) });
+        let work = crate::git_cache::load(cwd.clone(), cx);
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -270,9 +269,13 @@ impl WorktreeSwitcher {
         let cwd = self.focused.as_ref().map_or(&self.cwd, |f| &f.path).clone();
         self.creating = true;
         self.error = None;
-        let work = cx
-            .background_executor()
-            .spawn(async move { git::create_named_worktree(Path::new(&cwd), &branch) });
+        let work = crate::engine_client::local(cx).call::<CreateWorktree>(
+            Some(OpId::new()),
+            CreateWorktree {
+                checkout: cwd,
+                worktree: NewWorktree::Named { branch },
+            },
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {

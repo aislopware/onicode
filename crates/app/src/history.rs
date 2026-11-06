@@ -1,7 +1,6 @@
 //! GitHistoryGraph.tsx's standalone History tab: its toolbar, search and
 //! 44px rows with the swimlane graph painted per row.
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use gpui::prelude::*;
 use gpui::{
@@ -9,7 +8,7 @@ use gpui::{
     ScrollStrategy, SharedString, Subscription, UniformListScrollHandle, Window, actions, canvas,
     div, fill, point, px, rgb, size, uniform_list,
 };
-use onicode_core::scm::{self, HistoryCommit};
+use onicode_protocol::git::{self as git_calls, HistoryCommit};
 
 use crate::git_graph::{self, GraphCommit, NodeKind, Row, RowGraph, SWIMLANE_WIDTH};
 use crate::git_status::{GitChanged, ProjectGit};
@@ -158,10 +157,14 @@ impl History {
         self.loading = true;
         self.error = None;
         let cwd = self.cwd.clone();
-        let path = PathBuf::from(&cwd);
-        let work = cx
-            .background_executor()
-            .spawn(async move { scm::history(&path, Some(200)) });
+        let read = crate::engine_client::local(cx).call::<git_calls::History>(
+            None,
+            git_calls::History {
+                checkout: cwd.clone(),
+                limit: Some(200),
+            },
+        );
+        let work = cx.background_executor().spawn(read);
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {

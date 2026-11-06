@@ -571,8 +571,8 @@ mod tests {
             call.input = r#"{"command":"rg -n 'model_settings_menu|render_model_settings|self.models|models.clone' src"}"#.into();
             call.state = ToolState::Completed;
             view.patch(0, vec![
-                Row { role: "user".into(), text: "Find model settings".into(), first: true, sent_at: None },
-                Row { role: "tool".into(), text: serde_json::to_string(&call).unwrap(), first: true, sent_at: None },
+                Row { role: "user".into(), text: "Find model settings".into(), first: true, sent_at: None, id: None },
+                Row { role: "tool".into(), text: serde_json::to_string(&call).unwrap(), first: true, sent_at: None, id: None },
             ], cx);
             view.work_folds.insert(1, true);
             view.phases.insert(1, true);
@@ -626,8 +626,8 @@ mod tests {
             .to_string();
             call.state = ToolState::Completed;
             view.patch(0, vec![
-                Row { role: "user".into(), text: "Check the build".into(), first: true, sent_at: None },
-                Row { role: "tool".into(), text: serde_json::to_string(&call).unwrap(), first: true, sent_at: None },
+                Row { role: "user".into(), text: "Check the build".into(), first: true, sent_at: None, id: None },
+                Row { role: "tool".into(), text: serde_json::to_string(&call).unwrap(), first: true, sent_at: None, id: None },
             ], cx);
             view.work_folds.insert(1, true);
             view.phases.insert(1, true);
@@ -676,6 +676,7 @@ mod tests {
                     text,
                     first: true,
                     sent_at: None,
+                    id: None,
                 };
                 let mut call = ToolCall::new("read", "commandExecution");
                 call.input = r#"{"command":"/bin/zsh -lc 'cat src/lib.rs'","cwd":"/repo"}"#.into();
@@ -747,6 +748,7 @@ mod tests {
                     text: text.into(),
                     first: true,
                     sent_at: None,
+                    id: None,
                 };
                 let tool = |id: &str, name: &str, input: &str| {
                     let mut call = ToolCall::new(id, name);
@@ -824,6 +826,7 @@ mod tests {
                 text: text.into(),
                 first: true,
                 sent_at: None,
+                id: None,
             };
             view.streaming(true, cx);
             view.patch(
@@ -862,6 +865,7 @@ mod tests {
             text,
             first: true,
             sent_at: None,
+            id: None,
         };
         let step = |id: &str, state: ToolState| {
             let mut call = ToolCall::new(id, "Bash");

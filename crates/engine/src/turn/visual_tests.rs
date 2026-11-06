@@ -91,7 +91,7 @@ for line in sys.stdin:
     let session = summary.id;
     let store = Arc::new(Mutex::new(store));
     let worker_store = store.clone();
-    let (updates, receive) = async_channel::bounded(64);
+    let (updates, receive) = async_channel::unbounded();
     let (_controls, control_rx) = std::sync::mpsc::channel();
     let visible_prompt = prompt.clone();
     let worker = std::thread::spawn(move || {

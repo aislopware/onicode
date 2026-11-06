@@ -29,6 +29,11 @@ pub struct Row {
     /// Wall-clock send time on the first row; older histories may not have one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sent_at: Option<u64>,
+    /// The id the viewer minted for this prompt (a protocol `MessageId`), on a prompt's first row
+    /// while its engine holds the session live: a viewer's echo is replaced in place by it. Not
+    /// stored; rows read back from the store have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<uuid::Uuid>,
 }
 impl Row {
     pub fn is_prompt(&self) -> bool {
@@ -49,6 +54,7 @@ impl Transcript {
             text: String::new(),
             first: true,
             sent_at: Some(crate::time::now_ms()),
+            id: None,
         });
         ix
     }
@@ -80,6 +86,7 @@ impl Transcript {
                     text: String::new(),
                     first: false,
                     sent_at: None,
+                    id: None,
                 });
                 continue;
             }
@@ -92,6 +99,7 @@ impl Transcript {
                     text: String::new(),
                     first: false,
                     sent_at: None,
+                    id: None,
                 });
             }
         }

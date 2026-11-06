@@ -18,6 +18,34 @@ fn legacy(path: &Path) -> Result<Snapshot, String> {
     }
 }
 
+/// The sidecar's newest `user_version`.
+const LATEST: i64 = 2;
+
+/// Brings a writable sidecar from version 1 to [`LATEST`], one step per version, each in its own
+/// writer transaction so a second window waiting on the lock sees the step already done.
+fn migrate(conn: &Connection) -> Result<(), String> {
+    loop {
+        let tx = sql(Transaction::new_unchecked(
+            conn,
+            TransactionBehavior::Immediate,
+        ))?;
+        let version: i64 = sql(tx.query_row("PRAGMA user_version", [], |row| row.get(0)))?;
+        match version {
+            // 2: the engine's protocol ids for the desktop schema's sessions, whose own ids are
+            // never altered, and its ledger of processed mutating calls (engine.md "Ids").
+            1 => sql(tx.execute_batch(
+                "CREATE TABLE session_uids(session TEXT PRIMARY KEY, uid TEXT NOT NULL UNIQUE);
+                 CREATE TABLE ops(op TEXT PRIMARY KEY, session TEXT NOT NULL,
+                   receipt TEXT NOT NULL, at INTEGER NOT NULL);
+                 CREATE INDEX ops_at ON ops(at);
+                 PRAGMA user_version=2;",
+            ))?,
+            _ => return Ok(()),
+        }
+        sql(tx.commit())?;
+    }
+}
+
 pub(super) fn open(
     database: &Path,
     read_only: bool,
@@ -54,7 +82,7 @@ pub(super) fn open(
     let conn = sql(Connection::open_with_flags(&path, flags))?;
     sql(conn.busy_timeout(std::time::Duration::from_secs(5)))?;
     let version: i64 = sql(conn.query_row("PRAGMA user_version", [], |row| row.get(0)))?;
-    if version > 1 {
+    if version > LATEST {
         return Err(format!("Unsupported native settings version: {version}"));
     }
     if read_only && version == 0 {
@@ -87,9 +115,11 @@ pub(super) fn open(
                 // file untouched as a backup, but never re-import stale values.
                 sql(tx.execute_batch("PRAGMA user_version=1;"))?;
                 sql(tx.commit())?;
+                migrate(&conn)?;
                 return Ok((values, Some(conn)));
             }
         }
+        migrate(&conn)?;
     }
     let values = {
         let mut query = sql(conn.prepare("SELECT key,value FROM settings"))?;

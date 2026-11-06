@@ -1,4 +1,6 @@
-//! ProjectSearch.tsx: content search inside the Explorer, scoped to its checkout.
+//! ProjectSearch.tsx: content search inside the Explorer, scoped to its
+//! checkout, run by the engine's `SearchContent` under this view's search id,
+//! so each search stops the one before it.
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
@@ -11,7 +13,9 @@ use gpui::{
     ScrollHandle, StyledText, Subscription, Task, Window, div, point, px, rgb,
 };
 use onicode_core::search::project::{self, SearchMatch, SearchOptions};
+use onicode_protocol::files::SearchContent;
 
+use crate::engine_client;
 use crate::file_icons::file_type_icon;
 use crate::input::{self, Input};
 use crate::right_panel::{RED_400, spinner, stroke, tabular};
@@ -57,7 +61,10 @@ pub(crate) struct ProjectSearch {
     groups: Vec<Group>,
     count: usize,
     truncated: bool,
+    /// Set once a newer search (or none) replaces the one running.
     cancel: Arc<AtomicBool>,
+    /// The engine stops this view's running search when the next one starts.
+    search_id: String,
     debounce: Option<Task<()>>,
     scroll: ScrollHandle,
     _subscriptions: Vec<Subscription>,
@@ -68,12 +75,6 @@ impl EventEmitter<SearchEvent> for ProjectSearch {}
 impl Focusable for ProjectSearch {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
         self.query.focus_handle(cx)
-    }
-}
-
-impl Drop for ProjectSearch {
-    fn drop(&mut self) {
-        self.cancel.store(true, Ordering::Release);
     }
 }
 
@@ -113,6 +114,7 @@ impl ProjectSearch {
             count: 0,
             truncated: false,
             cancel: Arc::new(AtomicBool::new(false)),
+            search_id: onicode_core::new_id(),
             debounce: None,
             scroll: ScrollHandle::new(),
             _subscriptions: subscriptions,
@@ -162,7 +164,7 @@ impl ProjectSearch {
             regex: self.regex,
             include: filter(&self.include),
             exclude: filter(&self.exclude),
-            search_id: String::new(),
+            search_id: self.search_id.clone(),
         }
     }
 
@@ -197,11 +199,15 @@ impl ProjectSearch {
 
     fn start(&mut self, options: SearchOptions, cx: &mut Context<Self>) {
         self.loading = true;
-        let flag = self.cancel.clone();
-        let check = flag.clone();
+        let check = self.cancel.clone();
+        let search = engine_client::local(cx).call::<SearchContent>(
+            None,
+            SearchContent {
+                options: options.clone(),
+            },
+        );
         let work = cx.background_executor().spawn(async move {
-            let result =
-                project::search_project(std::path::Path::new(&options.cwd), &options, &flag)?;
+            let result = search.await?;
             let ranges = project::preview_ranges(&result.matches, &options);
             let mut groups: Vec<Group> = Vec::new();
             let mut by_path = HashMap::new();

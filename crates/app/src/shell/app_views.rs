@@ -129,26 +129,6 @@ impl Shell {
             }))
     }
 
-    /// Reads how many notes the store holds for the sidebar's Notes row.
-    pub(super) fn load_note_count(&mut self, cx: &mut Context<Self>) {
-        let store = self.store.clone();
-        let work = cx
-            .background_executor()
-            .spawn(async move { locked(&store)?.list_notes().map(|notes| notes.len()) });
-        cx.spawn(async move |this, cx| {
-            let Ok(count) = work.await else {
-                return;
-            };
-            let _ = this.update(cx, |this, cx| {
-                if this.note_count != Some(count) {
-                    this.note_count = Some(count);
-                    this.notify_sidebar(cx);
-                }
-            });
-        })
-        .detach();
-    }
-
     pub(super) fn leave_app_views(&mut self, cx: &mut Context<Self>) {
         if self.active_app_view == Some(AppView::Notes)
             && let Some(notes) = &self.notes
@@ -244,7 +224,14 @@ impl Shell {
                 window,
                 |this, _, event: &notes::Event, window, cx| match event {
                     notes::Event::Close => this.close_app_view(window, cx),
-                    notes::Event::OpenSource(id) => this.open(*id, window, cx),
+                    notes::Event::OpenSource(key) => match this.mirror.row_for_key(key) {
+                        Some(id) => this.open(id, window, cx),
+                        None => {
+                            if let Some(notes) = &this.notes {
+                                notes.update(cx, |notes, cx| notes.source_missing(cx));
+                            }
+                        }
+                    },
                     notes::Event::AddToChat(note) => this.note_to_chat(note.clone(), window, cx),
                 },
             ));
@@ -347,11 +334,8 @@ impl Shell {
                     automations::Event::Launch(run) => {
                         this.launch_automation(run.as_ref().clone(), true, cx)
                     }
-                    automations::Event::OpenSession(id) => {
-                        let native = locked(&this.store)
-                            .ok()
-                            .and_then(|store| store.resolve_existing_session_id(id));
-                        if let Some(id) = native {
+                    automations::Event::OpenSession(key) => {
+                        if let Some(id) = this.mirror.row_for_key(key) {
                             this.open(id, window, cx);
                         }
                     }
@@ -393,7 +377,6 @@ impl Shell {
             .unwrap_or_else(|| self.workspace.project.clone());
         let choice = self.new_chat_choice(&cwd);
         let kind = choice.kind;
-        let store = self.store.clone();
         let settings = onicode_core::agent::Settings {
             model: choice.model,
             effort: crate::conversation::preferred_effort(kind.id(), cx),
@@ -412,20 +395,18 @@ impl Shell {
         self.leave_app_views(cx);
         self.navigation_revision += 1;
         let revision = self.navigation_revision;
-        let work = cx.background_executor().spawn(async move {
-            let store = locked(&store)?;
-            let mut summary = store.create(kind.id(), &cwd)?;
-            if !note.title.trim().is_empty() {
-                store.title(summary.id, &note.title)?;
-                summary.title = note.title.clone();
-            }
-            store.save_agent_settings(summary.id, &settings)?;
-            Ok::<_, String>((summary, settings, note))
-        });
+        let title = (!note.title.trim().is_empty()).then(|| note.title.clone());
+        let work = self.create_in_engine(
+            kind.id(),
+            &cwd,
+            title,
+            onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| match result {
-                Ok((summary, settings, note)) => {
+                Ok((summary, _)) => {
                     let id = summary.id;
                     this.add(summary, cx);
                     this.sessions[&id].update(cx, |view, cx| {
@@ -478,27 +459,37 @@ impl Shell {
                 .unwrap_or_default(),
             ..Default::default()
         };
-        let store = self.store.clone();
         self.navigation_revision += 1;
         let revision = self.navigation_revision;
-        let work = cx.background_executor().spawn(async move {
-            if !std::path::Path::new(&cwd).is_dir() {
-                return Err("Choose a project folder before starting work on this item".into());
-            }
-            let store = locked(&store)?;
-            let mut summary = store.create(kind.id(), &cwd)?;
-            summary.title = format!("{} · {}", item.reference(), item.title);
-            summary.work_item = Some(item.work_item());
-            store.title(summary.id, &summary.title)?;
-            store.set_work_item(summary.id, summary.work_item.as_ref())?;
-            store.save_agent_settings(summary.id, &settings)?;
-            Ok::<_, String>((summary, settings, prompt))
-        });
+        if !std::path::Path::new(&cwd).is_dir() {
+            self.error = Some("Choose a project folder before starting work on this item".into());
+            cx.notify();
+            return;
+        }
+        let work = self.create_in_engine(
+            kind.id(),
+            &cwd,
+            Some(format!("{} · {}", item.reference(), item.title)),
+            onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
+            cx,
+        );
+        let work_item = item.work_item();
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| match result {
-                Ok((summary, settings, prompt)) => {
+                Ok((mut summary, _)) => {
                     let id = summary.id;
+                    summary.work_item = Some(work_item.clone());
+                    this.workspace_write::<onicode_protocol::workspace::SetWorkItem>(
+                        "link the session",
+                        onicode_protocol::workspace::SetWorkItem {
+                            session: id,
+                            item: Some(work_item),
+                            if_unlinked: false,
+                        },
+                        None,
+                        cx,
+                    );
                     this.add(summary, cx);
                     this.sessions[&id]
                         .update(cx, |view, cx| view.quick_submit(prompt, settings, cx));

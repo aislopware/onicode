@@ -3,10 +3,10 @@
 //! CommitDiff.tsx load their files four at a time off the UI thread and
 //! build each diff there too; the view only lays out rows.
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use futures::future::Either;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Bounds, Context, CursorStyle, Entity, EventEmitter, FocusHandle, Focusable,
@@ -14,12 +14,16 @@ use gpui::{
     SharedString, Subscription, Task, Window, div, px, rgb,
 };
 use onicode_core::diff;
-use onicode_core::scm::{self, ChangedFile, FileDiff, FileDiffVersion};
+use onicode_protocol::git::{
+    self as git_calls, ChangeSet, ChangedFile, Diff, DiffList, DiffSides, Discard, FileDiffVersion,
+    Stage, StageTarget,
+};
+use onicode_protocol::{OpId, Outcome};
 use serde::{Deserialize, Serialize};
 
 use crate::diff_view::{DiffEvent, DiffFile, DiffView};
 use crate::file_editor::{FileEditor, FileEvent};
-use crate::git_status::{GitChanged, ProjectGit};
+use crate::git_status::{GitChanged, GitEcho, ProjectGit};
 use crate::pane_motion::PaneReveal;
 use crate::popover::{Anchor, Menu, MenuAction, MenuEvent, menu_popover};
 use crate::right_panel::{RED_400, selection, spinner, stroke};
@@ -144,7 +148,7 @@ pub(crate) enum ReviewEvent {
 #[derive(Clone)]
 struct Loaded {
     version: Option<FileDiffVersion>,
-    diff: Arc<FileDiff>,
+    diff: Arc<DiffSides>,
     unified: Option<Arc<Vec<diff::Block>>>,
     additions: u32,
     deletions: u32,
@@ -323,31 +327,19 @@ fn entries(files: &[ChangedFile], staged: Option<bool>) -> Vec<(String, bool, Ch
     out
 }
 
-/// SessionChangesDiff's list: the recorded turn's files, as a commit lists them.
-type Listed = (Vec<ChangedFile>, Option<HashMap<String, FileDiffVersion>>);
-fn session_files(cwd: &str, session: i64) -> Result<Listed, String> {
-    let store = onicode_core::checkpoint::store().ok_or("Session changes are unavailable")?;
-    let status = store.exclusive(|s| s.status(&session.to_string(), cwd))?;
-    Ok((
-        status
-            .files
-            .into_iter()
-            .map(|f| ChangedFile {
-                path: f.path,
-                relative: f.relative,
-                status: f.status,
-                additions: f.additions,
-                deletions: f.deletions,
-                staged: false,
-                unstaged: true,
-            })
-            .collect(),
-        None,
-    ))
-}
-fn session_file_diff(cwd: &str, session: i64, relative: &str) -> Result<FileDiff, String> {
-    let store = onicode_core::checkpoint::store().ok_or("Session changes are unavailable")?;
-    store.exclusive(|s| s.file_diff(&session.to_string(), cwd, relative))
+/// The checkout a review tab reads and the change set it lists: the working
+/// tree, a commit, or SessionChangesDiff's recorded turn.
+fn change_set(tab: &ReviewTab) -> Option<(String, ChangeSet)> {
+    match tab {
+        ReviewTab::File { .. } => None,
+        ReviewTab::Changes { cwd, .. } => Some((cwd.clone(), ChangeSet::WorkingTree)),
+        ReviewTab::Commit { cwd, sha, .. } => {
+            Some((cwd.clone(), ChangeSet::Commit { sha: sha.clone() }))
+        }
+        ReviewTab::Session { cwd, session, .. } => {
+            Some((cwd.clone(), ChangeSet::Checkpoint { session: *session }))
+        }
+    }
 }
 
 impl ReviewPane {
@@ -985,36 +977,27 @@ impl ReviewPane {
             source.refresh_pending = true;
             return;
         }
+        let Some((checkout, changes)) = change_set(&source.tab) else {
+            return;
+        };
         source.loading = true;
         let generation = source.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let tab = source.tab.clone();
         let counter = source.generation.clone();
-        let known_index = match &tab {
-            ReviewTab::Changes { cwd, .. } if self.git.read(cx).project() == cwd => {
-                self.git.read(cx).index.clone()
-            }
-            _ => None,
-        };
-        let list = cx.background_executor().spawn({
-            let tab = tab.clone();
-            async move {
-                match &tab {
-                    ReviewTab::File { .. } => unreachable!(),
-                    ReviewTab::Changes { cwd, .. } => {
-                        let root = PathBuf::from(cwd);
-                        let index = scm::review_index(&root, known_index.as_ref())?;
-                        let versions = scm::file_diff_versions(&root, &index).ok();
-                        Ok((index.files, versions))
-                    }
-                    ReviewTab::Commit { cwd, sha, .. } => {
-                        scm::commit_files(&PathBuf::from(cwd), sha).map(|files| (files, None))
-                    }
-                    ReviewTab::Session { cwd, session, .. } => session_files(cwd, *session),
-                }
-            }
-        });
+        let engine = crate::engine_client::local(cx);
+        let list = cx.background_executor().spawn(engine.call::<Diff>(
+            None,
+            Diff {
+                checkout: checkout.clone(),
+                changes: changes.clone(),
+            },
+        ));
         let task = cx.spawn(async move |this, cx| {
-            let listed = list.await;
+            let listed = list.await.map(|DiffList { files, versions }| {
+                let versions: Option<HashMap<String, FileDiffVersion>> =
+                    versions.map(|versions| versions.into_iter().collect());
+                (files, versions)
+            });
             let order = this.update(cx, |this, cx| {
                 let source = this
                     .sources
@@ -1091,6 +1074,8 @@ impl ReviewPane {
                 let versions = versions.clone();
                 let counter = counter.clone();
                 let tab = tab.clone();
+                let (engine, checkout, changes) =
+                    (engine.clone(), checkout.clone(), changes.clone());
                 let this = this.clone();
                 let mut cx = cx.clone();
                 workers.push(async move {
@@ -1118,26 +1103,20 @@ impl ReviewPane {
                         }) {
                             continue;
                         }
-                        let tab = tab.clone();
-                        let relative = file.relative.clone();
+                        let read = engine.call::<git_calls::FileDiff>(
+                            None,
+                            git_calls::FileDiff {
+                                checkout: checkout.clone(),
+                                path: file.relative.clone(),
+                                changes: changes.clone(),
+                                staged: Some(staged == Some(true)),
+                            },
+                        );
                         let work_counter = counter.clone();
                         let loaded = cx
                             .background_executor()
                             .spawn(async move {
-                                let diff = match &tab {
-                                    ReviewTab::File { .. } => unreachable!(),
-                                    ReviewTab::Changes { cwd, .. } => scm::file_diff(
-                                        &PathBuf::from(cwd),
-                                        &relative,
-                                        staged == Some(true),
-                                    ),
-                                    ReviewTab::Commit { cwd, sha, .. } => {
-                                        scm::commit_file_diff(&PathBuf::from(cwd), sha, &relative)
-                                    }
-                                    ReviewTab::Session { cwd, session, .. } => {
-                                        session_file_diff(cwd, *session, &relative)
-                                    }
-                                };
+                                let diff = read.await.map(|sides| sides.diff);
                                 if work_counter.load(Ordering::SeqCst) != generation {
                                     return None;
                                 }
@@ -1174,7 +1153,7 @@ impl ReviewPane {
                                     }
                                     Err(error) => Some(Arc::new(Loaded {
                                         version: None,
-                                        diff: Arc::new(FileDiff::default()),
+                                        diff: Arc::new(DiffSides::default()),
                                         unified: None,
                                         additions: 0,
                                         deletions: 0,
@@ -1392,6 +1371,11 @@ impl ReviewPane {
     }
 
     fn diff_event(&mut self, ix: usize, event: &DiffEvent, cx: &mut Context<Self>) {
+        /// What a diff's action asks of the checkout.
+        enum Change {
+            Stage(StageTarget),
+            Discard(String),
+        }
         if self.closed {
             return;
         }
@@ -1402,9 +1386,8 @@ impl ReviewPane {
             }
             return;
         };
-        let cwd = PathBuf::from(cwd);
-        let (id, work): (SharedString, Box<dyn FnOnce() -> Result<(), String> + Send>) = match event
-        {
+        let checkout = cwd.clone();
+        let (id, change) = match event {
             DiffEvent::Comment(text) => {
                 cx.emit(ReviewEvent::Comment(text.clone()));
                 return;
@@ -1413,17 +1396,11 @@ impl ReviewPane {
                 let Some(relative) = id.strip_prefix("unstaged:").map(str::to_owned) else {
                     return;
                 };
-                let stage = matches!(event, DiffEvent::StageFile(_));
-                (
-                    id.clone(),
-                    Box::new(move || {
-                        if stage {
-                            scm::stage_file(&cwd, &relative)
-                        } else {
-                            scm::discard_file(&cwd, &relative)
-                        }
-                    }),
-                )
+                if matches!(event, DiffEvent::StageFile(_)) {
+                    (id.clone(), Change::Stage(StageTarget::Path(relative)))
+                } else {
+                    (id.clone(), Change::Discard(relative))
+                }
             }
             DiffEvent::StageHunk(id, chunk) => {
                 let Some(relative) = id.strip_prefix("unstaged:").map(str::to_owned) else {
@@ -1433,31 +1410,60 @@ impl ReviewPane {
                     return;
                 };
                 // The same diff the view showed, so the same hunk is staged.
-                let Some(next) =
+                let Some(contents) =
                     diff::stage_chunk(&loaded.diff.original, &loaded.diff.current, *chunk)
                 else {
                     return;
                 };
-                (
-                    id.clone(),
-                    Box::new(move || scm::stage_contents(&cwd, &relative, next.as_bytes())),
-                )
+                let target = StageTarget::Contents {
+                    path: relative,
+                    contents,
+                };
+                (id.clone(), Change::Stage(target))
             }
         };
         let view = source.view.clone();
+        // A whole file's stage or discard shows at once in the project's
+        // Changes; a hunk waits for the engine's status.
+        let echo = match &change {
+            _ if self.git.read(cx).project() != checkout => None,
+            Change::Stage(StageTarget::Path(path)) => Some(GitEcho::Stage(Some(path.clone()))),
+            Change::Discard(path) => Some(GitEcho::Discard(Some(path.clone()))),
+            Change::Stage(_) => None,
+        };
+        let engine = crate::engine_client::local(cx);
+        let op = OpId::new();
+        let work = match change {
+            Change::Stage(target) => {
+                Either::Left(engine.call::<Stage>(Some(op), Stage { checkout, target }))
+            }
+            Change::Discard(path) => {
+                let path = Some(path);
+                Either::Right(engine.call::<Discard>(Some(op), Discard { checkout, path }))
+            }
+        };
         view.update(cx, |v, cx| {
             v.busy_id = Some(id.clone());
             cx.notify();
         });
-        let task = cx.background_executor().spawn(async move { work() });
+        if let Some(echo) = echo {
+            self.git.update(cx, |git, cx| git.echo(op, echo, cx));
+        }
+        let task = cx.background_executor().spawn(work);
         cx.spawn(async move |this, cx| {
-            let result = task.await;
+            let result = task.await.and_then(|outcome| match outcome {
+                Outcome::Applied => Ok(()),
+                Outcome::Rejected(rejection) => Err(format!("Not applied: {rejection:?}")),
+            });
             let _ = this.update(cx, |this, cx| {
                 view.update(cx, |v, cx| {
                     v.busy_id = None;
                     cx.notify();
                 });
-                this.git.update(cx, |git, cx| git.changed(cx));
+                this.git.update(cx, |git, cx| {
+                    git.settle(op, cx);
+                    git.changed(cx);
+                });
                 if let Err(error) = result {
                     log_error(&error);
                 }
@@ -1914,6 +1920,8 @@ fn centered() -> gpui::Div {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     struct Repo(PathBuf);
     impl Repo {
@@ -2220,7 +2228,7 @@ mod tests {
                 "huge".into(),
                 Arc::new(Loaded {
                     version: None,
-                    diff: Arc::new(FileDiff {
+                    diff: Arc::new(DiffSides {
                         current: "x".repeat(MAX_CACHED_TEXT_BYTES + 1),
                         ..Default::default()
                     }),

@@ -49,7 +49,9 @@ pub struct Person {
     pub avatar_url: String,
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+// Named apart from the protocol's `Item` so its schema traces on its own; JSON never shows the
+// name.
+#[serde(default, rename = "InboxItem", rename_all = "camelCase")]
 pub struct Item {
     pub provider: String,
     pub kind: String,

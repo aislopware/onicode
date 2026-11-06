@@ -34,13 +34,13 @@ mod diff_view;
 mod editor_analysis;
 mod editor_scrollbar;
 mod editor_syntax;
+mod engine_client;
 mod explorer;
 mod file_editor;
 mod file_icons;
 mod fixtures;
 mod fonts;
 mod frame_log;
-mod fs_watch;
 mod git_cache;
 mod git_graph;
 mod git_picker;
@@ -595,6 +595,7 @@ mod native_tests {
                             text: "Changed streaming tail".into(),
                             first: true,
                             sent_at: None,
+                            id: None,
                         }],
                         cx,
                     );

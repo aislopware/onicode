@@ -38,11 +38,11 @@ presentation) are re-exported from `onicode-core` until step 6. Then they move i
 `crates/app` stops depending on core.
 
 ```rust
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 pub trait Call  { const NAME: &'static str; const AGENT: bool = false; type Params; type Reply; }
 pub trait Watch { const NAME: &'static str; type Params; type State; type Event; }
 pub struct Cursor { pub epoch: u64, pub seq: u64 }
-pub enum Item<S, E> { Snapshot { at: Cursor, state: S }, Events { first: u64, events: Vec<E> }, Resync }
+pub enum Item<S, E> { Snapshot { at: Cursor, state: S }, Events { first: u64, last: u64, events: Vec<E> }, Resync }
 pub struct Routed<T> { pub engine: Option<EngineId>, pub op: Option<OpId>, pub body: T }
 pub enum Outcome { Applied, Rejected(Rejection) } // Rejection: AlreadyResolved, StaleRev, Gone, Denied(String)
 
@@ -68,8 +68,8 @@ first port is a translation, not a redesign.
 | Engine | `WatchMachines` (local engine only: directory, link path, versions, live-agent counts) | `Hello`, `EngineInfo`, `UpdateEngine`, `StopEngine` |
 | Workspace | `WatchWorkspace` (session summaries with marks, projects, folders and groups, reminders, unread) | `CreateSession`, `Rename`, `Archive`, `Pin`, `Delete`, `SetWorkItem`, `SetReminder`, `SaveGroups`, `SearchSessions`, notes |
 | Session | `WatchSession {session, since, window_turns}` | `Send`, `Steer`, `Stop`, `Decide {approval, answer}`, `Answer`, `KeepQuestionOpen`, `QueueEdit {id, base_rev, edit}`, `SendNow`, `SteerNow`, `Configure`, `EditLastTurn`, `Rewind`, `Fork`, `Btw`, `SwitchProvider`, `ReadTranscript {before_turn, turns}` |
-| Files | `WatchDir {root, path}` (listings with a scan id) | `ListDir`, `Stat`, `Read`, `Write`, `Create`, `Move`, `Delete`, `SearchPaths`, `SearchContent`, `ListDrives`, `SearchHomeFolders` |
-| Git | `WatchGit {checkout}` (status and branch, from the engine's fs watch) | `Diff`, `FileDiff`, `Branches`, `Refs`, `History`, `Switch`, `CreateBranch`, `Stage`, `Unstage`, `Discard`, `Commit`, `Push`, `Pull`, `CreatePr`, `Worktrees`, `CreateWorktree`, `RemoveWorktree`, `RestoreCheckpoint` |
+| Files | `WatchDir {root, path}` (listings with a scan id) | `ListDir`, `Stat`, `Read`, `Write`, `Create`, `Move`, `DeletePath`, `SearchPaths`, `SearchContent`, `ListDrives`, `SearchHomeFolders`, `SaveAttachments`, `SaveNoteImages` |
+| Git | `WatchGit {checkout}` (status and branch, from the engine's fs watch) | `ReadStatus`, `Diff`, `FileDiff`, `Branches`, `Refs`, `History`, `Switch`, `CreateBranch`, `Stage`, `Unstage`, `Discard`, `Commit`, `Push`, `Pull`, `Sync`, `HeadMessage`, `CommitContext`, `PrContext`, `PrStatus`, `CreatePr`, `Worktrees`, `CreateWorktree`, `RemoveWorktree`, `ReadCheckpoint`, `RestoreCheckpoint`, `ReadSessionChanges` |
 | Terminal | a `StreamKind::Terminal` stream per attach (`terminal.md`, `topology.md`) | `OpenTerminal {cwd, size}`, `ListTerminals`, `Resize`, `CloseTerminal` |
 | Agents | `WatchAccounts` (accounts with usage from the streams) | `Catalog`, `Skills`, `Commands`, `AddAccount`, `Login`, `Logout`, `SetProviderEnabled`, MCP servers, `HarnessUpdates` |
 | Engine settings | `WatchEngineSettings` | `SetEngineSetting` (typed keys: keep-awake, worktree defaults, title generation, hooks) |
@@ -98,7 +98,83 @@ engine of its own and dials every engine directly through `EngineList`.
 and that goes. Each watcher has a bounded queue (256 batches or 4 MiB). Within the queue, an `Append` merges
 into the pending `Append` for the same row, and a `Rows` patch absorbs older patches of the rows it covers. A
 watcher that still overflows is dropped to `Resync` and comes back with its cursor. QUIC stream flow control
-(16 MiB per stream) bounds the wire.
+(16 MiB per stream) bounds the wire. Merged events cover more numbers than they are, so `Item::Events` carries
+`first` and `last` and the watcher's cursor moves to `last`; a `Status` also folds into a pending `Status`
+unless a finished turn sits between them.
+
+**Step 3 as built.** `Row.id` holds the prompt's `MessageId` only while the engine holds the session live; the
+store does not keep it, so rows read back carry none. The protocol does not carry `Settings`' transport-only
+fields (the prepared prompt, the turn's model identity, the environment, the queued message's id) or the stop
+flag, so until the composer, catalog and queue move into the engine the app stages them in process
+(`SessionHub::stage`) under the call's `MessageId`. The conversation still merges `turn::Update`s: a `Viewer`
+mirrors the session from its watch and folds what arrived into one `Update` per beat. The follow-up queue stays
+app-owned, its steers sent as `Steer` with the queued message staged whole; `SendNow`, `SteerNow`,
+`EditLastTurn`, `Rewind`, `Fork`, `Btw` and `SwitchProvider` answer "not served yet" until step 4.
+
+**Step 4 as built.** The engine's `WorkspaceHub` holds the workspace (every session's summary, the projects'
+folders, reminders, orchestration summaries, the note count and the automation runs waiting to start) and serves
+it as `WatchWorkspace` with a session's seq, ring and backpressure. Only the Workspace calls change it, each
+answered from the ledger on repeat; a created session takes the viewer's `SessionId`. A session created that
+way which no turn has started in is removed when its last session watcher leaves, once the store shows no rows and
+no saved draft in it (another viewer of the engine may have used it), and every viewer sees it go as `Removed`;
+the mark lives in memory, so a session left from an earlier engine run stays. The desktop holds no session watch
+while a blank chat is open, so what it shows of blank chats is still monocode's own draft behaviour. Sessions are
+keyed there by the store's row id beside their `SessionId`, because folders, reminders and the saved layout name sessions by row
+until `SessionKey`; `SessionSummary.key` is the id other tools know a session by. The engine runs the reminder and
+automation schedulers on its own clock (a beat at start, then every 30 s in process; tests beat in virtual time),
+recovers runs an earlier engine claimed, keeps and retries Inbox event claims, generates titles and worktree branch
+names, stores notes under the id the viewer minted (`CreateNote` refuses a taken one, so a new note opens in the
+frame it is made) and keeps orchestration summaries; a plan's dispatch is the pure `orchestration::Run`. A session's
+summary marks a saved draft as `SaveQueue` stores or clears it. The shell mirrors the watch into the maps its views
+already read, moving only the fields whose engine value changed (a title, pin or draft mark the app set stays until
+the engine moves that field), and echoes each call in the same frame until its receipt; a refused echo returns to
+the engine's value.
+A conversation reads its record and transcript (`ReadSession`, `ReadTranscript`) and saves its queue (`SaveQueue`)
+through the Session calls. `SendNow` and `SteerNow` take a stored queued message by its `MessageId`; the desktop
+steers with `SteerNow` and still launches a queued message with `Send`. `EditLastTurn` replaces the turn that
+`RecallLastTurn` holds. A side question (`Btw`, `ReadBtw`, `SaveBtw`, `StopBtw`) streams its answer as `BtwText`
+events to a watch that holds no turns. Deleting a session stops its title generation, work item lookup and branch
+naming, so no provider or `gh` runs for it after it goes; closing the conversation stops its side answers with
+`StopBtw`, as monocode's drop did. `Rewind`, `Fork` and `SwitchProvider` stay unserved until the
+composer and accounts move (step 6).
+App-side for now: a run's prompt still goes through the conversation, since the composer and accounts move in step
+6 (the engine claims the run, creates its session and records its end); the Inbox view still fetches from its
+providers and reports what appeared (`ClaimInboxEvents`) until the providers' fetch moves with a watch of its own;
+the Automations view edits definitions, and the app bridge (`sessions.create`, `sessions.read`, notes actions,
+receipts) uses the store, until settings move (step 6); the layout and seen markers are preferences (step 6); note
+images, attachments, worktree removal and session search are files and search (step 5). `PROTOCOL` is 4; the golden
+file is re-recorded with `ONICODE_GOLDEN=record`.
+
+**Step 5 as built.** The engine's `FilesHub` and `CheckoutHub` serve `WatchDir` and `WatchGit` with the
+session's numbering and backpressure (one generic `Topic`: ring of 2048 events or 4 MiB, a queue of 256 batches
+or 4 MiB, a pending listing or status replaced by the next, `Resync` past that; a watcher that comes back with a
+backlog bigger than its queue gets a snapshot instead). Both events are whole states, so a viewer replaces what it
+holds. Each watched root or checkout has one platform watch (`notify`, FSEvents) and a pump thread: reports are
+renamed from the resolved root (`/private/var`) to the root the viewer named, filtered (build output, Git's object
+store and lock files never move a status), and coalesced in virtual time: a burst settles 300 ms after its first
+change, more than 4096 paths or a dropped report rereads everything, and a repair read runs every 30 s (a poll every
+2 s where no platform watch starts). A rescan never blocks a turn: it runs on the pump thread, listings on the
+hub's spawner, and only a listing or status that changed is published. Calls that change a directory relist it
+before they reply, and Git calls that change a checkout reread its status in the same lane slot, so a viewer
+holds the covering listing or status before the receipt; a status read older than one already offered is
+dropped. Git runs in two lanes the caller picks: a foreground lane of 8 slots for what a person waits on (calls and
+the watch's burst reads) and a background lane of 2 for pull-request discovery and repair reads, so a background
+flood never holds a foreground slot. Mutating calls (`Write`, `Create`, `Move`, `DeletePath`, `SaveAttachments`,
+`SaveNoteImages`, and every Git call that changes a checkout, a branch, a worktree or a checkpoint) run once per
+`OpId` through a ledger over the store's `ops` table; a failure is not recorded, so its retry runs again. Reads
+come back whole in one reply: `Read` carries the file's FNV-1a digest, answers `Unchanged` when the viewer's
+digest still matches (the editor's 2 s poll then moves no bytes), returns images as base64 and refuses files the
+editor cannot show with the reason; `Write` takes the digest it was read at and refuses to overwrite a file that
+changed since. A newer `SearchContent` or `SearchPaths` under the same search id stops the older one.
+The app's `ProjectGit` mirrors `WatchGit` for the current project and shows stage, unstage and discard in the
+frame they are made (`GitEcho`) until their reply; the explorer watches every loaded folder with `WatchDir` and
+echoes create, move and delete the same way. Editor buffers stay in the app until save. `git_cache` holds `Refs`
+replies for the branch and worktree pickers. `fs_watch.rs` left the app, and with it the app's `notify`.
+App-side for now: revealing in Finder and screenshots (they act on the viewer's own Mac); the commit message and
+pull-request text prompts, which run the viewer's provider until accounts move (step 6), and the phone bridge's
+Git, which goes with `mobile/` (step 11); the Settings → Worktrees page data (locked, dirty and unpushed marks)
+and a session's worktree membership, which are store and settings reads (step 6); `.git/HEAD` read for the
+project menu's branch label; session search. `PROTOCOL` is 5.
 
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,

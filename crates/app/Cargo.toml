@@ -11,6 +11,10 @@ serde_json.workspace = true
 onicode-core = { path = "../core" }
 # Turns run in the engine library, in process until the engine runs on its own (engine.md).
 onicode-engine.workspace = true
+# Local turns run in the engine's SessionHub, watched and driven over the in-memory transport.
+onicode-protocol.workspace = true
+onicode-rpc.workspace = true
+futures.workspace = true
 # Onicode's updater: the release feed, staging and the bundle swap. Its async
 # calls run on a current-thread tokio runtime inside a background task.
 onicode-update = { path = "../update" }
@@ -36,7 +40,6 @@ rquickjs = "0.14.0"
 tree-sitter = "0.26"
 tree-sitter-language = "0.1"
 streaming-iterator = "0.1"
-notify = "8.2"
 similar = "2.7"
 tree-sitter-javascript = "0.25"
 tree-sitter-typescript = "0.23"

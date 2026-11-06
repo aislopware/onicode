@@ -1,11 +1,14 @@
 //! The Session group: one session's state and events ([`WatchSession`]) and the commands that
-//! drive its turns. Every command but [`ReadTranscript`] is mutating: it travels with an
-//! [`OpId`] in its [`Routed`](crate::Routed) and replies an [`Outcome`], which a
+//! drive its turns. Every command but the reads ([`ReadTranscript`], [`ReadSession`],
+//! [`RecallLastTurn`] and [`ReadBtw`]) is mutating: it travels with an [`OpId`] in its
+//! [`Routed`](crate::Routed) and replies an [`Outcome`] (or a reply holding one), which a
 //! [`SessionEvent::Receipt`] repeats to every watcher.
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::accounts::Profile;
 use crate::agent::{Approval, Handoff, Question, Settings, TurnInfo, TurnMetrics};
 use crate::provider::{BackgroundTask, NativeCommand};
 use crate::transcript::Row;
@@ -75,6 +78,12 @@ pub enum SessionEvent {
     Receipt {
         op: OpId,
         outcome: Outcome,
+    },
+    /// The answer to the by-the-way thread `thread` grew by `text` ([`Btw`]). Not kept in the
+    /// state: the call's reply holds the whole answer.
+    BtwText {
+        thread: String,
+        text: String,
     },
 }
 
@@ -229,7 +238,9 @@ pub struct QueueEdit {
 }
 session_call!(QueueEdit, agent: false, reply: Outcome);
 
-/// Stop the running turn and send the queued message `id` now.
+/// Send the queued message `id` as the next turn now: it leaves the stored queue, and a running
+/// turn is stopped first, the message following when it ends. Its receipt arrives with that
+/// turn's first update, as a [`Send`]'s does.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SendNow {
     pub session: SessionId,
@@ -237,7 +248,9 @@ pub struct SendNow {
 }
 session_call!(SendNow, agent: false, reply: Outcome);
 
-/// Steer the queued message `id` into the running turn now.
+/// Steer the queued message `id` into the running turn now: it leaves the stored queue, and
+/// returns to its head, paused with the error, if the provider refuses it. Its receipt arrives
+/// when the provider accepts or refuses it, as a [`Steer`]'s does.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SteerNow {
     pub session: SessionId,
@@ -245,23 +258,88 @@ pub struct SteerNow {
 }
 session_call!(SteerNow, agent: false, reply: Outcome);
 
-/// Replace the session's agent settings.
+/// Replace the session's provider and agent settings, unless the stored settings are newer by
+/// `revision` (`Rejected(StaleRev)`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Configure {
     pub session: SessionId,
+    pub provider: String,
     pub settings: Settings,
 }
 session_call!(Configure, agent: false, reply: Outcome);
 
-/// Replace the last turn's prompt and run it again.
+/// Read what the session's store holds besides its rows: what a viewer opening it starts from.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadSession {
+    pub session: SessionId,
+}
+session_call!(ReadSession, agent: false, reply: SessionRecord);
+
+/// [`ReadSession`]'s reply.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SessionRecord {
+    /// `None` until the session's settings were first saved.
+    pub settings: Option<Box<Settings>>,
+    pub context: Option<context::Usage>,
+    pub queue: follow_up::State,
+    /// Why the session takes no more turns: an edit changed the provider's context and the
+    /// transcript could not follow.
+    pub edit_recovery: Option<String>,
+}
+
+/// Replace the session's queue and saved draft whole, keeping copies of their attachments with
+/// the session. Replies with the queue as saved.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SaveQueue {
+    pub session: SessionId,
+    pub queue: follow_up::State,
+}
+session_call!(SaveQueue, agent: false, reply: follow_up::State);
+
+/// Recall the last turn for editing: its prompt goes back to the viewer's composer, and the
+/// engine holds the edit for [`EditLastTurn`]. `turn` is the provider's id of the turn, when the
+/// viewer knows it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecallLastTurn {
+    pub session: SessionId,
+    pub turn: Option<String>,
+}
+session_call!(RecallLastTurn, agent: false, reply: RecalledTurn);
+
+/// [`RecallLastTurn`]'s reply: the turn as the store holds it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecalledTurn {
+    /// The transcript index the edit drops rows from.
+    pub start: usize,
+    pub prompt: String,
+    pub attachments: Vec<PathBuf>,
+    pub provider: String,
+    pub provider_id: String,
+    pub account_id: String,
+    pub cwd: String,
+    /// The whole transcript the edit was recalled against.
+    pub rows: Vec<Row>,
+}
+
+/// Rewind the recalled last turn in the provider, then drop it from the transcript, so the
+/// viewer's next [`Send`] replaces it. `attachments` are the edited prompt's, checked first;
+/// `model` is the one the provider rewinds with. Without a recalled edit it is `Rejected(Gone)`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EditLastTurn {
     pub session: SessionId,
-    pub message: MessageId,
-    pub text: String,
     pub attachments: Vec<PathBuf>,
+    pub model: Option<String>,
 }
-session_call!(EditLastTurn, agent: false, reply: Outcome);
+session_call!(EditLastTurn, agent: false, reply: EditedTurn);
+
+/// [`EditLastTurn`]'s reply. A refusal that begins "Provider recovery required:" left the
+/// provider's context changed: the session takes no more turns.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditedTurn {
+    pub outcome: Outcome,
+    /// The provider session the transcript is bound to now.
+    pub provider_id: Option<String>,
+}
 
 /// Drop every turn from `turn` on.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -280,14 +358,80 @@ pub struct Fork {
 }
 session_call!(Fork, agent: false, reply: Outcome);
 
-/// Ask an aside about the session without adding to its turns.
+/// A by-the-way thread: an aside about the session, on a provider of its own, that never joins
+/// the session's turns.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BtwThread {
+    pub id: String,
+    /// The transcript index of the turn it asks about.
+    pub source_turn: usize,
+    /// The session as the thread saw it, the reference its answers start from.
+    pub snapshot: String,
+    pub provider: String,
+    pub model: Option<String>,
+    #[serde(default)]
+    pub cwd: String,
+    #[serde(default)]
+    pub account: Profile,
+    #[serde(default)]
+    pub effort: Option<String>,
+    #[serde(default)]
+    pub model_settings: HashMap<String, String>,
+    pub rows: Vec<Row>,
+    pub draft: String,
+    /// `draft`, `running`, `completed`, `stopped` or `error`.
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// A session's by-the-way threads, at a revision.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BtwThreads {
+    pub revision: u64,
+    pub threads: Vec<BtwThread>,
+}
+
+/// Read the session's by-the-way threads.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadBtw {
+    pub session: SessionId,
+}
+session_call!(ReadBtw, agent: false, reply: BtwThreads);
+
+/// Keep the session's by-the-way threads, unless the stored ones are at this revision or newer
+/// (`Rejected(StaleRev)`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SaveBtw {
+    pub session: SessionId,
+    pub threads: BtwThreads,
+}
+session_call!(SaveBtw, agent: false, reply: Outcome);
+
+/// Ask an aside about the session without adding to its turns: answer `thread`, whose rows end
+/// with the question. The answer streams to watchers as [`SessionEvent::BtwText`], is kept with
+/// the thread, and comes whole in the reply.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Btw {
     pub session: SessionId,
-    pub message: MessageId,
-    pub text: String,
+    pub thread: BtwThread,
 }
-session_call!(Btw, agent: false, reply: Outcome);
+session_call!(Btw, agent: false, reply: BtwAnswer);
+
+/// [`Btw`]'s reply: `Rejected(Denied("Stopped"))` when it was stopped. A repeat answered from
+/// the ledger carries no `text`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BtwAnswer {
+    pub outcome: Outcome,
+    pub text: Option<String>,
+}
+
+/// Stop the by-the-way thread `thread`'s running answer.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StopBtw {
+    pub session: SessionId,
+    pub thread: String,
+}
+session_call!(StopBtw, agent: false, reply: Outcome);
 
 /// Hand the session to another provider, account or model.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

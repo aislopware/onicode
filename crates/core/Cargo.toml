@@ -27,7 +27,8 @@ unicode-width = "0.2"
 onicode-mobile-link = { path = "../mobile-link" }
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "macros"] }
-uuid = { version = "1", features = ["v4"] }
+# `serde`: a prompt row carries its protocol `MessageId`; `v7`: the session uids the engine mints.
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
 if-addrs = "0.15"
 hostname = "0.4"
 igd-next = "0.18"

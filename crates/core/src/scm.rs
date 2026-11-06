@@ -89,8 +89,9 @@ pub struct HistoryCommit {
     pub head: bool,
 }
 
+/// Named `GitHistory` on the wire, beside the protocol's `History` call.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename = "GitHistory", rename_all = "camelCase")]
 pub struct History {
     pub head: Option<String>,
     pub commits: Vec<HistoryCommit>,

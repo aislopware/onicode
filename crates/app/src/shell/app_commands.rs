@@ -2,6 +2,8 @@
 use onicode_core::agent::Settings;
 use onicode_core::app_access as app;
 use onicode_core::app_access::bridge::{Call, Server};
+use onicode_protocol::OpId;
+use onicode_protocol::git::{CreateWorktree, NewWorktree, Refs};
 use serde_json::{Value, json};
 
 use super::*;
@@ -88,6 +90,16 @@ impl Shell {
     {
         let store = self.store.clone();
         let work = cx.background_executor().spawn(async move { work(store) });
+        self.app_settle(call, work, cx);
+    }
+
+    /// Answers `call` with what `work` did, after showing its effect.
+    fn app_settle(
+        &mut self,
+        call: Call,
+        work: gpui::Task<Result<(Value, Effect), String>>,
+        cx: &mut Context<Self>,
+    ) {
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -97,6 +109,7 @@ impl Shell {
                         Effect::Start(start) => {
                             let (summary, settings, draft, reveal, placement) = *start;
                             let id = summary.id;
+                            crate::engine_client::refresh_session(&this.store, id, cx);
                             this.draft_sessions.insert(id);
                             this.sidebar_hidden_sessions.remove(&id);
                             this.session_worktrees
@@ -445,39 +458,43 @@ impl Shell {
                                 return;
                             }
                             let deleting = self.group_writes.take();
-                            let store = self.store.clone();
                             self.group_writes = Some(cx.spawn(async move |this, cx| {
                                 if let Some(deleting) = deleting {
                                     deleting.await;
                                 }
-                                let result = cx
-                                    .background_executor()
-                                    .spawn(async move {
-                                        if locked(&store)?.sessions()?.iter().any(|s| s.id == id) {
-                                            Err("Could not delete session; its data was preserved"
-                                                .into())
-                                        } else {
-                                            Ok(json!({"sessionId":id,"deleted":true}))
-                                        }
-                                    })
-                                    .await;
-                                let _ = this
-                                    .update(cx, |this, cx| this.finish_app_call(call, result, cx));
+                                let _ = this.update(cx, |this, cx| {
+                                    let result = if this.session_summaries.contains_key(&id) {
+                                        Err("Could not delete session; its data was preserved"
+                                            .into())
+                                    } else {
+                                        Ok(json!({"sessionId":id,"deleted":true}))
+                                    };
+                                    this.finish_app_call(call, result, cx)
+                                });
                             }));
                             return;
                         } else if action == "sessions.archive" {
                             view.update(cx, |v, cx| v.stop_app_session(cx));
-                            self.app_background(
-                                call,
-                                move |store| {
-                                    locked(&store)?.set_archived(id, true)?;
-                                    Ok((
-                                        json!({"sessionId":id,"archived":true}),
-                                        Effect::Archive(id),
-                                    ))
-                                },
-                                cx,
-                            );
+                            let archived =
+                                crate::engine_client::call::<onicode_protocol::workspace::Archive>(
+                                    &self.store,
+                                    Some(onicode_protocol::OpId::new()),
+                                    onicode_protocol::workspace::Archive {
+                                        session: id,
+                                        archived: true,
+                                    },
+                                    cx,
+                                );
+                            let work = cx.spawn(async move |_, _| match archived.await? {
+                                onicode_protocol::Outcome::Applied => Ok((
+                                    json!({"sessionId":id,"archived":true}),
+                                    Effect::Archive(id),
+                                )),
+                                onicode_protocol::Outcome::Rejected(rejection) => {
+                                    Err(format!("Could not archive the session: {rejection:?}"))
+                                }
+                            });
+                            self.app_settle(call, work, cx);
                             return;
                         } else if action == "sessions.stop" {
                             view.update(cx, |v, cx| v.stop_app_session(cx));
@@ -564,7 +581,25 @@ impl Shell {
                                 } else {
                                     groups.add_to_folder(&folder, id);
                                     let name = groups.folder(&folder).unwrap().name.clone();
-                                    self.app_background(call,move|store|{locked(&store)?.save_groups(&project,&groups)?;Ok((json!({"sessionId":id,"folderId":folder,"folderName":name}),Effect::Groups(project,groups)))},cx);
+                                    let saved = crate::engine_client::call::<
+                                        onicode_protocol::workspace::SaveGroups,
+                                    >(
+                                        &self.store,
+                                        Some(onicode_protocol::OpId::new()),
+                                        onicode_protocol::workspace::SaveGroups {
+                                            project: project.clone(),
+                                            groups: groups.clone(),
+                                        },
+                                        cx,
+                                    );
+                                    let work = cx.spawn(async move |_, _| {
+                                        saved.await?;
+                                        Ok::<_, String>((
+                                            json!({"sessionId":id,"folderId":folder,"folderName":name}),
+                                            Effect::Groups(project, groups),
+                                        ))
+                                    });
+                                    self.app_settle(call, work, cx);
                                     return;
                                 }
                             }
@@ -573,31 +608,36 @@ impl Shell {
                 }
             },
             "worktrees.list" | "worktrees.create" => {
-                self.app_background(
-                    call,
-                    move |_| {
-                        let root = std::path::Path::new(&project);
-                        let value = if action == "worktrees.list" {
-                            let snapshot = onicode_core::git::snapshot(root)?;
-                            json!({"worktrees":snapshot.worktrees.iter().map(worktree_json).collect::<Vec<_>>(),"branches":snapshot.branches.iter().map(|b|json!({"name":b.name,"remote":b.remote})).collect::<Vec<_>>()})
-                        } else {
-                            let branch = app::text(&input, "branch", 400)?;
-                            let base = app::optional_text(&input, "base", 400)?;
-                            let existing = input["existing"].as_bool().unwrap_or(false);
-                            if existing && base.is_some() {
-                                return Err("base cannot be set for an existing branch".into());
-                            }
-                            worktree_json(&onicode_core::git::create_project_worktree(
-                                root,
-                                &branch,
-                                base.as_deref(),
-                                existing
-                            )?)
-                        };
-                        Ok((value, Effect::None))
-                    },
-                    cx,
-                );
+                let engine = crate::engine_client::local(cx);
+                let work = cx.background_executor().spawn(async move {
+                    let value = if action == "worktrees.list" {
+                        let snapshot = engine.call::<Refs>(None, Refs { checkout: project }).await?;
+                        json!({"worktrees":snapshot.worktrees.iter().map(worktree_json).collect::<Vec<_>>(),"branches":snapshot.branches.iter().map(|b|json!({"name":b.name,"remote":b.remote})).collect::<Vec<_>>()})
+                    } else {
+                        let branch = app::text(&input, "branch", 400)?;
+                        let base = app::optional_text(&input, "base", 400)?;
+                        let existing = input["existing"].as_bool().unwrap_or(false);
+                        if existing && base.is_some() {
+                            return Err("base cannot be set for an existing branch".into());
+                        }
+                        let tree = engine
+                            .call::<CreateWorktree>(
+                                Some(OpId::new()),
+                                CreateWorktree {
+                                    checkout: project,
+                                    worktree: NewWorktree::Project {
+                                        branch,
+                                        base,
+                                        existing,
+                                    },
+                                },
+                            )
+                            .await?;
+                        worktree_json(&tree)
+                    };
+                    Ok((value, Effect::None))
+                });
+                self.app_settle(call, work, cx);
                 return;
             }
             _ => Err("Unknown Operator action".into()),

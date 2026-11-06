@@ -1,5 +1,6 @@
 //! Composer.tsx / MessageQueue.tsx's durable follow-ups and saved user draft.
 use onicode_core::follow_up::{Message, State};
+use onicode_protocol::session::SaveQueue;
 
 use super::*;
 
@@ -36,16 +37,11 @@ impl Conversation {
         mode: Option<String>,
         cx: &gpui::App,
     ) -> Message {
-        static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let prepared = self.completion.read(cx).prepare_prompt(&text);
         Message {
             prepared_prompt: (prepared != text).then_some(prepared),
-            id: format!(
-                "composer-{}-{}-{}",
-                self.summary.id,
-                onicode_core::time::now_ms(),
-                SEQUENCE.fetch_add(1, Ordering::Relaxed)
-            ),
+            // The engine's id for the message: `SteerNow` and `SendNow` name it.
+            id: onicode_protocol::MessageId::new().to_string(),
             text,
             attachments,
             mode,
@@ -55,16 +51,13 @@ impl Conversation {
 
     pub(super) fn save_follow_ups(&mut self, cx: &mut Context<Self>) {
         self.follow_ups.state.revision += 1;
-        let mut snapshot = self.follow_ups.state.clone();
-        let revision = snapshot.revision;
-        let store = self.store.clone();
-        let id = self.summary.id;
-        let work = cx.background_executor().spawn(async move {
-            let directory = locked(&store)?.data_dir().map(Path::to_path_buf);
-            snapshot.retain_attachments(id, directory.as_deref())?;
-            locked(&store)?.save_follow_ups(id, &snapshot)?;
-            Ok::<_, String>(snapshot)
-        });
+        let queue = self.follow_ups.state.clone();
+        let revision = queue.revision;
+        let work = self.session_call::<SaveQueue>(
+            Some(OpId::new()),
+            move |session| SaveQueue { session, queue },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -178,16 +171,12 @@ impl Conversation {
                 .chars()
                 .take(42)
                 .collect();
-            let (store, id, title) = (
-                self.store.clone(),
-                self.summary.id,
-                self.summary.title.clone(),
-            );
-            cx.background_executor()
-                .spawn(async move {
-                    let _ = locked(&store).and_then(|s| s.title(id, &title));
-                })
-                .detach();
+            let body = Rename {
+                session: self.summary.id,
+                title: self.summary.title.clone(),
+                expected: None,
+            };
+            crate::engine_client::call::<Rename>(&self.store, Some(OpId::new()), body, cx).detach();
         }
         if !self.summary.has_messages {
             self.composer_motion.capture(self.composer_anchor.get());
@@ -786,7 +775,7 @@ mod tests {
         window
             .update(cx, |view, _, cx| {
                 view.busy = true;
-                view.controls = Some(controls);
+                view.controls = Some(controls.into());
                 view.input
                     .update(cx, |i, cx| i.set_text("first".into(), cx));
                 view.attachments.push("/tmp/image.png".into());
@@ -859,7 +848,7 @@ mod tests {
         window
             .update(cx, |view, _, cx| {
                 view.busy = true;
-                view.controls = Some(controls);
+                view.controls = Some(controls.into());
                 view.input
                     .update(cx, |input, cx| input.set_text("keep this".into(), cx));
                 view.send(cx);
@@ -890,7 +879,7 @@ mod tests {
         window
             .update(cx, |view, _, cx| {
                 view.busy = true;
-                view.controls = Some(controls);
+                view.controls = Some(controls.into());
                 view.follow_ups.ready = true;
                 view.input
                     .update(cx, |input, cx| input.set_text("keep this".into(), cx));
@@ -983,7 +972,7 @@ mod tests {
         window
             .update(cx, |view, _, cx| {
                 view.busy = true;
-                view.controls = Some(controls);
+                view.controls = Some(controls.into());
                 view.follow_ups.ready = true;
                 view.input
                     .update(cx, |input, cx| input.set_text("queued".into(), cx));
@@ -1021,7 +1010,7 @@ mod tests {
         window
             .update(cx, |view, _, cx| {
                 view.busy = true;
-                view.controls = Some(controls);
+                view.controls = Some(controls.into());
                 view.follow_ups.ready = true;
                 view.input
                     .update(cx, |input, cx| input.set_text("queued".into(), cx));
@@ -1165,7 +1154,7 @@ mod tests {
                 view.send(cx);
                 view.busy = true;
                 view.follow_ups.ready = true;
-                view.controls = Some(controls);
+                view.controls = Some(controls.into());
                 view.input
                     .update(cx, |i, cx| i.set_text("keep typing".into(), cx));
                 view.attachments.push("/tmp/new-file.txt".into());

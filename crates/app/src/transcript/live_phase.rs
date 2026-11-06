@@ -230,6 +230,7 @@ mod tests {
             text: text.into(),
             first: true,
             sent_at: None,
+            id: None,
         }
     }
     fn tool(i: usize) -> Row {

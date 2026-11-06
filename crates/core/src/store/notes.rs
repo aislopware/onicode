@@ -4,7 +4,9 @@ use std::path::{Component, Path, PathBuf};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::Store;
-use crate::notes::{MAX_BODY, Note, NoteImageAsset, NoteUpsert};
+use crate::notes::{
+    MAX_BODY, Note, NoteImageAsset, NoteUpsert, slug_candidates, slug_words, slugify,
+};
 const TITLE_MAX: usize = 200;
 const TAG_MAX: usize = 48;
 const TAGS_MAX: usize = 20;
@@ -273,33 +275,6 @@ fn normalize_title(title: &str) -> String {
     }
 }
 
-/// Lowercase ASCII words of `title` joined by single hyphens, untruncated.
-fn slug_words(title: &str) -> String {
-    let mut out = String::new();
-    let mut dash = false;
-    for ch in title.chars() {
-        let c = ch.to_ascii_lowercase();
-        if c.is_ascii_alphanumeric() {
-            out.push(c);
-            dash = false;
-        } else if !out.is_empty() && !dash {
-            out.push('-');
-            dash = true;
-        }
-    }
-    out.trim_end_matches('-').to_string()
-}
-
-fn slugify(title: &str) -> String {
-    let words = slug_words(title);
-    let slug = words[..words.len().min(48)].trim_end_matches('-');
-    if slug.is_empty() {
-        "note".into()
-    } else {
-        slug.into()
-    }
-}
-
 /// "Untitled" and "Untitled 2" read like generated slugs, so finalizing a
 /// pending note under such a title would just trade one placeholder for
 /// another; the note stays pending until it gets a real title. Checks the
@@ -316,13 +291,7 @@ fn is_placeholder_title(title: &str) -> bool {
 }
 
 fn unique_slug(conn: &Connection, title: &str) -> rusqlite::Result<String> {
-    let base = slugify(title);
-    for index in 0..1000 {
-        let candidate = if index == 0 {
-            base.clone()
-        } else {
-            format!("{base}-{}", index + 1)
-        };
+    for candidate in slug_candidates(title) {
         let taken: i64 = conn.query_row(
             "SELECT COUNT(*) FROM notes WHERE slug = ?1",
             params![candidate],
@@ -332,7 +301,7 @@ fn unique_slug(conn: &Connection, title: &str) -> rusqlite::Result<String> {
             return Ok(candidate);
         }
     }
-    Ok(format!("{base}-{}", now_millis()))
+    Ok(format!("{}-{}", slugify(title), now_millis()))
 }
 
 fn valid_id(id: &str) -> Result<(), String> {
@@ -412,13 +381,16 @@ impl Store {
         Ok(self.list_notes()?.into_iter().find(|note| note.id == id))
     }
 
-    pub fn create_note(&self, cwd: Option<String>) -> Result<Note, String> {
+    /// A new empty note under `id` (`crate::notes::new_id`, minted by whoever creates it), in
+    /// the project at `cwd` when there is one. An id already in use is refused: a create never
+    /// overwrites a note.
+    pub fn create_note(&self, id: &str, cwd: Option<String>) -> Result<Note, String> {
+        valid_id(id)?;
+        if self.get_note(id)?.is_some() {
+            return Err("A note with this id already exists".into());
+        }
         self.upsert_note(&NoteUpsert {
-            id: format!(
-                "note-{}-{:016x}",
-                crate::time::now_ms(),
-                rand::random::<u64>()
-            ),
+            id: id.to_owned(),
             source_cwd: cwd.filter(|cwd| crate::notes::is_project(cwd)),
             ..Default::default()
         })
@@ -489,7 +461,10 @@ impl Store {
         Ok(crate::notes::inject_prompt(text, &picked))
     }
 
-    pub(super) fn save_response_note(&self, note: &crate::response::Note) -> Result<(), String> {
+    pub(super) fn save_response_note(
+        &self,
+        note: &crate::response::ResponseNote,
+    ) -> Result<(), String> {
         if note.body.len() > MAX_BODY {
             return Err("Content is too large".into());
         }
@@ -758,7 +733,7 @@ mod tests {
     fn response_note_facade_and_legacy_settings_share_one_saved_identity() {
         let store = store();
         let session = store.create("codex", "/project").unwrap();
-        let mut response = crate::response::Note {
+        let mut response = crate::response::ResponseNote {
             id: 123,
             title: "Response".into(),
             body: "Saved response".into(),
