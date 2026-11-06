@@ -3817,25 +3817,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "monocode-mobile-link"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "jni",
- "p256",
- "pulldown-cmark",
- "quinn",
- "rcgen",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "socket2",
- "tokio",
- "x509-parser",
-]
-
-[[package]]
 name = "moxcms"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4703,8 +4684,8 @@ dependencies = [
  "image",
  "keyring",
  "libc",
- "monocode-mobile-link",
  "natpmp",
+ "onicode-mobile-link",
  "proptest",
  "quinn",
  "rand 0.9.5",
@@ -4940,6 +4921,25 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "tempfile",
+]
+
+[[package]]
+name = "onicode-mobile-link"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "jni",
+ "p256",
+ "pulldown-cmark",
+ "quinn",
+ "rcgen",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "socket2",
+ "tokio",
+ "x509-parser",
 ]
 
 [[package]]

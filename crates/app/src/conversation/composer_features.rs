@@ -156,7 +156,7 @@ impl Conversation {
                 }
                 self.save_settings(cx);
                 text = if rest.is_empty() && mode == "operator" {
-                    "Explain what you can do in MonoCode with the app CLI.".into()
+                    "Explain what you can do in Onicode with the app CLI.".into()
                 } else {
                     rest
                 };
@@ -227,7 +227,7 @@ impl Conversation {
             // Kept with the conversation so deleting it removes them.
             let root = locked(&store)?
                 .thread_attachments_dir(id)?
-                .unwrap_or_else(|| std::env::temp_dir().join("monocode-attachments"));
+                .unwrap_or_else(|| std::env::temp_dir().join("onicode-attachments"));
             std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
             for image in images {
                 let path = root.join(format!(

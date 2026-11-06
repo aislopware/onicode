@@ -38,7 +38,7 @@ fn operator_launch_applies_validated_overrides_without_transferring_app_access()
     };
     inherited
         .environment
-        .insert("MONOCODE_APP_TOKEN".into(), "private".into());
+        .insert("ONICODE_APP_TOKEN".into(), "private".into());
     let input = json!({"prompt":"Review","model":"test-model","runtimeMode":"read-only","effort":"high","modelSettings":{"fast":"true","custom":"b","serviceTier":"fast"}});
     let settings = launch_settings(&input, "codex", inherited, Kind::Codex, &[model()]).unwrap();
     assert_eq!(settings.access, AccessMode::ReadOnly);

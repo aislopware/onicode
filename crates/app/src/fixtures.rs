@@ -156,13 +156,13 @@ pub(crate) fn visual_story() -> Transcript {
         transcript.begin("tool");
         transcript.append(&tool(
             &format!("check-{id}"),
-            "monocode_visual:visual_check",
+            "onicode_visual:visual_check",
             input.clone(),
         ));
         transcript.begin("tool");
         transcript.append(&tool(
             &format!("show-{id}"),
-            "monocode_visual:visual_show",
+            "onicode_visual:visual_show",
             input,
         ));
         transcript.begin("visual");

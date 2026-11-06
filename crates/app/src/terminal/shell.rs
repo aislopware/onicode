@@ -181,7 +181,7 @@ mod tests {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let root = std::env::temp_dir().join(format!(
-            "monocode-shell-path-{}-{}",
+            "onicode-shell-path-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -248,6 +248,6 @@ mod tests {
             .output()
             .expect("the selected Windows shell must start");
         assert!(output.status.success());
-        assert!(String::from_utf8_lossy(&output.stdout).contains("monocode-terminal-ok"));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("onicode-terminal-ok"));
     }
 }

@@ -70,7 +70,7 @@ impl Job {
             inner: Mutex::new(JobData {
                 view: JobView {
                     id: uuid::Uuid::new_v4().to_string(),
-                    message: "Connecting to SSH and setting up MonoCode Host…".into(),
+                    message: "Connecting to SSH and setting up Onicode Host…".into(),
                     prompt: None,
                     done: false,
                     error: None,
@@ -246,11 +246,11 @@ pub enum HostPlatform {
     Windows,
 }
 
-const PLATFORM_PROBE: &[&str] = &["echo", "MONOCODE_PLATFORM", "$env:OS", "%OS%", "$OS"];
+const PLATFORM_PROBE: &[&str] = &["echo", "ONICODE_PLATFORM", "$env:OS", "%OS%", "$OS"];
 
 fn parse_platform(output: &str) -> Result<HostPlatform, String> {
     let marker = output
-        .rsplit_once("MONOCODE_PLATFORM")
+        .rsplit_once("ONICODE_PLATFORM")
         .ok_or("Could not identify the remote shell. Use cmd.exe, PowerShell, or a Unix shell.")?
         .1;
     Ok(
@@ -425,10 +425,10 @@ pub fn upgrade_script(platform: HostPlatform, port: u16) -> String {
     let script = bootstrap_script(platform);
     match platform {
         HostPlatform::Unix => {
-            format!("MONOCODE_HOST_FORCE_UPGRADE=1\nMONOCODE_HOST_PORT={port}\n{script}")
+            format!("ONICODE_HOST_FORCE_UPGRADE=1\nONICODE_HOST_PORT={port}\n{script}")
         }
         HostPlatform::Windows => format!(
-            "$env:MONOCODE_HOST_FORCE_UPGRADE = '1'\n$env:MONOCODE_HOST_PORT = '{port}'\n{script}"
+            "$env:ONICODE_HOST_FORCE_UPGRADE = '1'\n$env:ONICODE_HOST_PORT = '{port}'\n{script}"
         ),
     }
 }
@@ -670,9 +670,9 @@ pub fn device_name() -> String {
         .take(80)
         .collect();
     if name.is_empty() {
-        "MonoCode desktop".into()
+        "Onicode desktop".into()
     } else {
-        format!("MonoCode on {name}")
+        format!("Onicode on {name}")
     }
 }
 
@@ -724,9 +724,9 @@ mod tests {
     fn loopback_transport_preserves_host_and_reconnects() {
         let required = |key| std::env::var(key).expect("Run scripts/test-remote-ssh.py");
         let target = SshTarget {
-            target: required("MONOCODE_TEST_SSH_TARGET"),
-            port: Some(required("MONOCODE_TEST_SSH_PORT").parse().unwrap()),
-            remote_port: required("MONOCODE_TEST_HOST_PORT").parse().unwrap(),
+            target: required("ONICODE_TEST_SSH_TARGET"),
+            port: Some(required("ONICODE_TEST_SSH_PORT").parse().unwrap()),
+            remote_port: required("ONICODE_TEST_HOST_PORT").parse().unwrap(),
         };
         let make_command = || {
             let mut command = command(&target, false);
@@ -734,13 +734,13 @@ mod tests {
                 "-F",
                 "/dev/null",
                 "-i",
-                &required("MONOCODE_TEST_SSH_KEY"),
+                &required("ONICODE_TEST_SSH_KEY"),
                 "-o",
                 "IdentitiesOnly=yes",
                 "-o",
                 &format!(
                     "UserKnownHostsFile={}",
-                    required("MONOCODE_TEST_KNOWN_HOSTS")
+                    required("ONICODE_TEST_KNOWN_HOSTS")
                 ),
             ]);
             command
@@ -766,13 +766,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!(output.trim(), "remote-script-ok");
-        let environment = required("MONOCODE_TEST_ENVIRONMENT");
+        let environment = required("ONICODE_TEST_ENVIRONMENT");
         for _ in 0..2 {
             let tunnel = Tunnel::start_with_command(&target, None, None, make_command()).unwrap();
             let response = ureq::post(&format!("http://127.0.0.1:{}/rpc", tunnel.port))
                 .set(
                     "Authorization",
-                    &format!("Bearer {}", required("MONOCODE_TEST_TOKEN")),
+                    &format!("Bearer {}", required("ONICODE_TEST_TOKEN")),
                 )
                 .send_string(r#"{"version":1,"method":"environment.describe"}"#)
                 .unwrap();
@@ -831,26 +831,26 @@ mod tests {
         assert!(script.contains("\"$FORCE_UPGRADE\" = 1"));
         assert!(script.contains("service uninstall"));
         assert!(
-            upgrade_script(HostPlatform::Unix, 3774).starts_with("MONOCODE_HOST_FORCE_UPGRADE=1")
+            upgrade_script(HostPlatform::Unix, 3774).starts_with("ONICODE_HOST_FORCE_UPGRADE=1")
         );
         assert!(!upgrade_script(HostPlatform::Unix, 3774).contains('\r'));
         assert!(
             upgrade_script(HostPlatform::Windows, 3774)
-                .starts_with("$env:MONOCODE_HOST_FORCE_UPGRADE = '1'")
+                .starts_with("$env:ONICODE_HOST_FORCE_UPGRADE = '1'")
         );
     }
     #[test]
     fn remote_platform_probe_handles_cmd_powershell_and_unix() {
         assert_eq!(
-            parse_platform("MONOCODE_PLATFORM $env:OS Windows_NT $OS\r\n").unwrap(),
+            parse_platform("ONICODE_PLATFORM $env:OS Windows_NT $OS\r\n").unwrap(),
             HostPlatform::Windows
         );
         assert_eq!(
-            parse_platform("MONOCODE_PLATFORM\r\nWindows_NT\r\n%OS%\r\n").unwrap(),
+            parse_platform("ONICODE_PLATFORM\r\nWindows_NT\r\n%OS%\r\n").unwrap(),
             HostPlatform::Windows
         );
         assert_eq!(
-            parse_platform("MONOCODE_PLATFORM :OS %OS%\n").unwrap(),
+            parse_platform("ONICODE_PLATFORM :OS %OS%\n").unwrap(),
             HostPlatform::Unix
         );
         assert!(parse_platform("unrecognized shell").is_err());
@@ -912,7 +912,7 @@ mod tests {
     #[test]
     fn device_names_are_bounded_single_lines() {
         let name = device_name();
-        assert!(name.starts_with("MonoCode"));
+        assert!(name.starts_with("Onicode"));
         assert!(name.chars().count() <= 100);
         assert!(!name.chars().any(char::is_control));
     }

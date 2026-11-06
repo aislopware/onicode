@@ -1,5 +1,5 @@
 // ResourcePressureNotice.tsx: a footer chip while the machine is under
-// pressure, opening the running work MonoCode owns so it can be stopped.
+// pressure, opening the running work Onicode owns so it can be stopped.
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
@@ -413,9 +413,9 @@ impl ResourceMonitor {
                                     .line_height(px(19.5))
                                     .text_color(content(0.5))
                                     .child(if active {
-                                        "No running work found in MonoCode. Other apps may be using these resources."
+                                        "No running work found in Onicode. Other apps may be using these resources."
                                     } else {
-                                        "No running work found in MonoCode."
+                                        "No running work found in Onicode."
                                     }),
                             )
                         },

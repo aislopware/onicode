@@ -119,7 +119,7 @@ impl Element for Shimmer {
 
 /// A work icon by name. `monocode` is the app's own logo, for its tools.
 pub(crate) fn glyph(name: &'static str, side: f32) -> gpui::Div {
-    if name == "monocode" {
+    if name == "onicode" {
         return gpui::div()
             .size(gpui::px(side))
             .flex_shrink_0()
@@ -298,7 +298,7 @@ pub(crate) fn summary(tools: &[ToolCall], live: bool) -> (String, &'static str) 
         (agents, "bot"),
         (read_calls + searches, "search"),
         (others, "terminal"),
-        (chart_steps, "monocode"),
+        (chart_steps, "onicode"),
     ] {
         if count > most {
             most = count;

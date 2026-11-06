@@ -4,10 +4,8 @@ use super::*;
 
 #[gpui::test]
 fn replace_is_one_undo_and_autosave_formats_with_original_encoding(cx: &mut TestAppContext) {
-    let path = std::env::temp_dir().join(format!(
-        "monocode-editor-parity-{}.json",
-        std::process::id()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("onicode-editor-parity-{}.json", std::process::id()));
     let original = "\u{feff}{\"word\":\"hello\",\"other\":\"hello\"}\r\n";
     std::fs::write(&path, original).unwrap();
     cx.update(|cx| cx.set_global(crate::settings::Preferences::default()));
@@ -81,7 +79,7 @@ fn replace_is_one_undo_and_autosave_formats_with_original_encoding(cx: &mut Test
 #[gpui::test]
 fn autosave_refuses_external_edits_even_before_the_file_poll(cx: &mut TestAppContext) {
     let path = std::env::temp_dir().join(format!(
-        "monocode-autosave-conflict-{}.txt",
+        "onicode-autosave-conflict-{}.txt",
         std::process::id()
     ));
     std::fs::write(&path, "original\n").unwrap();
@@ -123,7 +121,7 @@ fn autosave_refuses_external_edits_even_before_the_file_poll(cx: &mut TestAppCon
 #[gpui::test]
 fn saving_a_clean_file_still_applies_the_format_on_save_preference(cx: &mut TestAppContext) {
     let path =
-        std::env::temp_dir().join(format!("monocode-clean-format-{}.json", std::process::id()));
+        std::env::temp_dir().join(format!("onicode-clean-format-{}.json", std::process::id()));
     std::fs::write(&path, "{\"value\":1}").unwrap();
     cx.update(|cx| cx.set_global(crate::settings::Preferences::default()));
     let window = cx.update(|cx| {

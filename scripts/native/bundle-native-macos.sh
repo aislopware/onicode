@@ -24,7 +24,7 @@ case "$native_data_mode" in
     exit 1
     ;;
 esac
-native_bundle="$native_target/Monocode Native.app"
+native_bundle="$native_target/Onicode.app"
 native_binary="$native_target/monocode-gpui"
 if [[ ! -f "$native_binary" ]]; then
   echo "Missing native executable: $native_binary" >&2
@@ -51,7 +51,7 @@ cp crates/monocode-gpui/assets/material/LICENSE "$native_licenses/material-icons
 rm -f "$native_licenses/Geist-OFL.txt"
 # Launch the binary itself: an exec'ing launcher changes the pid version, and macOS
 # then refuses the menu bar item. The app reads MonocodeDataMode from Info.plist.
-native_executable="monocode-gpui"
+native_executable="onicode-gpui"
 native_short_version="${native_version%%-*}"
 native_build_version="$native_short_version"
 if [[ "$native_version" == *-preview.* ]]; then
@@ -64,9 +64,9 @@ cat >"$native_bundle/Contents/Info.plist" <<PLIST
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>$native_executable</string>
 <key>MonocodeDataMode</key><string>$native_data_mode</string>
-<key>CFBundleIdentifier</key><string>dev.usemono.gpui</string>
-<key>CFBundleName</key><string>Monocode Native</string>
-<key>CFBundleDisplayName</key><string>Monocode Native</string>
+<key>CFBundleIdentifier</key><string>dev.aislopware.onicode</string>
+<key>CFBundleName</key><string>Onicode</string>
+<key>CFBundleDisplayName</key><string>Onicode</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$native_short_version</string>
 <key>CFBundleVersion</key><string>$native_build_version</string>
@@ -77,7 +77,7 @@ cat >"$native_bundle/Contents/Info.plist" <<PLIST
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
-native_identity="${MONOCODE_NATIVE_SIGNING_IDENTITY:--}"
+native_identity="${ONICODE_NATIVE_SIGNING_IDENTITY:--}"
 if [[ "$native_identity" = - ]]; then
   codesign --force --sign - "$native_bundle"
 else

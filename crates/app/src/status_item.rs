@@ -65,7 +65,7 @@ impl StatusItem {
             } else {
                 button.setTitle(&NSString::from_str("Mono"));
             }
-            button.setToolTip(Some(&NSString::from_str("MonoCode")));
+            button.setToolTip(Some(&NSString::from_str("Onicode")));
         }
         let menu = NSMenu::new(mtm);
         menu.setAutoenablesItems(false);
@@ -76,7 +76,7 @@ impl StatusItem {
             run.clone(),
         ));
         menu.addItem(&NSMenuItem::separatorItem(mtm));
-        menu.addItem(&Item::new(mtm, "Quit MonoCode", StatusAction::Quit, run));
+        menu.addItem(&Item::new(mtm, "Quit Onicode", StatusAction::Quit, run));
         item.setMenu(Some(&menu));
         Some(Self { item })
     }

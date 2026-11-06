@@ -9,10 +9,10 @@ impl Store {
         }
         Book::from_desktop(
             &preferences
-                .json("monocode.providerAccounts.v1")
+                .json("onicode.providerAccounts.v1")
                 .unwrap_or(json!({})),
             &preferences
-                .json("monocode.providerAccountSelections.v1")
+                .json("onicode.providerAccountSelections.v1")
                 .unwrap_or(json!({})),
         )
     }

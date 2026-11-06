@@ -74,7 +74,7 @@ impl ToolCall {
         }
     }
 
-    /// One of Monocode's own visual tools, under any provider's naming.
+    /// One of Onicode's own visual tools, under any provider's naming.
     pub fn visual_step(&self) -> Option<VisualStep> {
         visual_tool(&self.name)
     }

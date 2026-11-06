@@ -189,7 +189,7 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let dir = std::env::temp_dir().join(format!(
-                "monocode-session-transfer-{}",
+                "onicode-session-transfer-{}",
                 rand::random::<u128>()
             ));
             std::fs::create_dir_all(&dir).unwrap();

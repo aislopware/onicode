@@ -3,7 +3,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
-use monocode_mobile_link::{Address, PORT};
+use onicode_mobile_link::{Address, PORT};
 
 use super::host::MobileHost;
 
@@ -47,7 +47,7 @@ impl Mapping {
                     *port,
                     *local,
                     3600,
-                    "MonoCode mobile",
+                    "Onicode mobile",
                 )
                 .map_err(|e| e.to_string()),
         }
@@ -135,7 +135,7 @@ fn map() -> Result<Mapping, String> {
             igd_next::PortMappingProtocol::UDP,
             local,
             3600,
-            "MonoCode mobile",
+            "Onicode mobile",
         )
         .map_err(|e| e.to_string())?;
     Ok(Mapping::Upnp {
@@ -154,7 +154,7 @@ pub(super) fn restart(host: &MobileHost) {
     }
     let service = host.clone();
     let spawned = std::thread::Builder::new()
-        .name("monocode-mobile-router".into())
+        .name("onicode-mobile-router".into())
         .spawn(move || {
             let mut mapping: Option<Mapping> = None;
             let mut attempted = false;

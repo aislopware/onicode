@@ -743,7 +743,7 @@ impl Shell {
                         .min_h_0()
                         .min_w_0()
                         // Every project lands on a blank session, as in
-                        // Monocode; this is empty only while one is created.
+                        // Onicode; this is empty only while one is created.
                         .child({
                             let body = self.workspace_body(window, cx);
                             self.with_dock(body, window, cx)

@@ -127,7 +127,7 @@ impl Shell {
                 is_resizable: false,
                 is_minimizable: false,
                 window_background: crate::theme::window_backdrop(true),
-                app_id: Some("dev.usemono.quick-composer".into()),
+                app_id: Some("dev.aislopware.onicode.quick-composer".into()),
                 ..Default::default()
             },
             move |window, cx| {

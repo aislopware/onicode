@@ -115,7 +115,7 @@ mod tests {
         cx.update(|cx| cx.set_reduce_motion(true));
         let (window, _, session) = window(cx);
         let folder =
-            std::env::temp_dir().join(format!("monocode-wrap-prefs-{}", std::process::id()));
+            std::env::temp_dir().join(format!("onicode-wrap-prefs-{}", std::process::id()));
         std::fs::create_dir_all(&folder).unwrap();
         for file in ["one.txt", "two.txt"] {
             std::fs::write(folder.join(file), "a long line ".repeat(50)).unwrap();
@@ -321,10 +321,8 @@ mod tests {
             cx.set_reduce_motion(true);
         });
         let (window, _, session) = window(cx);
-        let path = std::env::temp_dir().join(format!(
-            "monocode-chat-pane-drag-{}.txt",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("onicode-chat-pane-drag-{}.txt", std::process::id()));
         std::fs::write(&path, "original\n").unwrap();
         let (chat, review) = window
             .update(cx, |shell, w, cx| {
@@ -529,7 +527,7 @@ mod tests {
         cx.update(|cx| cx.set_reduce_motion(true));
         let (window, _, session) = window(cx);
         let path =
-            std::env::temp_dir().join(format!("monocode-pane-drag-{}.txt", std::process::id()));
+            std::env::temp_dir().join(format!("onicode-pane-drag-{}.txt", std::process::id()));
         std::fs::write(&path, "original\n").unwrap();
         let file = path.to_string_lossy().into_owned();
         let review = window

@@ -14,7 +14,7 @@ actions!(application, [Hide, HideOthers, ShowAll]);
 #[action(namespace = application, no_json)]
 pub(crate) struct OpenUrl(pub &'static str);
 
-const REPO: &str = "https://github.com/hardbeat920/monocode";
+const REPO: &str = "https://github.com/aislopware/onicode";
 
 pub(crate) fn bind(cx: &mut App) {
     cx.on_action(|_: &Hide, cx| cx.hide());
@@ -49,17 +49,17 @@ pub(crate) fn install(prefs: &crate::settings::Preferences, cx: &mut App) {
         return;
     }
     cx.set_menus(vec![
-        Menu::new("Monocode Native").items([
-            MenuItem::action("About Monocode Native", About),
+        Menu::new("Onicode").items([
+            MenuItem::action("About Onicode", About),
             MenuItem::separator(),
             MenuItem::action("Settings…", OpenSettings),
             MenuItem::action("Check for Updates…", CheckForUpdates),
             MenuItem::separator(),
-            MenuItem::action("Hide Monocode Native", Hide),
+            MenuItem::action("Hide Onicode", Hide),
             MenuItem::action("Hide Others", HideOthers),
             MenuItem::action("Show All", ShowAll),
             MenuItem::separator(),
-            MenuItem::action("Quit Monocode Native", Quit),
+            MenuItem::action("Quit Onicode", Quit),
         ]),
         Menu::new("File").items([
             MenuItem::action("Open Project…", OpenProject),
@@ -139,21 +139,20 @@ pub(crate) fn install(prefs: &crate::settings::Preferences, cx: &mut App) {
             MenuItem::action("Zoom", ZoomWindow),
         ]),
         Menu::new("Help").items([
-            MenuItem::action("MonoCode Website", OpenUrl("https://usemono.dev")),
             MenuItem::action("View on GitHub", OpenUrl(REPO)),
             MenuItem::separator(),
             MenuItem::action(
                 "Report a Bug…",
                 OpenUrl(concat!(
-                    "https://github.com/hardbeat920/monocode",
-                    "/issues/new?template=bug_report.yml"
+                    "https://github.com/aislopware/onicode",
+                    "/issues/new"
                 )),
             ),
             MenuItem::action(
                 "Request a Feature…",
                 OpenUrl(concat!(
-                    "https://github.com/hardbeat920/monocode",
-                    "/issues/new?template=feature_request.yml"
+                    "https://github.com/aislopware/onicode",
+                    "/issues/new"
                 )),
             ),
         ]),

@@ -638,11 +638,7 @@ impl Conversation {
             stopping: false,
             notification_cancelled: false,
             draft_hint: false,
-            model: std::env::var(format!(
-                "MONOCODE_{}_MODEL",
-                summary.provider.to_uppercase()
-            ))
-            .ok(),
+            model: std::env::var(format!("ONICODE_{}_MODEL", summary.provider.to_uppercase())).ok(),
             resolved_model: None,
             settings: Settings {
                 account,
@@ -2005,7 +2001,7 @@ impl Conversation {
             }
             return;
         }
-        if std::env::var_os("MONOCODE_NATIVE_TRACE").is_some() {
+        if std::env::var_os("ONICODE_NATIVE_TRACE").is_some() {
             eprintln!("native settings session={} action={id}", self.summary.id);
         }
         if let Some(mode) = id.strip_prefix("access:") {
@@ -2231,7 +2227,7 @@ impl Conversation {
             return false;
         }
         let changed_model = self.summary.provider != picked.0.id() || self.model != picked.1;
-        if std::env::var_os("MONOCODE_NATIVE_TRACE").is_some() {
+        if std::env::var_os("ONICODE_NATIVE_TRACE").is_some() {
             eprintln!(
                 "native model session={} provider={} model={:?}",
                 self.summary.id,
@@ -2539,7 +2535,7 @@ impl Conversation {
                             .disabled(self.is_remote())
                             .icon("cursor-magic")
                             .icon_color(tint(SKY_300, 0.8))
-                            .description("Give this thread access to MonoCode"),
+                            .description("Give this thread access to Onicode"),
                         MenuAction::new("orchestrator", "Orchestrator")
                             .disabled(self.is_remote())
                             .icon("share")
@@ -3426,20 +3422,20 @@ impl Conversation {
     }
 }
 
-/// For profiling without clicking: with `MONOCODE_PERF_PROMPT=<text>`, the
+/// For profiling without clicking: with `ONICODE_PERF_PROMPT=<text>`, the
 /// first chat created switches to Claude and sends that text once, a few
 /// seconds after launch. scripts/perf/frame-run.sh sets it. It only runs
-/// while `MONOCODE_CLAUDE_BINARY` replaces `claude`, so it never reaches a
+/// while `ONICODE_CLAUDE_BINARY` replaces `claude`, so it never reaches a
 /// real provider.
 fn perf_prompt(cx: &mut Context<Conversation>) {
     static SENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    let Some(prompt) = std::env::var("MONOCODE_PERF_PROMPT")
+    let Some(prompt) = std::env::var("ONICODE_PERF_PROMPT")
         .ok()
         .filter(|prompt| !prompt.is_empty())
     else {
         return;
     };
-    if std::env::var_os("MONOCODE_CLAUDE_BINARY").is_none()
+    if std::env::var_os("ONICODE_CLAUDE_BINARY").is_none()
         || SENT.swap(true, std::sync::atomic::Ordering::Relaxed)
     {
         return;
@@ -4053,7 +4049,7 @@ mod tests {
     use super::git_branch;
     #[test]
     fn reads_branch_from_repositories_and_linked_worktrees() {
-        let root = std::env::temp_dir().join(format!("monocode-branch-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("onicode-branch-{}", std::process::id()));
         let repo = root.join("repo");
         let nested = repo.join("src/deep");
         std::fs::create_dir_all(repo.join(".git")).unwrap();

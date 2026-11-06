@@ -387,11 +387,11 @@ fn same_row(a: &UiRow, b: &UiRow) -> bool {
         }
 }
 
-/// `MONOCODE_VERIFY_ROW_HEIGHTS=1` re-measures every reused row height and
+/// `ONICODE_VERIFY_ROW_HEIGHTS=1` re-measures every reused row height and
 /// reports any that changed, to check that nothing resizes rows unnoticed.
 fn verify_heights() -> bool {
     static VERIFY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *VERIFY.get_or_init(|| std::env::var_os("MONOCODE_VERIFY_ROW_HEIGHTS").is_some())
+    *VERIFY.get_or_init(|| std::env::var_os("ONICODE_VERIFY_ROW_HEIGHTS").is_some())
 }
 
 impl TranscriptView {
@@ -415,7 +415,7 @@ impl TranscriptView {
             .height;
         if (fresh - retained).abs() > px(0.5) {
             eprintln!(
-                "monocode: row {:?} reused height {retained:?} but measures {fresh:?}",
+                "onicode: row {:?} reused height {retained:?} but measures {fresh:?}",
                 self.rows[ix].key
             );
         }

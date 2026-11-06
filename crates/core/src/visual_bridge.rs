@@ -15,10 +15,10 @@ use crate::visual::{self, VisualDocument};
 
 const MAX_WIRE_BYTES: usize = 1_048_576;
 const MAX_SOURCE_BYTES: usize = visual::MAX_SOURCE_BYTES;
-const ENV_ENDPOINT: &str = "MONOCODE_VISUAL_ENDPOINT";
-const ENV_TOKEN: &str = "MONOCODE_VISUAL_TOKEN";
-const ENV_SESSION: &str = "MONOCODE_VISUAL_SESSION";
-const ENV_EXECUTABLE: &str = "MONOCODE_VISUAL_EXECUTABLE";
+const ENV_ENDPOINT: &str = "ONICODE_VISUAL_ENDPOINT";
+const ENV_TOKEN: &str = "ONICODE_VISUAL_TOKEN";
+const ENV_SESSION: &str = "ONICODE_VISUAL_SESSION";
+const ENV_EXECUTABLE: &str = "ONICODE_VISUAL_EXECUTABLE";
 
 /// Loaded through visual_docs or the CLI only when authoring a visual. Keep the
 /// SDK out of ordinary prompts, server instructions and tool descriptions; only
@@ -100,7 +100,7 @@ const USAGE: &str = "### Native visuals\n\nAnswer data with a trend, comparison 
 pub fn instructions(environment: &HashMap<String, String>, deferred: bool) -> Option<String> {
     configured(environment).then(|| {
         if deferred {
-            format!("{USAGE} The monocode_visual tools may be deferred: load them with ToolSearch before you call them.")
+            format!("{USAGE} The onicode_visual tools may be deferred: load them with ToolSearch before you call them.")
         } else {
             USAGE.to_owned()
         }
@@ -117,7 +117,7 @@ pub fn requested_prompt(request: &str) -> String {
     };
     format!(
         "Create and publish at least one native inline visual in this conversation during this turn. The user invoked the visualization command, so a visual is required even if you would normally answer only in prose.\n\n\
-         Read `visual_docs`, build the visual, run `visual_check`, fix any errors, and call `visual_show` before finishing. The monocode_visual MCP tools may be deferred; load them with ToolSearch if needed. If these tools are unavailable, use the executable in MONOCODE_VISUAL_EXECUTABLE: run `\"$MONOCODE_VISUAL_EXECUTABLE\" visual docs`, write the JavaScript source to a file, then run `\"$MONOCODE_VISUAL_EXECUTABLE\" visual check --input FILE` and `\"$MONOCODE_VISUAL_EXECUTABLE\" visual show --input FILE --title TITLE`.\n\n\
+         Read `visual_docs`, build the visual, run `visual_check`, fix any errors, and call `visual_show` before finishing. The onicode_visual MCP tools may be deferred; load them with ToolSearch if needed. If these tools are unavailable, use the executable in ONICODE_VISUAL_EXECUTABLE: run `\"$ONICODE_VISUAL_EXECUTABLE\" visual docs`, write the JavaScript source to a file, then run `\"$ONICODE_VISUAL_EXECUTABLE\" visual check --input FILE` and `\"$ONICODE_VISUAL_EXECUTABLE\" visual show --input FILE --title TITLE`.\n\n\
          Use the native visual SDK, never a server, browser or HTML file. Include the embed line returned by visual_show in your reply, alongside concise supporting prose. If publication fails, explain the failure; do not claim a visual was shown. Never print capability environment variables.\n\n\
          User request:\n{request}"
     )
@@ -125,7 +125,7 @@ pub fn requested_prompt(request: &str) -> String {
 
 /// Claude permission rule that pre-approves every visual tool. Publishing
 /// only affects this conversation, so read-only and plan turns may use it.
-pub const CLAUDE_ALLOWED_TOOLS: &str = "mcp__monocode_visual";
+pub const CLAUDE_ALLOWED_TOOLS: &str = "mcp__onicode_visual";
 
 #[derive(Serialize, Deserialize)]
 struct Wire {
@@ -525,7 +525,7 @@ fn publish_with_environment(
     let get = |key| {
         environment
             .get(key)
-            .ok_or("Visual publication requires a running MonoCode session")
+            .ok_or("Visual publication requires a running Onicode session")
     };
     let endpoint: SocketAddr = get(ENV_ENDPOINT)?
         .parse()
@@ -604,12 +604,12 @@ pub fn client(args: &[String]) -> Result<Value, String> {
         .filter(|a| !matches!(a.as_str(), "help" | "--help" | "-h"))
     else {
         return Ok(
-            json!({"help":format!("Usage: monocode-gpui visual docs\n       monocode-gpui visual check|show --input FILE [--title TITLE] [--id ID]\nFILE is JavaScript source, or JSON with source/title/id/requestId. Use - for stdin.\n{DOCUMENTATION}")}),
+            json!({"help":format!("Usage: onicode visual docs\n       onicode visual check|show --input FILE [--title TITLE] [--id ID]\nFILE is JavaScript source, or JSON with source/title/id/requestId. Use - for stdin.\n{DOCUMENTATION}")}),
         );
     };
     if action == "docs" {
         if args.len() != 1 {
-            return Err("Usage: monocode-gpui visual docs".into());
+            return Err("Usage: onicode visual docs".into());
         }
         return Ok(documentation());
     }
@@ -687,8 +687,8 @@ fn documentation() -> Value {
     json!({
         "documentation": DOCUMENTATION,
         "cli": {
-            "check": "monocode-gpui visual check --input FILE",
-            "show": "monocode-gpui visual show --input FILE --title TITLE"
+            "check": "onicode visual check --input FILE",
+            "show": "onicode visual show --input FILE --title TITLE"
         }
     })
 }
@@ -714,7 +714,7 @@ pub fn acp_servers(environment: &HashMap<String, String>) -> Value {
     };
     // ACP's stdio server shape omits the transport discriminator.
     server.as_object_mut().unwrap().remove("type");
-    server["name"] = "monocode_visual".into();
+    server["name"] = "onicode_visual".into();
     server["env"] = [ENV_ENDPOINT, ENV_TOKEN, ENV_SESSION, ENV_EXECUTABLE]
         .into_iter()
         .map(|key| json!({"name":key,"value":environment[key]}))
@@ -736,7 +736,7 @@ pub fn configure_codex(command: &mut std::process::Command, environment: &HashMa
         ),
     ] {
         // JSON's strings and arrays are valid TOML literals for these values.
-        command.args(["-c", &format!("mcp_servers.monocode_visual.{key}={value}")]);
+        command.args(["-c", &format!("mcp_servers.onicode_visual.{key}={value}")]);
     }
 }
 
@@ -757,7 +757,7 @@ fn mcp_response(request: Value, environment: &HashMap<String, String>) -> Option
     let id = request.get("id")?.clone();
     let result = match request["method"].as_str().unwrap_or("") {
         "initialize" => Ok(
-            json!({"protocolVersion":request["params"]["protocolVersion"].as_str().unwrap_or("2024-11-05"),"capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"monocode_visual","version":env!("CARGO_PKG_VERSION")}}),
+            json!({"protocolVersion":request["params"]["protocolVersion"].as_str().unwrap_or("2024-11-05"),"capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"onicode_visual","version":env!("CARGO_PKG_VERSION")}}),
         ),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({"tools":tool_definitions()})),
@@ -843,7 +843,7 @@ mod tests {
             assert!(prompt.contains("visual_docs"));
             assert!(prompt.contains("visual_check"));
             assert!(prompt.contains("visual_show"));
-            assert!(prompt.contains("MONOCODE_VISUAL_EXECUTABLE"));
+            assert!(prompt.contains("ONICODE_VISUAL_EXECUTABLE"));
             assert!(prompt.ends_with(if request.is_empty() {
                 "Visualize the current topic using the conversation so far."
             } else {
@@ -866,7 +866,7 @@ mod tests {
     #[test]
     fn scoped_publication_acknowledges_after_save_and_deduplicates() {
         let server = Server::start(42).unwrap();
-        let environment = server.environment(std::path::Path::new("/test/monocode-gpui"));
+        let environment = server.environment(std::path::Path::new("/test/onicode"));
         let child_environment = environment.clone();
         let worker =
             std::thread::spawn(move || publish_with_environment(input(), &child_environment));
@@ -1016,7 +1016,7 @@ mod tests {
         assert!(arguments.contains(ENV_TOKEN));
         assert!(!arguments.contains(&environment[ENV_TOKEN]));
         let acp = acp_servers(&environment);
-        assert_eq!(acp[0]["name"], "monocode_visual");
+        assert_eq!(acp[0]["name"], "onicode_visual");
         assert_eq!(acp[0]["env"].as_array().unwrap().len(), 4);
         assert_eq!(mcp_server(&environment).unwrap()["command"], "/test/app");
     }

@@ -412,13 +412,13 @@ fn main() {
                         .wayland_decorations(cx.compositor_name()),
                     // Linux desktops match this to the .desktop file's
                     // StartupWMClass to show the app icon.
-                    app_id: Some("dev.usemono.gpui".into()),
+                    app_id: Some("dev.aislopware.onicode".into()),
                     window_background: theme::window_backdrop(true),
                     // GPUI owns the custom chrome. AppKit must not reinterpret
                     // its controls as native titlebar double-click/drag gestures.
                     app_owns_titlebar_drag: cfg!(target_os = "macos"),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Monocode Native".into()),
+                        title: Some("Onicode".into()),
                         // Windows also drops its caption: the app's drag areas
                         // hit-test as the caption and the frame still resizes.
                         appears_transparent: cfg!(any(target_os = "macos", target_os = "windows")),

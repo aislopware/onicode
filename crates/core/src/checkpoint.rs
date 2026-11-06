@@ -402,7 +402,7 @@ impl Store {
         if edited.is_empty() {
             return Ok(());
         }
-        let prefix = format!("refs/monocode/checkpoints/{session_id}/");
+        let prefix = format!("refs/onicode/checkpoints/{session_id}/");
         let refs = run_git(
             root,
             &[
@@ -705,7 +705,7 @@ impl Store {
                 repos.insert(saved.repo);
             }
         }
-        let prefix = format!("refs/monocode/checkpoints/{session_id}/");
+        let prefix = format!("refs/onicode/checkpoints/{session_id}/");
         for repo in repos {
             if !Path::new(&repo).is_dir() {
                 continue;
@@ -849,7 +849,7 @@ struct Change {
 }
 
 fn turn_ref(session: &str, turn: &str, side: &str) -> String {
-    format!("refs/monocode/checkpoints/{session}/{turn}/{side}")
+    format!("refs/onicode/checkpoints/{session}/{turn}/{side}")
 }
 
 // Git's NUL-delimited output already contains literal paths. Never trim them
@@ -939,14 +939,14 @@ fn capture_workspace(root: &Path, reference: &str) -> Result<String, String> {
         return Err("Workspace checkpoints are unavailable for sparse checkouts".into());
     }
     let index =
-        PrivateIndex(std::env::temp_dir().join(format!("monocode-checkpoint-{}", unique_id())));
+        PrivateIndex(std::env::temp_dir().join(format!("onicode-checkpoint-{}", unique_id())));
     let run = |args: &[&str]| {
         checked_output(
             git_command(root, args)
                 .env("GIT_INDEX_FILE", &index.0)
-                .env("GIT_AUTHOR_NAME", "MonoCode")
+                .env("GIT_AUTHOR_NAME", "Onicode")
                 .env("GIT_AUTHOR_EMAIL", "checkpoint@monocode.local")
-                .env("GIT_COMMITTER_NAME", "MonoCode")
+                .env("GIT_COMMITTER_NAME", "Onicode")
                 .env("GIT_COMMITTER_EMAIL", "checkpoint@monocode.local"),
         )
     };
@@ -970,7 +970,7 @@ fn capture_workspace(root: &Path, reference: &str) -> Result<String, String> {
             "commit-tree",
             tree.trim(),
             "-m",
-            "MonoCode workspace checkpoint",
+            "Onicode workspace checkpoint",
         ],
     ]
     .concat())?)
@@ -1000,14 +1000,14 @@ fn overlay_baseline(
     reference: &str,
 ) -> Result<String, String> {
     let index =
-        PrivateIndex(std::env::temp_dir().join(format!("monocode-checkpoint-{}", unique_id())));
+        PrivateIndex(std::env::temp_dir().join(format!("onicode-checkpoint-{}", unique_id())));
     let run = |args: &[&str]| {
         checked_output(
             git_command(root, args)
                 .env("GIT_INDEX_FILE", &index.0)
-                .env("GIT_AUTHOR_NAME", "MonoCode")
+                .env("GIT_AUTHOR_NAME", "Onicode")
                 .env("GIT_AUTHOR_EMAIL", "checkpoint@monocode.local")
-                .env("GIT_COMMITTER_NAME", "MonoCode")
+                .env("GIT_COMMITTER_NAME", "Onicode")
                 .env("GIT_COMMITTER_EMAIL", "checkpoint@monocode.local"),
         )
     };
@@ -1037,7 +1037,7 @@ fn overlay_baseline(
             "commit-tree",
             tree.trim(),
             "-m",
-            "MonoCode workspace checkpoint",
+            "Onicode workspace checkpoint",
         ],
     ]
     .concat())?)

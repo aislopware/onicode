@@ -1,6 +1,6 @@
-//! A memory readout for profiling: launched with `MONOCODE_MEMORY_LOG=<file>`,
+//! A memory readout for profiling: launched with `ONICODE_MEMORY_LOG=<file>`,
 //! the app appends its footprint and GPU usage to that file every 10 seconds.
-//! `open --env MONOCODE_MEMORY_LOG=/tmp/monocode-memory.log "Monocode Native.app"`
+//! `open --env ONICODE_MEMORY_LOG=/tmp/monocode-memory.log "Onicode.app"`
 use std::io::Write;
 use std::time::Duration;
 
@@ -9,7 +9,7 @@ use gpui::App;
 const PERIOD: Duration = Duration::from_secs(10);
 
 pub(crate) fn start(cx: &mut App) {
-    let Some(path) = std::env::var_os("MONOCODE_MEMORY_LOG") else {
+    let Some(path) = std::env::var_os("ONICODE_MEMORY_LOG") else {
         return;
     };
     let executor = cx.background_executor().clone();

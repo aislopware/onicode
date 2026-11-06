@@ -91,7 +91,7 @@ mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         let root = std::env::temp_dir().join(format!(
-            "monocode-worktree-naming-{}-{}",
+            "onicode-worktree-naming-{}-{}",
             std::process::id(),
             onicode_core::new_id(),
         ));

@@ -22,7 +22,7 @@ fn transfer(rows: &[Row]) -> Option<ToolCall> {
 #[test]
 fn a_provider_switch_shows_its_transfer_before_the_new_provider_answers() {
     let fixture = Fixture(std::env::temp_dir().join(format!(
-        "monocode-runtime-handoff-{}-{}",
+        "onicode-runtime-handoff-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

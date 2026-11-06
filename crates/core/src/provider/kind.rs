@@ -143,10 +143,10 @@ impl Kind {
         let name = self.install_name();
         match self.install_command() {
             Some(install) => format!(
-                "{name} not found (`{install}`). Install it, or restart MonoCode if it is already installed."
+                "{name} not found (`{install}`). Install it, or restart Onicode if it is already installed."
             ),
             None => format!(
-                "{name} not found. Install it, or restart MonoCode if it is already installed."
+                "{name} not found. Install it, or restart Onicode if it is already installed."
             ),
         }
     }
@@ -159,15 +159,15 @@ mod tests {
     fn unavailable_hint_matches_the_react_copy() {
         assert_eq!(
             Kind::Antigravity.unavailable_hint(),
-            "Antigravity ACP server (agy_acp_server.par) not found. Install it, or restart MonoCode if it is already installed."
+            "Antigravity ACP server (agy_acp_server.par) not found. Install it, or restart Onicode if it is already installed."
         );
         assert_eq!(
             Kind::Pi.unavailable_hint(),
-            "Pi CLI not found (`npm i -g @earendil-works/pi-coding-agent`). Install it, or restart MonoCode if it is already installed."
+            "Pi CLI not found (`npm i -g @earendil-works/pi-coding-agent`). Install it, or restart Onicode if it is already installed."
         );
         assert_eq!(
             Kind::Codex.unavailable_hint(),
-            "Codex CLI not found. Install it, or restart MonoCode if it is already installed."
+            "Codex CLI not found. Install it, or restart Onicode if it is already installed."
         );
     }
 }

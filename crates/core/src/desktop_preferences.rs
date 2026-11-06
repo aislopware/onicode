@@ -131,10 +131,10 @@ impl DesktopPreferences {
             }
             next.insert("appearance".into(), Value::Object(source));
         }
-        let model_controls = json!(match self.get("monocode.modelControls") {
+        let model_controls = json!(match self.get("onicode.modelControls") {
             Some("beside") => "beside",
             None if matches!(
-                self.get("monocode.composerEffortVisible"),
+                self.get("onicode.composerEffortVisible"),
                 Some("1" | "true")
             ) =>
                 "beside",
@@ -155,7 +155,7 @@ impl DesktopPreferences {
         }
         next.insert("model_controls".into(), model_controls);
         let provider = self
-            .json("monocode.lastModel")
+            .json("onicode.lastModel")
             .and_then(|last| last["harness"].as_str().map(str::to_owned))
             .filter(|id| crate::provider::Kind::parse(id).is_some());
         if provider.is_some() || baseline.get("default_provider").is_some() {
@@ -168,7 +168,7 @@ impl DesktopPreferences {
             );
         }
         // Convert desktop model IDs before they reach native launch controls.
-        let projects = self.json("monocode.projectProviderSettings.v1");
+        let projects = self.json("onicode.projectProviderSettings.v1");
         if projects.is_some() || baseline.get("project_providers").is_some() {
             let empty = Map::new();
             let projects = projects
@@ -216,10 +216,10 @@ impl DesktopPreferences {
     }
 
     fn projects(&self) -> Option<Vec<String>> {
-        let recents = self.json("monocode.recentProjects")?;
+        let recents = self.json("onicode.recentProjects")?;
         let recents = recents.as_array()?;
         let archived: HashSet<String> = self
-            .json("monocode.archivedProjects")
+            .json("onicode.archivedProjects")
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default()
             .iter()
@@ -236,11 +236,11 @@ impl DesktopPreferences {
             }
         }
         let order = self
-            .json("monocode.projectRailOrder")
+            .json("onicode.projectRailOrder")
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default();
         let pinned = self
-            .json("monocode.projectRailPinned")
+            .json("onicode.projectRailPinned")
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default();
         let pinned: HashSet<String> = pinned
@@ -273,7 +273,7 @@ impl DesktopPreferences {
             ("colors", "color"),
             ("custom-colors", "color"),
         ] {
-            let Some(values) = self.json(&format!("monocode:tab-group:{key}")) else {
+            let Some(values) = self.json(&format!("onicode:tab-group:{key}")) else {
                 continue;
             };
             let Some(values) = values.as_object() else {
@@ -336,7 +336,7 @@ impl DesktopPreferences {
                 record.entry(field).or_insert(default);
             }
         }
-        if let Some(backgrounds) = self.json("monocode:project-chat-backgrounds") {
+        if let Some(backgrounds) = self.json("onicode:project-chat-backgrounds") {
             for (path, settings) in backgrounds.as_object().into_iter().flatten() {
                 let Some(path_value) = settings["path"]
                     .as_str()
@@ -374,7 +374,7 @@ impl DesktopPreferences {
                     .as_str()
                     .filter(|s| ["empty", "all"].contains(s))
                     .or_else(|| {
-                        self.get("monocode.chatBackgroundScope")
+                        self.get("onicode.chatBackgroundScope")
                             .filter(|s| ["empty", "all"].contains(s))
                     })
                     .unwrap_or("all");
@@ -521,27 +521,24 @@ mod tests {
     fn canonical_preferences_replace_stale_sidecar_projects_and_appearance() {
         let preferences = prefs(&[
             (
-                "monocode.recentProjects",
+                "onicode.recentProjects",
                 json!([{"path":"/code/agent-terminal"},{"path":"/code/noodle"},{"path":"/code/archived"}]),
             ),
             (
-                "monocode.projectRailOrder",
+                "onicode.projectRailOrder",
                 json!(["/code/noodle", "/code/agent-terminal"]),
             ),
+            ("onicode.projectRailPinned", json!(["/code/agent-terminal"])),
             (
-                "monocode.projectRailPinned",
-                json!(["/code/agent-terminal"]),
-            ),
-            (
-                "monocode.archivedProjects",
+                "onicode.archivedProjects",
                 json!([{"path":"/code/archived"}]),
             ),
             (
-                "monocode:tab-group:labels",
-                json!({"/code/agent-terminal":"Monocode"}),
+                "onicode:tab-group:labels",
+                json!({"/code/agent-terminal":"Onicode"}),
             ),
             (
-                "monocode:tab-group:logos",
+                "onicode:tab-group:logos",
                 json!({"/code/agent-terminal":"/logos/saved.png"}),
             ),
         ]);
@@ -556,7 +553,7 @@ mod tests {
         assert!(workspace["active"].is_null());
         assert_eq!(
             workspace["project_appearance"]["/code/agent-terminal"]["name"],
-            "Monocode"
+            "Onicode"
         );
         assert_eq!(
             workspace["project_appearance"]["/code/agent-terminal"]["logo"],
@@ -572,10 +569,10 @@ mod tests {
     fn native_edits_survive_until_the_corresponding_desktop_setting_changes() {
         let initial = prefs(&[
             (
-                "monocode.recentProjects",
+                "onicode.recentProjects",
                 json!([{"path":"/code/a"},{"path":"/code/b"}]),
             ),
-            ("monocode:tab-group:labels", json!({"/code/a":"Desktop"})),
+            ("onicode:tab-group:labels", json!({"/code/a":"Desktop"})),
         ]);
         let mut workspace = json!({});
         initial.apply_workspace(&mut workspace);
@@ -596,11 +593,11 @@ mod tests {
         assert_eq!(workspace["project_appearance"]["/code/a"]["mascot"], "cat");
         let changed = prefs(&[
             (
-                "monocode.recentProjects",
+                "onicode.recentProjects",
                 json!([{"path":"/code/a"},{"path":"/code/new"}]),
             ),
             (
-                "monocode:tab-group:labels",
+                "onicode:tab-group:labels",
                 json!({"/code/a":"Renamed in desktop"}),
             ),
         ]);
@@ -620,7 +617,7 @@ mod tests {
     fn model_control_placement_matches_desktop_and_retains_explicit_native_edits() {
         let beside = DesktopPreferences {
             available: true,
-            values: BTreeMap::from([("monocode.modelControls".into(), "beside".into())]),
+            values: BTreeMap::from([("onicode.modelControls".into(), "beside".into())]),
         };
         let mut workspace = json!({"preferences":{"model_controls":"menu"}});
         beside.apply_workspace(&mut workspace);
@@ -636,7 +633,7 @@ mod tests {
         assert_eq!(workspace["preferences"]["model_controls"], "menu");
         let legacy = DesktopPreferences {
             available: true,
-            values: BTreeMap::from([("monocode.composerEffortVisible".into(), "1".into())]),
+            values: BTreeMap::from([("onicode.composerEffortVisible".into(), "1".into())]),
         };
         legacy.apply_workspace(&mut workspace);
         assert_eq!(workspace["preferences"]["model_controls"], "beside");
@@ -646,11 +643,11 @@ mod tests {
     fn desktop_provider_choices_seed_defaults_and_preserve_explicit_native_edits() {
         let source = prefs(&[
             (
-                "monocode.lastModel",
+                "onicode.lastModel",
                 json!({"harness":"claude","model":"claude:opus-4.8"}),
             ),
             (
-                "monocode.projectProviderSettings.v1",
+                "onicode.projectProviderSettings.v1",
                 json!({"/project":{"defaultHarness":"codex"}}),
             ),
         ]);

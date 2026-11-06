@@ -23,7 +23,7 @@ pub(crate) const ASK_EDITS_RULE: &str = "Write(**)";
 /// The `--config` arguments for a supervised `devin acp` child.
 pub(super) fn supervised_args() -> Result<Vec<String>, String> {
     let config = ask_before_edits(read_user_config()?.as_deref())?;
-    let dir = std::env::var_os("MONOCODE_NATIVE_DATA_DIR")
+    let dir = std::env::var_os("ONICODE_NATIVE_DATA_DIR")
         .map(PathBuf::from)
         .or_else(|| dirs_home().map(|home| PathBuf::from(home).join(".cache/monocode-native")))
         .ok_or("No user data directory available for Devin's supervised config")?
@@ -769,8 +769,7 @@ mod tests {
 
     #[test]
     fn writes_each_config_once_by_content() {
-        let dir =
-            std::env::temp_dir().join(format!("monocode-devin-config-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("onicode-devin-config-{}", std::process::id()));
         let first = write_once(&dir, "{}").unwrap();
         assert_eq!(write_once(&dir, "{}").unwrap(), first);
         assert_eq!(std::fs::read_to_string(&first).unwrap(), "{}");

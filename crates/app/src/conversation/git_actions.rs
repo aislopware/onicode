@@ -1,7 +1,7 @@
 //! The commit pill above the composer. It shows while this idle session has
 //! edited files that are still uncommitted; one click asks the session's own agent to stage or
 //! commit exactly what it changed, leaving other agents' and the user's work
-//! alone. The agent, not MonoCode's edit log, decides which changes are its.
+//! alone. The agent, not Onicode's edit log, decides which changes are its.
 //! Once a step lands the pill moves on: staged work offers Commit, and an
 //! unpushed commit offers Push.
 use super::*;
@@ -430,7 +430,7 @@ mod tests {
         fn new() -> Self {
             static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let root = std::env::temp_dir().join(format!(
-                "monocode-git-actions-{}-{}",
+                "onicode-git-actions-{}-{}",
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::SeqCst),
             ));

@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn reuses_only_the_same_conversation_and_launch_configuration() {
-        const CHILD: &str = "MONOCODE_PARKED_REUSE_TEST_CHILD";
+        const CHILD: &str = "ONICODE_PARKED_REUSE_TEST_CHILD";
         if std::env::var_os(CHILD).is_none() {
             // The idle limit and pool are process-wide. Other provider tests
             // must not park competing children while this test checks reuse.

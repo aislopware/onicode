@@ -1,8 +1,8 @@
-//! A frame readout for profiling: launched with `MONOCODE_FRAME_LOG=<file>`,
+//! A frame readout for profiling: launched with `ONICODE_FRAME_LOG=<file>`,
 //! the app appends one line per second it drew anything, so you can see how
 //! many frames streaming or scrolling costs and which views keep asking for
 //! them.
-//! `open --env MONOCODE_FRAME_LOG=/tmp/monocode-frames.log "Monocode Native.app"`
+//! `open --env ONICODE_FRAME_LOG=/tmp/monocode-frames.log "Onicode.app"`
 //!
 //! - `fps`: draws per second, split into `layout` (content changed), `paint` (only animation steps)
 //!   and `refresh` (whole-window redraws).
@@ -20,7 +20,7 @@ const PERIOD: Duration = Duration::from_secs(1);
 const ORIGINS: usize = 6;
 
 pub(crate) fn start(cx: &mut App) {
-    let Some(path) = std::env::var_os("MONOCODE_FRAME_LOG") else {
+    let Some(path) = std::env::var_os("ONICODE_FRAME_LOG") else {
         return;
     };
     gpui::frame_stats::enable();

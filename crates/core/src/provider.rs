@@ -1,4 +1,4 @@
-//! Native provider transports, ported from Monocode's TS adapters.
+//! Native provider transports, ported from Onicode's TS adapters.
 //! Blocking work belongs to a worker; never call `run` from a render/input handler.
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -144,7 +144,7 @@ pub fn resolve(kind: Kind) -> Option<PathBuf> {
     resolve_auto(kind)
 }
 pub fn resolve_auto(kind: Kind) -> Option<PathBuf> {
-    let key = format!("MONOCODE_{}_BINARY", kind.id().to_uppercase());
+    let key = format!("ONICODE_{}_BINARY", kind.id().to_uppercase());
     if let Some(path) = std::env::var_os(key).filter(|s| !s.is_empty()) {
         return Some(path.into());
     }
@@ -522,7 +522,7 @@ impl Protocol {
                         }
                         let (policy, sandbox, sandbox_policy, reviewer) = self.codex_access();
                         let mut params = json!({"cwd":self.request.cwd,"approvalPolicy":policy,"sandbox":sandbox,"sandboxPolicy":sandbox_policy,"approvalsReviewer":reviewer,
-                            "developerInstructions":format!("You are the coding agent in Monocode. Use the available tools to inspect and work in the supplied cwd. Do not ask the user to paste files or git output you can inspect yourself. Respect the selected access policy and request approval when required. {}", if self.request.settings.plan { "This is a planning turn: inspect and propose a plan without changing files." } else { "" })});
+                            "developerInstructions":format!("You are the coding agent in Onicode. Use the available tools to inspect and work in the supplied cwd. Do not ask the user to paste files or git output you can inspect yourself. Respect the selected access policy and request approval when required. {}", if self.request.settings.plan { "This is a planning turn: inspect and propose a plan without changing files." } else { "" })});
                         if let Some(instructions) = crate::visual_bridge::instructions(
                             &self.request.settings.environment,
                             false,
@@ -1401,7 +1401,7 @@ fn run_operation(
         && !request.settings.text_only)
         .then(lifecycle::claude_session_id);
     #[cfg(unix)]
-    if std::env::var_os("MONOCODE_NATIVE_TRACE").is_some() {
+    if std::env::var_os("ONICODE_NATIVE_TRACE").is_some() {
         unsafe {
             let mut signals = std::mem::zeroed();
             libc::pthread_sigmask(libc::SIG_SETMASK, std::ptr::null(), &mut signals);
@@ -1461,7 +1461,7 @@ fn run_operation(
             let mut servers = serde_json::Map::new();
             let mut system = Vec::new();
             if let Some(server) = visual_server {
-                servers.insert("monocode_visual".into(), server);
+                servers.insert("onicode_visual".into(), server);
                 allowed.push(crate::visual_bridge::CLAUDE_ALLOWED_TOOLS);
                 if let Some(instructions) =
                     crate::visual_bridge::instructions(&settings.environment, true)
@@ -1614,7 +1614,7 @@ fn run_operation(
         } else if protocol.request.kind == Kind::Codex {
             write_json(
                 &mut stdin,
-                json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"monocode_native","title":"MonoCode Native","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}}),
+                json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"onicode_native","title":"Onicode","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}}),
             )?;
         } else {
             write_json(
@@ -1684,7 +1684,7 @@ fn run_operation(
                         }
                         Err(e) => return Err(format!("Invalid provider JSON: {e}")),
                     };
-                    if std::env::var_os("MONOCODE_NATIVE_TRACE").is_some() {
+                    if std::env::var_os("ONICODE_NATIVE_TRACE").is_some() {
                         let method = value["method"].as_str().unwrap_or("");
                         let item = &value["params"]["item"];
                         if !method.is_empty()

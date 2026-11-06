@@ -14,13 +14,13 @@ use objc2_user_notifications::*;
 
 use super::{Notification, Permission, Target, resolved};
 
-const CATEGORY: &str = "monocode.session";
-const SHOW: &str = "monocode.session.show";
+const CATEGORY: &str = "onicode.session";
+const SHOW: &str = "onicode.session.show";
 static CLICKS: Mutex<VecDeque<Target>> = Mutex::new(VecDeque::new());
 
 define_class!(
     #[unsafe(super(NSObject))]
-    #[name = "MonoCodeNativeNotificationDelegate"]
+    #[name = "OnicodeNotificationDelegate"]
     struct Delegate;
     unsafe impl NSObjectProtocol for Delegate {}
     unsafe impl UNUserNotificationCenterDelegate for Delegate {
@@ -163,7 +163,7 @@ pub fn show(notification: Notification) -> Receiver<Result<(), String>> {
             return;
         }
         let content = UNMutableNotificationContent::new();
-        content.setTitle(&NSString::from_str("MonoCode"));
+        content.setTitle(&NSString::from_str("Onicode"));
         content.setSubtitle(&NSString::from_str(&notification.subtitle));
         content.setBody(&NSString::from_str(&notification.body));
         content.setCategoryIdentifier(&NSString::from_str(CATEGORY));

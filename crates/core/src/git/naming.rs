@@ -64,7 +64,7 @@ pub fn parse(raw: &str) -> Option<String> {
     let fragment = fragment.trim_end_matches(['/', '_', '-']);
     let fragment = fragment
         .strip_prefix("mc/")
-        .or_else(|| fragment.strip_prefix("monocode/"))
+        .or_else(|| fragment.strip_prefix("onicode/"))
         .unwrap_or(fragment)
         .trim_matches('/');
     (!fragment.is_empty()).then(|| format!("mc/{fragment}"))
@@ -182,7 +182,7 @@ mod tests {
                 Some("mc/fix-worktree-names"),
             ),
             ("`mc/already-named`", Some("mc/already-named")),
-            ("monocode/faster-worktrees", Some("mc/faster-worktrees")),
+            ("onicode/faster-worktrees", Some("mc/faster-worktrees")),
             (
                 " /Feature///Better   names/ ",
                 Some("mc/feature/better-names"),

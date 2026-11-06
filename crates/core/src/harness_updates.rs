@@ -61,7 +61,7 @@ pub fn latest_version(kind: Kind) -> Result<String, String> {
         .timeout(Duration::from_secs(10))
         .build()
         .get(&format!("https://registry.npmjs.org/{package}/latest"))
-        .set("User-Agent", "MonoCode")
+        .set("User-Agent", "Onicode")
         .set("Accept", "application/json")
         .call()
         .map_err(|e| e.to_string())?

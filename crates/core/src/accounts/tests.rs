@@ -172,7 +172,7 @@ for line in sys.stdin:
         print(json.dumps({'method':'turn/completed','params':{'turn':{'status':'completed'}}}), flush=True)
 "#).unwrap();
     std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let key = std::ffi::OsString::from("MONOCODE_CODEX_BINARY");
+    let key = std::ffi::OsString::from("ONICODE_CODEX_BINARY");
     let _restore = Binary(key.clone(), std::env::var_os(&key));
     unsafe {
         std::env::set_var(&key, &binary);

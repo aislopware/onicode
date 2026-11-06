@@ -283,7 +283,7 @@ impl Shell {
             self.live_agents_preview(cx)
         };
         div()
-            .id("monocode-sidebar")
+            .id("onicode-sidebar")
             .debug_selector(|| "sidebar-content".into())
             .track_focus(&self.sidebar_focus)
             .when(sessions, |d| {

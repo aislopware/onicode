@@ -21,7 +21,7 @@ for line in sys.stdin:
         assert value['params']['sandbox'] == 'read-only'
         assert value['params']['approvalPolicy'] == 'never'
         assert 'Do not call tools' in value['params']['developerInstructions']
-        assert os.getenv('MONOCODE_TEST_CAPABILITY') is None
+        assert os.getenv('ONICODE_TEST_CAPABILITY') is None
         send({{'id':2,'result':{{'thread':{{'id':'fresh-text-thread'}}}}}})
     elif value.get('id') == 3:
         assert value['params']['threadId'] == 'fresh-text-thread'
@@ -49,7 +49,7 @@ for line in sys.stdin:
         model: None,
         settings: Settings {
             access: AccessMode::FullAccess,
-            environment: [("MONOCODE_TEST_CAPABILITY".into(), "private".into())].into(),
+            environment: [("ONICODE_TEST_CAPABILITY".into(), "private".into())].into(),
             attachments: vec![dir.path().join("private-file")],
             ..Default::default()
         },

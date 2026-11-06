@@ -3,7 +3,7 @@
 use gpui::App;
 
 pub fn install(cx: &mut App) {
-    if std::env::var("MONOCODE_DEV_RELOAD").as_deref() != Ok("1") {
+    if std::env::var("ONICODE_DEV_RELOAD").as_deref() != Ok("1") {
         return;
     }
     let (sender, receiver) = async_channel::bounded(1);

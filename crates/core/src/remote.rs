@@ -515,7 +515,7 @@ impl Connections {
                 let mut machine = if let Some(mut existing) = existing {
                     if upgrade {
                         let platform = ssh::detect_platform(&target, &job, &askpass)?;
-                        job.message("Updating MonoCode Host on the machine…");
+                        job.message("Updating Onicode Host on the machine…");
                         let output = ssh::run_script(
                             &target,
                             platform,
@@ -538,7 +538,7 @@ impl Connections {
                     existing
                 } else {
                     let platform = ssh::detect_platform(&target, &job, &askpass)?;
-                    job.message("Installing or starting MonoCode Host…");
+                    job.message("Installing or starting Onicode Host…");
                     let output = ssh::run_script(
                         &target,
                         platform,
@@ -621,7 +621,7 @@ impl Connections {
                         || !supports("files.create")
                         || !supports("files.searchContent")
                     {
-                        return Err("The installed host package still lacks Explorer and Changes. Install a newer MonoCode release with updated host packages.".into());
+                        return Err("The installed host package still lacks Explorer and Changes. Install a newer Onicode release with updated host packages.".into());
                     }
                 }
                 if machine.name.trim().is_empty() {

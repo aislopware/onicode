@@ -79,7 +79,7 @@ mod tests {
 
     fn fixture() -> (Fixture, Store) {
         let path = std::env::temp_dir().join(format!(
-            "monocode-visual-discovery-{}-{}",
+            "onicode-visual-discovery-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

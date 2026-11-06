@@ -94,13 +94,13 @@ mod tests {
     fn messages_carry_the_tap_target_and_unregistered_phones_are_found_in_order() {
         let notice = Notice {
             title: "Fix the build".into(),
-            subtitle: Some("monocode".into()),
+            subtitle: Some("onicode".into()),
             body: "Finished".into(),
             data: json!({"sessionId":"s"}),
         };
         let message = message("ExponentPushToken[a]", &notice);
         assert_eq!(message["data"]["sessionId"], "s");
-        assert_eq!(message["subtitle"], "monocode");
+        assert_eq!(message["subtitle"], "onicode");
         let tokens = vec!["ExponentPushToken[a]".into(), "ExponentPushToken[b]".into()];
         let response = json!({"data":[
             {"status":"ok","id":"1"},

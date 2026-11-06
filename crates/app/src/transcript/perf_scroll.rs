@@ -1,5 +1,5 @@
 //! For profiling scrolling without a trackpad: with
-//! `MONOCODE_PERF_SCROLL=<pixels per second>`, the first transcript to finish
+//! `ONICODE_PERF_SCROLL=<pixels per second>`, the first transcript to finish
 //! streaming scrolls itself up and down between its ends on every display
 //! frame, the way wheel scrolling moves its list and notifies it.
 //! scripts/perf/frame-run.sh sets it for `MODE=scroll`.
@@ -22,7 +22,7 @@ pub(super) struct PerfScroll {
 fn speed() -> Option<f32> {
     static SPEED: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
     *SPEED.get_or_init(|| {
-        std::env::var("MONOCODE_PERF_SCROLL")
+        std::env::var("ONICODE_PERF_SCROLL")
             .ok()?
             .parse::<f32>()
             .ok()

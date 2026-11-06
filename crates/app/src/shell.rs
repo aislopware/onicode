@@ -869,7 +869,7 @@ impl Shell {
             .ok()
             .and_then(|store| store.data_dir().map(std::path::Path::to_path_buf))
             .unwrap_or_else(|| {
-                std::env::temp_dir().join(format!("monocode-remote-{}", std::process::id()))
+                std::env::temp_dir().join(format!("onicode-remote-{}", std::process::id()))
             });
         let remote = Arc::new(onicode_core::remote::Connections::new(remote_dir));
         onicode_core::remote::set_default_connections(remote.clone());
@@ -1884,7 +1884,7 @@ impl Shell {
         };
         let answer = window.prompt(
             gpui::PromptLevel::Warning,
-            "Reload Monocode Native?",
+            "Reload Onicode?",
             Some(detail),
             &["Reload", "Cancel"],
             cx,
@@ -6636,7 +6636,7 @@ impl Shell {
         self.refresh_sidebar_structure(cx);
         let live_agents = self.live_agents_preview(cx);
         div()
-            .id("monocode-sidebar")
+            .id("onicode-sidebar")
             .debug_selector(|| "sidebar-content".into())
             .track_focus(&self.sidebar_focus)
             .key_context("SessionSidebar")
@@ -8526,10 +8526,10 @@ impl Render for Shell {
         }
         self.sync_notices(window, cx);
         div()
-            .id("monocode-workspace")
+            .id("onicode-workspace")
             .relative()
             .role(Role::Application)
-            .aria_label("Monocode Native")
+            .aria_label("Onicode")
             .key_context("Workspace")
             .track_focus(&self.focus)
             .capture_key_up(cx.listener(|this, _, _, _| this.archive_shortcut_held = false))
@@ -8611,7 +8611,7 @@ impl Render for Shell {
                 let detail = format!("Version {}", onicode_update::app_version());
                 drop(window.prompt(
                     gpui::PromptLevel::Info,
-                    "Monocode Native",
+                    "Onicode",
                     Some(&detail),
                     &["OK"],
                     cx,
@@ -11587,7 +11587,7 @@ mod tests {
             .unwrap();
         cx.run_until_parked();
         // Pin → Rename → Copy session ID, open it, then skip the harness ID
-        // (this session has none) for the MonoCode one.
+        // (this session has none) for the Onicode one.
         cx.simulate_keystrokes(window.into(), "down down right down enter");
         cx.run_until_parked();
         window
@@ -11715,7 +11715,7 @@ mod tests {
                 let id = shell.workspace.active.unwrap();
                 let anchor = Anchor::Point(gpui::point(px(400.), px(30.)));
                 shell.open_menu(MenuTarget::Tab(id), anchor, w, cx);
-                // Closing every tab preserves one fresh blank tab, as in Monocode.
+                // Closing every tab preserves one fresh blank tab, as in Onicode.
                 for id in shell.workspace.tabs.clone() {
                     shell.close(id, w, cx);
                 }
@@ -12094,7 +12094,7 @@ mod tests {
         cx.update(|cx| cx.set_reduce_motion(true));
         use gpui::EntityInputHandler;
         let path =
-            std::env::temp_dir().join(format!("monocode-file-pane-{}.rs", std::process::id()));
+            std::env::temp_dir().join(format!("onicode-file-pane-{}.rs", std::process::id()));
         std::fs::write(&path, "fn main() {}\n").unwrap();
         let (window, _, id) = window(cx);
         let cx = &mut gpui::VisualTestContext::from_window(window.into(), cx);

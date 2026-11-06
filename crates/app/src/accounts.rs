@@ -36,7 +36,7 @@ pub(crate) fn install(store: Database, cx: &mut App) {
         })
         .unwrap_or_default();
     let root = root.unwrap_or_else(|| {
-        std::env::temp_dir().join(format!("monocode-test-accounts-{}", onicode_core::new_id()))
+        std::env::temp_dir().join(format!("onicode-test-accounts-{}", onicode_core::new_id()))
     });
     let center = cx.new(|cx| Accounts::new(root, book, store, cx));
     cx.set_global(Shared(center));
@@ -859,7 +859,7 @@ impl Accounts {
     }
 }
 impl Accounts {
-    /// Monocode came back to the front while a browser sign-in is still
+    /// Onicode came back to the front while a browser sign-in is still
     /// waiting. A finished login reaches the CLI within a second or two, so if
     /// it is still waiting after a short grace the browser was closed or
     /// abandoned: reset to Sign in instead of waiting out the CLI's 10 minutes.

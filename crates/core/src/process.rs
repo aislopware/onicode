@@ -48,7 +48,7 @@ unsafe extern "C" {
 /// New native provider processes use a separate group for cancellation.
 pub fn isolate(command: &mut Command) {
     configure_child(command);
-    command.env("MONOCODE_HARNESS_PARENT", std::process::id().to_string());
+    command.env("ONICODE_HARNESS_PARENT", std::process::id().to_string());
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -282,7 +282,7 @@ mod tests {
     // `retire_pid` reaps the child with waitpid.
     #[allow(clippy::zombie_processes)]
     fn retire_lets_a_child_finish_on_stdin_eof_before_any_signal() {
-        let dir = std::env::temp_dir().join(format!("monocode-retire-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("onicode-retire-{}", std::process::id()));
         let _ = std::fs::remove_file(&dir);
         // Exits 0 on EOF after a short write; a signal would skip the write.
         let mut child = spawn(&format!(
@@ -318,7 +318,7 @@ mod tests {
     }
     #[test]
     fn provider_child_does_not_inherit_executor_signal_mask() {
-        const CHILD: &str = "MONOCODE_SIGNAL_REGRESSION_CHILD";
+        const CHILD: &str = "ONICODE_SIGNAL_REGRESSION_CHILD";
         unsafe {
             let mut mask = std::mem::zeroed();
             libc::pthread_sigmask(libc::SIG_SETMASK, std::ptr::null(), &mut mask);

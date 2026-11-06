@@ -10,7 +10,7 @@ fn git(dir: &Path, args: &[&str]) -> bool {
     Command::new("git")
         .args([
             "-c",
-            "user.name=MonoCode",
+            "user.name=Onicode",
             "-c",
             "user.email=monocode@test",
             "-c",
@@ -18,10 +18,10 @@ fn git(dir: &Path, args: &[&str]) -> bool {
         ])
         .args(args)
         .current_dir(dir)
-        .env("GIT_AUTHOR_NAME", "MonoCode")
-        .env("GIT_AUTHOR_EMAIL", "monocode@test")
-        .env("GIT_COMMITTER_NAME", "MonoCode")
-        .env("GIT_COMMITTER_EMAIL", "monocode@test")
+        .env("GIT_AUTHOR_NAME", "Onicode")
+        .env("GIT_AUTHOR_EMAIL", "onicode@test")
+        .env("GIT_COMMITTER_NAME", "Onicode")
+        .env("GIT_COMMITTER_EMAIL", "onicode@test")
         .status()
         .map(|status| status.success())
         .unwrap_or(false)
@@ -33,8 +33,8 @@ fn init_git(dir: &Path, branch: &str) -> bool {
             dir,
             &["symbolic-ref", "HEAD", &format!("refs/heads/{branch}")],
         )
-        && git(dir, &["config", "user.name", "MonoCode"])
-        && git(dir, &["config", "user.email", "monocode@test"])
+        && git(dir, &["config", "user.name", "Onicode"])
+        && git(dir, &["config", "user.email", "onicode@test"])
         && git(dir, &["config", "commit.gpgsign", "false"])
         && git(dir, &["config", "core.autocrlf", "false"])
 }
@@ -351,7 +351,7 @@ fn history_lists_commits_parents_and_head() {
     );
     assert!(history.commits[0].head);
     assert!(!history.commits[1].head);
-    assert_eq!(history.commits[0].author, "MonoCode");
+    assert_eq!(history.commits[0].author, "Onicode");
     assert!(
         history.commits[0]
             .refs
@@ -821,8 +821,8 @@ fn sync_pulls_then_pushes() {
         ]
     ));
     for args in [
-        ["config", "user.name", "MonoCode"],
-        ["config", "user.email", "monocode@test"],
+        ["config", "user.name", "Onicode"],
+        ["config", "user.email", "onicode@test"],
         ["config", "commit.gpgsign", "false"],
     ] {
         assert!(git(&b, &args));

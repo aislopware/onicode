@@ -482,29 +482,29 @@ impl ViewState {
             .unwrap_or_default();
         let mut state = Self::default();
         if let Some(source) = desktop
-            .get("monocode.inboxSource")
+            .get("onicode.inboxSource")
             .filter(|s| PROVIDERS.contains(s))
         {
             state.source = source.into();
         }
         if let Some(filters) = desktop
-            .json("monocode.inboxFilters")
+            .json("onicode.inboxFilters")
             .and_then(|v| serde_json::from_value(v).ok())
         {
             state.filters = filters;
         }
-        if let Some(seen) = desktop.json("monocode.inboxSeen") {
+        if let Some(seen) = desktop.json("onicode.inboxSeen") {
             state.seen = serde_json::from_value(seen.clone()).unwrap_or_else(|_| Seen {
                 seeded: true,
                 items: serde_json::from_value(seen).unwrap_or_default(),
             });
         }
         state.hidden_linear_teams = desktop
-            .json("monocode.linearHiddenTeams")
+            .json("onicode.linearHiddenTeams")
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
         state.hidden_jira_projects = desktop
-            .json("monocode.jiraHiddenProjects")
+            .json("onicode.jiraHiddenProjects")
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
         state

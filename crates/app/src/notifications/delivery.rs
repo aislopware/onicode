@@ -92,9 +92,9 @@ impl Target {
     /// Sequence prevents replacement of an earlier banner for this session.
     pub fn tag(self, sequence: u64) -> String {
         match self {
-            Self::Session(id) => format!("monocode-session:{id}:{sequence}"),
+            Self::Session(id) => format!("onicode-session:{id}:{sequence}"),
             Self::Reminder { session_id, due_at } => {
-                format!("monocode-reminder:{session_id}:{due_at}")
+                format!("onicode-reminder:{session_id}:{due_at}")
             }
         }
     }
@@ -104,12 +104,12 @@ impl Target {
         expect(dead_code, reason = "only macOS reports which notification was opened")
     )]
     pub fn from_tag(tag: &str) -> Option<Self> {
-        if let Some(rest) = tag.strip_prefix("monocode-session:") {
+        if let Some(rest) = tag.strip_prefix("onicode-session:") {
             let (id, sequence) = rest.split_once(':')?;
             sequence.parse::<u64>().ok()?;
             return Some(Self::Session(id.parse().ok()?));
         }
-        let (id, due) = tag.strip_prefix("monocode-reminder:")?.split_once(':')?;
+        let (id, due) = tag.strip_prefix("onicode-reminder:")?.split_once(':')?;
         Some(Self::Reminder {
             session_id: id.parse().ok()?,
             due_at: due.parse().ok()?,

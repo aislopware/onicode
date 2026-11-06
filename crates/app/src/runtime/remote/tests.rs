@@ -12,10 +12,8 @@ use super::*;
 struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!(
-            "monocode-remote-runtime-{}",
-            onicode_core::new_id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("onicode-remote-runtime-{}", onicode_core::new_id()));
         std::fs::create_dir_all(&path).unwrap();
         Self(path)
     }
@@ -465,13 +463,13 @@ fn built_node_host_round_trip_preserves_native_wire_commands() {
     use std::os::unix::fs::PermissionsExt;
     use std::process::{Command, Stdio};
     let directory = Directory::new();
-    let cli = std::env::var_os("MONOCODE_TEST_HOST_BINARY")
+    let cli = std::env::var_os("ONICODE_TEST_HOST_BINARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../build/host/monocode-host.mjs")
         });
     assert!(cli.is_file(), "Run npm run host:build first");
-    let node = std::env::var("MONOCODE_TEST_NODE").unwrap_or_else(|_| "node".into());
+    let node = std::env::var("ONICODE_TEST_NODE").unwrap_or_else(|_| "node".into());
     let bin = directory.0.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     let provider = bin.join("codex");

@@ -1,5 +1,5 @@
 //! QuickComposer.tsx: the Spotlight-style panel opened by the global shortcut
-//! and the menu bar. It floats over other apps without activating MonoCode,
+//! and the menu bar. It floats over other apps without activating Onicode,
 //! keeps its draft across a dismiss, and opens its pickers below the toolbar
 //! so the prompt never moves.
 use std::collections::HashMap;
@@ -44,7 +44,7 @@ const COMMANDS: [(Command, &str); 4] = [
     ),
     (
         Command::Operator,
-        "Give this thread access to MonoCode sessions, folders, and notes.",
+        "Give this thread access to Onicode sessions, folders, and notes.",
     ),
     (Command::Orchestrator, "Plan and coordinate agent work."),
     (
@@ -95,7 +95,7 @@ pub(crate) struct Launch {
 /// Pasted images wait here until the launch creates their conversation, which
 /// then adopts them into its own folder.
 pub(crate) fn paste_staging_dir() -> PathBuf {
-    std::env::temp_dir().join("monocode-quick-composer")
+    std::env::temp_dir().join("onicode-quick-composer")
 }
 impl Launch {
     pub(crate) fn choice(
@@ -343,7 +343,7 @@ impl QuickComposer {
 
     fn update_placeholder(&mut self, cx: &mut Context<Self>) {
         let text = if self.cwd.is_empty() {
-            "Open a project in MonoCode first".to_owned()
+            "Open a project in Onicode first".to_owned()
         } else {
             format!(
                 "Start a {} session in {}…",
@@ -816,7 +816,7 @@ impl QuickComposer {
         #[cfg(all(target_os = "macos", not(test)))]
         crate::traffic_lights::hide(window);
         let path = std::env::temp_dir()
-            .join("monocode-quick-composer")
+            .join("onicode-quick-composer")
             .join(format!("screenshot-{}.png", onicode_core::new_id()));
         let work = cx.background_executor().spawn({
             let path = path.clone();

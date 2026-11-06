@@ -23,7 +23,7 @@ fn visualize_command_sends_required_workflow_and_keeps_the_visible_request() {
 
 fn visual_turn(request: Option<&str>) {
     let fixture = Fixture(std::env::temp_dir().join(format!(
-        "monocode-runtime-visual-{}-{}",
+        "onicode-runtime-visual-{}-{}",
         std::process::id(),
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
     )));
@@ -57,12 +57,12 @@ for line in sys.stdin:
             assert value['params']['input'] == [{'type': 'text', 'text': expected.read()}], 'The provider must receive the prepared prompt'
         send({'method': 'item/agentMessage/delta', 'params': {'itemId': 'before', 'delta': 'Before the visual.'}})
         time.sleep(0.05)
-        address, port = os.environ['MONOCODE_VISUAL_ENDPOINT'].rsplit(':', 1)
+        address, port = os.environ['ONICODE_VISUAL_ENDPOINT'].rsplit(':', 1)
         with socket.create_connection((address, int(port)), timeout=4) as connection:
             connection.settimeout(4)
             request = {
-                'session': int(os.environ['MONOCODE_VISUAL_SESSION']),
-                'token': os.environ['MONOCODE_VISUAL_TOKEN'],
+                'session': int(os.environ['ONICODE_VISUAL_SESSION']),
+                'token': os.environ['ONICODE_VISUAL_TOKEN'],
                     'request_id': 'runtime-integration-request-' + str(os.getpid()),
                 'document': {
                     'id': 'runtime-native', 'title': 'Native result',

@@ -368,7 +368,7 @@ impl SettingsView {
                 None,
                 false,
                 "Background tasks",
-                Some("Small jobs Monocode runs with a model on your behalf.".into()),
+                Some("Small jobs Onicode runs with a model on your behalf.".into()),
                 None,
                 background,
             ),

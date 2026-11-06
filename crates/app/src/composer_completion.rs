@@ -291,7 +291,7 @@ impl Completion {
     }
 
     /// A skill or provider command already named `/{name}`, which wins over
-    /// MonoCode's own command of the same name.
+    /// Onicode's own command of the same name.
     pub(crate) fn has_user_command(&self, name: &str) -> bool {
         self.skills
             .iter()
@@ -685,11 +685,7 @@ impl Completion {
                     "Orchestrator",
                     "Plan and coordinate agent work",
                 ),
-                (
-                    "operator",
-                    "Operator",
-                    "Give this thread access to MonoCode",
-                ),
+                ("operator", "Operator", "Give this thread access to Onicode"),
                 ("plan", "Plan mode", "Review a plan before building"),
                 (
                     "btw",
@@ -812,7 +808,7 @@ impl Completion {
                         | "draft"
                         | "btw"
                         | "mono"
-                        | "monocode"
+                        | "onicode"
                 ) {
                     continue;
                 }

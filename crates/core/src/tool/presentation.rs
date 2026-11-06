@@ -323,7 +323,7 @@ pub(super) fn present(call: &ToolCall, fallback_cwd: Option<&str>) -> ToolPresen
     shown.target = shown.target.lines().next().unwrap_or("").into();
     shown
 }
-/// A step of Monocode's own visual tools.
+/// A step of Onicode's own visual tools.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VisualStep {
     Docs,
@@ -331,16 +331,16 @@ pub enum VisualStep {
     Show,
 }
 
-/// Recognizes Monocode's visual tools however a provider names an MCP tool:
-/// `visual_show`, `monocode_visual:visual_show`,
-/// `mcp__monocode_visual__visual_show` or `monocode_visual.visual_show`.
+/// Recognizes Onicode's visual tools however a provider names an MCP tool:
+/// `visual_show`, `onicode_visual:visual_show`,
+/// `mcp__onicode_visual__visual_show` or `onicode_visual.visual_show`.
 pub fn visual_tool(name: &str) -> Option<VisualStep> {
     let (server, tool) = name
         .rsplit_once("__")
         .or_else(|| name.rsplit_once(':'))
         .or_else(|| name.rsplit_once('.'))
         .unwrap_or(("", name));
-    if !server.is_empty() && !server.contains("monocode_visual") {
+    if !server.is_empty() && !server.contains("onicode_visual") {
         return None;
     }
     match tool {
@@ -352,13 +352,13 @@ pub fn visual_tool(name: &str) -> Option<VisualStep> {
 }
 
 /// The action of an Operator app CLI call in a shell command:
-/// `'/Applications/Monocode.app/…/monocode-gpui' app sessions.start --json …`.
+/// `'/Applications/Onicode.app/…/onicode' app sessions.start --json …`.
 pub fn app_cli_action(command: &str) -> Option<&str> {
     let words: Vec<&str> = command.split_whitespace().collect();
     words.windows(3).find_map(|w| {
         let binary = w[0].trim_matches(|c| c == '\'' || c == '"');
         let name = binary.rsplit('/').next().unwrap_or(binary);
-        (w[1] == "app" && name.to_ascii_lowercase().starts_with("monocode") && w[2].contains('.'))
+        (w[1] == "app" && name.to_ascii_lowercase().starts_with("onicode") && w[2].contains('.'))
             .then_some(w[2])
     })
 }
@@ -812,16 +812,16 @@ mod tests {
     fn operator_app_calls_read_as_what_they_do() {
         assert_eq!(
             app_cli_action(
-                r#"'/Applications/Monocode.app/Contents/MacOS/monocode-gpui' app sessions.start --json '{"prompt":"x"}'"#
+                r#"'/Applications/Onicode.app/Contents/MacOS/onicode' app sessions.start --json '{"prompt":"x"}'"#
             ),
             Some("sessions.start")
         );
         assert_eq!(app_cli_action("git log app sessions.start"), None);
-        assert_eq!(app_cli_action("monocode-gpui app help"), None);
+        assert_eq!(app_cli_action("onicode-gpui app help"), None);
 
         let mut done = call(
             "Bash",
-            json!({"command":"/opt/monocode-gpui app notes.write --json '{\"body\":\"x\"}'"}),
+            json!({"command":"/opt/onicode app notes.write --json '{\"body\":\"x\"}'"}),
         );
         done.state = ToolState::Completed;
         let shown = done.presentation();
@@ -1036,15 +1036,15 @@ mod visual_tests {
     fn visual_tools_read_as_chart_steps_under_every_provider_name() {
         for name in [
             "visual_show",
-            "monocode_visual:visual_show",
-            "mcp__monocode_visual__visual_show",
-            "monocode_visual.visual_show",
+            "onicode_visual:visual_show",
+            "mcp__onicode_visual__visual_show",
+            "onicode_visual.visual_show",
         ] {
             assert_eq!(visual_tool(name), Some(VisualStep::Show), "{name}");
         }
         assert_eq!(visual_tool("other_server:visual_show"), None);
         assert_eq!(visual_tool("visual_publish"), None);
-        let mut call = ToolCall::new("1", "monocode_visual:visual_show");
+        let mut call = ToolCall::new("1", "onicode_visual:visual_show");
         call.input = r#"{"title":"Stars per week","source":"return () => null"}"#.into();
         call.state = ToolState::Completed;
         let shown = call.presentation();

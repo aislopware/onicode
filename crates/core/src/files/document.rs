@@ -110,7 +110,7 @@ pub fn read_document(path: &Path) -> Result<Document, String> {
                 .and_then(|value| value.to_str())
                 .unwrap_or("video");
             let temporary = std::env::temp_dir().join(format!(
-                "monocode-video-{}-{stamp}.{extension}",
+                "onicode-video-{}-{stamp}.{extension}",
                 std::process::id()
             ));
             let mut options = std::fs::OpenOptions::new();
@@ -409,7 +409,7 @@ mod tests {
     }
     #[test]
     fn atomic_saves_preserve_crlf_bom_permissions_and_reject_external_changes() {
-        let root = std::env::temp_dir().join(format!("monocode-document-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("onicode-document-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("source.rs");
         std::fs::write(&path, b"\xef\xbb\xbffn main() {}\r\n").unwrap();
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn editor_saves_keep_each_line_ending_convention() {
         let path =
-            std::env::temp_dir().join(format!("monocode-line-endings-{}.txt", std::process::id()));
+            std::env::temp_dir().join(format!("onicode-line-endings-{}.txt", std::process::id()));
         for eol in ["\n", "\r\n", "\r"] {
             std::fs::write(&path, format!("first{eol}second{eol}")).unwrap();
             let Document::Text(doc) = read_document(&path).unwrap() else {
@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn binary_invalid_utf8_and_long_lines_are_explicit() {
         let path =
-            std::env::temp_dir().join(format!("monocode-document-types-{}", std::process::id()));
+            std::env::temp_dir().join(format!("onicode-document-types-{}", std::process::id()));
         for bytes in [
             vec![0],
             vec![0xff],

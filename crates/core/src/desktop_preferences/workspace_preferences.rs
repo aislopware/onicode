@@ -148,7 +148,7 @@ impl DesktopPreferences {
             ),
         ] {
             let value = self
-                .get(&format!("monocode.{key}"))
+                .get(&format!("onicode.{key}"))
                 .filter(|value| allowed.contains(value))
                 .unwrap_or(default);
             reconcile_preference(target, baseline, next, field, json!(value));
@@ -202,7 +202,7 @@ impl DesktopPreferences {
             baseline,
             next,
             "accent_color",
-            json!(self.get("monocode.accentColor").filter(|v| valid_hex(v))),
+            json!(self.get("onicode.accentColor").filter(|v| valid_hex(v))),
         );
         reconcile_preference(
             target,
@@ -210,7 +210,7 @@ impl DesktopPreferences {
             next,
             "chat_background",
             json!(
-                self.get("monocode.chatBackgroundPath")
+                self.get("onicode.chatBackgroundPath")
                     .filter(|v| !v.trim().is_empty())
             ),
         );
@@ -222,12 +222,12 @@ impl DesktopPreferences {
         for (field, key, default) in [
             (
                 "project_notifications",
-                "monocode.projectNotifications.v1",
+                "onicode.projectNotifications.v1",
                 json!({}),
             ),
             (
                 "notification_projects",
-                "monocode.notificationProjects.v2",
+                "onicode.notificationProjects.v2",
                 json!([]),
             ),
         ] {
@@ -244,7 +244,7 @@ impl DesktopPreferences {
             reconcile_preference(target, baseline, next, field, value);
         }
         let paths: Map<String, Value> = self
-            .json("monocode.providerBinaryPaths.v1")
+            .json("onicode.providerBinaryPaths.v1")
             .as_ref()
             .and_then(Value::as_object)
             .into_iter()
@@ -259,7 +259,7 @@ impl DesktopPreferences {
             .collect();
         reconcile_preference(target, baseline, next, "binary_paths", json!(paths));
         let disabled = self
-            .json("monocode.disabledSkillPaths")
+            .json("onicode.disabledSkillPaths")
             .as_ref()
             .and_then(Value::as_array)
             .into_iter()
@@ -280,7 +280,7 @@ impl DesktopPreferences {
             next,
             "default_models",
             json!(native_models(
-                &self.json("monocode.defaultModels").unwrap_or(Value::Null)
+                &self.json("onicode.defaultModels").unwrap_or(Value::Null)
             )),
         );
         reconcile_preference(
@@ -290,18 +290,18 @@ impl DesktopPreferences {
             "hidden_providers",
             json!(providers(
                 &self
-                    .json("monocode.hiddenPickerProviders")
+                    .json("onicode.hiddenPickerProviders")
                     .unwrap_or(Value::Null)
             )),
         );
-        let filters = self.json("monocode.sessionSidebarFilters");
+        let filters = self.json("onicode.sessionSidebarFilters");
         let archived = filters
             .as_ref()
             .map(|v| v["showArchived"] == true)
             .unwrap_or_else(|| self.flag("sessionsShowArchived").unwrap_or(false));
         reconcile_preference(target, baseline, next, "show_archived", json!(archived));
         let keys: Map<String, Value> = self
-            .json("monocode.keybindingOverrides")
+            .json("onicode.keybindingOverrides")
             .as_ref()
             .and_then(Value::as_object)
             .into_iter()
@@ -317,7 +317,7 @@ impl DesktopPreferences {
             })
             .collect();
         reconcile_preference(target, baseline, next, "keybindings", json!(keys));
-        let favorites = self.json("monocode.favoriteModels");
+        let favorites = self.json("onicode.favoriteModels");
         let mut choices = Vec::new();
         for id in favorites
             .as_ref()
@@ -336,7 +336,7 @@ impl DesktopPreferences {
             }
         }
         reconcile_preference(target, baseline, next, "favorite_models", json!(choices));
-        let recent = self.json("monocode.recentModels");
+        let recent = self.json("onicode.recentModels");
         let mut choices = Vec::new();
         for choice in recent
             .as_ref()
@@ -360,7 +360,7 @@ impl DesktopPreferences {
         }
         reconcile_preference(target, baseline, next, "recent_models", json!(choices));
         let tab = self
-            .get("monocode.modelPickerTab")
+            .get("onicode.modelPickerTab")
             .filter(|tab| *tab == "favorites" || crate::provider::Kind::parse(tab).is_some())
             .unwrap_or("favorites");
         reconcile_preference(target, baseline, next, "model_picker_tab", json!(tab));
@@ -440,13 +440,13 @@ impl DesktopPreferences {
             ),
         );
         let tab = self
-            .get("monocode.rightPanelTab")
+            .get("onicode.rightPanelTab")
             .filter(|s| ["files", "changes", "graph"].contains(s))
             .unwrap_or("files");
         reconcile_preference(target, old, &mut source, "right_panel_tab", json!(tab));
         let order = self
-            .json("monocode.rightPanelTabOrder")
-            .or_else(|| self.json("monocode.sidebarTabOrder"));
+            .json("onicode.rightPanelTabOrder")
+            .or_else(|| self.json("onicode.sidebarTabOrder"));
         let mut tabs = Vec::new();
         for tab in order
             .as_ref()
@@ -466,14 +466,14 @@ impl DesktopPreferences {
             old,
             &mut source,
             "changes_view",
-            json!(if self.get("monocode.changesView") == Some("tree") {
+            json!(if self.get("onicode.changesView") == Some("tree") {
                 "tree"
             } else {
                 "list"
             }),
         );
         let collapsed = self
-            .json("monocode:tab-groups:collapsed")
+            .json("onicode:tab-groups:collapsed")
             .as_ref()
             .and_then(Value::as_array)
             .into_iter()
@@ -483,7 +483,7 @@ impl DesktopPreferences {
             .collect::<Vec<_>>();
         reconcile_preference(target, old, &mut source, "collapsed", json!(collapsed));
         let filters = self
-            .json("monocode.sessionSidebarFilters")
+            .json("onicode.sessionSidebarFilters")
             .unwrap_or(Value::Null);
         let time = filters["time"]
             .as_str()
@@ -499,31 +499,31 @@ impl DesktopPreferences {
         next.insert("workspace".into(), json!(source));
         // Preserve exact strings for source concepts with no native equivalent.
         let metadata: Map<String, Value> = [
-            "monocode.sessionFolders",
-            "monocode.pinnedSessionsCollapsed",
-            "monocode.reminderSessionsCollapsed",
-            "monocode.projectProviderSettings.v1",
-            "monocode.archivedProjects",
-            "monocode.settingsSection",
-            "monocode.quickComposerShortcut",
-            "monocode.sidebarOpen",
-            "monocode.sidebarLayout",
-            "monocode.favoriteModels",
-            "monocode.recentModels",
-            "monocode.projectGroups",
-            "monocode.projectGroupAssignments",
-            "monocode.projectLocations",
-            "monocode.projectSidebarTabs.v1",
-            "monocode.sidebarTabOrder",
-            "monocode.projectRailOpen",
-            "monocode.projectRailWidth",
-            "monocode.projectRailPinned",
-            "monocode.projectRailOrder",
-            "monocode.transcriptZen",
-            "monocode.projectNotifications.v1",
-            "monocode.notificationProjects.v2",
-            "monocode.newLayoutPromptDismissed",
-            "monocode.linkedSessionSeen",
+            "onicode.sessionFolders",
+            "onicode.pinnedSessionsCollapsed",
+            "onicode.reminderSessionsCollapsed",
+            "onicode.projectProviderSettings.v1",
+            "onicode.archivedProjects",
+            "onicode.settingsSection",
+            "onicode.quickComposerShortcut",
+            "onicode.sidebarOpen",
+            "onicode.sidebarLayout",
+            "onicode.favoriteModels",
+            "onicode.recentModels",
+            "onicode.projectGroups",
+            "onicode.projectGroupAssignments",
+            "onicode.projectLocations",
+            "onicode.projectSidebarTabs.v1",
+            "onicode.sidebarTabOrder",
+            "onicode.projectRailOpen",
+            "onicode.projectRailWidth",
+            "onicode.projectRailPinned",
+            "onicode.projectRailOrder",
+            "onicode.transcriptZen",
+            "onicode.projectNotifications.v1",
+            "onicode.notificationProjects.v2",
+            "onicode.newLayoutPromptDismissed",
+            "onicode.linkedSessionSeen",
         ]
         .into_iter()
         .filter_map(|key| self.get(key).map(|value| (key.to_owned(), json!(value))))
@@ -532,12 +532,12 @@ impl DesktopPreferences {
     }
 
     fn flag(&self, key: &str) -> Option<bool> {
-        self.get(&format!("monocode.{key}"))
+        self.get(&format!("onicode.{key}"))
             .map(|value| matches!(value, "1" | "true"))
     }
 
     pub(super) fn number(&self, key: &str) -> Option<f64> {
-        self.get(&format!("monocode.{key}"))?
+        self.get(&format!("onicode.{key}"))?
             .parse::<f64>()
             .ok()
             .filter(|v| v.is_finite())
@@ -677,8 +677,8 @@ mod tests {
 
     #[test]
     fn empty_session_migration_precedes_desktop_reconciliation() {
-        let enabled = source(&[("monocode.gridArcadeEnabled", "1")]);
-        let disabled = source(&[("monocode.gridArcadeEnabled", "0")]);
+        let enabled = source(&[("onicode.gridArcadeEnabled", "1")]);
+        let disabled = source(&[("onicode.gridArcadeEnabled", "0")]);
         for (preferences, expected) in [
             (json!({}), "ink"),
             (json!({"empty_session_games":false}), "none"),
@@ -719,7 +719,7 @@ mod tests {
                 "preferences":{"empty_session_games":before},
                 "desktop_project_preferences":{"empty_session_games":before}
             });
-            source(&[("monocode.gridArcadeEnabled", value)]).apply_workspace(&mut workspace);
+            source(&[("onicode.gridArcadeEnabled", value)]).apply_workspace(&mut workspace);
             assert_eq!(workspace["preferences"]["empty_session"], expected);
         }
     }
@@ -727,32 +727,32 @@ mod tests {
     #[test]
     fn desktop_settings_and_sidebar_filters_use_native_names_units_and_enums() {
         let preferences = source(&[
-            ("monocode.sounds", "0"),
-            ("monocode.colorScheme", "light"),
-            ("monocode.workspaceTheme", "tidepool"),
-            ("monocode.insetLayout", "1"),
-            ("monocode.sessionSidebarOpen", "0"),
-            ("monocode.projectRailOpen", "1"),
-            ("monocode.projectRailWidth", "248"),
-            ("monocode.collapsedProjectRailMode", "hidden"),
-            ("monocode.sidebarOpacity", "0.42"),
-            ("monocode.uiScale", "1.4"),
-            ("monocode.chatBackgroundSessionOpacity", "0.31"),
+            ("onicode.sounds", "0"),
+            ("onicode.colorScheme", "light"),
+            ("onicode.workspaceTheme", "tidepool"),
+            ("onicode.insetLayout", "1"),
+            ("onicode.sessionSidebarOpen", "0"),
+            ("onicode.projectRailOpen", "1"),
+            ("onicode.projectRailWidth", "248"),
+            ("onicode.collapsedProjectRailMode", "hidden"),
+            ("onicode.sidebarOpacity", "0.42"),
+            ("onicode.uiScale", "1.4"),
+            ("onicode.chatBackgroundSessionOpacity", "0.31"),
             (
-                "monocode.rightPanelTabOrder",
+                "onicode.rightPanelTabOrder",
                 "[\"changes\",\"files\",\"changes\"]",
             ),
-            ("monocode.changesView", "tree"),
+            ("onicode.changesView", "tree"),
             (
-                "monocode.sessionSidebarFilters",
+                "onicode.sessionSidebarFilters",
                 r#"{"showArchived":true,"hiddenHarnesses":["codex","unknown","codex"],"time":"7d","status":{"needsApproval":true}}"#,
             ),
             (
-                "monocode.defaultModels",
+                "onicode.defaultModels",
                 r#"{"codex":"codex:gpt-6.1-sol","claude":"claude:opus-4.8"}"#,
             ),
             (
-                "monocode.keybindingOverrides",
+                "onicode.keybindingOverrides",
                 r#"{"App: Search":{"shortcut":"Command+KeyJ"},"App: Settings":{"disabled":true}}"#,
             ),
         ]);
@@ -791,7 +791,7 @@ mod tests {
     #[test]
     fn unrelated_desktop_map_edits_preserve_native_model_choices_and_added_keys() {
         let initial = source(&[(
-            "monocode.defaultModels",
+            "onicode.defaultModels",
             r#"{"codex":"codex:gpt-old","claude":"claude:opus-4.8"}"#,
         )]);
         let mut workspace = json!({});
@@ -800,7 +800,7 @@ mod tests {
         workspace["preferences"]["default_models"]["cursor"] = json!("native-added");
         workspace["preferences"]["sounds"] = json!(false);
         let changed = source(&[(
-            "monocode.defaultModels",
+            "onicode.defaultModels",
             r#"{"codex":"codex:gpt-old","claude":"claude:sonnet-4.8"}"#,
         )]);
         changed.apply_workspace(&mut workspace);
@@ -822,7 +822,7 @@ mod tests {
     #[test]
     fn project_backgrounds_keep_independent_opacities_and_native_overrides() {
         let source = source(&[(
-            "monocode:project-chat-backgrounds",
+            "onicode:project-chat-backgrounds",
             r#"{"/work":{"path":"/images/background.png","emptyOpacity":0.2,"sessionOpacity":0.4,"scope":"empty","effect":"ascii"}}"#,
         )]);
         let mut workspace = json!({});
@@ -859,16 +859,16 @@ mod tests {
     fn source_picker_choices_and_file_mode_reconcile_and_unported_prefs_stay_exact() {
         let source = source(&[
             (
-                "monocode.favoriteModels",
+                "onicode.favoriteModels",
                 r#"["claude:opus-4.8","codex:gpt-6.1-sol","claude:opus-4.8","unknown:model"]"#,
             ),
             (
-                "monocode.recentModels",
+                "onicode.recentModels",
                 r#"[{"harness":"codex","model":"codex:gpt-6.1-sol"},{"harness":"claude","model":"claude:opus-4.8"}]"#,
             ),
-            ("monocode.modelPickerTab", "codex"),
-            ("monocode.fileViewMode", "source"),
-            ("monocode.projectSidebarTabs.v1", r#"{"/work":"sessions"}"#),
+            ("onicode.modelPickerTab", "codex"),
+            ("onicode.fileViewMode", "source"),
+            ("onicode.projectSidebarTabs.v1", r#"{"/work":"sessions"}"#),
         ]);
         let mut workspace = json!({});
         source.apply_workspace(&mut workspace);
@@ -886,7 +886,7 @@ mod tests {
         assert_eq!(workspace["preferences"]["model_picker_tab"], "codex");
         assert_eq!(workspace["preferences"]["file_view_mode"], "source");
         assert_eq!(
-            workspace["desktop_preferences_metadata"]["monocode.projectSidebarTabs.v1"],
+            workspace["desktop_preferences_metadata"]["onicode.projectSidebarTabs.v1"],
             r#"{"/work":"sessions"}"#
         );
         workspace["preferences"]["model_picker_tab"] = json!("favorites");

@@ -491,9 +491,9 @@ pub(crate) fn activity_face(glyph: &'static str) -> (Face, AnyElement, Hsla) {
         "search" => (fill(0x6aaeff, 0x2f6fe4), white("search", 12.), ink),
         "bot" => (fill(0xa98bf5, 0x7246e0), white("bot", 12.), ink),
         // The app's own logo keeps its colours.
-        "monocode" => (
+        "onicode" => (
             Face::Neutral,
-            crate::activity::glyph("monocode", 12.).into_any_element(),
+            crate::activity::glyph("onicode", 12.).into_any_element(),
             tile_ink(),
         ),
         other => (

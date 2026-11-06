@@ -146,7 +146,7 @@ impl SettingsView {
                 Some("wayland-window-decorations"),
                 false,
                 "Wayland window decorations",
-                Some("Show compositor decorations. Monocode's title bar stays visible.".into()),
+                Some("Show compositor decorations. Onicode's title bar stays visible.".into()),
                 vec![self.toggle(
                     "wayland-window-decorations",
                     "Wayland window decorations",
@@ -257,7 +257,7 @@ impl SettingsView {
             Some(if light {
                 "Translucency is available in dark mode.".into()
             } else {
-                "How much of the desktop shows through MonoCode.".into()
+                "How much of the desktop shows through Onicode.".into()
             }),
             None,
             translucency,

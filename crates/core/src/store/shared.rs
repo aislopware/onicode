@@ -273,7 +273,7 @@ impl Store {
         ] {
             if !columns.contains(required) {
                 return Err(format!(
-                    "Unsupported Monocode database: missing sessions.{required}. No schema changes were made."
+                    "Unsupported Onicode database: missing sessions.{required}. No schema changes were made."
                 ));
             }
         }
@@ -409,7 +409,7 @@ impl Store {
 
     pub(super) fn shared_writable(&self) -> Result<(), String> {
         if self.shared.as_ref().unwrap().read_only {
-            Err("This Monocode store is read-only".into())
+            Err("This Onicode store is read-only".into())
         } else {
             Ok(())
         }
@@ -740,8 +740,8 @@ impl Store {
             block["role"] == "user"
                 && block["draft"] != true
                 && block["internal"] != true
-                && (block["monocode"] == true
-                    || ["mono", "monocode"].into_iter().any(|command| {
+                && (block["onicode"] == true
+                    || ["mono", "onicode"].into_iter().any(|command| {
                         crate::composer::consume_command(
                             block["text"].as_str().unwrap_or_default(),
                             command,

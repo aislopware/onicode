@@ -11,7 +11,7 @@ pub fn png(url: &str) -> Result<Vec<u8>, String> {
         .timeout(Duration::from_secs(8))
         .build()
         .get(url)
-        .set("User-Agent", "MonoCode")
+        .set("User-Agent", "Onicode")
         .call()
         .map_err(|_| "Avatar unavailable".to_string())?;
     let mut bytes = vec![];

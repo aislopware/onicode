@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn an_edit_signals_once_and_build_output_stays_quiet() {
         use std::time::Duration;
-        let root = std::env::temp_dir().join(format!("monocode-fs-watch-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("onicode-fs-watch-{}", std::process::id()));
         std::fs::create_dir_all(root.join("target")).unwrap();
         // Canonical, as FSEvents reports /private/var for /var.
         let root = root.canonicalize().unwrap();

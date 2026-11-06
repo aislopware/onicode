@@ -760,7 +760,7 @@ fn query_provider(
         if kind == Kind::Codex {
             send(
                 &mut stdin,
-                json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"monocode_native_catalog","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}}),
+                json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"onicode_native_catalog","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}}),
             )?;
         } else {
             send(

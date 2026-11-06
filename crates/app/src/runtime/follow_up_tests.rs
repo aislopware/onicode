@@ -16,7 +16,7 @@ impl Drop for Fixture {
 #[test]
 fn accepted_steer_publishes_its_working_receipt_before_provider_output() {
     let fixture = Fixture(std::env::temp_dir().join(format!(
-        "monocode-runtime-steer-{}-{}",
+        "onicode-runtime-steer-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

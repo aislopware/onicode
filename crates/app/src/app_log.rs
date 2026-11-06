@@ -2,7 +2,7 @@
 //! display link restarts through the `log` crate, and without a logger those
 //! reports were dropped, so a window that stopped repainting left no trace.
 //! Warnings from every crate, plus the macOS window's info lines, go to
-//! `~/Library/Logs/Monocode Native/gpui.log`.
+//! `~/Library/Logs/Onicode/gpui.log`.
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -28,7 +28,7 @@ pub(crate) fn init() {
     let Some(home) = std::env::var_os("HOME") else {
         return;
     };
-    let directory = PathBuf::from(home).join("Library/Logs/Monocode Native");
+    let directory = PathBuf::from(home).join("Library/Logs/Onicode");
     if std::fs::create_dir_all(&directory).is_err() {
         return;
     }

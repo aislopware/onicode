@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use monocode_mobile_link::{Address, Gate, Identity, PORT, VERSION, WatchSink, now};
+use onicode_mobile_link::{Address, Gate, Identity, PORT, VERSION, WatchSink, now};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::oneshot;
@@ -270,7 +270,7 @@ impl MobileHost {
         if enabled {
             let starting = host.clone();
             std::thread::Builder::new()
-                .name("monocode-mobile-start".into())
+                .name("onicode-mobile-start".into())
                 .spawn(move || {
                     if let Err(error) = starting.start() {
                         if let Ok(mut inner) = starting.inner.lock() {
@@ -477,7 +477,7 @@ impl MobileHost {
         }
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
-            .thread_name("monocode-mobile")
+            .thread_name("onicode-mobile")
             .enable_all()
             .build()
             .map_err(|e| format!("Mobile service could not start: {e}"))?;
@@ -496,7 +496,7 @@ impl MobileHost {
         }
         let endpoint = {
             let _context = runtime.enter();
-            monocode_mobile_link::server_endpoint(
+            onicode_mobile_link::server_endpoint(
                 &identity,
                 self.gate.clone(),
                 format!("[::]:{PORT}").parse().unwrap(),
@@ -505,7 +505,7 @@ impl MobileHost {
                 // Another copy of the app (or the earlier desktop) holds the
                 // port; phones would reach it instead of this one.
                 if error.contains("in use") || error.contains("os error 48") {
-                    format!("Another MonoCode window or app is already accepting phone connections on port {PORT}. Quit it, then turn Accept connections off and on.")
+                    format!("Another Onicode window or app is already accepting phone connections on port {PORT}. Quit it, then turn Accept connections off and on.")
                 } else {
                     error
                 }
@@ -515,7 +515,7 @@ impl MobileHost {
         drop(inner);
         let service = self.clone();
         let watching = self.clone();
-        runtime.spawn(monocode_mobile_link::serve(
+        runtime.spawn(onicode_mobile_link::serve(
             endpoint,
             self.gate.clone(),
             move |peer, request| {
@@ -587,7 +587,7 @@ impl MobileHost {
             .as_str()
             .ok_or("Missing device identity")?;
         let proof = params["proof"].as_str().ok_or("Missing device proof")?;
-        let fingerprint = monocode_mobile_link::verify_proof(certificate, peer, proof)?;
+        let fingerprint = onicode_mobile_link::verify_proof(certificate, peer, proof)?;
         let name = params["name"]
             .as_str()
             .unwrap_or("Phone")
@@ -623,7 +623,7 @@ impl MobileHost {
 
     async fn handle(&self, peer: &str, request: Value) -> Result<Value, String> {
         if request["version"] != VERSION {
-            return Err("Update MonoCode on both devices".into());
+            return Err("Update Onicode on both devices".into());
         }
         let method = request["method"].as_str().ok_or("Invalid mobile method")?;
         let params = request["params"].clone();
@@ -717,7 +717,7 @@ impl MobileHost {
     /// every change, until the phone goes or the watch is stopped.
     async fn watch(&self, peer: &str, request: Value, sink: WatchSink) -> Result<(), String> {
         if request["version"] != VERSION {
-            return Err("Update MonoCode on both devices".into());
+            return Err("Update Onicode on both devices".into());
         }
         if request["method"] != "conversation.watch" {
             return Err("Unsupported mobile operation".into());
@@ -887,7 +887,7 @@ mod tests {
         let phone = Identity::generate().unwrap();
         let key = join.fingerprint().unwrap();
         let dir =
-            std::env::temp_dir().join(format!("monocode-mobile-test-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("onicode-mobile-test-{}", uuid::Uuid::new_v4()));
         let (host, events) = MobileHost::open(dir.join("mobile-access.json")).unwrap();
         host.gate.allow(key.clone(), Some(now() + 900));
         {
