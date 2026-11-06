@@ -21,9 +21,13 @@ allowance, red over it), the drawn images and per-scene stats (max channel delta
 The ten dark images were recorded again on the monocode stack (7152d2bd) with those two fixes, since the first
 recording held the update toast; the light ones came out byte-identical. On gpui-fast (FORK.md "Onicode",
 `onicode-parity-3`) the plain scenes match exactly: labels, the title reveal and all eight project backgrounds. Every
-other scene differs by at most 1 level and still fails `check`: mostly the ring along rounded corners and their
-clipped fills and borders, whose low-contrast steps the 16-level edge test does not count, plus 1-level glyph
-interiors in light text over the composer's shadow (about 31 pixels a light scene, 115 in `ui-scale-125-light`).
+other scene differs by at most 1 level and still fails `check`. A dark scene keeps 4 to 9 pixels (24 in
+`ui-scale-125-dark`): two at each corner of the clipped card, along its outer antialiased step, whose low contrast the
+16-level edge test does not count; the frosted composer's corner ring is gone since a backdrop blur mixes with what is
+under it rounded once, as monocode's composite does. A light scene keeps about 31 pixels over the tolerance (115 in
+`ui-scale-125-light`), glyph interiors a level off in the workspace line under the composer: gpui-fast draws the
+composer's 20 px shadow (draw order 4) after that text (order 3), and the drawn values fit the shadow blended over the
+text, monocode's the text blended over the shadow, so monocode orders that shadow below the text; why is not found yet.
 `ui-scale-125`'s activity tile icons sit where monocode drew them since a cached view lays out from its snapped
 bounds again, as monocode's did (it had placed them a device pixel lower, at the half pixel the tile lies at in
 place). The project background spans the view's width at the image's aspect from the top, which is what monocode's

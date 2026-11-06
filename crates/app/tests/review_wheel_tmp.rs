@@ -38,7 +38,8 @@ fn pending_wheel_must_not_cancel_jump_to_bottom(cx: &mut TestAppContext) {
     state.set_follow_mode(FollowMode::Tail);
     state.scroll_to_end();
     draw(cx, &state);
-    std::thread::sleep(std::time::Duration::from_millis(5));
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(5));
     cx.update(|window, cx| {
         window.simulate_next_frame(cx);
     });
@@ -64,7 +65,8 @@ fn pending_wheel_must_not_survive_reset(cx: &mut TestAppContext) {
     });
     state.reset(50);
     draw(cx, &state);
-    std::thread::sleep(std::time::Duration::from_millis(5));
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(5));
     cx.update(|window, cx| {
         window.simulate_next_frame(cx);
     });
@@ -83,7 +85,8 @@ fn wheel_glide_must_preserve_input_distance(cx: &mut TestAppContext) {
         ..Default::default()
     });
     for _ in 0..35 {
-        std::thread::sleep(std::time::Duration::from_millis(16));
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(16));
         cx.update(|window, cx| {
             window.simulate_next_frame(cx);
         });
