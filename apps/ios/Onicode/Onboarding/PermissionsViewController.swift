@@ -9,9 +9,10 @@ final class PermissionsViewController: UIViewController {
     private var rows: [Permission: PermissionRow] = [:]
     private var activeObserver: NSObjectProtocol?
 
-    /// `onContinue` nil: reached from Settings, so no Continue button.
-    init(model: PermissionsModel = PermissionsModel(), onContinue: (() -> Void)? = nil) {
-        self.model = model
+    /// `model` nil: a new one over the real system. `onContinue` nil: reached from Settings, so
+    /// no Continue button.
+    init(model: PermissionsModel? = nil, onContinue: (() -> Void)? = nil) {
+        self.model = model ?? PermissionsModel()
         self.onContinue = onContinue
         super.init(nibName: nil, bundle: nil)
         title = "Permissions"

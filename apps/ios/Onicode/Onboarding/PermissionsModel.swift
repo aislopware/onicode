@@ -94,8 +94,10 @@ final class PermissionsModel {
     private(set) var statuses: [Permission: PermissionStatus] = [:]
     var onChange: (() -> Void)?
 
-    init(system: PermissionSystem = SystemPermissions(), defaults: UserDefaults = .standard) {
-        self.system = system
+    /// `system` nil: the real one. (A default argument runs off the main actor, so it can't
+    /// build `SystemPermissions` itself.)
+    init(system: PermissionSystem? = nil, defaults: UserDefaults = .standard) {
+        self.system = system ?? SystemPermissions()
         self.defaults = defaults
     }
 
