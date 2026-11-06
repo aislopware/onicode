@@ -204,6 +204,12 @@ pub(crate) const INDEX: &[(&str, Section, &str, &str)] = &[
         "update upgrade release what's new build changelog",
     ),
     (
+        "update-channel",
+        Section::General,
+        "Channel",
+        "update beta stable release prerelease preview channel",
+    ),
+    (
         "sounds",
         Section::General,
         "Sounds",

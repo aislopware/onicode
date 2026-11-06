@@ -9,6 +9,10 @@ publish = false
 serde.workspace = true
 serde_json.workspace = true
 onicode-core = { path = "../core" }
+# Onicode's updater: the release feed, staging and the bundle swap. Its async
+# calls run on a current-thread tokio runtime inside a background task.
+onicode-update = { path = "../update" }
+tokio.workspace = true
 log = "0.4"
 pulldown-cmark = "0.13.5"
 mermaid-rs-renderer = { version = "0.3.1", default-features = false }
@@ -104,4 +108,9 @@ mimalloc = { version = "0.1", default-features = false, features = ["v2"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 gpui_apple = { package = "gpui-pre-apple", version = "=0.3.9", features = ["test-support", "runtime_shaders"] }
+# Golden images (src/shell/golden_tests.rs): the headless Metal renderer, and PNG files.
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", default-features = false, features = [
+    "test-support",
+] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 parking_lot = "0.12"

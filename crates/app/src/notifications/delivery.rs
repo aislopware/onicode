@@ -8,7 +8,15 @@ use serde_json::Value;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Permission {
     Prompt,
+    #[cfg_attr(
+        not(target_os = "macos"),
+        expect(dead_code, reason = "only the macOS notification center grants")
+    )]
     Granted,
+    #[cfg_attr(
+        not(target_os = "macos"),
+        expect(dead_code, reason = "only the macOS notification center denies")
+    )]
     Denied,
     Unsupported,
 }
@@ -91,6 +99,10 @@ impl Target {
         }
     }
 
+    #[cfg_attr(
+        not(target_os = "macos"),
+        expect(dead_code, reason = "only macOS reports which notification was opened")
+    )]
     pub fn from_tag(tag: &str) -> Option<Self> {
         if let Some(rest) = tag.strip_prefix("monocode-session:") {
             let (id, sequence) = rest.split_once(':')?;

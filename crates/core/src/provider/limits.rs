@@ -5,6 +5,14 @@ use crate::usage::Limit;
 
 impl Protocol {
     pub(super) fn claude_error(&mut self, error: &str, frame: &Value) -> String {
+        // SDKAssistantMessage's published error code; the footer offers sign-in only after it.
+        if error == "authentication_failed" || frame["error"] == "authentication_failed" {
+            crate::usage::observe_signed_out(
+                self.request.kind,
+                &self.request.settings.account,
+                crate::usage::now_ms(),
+            );
+        }
         let info = frame
             .get("rate_limit_info")
             .or_else(|| frame.get("quotaLimits"))
@@ -125,6 +133,55 @@ mod tests {
             "authentication_failed"
         );
         assert!(p.claude_usage_limit.is_none());
+    }
+
+    #[test]
+    fn claude_rate_events_feed_the_accounts_meter_and_auth_failures_sign_it_out() {
+        let mut p = protocol();
+        p.request.settings.account = crate::accounts::Profile::new(
+            &format!("limits-meter-{}", crate::new_id()),
+            std::path::Path::new("/fixture"),
+        );
+        let account = p.request.settings.account.clone();
+        let mut out = Vec::new();
+        for frame in [
+            json!({"type":"rate_limit_event","rate_limit_info":{
+                "status":"allowed","resetsAt":4_102_444_800_i64,"utilization":0.25,"rateLimitType":"five_hour"
+            }}),
+            json!({"type":"rate_limit_event","parent_tool_use_id":"child","rate_limit_info":{
+                "status":"allowed_warning","resetsAt":4_102_444_800_i64,"rateLimitType":"seven_day"
+            }}),
+            json!({"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"overage"}}),
+        ] {
+            p.frame(frame, &mut out).unwrap();
+        }
+        assert!(p.claude_usage_limit.is_none());
+        let snapshot = crate::usage::observed(Kind::Claude, &account)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            snapshot
+                .windows
+                .iter()
+                .map(|w| (w.minutes, w.used_percent))
+                .collect::<Vec<_>>(),
+            vec![(300, Some(25.)), (10_080, None)]
+        );
+        assert_eq!(
+            snapshot.standing(snapshot.updated_at),
+            Some(crate::usage::Standing::Low(None))
+        );
+        p.frame(
+            json!({"type":"assistant","error":"authentication_failed"}),
+            &mut out,
+        )
+        .unwrap_err();
+        assert!(
+            crate::usage::observed(Kind::Claude, &account)
+                .unwrap()
+                .unwrap_err()
+                .unavailable
+        );
     }
 
     #[cfg(unix)]

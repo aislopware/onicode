@@ -5,7 +5,7 @@ pub(crate) use desktop::DesktopOverrides;
 pub(crate) mod login;
 mod transfer;
 pub use identity::Identity;
-pub use login::{AuthAction, arguments as login_arguments, authenticate};
+pub use login::{AuthAction, arguments as login_arguments, authenticate, sign_out_for_removal};
 mod processes;
 #[cfg(test)]
 mod tests;

@@ -251,7 +251,7 @@ impl Shell {
                 AppUpdateEvent::Dismiss => {
                     this.notification_state
                         .installed
-                        .update(cx, |notice, cx| notice.set_version(None, cx));
+                        .update(cx, |notice, cx| notice.set_notice(None, cx));
                     this.invalidate_chrome(cx);
                     cx.notify();
                 }
@@ -268,14 +268,22 @@ impl Shell {
         ));
         let store = self.store.clone();
         let work = cx.background_executor().spawn(async move {
-            locked(&store).and_then(|store| app_update::consume_installed_update(&store))
+            let report =
+                onicode_update::channel::data_dir().and_then(onicode_update::transaction::report);
+            locked(&store).and_then(|store| {
+                app_update::consume_startup_notice(
+                    &store,
+                    report.as_ref(),
+                    onicode_update::app_version(),
+                )
+            })
         });
         cx.spawn(async move |this, cx| {
-            if let Ok(Some(version)) = work.await {
+            if let Ok(Some(notice)) = work.await {
                 let _ = this.update(cx, |this, cx| {
                     this.notification_state
                         .installed
-                        .update(cx, |notice, cx| notice.set_version(Some(version), cx));
+                        .update(cx, |card, cx| card.set_notice(Some(notice), cx));
                     this.invalidate_chrome(cx);
                     cx.notify();
                 });
@@ -828,17 +836,14 @@ impl Shell {
     pub(super) fn open_whats_new(&mut self, version: String, cx: &mut Context<Self>) {
         let view = cx.new(|_| WhatsNew::new(version.clone()));
         let weak = view.downgrade();
-        let store = self.store.clone();
-        let work = cx.background_executor().spawn(async move {
-            locked(&store).and_then(|store| store.setting("monocode.nativeReleaseNotes"))
-        });
+        let notes = self
+            .notification_state
+            .updater
+            .read(cx)
+            .release_notes(&version, cx);
         cx.spawn(async move |_, cx| {
-            if let Ok(Some(raw)) = work.await
-                && let Ok(notes) = serde_json::from_str::<serde_json::Value>(&raw)
-                && notes["version"].as_str() == Some(version.as_str())
-                && let Some(body) = notes["body"].as_str()
-            {
-                let _ = weak.update(cx, |view, cx| view.set_release_notes(body, cx));
+            if let Some(notes) = notes.await {
+                let _ = weak.update(cx, |view, cx| view.set_release_notes(&notes, cx));
             }
         })
         .detach();
@@ -1324,7 +1329,7 @@ mod tests {
         window
             .update(visual, |shell, _, cx| {
                 shell.notification_state.installed.update(cx, |notice, cx| {
-                    notice.set_version(Some("1.2.3".into()), cx)
+                    notice.set_notice(Some(app_update::Notice::Updated("1.2.3".into())), cx)
                 });
                 shell.invalidate_chrome(cx);
                 cx.notify();
@@ -1341,5 +1346,40 @@ mod tests {
                 assert!(shell.notification_state.whats_new.is_none());
             })
             .unwrap();
+    }
+
+    /// The card after an install opens What's new; after a rollback it only says so.
+    #[gpui::test]
+    fn the_update_card_opens_whats_new_only_after_an_update(cx: &mut TestAppContext) {
+        let (window, _, _) = crate::shell::tests::window(cx);
+        let visual = &mut VisualTestContext::from_window(window.into(), cx);
+        let show = |visual: &mut VisualTestContext, notice: app_update::Notice| {
+            window
+                .update(visual, |shell, _, cx| {
+                    shell
+                        .notification_state
+                        .installed
+                        .update(cx, |card, cx| card.set_notice(Some(notice), cx));
+                    shell.invalidate_chrome(cx);
+                    cx.notify();
+                })
+                .unwrap();
+            visual.run_until_parked();
+            visual.refresh().unwrap();
+            let card = visual.debug_bounds("open-installed-update").unwrap();
+            visual.simulate_click(card.center(), Default::default());
+            visual.run_until_parked();
+            window
+                .update(visual, |shell, _, _| {
+                    shell.notification_state.whats_new.is_some()
+                })
+                .unwrap()
+        };
+        let rolled_back = app_update::Notice::RolledBack {
+            version: "1.2.2".into(),
+            reason: None,
+        };
+        assert!(!show(visual, rolled_back));
+        assert!(show(visual, app_update::Notice::Updated("1.2.3".into())));
     }
 }

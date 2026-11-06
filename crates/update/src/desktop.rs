@@ -1,6 +1,5 @@
-//! The desktop app's own updates, for whichever interface it has (the GPUI
-//! app's `crates/ui/src/app_update.rs`, the zgx interface's `src/about.rs`):
-//! what both do the same, apart from how they draw it.
+//! The desktop app's own updates (the app's `notifications/updater.rs`): what
+//! it does apart from how it draws it.
 //!
 //! The lifecycle around these (Sparkle's, VS Code's): a found release
 //! downloads in the background ([`stage_offer`]), "Restart to update" installs
@@ -10,7 +9,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    Channel, InstallKind, Offer, app_version, bundle_engine_version, channel, fetch_latest, offer,
+    Channel, InstallKind, Offer, Progress, app_version, bundle_engine_version, channel,
+    fetch_latest, offer,
 };
 
 /// What the selected channel offers this app now, with the release itself:
@@ -38,11 +38,12 @@ pub async fn current_offer(
 /// Download, verify and stage what the selected channel offers this app (a
 /// newer release, or the other channel's after a switch): its version and
 /// the staged bundle. An offer that's gone or held is an error, in words for
-/// the person.
+/// the person. The download reports to `progress`.
 pub async fn stage_offer(
     feed_url: &str,
     data_dir: &Path,
     install: &InstallKind,
+    progress: Progress<'_>,
 ) -> anyhow::Result<(String, PathBuf)> {
     let (offer, manifest) = current_offer(feed_url, install).await?;
     match offer {
@@ -50,7 +51,9 @@ pub async fn stage_offer(
         Offer::Held(why) => anyhow::bail!(why),
         Offer::Current => anyhow::bail!("the release feed no longer offers a newer version"),
     }
-    let staged = install.stage_desktop(feed_url, &manifest, data_dir).await?;
+    let staged = install
+        .stage_desktop(feed_url, &manifest, data_dir, progress)
+        .await?;
     Ok((manifest.version, staged))
 }
 

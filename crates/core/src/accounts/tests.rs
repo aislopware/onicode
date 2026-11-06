@@ -218,7 +218,7 @@ for line in sys.stdin:
                 .unwrap()
                 .windows[0]
                 .used_percent,
-            used
+            Some(used)
         );
         assert_eq!(
             usage::consume_reset(&profile, Some("fixture-credit")).unwrap(),

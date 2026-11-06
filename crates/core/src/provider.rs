@@ -415,6 +415,20 @@ impl Protocol {
             {
                 self.claude_prompt(stdin)?;
             }
+            // Limits are per account, so a subagent's report feeds the meter too; record it
+            // before subagent frames are routed away below.
+            if v["type"] == "rate_limit_event" {
+                if let Some(observation) = crate::usage::Observation::from_claude_info(
+                    &v["rate_limit_info"],
+                    crate::usage::now_ms(),
+                ) {
+                    crate::usage::observe(
+                        self.request.kind,
+                        &self.request.settings.account,
+                        observation,
+                    );
+                }
+            }
             let starts_message = v["parent_tool_use_id"].is_null()
                 && (v["type"] == "assistant"
                     || (v["type"] == "stream_event" && v["event"]["type"] == "message_start")
@@ -763,9 +777,12 @@ impl Protocol {
                     events.push(Event::Model(model.into()));
                 }
                 match v["type"].as_str().unwrap_or("") {
-                    "rate_limit_event" if v["parent_tool_use_id"].is_null() => {
-                        self.claude_usage_limit =
-                            crate::usage::Limit::from_claude_info(&v["rate_limit_info"]);
+                    "rate_limit_event" => {
+                        // Only the parent's rejection stops this turn.
+                        if v["parent_tool_use_id"].is_null() {
+                            self.claude_usage_limit =
+                                crate::usage::Limit::from_claude_info(&v["rate_limit_info"]);
+                        }
                     }
                     "control_response" if v["response"]["request_id"] == "native-init" => {
                         self.claude_prompt(stdin)?;

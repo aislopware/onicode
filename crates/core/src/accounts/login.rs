@@ -105,7 +105,24 @@ pub fn authenticate(
     process::terminate(&mut child);
     drop(rx);
     let _ = reader.join();
+    if result.is_ok() {
+        crate::usage::forget(kind, profile);
+    }
     result
+}
+/// Removing an account promises its stored credentials go. Claude Code keeps them where only it
+/// should reach (its config dir and Keychain item), so its published logout deletes them.
+pub fn sign_out_for_removal(kind: Kind, profile: &Profile) -> Result<(), String> {
+    if kind != Kind::Claude || provider::resolve(kind).is_none() {
+        return Ok(());
+    }
+    authenticate(
+        kind,
+        profile,
+        AuthAction::SignOut,
+        Arc::new(AtomicBool::new(false)),
+    )
+    .map_err(|error| format!("Could not sign out of Claude Code: {error}"))
 }
 fn safe_detail(value: &str) -> String {
     let last = value

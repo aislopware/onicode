@@ -347,6 +347,8 @@ impl MediaPreview {
 }
 impl gpui::Render for MediaPreview {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(not(target_os = "macos"))]
+        let _ = &window;
         let is_image = self.image.is_some();
         #[cfg(target_os = "macos")]
         if self.failed

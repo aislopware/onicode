@@ -213,7 +213,14 @@ impl SettingsView {
                 )],
             ));
         }
-        let version = crate::notifications::updater::version();
+        let version = onicode_update::app_version();
+        let updates = cx
+            .try_global::<updater::Shared>()
+            .map(|shared| shared.0.clone());
+        let channel = updates
+            .as_ref()
+            .map(|updates| updater::followed_channel(updates, cx))
+            .unwrap_or_default();
         let about = vec![
             self.row(
                 Some("update"),
@@ -266,6 +273,24 @@ impl SettingsView {
                         .child(self.app_update_button(cx))
                         .into_any_element(),
                 ],
+            ),
+            self.row(
+                Some("update-channel"),
+                false,
+                "Channel",
+                Some("Stable gets tested releases. Beta gets new versions first.".into()),
+                vec![self.segmented(
+                    "update-channel",
+                    "Channel",
+                    channel.as_str(),
+                    &[("stable", "Stable"), ("beta", "Beta")],
+                    cx,
+                    move |_, value, cx| {
+                        if let Some(updates) = &updates {
+                            updater::choose_channel(updates, value == "beta", cx);
+                        }
+                    },
+                )],
             ),
         ];
         vec![

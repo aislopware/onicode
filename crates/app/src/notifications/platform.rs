@@ -5,6 +5,10 @@ use std::sync::mpsc::{self, Receiver};
 
 use super::delivery::{Permission, Target};
 
+#[cfg_attr(
+    not(target_os = "macos"),
+    expect(dead_code, reason = "only the macOS backend posts notifications")
+)]
 pub struct Notification {
     pub tag: String,
     pub subtitle: String,

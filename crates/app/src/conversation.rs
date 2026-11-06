@@ -1422,6 +1422,7 @@ impl Conversation {
                                 this.settings.usage_limit = Some(limit);
                             }
                             if !this.is_remote() {
+                                this.refresh_turn_usage(cx);
                                 this.detect_usage_limit(cx);
                             }
                             this.review

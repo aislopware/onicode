@@ -129,7 +129,7 @@ impl Shell {
                     }
                 }
                 SettingsEvent::WhatsNew => {
-                    this.open_whats_new(crate::notifications::updater::version().into(), cx)
+                    this.open_whats_new(onicode_update::app_version().into(), cx)
                 }
                 SettingsEvent::CheckAppUpdates => {
                     this.notification_state

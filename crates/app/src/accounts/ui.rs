@@ -488,15 +488,17 @@ impl Accounts {
             .gap_3()
             .children(snapshot.windows.iter().map(|w| {
                 let used = if w.resets_at.is_some_and(|at| at <= usage::now_ms()) {
-                    0.
+                    Some(0.)
                 } else {
                     w.used_percent
                 };
-                let percent = if self.show_remaining {
-                    100. - used
-                } else {
-                    used
-                };
+                let percent = used.map(|used| {
+                    if self.show_remaining {
+                        100. - used
+                    } else {
+                        used
+                    }
+                });
                 div()
                     .w(px(64.))
                     .child(
@@ -506,9 +508,12 @@ impl Accounts {
                             .text_size(px(9.))
                             .text_color(content(0.4))
                             .child(w.label())
-                            .child(format!("{percent:.0}%")),
+                            .child(percent.map_or_else(
+                                || w.status_label().into(),
+                                |percent| format!("{percent:.0}%"),
+                            )),
                     )
-                    .child(
+                    .children(used.zip(percent).map(|(used, percent)| {
                         div()
                             .mt_1()
                             .h(px(3.))
@@ -526,8 +531,8 @@ impl Accounts {
                                     } else {
                                         content(0.55)
                                     }),
-                            ),
-                    )
+                            )
+                    }))
             }))
             .into_any_element()
     }
@@ -874,10 +879,11 @@ pub(crate) fn status_label(status: &Status) -> Div {
 
 /// UsageMeter with React's short "5h · 3h 10m" title for account rows.
 fn meter(w: &usage::Window, now: i64, show_remaining: bool) -> Div {
-    let used = w.used_percent.clamp(0., 100.);
+    let measured = w.used_percent.map(|used| used.clamp(0., 100.));
+    let used = measured.unwrap_or_default();
     let remaining = 100. - used;
     let shown = if show_remaining { remaining } else { used };
-    let full = used >= 100. && w.resets_at.is_none_or(|at| at > now);
+    let full = w.exhausted() && w.resets_at.is_none_or(|at| at > now);
     let reset = match w.resets_at {
         None => w.label(),
         Some(at) if at <= now => "reset due".into(),
@@ -912,7 +918,9 @@ fn meter(w: &usage::Window, now: i64, show_remaining: bool) -> Div {
                                 d.text_color(content(0.6))
                             }
                         })
-                        .child(if show_remaining {
+                        .child(if measured.is_none() {
+                            w.status_label().into()
+                        } else if show_remaining {
                             format!("{remaining:.0}% left")
                         } else if full {
                             "Full".into()
@@ -921,21 +929,23 @@ fn meter(w: &usage::Window, now: i64, show_remaining: bool) -> Div {
                         }),
                 ),
         )
-        .child(
-            div()
-                .mt(px(6.))
-                .h_1()
-                .rounded_full()
-                .bg(content(0.1))
-                .overflow_hidden()
-                .child(
-                    div()
-                        .h_full()
-                        .w(gpui::relative(shown as f32 / 100.))
-                        .rounded_full()
-                        .bg(bar_color(used)),
-                ),
-        )
+        .when(measured.is_some(), |d| {
+            d.child(
+                div()
+                    .mt(px(6.))
+                    .h_1()
+                    .rounded_full()
+                    .bg(content(0.1))
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .h_full()
+                            .w(gpui::relative(shown as f32 / 100.))
+                            .rounded_full()
+                            .bg(bar_color(used)),
+                    ),
+            )
+        })
 }
 
 impl Render for Accounts {

@@ -65,6 +65,31 @@ pub fn app_version() -> &'static str {
         .unwrap_or(current_version())
 }
 
+/// The release feed this build reads: `ONICODE_UPDATE_FEED` when it is set
+/// (empty turns updates off), else the feed the build was made with. None
+/// leaves the updater off (`docs/onicode/decisions/releases.md`).
+pub fn feed_url() -> Option<String> {
+    feed_from(
+        std::env::var("ONICODE_UPDATE_FEED").ok().as_deref(),
+        option_env!("ONICODE_UPDATE_FEED"),
+    )
+}
+
+fn feed_from(runtime: Option<&str>, built: Option<&str>) -> Option<String> {
+    runtime
+        .or(built)
+        .map(str::trim)
+        .filter(|feed| !feed.is_empty())
+        .map(str::to_owned)
+}
+
+/// How far a download has got: the bytes so far, and the whole when the feed
+/// says. Called from the download's task, once per chunk.
+pub type Progress<'a> = &'a (dyn Fn(u64, Option<u64>) + Send + Sync);
+
+/// A [`Progress`] for callers that show none.
+pub fn no_progress(_done: u64, _total: Option<u64>) {}
+
 /// Successful checks repeat this often. The feed is a sub-kilobyte
 /// document, so hourly polling is free and bounds how long a
 /// long-running app can sit on a stale release.
@@ -124,6 +149,13 @@ pub struct Manifest {
         skip_serializing_if = "Option::is_none"
     )]
     pub minimum_macos: Option<String>,
+    /// The release's notes, in Markdown: what the app's What's new shows for
+    /// `version`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    /// The day `version` was released (`YYYY-MM-DD`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
     /// The channel this manifest was fetched from: where its files are.
     #[serde(skip)]
     pub channel: Channel,
@@ -591,11 +623,12 @@ impl InstallKind {
         feed_url: &str,
         manifest: &Manifest,
         data_dir: &Path,
+        progress: Progress<'_>,
     ) -> anyhow::Result<PathBuf> {
         match self {
-            Self::MacApp { .. } => stage_mac_app(feed_url, manifest, data_dir).await,
+            Self::MacApp { .. } => stage_mac_app(feed_url, manifest, data_dir, progress).await,
             Self::Managed { app_root } if self.supports_desktop_update() => {
-                stage_headless(feed_url, manifest, app_root).await
+                stage_headless(feed_url, manifest, app_root, progress).await
             }
             _ => bail!("this installation does not support desktop updates"),
         }
@@ -931,6 +964,7 @@ pub async fn download_release_file(
     manifest: &Manifest,
     file: &str,
     dest: &Path,
+    progress: Progress<'_>,
 ) -> anyhow::Result<()> {
     // From the feed the manifest came from: a beta's files are beta's.
     let url = format!("{}/{file}", manifest.channel.base(&release_base(feed_url)?));
@@ -949,15 +983,20 @@ pub async fn download_release_file(
         .with_context(|| format!("downloading {url}"))?
         .error_for_status()
         .with_context(|| format!("downloading {url}"))?;
+    let total = resp.content_length();
     let mut out = tokio::fs::File::create(&partial)
         .await
         .with_context(|| format!("creating {}", partial.display()))?;
     let mut hasher = Sha256::new();
     let mut stream = resp.bytes_stream();
+    let mut done = 0_u64;
+    progress(done, total);
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.context("reading download stream")?;
         hasher.update(&chunk);
         out.write_all(&chunk).await.context("writing download")?;
+        done = done.saturating_add(chunk.len() as u64);
+        progress(done, total);
     }
     out.flush().await.context("flushing download")?;
     drop(out);
@@ -1024,6 +1063,7 @@ pub async fn stage_headless(
     feed_url: &str,
     manifest: &Manifest,
     app_root: &Path,
+    progress: Progress<'_>,
 ) -> anyhow::Result<PathBuf> {
     // Reject unsupported targets before creating a stage or making a request.
     require_managed_update_platform()?;
@@ -1042,7 +1082,7 @@ pub async fn stage_headless(
     std::fs::create_dir_all(&stage).with_context(|| format!("creating {}", stage.display()))?;
     let result = async {
         let tarball = stage.join(&file);
-        download_release_file(feed_url, manifest, &file, &tarball).await?;
+        download_release_file(feed_url, manifest, &file, &tarball, progress).await?;
         let unpacked = stage.join("unpacked");
         std::fs::create_dir_all(&unpacked)?;
         // Tarball root is the versioned stage dir (see scripts/package-linux.sh);
@@ -1213,6 +1253,7 @@ pub async fn stage_mac_app(
     feed_url: &str,
     manifest: &Manifest,
     data_dir: &Path,
+    progress: Progress<'_>,
 ) -> anyhow::Result<PathBuf> {
     // Reject unsupported targets before creating a stage or making a request.
     require_mac_app_update_platform()?;
@@ -1233,7 +1274,7 @@ pub async fn stage_mac_app(
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let file = mac_app_artifact(version);
     let tarball = dir.join(&file);
-    download_release_file(feed_url, manifest, &file, &tarball).await?;
+    download_release_file(feed_url, manifest, &file, &tarball, progress).await?;
     let unpack = dir.join(".unpack");
     std::fs::create_dir_all(&unpack)?;
     let unpacked = run(
@@ -1554,7 +1595,7 @@ enum Role {
     /// and a service daemon restarts into a binary someone else installed.
     Engine { quiescent: Option<QuiescentCheck> },
     /// The desktop app: report only — downloading and installing are UI
-    /// decisions (see `crates/ui/src/app_update.rs`).
+    /// decisions (see `crates/app/src/notifications/updater.rs`).
     Desktop,
 }
 
@@ -1760,7 +1801,9 @@ impl Updater {
         if let InstallKind::Managed { app_root } = detect_install() {
             match fetch_latest(&self.feed_url).await {
                 Ok(manifest) if version_newer(&manifest.version, current_version()) => {
-                    if let Err(err) = stage_headless(&self.feed_url, &manifest, &app_root).await {
+                    if let Err(err) =
+                        stage_headless(&self.feed_url, &manifest, &app_root, &no_progress).await
+                    {
                         tracing::warn!(error = %err, "auto-update staging failed");
                         return;
                     }
@@ -2049,7 +2092,7 @@ async fn prepare_this_install(
             {
                 bail!(why);
             }
-            let staged = stage_mac_app(feed_url, manifest, data_dir).await?;
+            let staged = stage_mac_app(feed_url, manifest, data_dir, &no_progress).await?;
             let name = bundle
                 .file_name()
                 .context("app bundle has no name")?
@@ -2105,7 +2148,7 @@ pub async fn prepare_install(
     if let Err(why) = transaction::ensure_room(data_dir, app_root, download) {
         bail!(why);
     }
-    stage_headless(feed_url, manifest, app_root).await?;
+    stage_headless(feed_url, manifest, app_root, &no_progress).await?;
     Ok(())
 }
 
@@ -3115,7 +3158,7 @@ mod tests {
 
         let wrong = fake_headless_tarball(&tmp.path().join("wrong"), "1.0.0");
         let (base, server) = serve_forever(wrong.clone()).await;
-        let error = stage_headless(&base, &manifest(&wrong), &app_root)
+        let error = stage_headless(&base, &manifest(&wrong), &app_root, &no_progress)
             .await
             .unwrap_err();
         server.abort();
@@ -3128,11 +3171,72 @@ mod tests {
 
         let right = fake_headless_tarball(&tmp.path().join("right"), "9.9.9");
         let (base, server) = serve_forever(right.clone()).await;
-        let staged = stage_headless(&base, &manifest(&right), &app_root)
+        let staged = stage_headless(&base, &manifest(&right), &app_root, &no_progress)
             .await
             .unwrap();
         server.abort();
         assert_eq!(staged, app_root.join("9.9.9"));
         assert!(staged.join("onicode").is_file());
+    }
+
+    #[test]
+    fn a_manifest_carries_its_release_notes() {
+        let manifest: Manifest = serde_json::from_str(
+            r#"{"version":"0.3.0","notes":"- Faster.\n","date":"2026-11-07","files":{}}"#,
+        )
+        .unwrap();
+        assert_eq!(manifest.notes.as_deref(), Some("- Faster.\n"));
+        assert_eq!(manifest.date.as_deref(), Some("2026-11-07"));
+        let bare: Manifest = serde_json::from_str(r#"{"version":"0.3.0"}"#).unwrap();
+        assert_eq!((bare.notes, bare.date), (None, None));
+        // Absent notes stay absent when written back.
+        let written = serde_json::to_value(manifest_of("0.3.0", Channel::Stable)).unwrap();
+        assert!(written.get("notes").is_none() && written.get("date").is_none());
+    }
+
+    #[test]
+    fn the_feed_set_at_run_time_wins_and_empty_turns_updates_off() {
+        let built = Some("https://built.example");
+        assert_eq!(
+            feed_from(Some(" https://run.example "), built).as_deref(),
+            Some("https://run.example")
+        );
+        assert_eq!(feed_from(None, built).as_deref(), built);
+        assert_eq!(feed_from(Some(""), built), None);
+        assert_eq!(feed_from(None, None), None);
+    }
+
+    #[tokio::test]
+    async fn a_download_reports_its_progress_up_to_the_whole() {
+        let body = vec![7_u8; 256 * 1024];
+        let (base, server) = serve_forever(body.clone()).await;
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest = Manifest {
+            version: "9.9.9".into(),
+            files: [(
+                "blob".to_owned(),
+                FileMeta {
+                    sha256: Some(format!("{:x}", Sha256::digest(&body))),
+                },
+            )]
+            .into(),
+            ..Manifest::default()
+        };
+        let seen = std::sync::Mutex::new(Vec::new());
+        let record = |done: u64, total: Option<u64>| seen.lock().unwrap().push((done, total));
+        let dest = tmp.path().join("blob");
+        download_release_file(&base, &manifest, "blob", &dest, &record)
+            .await
+            .unwrap();
+        server.abort();
+        let seen = seen.into_inner().unwrap();
+        let whole = body.len() as u64;
+        assert_eq!(seen.first(), Some(&(0, Some(whole))));
+        assert_eq!(seen.last(), Some(&(whole, Some(whole))));
+        assert!(
+            seen.windows(2).all(|pair| pair[0].0 <= pair[1].0),
+            "{seen:?}"
+        );
+        assert_eq!(std::fs::read(&dest).unwrap(), body);
     }
 }

@@ -16,6 +16,7 @@ use crate::theme::*;
 
 pub(crate) const RADIUS: f32 = 16.;
 /// Backdrop blur behind the card, in points.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const BLUR: f32 = 24.;
 const ENTER: Duration = Duration::from_millis(200);
 const RISE: f32 = 6.;

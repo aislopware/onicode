@@ -22,6 +22,36 @@ const PARTICLE_LIFE: f32 = 0.85;
 pub(crate) struct GlyphRaster(pub Arc<dyn PlatformTextSystem>);
 impl Global for GlyphRaster {}
 
+#[cfg(test)]
+thread_local! {
+    /// The reveal's clock while a golden image holds it; `None` reads the real one.
+    static HELD_NOW: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
+}
+
+/// Holds every reveal's clock at `now`, or releases it with `None`. Golden images step it frame by
+/// frame; while held, particles scatter from a fixed seed.
+#[cfg(test)]
+pub(crate) fn hold_clock(now: Option<Instant>) {
+    HELD_NOW.set(now);
+}
+
+fn now() -> Instant {
+    #[cfg(test)]
+    if let Some(now) = HELD_NOW.get() {
+        return now;
+    }
+    Instant::now()
+}
+
+/// Each title change scatters its particles differently, except under a held clock.
+fn scatter() -> std::hash::DefaultHasher {
+    #[cfg(test)]
+    if HELD_NOW.get().is_some() {
+        return std::hash::DefaultHasher::new();
+    }
+    RandomState::new().build_hasher()
+}
+
 pub(crate) fn particle_text(text: impl Into<String>) -> impl IntoElement {
     ParticleText {
         text: text.into(),
@@ -197,7 +227,7 @@ fn sample_text(
             }
         }
     }
-    let mut random = RandomState::new().build_hasher();
+    let mut random = scatter();
     let mut next = || {
         random.write_u8(1);
         (random.finish() >> 40) as f32 / (1_u32 << 24) as f32
@@ -354,7 +384,7 @@ impl Element for ParticleText {
                 style: style.clone(),
                 transition: None,
             });
-            let frame = state.prepare(&self.text, style, bounds, Instant::now(), window, cx);
+            let frame = state.prepare(&self.text, style, bounds, now(), window, cx);
             (frame, state)
         })
     }

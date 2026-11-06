@@ -8,6 +8,8 @@ mod classic_sidebar;
 mod classic_surface_tests;
 mod classic_surfaces;
 mod file_panes;
+#[cfg(all(test, target_os = "macos"))]
+mod golden_tests;
 mod idle_agents;
 #[cfg(test)]
 mod image_lightbox_tests;
@@ -8606,7 +8608,7 @@ impl Render for Shell {
                 this.open_settings(crate::settings::Section::Appearance, window, cx)
             }))
             .on_action(|_: &About, window, cx| {
-                let detail = format!("Version {}", crate::notifications::updater::version());
+                let detail = format!("Version {}", onicode_update::app_version());
                 drop(window.prompt(
                     gpui::PromptLevel::Info,
                     "Monocode Native",

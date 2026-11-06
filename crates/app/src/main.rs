@@ -165,7 +165,8 @@ fn main() {
         .first()
         .is_some_and(|arg| arg == "--version" || arg == "-V")
     {
-        println!("Onicode {}", notifications::updater::version());
+        // `onicode-update` runs a staged release's `--version` and expects exactly this.
+        println!("onicode {}", onicode_update::app_version());
         return;
     }
     if cli_args.first().is_some_and(|a| a == "visual-mcp") {
@@ -266,6 +267,15 @@ fn main() {
             }
         }
         return;
+    }
+    // Where the update channel is kept, and the update record this app reads.
+    let data = data_dir();
+    onicode_update::channel::set_data_dir(&data);
+    let version = onicode_update::app_version();
+    if onicode_update::Channel::of_version(version) == onicode_update::Channel::Beta
+        && let Err(error) = onicode_update::channel::claim_for_beta_build(&data, version)
+    {
+        eprintln!("Cannot record the beta update channel: {error}");
     }
     onicode_core::checkpoint::init(
         database

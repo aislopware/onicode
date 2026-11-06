@@ -22,6 +22,8 @@ const PEEK_CLOSE_DELAY: Duration = Duration::from_millis(180);
 const PEEK_INSET: f32 = 6.;
 /// How far the panel drifts in from the edge.
 const PEEK_DRIFT: f32 = 12.;
+/// The opening ease, `cubic-bezier(0.16, 1, 0.3, 1)`.
+const OPEN_CURVE: (f32, f32, f32, f32) = (0.16, 1., 0.3, 1.);
 
 /// A fade between hidden (0) and shown (1). A reversal midway starts from
 /// wherever the last one had got to.
@@ -48,7 +50,7 @@ impl SidebarPeek {
     fn at(&self, now: Instant) -> (f32, bool) {
         let to = if self.open { 1. } else { 0. };
         let (duration, curve) = if self.open {
-            (240., (0.16, 1., 0.3, 1.))
+            (240., OPEN_CURVE)
         } else {
             (200., (0.4, 0., 0.2, 1.))
         };
@@ -63,6 +65,20 @@ impl SidebarPeek {
         }
         let eased = bezier(t, curve.0, curve.1, curve.2, curve.3);
         (self.from + (to - self.from) * eased, false)
+    }
+}
+
+#[cfg(test)]
+impl SidebarPeek {
+    /// An opening peek held `t` of the way through its curve, for golden images: its start lies an
+    /// hour ahead, so every frame reads the same progress.
+    pub(super) fn held_opening(t: f32) -> Self {
+        let (x1, y1, x2, y2) = OPEN_CURVE;
+        Self {
+            open: true,
+            from: bezier(t, x1, y1, x2, y2),
+            start: Instant::now() + Duration::from_secs(3600),
+        }
     }
 }
 

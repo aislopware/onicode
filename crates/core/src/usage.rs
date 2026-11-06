@@ -1,6 +1,10 @@
 //! Subscription usage, ported from rateLimits.ts and src-tauri/rate_limits.rs.
-//! Blocking probes belong on a worker. Credentials are read only, never rotated.
+//! Codex is polled through its app-server on a worker. Claude Code publishes no poll, so its
+//! meter is what its own stream reported (`rate_limit_event`), kept per account in [`observed`].
+//! No provider's credentials are ever read.
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
@@ -8,13 +12,77 @@ use serde_json::Value;
 use crate::catalog;
 use crate::provider::Kind;
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Window {
-    pub used_percent: f64,
+    /// None when the provider reported only a status, as Claude Code's events may.
+    pub used_percent: Option<f64>,
     pub minutes: u64,
     pub resets_at: Option<i64>,
+    /// The provider's own verdict on this window, when it gives one.
+    #[serde(default)]
+    pub status: Option<Status>,
+}
+/// Claude Code's `rate_limit_event` status.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+    Allowed,
+    Warning,
+    Rejected,
+}
+impl Status {
+    fn from_claude(value: &Value) -> Option<Self> {
+        match value.as_str()? {
+            "allowed" => Some(Self::Allowed),
+            "allowed_warning" => Some(Self::Warning),
+            "rejected" => Some(Self::Rejected),
+            _ => None,
+        }
+    }
+
+    /// The account picker's words, shown where a percentage would be.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Allowed => "Ready",
+            Self::Warning => "Running low",
+            Self::Rejected => "Exhausted",
+        }
+    }
+}
+/// What an account's windows add up to: the account picker's tone.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Standing {
+    Ready,
+    /// The percentage left, when the provider reported one.
+    Low(Option<f64>),
+    /// When every exhausted window has reset, if known and still ahead.
+    Exhausted(Option<i64>),
 }
 impl Window {
+    fn reset(&self, now: i64) -> bool {
+        self.resets_at.is_some_and(|at| at <= now)
+    }
+
+    /// Percentage left, or None when the window reported neither a percentage nor a rejection.
+    pub fn headroom(&self, now: i64) -> Option<f64> {
+        if self.reset(now) {
+            Some(100.)
+        } else if self.status == Some(Status::Rejected) {
+            Some(0.)
+        } else {
+            self.used_percent.map(|used| 100. - used.clamp(0., 100.))
+        }
+    }
+
+    pub fn exhausted(&self) -> bool {
+        self.status == Some(Status::Rejected) || self.used_percent.is_some_and(|used| used >= 100.)
+    }
+
+    /// The word shown in place of a percentage the provider did not report.
+    pub fn status_label(&self) -> &'static str {
+        self.status.unwrap_or(Status::Allowed).label()
+    }
+
     pub fn label(&self) -> String {
         match self.minutes {
             300 => "5h".into(),
@@ -109,6 +177,121 @@ impl Limit {
                 .is_some_and(|at| now >= at.saturating_add(30_000))
     }
 }
+/// One window as an agent's stream reported it, stamped when it arrived.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Observation {
+    pub window: Window,
+    pub observed_at: i64,
+}
+impl Observation {
+    /// Claude Code's `rate_limit_info`: `status`, `resetsAt` (epoch seconds), optional
+    /// `utilization` (0..1) and `rateLimitType`. Events without a type are the five-hour session
+    /// window; overage and types this meter has no row for are not windows of the subscription.
+    pub fn from_claude_info(info: &Value, now: i64) -> Option<Self> {
+        let status = Status::from_claude(&info["status"])?;
+        let minutes = match info["rateLimitType"].as_str() {
+            None | Some("five_hour") => 300,
+            Some("seven_day") => 10_080,
+            Some(_) => return None,
+        };
+        Some(Self {
+            window: Window {
+                used_percent: number(info, &["utilization"])
+                    .map(|fraction| (fraction * 100.).clamp(0., 100.)),
+                minutes,
+                resets_at: timestamp(&info["resetsAt"]),
+                status: Some(status),
+            },
+            observed_at: now,
+        })
+    }
+}
+/// What one account's turns have reported: the newest observation per window, and whether
+/// the stream said the account is signed out since.
+#[derive(Clone, Debug, Default)]
+pub struct Ledger {
+    windows: Vec<(i64, Window)>,
+    signed_out: Option<i64>,
+}
+impl Ledger {
+    /// Turns of one account run side by side, so reports can land out of order.
+    pub fn observe(&mut self, observation: Observation) {
+        let Observation {
+            window,
+            observed_at,
+        } = observation;
+        if self.signed_out.is_some_and(|at| at <= observed_at) {
+            self.signed_out = None;
+        }
+        match self
+            .windows
+            .iter_mut()
+            .find(|(_, w)| w.minutes == window.minutes)
+        {
+            Some(slot) if slot.0 > observed_at => {}
+            Some(slot) => *slot = (observed_at, window),
+            None => {
+                self.windows.push((observed_at, window));
+                self.windows.sort_by_key(|(_, w)| w.minutes);
+            }
+        }
+    }
+
+    pub fn sign_out(&mut self, at: i64) {
+        if self.windows.iter().all(|(seen, _)| *seen <= at) {
+            self.signed_out = Some(at);
+        }
+    }
+
+    /// None until a turn reports something: the meter is not known yet, not unavailable.
+    pub fn snapshot(&self) -> Option<Result<Snapshot, FetchError>> {
+        if self.signed_out.is_some() {
+            return Some(Err(FetchError::unavailable(
+                "Claude Code reported that this account is signed out.",
+            )));
+        }
+        let updated_at = self.windows.iter().map(|(at, _)| *at).max()?;
+        Some(Ok(Snapshot {
+            windows: self.windows.iter().map(|(_, w)| w.clone()).collect(),
+            updated_at,
+            ..Default::default()
+        }))
+    }
+}
+type Ledgers = HashMap<(Kind, String), Ledger>;
+fn ledgers() -> std::sync::MutexGuard<'static, Ledgers> {
+    static LEDGERS: OnceLock<Mutex<Ledgers>> = OnceLock::new();
+    LEDGERS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+/// Whether this provider's meter comes from its turns rather than a poll.
+pub fn from_turns(kind: Kind) -> bool {
+    kind == Kind::Claude
+}
+pub fn observe(kind: Kind, profile: &crate::accounts::Profile, observation: Observation) {
+    ledgers()
+        .entry((kind, profile.id.clone()))
+        .or_default()
+        .observe(observation);
+}
+pub fn observe_signed_out(kind: Kind, profile: &crate::accounts::Profile, at: i64) {
+    ledgers()
+        .entry((kind, profile.id.clone()))
+        .or_default()
+        .sign_out(at);
+}
+/// A sign-in or sign-out makes what earlier turns reported belong to someone else.
+pub fn forget(kind: Kind, profile: &crate::accounts::Profile) {
+    ledgers().remove(&(kind, profile.id.clone()));
+}
+pub fn observed(
+    kind: Kind,
+    profile: &crate::accounts::Profile,
+) -> Option<Result<Snapshot, FetchError>> {
+    ledgers().get(&(kind, profile.id.clone()))?.snapshot()
+}
 #[derive(Clone, Debug)]
 pub struct FetchError {
     pub message: String,
@@ -138,9 +321,16 @@ pub fn fetch_for(
     profile: &crate::accounts::Profile,
     model: Option<&str>,
 ) -> Result<Snapshot, FetchError> {
-    // Only Codex publishes its rate limits (app-server `account/rateLimits/read`). The others'
-    // meters would need their credential files or private endpoints, which Onicode never touches.
+    // Only Codex publishes a poll (app-server `account/rateLimits/read`). Claude Code's meter is
+    // what its turns reported; the others' would need credential files or private endpoints.
     let _ = model;
+    if from_turns(kind) {
+        return observed(kind, profile).unwrap_or_else(|| {
+            Err(FetchError::unavailable(
+                "Usage appears after this account's next turn.",
+            ))
+        });
+    }
     if kind != Kind::Codex || !kind.subscription_usage() {
         return Err(FetchError::unavailable(format!(
             "No subscription usage is available for {}.",
@@ -193,22 +383,39 @@ impl Snapshot {
     pub fn headroom(&self, now: i64) -> Option<f64> {
         self.windows
             .iter()
-            .map(|w| {
-                if w.resets_at.is_some_and(|at| at <= now) {
-                    100.
-                } else {
-                    100. - w.used_percent.clamp(0., 100.)
-                }
-            })
+            .filter_map(|w| w.headroom(now))
             .reduce(f64::min)
     }
 
-    pub fn exhausted_reset(&self) -> Option<i64> {
-        let exhausted: Vec<_> = self
+    /// React's `accountStatus` thresholds, plus the provider's own warning when it sent one.
+    pub fn standing(&self, now: i64) -> Option<Standing> {
+        if self.windows.is_empty() {
+            return None;
+        }
+        let headroom = self.headroom(now);
+        if headroom.is_some_and(|left| left <= 0.) {
+            return Some(Standing::Exhausted(
+                self.exhausted_reset().filter(|at| *at > now),
+            ));
+        }
+        if let Some(left) = headroom.filter(|left| *left <= 20.) {
+            return Some(Standing::Low(Some(left)));
+        }
+        let mut warned = self
             .windows
             .iter()
-            .filter(|w| w.used_percent >= 100.)
-            .collect();
+            .filter(|w| w.status == Some(Status::Warning) && !w.reset(now))
+            .peekable();
+        if warned.peek().is_some() {
+            return Some(Standing::Low(
+                warned.filter_map(|w| w.headroom(now)).reduce(f64::min),
+            ));
+        }
+        Some(Standing::Ready)
+    }
+
+    pub fn exhausted_reset(&self) -> Option<i64> {
+        let exhausted: Vec<_> = self.windows.iter().filter(|w| w.exhausted()).collect();
         if exhausted.is_empty() || exhausted.iter().any(|w| w.resets_at.is_none()) {
             None
         } else {
@@ -265,9 +472,10 @@ fn timestamp(value: &Value) -> Option<i64> {
 }
 fn window(value: &Value, minutes: u64, percent_keys: &[&str]) -> Option<Window> {
     Some(Window {
-        used_percent: number(value, percent_keys)?.clamp(0., 100.),
+        used_percent: Some(number(value, percent_keys)?.clamp(0., 100.)),
         minutes,
         resets_at: timestamp(&value["resetsAt"]).or_else(|| timestamp(&value["resets_at"])),
+        status: None,
     })
 }
 fn parse_codex(value: &Value) -> Snapshot {
@@ -364,12 +572,12 @@ mod tests {
             &json!({"primary":{"usedPercent":99},"secondary":{"usedPercent":12,"windowDurationMins":300}}),
         );
         assert_eq!(snapshot.windows.len(), 1);
-        assert_eq!(snapshot.windows[0].used_percent, 12.);
+        assert_eq!(snapshot.windows[0].used_percent, Some(12.));
         let snapshot = parse_codex(
             &json!({"primary":{"usedPercent":44,"windowDurationMins":10080},"secondary":{"usedPercent":88}}),
         );
         assert_eq!(snapshot.windows.len(), 1);
-        assert_eq!(snapshot.windows[0].used_percent, 44.);
+        assert_eq!(snapshot.windows[0].used_percent, Some(44.));
     }
     #[test]
     fn reset_credit_details_keep_aliases_and_unknown_statuses() {
@@ -390,14 +598,16 @@ mod tests {
         let mut snapshot = Snapshot {
             windows: vec![
                 Window {
-                    used_percent: 100.,
+                    used_percent: Some(100.),
                     minutes: 300,
                     resets_at: Some(100_000),
+                    status: None,
                 },
                 Window {
-                    used_percent: 100.,
+                    used_percent: Some(100.),
                     minutes: 10080,
                     resets_at: Some(200_000),
+                    status: None,
                 },
             ],
             ..Default::default()
@@ -433,7 +643,7 @@ mod tests {
         }}));
         assert_eq!(snapshot.windows.len(), 2);
         assert_eq!(snapshot.windows[0].minutes, 300);
-        assert_eq!(snapshot.windows[0].used_percent, 100.);
+        assert_eq!(snapshot.windows[0].used_percent, Some(100.));
         assert_eq!(snapshot.windows[1].minutes, 10_080);
         assert_eq!(snapshot.windows[0].resets_at, snapshot.windows[1].resets_at);
         let monthly =
@@ -457,10 +667,243 @@ mod tests {
             assert_eq!(duration(ms), expected);
         }
         let w = Window {
-            used_percent: 4.,
+            used_percent: Some(4.),
             minutes: 300,
-            resets_at: None,
+            ..Default::default()
         };
         assert_eq!(w.countdown(0), "5h");
+    }
+
+    fn claude(info: Value, at: i64) -> Option<Observation> {
+        Observation::from_claude_info(&info, at)
+    }
+
+    #[test]
+    fn claude_rate_limit_events_map_each_status_with_and_without_utilization() {
+        for (status, expected) in [
+            ("allowed", Status::Allowed),
+            ("allowed_warning", Status::Warning),
+            ("rejected", Status::Rejected),
+        ] {
+            let measured = claude(
+                json!({"status":status,"resetsAt":1792600200,"utilization":0.25,"rateLimitType":"five_hour"}),
+                7,
+            )
+            .unwrap();
+            assert_eq!(
+                measured,
+                Observation {
+                    window: Window {
+                        used_percent: Some(25.),
+                        minutes: 300,
+                        resets_at: Some(1_792_600_200_000),
+                        status: Some(expected),
+                    },
+                    observed_at: 7,
+                }
+            );
+            let bare = claude(json!({"status":status,"resetsAt":1792600200}), 7).unwrap();
+            assert_eq!(bare.window.used_percent, None);
+            assert_eq!(bare.window.minutes, 300);
+            assert_eq!(bare.window.status_label(), expected.label());
+        }
+        let weekly = claude(
+            json!({"status":"allowed","rateLimitType":"seven_day","utilization":3.5}),
+            0,
+        )
+        .unwrap();
+        assert_eq!(weekly.window.minutes, 10_080);
+        assert_eq!(weekly.window.used_percent, Some(100.));
+        assert_eq!(weekly.window.label(), "wk");
+        for ignored in [
+            json!({"status":"allowed","rateLimitType":"overage"}),
+            json!({"status":"allowed","rateLimitType":"seven_day_opus"}),
+            json!({"status":"queued","rateLimitType":"five_hour"}),
+            json!({"resetsAt":1792600200}),
+        ] {
+            assert_eq!(claude(ignored, 0), None);
+        }
+    }
+
+    fn five_hour(used: Option<f64>, status: Option<Status>, resets_at: Option<i64>) -> Window {
+        Window {
+            used_percent: used,
+            minutes: 300,
+            resets_at,
+            status,
+        }
+    }
+    fn standing(windows: Vec<Window>, now: i64) -> Option<Standing> {
+        Snapshot {
+            windows,
+            ..Default::default()
+        }
+        .standing(now)
+    }
+
+    #[test]
+    fn account_standing_follows_reported_status_and_percentage() {
+        use Standing::*;
+        use Status::*;
+        let ahead = Some(10_000);
+        for (windows, expected) in [
+            (vec![], None),
+            (vec![five_hour(None, Some(Allowed), ahead)], Some(Ready)),
+            (vec![five_hour(None, Some(Warning), ahead)], Some(Low(None))),
+            (
+                vec![five_hour(Some(70.), Some(Warning), ahead)],
+                Some(Low(Some(30.))),
+            ),
+            (
+                vec![five_hour(None, Some(Rejected), ahead)],
+                Some(Exhausted(ahead)),
+            ),
+            (
+                vec![five_hour(None, Some(Rejected), None)],
+                Some(Exhausted(None)),
+            ),
+            // A rejected window whose reset passed is usable again.
+            (
+                vec![five_hour(None, Some(Rejected), Some(500))],
+                Some(Ready),
+            ),
+            (vec![five_hour(None, Some(Warning), Some(500))], Some(Ready)),
+            (vec![five_hour(Some(79.), None, ahead)], Some(Ready)),
+            (
+                vec![five_hour(Some(80.), None, ahead)],
+                Some(Low(Some(20.))),
+            ),
+            (
+                vec![five_hour(Some(100.), None, ahead)],
+                Some(Exhausted(ahead)),
+            ),
+            (
+                vec![
+                    five_hour(Some(10.), Some(Allowed), ahead),
+                    Window {
+                        minutes: 10_080,
+                        ..five_hour(None, Some(Warning), ahead)
+                    },
+                ],
+                Some(Low(None)),
+            ),
+        ] {
+            assert_eq!(standing(windows, 1_000), expected);
+        }
+    }
+
+    #[test]
+    fn claude_ledger_reports_nothing_until_a_turn_and_sign_in_only_after_an_auth_failure() {
+        let mut ledger = Ledger::default();
+        assert!(ledger.snapshot().is_none());
+        ledger.observe(claude(json!({"status":"allowed","utilization":0.25}), 100).unwrap());
+        let snapshot = ledger.snapshot().unwrap().unwrap();
+        assert_eq!(snapshot.updated_at, 100);
+        assert_eq!(snapshot.windows[0].used_percent, Some(25.));
+        ledger.sign_out(200);
+        assert!(ledger.snapshot().unwrap().unwrap_err().unavailable);
+        // A report from before the failure does not sign the account back in; a later one does.
+        ledger.observe(claude(json!({"status":"allowed"}), 150).unwrap());
+        assert!(ledger.snapshot().unwrap().is_err());
+        ledger.observe(claude(json!({"status":"allowed"}), 250).unwrap());
+        assert_eq!(ledger.snapshot().unwrap().unwrap().updated_at, 250);
+    }
+
+    #[test]
+    fn observed_usage_is_kept_per_provider_and_account() {
+        let profile = crate::accounts::Profile::new(
+            &format!("usage-ledger-{}", crate::new_id()),
+            std::path::Path::new("/fixture"),
+        );
+        assert!(observed(Kind::Claude, &profile).is_none());
+        assert!(
+            fetch_for(Kind::Claude, &profile, None)
+                .unwrap_err()
+                .unavailable
+        );
+        observe(
+            Kind::Claude,
+            &profile,
+            claude(json!({"status":"rejected","resetsAt":1792600200}), 1).unwrap(),
+        );
+        let snapshot = fetch_for(Kind::Claude, &profile, None).unwrap();
+        assert_eq!(snapshot.exhausted_reset(), Some(1_792_600_200_000));
+        assert!(observed(Kind::Codex, &profile).is_none());
+        observe_signed_out(Kind::Claude, &profile, 2);
+        assert!(observed(Kind::Claude, &profile).unwrap().is_err());
+        forget(Kind::Claude, &profile);
+        assert!(observed(Kind::Claude, &profile).is_none());
+    }
+
+    mod properties {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            /// Metamorphic: however a window's reports interleave, the newest one is what shows.
+            #[test]
+            fn the_newest_report_per_window_wins_in_any_arrival_order(
+                reports in prop::collection::vec(
+                    (0..3_usize, prop::option::of(0.0..1.0_f64), any::<bool>()),
+                    1..24,
+                )
+                .prop_flat_map(|reports| {
+                    let order = Just((0..reports.len()).collect::<Vec<_>>()).prop_shuffle();
+                    (Just(reports), order)
+                })
+            ) {
+                let (reports, order) = reports;
+                let observations: Vec<Observation> = reports
+                    .iter()
+                    .enumerate()
+                    .map(|(at, (status, utilization, weekly))| {
+                        let status = ["allowed", "allowed_warning", "rejected"][*status];
+                        let mut info = json!({
+                            "status": status,
+                            "rateLimitType": if *weekly { "seven_day" } else { "five_hour" },
+                        });
+                        if let Some(fraction) = utilization {
+                            info["utilization"] = json!(fraction);
+                        }
+                        claude(info, at as i64).unwrap()
+                    })
+                    .collect();
+                let mut in_order = Ledger::default();
+                for observation in &observations {
+                    in_order.observe(observation.clone());
+                }
+                let mut shuffled = Ledger::default();
+                for ix in order {
+                    shuffled.observe(observations[ix].clone());
+                }
+                let expected = in_order.snapshot().unwrap().unwrap();
+                let actual = shuffled.snapshot().unwrap().unwrap();
+                prop_assert_eq!(&actual.windows, &expected.windows);
+                prop_assert_eq!(actual.updated_at, observations.len() as i64 - 1);
+                for w in &actual.windows {
+                    let newest = observations.iter().rfind(|o| o.window.minutes == w.minutes).unwrap();
+                    prop_assert_eq!(w, &newest.window);
+                }
+                prop_assert!(actual.windows.windows(2).all(|pair| pair[0].minutes < pair[1].minutes));
+            }
+
+            /// Without a provider status, the tone keeps monocode's percentage thresholds.
+            #[test]
+            fn polled_windows_keep_the_percentage_thresholds(
+                used in prop::collection::vec(0.0..=100.0_f64, 1..3),
+            ) {
+                let windows: Vec<_> = used.iter().map(|u| five_hour(Some(*u), None, None)).collect();
+                let left = 100. - used.iter().copied().fold(0., f64::max);
+                let expected = if left <= 0. {
+                    Standing::Exhausted(None)
+                } else if left <= 20. {
+                    Standing::Low(Some(left))
+                } else {
+                    Standing::Ready
+                };
+                prop_assert_eq!(standing(windows, 0), Some(expected));
+            }
+        }
     }
 }

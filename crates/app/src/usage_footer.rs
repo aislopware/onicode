@@ -183,6 +183,16 @@ impl UsageFooter {
         )
     }
 
+    /// A window's chip and description text; Claude's events may carry only a status.
+    fn window_label(&self, w: &usage::Window, chip: bool) -> String {
+        match w.used_percent {
+            Some(used) if chip => format!("{:.0}%", self.display_percent(used)),
+            Some(used) => self.percent_label(used),
+            None if chip => w.status_label().to_lowercase(),
+            None => w.status_label().into(),
+        }
+    }
+
     pub(crate) fn set_classic(&mut self, classic: bool, cx: &mut Context<Self>) {
         if self.classic != classic {
             self.classic = classic;
@@ -531,7 +541,9 @@ impl UsageFooter {
                             div()
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(content(0.65))
-                                .child(if loading {
+                                .child(if loading && usage::from_turns(self.kind) {
+                                    "Shows after this account’s next turn"
+                                } else if loading {
                                     "Loading usage…"
                                 } else if state.error.as_ref().is_some_and(|e| e.unavailable) {
                                     "Not connected"
@@ -663,8 +675,8 @@ impl UsageFooter {
     }
 
     fn window_card(&self, w: &usage::Window, now: i64) -> gpui::Div {
-        let used = w.used_percent.clamp(0., 100.);
-        let shown = self.display_percent(used);
+        let used = w.used_percent.map(|used| used.clamp(0., 100.));
+        let shown = used.map(|used| self.display_percent(used));
         let label = match w.minutes {
             1_440 => "Daily limit",
             10_080 => "Weekly limit",
@@ -690,36 +702,38 @@ impl UsageFooter {
                             .text_color(content(0.65))
                             .child(label),
                     )
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(format!(
+                    .child(div().flex_shrink_0().font_weight(FontWeight::MEDIUM).child(
+                        match shown {
+                            Some(shown) => format!(
                                 "{shown:.0}% {}",
                                 if self.show_remaining {
                                     "remaining"
                                 } else {
                                     "used"
                                 }
-                            )),
-                    ),
+                            ),
+                            None => w.status_label().into(),
+                        },
+                    )),
             )
-            .child(
-                div()
-                    .mt_2()
-                    .h(px(6.))
-                    .w_full()
-                    .rounded_full()
-                    .bg(content(0.1))
-                    .overflow_hidden()
-                    .child(
-                        div()
-                            .h_full()
-                            .w(gpui::relative(shown as f32 / 100.))
-                            .rounded_full()
-                            .bg(usage_color(used)),
-                    ),
-            )
+            .when_some(used.zip(shown), |d, (used, shown)| {
+                d.child(
+                    div()
+                        .mt_2()
+                        .h(px(6.))
+                        .w_full()
+                        .rounded_full()
+                        .bg(content(0.1))
+                        .overflow_hidden()
+                        .child(
+                            div()
+                                .h_full()
+                                .w(gpui::relative(shown as f32 / 100.))
+                                .rounded_full()
+                                .bg(usage_color(used)),
+                        ),
+                )
+            })
             .child(
                 div()
                     .mt(px(6.))
@@ -729,15 +743,17 @@ impl UsageFooter {
                     .text_size(px(10.))
                     .line_height(px(16.))
                     .text_color(content(0.4))
-                    .child(format!(
-                        "{:.0}% {}",
-                        100. - shown,
-                        if self.show_remaining {
-                            "used"
-                        } else {
-                            "remaining"
-                        }
-                    ))
+                    .children(shown.map(|shown| {
+                        format!(
+                            "{:.0}% {}",
+                            100. - shown,
+                            if self.show_remaining {
+                                "used"
+                            } else {
+                                "remaining"
+                            }
+                        )
+                    }))
                     .child(div().truncate().child(w.reset_label(now))),
             )
     }
@@ -837,13 +853,7 @@ impl Render for UsageFooter {
             snapshot
                 .windows
                 .iter()
-                .map(|w| {
-                    format!(
-                        "{:.0}% {}",
-                        self.display_percent(w.used_percent),
-                        w.countdown(now)
-                    )
-                })
+                .map(|w| format!("{} {}", self.window_label(w, true), w.countdown(now)))
                 .collect::<Vec<_>>()
                 .join(" · ")
         } else if state.fetching || state.error.is_none() {
@@ -859,23 +869,20 @@ impl Render for UsageFooter {
             .map(|s| {
                 s.windows
                     .iter()
-                    .map(|w| {
-                        format!(
-                            "{} · {}",
-                            self.percent_label(w.used_percent),
-                            w.reset_label(now)
-                        )
-                    })
+                    .map(|w| format!("{} · {}", self.window_label(w, false), w.reset_label(now)))
                     .collect::<Vec<_>>()
                     .join(" · ")
             })
             .or_else(|| state.error.as_ref().map(|e| e.message.clone()))
             .unwrap_or_else(|| "Loading usage".into());
-        let fetching = state.fetching;
-        let tightest = state
-            .snapshot
-            .as_ref()
-            .and_then(|s| s.windows.iter().map(|w| w.used_percent).reduce(f64::max));
+        // Claude publishes no poll; its refresh stays put, dimmed as while fetching.
+        let fetching = state.fetching || usage::from_turns(self.kind);
+        let tightest = state.snapshot.as_ref().and_then(|s| {
+            s.windows
+                .iter()
+                .filter_map(|w| w.used_percent)
+                .reduce(f64::max)
+        });
         let weak = cx.weak_entity();
         let classic = self.classic;
         div()
@@ -1005,9 +1012,9 @@ mod tests {
             .update(cx, |footer, w, cx| {
                 footer.cache[0].complete(Ok(Snapshot {
                     windows: vec![usage::Window {
-                        used_percent: 28.,
+                        used_percent: Some(28.),
                         minutes: 300,
-                        resets_at: None,
+                        ..Default::default()
                     }],
                     updated_at: usage::now_ms(),
                     ..Default::default()
@@ -1036,9 +1043,9 @@ mod tests {
                 // A late Codex response belongs to Codex, while Claude stays in view.
                 footer.cache[0].complete(Ok(Snapshot {
                     windows: vec![usage::Window {
-                        used_percent: 42.,
+                        used_percent: Some(42.),
                         minutes: 300,
-                        resets_at: None,
+                        ..Default::default()
                     }],
                     updated_at: usage::now_ms(),
                     ..Default::default()
@@ -1047,7 +1054,7 @@ mod tests {
                 footer.provider(Kind::Codex, cx);
                 assert_eq!(
                     footer.cache[0].snapshot.as_ref().unwrap().windows[0].used_percent,
-                    42.
+                    Some(42.)
                 );
             })
             .unwrap();

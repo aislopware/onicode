@@ -14,6 +14,19 @@ impl Conversation {
         cx.notify();
     }
 
+    /// Claude reports its limits only during turns, so a finished turn is when its meter moves.
+    pub(super) fn refresh_turn_usage(&self, cx: &mut Context<Self>) {
+        let kind = Kind::from_id(&self.summary.provider);
+        if !usage::from_turns(kind) {
+            return;
+        }
+        let key =
+            crate::accounts::Key::new(kind, self.settings.account.clone(), self.account_model());
+        if let Some(center) = crate::accounts::get(cx) {
+            center.update(cx, |center, cx| center.refresh(key, true, cx));
+        }
+    }
+
     pub(super) fn auth_notice(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let kind = Kind::from_id(&self.summary.provider);
         let action = onicode_core::accounts::AuthAction::SignIn;
@@ -563,9 +576,10 @@ pub(super) fn usage_reset_label(limit: &Limit, now: i64) -> Option<String> {
         format!(
             "Resets {when} · in {}",
             usage::Window {
-                used_percent: 100.,
+                used_percent: Some(100.),
                 minutes: 300,
-                resets_at: Some(at)
+                resets_at: Some(at),
+                status: None,
             }
             .countdown(now)
         )

@@ -288,23 +288,24 @@ impl Accounts {
 
     pub(crate) fn suggestion(&self, kind: Kind, selected: &str) -> Option<Account> {
         let now = usage::now_ms();
-        let room = |id: &str| {
+        let snapshot = |id: &str| {
             self.usage
                 .get(&Key::new(kind, self.profile(id), None))?
                 .snapshot
-                .as_ref()?
-                .headroom(now)
+                .as_ref()
         };
-        if room(selected)? > 20. {
+        if snapshot(selected)?.standing(now)? == usage::Standing::Ready {
             return None;
         }
+        // Ready accounts with the most room first; one that reported only its status ranks last.
         self.book
             .list(kind)
             .into_iter()
             .filter(|a| a.id != selected)
             .filter_map(|a| {
-                let n = room(&a.id)?;
-                (n > 20.).then_some((a, n))
+                let theirs = snapshot(&a.id)?;
+                (theirs.standing(now)? == usage::Standing::Ready)
+                    .then(|| (a, theirs.headroom(now).unwrap_or(0.)))
             })
             .max_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(a, _)| a)
@@ -317,39 +318,38 @@ impl Accounts {
     /// React's `accountStatus`: a tone, a word, and an optional detail.
     pub(crate) fn status(&self, kind: Kind, id: &str) -> Status {
         let key = Key::new(kind, self.profile(id), None);
+        // Claude reports nothing until the account's next turn: not known yet, not a failure.
         let checking = Status {
             tone: Tone::Checking,
-            label: "Checking…".into(),
+            label: if usage::from_turns(kind) {
+                "Ready"
+            } else {
+                "Checking…"
+            }
+            .into(),
             detail: None,
         };
         let Some(state) = self.usage.get(&key) else {
             return checking;
         };
         let now = usage::now_ms();
-        if let Some(snapshot) = &state.snapshot
-            && let Some(headroom) = snapshot.headroom(now)
-        {
-            if headroom <= 0. {
-                return Status {
+        if let Some(standing) = state.snapshot.as_ref().and_then(|s| s.standing(now)) {
+            return match standing {
+                usage::Standing::Exhausted(back) => Status {
                     tone: Tone::Exhausted,
                     label: "Exhausted".into(),
-                    detail: snapshot
-                        .exhausted_reset()
-                        .filter(|at| *at > now)
-                        .map(|at| format!("back in {}", usage::duration(at - now))),
-                };
-            }
-            if headroom <= 20. {
-                return Status {
+                    detail: back.map(|at| format!("back in {}", usage::duration(at - now))),
+                },
+                usage::Standing::Low(left) => Status {
                     tone: Tone::Low,
                     label: "Running low".into(),
-                    detail: Some(format!("{headroom:.0}% left")),
-                };
-            }
-            return Status {
-                tone: Tone::Ready,
-                label: "Ready".into(),
-                detail: None,
+                    detail: left.map(|left| format!("{left:.0}% left")),
+                },
+                usage::Standing::Ready => Status {
+                    tone: Tone::Ready,
+                    label: "Ready".into(),
+                    detail: None,
+                },
             };
         }
         if state.fetching || (state.snapshot.is_none() && state.error.is_none()) {
@@ -371,6 +371,19 @@ impl Accounts {
             return;
         }
         let state = self.usage.entry(key.clone()).or_default();
+        if usage::from_turns(key.kind) {
+            // Nothing to poll: read what this account's turns reported, as often as asked.
+            state.fetching = false;
+            match usage::observed(key.kind, &key.profile) {
+                Some(result) => state.complete(result),
+                None => {
+                    state.snapshot = None;
+                    state.error = None;
+                }
+            }
+            cx.notify();
+            return;
+        }
         if state.fetching {
             state.queued |= force;
             return;
@@ -812,6 +825,8 @@ impl Accounts {
                 let saved = book.clone();
                 let work = cx.background_executor().spawn(async move {
                     accounts::stop_processes(kind, &profile);
+                    // An account that is already signed out can fail logout; removal still goes on.
+                    let _ = accounts::sign_out_for_removal(kind, &profile);
                     profile.remove_credentials(kind)?;
                     locked(&store)?.save_provider_accounts(&saved)
                 });
@@ -889,9 +904,9 @@ mod tests {
     fn usage_cache_preserves_stale_data_on_errors_and_separates_accounts_and_pi_billing() {
         let snapshot = Snapshot {
             windows: vec![usage::Window {
-                used_percent: 40.,
+                used_percent: Some(40.),
                 minutes: 300,
-                resets_at: None,
+                ..Default::default()
             }],
             ..Default::default()
         };
@@ -903,7 +918,7 @@ mod tests {
         }));
         assert_eq!(
             state.snapshot.as_ref().unwrap().windows[0].used_percent,
-            40.
+            Some(40.)
         );
         state.complete(Err(FetchError {
             message: "Not signed in".into(),

@@ -1593,7 +1593,7 @@ impl Shell {
                                     43_200 => "Monthly",
                                     _ => return None,
                                 };
-                                let used = window.used_percent.clamp(0., 100.);
+                                let used = window.used_percent?.clamp(0., 100.);
                                 let percent = if show_remaining { 100. - used } else { used };
                                 let reset = match window.resets_at {
                                     None => window.label(),
