@@ -40,6 +40,13 @@ For the toolchain and crates, take the newest that pays off, including nightly, 
 Fix the call sites and adopt what the new version offers. A dependency that blocks a bump or falls short is
 forked under aislopware, fixed there and added to `sources.toml`.
 
+## The forks
+
+The forks under aislopware (gpui-fast, gpui-kit, ghostty, libghostty-rs, askama) serve onicode alone. Each one's
+`main` is the line onicode pins: work and upstream merges land on `main` directly and are pushed to the `fork`
+remote, never to upstream. There are no integration branches. The pre-onicode default branches are kept as
+`archive/*-pre-onicode` tags.
+
 ## Studying references
 
 `sources.toml` also lists references: Claude Code, its Agent SDKs, Claude's desktop apps, t3code, Amp, Zed's ACP
