@@ -5024,15 +5024,23 @@ mod tests {
     /// is often handed out again as the source port of the next outgoing
     /// connection, so a probe that connects to it can connect to itself and
     /// hold the port. A port outside that range is never a source port.
-    async fn free_port_outside_ephemeral_range() -> u16 {
+    /// A port below the ephemeral range, reserved from every other test process while the
+    /// returned lock lives: nextest runs each test in its own process, so a bind probe alone
+    /// lets a concurrent test take the same port before this one listens on it.
+    async fn free_port_outside_ephemeral_range() -> (u16, std::fs::File) {
         let start = 20_000 + (std::process::id() % 10_000) as u16;
         for offset in 0..2_000u16 {
             let port = start + offset;
-            if tokio::net::TcpListener::bind(("127.0.0.1", port))
-                .await
-                .is_ok()
+            let lock = std::fs::File::create(
+                std::env::temp_dir().join(format!("onicode-test-port-{port}.lock")),
+            )
+            .unwrap();
+            if lock.try_lock().is_ok()
+                && tokio::net::TcpListener::bind(("127.0.0.1", port))
+                    .await
+                    .is_ok()
             {
-                return port;
+                return (port, lock);
             }
         }
         panic!("no free port in 20000..32000");
@@ -5178,7 +5186,7 @@ mod tests {
         onicode_engine::EngineProfile::local(dir.path()).unwrap();
         std::fs::create_dir(dir.path().join("profiles")).unwrap();
         std::fs::write(dir.path().join("profiles/local"), b"not a directory").unwrap();
-        let port = free_port_outside_ephemeral_range().await;
+        let (port, _reserved) = free_port_outside_ephemeral_range().await;
 
         let error = match EngineHandle::bootstrap(EngineBootConfig {
             data_dir: dir.path().to_path_buf(),
@@ -5202,8 +5210,8 @@ mod tests {
         // Probe the port the way the next bootstrap does (`attach_to_daemon`
         // connects): a live listener completes the handshake from its backlog
         // whether or not anyone accepts, so a refusal means nothing listens.
-        // The port is below the ephemeral range, so the connect can never be
-        // its own source port and self-connect.
+        // No other test process listens on the reserved port, and it is below the
+        // ephemeral range, so the connect can never be its own source port and self-connect.
         //
         // Not a rebind: on macOS a just-closed listener's PCB can stay in the
         // local-port table until the kernel disposes of it, and `bind` counts
