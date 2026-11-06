@@ -1,6 +1,6 @@
 //! The helper's command line for its grants: what the app and desktopd itself start it with.
-//! desktopd reads these first thing in `main`; [`crate::probe_helper`] and
-//! [`crate::request_in_helper`] start it with them.
+//! desktopd reads these first thing in `main`; `probe_helper` and
+//! `request_in_helper` start it with them.
 
 use crate::Privilege;
 

@@ -16,7 +16,8 @@ cd "$(dirname "$0")/../.."
 . scripts/dev/tools.env
 run() { nice -n 10 "$@"; }
 
-sh_files() { git ls-files -co --exclude-standard -- '*.sh' scripts/dev/tools.env | grep -v '^vendor/'; }
+# remote_bootstrap.sh is monocode's POSIX bootstrap for its SSH host, deleted with SSH remote (decisions/monocode-base.md).
+sh_files() { git ls-files -co --exclude-standard -- '*.sh' scripts/dev/tools.env | grep -v -e '^vendor/' -e '^crates/core/src/remote/remote_bootstrap.sh$'; }
 skip() {
   echo "$1 not installed (scripts/dev/setup.sh): skipped"
 }
@@ -36,14 +37,18 @@ check_zizmor() {
   fi
 }
 check_swiftlint() {
-  if command -v swiftlint >/dev/null; then swiftlint lint --strict --quiet --baseline apps/ios/.swiftlint-baseline.json; else skip swiftlint; fi
+  local swift
+  swift=$(git ls-files '*.swift')
+  if [[ -z "$swift" ]]; then
+    skip "swiftlint (no Swift files)"
+  elif command -v swiftlint >/dev/null; then swiftlint lint --strict --quiet; else skip swiftlint; fi
 }
 # Xcode's swift format only: the toolchain on Linux runners is another version and formats differently.
 check_swift_format() {
   local os
   os=$(uname -s)
   if [[ "$os" == Darwin ]] && swift format --version >/dev/null 2>&1; then
-    swift format lint --strict --recursive --parallel apps/ios scripts
+    swift format lint --strict --recursive --parallel scripts
   else
     skip "swift format"
   fi
@@ -81,7 +86,7 @@ lint() {
   run cargo lint
 }
 doc() {
-  RUSTDOCFLAGS="-D warnings" run cargo doc --locked --no-deps --document-private-items --workspace --features onicode-harness/native-fixture
+  RUSTDOCFLAGS="-D warnings" run cargo doc --locked --no-deps --document-private-items --workspace
 }
 # NEXTEST_PROFILE also reaches the tests: the cursor_shim stress test runs 14 rounds under `ci`.
 # ONICODE_NO_LOGIN_SHELL: every test process would otherwise run the developer's `$SHELL -lic` once

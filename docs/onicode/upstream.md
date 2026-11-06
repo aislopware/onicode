@@ -1,6 +1,6 @@
 # Following upstream
 
-Onicode builds on zeron, gpui-fast and gpui-kit (and through them zed's gpui), ghostty, libghostty-rs, noq,
+Onicode builds on monocode native, gpui-fast and gpui-kit (and through them zed's gpui), ghostty, libghostty-rs, noq,
 the Rust toolchain and the crates in `Cargo.lock`. Each moves fast, and each move can carry a fix, a speed-up or
 a feature onicode wants, or work onicode would otherwise duplicate. Onicode follows them continuously and never
 blindly.
@@ -51,7 +51,8 @@ remote, never to upstream. There are no integration branches. The pre-onicode de
 
 `sources.toml` also lists references: Claude Code, its Agent SDKs, Claude's desktop apps, t3code, Amp, Zed's ACP
 adapter, opencode and Codex. They are studied rather than built on. Each change is read for what it teaches about
-driving agents, syncing sessions, recovering from failures and presenting work. Where it is better than what onicode
+driving agents, syncing sessions and recovering from failures. Look and feel is not taken from them: the interface is
+monocode's, and its UI/UX changes come from monocode upstream alone. Where it is better than what onicode
 does, port the idea. A reference's `base` is the commit last studied.
 
 Closed or bundled code is studied from what its vendor publishes, with REA (github.com/morluto/rea; the `rea`

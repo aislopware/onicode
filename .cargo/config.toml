@@ -2,9 +2,6 @@
 # (a different `-p` or feature set rebuilds dependencies and duplicates artifacts). Select tests with
 # nextest's `-E 'rdeps(crate)'`, not `-p`.
 [alias]
-t = "nextest run --no-tests=fail --workspace --lib --bins --tests --features onicode-harness/native-fixture"
-lint = "clippy --locked --workspace --all-targets --features onicode-harness/native-fixture -- -D warnings"
-# The binaries in the feature set the two above resolve to: their dev-dependencies turn on harness
-# `installer-fixture`, which a plain `cargo build` leaves off, rebuilding harness and the crates above
-# it (ui, engine, client, onicode...) a second time.
-bins = "build --locked --workspace --bins --features onicode-harness/native-fixture,onicode-harness/installer-fixture"
+t = "nextest run --no-tests=fail --workspace --lib --bins --tests"
+lint = "clippy --locked --workspace --all-targets -- -D warnings"
+bins = "build --locked --workspace --bins"

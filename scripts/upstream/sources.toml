@@ -7,16 +7,24 @@
 # `paths`: only changes under these count (the upstream lands far more than onicode uses).
 # `every_minutes`: how often the watcher asks; 0 means every round.
 
-[zeron]
-upstream = "zeronsh/zeron"
+[monocode]
+# Onicode's base since 2026-11-07 (docs/onicode/decisions/monocode-base.md): its native app and core. Its
+# interface, motion and icons are kept exactly, and UI/UX changes are taken from here only.
+upstream = "hardbeat920/monocode"
 branch = "main"
-remote = "upstream"
-checkout = "onicode"
-base = "51e1469d36662b6473c7c8142297a1ffa9952f07"
+checkout = "forks/monocode"
+base = "1de99e7bc7305bf266a571cb5c0e4d11d72c9525"
 base_date = "2026-11-06"
 every_minutes = 0
-# zeron's own release, CI and edge plumbing is not onicode's; the app, engine and agent code is.
-paths = ["crates/", "apps/zeron/", "apps/ios/", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml"]
+# The native app, its core and vendored GPUI; the Tauri/React app, Node host and Expo app are not onicode's.
+paths = [
+    "crates/monocode-gpui/",
+    "crates/monocode-core/",
+    "vendor/gpui-pre",
+    "docs/native/",
+    "scripts/native-",
+    "scripts/generate-",
+]
 
 [gpui-fast]
 upstream = "longbridge/gpui-fast"

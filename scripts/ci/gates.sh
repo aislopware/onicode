@@ -19,7 +19,7 @@ tool() { # crate version
   if [[ "$have" != *"$2"* ]]; then cargo install --locked --version "$2" "$1"; fi
 }
 
-features=(--workspace --features onicode-harness/native-fixture)
+features=(--workspace)
 
 case "${1:?usage: gates.sh coverage|mutants-diff|mutants-shard|miri|hack|fuzz}" in
   coverage)

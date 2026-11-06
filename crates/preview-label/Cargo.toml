@@ -1,9 +1,0 @@
-[package]
-name = "onicode-preview-label"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-publish.workspace = true
-description = "A preview's process label and its redacted command line, shared by Onicode's engine and its zgx app"
-
-[dependencies]

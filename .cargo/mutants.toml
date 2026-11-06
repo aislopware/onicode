@@ -2,7 +2,6 @@
 # workspace's tests under nextest, so the warm target serves every mutant.
 test_tool = "nextest"
 test_workspace = true
-features = ["onicode-harness/native-fixture"]
 # Every phase: the build phase (`nextest run --no-run`) needs the config file too, or NEXTEST_PROFILE=ci is
 # "profile not found"; `--lib --bins --tests` is `cargo t`'s target set (without it the build also links
 # every example, 41 binaries, for each mutant).

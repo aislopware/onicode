@@ -4,9 +4,11 @@ A native control plane for coding agents: many clients drive many servers peer t
 
 ## Upstream
 
-- `upstream` is zeronsh/zeron. Onicode owns its code outright: rename, restructure or delete anything that
-  makes it better.
-- Changes from upstream and from the forks (gpui-fast, ghostty, libghostty-rs, noq) are ported by intent: an agent
+- The base is monocode's native app (hardbeat920/monocode; `docs/onicode/decisions/monocode-base.md`). Onicode owns
+  its code outright: rename, restructure or delete anything that makes it better.
+- monocode's interface, layout, motion and icons are kept exactly; UI/UX changes come from monocode upstream only,
+  never from other references.
+- Changes from monocode and from the forks (gpui-fast, ghostty, libghostty-rs, noq) are ported by intent: an agent
   reads each change, judges it, and re-implements what helps. Never a git merge or rebase.
 - `scripts/upstream/watch.py` reports what moved; check it at least every 30 minutes and adopt per
   `docs/onicode/upstream.md`.

@@ -7,14 +7,11 @@
 #                       cargo-mutants on the lines the branch changed
 #   mac.sh nightly      the same build and tests under the default profile, then coverage (the number that
 #                       counts), Miri, a mutants shard, cargo-hack and the fuzz targets (scripts/ci/gates.sh)
-#   mac.sh ios-pr       scripts/ci/ios.sh pr: the iOS lane, from the same pipeline
-#   mac.sh ios-nightly  scripts/ci/ios.sh nightly
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 suite="${1:-pr}"
 case "$suite" in
   pr | nightly) ;;
-  ios-pr | ios-nightly) exec scripts/ci/ios.sh "${suite#ios-}" ;;
   *)
     echo "mac.sh: unknown suite $suite" >&2
     exit 2

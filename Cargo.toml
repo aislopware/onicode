@@ -1,48 +1,20 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/voice",
-    "crates/voice-media",
-    "crates/voice-session",
-    "crates/orb",
-    "crates/veil",
-    "crates/term",
-    "crates/term-link",
-    "crates/theme",
-    "crates/audio",
-    "crates/proto",
-    "crates/preview",
-    "crates/preview-label",
-    "crates/doc",
-    "crates/sync",
-    "crates/harness",
-    "crates/engine",
+    # The app and its core, from monocode native 0.16.0-preview.14 (docs/onicode/decisions/monocode-base.md).
+    "crates/app",
+    "crates/core",
+    # Temporary: monocode's phone link, replaced by the tailnet engine protocol (M4, M10).
+    "crates/mobile-link",
     "crates/rpc",
     "crates/update",
-    "crates/cli",
     "crates/launch",
-    "crates/ui",
     "crates/notify",
-    "crates/syntax",
-    "crates/markdown",
-    "crates/mobile",
-    "crates/mobile-bindgen",
-    "crates/client",
-    "crates/mcp",
-    "crates/text",
-    "crates/visual",
-    "crates/visual-gpu",
-    "crates/zatex",
-    "apps/onicode",
     # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
     "crates/net",
     "crates/net-sim",
     "crates/tailnet",
     "crates/peer",
-    # Files between peers: manifests, ranges, resume (docs/onicode/decisions/one-machine.md).
-    "crates/transfer",
-    # The clipboard that follows the owner between machines (docs/onicode/decisions/one-machine.md).
-    "crates/clipboard",
     # Remote desktop (.research/remote-desktop.md §5).
     "crates/desktop-media",
     "crates/desktop-proto",
@@ -72,42 +44,17 @@ publish = false
 # gpui-fast's renderer pins wgpu by rev; onicode's shader checks and offscreen visuals take the same one.
 wgpu = { git = "https://github.com/gfx-rs/wgpu", rev = "cddb2f5d80dc0009b2ef6767635140cacf90a007" }
 naga = { git = "https://github.com/gfx-rs/wgpu", rev = "cddb2f5d80dc0009b2ef6767635140cacf90a007" }
-onicode-voice-session = { path = "crates/voice-session" }
-onicode-orb = { path = "crates/orb" }
-onicode-veil = { path = "crates/veil" }
-onicode-term = { path = "crates/term" }
-onicode-term-link = { path = "crates/term-link" }
-onicode-voice-media = { path = "crates/voice-media" }
-onicode-proto = { path = "crates/proto" }
-onicode-preview = { path = "crates/preview" }
-onicode-preview-label = { path = "crates/preview-label" }
-onicode-doc = { path = "crates/doc" }
-onicode-sync = { path = "crates/sync" }
-onicode-harness = { path = "crates/harness" }
-onicode-engine = { path = "crates/engine" }
 onicode-rpc = { path = "crates/rpc" }
 onicode-update = { path = "crates/update" }
-onicode-cli = { path = "crates/cli" }
 onicode-launch = { path = "crates/launch" }
-onicode-ui = { path = "crates/ui" }
 onicode-notify = { path = "crates/notify" }
-onicode-syntax = { path = "crates/syntax" }
-onicode-markdown = { path = "crates/markdown" }
-onicode-client = { path = "crates/client" }
-onicode-theme = { path = "crates/theme" }
-onicode-mcp = { path = "crates/mcp" }
-onicode-text = { path = "crates/text" }
 zatex = { path = "crates/zatex" }
-onicode-visual = { path = "crates/visual" }
-onicode-visual-gpu = { path = "crates/visual-gpu" }
 
 # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
 onicode-net = { path = "crates/net" }
 onicode-net-sim = { path = "crates/net-sim" }
 onicode-peer = { path = "crates/peer" }
 onicode-tailnet = { path = "crates/tailnet" }
-onicode-transfer = { path = "crates/transfer" }
-onicode-clipboard = { path = "crates/clipboard" }
 # Transfers: BLAKE3 over every block both ends stream, and zstd level 1 for items whose sample
 # shrinks (crates.io newest, 2026-11-06).
 blake3 = "=1.8.7"
@@ -334,7 +281,7 @@ plist = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # storage
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40.2", features = ["bundled", "hooks"], default-features = false }
 
 # misc
 # Global allocator on macOS only: libmalloc retains the churn high-water mark
@@ -396,13 +343,6 @@ debug = true
 [profile.dev-debug.package."*"]
 debug = true
 
-# Scenes rasterize in software every frame the camera moves.
-[profile.dev.package.onicode-visual]
-opt-level = 3
-
-[profile.dev.package.onicode-visual-gpu]
-opt-level = 3
-
 # Mobile core (scripts/ios/build-core.sh). Always optimized — layout and sync
 # run on the phone's hot paths, so even Debug app builds link an -O core.
 [profile.mobile]
@@ -420,21 +360,14 @@ lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
 
-# askama 0.16.1 diffs canonical template paths against a non-canonical caller directory, so
-# uniffi_bindgen fails to build under a symlinked ~/.cargo/registry. aislopware/askama main
-# carries the fix (scripts/upstream/sources.toml); drop this once upstream has it.
+# monocode's vendored GPUI snapshot (zed 93d7456 as gpui-pre 0.3.9) with its renderer patches: backdrop blur,
+# edge fades, alpha, font matching, display-link recovery, no screen-capture crate. Replaced by gpui-fast in M1.
 [patch.crates-io]
-askama = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
-askama_derive = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
-askama_macros = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
-askama_parser = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
-
-# gpui-kit names GPUI by the gpui-pre snapshots; the gpui-fast fork's compat crates stand in for the ones
-# the graph reaches, at this one rev.
-gpui-pre = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3" }
-gpui-pre-macros = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3" }
-gpui-pre-sum-tree = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3" }
-
+gpui-pre = { path = "vendor/gpui-pre" }
+gpui-pre-apple = { path = "vendor/gpui-pre-apple" }
+gpui-pre-linux = { path = "vendor/gpui-pre-linux" }
+gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
+gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
 # The QUIC stack under onicode-net: n0's noq-proto and noq-udp with slopty's and axolotty's
 # patches (vendor/noq-proto/SLOPTY.md, vendor/noq-udp/SLOPTY.md list each).
 noq-proto = { path = "vendor/noq-proto" }
