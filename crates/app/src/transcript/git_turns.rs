@@ -123,7 +123,7 @@ impl TranscriptView {
         turn_end: usize,
         final_answer: Option<usize>,
     ) -> Option<Arc<GitCard>> {
-        if self.mono || turn == 0 {
+        if turn == 0 {
             return None;
         }
         let prompt: String = self.source[prompt_start(&self.source, turn)..turn]

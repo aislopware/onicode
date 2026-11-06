@@ -36,10 +36,7 @@ pub(crate) fn install(store: Database, cx: &mut App) {
         })
         .unwrap_or_default();
     let root = root.unwrap_or_else(|| {
-        std::env::temp_dir().join(format!(
-            "monocode-test-accounts-{}",
-            onicode_core::mono::new_id()
-        ))
+        std::env::temp_dir().join(format!("monocode-test-accounts-{}", onicode_core::new_id()))
     });
     let center = cx.new(|cx| Accounts::new(root, book, store, cx));
     cx.set_global(Shared(center));

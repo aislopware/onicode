@@ -195,7 +195,6 @@ impl Shell {
         self.workspace.preferences.terminal_placement() == "panel"
             && !self.workspace.classic_layout
             && !self.workspace.project.starts_with("remote://")
-            && !self.mono_active(cx)
             && self.git.read(cx).available()
     }
 

@@ -7,10 +7,8 @@ impl TranscriptView {
     /// Saving a new draft is a user submission, even though no provider starts.
     /// Cold restores and persistence updates use set_saved_draft without replay.
     pub(crate) fn introduce_saved_draft(&mut self, draft: Draft, cx: &mut Context<Self>) {
-        if !self.mono {
-            self.follow = Follow::default();
-        }
-        if self.anchor_prompts && !self.mono {
+        self.follow = Follow::default();
+        if self.anchor_prompts {
             self.anchor_turn = Some(SAVED_DRAFT_START);
             self.show_jump = false;
             if self.visible && self.chat_layout && !cx.reduce_motion() {
@@ -56,7 +54,7 @@ impl TranscriptView {
             let index = self
                 .rows
                 .iter()
-                .position(|row| row.key.0 >= self.base + draft.at)
+                .position(|row| row.key.0 >= draft.at)
                 .unwrap_or(self.rows.len());
             self.rows.insert(
                 index,

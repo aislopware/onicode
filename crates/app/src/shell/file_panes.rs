@@ -82,9 +82,6 @@ impl Shell {
             return;
         };
         self.workspace.project = session.read(cx).summary.cwd.clone();
-        if let Some(monos) = &self.monos {
-            monos.update(cx, |m, cx| m.close(cx));
-        }
         self.navigation_revision += 1;
         self.leave_app_views(cx);
         self.close_preview(cx);
@@ -112,125 +109,6 @@ mod tests {
     use super::*;
     use crate::review::ReviewTab;
     use crate::shell::tests::window;
-
-    #[gpui::test]
-    fn mono_file_link_opens_visible_editor_and_preserves_its_chat(cx: &mut TestAppContext) {
-        cx.update(|cx| cx.set_reduce_motion(true));
-        let (window, _, session) = window(cx);
-        let folder =
-            std::env::temp_dir().join(format!("monocode-mono-file-link-{}", std::process::id()));
-        std::fs::create_dir_all(&folder).unwrap();
-        let path = folder.join("README.md").to_string_lossy().into_owned();
-        std::fs::write(&path, "# Heading\nsecond line\nthird line\n").unwrap();
-        window
-            .update(cx, |shell, w, cx| {
-                shell
-                    .mono_manager()
-                    .update(cx, |m, cx| m.create(Vec::new(), w, cx));
-            })
-            .unwrap();
-        cx.run_until_parked();
-        let (mono, chat) = window
-            .update(cx, |shell, _, cx| {
-                assert!(shell.mono_active(cx));
-                let mono = shell.active_title_tab(cx).unwrap();
-                let chat = shell.mono_manager().read(cx).chat().unwrap();
-                chat.read(cx).input.clone().update(cx, |input, cx| {
-                    input.set_text("Keep my Mono draft".into(), cx)
-                });
-                (mono, chat)
-            })
-            .unwrap();
-        let visual = &mut VisualTestContext::from_window(window.into(), cx);
-        visual.run_until_parked();
-        assert!(
-            visual.debug_bounds("mono-composer").is_some(),
-            "the action starts in the visible Mono"
-        );
-        window
-            .update(visual, |_, w, cx| {
-                w.dispatch_action(
-                    Box::new(crate::file_editor::OpenPath(format!("{path}:2:3"))),
-                    cx,
-                );
-            })
-            .unwrap();
-        visual.run_until_parked();
-        assert!(
-            visual.debug_bounds("review-tab-strip").is_some(),
-            "the file pane is rendered"
-        );
-        assert!(visual.debug_bounds("mono-composer").is_none());
-        let (pane, editor) = window
-            .update(visual, |shell, w, cx| {
-                assert!(!shell.mono_active(cx));
-                let pane = shell.workspace.active.unwrap();
-                assert_ne!(pane, session, "the file has its own title tab");
-                assert_eq!(shell.workspace.session_for_pane(pane), session);
-                assert!(shell.visible_tabs(cx).contains(&mono));
-                assert!(shell.visible_tabs(cx).contains(&TitleTab::Session(session)));
-                let review = shell.active_review(cx).unwrap();
-                assert!(review.read(cx).state.chat_hidden);
-                let editor = review
-                    .read(cx)
-                    .active_editor()
-                    .expect("the file editor is mounted");
-                assert_eq!(editor.read(cx).path, path);
-                assert!(
-                    editor.read(cx).focus_handle(cx).contains_focused(w, cx),
-                    "focus is inside the visible editor"
-                );
-                assert_eq!(
-                    editor.read(cx).input.read(cx).selection_range(),
-                    12..12,
-                    "line and column survive navigation"
-                );
-                editor.read(cx).input.clone().update(cx, |input, cx| {
-                    input.replace_text_in_range(None, "unsaved", w, cx)
-                });
-                shell.open_title_tab(&mono, w, cx);
-                (pane, editor)
-            })
-            .unwrap();
-        visual.run_until_parked();
-        assert!(visual.debug_bounds("mono-composer").is_some());
-        window
-            .update(visual, |shell, w, cx| {
-                assert_eq!(shell.active_title_tab(cx), Some(mono.clone()));
-                let restored = shell.mono_manager().read(cx).chat().unwrap();
-                assert_eq!(
-                    restored, chat,
-                    "the original live Mono conversation is retained"
-                );
-                assert_eq!(
-                    restored.read(cx).input.read(cx).content.as_ref(),
-                    "Keep my Mono draft"
-                );
-                assert!(restored.read(cx).input.focus_handle(cx).is_focused(w));
-                w.dispatch_action(Box::new(crate::file_editor::OpenPath(path.clone())), cx);
-            })
-            .unwrap();
-        visual.run_until_parked();
-        window
-            .update(visual, |shell, w, cx| {
-                assert_eq!(shell.workspace.active, Some(pane));
-                let reopened = shell
-                    .active_review(cx)
-                    .unwrap()
-                    .read(cx)
-                    .active_editor()
-                    .unwrap();
-                assert_eq!(
-                    reopened, editor,
-                    "reopening keeps the existing dirty editor"
-                );
-                assert!(reopened.read(cx).dirty);
-                assert!(reopened.read(cx).focus_handle(cx).contains_focused(w, cx));
-                assert!(shell.visible_tabs(cx).contains(&mono));
-            })
-            .unwrap();
-        std::fs::remove_dir_all(folder).unwrap();
-    }
 
     #[gpui::test]
     fn file_word_wrap_is_shared_and_persisted_across_restart(cx: &mut TestAppContext) {

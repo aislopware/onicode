@@ -8,15 +8,12 @@ mod classic_sidebar;
 mod classic_surface_tests;
 mod classic_surfaces;
 mod file_panes;
-mod github_star;
 mod idle_agents;
 #[cfg(test)]
 mod image_lightbox_tests;
 mod layout;
 mod live_agents;
 mod mobile_host;
-mod mono_panes;
-pub(crate) mod monos;
 mod new_chat_choice;
 #[cfg(test)]
 mod new_chat_choice_tests;
@@ -356,7 +353,6 @@ fn adjacent<T: PartialEq + Clone>(items: &[T], current: Option<&T>, step: isize)
 #[derive(Clone, PartialEq)]
 pub(crate) enum MenuTarget {
     Tab(i64),
-    MonoTab(String),
     SearchTab,
     AppTab(app_views::AppView),
     Session(i64),
@@ -468,8 +464,6 @@ enum DragSource {
     Review(i64),
     Tab(i64),
     Session(i64),
-    /// A Mono tab pulled down out of the strip; it has no pane yet.
-    MonoTab,
     /// A dock terminal pulled off the dock's strip; it has no pane yet.
     DockTerminal(usize),
 }
@@ -480,7 +474,7 @@ impl DragSource {
             | DragSource::Review(id)
             | DragSource::Tab(id)
             | DragSource::Session(id) => id,
-            DragSource::MonoTab | DragSource::DockTerminal(_) => i64::MIN,
+            DragSource::DockTerminal(_) => i64::MIN,
         }
     }
 }
@@ -553,8 +547,6 @@ enum PaneMark {
     Session(String, Option<i64>),
     /// A file's name, or `None` for changes and commits.
     File(Option<String>),
-    /// A Mono's mascot and colour.
-    Mono(String, u32),
     /// A terminal pulled out of its dock.
     Terminal,
 }
@@ -603,10 +595,9 @@ struct SessionPreview {
 }
 
 pub(crate) struct Shell {
-    monos: Option<Entity<crate::monos::Monos>>,
     quick_open: Option<quick_open::Open>,
     image_lightbox: Option<(Entity<crate::image_lightbox::ImageLightbox>, Subscription)>,
-    app_bridge: Option<onicode_core::mono::bridge::Server>,
+    app_bridge: Option<onicode_core::app_access::bridge::Server>,
     mobile: mobile_host::Mobile,
     app_results: HashMap<(i64, String), (String, Result<serde_json::Value, String>)>,
     app_pending: HashSet<(i64, String)>,
@@ -676,8 +667,10 @@ pub(crate) struct Shell {
     live_next_change: u64,
     busy_sessions: HashSet<i64>,
     notification_state: notifications::State,
-    github_star: github_star::State,
     quick: crate::quick_composer::Controller,
+    /// The menu-bar icon, while `menu_bar_icon` keeps it.
+    #[cfg(all(target_os = "macos", not(test)))]
+    status_item: Option<crate::status_item::StatusItem>,
     unseen_finished: HashSet<i64>,
     archiving: HashSet<i64>,
     archive_shortcut_held: bool,
@@ -801,8 +794,6 @@ pub(crate) struct Shell {
     review_drag: bool,
     split_bounds: HashMap<i64, AnchorSlot>,
     pane_bounds: AnchorSlot,
-    /// The visible Mono's view, a drop target for tabs and panes.
-    mono_bounds: AnchorSlot,
     pane_drag: Option<PaneDrag>,
     pane_sash: Option<SashDrag>,
     pane_motion: Option<PaneMotion>,
@@ -992,8 +983,6 @@ impl Shell {
         let resource_stops = cx.subscribe(&resources, |this, _, StopSession(id), cx| {
             if let Some(session) = this.sessions.get(id) {
                 session.update(cx, |session, cx| session.stop_if_busy(cx));
-            } else if let Some(m) = this.monos.clone() {
-                m.update(cx, |m, cx| m.stop_session(*id, cx));
             }
         });
         let worktree_focus = workspace.worktree_focus.clone();
@@ -1008,7 +997,6 @@ impl Shell {
             .map(|id| classic_sidebar::ClassicSidebarTab::from_id(id))
             .unwrap_or_default();
         let mut this = Self {
-            monos: None,
             quick_open: None,
             image_lightbox: None,
             app_bridge: None,
@@ -1065,8 +1053,9 @@ impl Shell {
             live_next_change: 1000,
             busy_sessions: HashSet::new(),
             notification_state,
-            github_star: Default::default(),
             quick: Default::default(),
+            #[cfg(all(target_os = "macos", not(test)))]
+            status_item: None,
             unseen_finished: HashSet::new(),
             archiving: HashSet::new(),
             archive_shortcut_held: false,
@@ -1170,7 +1159,6 @@ impl Shell {
             review_drag: false,
             split_bounds: HashMap::new(),
             pane_bounds: AnchorSlot::default(),
-            mono_bounds: AnchorSlot::default(),
             pane_drag: None,
             pane_sash: None,
             pane_motion: None,
@@ -1211,90 +1199,9 @@ impl Shell {
         this.observe_accounts(cx);
         this.load_note_count(cx);
         this.observe_picker_preferences(cx);
-        let mono_owner = cx.weak_entity();
-        let mono_active =
-            this.workspace
-                .scope_focus
-                .get(&this.tab_scope())
-                .and_then(|tab| match tab {
-                    TitleTab::Mono { id, .. } => Some(id.clone()),
-                    _ => None,
-                });
-        let monos = cx.new(|cx| {
-            crate::monos::Monos::new(
-                this.store.clone(),
-                mono_owner,
-                this.workspace.preferences.clone(),
-                mono_active,
-                this.notification_state.region.clone(),
-                cx,
-            )
-        });
-        this.observations.push(
-            cx.subscribe(&monos, |this, _, _: &crate::monos::Changed, cx| {
-                this.sync_mono_search(cx);
-                this.update_usage_provider(cx);
-                this.invalidate_chrome(cx);
-                cx.notify();
-            }),
-        );
-        this.observations.push(cx.subscribe(
-            &monos,
-            |this, _, opened: &crate::monos::TabOpened, cx| {
-                this.mono_opened(opened.0.clone(), cx);
-            },
-        ));
-        this.observations.push(cx.subscribe(
-            &monos,
-            |_, _, request: &crate::monos::ShowDetails, cx| {
-                let id = request.0.clone();
-                cx.spawn(async move |this, cx| {
-                    let _ = this.update_in(cx, |this, window, cx| {
-                        if this
-                            .monos
-                            .as_ref()
-                            .is_some_and(|m| m.read(cx).active.as_ref() == Some(&id))
-                        {
-                            this.set_right_panel_open(true, window, cx);
-                        }
-                    });
-                })
-                .detach();
-            },
-        ));
-        let mut mono_chrome = monos.read(cx).overview_chrome();
-        let mut mono_error = monos.read(cx).error.clone();
-        let mut mono_session = monos.read(cx).routed_session();
-        this.observations
-            .push(cx.observe(&monos, move |this, monos, cx| {
-                let session = monos.read(cx).routed_session();
-                if session != mono_session {
-                    mono_session = session;
-                    this.update_chat_visibility(cx);
-                }
-                let chrome = monos.read(cx).overview_chrome();
-                if chrome != mono_chrome {
-                    mono_chrome = chrome;
-                    this.invalidate_chrome(cx);
-                    cx.notify();
-                }
-                let error = &monos.read(cx).error;
-                if *error != mono_error {
-                    mono_error = error.clone();
-                    cx.notify();
-                }
-            }));
-        this.monos = Some(monos);
         this.bind_notices(cx);
         this.init_app_bridge(cx);
         for summary in summaries {
-            if this
-                .monos
-                .as_ref()
-                .is_some_and(|m| m.read(cx).is_mono_session(summary.id))
-            {
-                continue;
-            }
             this.order.push(summary.id);
             this.session_summaries.insert(summary.id, summary);
         }
@@ -1332,31 +1239,14 @@ impl Shell {
             inbox.update(cx, |inbox, cx| inbox.set_active(active, cx));
         }
         // Every pane of the active tab is on screen, not just the focused one.
-        let mut shown: HashSet<i64> = match self.workspace.active_tab() {
+        let shown: HashSet<i64> = match self.workspace.active_tab() {
             Some(tab)
-                if !self.app_view_open()
-                    && self.settings.is_none()
-                    && !self.search_page()
-                    && !self.mono_active(cx) =>
+                if !self.app_view_open() && self.settings.is_none() && !self.search_page() =>
             {
                 self.workspace.layout(tab).leaf_ids().into_iter().collect()
             }
             _ => HashSet::new(),
         };
-        // A session opened in the Mono details panel is on screen too. Left
-        // out, it was trimmed as inactive and the panel showed it empty.
-        if self.mono_active(cx)
-            && self.workspace.right_panel_open
-            && !self.app_view_open()
-            && self.settings.is_none()
-            && !self.search_page()
-        {
-            shown.extend(
-                self.monos
-                    .as_ref()
-                    .and_then(|m| m.read(cx).routed_session()),
-            );
-        }
         // Hidden tabs keep their prepared image and any in-flight load. Only
         // closing a tab/pane should discard its background.
         let open: HashSet<i64> = self.workspace.open_sessions().into_iter().collect();
@@ -1652,7 +1542,7 @@ impl Shell {
         if let Some(ix) = self
             .visible_tabs(cx)
             .iter()
-            .position(|tab| Some(tab) == self.active_title_tab(cx).as_ref())
+            .position(|tab| Some(tab) == self.active_title_tab().as_ref())
         {
             self.tab_scroll.scroll_to_item(ix);
         }
@@ -1696,17 +1586,16 @@ impl Shell {
     /// project, and not covered by an app view.
     fn right_panel_shown(&self, cx: &App) -> bool {
         (self.workspace.right_panel_open || self.right_slide.is_some())
-            && (!self.workspace.classic_layout || self.mono_active(cx))
+            && !self.workspace.classic_layout
             && !self.app_view_open()
             && self.settings.is_none()
             && !self.search_page()
-            && (self.mono_active(cx) || self.git.read(cx).available())
+            && self.git.read(cx).available()
     }
 
     fn sync_right_panel(&mut self, cx: &mut Context<Self>) {
         let opening = self.right_slide.as_ref().is_some_and(PaneSlide::opening);
-        let shown = !self.mono_active(cx)
-            && !self.workspace.classic_layout
+        let shown = !self.workspace.classic_layout
             && self.workspace.right_panel_open
             && !self.app_view_open()
             && self.settings.is_none()
@@ -1714,7 +1603,7 @@ impl Shell {
             && !opening;
         if let Some(panel) = &self.right_panel {
             let sidebar_tab = (self.workspace.classic_layout
-                && self.session_sidebar_available(cx)
+                && self.session_sidebar_available()
                 && self.workspace.sidebar_visible
                 && self.settings.is_none())
             .then(|| self.classic_sidebar_tab.tool_tab())
@@ -1737,9 +1626,6 @@ impl Shell {
         self.ensure_right_panel(window, cx);
         self.leave_app_views(cx);
         self.close_app_search(window, cx);
-        if let Some(monos) = self.monos.clone() {
-            monos.update(cx, |monos, cx| monos.close(cx));
-        }
         self.classic_sidebar_tab = tab;
         self.workspace
             .classic_sidebar_tabs
@@ -1779,17 +1665,12 @@ impl Shell {
 
     fn set_right_panel_open(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.app_view_open()
-            || (!self.mono_active(cx) && !self.git.read(cx).available())
+            || !self.git.read(cx).available()
             || self.workspace.right_panel_open == open
         {
             return;
         }
-        let details_focus =
-            if let Some(monos) = self.monos.as_ref().filter(|m| m.read(cx).active.is_some()) {
-                Some(monos.read(cx).details.focus_handle(cx))
-            } else {
-                self.right_panel.as_ref().map(|p| p.focus_handle(cx))
-            };
+        let details_focus = self.right_panel.as_ref().map(|p| p.focus_handle(cx));
         if !open
             && details_focus
                 .as_ref()
@@ -1806,10 +1687,7 @@ impl Shell {
             None => PaneSlide::new(if open { 0. } else { full }, to, full),
         });
         self.sync_right_panel(cx);
-        if open
-            && !self.mono_active(cx)
-            && let Some(panel) = self.right_panel.clone()
-        {
+        if open && let Some(panel) = self.right_panel.clone() {
             panel.update(cx, |p, cx| p.focus_pane(window, cx));
         }
         self.fit_sidebar(cx);
@@ -2322,7 +2200,6 @@ impl Shell {
             .sessions
             .get(&id)
             .map(|s| s.read(cx).display_title())
-            .or_else(|| self.mono_pane_title(id, cx))
             .or_else(|| self.terminal_pane_title(id, cx))
             .unwrap_or_default();
         let focused = self.workspace.active == Some(id) && !self.review_focused;
@@ -2421,8 +2298,8 @@ impl Shell {
                             cx.stop_propagation();
                             this.review_focused = false;
                             this.focus_pane(id, window, cx);
-                            // A terminal splits off a fresh shell; a chat or a
-                            // Mono, a new session with its provider.
+                            // A terminal splits off a fresh shell; a chat, a
+                            // new session with its provider.
                             if this.workspace.terminal_panes.contains_key(&id) {
                                 this.split_title_terminal_toward(dir, window, cx);
                             } else {
@@ -2769,9 +2646,6 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        if self.workspace.mono_panes.contains_key(&id) {
-            return self.mono_pane_surface(id, split, cx);
-        }
         if self.workspace.terminal_panes.contains_key(&id) {
             return self.terminal_pane_surface(id, split, cx);
         }
@@ -2990,14 +2864,11 @@ impl Shell {
     fn narrowest_chat(&self, sidebar: bool, cx: &App) -> f32 {
         // The card's inset and border.
         let mut main = self.viewport_width - 10. - self.project_rail_drawn_width();
-        if sidebar && self.session_sidebar_available(cx) {
+        if sidebar && self.session_sidebar_available() {
             main -= self.workspace.sidebar_width;
         }
         if self.right_panel_shown(cx) {
             main -= self.right_panel_width();
-        }
-        if self.mono_active(cx) {
-            return main;
         }
         if let Some(dock) = self.workspace.docks.get(&self.workspace.project)
             && dock.open
@@ -3037,7 +2908,7 @@ impl Shell {
     /// collapses the sidebar as it opens. A sidebar collapsed that way comes
     /// back once there is room again; one the user hid stays hidden.
     fn fit_sidebar(&mut self, cx: &mut Context<Self>) {
-        if !self.session_sidebar_available(cx) {
+        if !self.session_sidebar_available() {
             return;
         }
         if self.workspace.sidebar_visible {
@@ -3068,7 +2939,7 @@ impl Shell {
         }
         let room = (
             self.narrowest_chat(false, cx).round() as i32,
-            self.session_sidebar_available(cx),
+            self.session_sidebar_available(),
         );
         if self.sidebar_fitted_room.replace(room) == Some(room) {
             return;
@@ -3560,12 +3431,6 @@ impl Shell {
             self.open_file_pane(id, window, cx);
             return;
         }
-        if self.workspace.mono_panes.contains_key(&id) {
-            if self.workspace.active != Some(id) {
-                self.open_mono_pane(id, window, cx);
-            }
-            return;
-        }
         if self.workspace.terminal_panes.contains_key(&id) {
             self.open_terminal_pane(id, window, cx);
             return;
@@ -3618,11 +3483,6 @@ impl Shell {
         self.navigation_revision += 1;
         self.begin_pane_motion(before, cx);
         self.fit_sidebar(cx);
-        // A Mono left alone becomes its tab again, and shows when focused.
-        self.settle_mono_panes(window, cx);
-        if self.mono_active(cx) {
-            return;
-        }
         if self.workspace.active != active {
             if let Some(active) = self.workspace.active {
                 self.open(active, window, cx);
@@ -3784,13 +3644,9 @@ impl Shell {
     }
 
     /// The pane under a point and the edge it would take, in the active tab.
-    fn pane_hit(&self, position: Point<Pixels>, cx: &App) -> Option<(i64, Edge)> {
+    fn pane_hit(&self, position: Point<Pixels>) -> Option<(i64, Edge)> {
         if self.app_view_open() {
             return None;
-        }
-        // The visible Mono hides the tab's panes and stands in for them.
-        if self.mono_active(cx) {
-            return self.mono_view_hit(position, cx);
         }
         let bounds = self.pane_bounds.get()?;
         if !bounds.contains(&position) {
@@ -3865,7 +3721,7 @@ impl Shell {
         let over = if insert.is_some() {
             None
         } else {
-            self.pane_hit(event.position, cx)
+            self.pane_hit(event.position)
                 .and_then(|(id, edge)| {
                     if id != source.session()
                         || matches!(source, DragSource::Review(id) if self.workspace.reviews.get(&id).is_some_and(|r| !r.chat_hidden))
@@ -3924,17 +3780,11 @@ impl Shell {
             self.apply_sidebar_drop(drag.source.session(), target, window, cx);
             return;
         }
-        let mono = match drag.source {
-            DragSource::Pane(pane) => self.workspace.mono_panes.get(&pane).cloned(),
-            _ => None,
-        };
         if let DragSource::DockTerminal(ix) = drag.source {
             self.drop_dock_terminal(ix, drag.over, drag.insert, window, cx);
             return;
         }
-        let mut over = drag
-            .over
-            .map(|(target, edge)| (self.resolve_mono_target(target, cx), edge));
+        let mut over = drag.over;
         let mut before = self.active_leaves();
         let id = drag.source.session();
         if matches!(drag.source, DragSource::Pane(_))
@@ -3991,17 +3841,6 @@ impl Shell {
         self.history
             .prune(&self.workspace.open_sessions(), self.workspace.active);
         self.fit_sidebar(cx);
-        // A Mono pulled out of its split onto the strip is its tab again.
-        self.settle_mono_panes(window, cx);
-        if let (Some(mono), Some(to)) = (mono, drag.insert)
-            && self.workspace.title_order.contains(&mono)
-        {
-            self.reorder_title_tab(&mono, to, cx);
-        }
-        if self.mono_active(cx) {
-            self.persist(cx);
-            return;
-        }
         if let Some(active) = self.workspace.active {
             self.open(active, window, cx);
         }
@@ -4223,18 +4062,11 @@ impl Shell {
     }
 
     fn update_usage_provider(&self, cx: &mut Context<Self>) {
-        let view = self
-            .monos
-            .as_ref()
-            .filter(|_| self.mono_active(cx))
-            .and_then(|m| m.read(cx).chat())
-            .or_else(|| {
-                self.workspace.active.and_then(|id| {
-                    self.sessions
-                        .get(&self.workspace.session_for_pane(id))
-                        .cloned()
-                })
-            });
+        let view = self.workspace.active.and_then(|id| {
+            self.sessions
+                .get(&self.workspace.session_for_pane(id))
+                .cloned()
+        });
         if let Some(view) = view {
             let view = view.read(cx);
             let kind = Kind::from_id(&view.summary.provider);
@@ -4249,7 +4081,7 @@ impl Shell {
     }
 
     pub(crate) fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.keep_visible_idle_agents(cx);
+        self.keep_visible_idle_agents();
         if let Some(search) = &self.app_search {
             window.focus(&search.view.focus_handle(cx), cx);
             return;
@@ -4257,11 +4089,7 @@ impl Shell {
         if self.focus_app_view(window, cx) {
             return;
         }
-        if let Some(monos) = self.monos.clone().filter(|m| m.read(cx).active.is_some()) {
-            monos.update(cx, |m, cx| m.focus_active(window, cx));
-            return;
-        }
-        if self.focus_mono_pane(window, cx) || self.focus_terminal_pane(window, cx) {
+        if self.focus_terminal_pane(window, cx) {
             return;
         }
         if let Some(review) = self
@@ -4282,10 +4110,6 @@ impl Shell {
     pub(crate) fn open(&mut self, id: i64, window: &mut Window, cx: &mut Context<Self>) {
         if self.workspace.review_owners.contains_key(&id) {
             self.open_file_pane(id, window, cx);
-            return;
-        }
-        if self.workspace.mono_panes.contains_key(&id) {
-            self.open_mono_pane(id, window, cx);
             return;
         }
         if self.workspace.terminal_panes.contains_key(&id) {
@@ -4349,16 +4173,9 @@ impl Shell {
             self.open_file_pane(id, window, cx);
             return;
         }
-        if self.workspace.mono_panes.contains_key(&id) {
-            self.open_mono_pane(id, window, cx);
-            return;
-        }
         if self.workspace.terminal_panes.contains_key(&id) {
             self.open_terminal_pane(id, window, cx);
             return;
-        }
-        if let Some(monos) = &self.monos {
-            monos.update(cx, |m, cx| m.close(cx));
         }
         self.leave_app_views(cx);
         self.leave_app_search(cx);
@@ -4435,7 +4252,7 @@ impl Shell {
         if tabs.is_empty() {
             return;
         }
-        let active = self.active_title_tab(cx);
+        let active = self.active_title_tab();
         let current = tabs.iter().position(|tab| Some(tab) == active.as_ref());
         let next = current.map_or(if step < 0 { tabs.len() - 1 } else { 0 }, |index| {
             (index as isize + step).rem_euclid(tabs.len() as isize) as usize
@@ -4522,9 +4339,6 @@ impl Shell {
         self.leave_app_views(cx);
         self.leave_app_search(cx);
         self.close_preview(cx);
-        if let Some(monos) = self.monos.clone() {
-            monos.update(cx, |m, cx| m.close(cx));
-        }
         self.workspace.project = path.clone();
         self.workspace.active = None;
         if let Some(ix) = self.workspace.projects.iter().position(|p| p == &path) {
@@ -4535,8 +4349,8 @@ impl Shell {
             }
         }
         self.workspace.collapsed.remove(&path);
-        // Original-layout project buttons leave the standalone Mono/app view.
-        // The new layout restores each project's selected tab, including Monos.
+        // Original-layout project buttons leave the standalone app view.
+        // The new layout restores each project's selected tab.
         let remembered_session = self
             .workspace
             .scope_focus
@@ -4598,7 +4412,7 @@ impl Shell {
     }
 
     fn ensure_project_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.workspace.active.is_some() || self.mono_active(cx) {
+        if self.workspace.active.is_some() {
             return;
         }
         if let Some(id) = self.order.iter().copied().find(|id| {
@@ -4735,7 +4549,6 @@ impl Shell {
                                 != focus.as_ref().map(|f| &f.path)
                             || if only_if_empty {
                                 this.workspace.active.is_some()
-                                    || this.mono_active(cx)
                                     || this.app_view_open()
                                     || this.settings.is_some()
                             } else {
@@ -4785,8 +4598,8 @@ impl Shell {
 
     /// Classic: the strip's room before its tabs, wherever the navigation
     /// overhangs the sidebar.
-    fn strip_lead(&self, cx: &App) -> f32 {
-        (self.navigation_width() - self.left_sidebar_width(cx)).max(0.)
+    fn strip_lead(&self) -> f32 {
+        (self.navigation_width() - self.left_sidebar_width()).max(0.)
     }
 
     /// The traffic lights, sidebar toggle and visit arrows, spanning the
@@ -4823,9 +4636,7 @@ impl Shell {
                     "visit-back",
                     BACK_LABEL,
                     "chevron-left",
-                    self.settings.is_some()
-                        || (self.workspace.classic_layout && self.mono_active(cx))
-                        || !self.history.back.is_empty(),
+                    self.settings.is_some() || !self.history.back.is_empty(),
                 )
                 .debug_selector(|| "visit-back".into())
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -4884,29 +4695,15 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let content =
-            if let Some(monos) = self.monos.as_ref().filter(|m| m.read(cx).active.is_some()) {
-                let manager = monos.read(cx);
-                let details = manager.details.clone();
-                let html = manager.native_detail_content(cx);
-                // Native artifact views must update their frames and clipping
-                // on every paint; replaying cached GPU quads skips that work.
-                if html {
-                    details.into_any_element()
-                } else {
-                    details
-                        .cached(StyleRefinement::default().size_full())
-                        .into_any_element()
-                }
-            } else if self.terminal_in_panel(cx)
-                && panel.read(cx).tab() == crate::right_panel::RightTab::Terminal
-            {
-                self.panel_terminal(window, cx)
-            } else {
-                panel
-                    .cached(StyleRefinement::default().size_full())
-                    .into_any_element()
-            };
+        let content = if self.terminal_in_panel(cx)
+            && panel.read(cx).tab() == crate::right_panel::RightTab::Terminal
+        {
+            self.panel_terminal(window, cx)
+        } else {
+            panel
+                .cached(StyleRefinement::default().size_full())
+                .into_any_element()
+        };
         div()
             .id("right-panel-frame")
             .debug_selector(|| "right-panel-frame".into())
@@ -4982,8 +4779,8 @@ impl Shell {
             }))
     }
 
-    /// Mono detail layers occlude the shell's ordinary mouse handlers. An
-    /// active resize must keep receiving moves and release over those layers.
+    /// Layers drawn over the panel can occlude the shell's ordinary mouse
+    /// handlers. An active resize must keep receiving moves and release over those layers.
     fn right_panel_resize_watch(&self, cx: &Context<Self>) -> AnyElement {
         let shell = cx.entity().downgrade();
         canvas(
@@ -5032,7 +4829,7 @@ impl Shell {
     /// Client-decorated Linux: the bar ends left of the window controls.
     /// The panel's width as drawn: the user's width, widened while Windows'
     /// controls need room beside the corner's tools. The stored width stays
-    /// as the user set it, so closing a Mono gives it back.
+    /// as the user set it.
     pub(super) fn right_panel_width(&self) -> f32 {
         self.workspace.right_panel_width.max(self.right_panel_min)
     }
@@ -5065,7 +4862,7 @@ impl Shell {
         if let Some(settings) = self.settings.clone() {
             let classic = self.workspace.boxy_layout();
             let lead = if classic {
-                self.strip_lead(cx)
+                self.strip_lead()
             } else {
                 self.navigation_width() + 6.
             };
@@ -5101,11 +4898,11 @@ impl Shell {
             .when(classic, |d| {
                 d.border_b_1().border_color(crate::right_panel::stroke())
             })
-            .child(if classic && !self.classic_titlebar_spans_window(cx) {
+            .child(if classic && !self.classic_titlebar_spans_window() {
                 // The navigation floats over the sidebar's header
                 // (classic_body); the strip keeps only the part it uncovers.
                 titlebar_drag_area()
-                    .w(px(self.strip_lead(cx)))
+                    .w(px(self.strip_lead()))
                     .flex_shrink_0()
                     .into_any_element()
             } else {
@@ -5133,44 +4930,32 @@ impl Shell {
 
     /// TitleBar.tsx's right panel toggle, `pl-1.5 pr-3` clear of the edge.
     fn panel_toggle(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let mono = self.mono_active(cx);
-        if self.workspace.classic_layout && !mono {
+        if self.workspace.classic_layout {
             return div().into_any_element();
         }
-        if self.workspace.boxy_layout() && !mono {
+        if self.workspace.boxy_layout() {
             return self.classic_corner(window, cx);
         }
-        let toggle = mono || self.git.read(cx).available();
+        let toggle = self.git.read(cx).available();
         let panel_off = self.app_view_open();
-        let dot = !mono && !panel_off && self.git.read(cx).has_changes();
+        let dot = !panel_off && self.git.read(cx).has_changes();
         let panel_active = self.workspace.right_panel_open && !panel_off;
-        let tabs = if mono && panel_active {
-            self.monos.clone().map(|m| {
-                m.update(cx, |m, cx| {
-                    m.overview_controls(
-                        self.right_panel_width() >= 312. + self.window_controls,
-                        window,
-                        cx,
+        let tabs = self
+            .right_panel
+            .as_ref()
+            .filter(|_| panel_active)
+            .map(|panel| {
+                panel
+                    .read(cx)
+                    .tabs
+                    .clone()
+                    .cached(
+                        StyleRefinement::default()
+                            .w(px(self.project_tabs_width(cx)))
+                            .h(px(TITLE_BAR_HEIGHT)),
                     )
-                })
-            })
-        } else {
-            self.right_panel
-                .as_ref()
-                .filter(|_| panel_active && !mono)
-                .map(|panel| {
-                    panel
-                        .read(cx)
-                        .tabs
-                        .clone()
-                        .cached(
-                            StyleRefinement::default()
-                                .w(px(self.project_tabs_width(cx)))
-                                .h(px(TITLE_BAR_HEIGHT)),
-                        )
-                        .into_any_element()
-                })
-        };
+                    .into_any_element()
+            });
         let show_tabs = tabs.is_some();
         div()
             .relative()
@@ -5207,8 +4992,7 @@ impl Shell {
                         }))
                         .pr(px(12. + self.window_controls))
                         .when_some(tabs, |d, tabs| {
-                            d.child(tabs)
-                                .when(!mono, |d| d.child(titlebar_drag_area().flex_1().min_w_0()))
+                            d.child(tabs).child(titlebar_drag_area().flex_1().min_w_0())
                         })
                         .children(self.project_diff_stat(cx))
                         .child(self.file_search_button(cx).mx(px(CORNER_CONTROL_GAP)))
@@ -5350,7 +5134,7 @@ impl Shell {
     }
 
     fn diff_stat_room(&self, cx: &App) -> f32 {
-        if self.mono_active(cx) || !self.git.read(cx).available() {
+        if !self.git.read(cx).available() {
             return 0.;
         }
         let natural = crate::right_panel::diff_stat_width(self.git.read(cx).stats.as_ref());
@@ -5395,16 +5179,8 @@ impl Shell {
         }
         // Client-drawn window controls hold the corner's right end.
         let controls = self.window_controls;
-        if self.mono_active(cx) || self.git.read(cx).available() {
+        if self.git.read(cx).available() {
             if self.workspace.right_panel_open && !self.app_view_open() {
-                if self.mono_active(cx) {
-                    let minimum = if self.right_panel_width() >= 312. + controls {
-                        312.
-                    } else {
-                        252.
-                    };
-                    return (self.right_drawn + 7.).max(minimum + controls);
-                }
                 // Follow the rounded panel's left edge, including the card's
                 // right inset, while keeping room for all controls when narrow.
                 (self.right_drawn + 7.).max(
@@ -5552,13 +5328,9 @@ impl Shell {
                 200.,
                 MenuStyle::Explorer,
             ),
-            MenuTarget::Tab(_)
-            | MenuTarget::MonoTab(_)
-            | MenuTarget::SearchTab
-            | MenuTarget::AppTab(_) => {
+            MenuTarget::Tab(_) | MenuTarget::SearchTab | MenuTarget::AppTab(_) => {
                 let tab = match target {
                     MenuTarget::Tab(id) => TitleTab::Session(*id),
-                    MenuTarget::MonoTab(id) => self.mono_tab(id.clone()),
                     MenuTarget::SearchTab => TitleTab::Search,
                     MenuTarget::AppTab(view) => TitleTab::App(*view),
                     _ => unreachable!(),
@@ -5625,12 +5397,6 @@ impl Shell {
                             TitleTab::Session(id) => title(id),
                             TitleTab::Search => "Search".into(),
                             TitleTab::App(view) => view.label().into(),
-                            TitleTab::Mono { id, .. } => self
-                                .monos
-                                .as_ref()
-                                .and_then(|m| m.read(cx).roster.get(id))
-                                .map(|m| m.label())
-                                .unwrap_or_default(),
                         }
                     )
                     .into(),
@@ -5698,31 +5464,10 @@ impl Shell {
                 MenuStyle::Explorer,
             ),
             MenuTarget::CompactProjectPicker => {
-                let (monos, active) = self
-                    .monos
-                    .as_ref()
-                    .filter(|_| self.workspace.classic_layout && self.workspace.preferences.monos)
-                    .map(|manager| {
-                        let manager = manager.read(cx);
-                        let monos = manager
-                            .roster
-                            .monos
-                            .iter()
-                            .map(|mono| crate::pickers::PickerMono {
-                                id: mono.id.clone(),
-                                name: mono.label(),
-                                mascot: mono.mascot.clone(),
-                                color: mono.color,
-                            })
-                            .collect();
-                        (monos, manager.active.clone())
-                    })
-                    .unwrap_or_default();
                 let picker = cx.new(|cx| {
                     ProjectPicker::new(&self.workspace.projects, &self.workspace.project, cx)
                         .appearance(self.workspace.project_appearance.clone())
                         .allow_remote()
-                        .monos(monos, active, cx)
                 });
                 events.push(cx.subscribe_in(
                     &picker,
@@ -5732,11 +5477,6 @@ impl Shell {
                         match picked {
                             ProjectPicked::Project(path) => {
                                 this.select_project(path.clone(), window, cx)
-                            }
-                            ProjectPicked::Mono(id) => {
-                                if let Some(monos) = this.monos.clone() {
-                                    monos.update(cx, |m, cx| m.open(id, window, cx));
-                                }
                             }
                             ProjectPicked::New => this.open_project(cx),
                             ProjectPicked::Remote => {
@@ -5773,7 +5513,7 @@ impl Shell {
                             ProjectPicked::Project(path) if *path != this.workspace.project => {
                                 this.select_project(path.clone(), window, cx)
                             }
-                            ProjectPicked::Project(_) | ProjectPicked::Mono(_) => {}
+                            ProjectPicked::Project(_) => {}
                             ProjectPicked::New => this.open_project(cx),
                             ProjectPicked::Remote => {
                                 this.open_remote_project(window, cx);
@@ -5986,9 +5726,6 @@ impl Shell {
             MenuTarget::SidebarOptions => self.change_sidebar_option(action, cx),
             MenuTarget::Tab(id) => {
                 self.run_title_tab_menu(TitleTab::Session(id), action, window, cx)
-            }
-            MenuTarget::MonoTab(id) => {
-                self.run_title_tab_menu(self.mono_tab(id), action, window, cx)
             }
             MenuTarget::SearchTab => self.run_title_tab_menu(TitleTab::Search, action, window, cx),
             MenuTarget::AppTab(view) => {
@@ -6275,9 +6012,7 @@ impl Shell {
         let started_in_view = match rail {
             Some((rails::Rail::Started(children), _)) => children.iter().any(|c| {
                 self.selected_sessions.contains(c)
-                    || (self.workspace.active == Some(*c)
-                        && !self.mono_active(cx)
-                        && !self.app_view_open())
+                    || (self.workspace.active == Some(*c) && !self.app_view_open())
             }),
             _ => false,
         };
@@ -6292,9 +6027,7 @@ impl Shell {
             || self.automation_state.session_automations.contains_key(&id);
         let session = self.session_metadata(id, cx);
         let active = self.selected_sessions.contains(&id)
-            || (self.workspace.active == Some(id)
-                && !self.mono_active(cx)
-                && !self.app_view_open());
+            || (self.workspace.active == Some(id) && !self.app_view_open());
         let anchor = self
             .session_row_bounds
             .get(&id)
@@ -6741,11 +6474,7 @@ impl Shell {
         // sidebar. Tab restoration still uses the stricter execution scope.
         let listable = |id: i64| {
             let s = self.session_metadata(id, cx);
-            !self
-                .monos
-                .as_ref()
-                .is_some_and(|m| m.read(cx).hidden_session(id))
-                && s.summary.cwd == self.workspace.project
+            s.summary.cwd == self.workspace.project
                 && s.summary.has_messages
                 && !self.orchestration_worker(id)
                 && self.in_sidebar_worktree_scope(id, cx)
@@ -6858,7 +6587,7 @@ impl Shell {
     }
 
     fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(active) = self.active_title_tab(cx) else {
+        let Some(active) = self.active_title_tab() else {
             return;
         };
         // Pins survive the bulk closes, as in the tab menu.
@@ -7062,14 +6791,7 @@ impl Shell {
                         )
                         .child(self.virtual_sidebar(cx))
                         .children(live_agents)
-                        .child(self.app_update_footer(cx))
-                        // The Focused layout has no project rail footer to hold it.
-                        .when(!self.workspace.classic_layout, |d| {
-                            d.children(
-                                self.github_star_prompt(cx)
-                                    .map(|prompt| div().mx_2().my_2().child(prompt)),
-                            )
-                        }),
+                        .child(self.app_update_footer(cx)),
                 ),
             )
             .when(!self.workspace.classic_layout, |d| {
@@ -7355,17 +7077,14 @@ impl Shell {
             }
         }
         let file_panes = leaves.iter().filter(|id| review(id).is_some()).count();
-        let mono_panes = leaves
+        let terminal_panes = leaves
             .iter()
-            .filter(|id| {
-                self.workspace.mono_panes.contains_key(id)
-                    || self.workspace.terminal_panes.contains_key(id)
-            })
+            .filter(|id| self.workspace.terminal_panes.contains_key(id))
             .count();
-        let multi_pane = sessions.len() + file_panes + mono_panes > 1;
+        let multi_pane = sessions.len() + file_panes + terminal_panes > 1;
         let session_focused = sessions.first() == Some(&focus);
         let file_focused =
-            !session_focused || (self.tab_review_focused(tab, cx) && review(&focus).is_some());
+            !session_focused || (self.tab_review_focused(tab) && review(&focus).is_some());
         let title = |id: &i64| {
             let title = self.session_metadata(*id, cx).display_title();
             if title == "New session" {
@@ -7377,11 +7096,8 @@ impl Shell {
         let conversation = sessions.first().map(title).unwrap_or_default();
         let file = files.first().cloned().unwrap_or_default();
         let untitled = "New session".to_owned();
-        let mono = self
-            .mono_pane_title(focus, cx)
-            .or_else(|| self.terminal_pane_title(focus, cx));
-        let headline = if let Some(mono) = mono {
-            mono
+        let headline = if let Some(terminal) = self.terminal_pane_title(focus, cx) {
+            terminal
         } else if multi_pane && file_focused && !file.is_empty() {
             file
         } else {
@@ -7394,20 +7110,11 @@ impl Shell {
         // right or down rolls the headline up.
         let mut panes = Vec::new();
         for id in self.workspace.layout(tab).leaf_ids() {
-            if let (Some(title), Some(mark)) = (
-                self.mono_pane_title(id, cx)
-                    .or_else(|| self.terminal_pane_title(id, cx)),
-                self.mono_pane_mark(id, cx).or_else(|| {
-                    self.workspace
-                        .terminal_panes
-                        .contains_key(&id)
-                        .then_some(PaneMark::Terminal)
-                }),
-            ) {
+            if let Some(title) = self.terminal_pane_title(id, cx) {
                 panes.push(TabPane {
                     key: (id, false),
                     title,
-                    mark,
+                    mark: PaneMark::Terminal,
                 });
             }
             if sessions.contains(&id) {
@@ -7445,42 +7152,6 @@ impl Shell {
             panes,
             focus,
         }
-    }
-
-    /// A pane's mark: its provider, spinning while it works and checked when
-    /// it finished unseen, or the file's icon.
-    fn pane_mark(&self, mark: &PaneMark, active: bool) -> AnyElement {
-        let ink = content(if active { 1. } else { 0.5 });
-        let mark = match mark {
-            PaneMark::Session(provider, lit) => match lit.and_then(|id| self.tab_marks.get(&id)) {
-                Some(mark) => mark
-                    .clone()
-                    .cached(StyleRefinement::default().size(px(14.)))
-                    .into_any_element(),
-                None => provider_icon(provider, 14.)
-                    .opacity(if active { 1. } else { 0.55 })
-                    .into_any_element(),
-            },
-            PaneMark::File(Some(name)) => {
-                crate::file_icons::file_type_icon(name, false, false, 14.)
-            }
-            PaneMark::File(None) => icon("git-compare", 14.).text_color(ink).into_any_element(),
-            PaneMark::Terminal => icon("terminal", 14.).text_color(ink).into_any_element(),
-            PaneMark::Mono(mascot, color) => div()
-                .opacity(if active { 1. } else { 0.55 })
-                .child(crate::monos::avatar::avatar(
-                    mascot, *color, "idle", 14., true,
-                ))
-                .into_any_element(),
-        };
-        div()
-            .size(px(14.))
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(mark)
-            .into_any_element()
     }
 
     /// The focused pane's mark and title on one line; while focus moves,
@@ -7629,7 +7300,7 @@ impl Shell {
 
     /// A pane's tile: a session on its provider's colour with a white mark,
     /// or, while it works or waits to be seen, its live mark on a neutral
-    /// tile; files and Monos neutral.
+    /// tile; files neutral.
     fn pane_tile(&self, mark: &PaneMark, live: bool) -> (Face, AnyElement) {
         match mark {
             PaneMark::Session(provider, lit) => {
@@ -7659,8 +7330,6 @@ impl Shell {
                     .text_color(crate::tab_tile::tile_ink())
                     .into_any_element(),
             ),
-            // A Mono keeps its mascot's own colours.
-            mark => (Face::Neutral, self.pane_mark(mark, true)),
         }
     }
 
@@ -7830,10 +7499,9 @@ impl Shell {
         let (id, armed) = (drag.id.clone(), drag.armed);
         // The active tab has no other pane to land on, but its title still
         // follows the pointer.
-        let own = self.active_title_tab(cx).as_ref() == Some(&id);
+        let own = self.active_title_tab().as_ref() == Some(&id);
         let source = match &id {
             TitleTab::Session(tab) => Some(DragSource::Tab(*tab)),
-            TitleTab::Mono { .. } => Some(DragSource::MonoTab),
             TitleTab::Search | TitleTab::App(_) => None,
         };
         let was = self.pane_drag.is_some();
@@ -7845,7 +7513,7 @@ impl Shell {
             over: if own {
                 None
             } else {
-                self.pane_hit(event.position, cx)
+                self.pane_hit(event.position)
             },
             insert: None,
         });
@@ -7861,17 +7529,12 @@ impl Shell {
                 d.over.is_some()
                     && match d.source {
                         DragSource::Tab(tab) => drag.id.session() == Some(tab),
-                        DragSource::MonoTab => matches!(drag.id, TitleTab::Mono { .. }),
                         _ => false,
                     }
             });
             if onto_pane {
                 self.skip_tab_click = true;
-                if matches!(drag.id, TitleTab::Mono { .. }) {
-                    self.drop_mono_tab(drag.id, window, cx);
-                } else {
-                    self.finish_pane_drag(window, cx);
-                }
+                self.finish_pane_drag(window, cx);
             } else if drag.active {
                 self.cancel_pane_drag(cx);
                 // Each tab glides from where it is drawn into its new slot.
@@ -7990,8 +7653,8 @@ impl Shell {
         };
         // The classic strip starts beside the sidebar, after whatever the
         // navigation leaves uncovered.
-        let lead = if self.workspace.boxy_layout() && !self.classic_titlebar_spans_window(cx) {
-            self.left_sidebar_width(cx) + self.strip_lead(cx)
+        let lead = if self.workspace.boxy_layout() && !self.classic_titlebar_spans_window() {
+            self.left_sidebar_width() + self.strip_lead()
         } else {
             self.navigation_width()
         };
@@ -8045,7 +7708,7 @@ impl Shell {
             (avail / share).clamp(0., TITLE_TAB_MAX_WIDTH)
         };
         // The selected tab keeps a wider share; the others split the rest.
-        let selected = self.active_title_tab(cx);
+        let selected = self.active_title_tab();
         let now = std::time::Instant::now();
         let selection_changed = self.title_tab_selection.1 != selected;
         if selection_changed {
@@ -8191,7 +7854,6 @@ impl Shell {
                 let (copy, ((leaving, dir, progress), shuffle)) = copies.remove(&id)?;
                 let active = self.workspace.active_tab() == Some(id)
                     && !self.app_view_open()
-                    && !self.mono_active(cx)
                     && !self.search_page();
                 // The press itself redraws the strip to arm tab dragging.
                 // Keep its ink stable until that press is released, even if
@@ -8406,44 +8068,6 @@ impl Shell {
                         gpui::deferred(element).with_priority(1).into_any_element()
                     } else {
                         element.into_any_element()
-                    })
-                }
-                TitleTab::Mono { id, .. } => {
-                    let manager = self.monos.clone()?;
-                    let w = tab_width(tab);
-                    let element = manager.update(cx, |m, cx| m.title_tab(id, w, cx))?;
-                    let drag_id = tab.clone();
-                    let menu_id = id.clone();
-                    let dragging = dragged.as_ref() == Some(tab);
-                    let element = div()
-                        .id(SharedString::from(format!("mono-tab-slot-{id}")))
-                        .h(px(TITLE_BAR_HEIGHT))
-                        .w(px(w))
-                        .flex_shrink_0()
-                        .relative()
-                        .left(shifts[ix])
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, event, _, cx| {
-                                this.start_tab_drag(drag_id.clone(), event, cx);
-                            }),
-                        )
-                        .on_mouse_down(
-                            MouseButton::Right,
-                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                                this.open_menu(
-                                    MenuTarget::MonoTab(menu_id.clone()),
-                                    Anchor::Point(event.position),
-                                    window,
-                                    cx,
-                                );
-                            }),
-                        )
-                        .child(element);
-                    Some(if dragging {
-                        gpui::deferred(element).with_priority(1).into_any()
-                    } else {
-                        element.into_any()
                     })
                 }
             })
@@ -8683,14 +8307,8 @@ fn enter_from(leaf: &LayoutLeaf) -> (Edge, Rect) {
 }
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.keep_visible_idle_agents(cx);
+        self.keep_visible_idle_agents();
         self.sync_ui_scale(window, cx);
-        if self.mono_panes_unsettled(cx) {
-            let this = cx.entity();
-            window.defer(cx, move |window, cx| {
-                this.update(cx, |this, cx| this.settle_mono_panes(window, cx));
-            });
-        }
         if let Some(id) = self.pending_composer_focus.take()
             && self
                 .workspace
@@ -8702,10 +8320,8 @@ impl Render for Shell {
             self.review_focused = false;
             window.focus(&view.read(cx).input.focus_handle(cx), cx);
         }
-        if let Some(m) = &self.monos {
-            m.read(cx).hide_html(cx);
-            m.update(cx, |m, cx| m.bind_window(window, cx));
-        }
+        #[cfg(all(target_os = "macos", not(test)))]
+        self.sync_status_item(window, cx);
         self.render_passes += 1;
         if let Some((id, tab)) = self.pending_review.take()
             && self.workspace.tab_of(id).is_some()
@@ -8717,14 +8333,8 @@ impl Render for Shell {
         self.fullscreen = window.is_fullscreen();
         self.window_controls = corner_controls_width(window);
         // The corner's tools share the panel's header with client-drawn
-        // window controls, so the panel keeps room for both. A Mono's icon
-        // tabs need 252px (`corner_room`).
-        let tools = if self.window_controls > 0. && self.mono_active(cx) {
-            252.
-        } else {
-            crate::right_panel::WIDTH_MIN
-        };
-        self.right_panel_min = tools + self.window_controls;
+        // window controls, so the panel keeps room for both.
+        self.right_panel_min = crate::right_panel::WIDTH_MIN + self.window_controls;
         #[cfg(target_os = "linux")]
         {
             let client = matches!(
@@ -8823,7 +8433,6 @@ impl Render for Shell {
                     cx.notify();
                 }));
             self.start_native_notifications(cx);
-            self.check_github_star(false, cx);
             let shell = cx.entity().downgrade();
             window.on_window_should_close(cx, move |window, cx| {
                 shell
@@ -8831,11 +8440,7 @@ impl Render for Shell {
                         shell.save_window_state(window, cx);
                         #[cfg(all(target_os = "macos", not(test)))]
                         if shell.workspace.preferences.close_to_tray
-                            && shell.workspace.preferences.mono_menu_bar_icon
-                            && shell
-                                .monos
-                                .as_ref()
-                                .is_some_and(|m| !m.read(cx).roster.monos.is_empty())
+                            && shell.workspace.preferences.menu_bar_icon
                             && !shell.unsaved_files(cx)
                         {
                             crate::traffic_lights::hide(window);
@@ -8856,7 +8461,6 @@ impl Render for Shell {
                         this.close_preview(cx);
                     } else {
                         this.resume_git(cx);
-                        this.check_github_star(true, cx);
                         if let Some(center) = crate::accounts::get(cx) {
                             center.update(cx, |center, cx| center.app_reactivated(cx));
                         }
@@ -8880,7 +8484,6 @@ impl Render for Shell {
                     self.right_slide = None;
                     self.sync_right_panel(cx);
                     if self.workspace.right_panel_open
-                        && !self.mono_active(cx)
                         && let Some(panel) = self.right_panel.clone()
                     {
                         panel.update(cx, |p, cx| p.finish_opening(window, cx));
@@ -8894,7 +8497,7 @@ impl Render for Shell {
         };
         let right_shown = self.right_panel_shown(cx);
         self.right_drawn = if right_shown { right_width } else { 0. };
-        let poll_git = self.window_active && !self.mono_active(cx);
+        let poll_git = self.window_active;
         self.git.update(cx, |git, cx| {
             git.set_polling(poll_git && git.available(), cx)
         });
@@ -8912,26 +8515,12 @@ impl Render for Shell {
                 if self.workspace.project_rail_open {
                     12.
                 } else {
-                    self.strip_lead(cx) + 6.
+                    self.strip_lead() + 6.
                 }
             });
             search
                 .view
                 .update(cx, |search, cx| search.set_original_header(original, cx));
-        }
-        if let Some(monos) = &self.monos {
-            monos.update(cx, |monos, cx| {
-                monos.set_original_chrome(self.workspace.classic_layout, cx)
-            });
-            let details = monos.read(cx).details.clone();
-            let inset = if self.workspace.boxy_layout() && !self.workspace.classic_layout {
-                TITLE_BAR_HEIGHT
-            } else {
-                0.
-            };
-            details.update(cx, |view, cx| {
-                view.set_top_inset(inset, cx);
-            });
         }
         self.sync_notices(window, cx);
         div()
@@ -8980,15 +8569,6 @@ impl Render for Shell {
                     let cwd = this.git.read(cx).project().to_owned();
                     let (path, location) = crate::file_editor::file_location(&event.0, &cwd);
                     this.open_review(crate::review::ReviewTab::File { cwd, path }, window, cx);
-                    // Monos render above the session pane tree. Give its file
-                    // an independent visible tab using the normal navigation
-                    // path, which retains the Mono tab and live conversation.
-                    if this.mono_active(cx)
-                        && let Some(owner) = this.workspace.active
-                        && let Some(pane) = this.independent_file_pane(owner, cx)
-                    {
-                        this.open_file_pane(pane, window, cx);
-                    }
                     if let Some((line, column)) = location
                         && let Some(pane) = this.active_review(cx)
                     {
@@ -9062,7 +8642,7 @@ impl Render for Shell {
             .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
                 // A pinned tab stays put: ⌘W only closes what sits inside
                 // it, a dock terminal, a review file or one pane of a split.
-                let pinned = this.active_title_tab(cx).filter(|tab| this.tab_pinned(tab));
+                let pinned = this.active_title_tab().filter(|tab| this.tab_pinned(tab));
                 if pinned
                     .as_ref()
                     .is_some_and(|tab| !matches!(tab, TitleTab::Session(_)))
@@ -9083,10 +8663,6 @@ impl Render for Shell {
                 }
                 if this.app_search.is_some() {
                     this.close_app_search(window, cx);
-                    return;
-                }
-                if let Some(TitleTab::Mono { id, .. }) = this.active_title_tab(cx) {
-                    this.close_mono_tab(&id, window, cx);
                     return;
                 }
                 // ⌘W in the focused dock closes its terminal.
@@ -9123,9 +8699,7 @@ impl Render for Shell {
                 this.navigation_revision += 1;
                 // Pins survive the bulk closes, as in the tab menu.
                 this.close_title_tabs(&this.strip_tabs(cx), None, window, cx);
-                if !this.mono_active(cx) {
-                    this.ensure_project_session(window, cx);
-                }
+                this.ensure_project_session(window, cx);
             }))
             .on_action(
                 cx.listener(|this, _: &CloseOtherTabs, window, cx| {
@@ -9197,11 +8771,6 @@ impl Render for Shell {
                     }
                     return;
                 }
-                if let Some(monos) = this.monos.clone()
-                    && monos.update(cx, |m, cx| m.dismiss_settings(window, cx))
-                {
-                    return;
-                }
                 if this.app_view_open() {
                     this.close_app_view(window, cx);
                     return;
@@ -9216,7 +8785,6 @@ impl Render for Shell {
                 }
                 if this.menu.is_none()
                     && this.right_panel_shown(cx)
-                    && !this.mono_active(cx)
                     && let Some(panel) = &this.right_panel
                     && panel.read(cx).tab() == crate::right_panel::RightTab::Files
                 {
@@ -9251,7 +8819,7 @@ impl Render for Shell {
                 }
             }))
             .on_action(cx.listener(|this, _: &SearchFiles, window, cx| {
-                if this.app_view_open() || this.settings.is_some() || this.mono_active(cx) {
+                if this.app_view_open() || this.settings.is_some() {
                     return;
                 }
                 this.close_app_search(window, cx);
@@ -9325,9 +8893,6 @@ impl Render for Shell {
             .on_action(|_: &FocusNext, window, cx| window.focus_next(cx))
             .on_action(|_: &FocusPrevious, window, cx| window.focus_prev(cx))
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
-                if let Some(monos) = &this.monos {
-                    monos.update(cx, |m, cx| m.move_rail_drag(event, cx));
-                }
                 this.move_tab_drag(event, cx);
                 this.move_dock_drag(event, cx);
                 this.move_pane_drag(event, cx);
@@ -9368,9 +8933,6 @@ impl Render for Shell {
                     this.finish_project_rail_drag(cx);
                     this.finish_space_drag(cx);
                     this.end_classic_sidebar_tab(cx);
-                    if let Some(m) = this.monos.clone() {
-                        m.update(cx, |m, cx| m.finish_reorder(cx));
-                    }
                     this.release_resizes(cx);
                     if std::mem::take(&mut this.review_drag)
                         && let Some(review) = this.active_review(cx)
@@ -10970,34 +10532,23 @@ mod tests {
     }
 
     #[gpui::test]
-    fn monos_and_session_title_tabs_share_width_spacing_and_scroll_slots(cx: &mut TestAppContext) {
+    fn session_title_tabs_share_width_spacing_and_scroll_slots(cx: &mut TestAppContext) {
         let (window, a, b) = same_project_window(cx);
         cx.update(|cx| cx.set_reduce_motion(true));
-        let mono = window
-            .update(cx, |shell, w, cx| {
-                let manager = shell.mono_manager();
-                manager.update(cx, |m, cx| m.create(Vec::new(), w, cx));
-                manager.read(cx).active.clone().unwrap()
-            })
-            .unwrap();
         let cx = &mut gpui::VisualTestContext::from_window(window.into(), cx);
         cx.run_until_parked();
-        let mono = cx
-            .debug_bounds(Box::leak(format!("mono-title-tab-{mono}").into_boxed_str()))
-            .unwrap();
         let first = cx
             .debug_bounds(Box::leak(format!("title-tab-{a}").into_boxed_str()))
             .unwrap();
         let second = cx
             .debug_bounds(Box::leak(format!("title-tab-{b}").into_boxed_str()))
             .unwrap();
-        assert_eq!(mono.left() - second.right(), px(2.));
         assert_eq!(second.left() - first.right(), px(2.));
-        assert_eq!(mono.size, first.size);
+        assert_eq!(second.size, first.size);
         window
             .update(cx, |shell, _, cx| {
-                assert_eq!(shell.visible_tabs(cx).len(), 3);
-                assert_eq!(shell.tab_scroll.bounds_for_item(2), Some(mono));
+                assert_eq!(shell.visible_tabs(cx).len(), 2);
+                assert_eq!(shell.tab_scroll.bounds_for_item(1), Some(second));
                 assert_eq!(shell.tab_scroll.bounds_for_item(0), Some(first));
             })
             .unwrap();
@@ -11055,10 +10606,7 @@ mod tests {
         let (selected, other) = window
             .update(cx, |shell, _, cx| {
                 let tabs = shell.visible_tabs(cx);
-                let selected = shell
-                    .active_title_tab(cx)
-                    .and_then(|t| t.session())
-                    .unwrap();
+                let selected = shell.active_title_tab().and_then(|t| t.session()).unwrap();
                 let other = tabs
                     .iter()
                     .filter_map(|t| t.session())

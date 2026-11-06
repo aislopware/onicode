@@ -1824,7 +1824,6 @@ fn paint_question_burst(
 impl Conversation {
     fn btw_target(&self, cx: &App) -> Option<Target> {
         if !self.history_ready()
-            || self.settings.mono.is_some()
             || self.settings.worktree_removed
             || self.editing_last_turn.pending()
         {

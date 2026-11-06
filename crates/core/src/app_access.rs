@@ -1,44 +1,128 @@
-//! Shared project actions for ordinary Operator threads and resident Monos.
-//! Visibility and Mono-only capabilities belong to the caller, not launch JSON.
+//! Project actions for Operator threads. Visibility belongs to the caller,
+//! not launch JSON.
 use std::collections::HashMap;
 
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::agent::{AccessMode, Settings};
 use crate::catalog::{Model, ModelControl};
 use crate::provider::Kind;
 use crate::store::Store;
 
+pub mod bridge;
 #[cfg(test)]
 mod tests;
 
+/// Reject unknown actions, misspelled fields and ambiguous types before any
+/// app mutation.
 pub fn validate_operator(action: &str, input: &Value) -> Result<(), String> {
-    if !matches!(
-        action,
-        "models.list"
-            | "sessions.list"
-            | "sessions.read"
-            | "sessions.start"
-            | "sessions.send"
-            | "sessions.draft"
-            | "sessions.stop"
-            | "sessions.archive"
-            | "sessions.delete"
-            | "folders.list"
-            | "folders.move"
-            | "notes.list"
-            | "notes.read"
-            | "notes.write"
-            | "worktrees.list"
-            | "worktrees.create"
-    ) {
-        return Err("Unknown Operator action. Run app help for project actions; memory, habits and artifacts require a Mono.".into());
+    let fields = match action {
+        "models.list" => "",
+        "sessions.list" | "folders.list" | "worktrees.list" => "project",
+        "sessions.read" => "sessionId project before limit maxChars",
+        "sessions.start" => {
+            "prompt project harness model modelSettings effort runtimeMode title draft reveal workspaceMode worktreeBase worktreeCwd placement besideSessionId"
+        }
+        "sessions.send" | "sessions.draft" => "sessionId prompt project",
+        "sessions.stop" | "sessions.archive" | "sessions.delete" => "sessionId project",
+        "worktrees.create" => "branch base existing project",
+        "folders.move" => "sessionId folderId newFolderName project",
+        "notes.list" => "limit offset",
+        "notes.read" => "id",
+        "notes.write" => "id title body tags",
+        _ => return Err("Unknown Operator action. Run app help for project actions.".into()),
+    };
+    for (key, value) in input.as_object().ok_or("Input must be an object")? {
+        if !fields.split_whitespace().any(|f| f == key) {
+            return Err(format!("{action} does not take {key}"));
+        }
+        if ["draft", "reveal", "existing"].contains(&key.as_str()) && !value.is_boolean() {
+            return Err(format!("{key} must be true or false"));
+        }
+        if ["limit", "offset", "maxChars"].contains(&key.as_str()) && value.as_u64().is_none() {
+            return Err(format!("{key} must be a non-negative integer"));
+        }
+        if key == "before" && !value.is_string() && value.as_u64().is_none() {
+            return Err("before must be a turn ID".into());
+        }
+        if matches!(key.as_str(), "id" | "sessionId" | "besideSessionId")
+            && !value.is_string()
+            && value.as_u64().is_none()
+        {
+            return Err(format!("{key} must be an ID"));
+        }
+        if ![
+            "draft",
+            "reveal",
+            "existing",
+            "before",
+            "limit",
+            "offset",
+            "maxChars",
+            "id",
+            "sessionId",
+            "besideSessionId",
+            "modelSettings",
+            "tags",
+        ]
+        .contains(&key.as_str())
+            && !value.is_string()
+        {
+            return Err(format!("{key} must be text"));
+        }
     }
-    crate::mono::api::validate(action, input)?;
-    if input["notifyOnComplete"] == true {
-        return Err("Completion notifications are only available in a Mono's chat".into());
+    if input.get("modelSettings").is_some_and(|value| {
+        value
+            .as_object()
+            .is_none_or(|values| values.values().any(|v| !v.is_string()))
+    }) {
+        return Err("modelSettings must be an object of strings".into());
+    }
+    if input.get("runtimeMode").is_some_and(|v| {
+        !matches!(
+            v.as_str(),
+            Some("read-only" | "supervised" | "auto-accept-edits" | "auto" | "full-access")
+        )
+    }) {
+        return Err("Unknown runtimeMode".into());
+    }
+    if input
+        .get("workspaceMode")
+        .is_some_and(|v| !matches!(v.as_str(), Some("current" | "checkout" | "worktree")))
+    {
+        return Err("workspaceMode must be current or worktree".into());
+    }
+    if input
+        .get("placement")
+        .is_some_and(|v| !matches!(v.as_str(), Some("tab" | "right" | "down")))
+    {
+        return Err("placement must be tab, right or down".into());
+    }
+    if input.get("besideSessionId").is_some()
+        && !matches!(input["placement"].as_str(), Some("right" | "down"))
+    {
+        return Err("besideSessionId requires placement right or down".into());
+    }
+    if input.get("tags").is_some_and(|v| {
+        v.as_array().is_none_or(|a| {
+            a.len() > crate::notes::MAX_TAGS
+                || a.iter().any(|v| {
+                    v.as_str()
+                        .is_none_or(|s| s.len() > crate::notes::MAX_TAG_LENGTH)
+                })
+        })
+    }) {
+        return Err("tags must be an array of up to 20 short strings".into());
     }
     Ok(())
+}
+
+pub fn content_hash(text: &str) -> String {
+    Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 pub fn text(input: &Value, key: &str, max: usize) -> Result<String, String> {
@@ -60,13 +144,10 @@ pub fn prompt(input: &Value) -> Result<String, String> {
     Ok(prompt)
 }
 pub fn fingerprint(action: &str, input: &Value) -> String {
-    crate::mono::files::content_hash(&format!("{action}:{input}"))
+    content_hash(&format!("{action}:{input}"))
 }
 pub fn receipt_key(caller: i64, request: &str) -> String {
-    format!(
-        "operator-app-receipt:{caller}:{}",
-        crate::mono::files::content_hash(request)
-    )
+    format!("operator-app-receipt:{caller}:{}", content_hash(request))
 }
 
 /// Advertise precisely the IDs and values accepted by launch_settings.
@@ -114,14 +195,6 @@ pub fn model_controls(kind: Kind, model: &Model) -> Vec<ModelControl> {
     }
     controls
 }
-/// A model's effort levels as `sessions.start` accepts them, value and name.
-pub fn effort_choices(kind: Kind, model: &Model) -> Vec<(String, String)> {
-    model_controls(kind, model)
-        .into_iter()
-        .find(|c| is_effort(&c.id))
-        .map(|c| c.choices)
-        .unwrap_or_default()
-}
 fn is_effort(key: &str) -> bool {
     matches!(
         key,
@@ -154,7 +227,7 @@ pub fn models_catalog(profiles: Vec<(Kind, crate::accounts::Profile)>) -> Result
 }
 
 /// Account choice is supplied by the caller; transports and credentials are never
-/// inherited from a Mono or an Operator grant into its child.
+/// inherited from an Operator grant into its child.
 pub fn launch_settings(
     input: &Value,
     source_provider: &str,
@@ -162,7 +235,7 @@ pub fn launch_settings(
     kind: Kind,
     models: &[Model],
 ) -> Result<Settings, String> {
-    crate::mono::api::validate("sessions.start", input)?;
+    validate_operator("sessions.start", input)?;
     let requested =
         optional_text(input, "model", 512)?.and_then(|m| crate::store::native_model(&m, kind.id()));
     let changing = source_provider != kind.id()
@@ -247,9 +320,7 @@ pub fn launch_settings(
     if input.get("worktreeCwd").is_some() && workspace == "worktree" {
         return Err("worktreeCwd requires workspaceMode current".into());
     }
-    settings.mono = None;
     settings.mono_message_id = None;
-    settings.mono_sent_at = None;
     settings.operator = false;
     settings.operator_enabled = false;
     settings.orchestrator = false;
@@ -334,10 +405,7 @@ pub fn conversation_page(blocks: &[Value], input: &Value) -> Result<Value, Strin
     let max = bounded(input, "maxChars", 1200, 200, 6000)?;
     let mut turns: Vec<(&Value, Vec<&Value>)> = Vec::new();
     for block in blocks {
-        if block["role"] == "user"
-            && (block["internal"] != true || block["monoSessionCompletion"].is_object())
-            && block["draft"] != true
-        {
+        if block["role"] == "user" && block["internal"] != true && block["draft"] != true {
             turns.push((block, Vec::new()));
         } else if block["role"] == "assistant"
             && block["internal"] != true
@@ -442,12 +510,10 @@ pub fn notes_action(
         return Err("body is required to create a note".into());
     }
     let body = body.unwrap_or_else(|| current.unwrap().body.clone());
-    let id = current.map(|n| n.id.clone()).or(id).unwrap_or_else(|| {
-        format!(
-            "app-note-{caller}-{}",
-            crate::mono::files::content_hash(request)
-        )
-    });
+    let id = current
+        .map(|n| n.id.clone())
+        .or(id)
+        .unwrap_or_else(|| format!("app-note-{caller}-{}", content_hash(request)));
     let note = store.upsert_note(&crate::notes::NoteUpsert {
         id,
         title: title

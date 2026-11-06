@@ -13,11 +13,9 @@ pub mod external_editor;
 pub mod files;
 pub mod follow_up;
 pub mod git;
-pub mod github_star;
 pub mod harness_updates;
 pub mod inbox;
 pub mod mobile;
-pub mod mono;
 pub mod notes;
 pub mod process;
 pub mod project_appearance;
@@ -39,7 +37,6 @@ pub mod visual;
 pub mod visual_bridge;
 
 pub mod composer;
-pub mod contributions;
 pub mod orchestration;
 pub mod skills;
 
@@ -49,3 +46,8 @@ pub mod cli;
 pub mod mcp;
 
 pub mod worktree_management;
+
+/// A random 128-bit ID as 32 hex digits.
+pub fn new_id() -> String {
+    format!("{:032x}", rand::random::<u128>())
+}

@@ -41,23 +41,13 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
-# gpui-fast's renderer pins wgpu by rev; onicode's shader checks and offscreen visuals take the same one.
-wgpu = { git = "https://github.com/gfx-rs/wgpu", rev = "cddb2f5d80dc0009b2ef6767635140cacf90a007" }
-naga = { git = "https://github.com/gfx-rs/wgpu", rev = "cddb2f5d80dc0009b2ef6767635140cacf90a007" }
 onicode-rpc = { path = "crates/rpc" }
-onicode-update = { path = "crates/update" }
-onicode-launch = { path = "crates/launch" }
-onicode-notify = { path = "crates/notify" }
-zatex = { path = "crates/zatex" }
 
 # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
 onicode-net = { path = "crates/net" }
 onicode-net-sim = { path = "crates/net-sim" }
 onicode-peer = { path = "crates/peer" }
 onicode-tailnet = { path = "crates/tailnet" }
-# Transfers: BLAKE3 over every block both ends stream, and zstd level 1 for items whose sample
-# shrinks (crates.io newest, 2026-11-06).
-blake3 = "=1.8.7"
 zstd = "=0.14.3"
 # Remote desktop (.research/remote-desktop.md §5): slopty's media, codec, capture, input and
 # virtual-display crates, ported whole.
@@ -231,41 +221,18 @@ socket2 = { version = "0.6.5", features = ["all"] }
 hyper = "1.11"
 hyper-util = "0.1.20"
 http-body-util = "0.1.5"
-
-# CRDT
-loro = "1.17"
-# Block compression for doc-sync frames; the version loro already brings in.
-lz4_flex = "0.11.6"
 # Property and model tests; the version noq-proto's tests already lock.
 proptest = "1.12"
 pretty_assertions = "1.4.1"
 # Structured fuzz inputs; desktop-media's tests replay its fuzz corpora through them.
 arbitrary = { version = "1.5.0", features = ["derive"] }
 
-# GPUI is aislopware/gpui-fast (retained mode, docs/onicode/decisions/rendering.md), pinned by rev on
-# its main; the gpui-pre crates it reaches are patched to the same rev below, so the graph holds
-# exactly one GPUI. Components are aislopware/gpui-kit's base crate on its main (upstream
-# longbridge/gpui-kit plus the caret and gutter fixes).
-gpui = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3" }
-gpui_platform = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3", features = [
-    "font-kit",
-    "runtime_shaders",
-] }
-gpui_tokio = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3" }
-# Tests build a text system and executor without a platform, which only the main thread may create.
-gpui_apple = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3", features = [
-    "font-kit",
-] }
-gpui-base = { git = "https://github.com/aislopware/gpui-kit.git", rev = "0fb34d8ff5677d20dc0e64f1f27ea1be989a5326" }
-
 # diffs
 similar = "2"
 
 # async / net
 tokio = { version = "1", features = ["full"] }
-tokio-util = "0.7"
 libc = "0.2"
-gethostname = "1"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures = "0.3"
 async-trait = "0.1"
@@ -273,11 +240,6 @@ async-trait = "0.1"
 # serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-json5 = "0.4"
-# antigravity writes `settings.json` but reads it back with `hjson.load`, so a
-# user's comments and unquoted keys have to survive our read of the same file.
-deser-hjson = "2.2"
-plist = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # storage
@@ -297,24 +259,16 @@ tempfile = "3"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"
-zip = { version = "9.4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 notify = "7"
-portable-pty = "0.9"
 alacritty_terminal = "0.26"
 pulldown-cmark = "0.12"
 unicode-segmentation = "1"
 unicode-width = "0.2"
-ttf-parser = "0.25.1"
 # Packaged GUI apps do not inherit shell proxy variables; honor the macOS
 # system proxy for provider usage probes and other HTTP clients.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
-ignore = "0.4"
-# Workspace file/content search index (@ mentions, file tree, cmd+K).
-# Pinned exactly: crates.io also carries `0.11.1-nightly.*` prereleases.
-fff-search = "=0.11.0"
 
 [profile.release]
 # Distribution profile (scripts/package-linux.sh): thin LTO buys most of fat

@@ -6,23 +6,6 @@
 //! unpushed commit offers Push.
 use super::*;
 
-/// Read older pages without installing their transcript payload in the UI.
-pub(super) fn restored_session_edits(
-    store: &onicode_core::store::Store,
-    session: i64,
-    rows: &[onicode_core::transcript::Row],
-) -> Result<Vec<String>, String> {
-    let mut paths = crate::runtime::edited_paths(rows);
-    if let Some(before) = store.history_before(session)? {
-        for path in crate::runtime::edited_paths(&store.load_before(session, before, true)?.rows) {
-            if !paths.contains(&path) {
-                paths.push(path);
-            }
-        }
-    }
-    Ok(paths)
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum GitAction {
     Stage,
@@ -181,7 +164,7 @@ impl Conversation {
     pub(crate) fn refresh_git_actions(&mut self, cx: &mut Context<Self>) {
         self.session_edits_generation = self.session_edits_generation.wrapping_add(1);
         let generation = self.session_edits_generation;
-        if !self.history_loaded() || self.busy || self.is_remote() || self.settings.mono.is_some() {
+        if !self.history_loaded() || self.busy || self.is_remote() {
             return;
         }
         if self.session_edits.is_empty() || self.settings.worktree_removed {
@@ -261,7 +244,6 @@ impl Conversation {
             && !self.preparing_worktree
             && self.follow_ups.state.messages.is_empty()
             && !self.is_remote()
-            && self.settings.mono.is_none()
             && !self.settings.worktree_removed
     }
 

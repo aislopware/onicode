@@ -8,8 +8,8 @@ use serde_json::{Value, json};
 const RECENT_SESSIONS: usize = 20;
 const SESSION_PAGE_MAX: usize = 100;
 
-/// The workspace poll's sessions: each project's most recent, every busy one,
-/// and every Mono's. `sessions` is newest first, as the catalog is sorted.
+/// The workspace poll's sessions: each project's most recent and every busy
+/// one. `sessions` is newest first, as the catalog is sorted.
 pub fn recent_sessions(sessions: &Value) -> Vec<Value> {
     let mut per_project: HashMap<&str, usize> = HashMap::new();
     sessions
@@ -21,7 +21,7 @@ pub fn recent_sessions(sessions: &Value) -> Vec<Value> {
                 .entry(session["projectId"].as_str().unwrap_or(""))
                 .or_default();
             *count += 1;
-            *count <= RECENT_SESSIONS || session["busy"] == true || session["monoId"].is_string()
+            *count <= RECENT_SESSIONS || session["busy"] == true
         })
         .cloned()
         .collect()
@@ -76,15 +76,14 @@ mod tests {
     fn the_poll_carries_recent_sessions_and_pages_serve_the_rest() {
         let sessions: Vec<Value> = (0..30)
             .map(|i| json!({"id":format!("s{i}"),"projectId":"p","title":format!("Task {i}"),"busy":i == 25}))
-            .chain([json!({"id":"m","projectId":"p","monoId":"mono"})])
             .collect();
         let sessions = json!(sessions);
         let recent = recent_sessions(&sessions);
-        assert_eq!(recent.len(), RECENT_SESSIONS + 2);
+        assert_eq!(recent.len(), RECENT_SESSIONS + 1);
         assert!(recent.iter().any(|s| s["id"] == "s25"));
 
         let page = session_page(&sessions, &json!({"projectId":"p","offset":28,"limit":10}));
-        assert_eq!(page["sessions"].as_array().unwrap().len(), 3);
+        assert_eq!(page["sessions"].as_array().unwrap().len(), 2);
         assert_eq!(page["hasMore"], false);
         let page = session_page(&sessions, &json!({"projectId":"p","limit":2}));
         assert_eq!(page["hasMore"], true);

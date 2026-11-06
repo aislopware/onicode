@@ -1,9 +1,7 @@
 //! Session storage. Desktop launches use Monocode's existing schema directly.
 mod app_access;
-mod contributions;
 mod managed_sessions;
 mod monocode_import;
-mod monos;
 mod notes;
 mod remote;
 mod remote_legacy;
@@ -22,7 +20,6 @@ use std::path::Path;
 pub use edit::EditSnapshot;
 pub use monocode_import::{ImportReport, monocode_database, native_model};
 use rusqlite::{Connection, params};
-pub use shared::{HistoryPage, PAGE_TURNS};
 pub use side_threads::DesktopSideThread;
 
 use crate::transcript::{Row, Transcript};
@@ -721,23 +718,6 @@ impl Store {
         } else {
             result
         }
-    }
-
-    /// The cursor for the turns before `load`'s rows, when a Mono's history
-    /// is paged rather than loaded whole.
-    pub fn history_before(&self, session: i64) -> Result<Option<i64>, String> {
-        if self.shared.is_none() || self.remote_session(session)?.is_some() {
-            return Ok(None);
-        }
-        self.shared_history_before(session)
-    }
-
-    /// The page of turns before `before`, or with `all` every older turn.
-    pub fn load_before(&self, session: i64, before: i64, all: bool) -> Result<HistoryPage, String> {
-        if self.shared.is_none() {
-            return Ok(HistoryPage::default());
-        }
-        self.shared_load_before(session, before, all)
     }
 
     pub fn load(&self, session: i64) -> Result<Transcript, String> {
@@ -1445,7 +1425,7 @@ mod tests {
         }
     }
     #[test]
-    fn send_times_survive_streaming_restart_and_queued_delivery() {
+    fn send_times_survive_streaming_and_restart() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("native.db");
         let mut store = Store::open(&path).unwrap();
@@ -1465,30 +1445,11 @@ mod tests {
         store
             .write_rows(session.id, answer, &transcript.rows[answer..])
             .unwrap();
-        let mut roster = crate::mono::Roster::default();
-        let mono = roster.create(Vec::new()).id.clone();
-        roster
-            .get_mut(&mono)
-            .unwrap()
-            .outbox
-            .push(crate::mono::Message {
-                id: "queued".into(),
-                text: "Tomorrow".into(),
-                sent_at,
-                internal: false,
-                error: None,
-                attachments: Vec::new(),
-            });
-        roster.save(&store).unwrap();
         drop(store);
         let store = Store::open(&path).unwrap();
         let saved = store.load(session.id).unwrap();
         assert_eq!(saved.rows, transcript.rows);
         assert_eq!(saved.rows[answer].sent_at, answer_time);
-        assert_eq!(
-            crate::mono::Roster::load(&store).unwrap().monos[0].outbox[0].sent_at,
-            sent_at
-        );
         let legacy: Row =
             serde_json::from_str(r#"{"role":"user","text":"Old","first":true}"#).unwrap();
         assert_eq!(legacy.sent_at, None);

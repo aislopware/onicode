@@ -112,11 +112,7 @@ pub struct Settings {
     #[serde(skip)]
     pub environment: std::collections::HashMap<String, String>,
     #[serde(skip)]
-    pub mono: Option<MonoContext>,
-    #[serde(skip)]
     pub mono_message_id: Option<String>,
-    #[serde(skip)]
-    pub mono_sent_at: Option<u64>,
     #[serde(skip)]
     pub internal_message: bool,
     #[serde(skip)]
@@ -159,12 +155,6 @@ pub struct ProviderSwitch {
     pub skip_outgoing_recap: bool,
     pub account: crate::accounts::Profile,
     pub provider_id: Option<String>,
-}
-#[derive(Clone, Debug)]
-pub struct MonoContext {
-    pub mono: crate::mono::Mono,
-    pub root: std::path::PathBuf,
-    pub executable: std::path::PathBuf,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]

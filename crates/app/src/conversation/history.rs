@@ -31,8 +31,7 @@ impl Conversation {
     }
 
     pub(super) fn preserve_new_composer(&self, cx: &gpui::App) -> bool {
-        self.settings.mono.is_none()
-            && (!self.input.read(cx).content.is_empty() || !self.attachments.is_empty())
+        !self.input.read(cx).content.is_empty() || !self.attachments.is_empty()
     }
 
     pub(super) fn enqueue_restored_prompt(&mut self, prompt: String, cx: &mut Context<Self>) {
@@ -75,7 +74,6 @@ impl Conversation {
                 .as_ref()
                 .is_some_and(|sheet| sheet.read(cx).is_open() || sheet.read(cx).is_running())
             || self.status != "Ready"
-            || self.settings.mono.is_some()
             || self.account_switching
             || self.preparing_worktree
             || self.planning_orchestration
@@ -83,7 +81,6 @@ impl Conversation {
             || self.orchestration_progress.is_some()
             || self.settings.usage_limit.is_some()
             || !self.history_actions.is_empty()
-            || self.mono_ui.external.is_some()
             || self.controls.is_some()
             || self.needs_approval()
             || self.attaching
@@ -125,34 +122,26 @@ impl Conversation {
         self.loading = true;
         let id = self.summary.id;
         let store = self.store.clone();
-        let mono = self.settings.mono.is_some();
         let work = cx.background_executor().spawn(async move {
-            let (history, turns, before) = {
+            let (history, turns) = {
                 let store = locked(&store)?;
                 (
                     store.load(id)?,
                     store.agent_settings(id)?.unwrap_or_default().turns,
-                    store.history_before(id)?,
                 )
             };
-            Ok::<_, String>((
-                crate::transcript::PreparedHistory::new(history.rows, mono),
-                turns,
-                before,
-            ))
+            Ok::<_, String>((crate::transcript::PreparedHistory::new(history.rows), turns))
         });
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
                 this.loading = false;
                 match result {
-                    Ok((history, turns, before)) => {
+                    Ok((history, turns)) => {
                         this.settings.turns = turns.clone();
-                        let pager = this.history_pager();
                         this.transcript.update(cx, |view, cx| {
                             view.set_turns(turns);
                             view.restore_prepared_history(history, cx);
-                            view.set_history_pager(before, Some(pager));
                         });
                         this.history_unloaded = false;
                         this.sync_review(cx);
@@ -162,7 +151,6 @@ impl Conversation {
                         }
                         this.run_history_actions(cx);
                         this.pump_follow_ups(cx);
-                        this.mono_flush_external(cx);
                     }
                     Err(error) => this.status = error,
                 }
@@ -271,7 +259,6 @@ mod tests {
             assert_eq!(chat.input.read(cx).content, "Unsent draft");
             assert_eq!(chat.history_actions.len(), 1);
             assert!(!chat.ready_for_external(cx));
-            assert!(chat.mono_post("assistant", "Report".into(), cx).is_err());
             assert!(chat.transcript.read(cx).source_rows().is_empty());
             // Replace the launch intent with observable, provider-free work to
             // verify FIFO actions cannot run against the empty suspended view.

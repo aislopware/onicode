@@ -97,10 +97,8 @@ pub(crate) struct Preferences {
     /// The model for session titles, branch names, commit messages and pull
     /// requests; `None` lets each use its own harness's quick model.
     pub background_model: Option<ModelChoice>,
-    // Monos
-    pub monos: bool,
-    pub rail_monos_pinned: bool,
-    pub mono_menu_bar_icon: bool,
+    /// The macOS menu-bar status item that opens the quick composer.
+    pub menu_bar_icon: bool,
     // Archive
     pub show_archived: bool,
     // Keybindings: a changed shortcut, or `None` for a disabled one.
@@ -180,9 +178,7 @@ impl Default for Preferences {
             default_access: None,
             provider_efforts: HashMap::new(),
             background_model: None,
-            monos: true,
-            rail_monos_pinned: false,
-            mono_menu_bar_icon: true,
+            menu_bar_icon: true,
             show_archived: false,
             keybindings: HashMap::new(),
         }

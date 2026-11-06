@@ -125,10 +125,7 @@ impl Conversation {
                     .map(onicode_core::store::Store::project_remote_history)
                     .transpose()?
                     .unwrap_or_default();
-                Some((
-                    crate::transcript::PreparedHistory::new(history.rows, false),
-                    turns,
-                ))
+                Some((crate::transcript::PreparedHistory::new(history.rows), turns))
             } else {
                 None
             };

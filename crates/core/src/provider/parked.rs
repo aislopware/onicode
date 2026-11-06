@@ -309,11 +309,6 @@ pub(super) fn key(request: &Request) -> String {
         request.model,
         settings,
         request.settings.environment,
-        request
-            .settings
-            .mono
-            .as_ref()
-            .map(|mono| (&mono.root, &mono.mono.id)),
         request.settings.disable_claude_hooks
     ])
     .to_string()
@@ -569,35 +564,6 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
-
-    #[test]
-    fn parked_keys_separate_mono_identity_and_private_storage_from_regular_sessions() {
-        let mut request = Request {
-            kind: Kind::Codex,
-            binary: PathBuf::from("codex"),
-            cwd: PathBuf::from("/project"),
-            prompt: "hello".into(),
-            provider_id: Some("saved-thread".into()),
-            model: None,
-            settings: Settings::default(),
-        };
-        let regular = key(&request);
-        request.settings.mono = Some(crate::agent::MonoContext {
-            mono: crate::mono::Mono {
-                id: "first-mono".into(),
-                ..Default::default()
-            },
-            root: PathBuf::from("/desktop/monos"),
-            executable: PathBuf::from("monocode"),
-        });
-        let first = key(&request);
-        assert_ne!(regular, first);
-        request.settings.mono.as_mut().unwrap().mono.id = "other-mono".into();
-        assert_ne!(first, key(&request));
-        request.settings.mono.as_mut().unwrap().mono.id = "first-mono".into();
-        request.settings.mono.as_mut().unwrap().root = PathBuf::from("/isolated/monos");
-        assert_ne!(first, key(&request));
-    }
 
     #[test]
     fn reuses_only_the_same_conversation_and_launch_configuration() {

@@ -79,12 +79,6 @@ pub(crate) const BINDINGS: &[Binding] = &[
         fixed: false,
     },
     Binding {
-        command: "App: Toggle Mono",
-        keys: "⌘I",
-        when: "Project with a mono",
-        fixed: false,
-    },
-    Binding {
         command: "Composer: Toggle Workspace",
         keys: "⌘⇧G",
         when: "Draft session composer",

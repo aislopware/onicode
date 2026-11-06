@@ -149,14 +149,13 @@ fn panel_button(enabled: bool, dot: bool) -> gpui::Stateful<gpui::Div> {
 }
 
 impl Shell {
-    pub(super) fn classic_titlebar_spans_window(&self, cx: &gpui::App) -> bool {
+    pub(super) fn classic_titlebar_spans_window(&self) -> bool {
         cfg!(target_os = "macos")
             && self.workspace.classic_layout
             && !self.workspace.project_rail_open
             && self.settings.is_none()
             && !self.app_view_open()
             && !self.search_page()
-            && !self.mono_active(cx)
     }
 
     /// Switch navigation layouts without changing the new layout's frame style.
@@ -191,12 +190,6 @@ impl Shell {
             && let Some(view) = self.active_app_view
         {
             self.remember_title_tab(TitleTab::App(view));
-        }
-        if !self.workspace.classic_layout
-            && let Some(id) = self.monos.as_ref().and_then(|m| m.read(cx).active.clone())
-        {
-            self.remember_title_tab(self.mono_tab(id));
-            self.reveal_active_tab(cx);
         }
         if let Some(search) = &self.app_search {
             search.view.update(cx, |v, cx| v.set_classic(classic, cx));
@@ -357,7 +350,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let sidebar_width = if !self.session_sidebar_available(cx) {
+        let sidebar_width = if !self.session_sidebar_available() {
             0.
         } else {
             sidebar_width
@@ -370,21 +363,18 @@ impl Shell {
             .clone()
             .filter(|_| right_shown && self.settings.is_none())
             .map(|panel| self.right_panel_frame(panel, right_width, full, window, cx));
-        let footer = (!self.classic_surface_open(cx)).then(|| self.footer_row(cx));
-        let spans_window = self.classic_titlebar_spans_window(cx);
+        let footer = (!self.classic_surface_open()).then(|| self.footer_row(cx));
+        let spans_window = self.classic_titlebar_spans_window();
         let original = self.workspace.classic_layout;
         let compact_surface = cfg!(target_os = "macos")
             && original
             && !self.workspace.project_rail_open
             && self.settings.is_none()
-            && self.classic_surface_open(cx);
+            && self.classic_surface_open();
         let tab_bar = if spans_window || (original && self.search_page()) {
             None
         } else if original && self.app_view_open() {
-            Some(self.titlebar_controls_space(self.classic_app_surface_header(cx), window))
-        } else if original && self.mono_active(cx) {
-            let bar = self.classic_mono_header(cx);
-            Some(self.titlebar_controls_space(bar, window))
+            Some(self.titlebar_controls_space(self.classic_app_surface_header(), window))
         } else {
             Some(self.titlebar(window, cx))
         };
@@ -518,20 +508,8 @@ impl Shell {
     pub(super) fn corner_room(&self, cx: &gpui::App) -> f32 {
         // Client-drawn window controls hold the corner's right end.
         let controls = self.window_controls;
-        if self.workspace.classic_layout && !self.mono_active(cx) {
+        if self.workspace.classic_layout {
             return controls;
-        }
-        if self.mono_active(cx) {
-            return if self.corner_tabs_shown() {
-                let minimum = if self.right_panel_width() >= 312. + controls {
-                    312.
-                } else {
-                    252.
-                };
-                self.right_drawn.max(minimum + controls)
-            } else {
-                6. + CORNER_BUTTONS_WIDTH + 12. + controls
-            };
         }
         if !self.git.read(cx).available() {
             return 6. + 24. + 12. + controls;
@@ -690,7 +668,7 @@ impl Shell {
     }
 
     fn sidebar_resize(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        (self.session_sidebar_available(cx)
+        (self.session_sidebar_available()
             && self.workspace.sidebar_visible
             && self.sidebar_slide.is_none())
         .then(|| {
@@ -767,31 +745,8 @@ impl Shell {
                         // Every project lands on a blank session, as in
                         // Monocode; this is empty only while one is created.
                         .child({
-                            if let Some(monos) =
-                                self.monos.clone().filter(|m| m.read(cx).active.is_some())
-                            {
-                                let session = monos.read(cx).active_notification_session(cx);
-                                let linked = session.and_then(|id| self.linked_notice(id, cx));
-                                div()
-                                    .relative()
-                                    .size_full()
-                                    .child(self.mono_bounds.layout_probe())
-                                    .child(monos)
-                                    .children(self.drop_hint(super::mono_panes::MONO_VIEW))
-                                    .children(linked.map(|notice| {
-                                        div()
-                                            .absolute()
-                                            .top(px(12.))
-                                            .right(px(12.))
-                                            .w(px(320.))
-                                            .max_w_full()
-                                            .child(notice)
-                                    }))
-                                    .into_any_element()
-                            } else {
-                                let body = self.workspace_body(window, cx);
-                                self.with_dock(body, window, cx)
-                            }
+                            let body = self.workspace_body(window, cx);
+                            self.with_dock(body, window, cx)
                         }),
                 ),
             )
@@ -868,7 +823,7 @@ impl Shell {
         if !self.resources.read(cx).is_open() {
             return None;
         }
-        let mut sessions: HashMap<i64, SessionInfo> = self
+        let sessions: HashMap<i64, SessionInfo> = self
             .sessions
             .iter()
             .map(|(id, session)| {
@@ -880,9 +835,6 @@ impl Shell {
                 (*id, info)
             })
             .collect();
-        if let Some(m) = &self.monos {
-            sessions.extend(m.read(cx).resource_sessions(cx));
-        }
         let content = self
             .resources
             .update(cx, |monitor, cx| monitor.dialog(&sessions, window, cx));
@@ -919,30 +871,10 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
-
-    use gpui::{TestAppContext, WindowHandle};
+    use gpui::TestAppContext;
 
     use super::*;
-    use crate::monos::Monos;
     use crate::shell::tests::window;
-
-    fn mixed_window(cx: &mut TestAppContext) -> (WindowHandle<Shell>, Entity<Monos>, String, i64) {
-        let (window, _, session) = window(cx);
-        let (manager, id) = window
-            .update(cx, |shell, w, cx| {
-                let manager = shell.mono_manager();
-                manager.update(cx, |m, cx| {
-                    m.create(Vec::new(), w, cx);
-                    m.dismiss_settings(w, cx);
-                });
-                let id = manager.read(cx).active.clone().unwrap();
-                (manager, id)
-            })
-            .unwrap();
-        cx.run_until_parked();
-        (window, manager, id, session)
-    }
 
     #[gpui::test]
     fn project_tabs_abbreviate_then_become_icons_without_losing_header_controls(
@@ -1027,211 +959,5 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[gpui::test]
-    fn right_sidebar_width_and_visibility_follow_both_tab_types_and_layouts(
-        cx: &mut TestAppContext,
-    ) {
-        cx.update(|cx| cx.set_reduce_motion(true));
-        let (window, manager, mono, session) = mixed_window(cx);
-        let visual = &mut gpui::VisualTestContext::from_window(window.into(), cx);
-        for classic in [false, true] {
-            window
-                .update(visual, |shell, _, cx| {
-                    shell.workspace.classic_layout = classic;
-                    assert!(
-                        !shell.workspace.right_panel_open,
-                        "opening a Mono respects the session's closed sidebar"
-                    );
-                    cx.notify();
-                })
-                .unwrap();
-            visual.run_until_parked();
-            assert!(visual.debug_bounds("right-panel-frame").is_none());
-            let toggle = visual
-                .debug_bounds(if classic {
-                    "classic-mono-overview"
-                } else {
-                    "toggle-right-panel"
-                })
-                .unwrap();
-            visual.simulate_click(toggle.center(), Default::default());
-            visual.run_until_parked();
-            assert!(visual.debug_bounds("mono-overview-panel").is_some());
-            let frame = visual.debug_bounds("right-panel-frame").unwrap();
-            let bounds = visual.debug_bounds("right-panel-resize").unwrap();
-            assert_eq!(bounds.size.width, px(6.));
-            assert!((bounds.center().x - frame.left() - px(0.5)).abs() <= px(0.5));
-            // Both halves of the transparent grab area must receive presses,
-            // including the half outside the panel's clipped contents.
-            for x in [bounds.left() + px(0.5), bounds.right() - px(0.5)] {
-                let point = gpui::point(x, bounds.center().y);
-                visual.simulate_mouse_down(point, MouseButton::Left, Default::default());
-                window
-                    .update(visual, |shell, _, _| assert!(shell.right_resize.is_some()))
-                    .unwrap();
-                visual.simulate_mouse_up(point, MouseButton::Left, Default::default());
-                visual.run_until_parked();
-            }
-            let handle = visual.debug_bounds("right-panel-resize").unwrap().center();
-            let end = handle - gpui::point(px(30.), px(0.));
-            visual.simulate_mouse_down(handle, MouseButton::Left, Default::default());
-            visual.simulate_mouse_move(end, MouseButton::Left, Default::default());
-            visual.simulate_mouse_up(end, MouseButton::Left, Default::default());
-            visual.run_until_parked();
-            let expanded = window
-                .update(visual, |shell, _, _| shell.workspace.right_panel_width)
-                .unwrap();
-            let handle = visual.debug_bounds("right-panel-resize").unwrap().center();
-            let end = handle + gpui::point(px(30.), px(0.));
-            visual.simulate_mouse_down(handle, MouseButton::Left, Default::default());
-            visual.simulate_mouse_move(end, MouseButton::Left, Default::default());
-            // The pointer is now over a Mono detail layer that occludes mouse
-            // events. Shrinking and releasing must still reach the shell.
-            window
-                .update(visual, |shell, _, _| {
-                    assert_eq!(shell.workspace.right_panel_width, expanded - 30.);
-                })
-                .unwrap();
-            visual.simulate_mouse_up(
-                end + gpui::point(px(20.), px(0.)),
-                MouseButton::Left,
-                Default::default(),
-            );
-            visual.run_until_parked();
-            let mono_bounds = visual.debug_bounds("right-panel-frame").unwrap();
-            let width = window
-                .update(visual, |shell, w, cx| {
-                    assert!(shell.right_resize.is_none());
-                    let width = shell.workspace.right_panel_width;
-                    assert_eq!(mono_bounds.size.width, px(width));
-                    shell.open(session, w, cx);
-                    width
-                })
-                .unwrap();
-            visual.run_until_parked();
-            if classic {
-                assert!(visual.debug_bounds("right-panel-frame").is_none());
-            } else {
-                assert_eq!(
-                    visual.debug_bounds("right-panel-frame").unwrap(),
-                    mono_bounds
-                );
-            }
-            assert!(visual.debug_bounds("mono-overview-panel").is_none());
-            if !classic {
-                let toggle = visual.debug_bounds("toggle-right-panel").unwrap();
-                visual.simulate_click(toggle.center(), Default::default());
-                visual.run_until_parked();
-            }
-            window
-                .update(visual, |_, w, cx| {
-                    manager.update(cx, |m, cx| m.open(&mono, w, cx))
-                })
-                .unwrap();
-            visual.run_until_parked();
-            if classic {
-                let toggle = visual.debug_bounds("classic-mono-overview").unwrap();
-                visual.simulate_click(toggle.center(), Default::default());
-                visual.run_until_parked();
-            }
-            assert!(visual.debug_bounds("right-panel-frame").is_none());
-            window
-                .update(visual, |shell, _, _| {
-                    assert_eq!(shell.workspace.right_panel_width, width);
-                    let saved = crate::runtime::locked(&shell.store)
-                        .unwrap()
-                        .ui_state()
-                        .unwrap()
-                        .unwrap();
-                    let saved: crate::workspace::Workspace = serde_json::from_str(&saved).unwrap();
-                    assert_eq!(saved.right_panel_width, width);
-                    assert!(!saved.right_panel_open);
-                })
-                .unwrap();
-        }
-    }
-
-    #[gpui::test]
-    fn switching_tabs_keeps_the_same_sidebar_spring_and_clipped_contents(cx: &mut TestAppContext) {
-        let (window, manager, mono, session) = mixed_window(cx);
-        cx.update(|cx| cx.set_reduce_motion(false));
-        window
-            .update(cx, |shell, w, cx| shell.toggle_right_panel(w, cx))
-            .unwrap();
-        for ms in [35, 70, 110] {
-            window
-                .update(cx, |shell, w, cx| {
-                    let slide = shell.right_slide.as_ref().unwrap();
-                    slide.elapsed(Duration::from_millis(ms));
-                    let now = Instant::now();
-                    let before = slide.at(now);
-                    if shell.mono_active(cx) {
-                        shell.open(session, w, cx);
-                    } else {
-                        manager.update(cx, |m, cx| m.open(&mono, w, cx));
-                    }
-                    assert_eq!(
-                        shell.right_slide.as_ref().unwrap().at(now),
-                        before,
-                        "tab switches preserve the spring's position and velocity"
-                    );
-                    assert!(shell.workspace.right_panel_open);
-                    cx.notify();
-                })
-                .unwrap();
-            cx.update_window(window.into(), |_, w, cx| {
-                w.simulate_next_frame(cx);
-                w.draw(cx).clear(cx);
-            })
-            .unwrap();
-            let visual = &mut gpui::VisualTestContext::from_window(window.into(), cx);
-            let frame = visual.debug_bounds("right-panel-frame").unwrap();
-            let content = visual.debug_bounds("right-panel-content").unwrap();
-            let width = window
-                .update(visual, |shell, _, _| shell.workspace.right_panel_width)
-                .unwrap();
-            assert!(frame.size.width > px(0.) && frame.size.width < px(width));
-            assert_eq!(content.size.width, px(width - 1.));
-        }
-        window
-            .update(cx, |shell, w, cx| {
-                shell.toggle_right_panel(w, cx);
-                assert!(!shell.workspace.right_panel_open);
-                assert_eq!(shell.right_slide.as_ref().unwrap().to, 0.);
-                shell
-                    .right_slide
-                    .as_ref()
-                    .unwrap()
-                    .elapsed(Duration::from_millis(45));
-                shell.open(session, w, cx);
-                shell.toggle_right_panel(w, cx);
-                assert!(shell.workspace.right_panel_open);
-                assert_eq!(
-                    shell.right_slide.as_ref().unwrap().to,
-                    shell.workspace.right_panel_width
-                );
-                manager.update(cx, |m, cx| m.open(&mono, w, cx));
-                shell
-                    .right_slide
-                    .as_ref()
-                    .unwrap()
-                    .elapsed(Duration::from_secs(1));
-                cx.notify();
-            })
-            .unwrap();
-        cx.run_until_parked();
-        window
-            .update(cx, |shell, _, _| assert!(shell.right_slide.is_none()))
-            .unwrap();
-        let visual = &mut gpui::VisualTestContext::from_window(window.into(), cx);
-        assert_eq!(
-            visual.debug_bounds("right-panel-frame").unwrap().size.width,
-            px(window
-                .update(visual, |shell, _, _| shell.workspace.right_panel_width)
-                .unwrap())
-        );
-        assert!(visual.debug_bounds("mono-overview-panel").is_some());
     }
 }

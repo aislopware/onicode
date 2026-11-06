@@ -323,7 +323,7 @@ mod tests {
     fn worktree_creation_follows_message_acceptance_and_reports_the_checkout_in_the_final_update() {
         let root = std::env::temp_dir().join(format!(
             "monocode-optimistic-worktree-{}",
-            onicode_core::mono::new_id()
+            onicode_core::new_id()
         ));
         let repo = root.join("repo");
         std::fs::create_dir_all(&repo).unwrap();

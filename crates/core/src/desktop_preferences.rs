@@ -1,6 +1,6 @@
-//! Read desktop webview preferences without modifying WebKit storage or its schema.
+//! Preferences carried over from monocode's desktop app. Onicode keeps its own data, so none load
+//! today; the type goes when the store moves into the engine.
 mod session_defaults;
-mod webview;
 mod workspace_preferences;
 mod workspace_snapshot;
 
@@ -33,21 +33,9 @@ impl DesktopPreferences {
         }
     }
 
-    /// Only the actual desktop data directory may read the desktop webview.
-    /// Isolated development databases and copies never inherit personal settings.
-    /// Read committed SQLite/WAL data once when opening a store. The store owns
-    /// the verified snapshot so session reads never rescan WebKit directories.
-    pub fn load(data_dir: &Path) -> Self {
-        let desktop = crate::store::monocode_database();
-        if data_dir
-            .canonicalize()
-            .ok()
-            .zip(desktop.parent().and_then(|p| p.canonicalize().ok()))
-            .is_none_or(|(actual, expected)| actual != expected)
-        {
-            return Self::default();
-        }
-        Self::load_installed(data_dir)
+    /// Nothing loads: Onicode never reads monocode's desktop data.
+    pub fn load(_data_dir: &Path) -> Self {
+        Self::default()
     }
 
     pub fn is_available(&self) -> bool {
@@ -82,7 +70,7 @@ impl DesktopPreferences {
             let merged = merge_projects(baseline.get("projects"), &current, &source);
             object.insert("projects".into(), merged.clone());
             next.insert("projects".into(), source);
-            // A stale sidecar selection may point at an internal Mono chat.
+            // A stale sidecar selection may point at a project no longer listed.
             if !merged
                 .as_array()
                 .is_some_and(|paths| paths.iter().any(|p| Some(p) == object.get("project")))
@@ -516,9 +504,7 @@ fn merge_projects(old: Option<&Value>, current: &Value, source: &Value) -> Value
 
 #[cfg(test)]
 mod tests {
-    use rusqlite::Connection;
 
-    use super::webview::{decode_webkit_value, desktop_origin};
     use super::*;
 
     fn prefs(entries: &[(&str, Value)]) -> DesktopPreferences {
@@ -529,43 +515,6 @@ mod tests {
                 .map(|(key, value)| (key.to_string(), value.to_string()))
                 .collect(),
         }
-    }
-    fn origin(scheme: &str, host: &str) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        for value in [scheme, host] {
-            bytes.extend((value.len() as u32).to_le_bytes());
-            bytes.push(1);
-            bytes.extend(value.as_bytes());
-        }
-        bytes
-    }
-
-    #[test]
-    fn reads_webkit_utf16_and_excludes_development_origins() {
-        let root = tempfile::tempdir().unwrap();
-        for (name, scheme, label) in [
-            ("production", "tauri", "Monocode 🦀"),
-            ("development", "http", "Stale name"),
-        ] {
-            let path = root.path().join(name).join(name);
-            std::fs::create_dir_all(path.join("LocalStorage")).unwrap();
-            std::fs::write(path.join("origin"), origin(scheme, "localhost")).unwrap();
-            let conn = Connection::open(path.join("LocalStorage/localstorage.sqlite3")).unwrap();
-            conn.execute_batch("CREATE TABLE ItemTable(key TEXT,value BLOB)")
-                .unwrap();
-            let value: Vec<u8> = label.encode_utf16().flat_map(u16::to_le_bytes).collect();
-            conn.execute(
-                "INSERT INTO ItemTable VALUES(?1,?2)",
-                rusqlite::params!["monocode.test", value],
-            )
-            .unwrap();
-        }
-        let preferences = DesktopPreferences::load_webkit(root.path());
-        assert_eq!(preferences.get("monocode.test"), Some("Monocode 🦀"));
-        assert!(!desktop_origin(&origin("http", "localhost")));
-        assert!(desktop_origin(&origin("https", "tauri.localhost")));
-        assert!(!desktop_origin(b"tauri localhost"));
-        assert_eq!(decode_webkit_value(&[0]), None);
     }
 
     #[test]
@@ -731,38 +680,5 @@ mod tests {
         let original = workspace.clone();
         DesktopPreferences::default().apply_workspace(&mut workspace);
         assert_eq!(workspace, original);
-    }
-
-    #[test]
-    fn isolated_data_directory_cannot_read_desktop_preferences() {
-        let directory = tempfile::tempdir().unwrap();
-        assert!(DesktopPreferences::load(directory.path()).values.is_empty());
-    }
-
-    #[test]
-    #[ignore = "manual integration check: reads the installed desktop profile"]
-    fn installed_desktop_dir_reads_packaged_webview_preferences_when_present() {
-        let desktop = crate::store::monocode_database();
-        let Some(dir) = desktop.parent() else {
-            return;
-        };
-        let linux = dir.join("localstorage/tauri_localhost_0.localstorage");
-        let macos = crate::accounts::home()
-            .map(|home| home.join("Library/WebKit/com.monocode.desktop/WebsiteData/Default"));
-        if !linux.is_file() && macos.as_ref().is_none_or(|root| !root.is_dir()) {
-            return;
-        }
-        let preferences = DesktopPreferences::load(dir);
-        assert!(
-            preferences.is_available(),
-            "installed desktop webview storage was not read from {}",
-            dir.display()
-        );
-        assert!(
-            preferences
-                .entries()
-                .any(|(key, _)| key.starts_with("monocode")),
-            "desktop webview storage had no monocode keys"
-        );
     }
 }

@@ -157,7 +157,6 @@ impl Shell {
         else {
             return;
         };
-        let over = over.map(|(target, edge)| (self.resolve_mono_target(target, cx), edge));
         // Never take the shell out of the dock without somewhere to put it:
         // a terminal pane no tab holds is pruned, and its shell stops.
         if insert.is_none()
@@ -273,9 +272,6 @@ impl Shell {
         };
         if let Some(session) = self.ensure_session(owner, cx) {
             self.workspace.project = session.read(cx).summary.cwd.clone();
-        }
-        if let Some(monos) = &self.monos {
-            monos.update(cx, |m, cx| m.close(cx));
         }
         self.navigation_revision += 1;
         self.leave_app_views(cx);
@@ -614,7 +610,7 @@ mod tests {
                 assert!(!shell.workspace.layout(pane).is_split());
                 let visible = shell.visible_tabs(cx);
                 assert_eq!(visible.last(), Some(&TitleTab::Session(pane)));
-                assert_eq!(shell.active_title_tab(cx), Some(TitleTab::Session(pane)));
+                assert_eq!(shell.active_title_tab(), Some(TitleTab::Session(pane)));
                 assert_eq!(
                     shell.tab_copy(pane, cx).headline,
                     shell.terminal_pane_title(pane, cx).unwrap()
@@ -829,7 +825,7 @@ mod tests {
         visual.simulate_keystrokes("cmd-j");
         visual.run_until_parked();
         let first = window
-            .update(&mut visual, |shell, _, cx| {
+            .update(&mut visual, |shell, _, _| {
                 let project = shell.workspace.project.clone();
                 assert!(shell.terminals.get(&project).is_none_or(|t| t.is_empty()));
                 assert_eq!(shell.workspace.terminal_panes.len(), 2);
@@ -839,7 +835,7 @@ mod tests {
                     assert_eq!(shell.workspace.tab_of(*pane), Some(*pane));
                     assert_eq!(shell.workspace.terminal_panes[pane].owner, b);
                 }
-                let active = shell.active_title_tab(cx).unwrap();
+                let active = shell.active_title_tab().unwrap();
                 assert!(matches!(active, TitleTab::Session(id) if panes.contains(&id)));
                 panes
             })

@@ -52,17 +52,6 @@ fn saved_turn_metrics_reload_with_the_same_revision() {
 }
 
 #[test]
-fn desktop_habit_reports_are_dated_by_their_run() {
-    let rows = blocks::project(&[
-        json!({"id":"habit","role":"assistant","text":"Report","monoHabit":{"at":1792224228054u64,"id":"h"}}),
-        json!({"id":"sent","role":"assistant","text":"Reply","sentAt":5,"monoHabit":{"at":9}}),
-    ])
-    .unwrap();
-    assert_eq!(rows[0].sent_at, Some(1792224228054));
-    assert_eq!(rows[1].sent_at, Some(5), "an explicit send time wins");
-}
-
-#[test]
 fn desktop_sidebar_recovers_only_hidden_launches_of_listed_callers_without_history_reads() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("monocode.db");
@@ -72,8 +61,8 @@ fn desktop_sidebar_recovers_only_hidden_launches_of_listed_callers_without_histo
         ("listed-caller", "/project", false, true),
         ("app-listed-caller-review-task", "/project", true, true),
         ("app-listed-caller-other-project", "/other", true, true),
-        ("mono-conversation", "/project", true, true),
-        ("app-mono-conversation-task", "/project", true, true),
+        ("hidden-caller", "/project", true, true),
+        ("app-hidden-caller-task", "/project", true, true),
         ("blank-caller", "/project", false, false),
         ("app-blank-caller-task", "/project", true, true),
         ("worker", "/project", false, true),
@@ -672,7 +661,7 @@ fn desktop_turn_receipts_restore_exact_model_timing_metrics_and_projected_offset
          "durationMs":9500,"providerTurnId":"provider-turn",
          "turnModel":{"harness":"claude","id":"claude:old-model","name":"Saved Model","future":true},
          "turnMetrics":{"inputTokens":100,"outputTokens":20,"cacheReadTokens":40,"cacheHitPercent":40,"future":1},
-         "noteCard":{"id":"note-one","title":"Saved context"}},
+         "attachments":[{"id":"context","path":"/context.md","future":true}]},
         {"id":"answer","role":"assistant","text":"Saved answer"},
         {"id":"second","role":"user","text":"Completion","internal":true,"startedAt":20000,"durationMs":0,
          "turnModel":{"harness":"codex","id":"codex:actual-model","name":"Actual Model"}},
@@ -703,10 +692,7 @@ fn desktop_turn_receipts_restore_exact_model_timing_metrics_and_projected_offset
         .position(|row| row.role == "mono-system")
         .unwrap()
         + 1;
-    assert!(
-        second > 3,
-        "hidden note metadata contributes to row offsets"
-    );
+    assert!(second > 3, "attachment metadata contributes to row offsets");
     let receipt = &settings.turns[&first];
     assert_eq!(receipt.provider, "claude");
     assert_eq!(receipt.model, "Saved Model");

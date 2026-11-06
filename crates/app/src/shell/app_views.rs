@@ -176,7 +176,7 @@ impl Shell {
         self.update_chat_visibility(cx);
         self.sync_right_panel(cx);
         self.focus_active(window, cx);
-        if let Some(tab) = self.active_title_tab(cx) {
+        if let Some(tab) = self.active_title_tab() {
             self.remember_title_tab(tab);
         }
         self.persist(cx);
@@ -189,9 +189,6 @@ impl Shell {
         self.close_menu(cx);
         if self.settings.is_some() {
             self.close_settings(window, cx);
-        }
-        if let Some(monos) = self.monos.clone() {
-            monos.update(cx, |monos, cx| monos.close(cx));
         }
         self.navigation_revision += 1;
         self.review_focused = false;

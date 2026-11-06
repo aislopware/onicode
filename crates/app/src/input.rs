@@ -212,7 +212,6 @@ pub struct Input {
     read_only: bool,
     secret: bool,
     max_chars: Option<usize>,
-    centered: bool,
     placeholder: SharedString,
     placeholder_alpha: Option<f32>,
     label: SharedString,
@@ -268,7 +267,6 @@ impl Input {
             read_only: false,
             secret: false,
             max_chars: None,
-            centered: false,
             placeholder: "Ask, build, or describe a change…".into(),
             placeholder_alpha: None,
             label: "Message composer".into(),
@@ -425,45 +423,6 @@ impl Input {
         input
     }
 
-    /// The Mono chat's composer, as tall as the session composer.
-    pub(crate) fn mono_composer(&mut self, name: &str, cx: &mut Context<Self>) {
-        if self.min_height != LINE_HEIGHT {
-            self.height = LINE_HEIGHT;
-        }
-        self.label = format!("Message {name}").into();
-        self.placeholder = self.label.clone();
-        self.font_size = 13.;
-        self.line_height = LINE_HEIGHT;
-        self.min_height = LINE_HEIGHT;
-        self.max_height = 144.;
-        self.height = self.height.clamp(self.min_height, self.max_height);
-        cx.notify();
-    }
-
-    /// NewHabitPage's three-row AutoTextarea, capped like React's AutoTextarea.
-    pub(crate) fn habit_instructions(cx: &mut Context<Self>) -> Self {
-        let mut input = Self::commit_message(cx);
-        input.label = "What it does".into();
-        input.placeholder =
-            "What it should do on each run, and when it's worth telling you about.".into();
-        input.font_size = 12.;
-        input.line_height = 20.;
-        input.height = 60.;
-        input.min_height = 60.;
-        input.max_height = 320.;
-        input.max_chars = Some(4000);
-        input
-    }
-
-    pub(crate) fn markdown_editor(label: &str, cx: &mut Context<Self>) -> Self {
-        let mut input = Self::commit_message(cx);
-        input.label = label.to_string().into();
-        input.min_height = 120.;
-        input.max_height = 2000.;
-        input.height = 120.;
-        input
-    }
-
     pub(crate) fn set_placeholder(
         &mut self,
         text: impl Into<SharedString>,
@@ -492,10 +451,6 @@ impl Input {
         self.font_size = size;
     }
 
-    pub(crate) fn set_centered(&mut self, centered: bool) {
-        self.centered = centered;
-    }
-
     pub(crate) fn set_min_height(&mut self, height: f32) {
         self.min_height = height;
         self.height = self.height.max(height);
@@ -509,23 +464,17 @@ impl Input {
         self.line_height = height;
     }
 
-    pub(crate) fn memory_fact(label: &str, cx: &mut Context<Self>) -> Self {
-        let mut input = Self::commit_message(cx);
-        input.label = label.to_string().into();
-        input.font_size = 12.;
-        input.line_height = 18.;
-        input.min_height = 18.;
-        input.max_height = 320.;
-        input.height = 18.;
-        input.secondary_submit = false;
-        input
-    }
-
     /// MessageQueue.tsx keeps its one-row textarea height while Shift+Enter
     /// inserts newlines; the field scrolls to the caret within that row.
     pub(crate) fn queued_message(cx: &mut Context<Self>) -> Self {
-        let mut input = Self::memory_fact("Edit queued message", cx);
-        input.max_height = input.min_height;
+        let mut input = Self::commit_message(cx);
+        input.label = "Edit queued message".into();
+        input.font_size = 12.;
+        input.line_height = 18.;
+        input.min_height = 18.;
+        input.max_height = 18.;
+        input.height = 18.;
+        input.secondary_submit = false;
         input
     }
 
@@ -1821,18 +1770,6 @@ impl Element for InputElement {
         let selection = to_display(i.selection.start)..to_display(i.selection.end);
         let cursor = to_display(i.cursor());
         let line_height = i.line_height();
-        let center_offset = if i.centered && i.single_line {
-            (bounds.size.width
-                - state
-                    .lines
-                    .first()
-                    .map(|line| line.size(line_height).width)
-                    .unwrap_or_default())
-            .max(px(0.))
-                / 2.
-        } else {
-            px(0.)
-        };
         w.handle_input(
             &focus,
             ElementInputHandler::new(bounds, self.input.clone()),
@@ -1840,7 +1777,7 @@ impl Element for InputElement {
         );
         w.with_content_mask(Some(ContentMask { bounds }), |w| {
             let mut base = 0;
-            let x = bounds.left() - state.scroll.x + center_offset;
+            let x = bounds.left() - state.scroll.x;
             let mut y = bounds.top() - state.scroll.y;
             for line in &state.lines {
                 let height = line.size(line_height).height;
@@ -1955,10 +1892,7 @@ impl Element for InputElement {
         });
         self.input.update(cx, |i, _| {
             i.lines = std::mem::take(&mut state.lines);
-            i.bounds = Some(Bounds::new(
-                bounds.origin + point(center_offset, px(0.)),
-                bounds.size,
-            ));
+            i.bounds = Some(bounds);
             i.scroll_x = state.scroll.x;
             i.scroll_y = state.scroll.y;
         });

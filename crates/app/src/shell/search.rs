@@ -175,7 +175,7 @@ impl Shell {
             } else {
                 self.focus_active(window, cx);
             }
-            if let Some(tab) = self.active_title_tab(cx) {
+            if let Some(tab) = self.active_title_tab() {
                 self.remember_title_tab(tab);
             }
             self.persist(cx);
@@ -198,26 +198,13 @@ impl Shell {
         } else {
             self.close_preview(cx);
             self.leave_app_views(cx);
-            if let Some(monos) = &self.monos {
-                monos.update(cx, |m, cx| m.close(cx));
-            }
             if self.settings.is_some() {
                 self.close_settings(window, cx);
             }
         }
         self.navigation_revision += 1;
         let restore = window.focused(cx);
-        let conversations = self
-            .sessions
-            .values()
-            .cloned()
-            .chain(
-                self.monos
-                    .as_ref()
-                    .map(|m| m.read(cx).search_conversations())
-                    .unwrap_or_default(),
-            )
-            .collect::<Vec<_>>();
+        let conversations = self.sessions.values().cloned().collect::<Vec<_>>();
         let mut summaries: HashMap<_, _> = self
             .order
             .iter()
@@ -231,14 +218,11 @@ impl Shell {
         let summaries = summaries.into_values().collect();
         let live = conversations
             .iter()
-            // A paged Mono's saved search covers turns not loaded yet.
-            .filter(|s| {
-                s.read(cx).history_loaded() && s.read(cx).transcript.read(cx).history_complete()
-            })
+            .filter(|s| s.read(cx).history_loaded())
             .map(|s| {
                 (
                     s.read(cx).summary.id,
-                    Arc::new(s.read(cx).transcript.read(cx).history_rows().to_vec()),
+                    Arc::new(s.read(cx).transcript.read(cx).source_rows().to_vec()),
                 )
             })
             .collect();
@@ -346,14 +330,6 @@ impl Shell {
             }
             return;
         }
-        if let Some(monos) = &self.monos
-            && let Some(view) = monos.update(cx, |m, cx| m.open_search_session(id, window, cx))
-        {
-            if let Some((row, query)) = jump {
-                view.update(cx, |v, cx| v.reveal_search(row, query, cx));
-            }
-            return;
-        }
         let store = self.store.clone();
         let revision = self.navigation_revision;
         let work = cx.background_executor().spawn(async move {
@@ -387,28 +363,6 @@ impl Shell {
         .detach();
     }
 
-    pub(super) fn sync_mono_search(&mut self, cx: &mut Context<Self>) {
-        let Some(search) = &self.app_search else {
-            return;
-        };
-        let views = self
-            .monos
-            .as_ref()
-            .map(|m| m.read(cx).search_conversations())
-            .unwrap_or_default();
-        for view in views {
-            let transcript = view.read(cx).transcript.read(cx);
-            if !transcript.history_complete() {
-                continue;
-            }
-            let rows = Arc::new(transcript.history_rows().to_vec());
-            let summary = view.read(cx).summary.clone();
-            search
-                .view
-                .update(cx, |v, cx| v.update_session(summary, rows, cx));
-        }
-    }
-
     pub(super) fn sync_search_session(&mut self, id: i64, cx: &mut Context<Self>) {
         let Some(search) = &self.app_search else {
             return;
@@ -418,11 +372,8 @@ impl Shell {
         };
         let session = session.read(cx);
         let transcript = session.transcript.read(cx);
-        if !transcript.history_complete() {
-            return;
-        }
         let summary = session.summary.clone();
-        let rows = Arc::new(transcript.history_rows().to_vec());
+        let rows = Arc::new(transcript.source_rows().to_vec());
         search
             .view
             .update(cx, |v, cx| v.update_session(summary, rows, cx));
@@ -510,7 +461,7 @@ mod tests {
                 }
                 shell.open_app_search(w, cx);
                 assert_eq!(shell.visible_tabs(cx).last(), Some(&TitleTab::Search));
-                assert_eq!(shell.active_title_tab(cx), Some(TitleTab::Search));
+                assert_eq!(shell.active_title_tab(), Some(TitleTab::Search));
             })
             .unwrap();
         cx.run_until_parked();
@@ -535,7 +486,7 @@ mod tests {
                 shell.cycle(-1, w, cx);
                 assert!(shell.app_search.is_none());
                 assert!(matches!(
-                    shell.active_title_tab(cx),
+                    shell.active_title_tab(),
                     Some(TitleTab::Session(_))
                 ));
                 shell.cycle(1, w, cx);
@@ -582,7 +533,7 @@ mod tests {
                 assert!(!shell.search_page());
                 assert_eq!(shell.visible_tabs(cx), tabs);
                 assert!(!shell.workspace.title_order.contains(&TitleTab::Search));
-                assert_eq!(shell.active_title_tab(cx), Some(TitleTab::Session(active)));
+                assert_eq!(shell.active_title_tab(), Some(TitleTab::Session(active)));
             })
             .unwrap();
         visual.simulate_keystrokes("escape");
@@ -595,7 +546,7 @@ mod tests {
                 shell.workspace.preferences.search_panel = false;
                 shell.open_app_search(w, cx);
                 assert!(shell.search_page());
-                assert_eq!(shell.active_title_tab(cx), Some(TitleTab::Search));
+                assert_eq!(shell.active_title_tab(), Some(TitleTab::Search));
             })
             .unwrap();
     }

@@ -98,17 +98,9 @@ pub(super) fn configure(command: &mut Command, request: &Request) -> Result<(), 
 }
 
 impl Protocol {
-    /// The native visual tools, plus a Mono's app tool.
+    /// The native visual tools.
     fn mcp_servers(&self) -> Value {
-        let settings = &self.request.settings;
-        let mut servers = crate::visual_bridge::acp_servers(&settings.environment);
-        if let (Some(list), Some(app)) = (
-            servers.as_array_mut(),
-            crate::mono::bridge::acp_server(settings.mono.as_ref(), &settings.environment),
-        ) {
-            list.push(app);
-        }
-        servers
+        crate::visual_bridge::acp_servers(&self.request.settings.environment)
     }
 
     pub(super) fn acp_cancel(&mut self, stdin: &mut impl Write) -> Result<(), String> {

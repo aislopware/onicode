@@ -191,6 +191,11 @@ impl Conversation {
         self.model.as_deref().or(self.resolved_model.as_deref())
     }
 
+    /// The checked-out branch, as the phone's session list shows it.
+    pub(crate) fn mobile_branch(&self) -> Option<&str> {
+        self.branch.as_deref()
+    }
+
     /// The model sheet's settings as the phone names them.
     pub(crate) fn mobile_model_settings(&self) -> std::collections::HashMap<String, String> {
         let mut values = self.settings.model_settings.clone();
@@ -581,98 +586,6 @@ mod usage_tests {
                     .contains("no longer paused")
             );
         });
-    }
-
-    #[gpui::test]
-    fn mobile_controls_persist_the_desktop_preference_and_use_its_mono_resume_and_scheduler(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(std::path::Path::new(":memory:")).unwrap(),
-        ));
-        let summary = locked(&store).unwrap().create("codex", "/fixture").unwrap();
-        let id = summary.id;
-        let view = cx.new(|cx| Conversation::new(summary, store.clone(), cx));
-        cx.run_until_parked();
-        let resumed = std::rc::Rc::new(std::cell::Cell::new(0));
-        cx.update(|cx| {
-            let count = resumed.clone();
-            cx.subscribe(&view, move |_, _: &crate::conversation::UsageResumed, _| {
-                count.set(count.get() + 1)
-            })
-            .detach();
-        });
-        view.update(cx, |v, cx| {
-            v.loaded = true;
-            v.settings.mono = Some(onicode_core::agent::MonoContext {
-                mono: Default::default(),
-                root: "/fixture".into(),
-                executable: "/fixture/binary".into(),
-            });
-            v.settings.usage_limit = Some(Limit {
-                resets_at: Some(usage::now_ms() + 60_000),
-                resume_at_reset: false,
-            });
-            let token = v.mobile_usage_limit(cx)["token"].clone();
-            assert!(v.mobile_resume_usage(&token, None, cx).is_err());
-            assert!(v.mobile_resume_usage(&token, Some(true), cx).is_ok());
-            assert!(v.mobile_resume_usage(&token, Some(false), cx).is_err()); // stale preference
-            assert!(v.settings.usage_limit.as_ref().unwrap().resume_at_reset);
-        });
-        cx.run_until_parked();
-        assert!(
-            locked(&store)
-                .unwrap()
-                .agent_settings(id)
-                .unwrap()
-                .unwrap()
-                .usage_limit
-                .unwrap()
-                .resume_at_reset
-        );
-        // A new desktop conversation restores the same persisted preference;
-        // the phone does not own a timer or a second preference store.
-        let summary = locked(&store)
-            .unwrap()
-            .sessions()
-            .unwrap()
-            .into_iter()
-            .find(|s| s.id == id)
-            .unwrap();
-        let reopened = cx.new(|cx| Conversation::new(summary, store.clone(), cx));
-        reopened.update(cx, |v, cx| v.load(cx));
-        cx.run_until_parked();
-        reopened.update(cx, |v, cx| {
-            assert_eq!(v.mobile_usage_limit(cx)["resumeAtReset"], true)
-        });
-
-        view.update(cx, |v, cx| {
-            let token = v.mobile_usage_limit(cx)["token"].clone();
-            v.mobile_resume_usage(&token, Some(false), cx).unwrap();
-            v.settings.usage_limit.as_mut().unwrap().resets_at = Some(usage::now_ms() - 31_000);
-            v.tick_usage(cx);
-            assert!(v.settings.usage_limit.is_some()); // disabling cancels the real scheduler
-            let token = v.mobile_usage_limit(cx)["token"].clone();
-            v.mobile_resume_usage(&token, None, cx).unwrap();
-            assert!(v.mobile_resume_usage(&token, None, cx).is_err()); // duplicate/another device
-            assert!(v.settings.usage_limit.is_none());
-        });
-        cx.run_until_parked();
-        assert_eq!(resumed.get(), 1);
-        view.update(cx, |v, cx| {
-            v.settings.usage_limit = Some(Limit {
-                resets_at: Some(usage::now_ms() + 60_000),
-                resume_at_reset: false,
-            });
-            let token = v.mobile_usage_limit(cx)["token"].clone();
-            v.mobile_resume_usage(&token, Some(true), cx).unwrap();
-            v.settings.usage_limit.as_mut().unwrap().resets_at = Some(usage::now_ms() - 31_000);
-            v.tick_usage(cx); // the existing desktop clock, without a phone
-            assert!(v.settings.usage_limit.is_none());
-            v.tick_usage(cx);
-        });
-        cx.run_until_parked();
-        assert_eq!(resumed.get(), 2);
     }
 }
 

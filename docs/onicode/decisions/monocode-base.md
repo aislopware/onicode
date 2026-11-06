@@ -32,7 +32,9 @@ the decorations (mascots, ink, arcade), which are part of the feel.
 
 Dropped:
 - **Monos.** A 17k-line persona-agent suite (habits, heartbeat, soul, menu-bar chat) whose runtime is unverified
-  even upstream. It is a product of its own, not part of driving agents.
+  even upstream. It is a product of its own, not part of driving agents. What only Monos read goes with it:
+  the contributions recorder, the paged history of indexed Mono chats and the app MCP server. The menu-bar
+  status item stays, holding the quick composer and Quit, and closing the window hides to it.
 - **The phone link and Expo app.** Its own QUIC with mTLS, router port mapping and Expo's push cloud break Onicode's
   rules; Onicode's native iOS app replaces them.
 - **SSH remote and the Node host.** Replaced by engines on the tailnet.

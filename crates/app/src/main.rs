@@ -50,7 +50,6 @@ mod memory_log;
 mod metal_tests;
 mod mobile;
 mod modal;
-mod monos;
 mod notes;
 mod notifications;
 mod pane_layout;
@@ -58,6 +57,7 @@ mod pane_motion;
 mod particle_text;
 mod phase_tile;
 mod pickers;
+mod pixel_mascot;
 mod popover;
 mod project_background;
 mod project_search;
@@ -82,6 +82,8 @@ mod session_review;
 mod settings;
 mod shell;
 mod sound;
+#[cfg(all(target_os = "macos", not(test)))]
+mod status_item;
 mod syntax;
 mod tab_label;
 mod tab_motion;
@@ -173,13 +175,6 @@ fn main() {
         }
         return;
     }
-    if cli_args.first().is_some_and(|a| a == "app-mcp") {
-        if let Err(error) = onicode_core::mono::bridge::mcp_stdio() {
-            eprintln!("{error}");
-            std::process::exit(1);
-        }
-        return;
-    }
     if cli_args.first().is_some_and(|a| a == "visual") {
         match onicode_core::visual_bridge::client(&cli_args[1..]) {
             Ok(value) => {
@@ -196,7 +191,7 @@ fn main() {
         return;
     }
     if cli_args.first().is_some_and(|a| a == "app") {
-        match onicode_core::mono::bridge::client(&cli_args[1..]) {
+        match onicode_core::app_access::bridge::client(&cli_args[1..]) {
             Ok(value) => {
                 println!("{value}");
                 if value.get("ok") == Some(&serde_json::Value::Bool(false)) {

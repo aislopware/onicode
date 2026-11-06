@@ -41,14 +41,6 @@ const APP_METHODS: &[&str] = &[
     "session.rename",
     "session.delete",
     "session.archive",
-    "mono.document",
-    "mono.profile",
-    "mono.update",
-    "mono.reset",
-    "mono.delete",
-    "mono.create",
-    "mono.file",
-    "mono.saveFile",
 ];
 /// Under the phone's own wait, so it hears why rather than timing out.
 const REPLY_WAIT: Duration = Duration::from_secs(25);
@@ -258,7 +250,7 @@ impl MobileHost {
                 identity: None,
                 endpoint: None,
                 invitations: HashMap::new(),
-                catalog: json!({"projects":[],"monos":[],"sessions":[]}),
+                catalog: json!({"projects":[],"sessions":[]}),
                 watches: HashMap::new(),
                 router_address: None,
                 router_status: "Off".into(),
@@ -404,12 +396,9 @@ impl MobileHost {
         Ok(())
     }
 
-    /// The app's workspace: `projects`, `monos` and `sessions` (newest first).
+    /// The app's workspace: `projects` and `sessions` (newest first).
     pub fn publish(&self, catalog: Value) -> Result<(), String> {
-        if !catalog["projects"].is_array()
-            || !catalog["monos"].is_array()
-            || !catalog["sessions"].is_array()
-        {
+        if !catalog["projects"].is_array() || !catalog["sessions"].is_array() {
             return Err("Invalid mobile catalog".into());
         }
         self.inner.lock().map_err(unavailable)?.catalog = catalog;
@@ -1051,10 +1040,8 @@ mod tests {
     #[tokio::test]
     async fn the_catalog_answers_workspace_polls_without_the_app() {
         let (host, _events, peer) = paired();
-        host.publish(
-            json!({"projects":[{"id":"p"}],"monos":[],"sessions":[{"id":"s","projectId":"p"}]}),
-        )
-        .unwrap();
+        host.publish(json!({"projects":[{"id":"p"}],"sessions":[{"id":"s","projectId":"p"}]}))
+            .unwrap();
         let catalog = host
             .handle(
                 &peer,

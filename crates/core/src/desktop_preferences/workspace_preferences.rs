@@ -29,9 +29,7 @@ impl DesktopPreferences {
             ("show_remaining_usage", "showRemainingUsage", false),
             ("mask_emails", "maskEmails", true),
             ("claude_hooks", "claudeHooks", true),
-            ("monos", "monosEnabled", true),
-            ("rail_monos_pinned", "railMonosPinned", false),
-            ("mono_menu_bar_icon", "monoMenuBarIcon", true),
+            ("menu_bar_icon", "monoMenuBarIcon", true),
         ] {
             reconcile_preference(
                 target,
@@ -521,7 +519,6 @@ impl DesktopPreferences {
             "monocode.projectRailWidth",
             "monocode.projectRailPinned",
             "monocode.projectRailOrder",
-            "monocode.railMonosPinned",
             "monocode.transcriptZen",
             "monocode.projectNotifications.v1",
             "monocode.notificationProjects.v2",

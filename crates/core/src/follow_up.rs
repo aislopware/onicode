@@ -106,7 +106,7 @@ impl State {
                 }
                 if !target.exists() {
                     std::fs::create_dir_all(&parent).map_err(|e| e.to_string())?;
-                    let temporary = parent.join(format!(".copy-{}", crate::mono::new_id()));
+                    let temporary = parent.join(format!(".copy-{}", crate::new_id()));
                     if let Err(error) = std::fs::copy(&*source, &temporary)
                         .and_then(|_| std::fs::rename(&temporary, &target))
                     {

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 mod presentation;
 pub mod tasks;
 pub use presentation::{
-    CommandStep, ToolPresentation, VisualStep, app_activity, app_cli_action, app_tool, visual_tool,
+    CommandStep, ToolPresentation, VisualStep, app_activity, app_cli_action, visual_tool,
 };
 
 /// The app's own step while a conversation carries over from another model.

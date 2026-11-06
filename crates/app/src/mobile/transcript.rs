@@ -5,8 +5,8 @@
 //!
 //! Known gaps against the React port, because native rows do not carry them:
 //! approvals are not persisted, so no "Waiting for approval on desktop" notice
-//! (the live header still says `waiting`); there are no Mono habits, operator
-//! prompts or background-task labels; and assignment wrappers stay in user
+//! (the live header still says `waiting`); there are no operator prompts or
+//! background-task labels; and assignment wrappers stay in user
 //! text, as the desktop shows them.
 use std::collections::HashMap;
 
@@ -17,7 +17,7 @@ use onicode_core::transcript::attachments::ROLE as ATTACHMENTS;
 use onicode_core::transcript::{Interjection, Row};
 use serde_json::{Map, Value, json};
 
-use crate::transcript::{self as desk, attachments, dates, phases};
+use crate::transcript::{self as desk, attachments, phases};
 
 const MAX_STEPS: usize = 40;
 const MAX_MESSAGES: usize = 200;
@@ -34,14 +34,9 @@ pub(crate) struct Source<'a> {
     pub busy: bool,
     /// "Waiting for approval" or "Waiting for answers", for the live header.
     pub waiting: Option<&'a str>,
-    /// The Mono's display name, for a Mono conversation (inline work).
-    pub mono: Option<&'a str>,
     /// Approvals and questions the live chat waits on. Rows never record
     /// them, so they come from the conversation and end the latest turn.
     pub pending: &'a [Pending],
-    /// The sessions a Mono started, as the phone's cards show them, by
-    /// session: where each runs and how it stands. Only these get cards.
-    pub launches: &'a HashMap<i64, Value>,
 }
 
 /// An approval or question waiting on the desktop.
@@ -52,7 +47,7 @@ pub(crate) struct Pending {
     pub label: String,
 }
 
-/// One prompt block and the response under it.
+/// One prompt block and the response under it: a turn as the phone shows it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Run {
     /// The prompt block's first row.
@@ -62,14 +57,9 @@ struct Run {
     end: usize,
 }
 
-/// A turn as the phone shows it: one run, or a Mono's run and the completion
-/// runs that continue it (groupMonoChatTurns).
-struct Turn {
-    runs: Vec<Run>,
-}
-impl Turn {
+impl Run {
     fn id(&self) -> String {
-        format!("t{}", self.runs[0].prompt)
+        format!("t{}", self.prompt)
     }
 }
 
@@ -128,29 +118,15 @@ fn runs(rows: &[Row]) -> Vec<Run> {
     out
 }
 
-fn turns(source: &Source) -> Vec<Turn> {
-    let mut out: Vec<Turn> = Vec::new();
-    for run in runs(source.rows) {
-        let continues = source.mono.is_some()
-            && !out.is_empty()
-            && desk::mono_continues(source.rows, run.key).is_some();
-        match out.last_mut() {
-            Some(turn) if continues => turn.runs.push(run),
-            _ => out.push(Turn { runs: vec![run] }),
-        }
-    }
-    out
-}
-
 /// Every turn's stable ID in order. An ID is its first row's index, which
 /// appends never move.
 pub(crate) fn turn_ids(source: &Source) -> Vec<String> {
-    turns(source).iter().map(Turn::id).collect()
+    runs(source.rows).iter().map(Run::id).collect()
 }
 
 /// `turns[range]` as the phone's `Turn` objects.
 pub(crate) fn build(source: &Source, range: std::ops::Range<usize>) -> Vec<Value> {
-    let turns = turns(source);
+    let turns = runs(source.rows);
     let end = range.end.min(turns.len());
     let start = range.start.min(end);
     (start..end)
@@ -158,17 +134,10 @@ pub(crate) fn build(source: &Source, range: std::ops::Range<usize>) -> Vec<Value
             // A run that has finished stays settled while the desktop is busy
             // taking the next message in, before that message has a row; else
             // its reply would fold back into the live status for a moment.
-            let finished = turns[index]
-                .runs
-                .last()
-                .and_then(|&run| info(source, run))
-                .is_some_and(|info| info.completed_at.is_some());
+            let finished =
+                info(source, turns[index]).is_some_and(|info| info.completed_at.is_some());
             let live = source.busy && index + 1 == turns.len() && !finished;
-            let mut turn = if let Some(name) = source.mono {
-                mono_turn(source, &turns[index], live, name)
-            } else {
-                agent_turn(source, &turns[index], live)
-            };
+            let mut turn = agent_turn(source, turns[index], live);
             if index + 1 == turns.len()
                 && let Some(items) = turn["items"].as_array_mut()
             {
@@ -213,7 +182,7 @@ fn put(map: &mut Map<String, Value>, key: &str, value: Option<impl Into<Value>>)
 }
 
 /// The user bubbles of a prompt block; `mono-system` prompts are the app's.
-fn user_items(rows: &[Row], run: Run, out: &mut Vec<Value>, by_row: &mut HashMap<usize, usize>) {
+fn user_items(rows: &[Row], run: Run, out: &mut Vec<Value>) {
     for (at, end) in messages_in(rows, run.prompt, run.key) {
         if rows[at].role != "user" {
             continue;
@@ -232,7 +201,6 @@ fn user_items(rows: &[Row], run: Run, out: &mut Vec<Value>, by_row: &mut HashMap
         if !files.is_empty() {
             item.insert("attachments".into(), files.len().into());
         }
-        by_row.insert(at, out.len());
         out.push(Value::Object(item));
     }
 }
@@ -244,69 +212,6 @@ fn compact(items: &mut [Value]) {
             items[at - 1]["compact"] = true.into();
         }
     }
-}
-
-/// A card the Mono put in its chat, as the phone shows it: suggested replies,
-/// checked once one is sent, or a document. Other cards stay on the desktop.
-fn mono_card(rows: &[Row], at: usize, end: usize) -> Option<Value> {
-    let value: Value = serde_json::from_str(&joined(&rows[at..end])).ok()?;
-    match value["type"].as_str()? {
-        "choices" => {
-            let options: Vec<&str> = value["options"]
-                .as_array()?
-                .iter()
-                .filter_map(Value::as_str)
-                .collect();
-            if options.is_empty() {
-                return None;
-            }
-            let mut item =
-                object(json!({"type": "choices", "id": format!("r{at}"), "options": options}));
-            // The reply sent after it answers it, as on the desktop.
-            let reply = messages_in(rows, end, rows.len())
-                .find(|&(at, _)| rows[at].role == "user")
-                .map(|(at, end)| joined(&rows[at..end]));
-            put(&mut item, "chosen", reply);
-            Some(Value::Object(item))
-        }
-        "document" => document_item(&value, &format!("r{at}")),
-        _ => None,
-    }
-}
-/// ArtifactCard: a document the Mono wrote, opened in the phone's reader.
-fn document_item(value: &Value, id: &str) -> Option<Value> {
-    Some(json!({
-        "type": "document",
-        "id": id,
-        "documentId": value["documentId"].as_str()?,
-        "title": value["title"].as_str().unwrap_or("Document"),
-        "kind": value["kind"].as_str().unwrap_or("document"),
-    }))
-}
-/// The documents a run wrote, under its reply once it settles, each once at
-/// its latest title, as the desktop's chat lists them.
-fn run_documents(rows: &[Row], run: Run) -> Vec<Value> {
-    let mut documents: Vec<Value> = Vec::new();
-    for row in &rows[run.prompt..run.end] {
-        if row.role == "mono-document"
-            && let Ok(value) = serde_json::from_str::<Value>(&row.text)
-        {
-            match documents
-                .iter_mut()
-                .find(|old| old["documentId"] == value["documentId"])
-            {
-                Some(old) => *old = value,
-                None => documents.push(value),
-            }
-        }
-    }
-    documents
-        .iter()
-        .filter_map(|value| {
-            let id = format!("doc:{}", value["documentId"].as_str()?);
-            document_item(value, &id)
-        })
-        .collect()
 }
 
 fn notice(rows: &[Row], at: usize, end: usize) -> Option<Value> {
@@ -522,11 +427,10 @@ fn harness(source: &Source, run: Run) -> String {
 /// A turn as `TranscriptView::rebuild` lays it out for an agent session: the
 /// prompt, the work line, then the response with its work folded behind the
 /// line once an answer follows it.
-fn agent_turn(source: &Source, turn: &Turn, live: bool) -> Value {
+fn agent_turn(source: &Source, run: Run, live: bool) -> Value {
     let rows = source.rows;
-    let run = turn.runs[0];
     let mut items = Vec::new();
-    user_items(rows, run, &mut items, &mut HashMap::new());
+    user_items(rows, run, &mut items);
     let header_at = items.len();
 
     let tail = run.end == rows.len();
@@ -555,12 +459,7 @@ fn agent_turn(source: &Source, turn: &Turn, live: bool) -> Value {
     };
     for (at, end) in messages_in(rows, run.key, run.end) {
         let role = rows[at].role.as_str();
-        if matches!(
-            role,
-            "mono-card" | "mono-document" | "mono-note" | "mono-launch"
-        ) || role == ATTACHMENTS
-            || activity.hidden.contains(&at)
-        {
+        if role == ATTACHMENTS || activity.hidden.contains(&at) {
             continue;
         }
         responded = true;
@@ -633,7 +532,7 @@ fn agent_turn(source: &Source, turn: &Turn, live: bool) -> Value {
             .or_else(|| source.model_name.clone().filter(|_| live));
         let mut header = object(json!({
             "type": "header",
-            "id": format!("{}:header", turn.id()),
+            "id": format!("{}:header", run.id()),
             "live": live,
             "harness": harness(source, run),
             "entries": entries,
@@ -648,7 +547,7 @@ fn agent_turn(source: &Source, turn: &Turn, live: bool) -> Value {
     }
     compact(&mut items);
 
-    let mut out = object(json!({"id": turn.id(), "items": items}));
+    let mut out = object(json!({"id": run.id(), "items": items}));
     if !live && responded {
         out.insert("footer".into(), true.into());
         put(
@@ -674,192 +573,6 @@ fn agent_turn(source: &Source, turn: &Turn, live: bool) -> Value {
         }
     }
     Value::Object(out)
-}
-
-fn reaction(text: &str) -> Option<&str> {
-    text.trim()
-        .strip_prefix("<reaction>")
-        .and_then(|s| s.strip_suffix("</reaction>"))
-        .filter(|emoji| emoji.chars().count() <= 16)
-}
-
-/// A Mono's turn, as its chat shows it: the user's messages, the Mono's
-/// signature line, and the prose it settled on; its process stays in the
-/// signature's live status.
-fn mono_turn(source: &Source, turn: &Turn, live: bool, name: &str) -> Value {
-    let rows = source.rows;
-    let mut items = Vec::new();
-    let mut by_row = HashMap::new();
-    let mut reacted = false;
-    let mut standalone = true;
-    let mut copy = Vec::new();
-    for &run in &turn.runs {
-        let before = items.len();
-        user_items(rows, run, &mut items, &mut by_row);
-        standalone &= items.len() == before;
-        let run_live = live && run.end == rows.len();
-        let internal = run.key > run.prompt && rows[run.key - 1].role == "mono-system";
-        for (at, end) in messages_in(rows, run.key, run.end) {
-            let role = rows[at].role.as_str();
-            let text = joined(&rows[at..end]);
-            if role == "assistant" {
-                if let Some(emoji) = reaction(&text) {
-                    // MonoReactionBadge: the emoji sits on the message it answers.
-                    let prompt = rows[..at]
-                        .iter()
-                        .rposition(Row::is_prompt)
-                        .and_then(|p| rows[..=p].iter().rposition(|r| r.first));
-                    if let Some(&item) = prompt.and_then(|p| by_row.get(&p)) {
-                        items[item]["reaction"] = emoji.into();
-                        reacted = true;
-                    }
-                    continue;
-                }
-                if !readable(&rows[at..end]) {
-                    continue;
-                }
-                // groupMonoTurnItems (mono_prose_hidden on the desktop): a
-                // direct reply keeps its opening sentence once it's whole;
-                // other prose said while working stays in the activity
-                // trail, as does all of it while the run is live.
-                let opening = !internal
-                    && rows[run.key..at]
-                        .iter()
-                        .all(|r| !r.first || r.role == "reasoning");
-                let hidden = if opening {
-                    run_live && end == rows.len()
-                } else {
-                    run_live
-                        || rows[at + 1..run.end].iter().any(|r| {
-                            r.first
-                                && (matches!(r.role.as_str(), "tool" | "reasoning")
-                                    || (internal && r.role == "assistant"))
-                        })
-                };
-                if hidden {
-                    continue;
-                }
-                let mut item =
-                    object(json!({"type": "text", "id": format!("r{at}"), "text": text}));
-                if live && end == rows.len() {
-                    item.insert("streaming".into(), true.into());
-                }
-                copy.push(text.replace("\r\n", "\n").trim().to_owned());
-                items.push(Value::Object(item));
-            } else if matches!(role, "mono-card" | "mono-note") {
-                items.extend(mono_card(rows, at, end));
-            } else if let Some(notice) = notice(rows, at, end) {
-                items.push(notice);
-            }
-        }
-        if !run_live {
-            items.extend(run_documents(rows, run));
-        }
-        // LaunchedSessionCard: the sessions the run started, under its
-        // reply once it settles, as the desktop's chat shows them.
-        if !run_live {
-            let sessions: Vec<Value> = desk::run_launches(rows, run.prompt, run.end, |id| {
-                source.launches.contains_key(&id)
-            })
-            .into_iter()
-            .filter_map(|id| source.launches.get(&id).cloned())
-            .collect();
-            if !sessions.is_empty() {
-                items.push(json!({
-                    "type": "sessions",
-                    "id": format!("l{}", run.prompt),
-                    "sessions": sessions,
-                }));
-            }
-        }
-    }
-    let has_prose = turn.runs.iter().any(|run| {
-        messages_in(rows, run.key, run.end).any(|(at, end)| {
-            rows[at].role == "assistant"
-                && readable(&rows[at..end])
-                && reaction(&joined(&rows[at..end])).is_none()
-        })
-    });
-    let standalone = standalone && has_prose;
-    let first = turn.runs[0];
-    let last = *turn.runs.last().unwrap();
-    let durations: Vec<u64> = turn
-        .runs
-        .iter()
-        .filter_map(|&run| duration(source, run))
-        .collect();
-    let duration = (!durations.is_empty()).then(|| durations.iter().sum::<u64>());
-    let started = started_at(source, first);
-    let first_work = items.iter().position(|item| item["type"] != "user");
-    let reacted_only = !live && first_work.is_none() && reacted;
-    if !reacted_only && (standalone || live || duration.is_some() || first_work.is_some()) {
-        let label = if live && !standalone {
-            source
-                .waiting
-                .map(|waiting| format!("{waiting}…"))
-                .unwrap_or_else(|| desk::mono_work_label(rows, first.key))
-        } else {
-            name.to_owned()
-        };
-        let mut header = object(json!({
-            "type": "header",
-            "id": format!("{}:header", turn.id()),
-            "live": live,
-            "label": label,
-            "model": name,
-            "harness": harness(source, first),
-            "entries": [],
-        }));
-        put(&mut header, "startedAt", started);
-        put(&mut header, "durationMs", duration);
-        // While it works, its status trails the turn, under anything it has
-        // already posted, as a messaging app's typing line.
-        let at = if live {
-            items.len()
-        } else {
-            first_work.unwrap_or(items.len())
-        };
-        items.insert(at, Value::Object(header));
-    }
-    compact(&mut items);
-
-    // A user opens its stretch above its bubble; a run without one, above the
-    // Mono's header.
-    let stamp = (first.prompt..first.key)
-        .find(|&i| rows[i].first && rows[i].role == "user")
-        .unwrap_or(first.prompt);
-    let stamp_at = rows
-        .get(stamp)
-        .filter(|_| dates::mono_opens_stretch(rows, stamp))
-        .and_then(|row| row.sent_at);
-    let mut out = object(json!({"id": turn.id(), "items": items}));
-    put(&mut out, "stampAt", stamp_at);
-    if !live && !reacted_only && (duration.is_some() || standalone || first_work.is_some()) {
-        let completed = info(source, last)
-            .and_then(|info| info.completed_at)
-            .or_else(|| {
-                if turn.runs.len() > 1 {
-                    started_at(source, last).map(|at| at + duration_or_zero(source, last))
-                } else {
-                    started.map(|at| at + duration.unwrap_or(0))
-                }
-            });
-        out.insert("footer".into(), true.into());
-        put(&mut out, "completedAt", completed);
-        out.insert(
-            "copyText".into(),
-            copy.into_iter()
-                .filter(|text| !text.is_empty())
-                .collect::<Vec<_>>()
-                .join("\n\n")
-                .into(),
-        );
-        put(&mut out, "durationMs", duration);
-    }
-    Value::Object(out)
-}
-fn duration_or_zero(source: &Source, run: Run) -> u64 {
-    duration(source, run).unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -926,9 +639,7 @@ mod tests {
             model_name: Some("Opus".into()),
             busy,
             waiting: None,
-            mono: None,
             pending: &[],
-            launches: Box::leak(Box::default()),
         }
     }
     fn all(source: &Source) -> Vec<Value> {
@@ -981,9 +692,7 @@ mod tests {
                 ..TurnInfo::default()
             },
         );
-        let mut mono = source(&rows, &infos, true);
-        mono.mono = Some("Ada");
-        let turn = &all(&mono)[0];
+        let turn = &all(&source(&rows, &infos, true))[0];
         assert_eq!(types(turn), ["user", "header", "text"]);
         assert_eq!(turn["items"][1]["live"], false);
     }
@@ -1179,192 +888,5 @@ mod tests {
         assert_eq!(items[0]["compact"], true);
         assert_eq!(items[1]["emojiOnly"], true);
         assert_eq!(items[1]["attachments"], 2);
-    }
-
-    #[test]
-    fn mono_notifications_keep_only_the_final_message() {
-        let rows = [
-            row("user", "Review the heartbeat"),
-            row("assistant", "Waiting for the review."),
-            row("mono-system", "The review session finished"),
-            row("assistant", "I'll verify the findings."),
-            row("assistant", "Verification is complete."),
-            row("assistant", "The review found three bugs."),
-            Row {
-                first: false,
-                ..row("assistant", " The report is in Documents.")
-            },
-        ];
-        let infos = HashMap::new();
-        let mut mono = source(&rows, &infos, true);
-        mono.mono = Some("Ada");
-        let text_items = |turn: &Value| {
-            turn["items"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .filter(|item| item["type"] == "text")
-                .map(|item| item["text"].as_str().unwrap().to_owned())
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(text_items(&all(&mono)[0]), ["Waiting for the review."]);
-        mono.busy = false;
-        let turns = all(&mono);
-        assert_eq!(turns.len(), 1);
-        assert_eq!(
-            text_items(&turns[0]),
-            [
-                "Waiting for the review.",
-                "The review found three bugs. The report is in Documents.",
-            ]
-        );
-        assert_eq!(
-            turns[0]["copyText"],
-            "Waiting for the review.\n\nThe review found three bugs. The report is in Documents."
-        );
-    }
-
-    #[test]
-    fn mono_turns_sign_their_header_and_keep_their_opening_sentence() {
-        let rows = [
-            sent("user", "Plan my day", 1_000),
-            row("assistant", "Checking your calendar"),
-            tool(
-                "Read",
-                json!({"file_path": "/repo/cal"}),
-                ToolState::Completed,
-            ),
-            row("assistant", "You are free after 3."),
-            sent("user", "Thanks", 2_000),
-            row("assistant", "<reaction>🙌</reaction>"),
-        ];
-        let infos = HashMap::new();
-        let mut mono = source(&rows, &infos, false);
-        mono.mono = Some("Ada");
-        let turns = all(&mono);
-        assert_eq!(turns.len(), 2);
-        assert_eq!(types(&turns[0]), ["user", "header", "text", "text"]);
-        assert_eq!(turns[0]["items"][1]["label"], "Ada");
-        assert_eq!(turns[0]["items"][2]["text"], "Checking your calendar");
-        assert_eq!(turns[0]["items"][3]["text"], "You are free after 3.");
-        assert_eq!(turns[0]["stampAt"], 1_000);
-        assert_eq!(
-            turns[0]["copyText"],
-            "Checking your calendar\n\nYou are free after 3."
-        );
-        // A reply that is only a reaction leaves the message on its own.
-        assert_eq!(types(&turns[1]), ["user"]);
-        assert_eq!(turns[1]["items"][0]["reaction"], "🙌");
-        assert!(turns[1].get("footer").is_none());
-
-        let mut live = source(&rows[..3], &infos, true);
-        live.mono = Some("Ada");
-        let turn = &all(&live)[0];
-        assert_eq!(types(turn), ["user", "text", "header"]);
-        assert_eq!(turn["items"][2]["label"], "Reading file…");
-    }
-
-    #[test]
-    fn a_monos_opening_sentence_stays_above_the_work_that_follows_it() {
-        let rows = [
-            sent("user", "Any PRs?", 1_000),
-            row("assistant", "I'll check the latest PRs."),
-            tool(
-                "Bash",
-                json!({"command": "gh pr list"}),
-                ToolState::Completed,
-            ),
-            row("assistant", "Started a background check."),
-        ];
-        let infos = HashMap::new();
-        let mut mono = source(&rows, &infos, false);
-        mono.mono = Some("Ada");
-        let turn = &all(&mono)[0];
-        assert_eq!(types(turn), ["user", "header", "text", "text"]);
-        assert_eq!(turn["items"][2]["text"], "I'll check the latest PRs.");
-
-        // While it works: the opening shows, its status trails under it.
-        let mut live = source(&rows[..3], &infos, true);
-        live.mono = Some("Ada");
-        let turn = &all(&live)[0];
-        assert_eq!(types(turn), ["user", "text", "header"]);
-    }
-
-    #[test]
-    fn a_monos_launched_sessions_land_on_cards_under_its_reply() {
-        let rows = [
-            sent("user", "Fix the composer", 1_000),
-            tool(
-                "Bash",
-                json!({"command": "monocode app sessions.start --json {}"}),
-                ToolState::Completed,
-            ),
-            row("assistant", "Started a session on it."),
-        ];
-        let mut call: ToolCall = serde_json::from_str(&rows[1].text).unwrap();
-        call.output = r#"{"ok":true,"result":{"sessionId":7,"accepted":true}}"#.into();
-        let rows = [
-            rows[0].clone(),
-            row("tool", &serde_json::to_string(&call).unwrap()),
-            rows[2].clone(),
-        ];
-        let infos = HashMap::new();
-        let card = json!({"id": "s-7", "projectId": "%2Frepo", "project": "repo",
-            "title": "Fix the composer", "harness": "codex", "state": "working"});
-        let launches = HashMap::from([(7, card.clone())]);
-        let mut mono = source(&rows, &infos, false);
-        mono.mono = Some("Ada");
-        mono.launches = &launches;
-        let turn = &all(&mono)[0];
-        assert_eq!(types(turn), ["user", "header", "text", "sessions"]);
-        assert_eq!(turn["items"][3]["sessions"], json!([card]));
-
-        // Not while the run is still going, and never for an unknown session.
-        let mut live = source(&rows, &infos, true);
-        live.mono = Some("Ada");
-        live.launches = &launches;
-        assert!(!types(&all(&live)[0]).contains(&"sessions"));
-        mono.launches = Box::leak(Box::default());
-        assert!(!types(&all(&mono)[0]).contains(&"sessions"));
-    }
-
-    #[test]
-    fn a_monos_choices_and_documents_come_as_cards() {
-        let rows = [
-            sent("user", "What next?", 1_000),
-            row("assistant", "Pick one."),
-            row(
-                "mono-card",
-                r#"{"id":"c","type":"choices","options":["Review it","Wait"]}"#,
-            ),
-            row(
-                "mono-document",
-                r#"{"id":"d1","type":"document","documentId":"doc","title":"Draft","kind":"document"}"#,
-            ),
-            row(
-                "mono-document",
-                r#"{"id":"d2","type":"document","documentId":"doc","title":"Report","kind":"document"}"#,
-            ),
-            sent("user", "Review it", 2_000),
-        ];
-        let infos = HashMap::new();
-        let mut mono = source(&rows, &infos, false);
-        mono.mono = Some("Ada");
-        let turns = all(&mono);
-        assert_eq!(
-            types(&turns[0]),
-            ["user", "header", "text", "choices", "document"]
-        );
-        let items = &turns[0]["items"];
-        assert_eq!(items[3]["options"], json!(["Review it", "Wait"]));
-        assert_eq!(items[3]["chosen"], "Review it");
-        // A document written twice is listed once, at its latest title.
-        assert_eq!(items[4]["documentId"], "doc");
-        assert_eq!(items[4]["title"], "Report");
-
-        // Unanswered until a reply follows.
-        let mut open = source(&rows[..5], &infos, false);
-        open.mono = Some("Ada");
-        assert!(all(&open)[0]["items"][3].get("chosen").is_none());
     }
 }

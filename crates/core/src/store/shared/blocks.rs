@@ -150,26 +150,19 @@ fn project_content(block: &Value) -> Result<Vec<Row>, String> {
         t.begin("tool");
         t.rows[0].text = super::encode(&call)?;
     } else {
-        if text.is_empty()
-            && (!matches!(role, "user" | "assistant" | "reasoning")
-                || block["monoCard"].is_object())
-        {
+        if text.is_empty() && !matches!(role, "user" | "assistant" | "reasoning") {
             return Ok(Vec::new());
         }
         t.begin(match role {
             "user" if block["internal"] == true => "mono-system",
-            "user" | "assistant" | "reasoning" | "error" | "mono-card" | "visual" => role,
+            "user" | "assistant" | "reasoning" | "error" | "visual" => role,
             "system" if block["notice"] == "error" => "error",
             "plan" | "tasks" => "assistant",
             _ => "system",
         });
         t.append(text);
     }
-    // Desktop habit reports record only when their run happened.
-    t.rows[0].sent_at = block["sentAt"]
-        .as_u64()
-        .or(block["startedAt"].as_u64())
-        .or(block["monoHabit"]["at"].as_u64());
+    t.rows[0].sent_at = block["sentAt"].as_u64().or(block["startedAt"].as_u64());
     Ok(t.rows)
 }
 fn metadata_row(role: &str, value: &Value) -> Row {
@@ -196,30 +189,6 @@ fn project_block(block: &Value) -> Result<Vec<Row>, String> {
             &block["attachments"],
         ));
     }
-    for card in crate::mono::work::document_cards(block) {
-        rows.push(metadata_row("mono-document", &card));
-    }
-    if let Some(id) = block["noteCard"]["id"].as_str() {
-        rows.push(metadata_row("mono-note", &json!({"id":format!("note:{id}"),"type":"document","documentId":id,"title":block["noteCard"]["title"],"kind":"document","note":true})));
-    }
-    for launch in crate::mono::work::block_launches(std::slice::from_ref(block))
-        .into_iter()
-        .flatten()
-    {
-        let mut launch = launch;
-        launch["sessionId"] = json!(crate::mono::work::session_handle(&launch["sessionId"]));
-        rows.push(metadata_row("mono-launch", &launch));
-    }
-    if block["monoCard"].is_object() {
-        let mut card = block["monoCard"].clone();
-        card["id"] = block["id"].clone();
-        if card["type"] == "session" {
-            card["sessionId"] = json!(crate::mono::work::session_handle(&card["sessionId"]));
-        }
-        let mut row = metadata_row("mono-card", &card);
-        row.sent_at = block["sentAt"].as_u64().or(block["startedAt"].as_u64());
-        rows.push(row);
-    }
     Ok(rows)
 }
 pub(crate) fn project(blocks: &[Value]) -> Result<Vec<Row>, String> {
@@ -232,7 +201,7 @@ pub(crate) fn project(blocks: &[Value]) -> Result<Vec<Row>, String> {
 fn update(old: Option<&Value>, rows: &[Row]) -> Result<Value, String> {
     let mut block = old
         .cloned()
-        .unwrap_or_else(|| json!({"id":format!("gpui-{}",crate::mono::new_id())}));
+        .unwrap_or_else(|| json!({"id":format!("gpui-{}",crate::new_id())}));
     let role = rows[0].role.as_str();
     let text = rows.iter().map(|r| r.text.as_str()).collect::<String>();
     // Reuse the complete original object for unchanged display rows. In
@@ -253,21 +222,6 @@ fn update(old: Option<&Value>, rows: &[Row]) -> Result<Value, String> {
         if old.is_none() {
             block["sentAt"] = json!(rows[0].sent_at);
         }
-    } else if role == "mono-card" {
-        let mut card: Value = super::parse(&text)?;
-        if old.is_none() && card["id"].is_string() {
-            block["id"] = card["id"].clone();
-        }
-        if let Some(external) = old.and_then(|old| old["monoCard"]["sessionId"].as_str()) {
-            // UI handles are a projection; never write one over the desktop UUID.
-            card["sessionId"] = json!(external);
-        }
-        if let Some(object) = card.as_object_mut() {
-            object.remove("id");
-        }
-        block["role"] = json!("assistant");
-        block["text"] = json!("");
-        block["monoCard"] = card;
     } else if role == "tool" {
         let call: ToolCall = super::parse(&text)?;
         let previous = old.map(tool);
@@ -481,30 +435,12 @@ pub(super) fn merge(blocks: &[Value], start: usize, delta: &[Row]) -> Result<Vec
             )?;
             let original = &displayed[local..end];
             if group != original {
-                if group[0].role == "mono-card" && value["monoCard"].is_object() {
-                    let card: Value =
-                        super::parse(&group.iter().map(|r| r.text.as_str()).collect::<String>())?;
-                    let external = value["monoCard"]["sessionId"].clone();
-                    value["monoCard"] = card;
-                    if external.is_string() {
-                        value["monoCard"]["sessionId"] = external;
-                    }
-                    if let Some(object) = value["monoCard"].as_object_mut() {
-                        object.remove("id");
-                    }
-                } else if !matches!(
-                    group[0].role.as_str(),
-                    "mono-document"
-                        | "mono-note"
-                        | "mono-launch"
-                        | crate::transcript::attachments::ROLE
-                ) {
-                    value = update(Some(&value), group)?;
-                } else {
+                if group[0].role == crate::transcript::attachments::ROLE {
                     return Err(
-                        "Card references changed; the original conversation was preserved".into(),
+                        "Attachments changed; the original conversation was preserved".into(),
                     );
                 }
+                value = update(Some(&value), group)?;
             }
             local = end;
         }
@@ -661,42 +597,8 @@ mod panel_tests {
 }
 
 #[cfg(test)]
-mod card_tests {
+mod internal_tests {
     use super::*;
-    #[test]
-    fn rich_desktop_cards_project_without_rewriting_source_when_later_reply_changes() {
-        let source = vec![
-            json!({"id":"prompt","role":"user","text":"Write a report","future":"keep","noteCard":{"id":"note","slug":"read-me","title":"Reference","sourceCwd":"/repo","future":true},"artifactCards":[{"id":"report","kind":"document","title":"Report","summary":"Summary","future":7}],"monoSpawnedSessions":[{"sessionId":"app-child","cwd":"/repo","title":"Review","harness":"codex","model":"gpt-6","future":8}]}),
-            json!({"id":"reply","role":"assistant","text":"Written","future":{"keep":true}}),
-            json!({"id":"choice","role":"assistant","text":"","monoCard":{"type":"session","sessionId":"app-child","note":"Review this"},"future":9}),
-        ];
-        let rows = project(&source).unwrap();
-        assert_eq!(
-            rows.iter().map(|r| r.role.as_str()).collect::<Vec<_>>(),
-            [
-                "user",
-                "mono-document",
-                "mono-note",
-                "mono-launch",
-                "assistant",
-                "mono-card"
-            ]
-        );
-        assert_eq!(merge(&source, 0, &rows).unwrap(), source);
-        let mut reply = rows[4].clone();
-        reply.text = "Written and checked".into();
-        let merged = merge(&source, 4, &[reply]).unwrap();
-        assert_eq!(merged[0], source[0]);
-        assert_eq!(merged[2], source[2]);
-        assert_eq!(merged[1]["future"], source[1]["future"]);
-        assert_eq!(project(&merged).unwrap().len(), rows.len());
-        let mut card = rows[5].clone();
-        let mut value: Value = serde_json::from_str(&card.text).unwrap();
-        value["title"] = json!("Live title");
-        card.text = value.to_string();
-        let patched = merge(&merged, 5, &[card]).unwrap();
-        assert_eq!(patched[2]["monoCard"]["sessionId"], "app-child");
-    }
     #[test]
     fn internal_completion_prompts_keep_live_row_offsets_and_timing_after_reload() {
         let source = json!({"id":"completion","role":"user","internal":true,"text":"Monitor finished","sentAt":123,"future":true});
@@ -712,28 +614,6 @@ mod card_tests {
         assert_eq!(native[0]["role"], "user");
         assert_eq!(native[0]["internal"], true);
         assert_eq!(project(&native).unwrap(), rows);
-    }
-    #[test]
-    fn new_native_cards_keep_their_identity_and_reload_as_cards() {
-        let mut row = metadata_row(
-            "mono-card",
-            &json!({"id":"card-identity","type":"choices","options":["Yes","No"]}),
-        );
-        row.sent_at = Some(123);
-        let saved = merge(&[], 0, std::slice::from_ref(&row)).unwrap();
-        assert_eq!(saved[0]["id"], "card-identity");
-        let reloaded = project(&saved).unwrap();
-        assert_eq!(reloaded.len(), 1);
-        assert_eq!(reloaded[0].role, row.role);
-        assert_eq!(reloaded[0].first, row.first);
-        assert_eq!(reloaded[0].sent_at, row.sent_at);
-        // The workspace enables serde_json's insertion-order feature. Card IDs
-        // live on the outer desktop block and are restored into the card, so
-        // compare the payload rather than its object-key serialization order.
-        assert_eq!(
-            serde_json::from_str::<Value>(&reloaded[0].text).unwrap(),
-            serde_json::from_str::<Value>(&row.text).unwrap()
-        );
     }
 }
 

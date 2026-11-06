@@ -106,7 +106,6 @@ impl Shell {
     pub(super) fn tab_menu_target(&self, tab: &TitleTab) -> MenuTarget {
         match tab {
             TitleTab::Session(id) => MenuTarget::Tab(*id),
-            TitleTab::Mono { id, .. } => MenuTarget::MonoTab(id.clone()),
             TitleTab::Search => MenuTarget::SearchTab,
             TitleTab::App(view) => MenuTarget::AppTab(*view),
         }
@@ -136,21 +135,6 @@ impl Shell {
                     None => (Face::Neutral, div().into_any_element()),
                 };
                 (face, mark, copy.headline.clone().into())
-            }
-            TitleTab::Mono { id, .. } => {
-                let mono = self
-                    .monos
-                    .as_ref()
-                    .and_then(|m| m.read(cx).roster.get(id).cloned());
-                match mono {
-                    Some(mono) => (
-                        Face::Neutral,
-                        crate::monos::avatar::avatar(&mono.mascot, mono.color, "idle", 14., true)
-                            .into_any_element(),
-                        mono.label().into(),
-                    ),
-                    None => (Face::Neutral, div().into_any_element(), "Mono".into()),
-                }
             }
             TitleTab::Search => (Face::Neutral, neutral("search"), "Search".into()),
             TitleTab::App(view) => (Face::Neutral, neutral(view.icon()), view.label().into()),
@@ -202,7 +186,7 @@ impl Shell {
         if moving {
             window.request_animation_frame();
         }
-        let active = self.active_title_tab(cx);
+        let active = self.active_title_tab();
         let front = active
             .as_ref()
             .and_then(|tab| pinned.iter().position(|p| p == tab));
@@ -553,8 +537,8 @@ mod tests {
         visual.simulate_click(card.center(), Default::default());
         visual.run_until_parked();
         window
-            .update(visual, |shell, _, cx| {
-                assert_eq!(shell.active_title_tab(cx), Some(TitleTab::Session(first)));
+            .update(visual, |shell, _, _| {
+                assert_eq!(shell.active_title_tab(), Some(TitleTab::Session(first)));
             })
             .unwrap();
     }
@@ -577,7 +561,7 @@ mod tests {
         window
             .update(visual, |shell, w, cx| {
                 assert_eq!(shell.workspace.pinned_tabs, [TitleTab::Session(first)]);
-                assert_eq!(shell.active_title_tab(cx), Some(TitleTab::Session(first)));
+                assert_eq!(shell.active_title_tab(), Some(TitleTab::Session(first)));
                 // Closing the strip's last tab leaves a blank one, not the pin.
                 shell.open(second, w, cx);
                 shell.close_title_tabs(&[TitleTab::Session(second)], None, w, cx);
@@ -588,7 +572,7 @@ mod tests {
             .update(visual, |shell, _, cx| {
                 let strip = shell.strip_tabs(cx);
                 assert_eq!(strip.len(), 1);
-                assert_eq!(shell.active_title_tab(cx), Some(strip[0].clone()));
+                assert_eq!(shell.active_title_tab(), Some(strip[0].clone()));
             })
             .unwrap();
     }
@@ -617,8 +601,8 @@ mod tests {
         visual.run_until_parked();
         visual.refresh().unwrap();
         window
-            .update(visual, |shell, _, cx| {
-                assert_eq!(shell.active_title_tab(cx), Some(TitleTab::Session(ids[1])));
+            .update(visual, |shell, _, _| {
+                assert_eq!(shell.active_title_tab(), Some(TitleTab::Session(ids[1])));
                 assert_eq!(shell.pin_deck.front, Some(TitleTab::Session(ids[1])));
                 let (was, _) = shell.pin_deck.shuffle.clone().unwrap();
                 assert_eq!(was, TitleTab::Session(first));

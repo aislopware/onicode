@@ -49,7 +49,6 @@ impl Conversation {
 
     pub(super) fn generate_title(&mut self, message: &str, cx: &mut Context<Self>) {
         if self.summary.has_messages
-            || self.settings.mono.is_some()
             || self.summary.title
                 != format!(
                     "New {} session",

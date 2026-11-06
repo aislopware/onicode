@@ -12,7 +12,6 @@ impl Shell {
         if self.app_view_open()
             || self.settings.is_some()
             || self.app_search.is_some()
-            || self.mono_active(cx)
             || self.quick_open.is_some()
             || self.image_lightbox.is_some()
             || self.menu.is_some()

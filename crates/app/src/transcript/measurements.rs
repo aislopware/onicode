@@ -493,10 +493,6 @@ mod tests {
     }
 
     fn chat(cx: &mut TestAppContext) -> gpui::WindowHandle<Fixture> {
-        fixture(cx, false)
-    }
-
-    fn fixture(cx: &mut TestAppContext, mono: bool) -> gpui::WindowHandle<Fixture> {
         let window = cx.update(|cx| {
             cx.open_window(
                 WindowOptions {
@@ -509,9 +505,6 @@ mod tests {
                 |_, cx| {
                     let transcript = cx.new(|cx| {
                         let mut view = TranscriptView::new();
-                        if mono {
-                            view.mono_mode("cat", 0xe86b5f, "MonoCat");
-                        }
                         view.visible = false;
                         view.streaming = true;
                         view.smooth_reveal = false;
@@ -732,71 +725,6 @@ mod tests {
             .iter()
             .position(|row| view.messages[row.message].start == prompt && row.last)
             .unwrap()
-    }
-
-    #[gpui::test]
-    fn mono_prompt_widths_survive_streaming_replies_and_refresh_with_attachments(
-        cx: &mut TestAppContext,
-    ) {
-        let window = fixture(cx, true);
-        probe(window, cx, |view, window, cx| {
-            assert!(view.mono && view.chat_layout);
-            view.visible = false;
-            let mut transcript = onicode_core::transcript::Transcript::default();
-            let prompt = transcript.begin("user");
-            transcript.append(&format!(
-                "A wide prompt line for measurement\n{}",
-                "x\n".repeat(64)
-            ));
-            let assistant = transcript.begin("assistant");
-            transcript.append("Answer");
-            view.expanded_prompts.insert(prompt);
-            view.patch(0, transcript.rows, cx);
-            view.begin_measurements(window, cx);
-            let width = view
-                .split_prompt_width(prompt_tail(view, prompt), window)
-                .unwrap();
-            let fresh = view.measurements.fresh_prompt_widths;
-            for i in 0..10 {
-                for _ in 0..3 {
-                    view.begin_measurements(window, cx);
-                }
-                // Mono rebuilds the whole group, from the prompt that opens it.
-                view.patch(
-                    assistant,
-                    vec![row("assistant", &format!("Answer {i}"))],
-                    cx,
-                );
-                let tail = prompt_tail(view, prompt);
-                assert_eq!(view.split_prompt_width(tail, window), Some(width));
-                assert_eq!(
-                    view.measurements.fresh_prompt_widths, fresh,
-                    "a streaming reply must not measure its prompt again"
-                );
-            }
-            // The manifest after a prompt changes its attachments, not its text.
-            let manifest = Row {
-                role: onicode_core::transcript::attachments::ROLE.into(),
-                text: onicode_core::transcript::attachments::from_paths(&[
-                    std::path::PathBuf::from("/tmp/notes.txt"),
-                ])
-                .to_string(),
-                first: true,
-                sent_at: None,
-            };
-            view.patch(assistant, vec![manifest, row("assistant", "Answer")], cx);
-            assert!(
-                !view.messages[view.rows[prompt_tail(view, prompt)].message]
-                    .attachments
-                    .is_empty()
-            );
-            let tail = prompt_tail(view, prompt);
-            assert_eq!(
-                view.split_prompt_width(tail, window),
-                Some(PROMPT_BUBBLE_MAX)
-            );
-            assert_eq!(view.measurements.fresh_prompt_widths, fresh + 1);
-        });
     }
 
     #[gpui::test]

@@ -418,7 +418,7 @@ pub(crate) fn tile_stack(size: &TileSize, tiles: Vec<StackTile>, t: f32) -> Div 
         .children(placed.into_iter().map(|(_, _, tile)| tile))
 }
 
-/// A tab's icon on a neutral tile: app views, Search, Monos, files and diffs.
+/// A tab's icon on a neutral tile: app views, Search, files and diffs.
 pub(crate) fn neutral_tile(mark: impl IntoElement) -> Div {
     mark_tile(&TAB_TILE, Face::Neutral, mark)
 }

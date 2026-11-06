@@ -11,7 +11,6 @@ pub(super) enum Target {
     Skill,
     Worktree,
     DeleteTree(data::Tree),
-    ResetMono(super::MonoSetting),
 }
 pub(super) struct Editor {
     pub target: Target,
@@ -78,10 +77,7 @@ impl SettingsView {
             }),
         ];
         let previous = window.focused(cx);
-        if matches!(
-            target,
-            Target::Cli(_) | Target::DeleteTree(_) | Target::ResetMono(_)
-        ) {
+        if matches!(target, Target::Cli(_) | Target::DeleteTree(_)) {
             window.focus(&self.focus, cx);
         } else {
             window.focus(&name.read(cx).focus_handle(cx), cx);
@@ -234,11 +230,6 @@ impl SettingsView {
         }
         editor.busy = true;
         editor.error = None;
-        if let Target::ResetMono(mono) = target {
-            cx.emit(SettingsEvent::ResetMono(mono.id));
-            cx.notify();
-            return;
-        }
         if let Target::DeleteTree(tree) = target {
             cx.emit(SettingsEvent::RemoveWorktree {
                 cwd,
@@ -297,22 +288,6 @@ impl SettingsView {
         let inspection = e.inspection.clone();
         let mut rows = Vec::new();
         match &target {
-            Target::ResetMono(mono) => {
-                let default = onicode_core::mono::Mono {
-                    name: String::new(),
-                    mascot: mono.mascot.clone(),
-                    ..Default::default()
-                }
-                .label();
-                rows.push(note(format!("Its soul goes back to the default and its name to {default}. Changes to its soul can't be recovered.")));
-                rows.push(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(content(0.5))
-                        .child("Its conversation, projects, memory and habits will be kept.")
-                        .into_any_element(),
-                );
-            }
             Target::Cli(kind) => {
                 let overridden = self.prefs.binary_paths.contains_key(kind.id());
                 let pending = onicode_core::cli::configured(*kind)
@@ -733,13 +708,6 @@ impl SettingsView {
                 }
             }
             Target::Worktree => "Create worktree",
-            Target::ResetMono(_) => {
-                if busy {
-                    "Resetting…"
-                } else {
-                    "Reset Mono"
-                }
-            }
             Target::DeleteTree(_) => {
                 if deleting {
                     "Delete worktree and sessions"
@@ -758,7 +726,7 @@ impl SettingsView {
             )
             .child(
                 crate::modal::disabled(
-                    if matches!(target, Target::DeleteTree(_) | Target::ResetMono(_)) {
+                    if matches!(target, Target::DeleteTree(_)) {
                         crate::modal::danger_button("submit-management", label)
                     } else {
                         crate::modal::primary_button("submit-management", label)
@@ -790,7 +758,6 @@ impl SettingsView {
             Target::Mcp => "Add MCP server".into(),
             Target::Worktree => "Create worktree".into(),
             Target::DeleteTree(_) => "Delete worktree?".into(),
-            Target::ResetMono(ref mono) => format!("Reset {} to its defaults?", mono.name),
             _ => String::new(),
         };
         let form = self.management_form(cx);

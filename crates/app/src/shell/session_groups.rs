@@ -2061,28 +2061,10 @@ mod tests {
     #[gpui::test]
     fn sidebar_header_controls_share_the_trailing_alignment(cx: &mut TestAppContext) {
         let (window, _, _) = setup(cx);
-        // The header's plus appears once this project has a Mono. The empty
-        // state uses a full-width creation row instead.
-        window
-            .update(cx, |shell, _, cx| {
-                if let Some(monos) = &shell.monos {
-                    monos.update(cx, |monos, cx| {
-                        monos.roster.monos.push(onicode_core::mono::Mono {
-                            projects: vec![shell.workspace.project.clone()],
-                            ..Default::default()
-                        });
-                        cx.notify();
-                    });
-                }
-                shell.invalidate_chrome(cx);
-            })
-            .unwrap();
         cx.refresh().unwrap();
         let visual = &mut VisualTestContext::from_window(window.into(), cx);
         let options = visual.debug_bounds("sidebar-options").unwrap();
-        let mono = visual.debug_bounds("sidebar-mono-button").unwrap();
         let filter = visual.debug_bounds("sidebar-filter-button").unwrap();
-        assert!((options.center().x - mono.center().x).abs() <= px(1.));
         assert!((options.center().x - filter.center().x).abs() <= px(1.));
         let project = visual.debug_bounds("sidebar-project-button").unwrap();
         let search = visual.debug_bounds("sidebar-search-button").unwrap();

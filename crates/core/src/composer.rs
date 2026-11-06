@@ -214,13 +214,6 @@ pub fn thumbnail_bgra(bytes: &[u8], side: u32) -> Result<image::RgbaImage, Strin
     let short = image.width().min(image.height()).max(1);
     Ok(scaled_bgra(image, f64::from(side) / f64::from(short)))
 }
-/// Shrink an image until its longer side fits `side` pixels, keeping its
-/// shape, for photos shown whole rather than cropped into a chip. BGRA.
-pub fn fit_bgra(bytes: &[u8], side: u32) -> Result<image::RgbaImage, String> {
-    let image = image::load_from_memory(bytes).map_err(|error| error.to_string())?;
-    let long = image.width().max(image.height()).max(1);
-    Ok(scaled_bgra(image, f64::from(side) / f64::from(long)))
-}
 fn scaled_bgra(image: image::DynamicImage, scale: f64) -> image::RgbaImage {
     let (width, height) = (image.width(), image.height());
     let mut image = if scale < 1. {

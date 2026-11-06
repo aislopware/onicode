@@ -11,7 +11,6 @@ const ICON_RAIL_WIDTH: f32 = 48.;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum ProjectRailRow {
-    Monos,
     Heading(&'static str),
     Group(String),
     Project { path: String, grouped: bool },
@@ -81,11 +80,6 @@ impl ProjectRailList {
             );
             self.rows = rows;
         }
-        // The global Mono roster is one naturally sized item, not a project
-        // card. Its row count can change without the project list changing.
-        if self.rows.first() == Some(&ProjectRailRow::Monos) {
-            self.state.remeasure_items(0..1);
-        }
     }
 }
 #[derive(Default)]
@@ -154,9 +148,9 @@ impl Shell {
         }
     }
 
-    pub(super) fn left_sidebar_width(&self, cx: &App) -> f32 {
+    pub(super) fn left_sidebar_width(&self) -> f32 {
         self.project_rail_drawn_width()
-            + if !self.session_sidebar_available(cx) {
+            + if !self.session_sidebar_available() {
                 0.
             } else {
                 self.workspace.sidebar_width * self.sidebar_fraction
@@ -239,7 +233,7 @@ impl Shell {
         if cfg!(target_os = "macos")
             && !self.workspace.project_rail_open
             && self.settings.is_none()
-            && self.classic_surface_open(cx)
+            && self.classic_surface_open()
         {
             // Destination headers live beside the rail. Keep its divider below
             // the traffic lights, at the same height as the sessions view.
@@ -319,7 +313,7 @@ impl Shell {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .when(!self.classic_titlebar_spans_window(cx), |d| d.child(header))
+            .when(!self.classic_titlebar_spans_window(), |d| d.child(header))
             .when(!compact, |d| d.child(self.original_rail_navigation(cx)))
             .child(
                 div()
@@ -337,9 +331,6 @@ impl Shell {
 
     fn prepare_project_rail(&mut self, compact: bool) {
         let mut rows = Vec::new();
-        if self.workspace.preferences.monos {
-            rows.push(ProjectRailRow::Monos);
-        }
         let projects = &self.workspace.projects;
         let pinned: Vec<_> = projects
             .iter()
@@ -423,11 +414,6 @@ impl Shell {
             Some(ProjectRailRow::Project { .. })
         );
         match row {
-            ProjectRailRow::Monos => self
-                .monos
-                .clone()
-                .map(|m| m.update(cx, |m, cx| m.project_navigation_rail(compact, cx)))
-                .unwrap_or_else(|| div().into_any()),
             ProjectRailRow::Heading(label) => self.project_rail_heading(label, compact, cx),
             ProjectRailRow::Project { path, grouped } => {
                 self.project_rail_row(ix, path, compact, grouped, row_gap, cx)
@@ -524,12 +510,6 @@ impl Shell {
             .pl(px(if compact { 8. } else { 6. }))
             .pr_2()
             .flex_shrink_0()
-            .when(!compact, |d| {
-                d.children(
-                    self.github_star_prompt(cx)
-                        .map(|prompt| div().mb_1().child(prompt)),
-                )
-            })
             .child(
                 div()
                     .id("rail-settings")
@@ -685,7 +665,7 @@ impl Shell {
 
     fn project_rail_compact_actions(&mut self, cx: &mut Context<Self>) -> AnyElement {
         use classic_sidebar::ClassicSidebarTab;
-        let workspace_active = !self.app_view_open() && !self.mono_active(cx);
+        let workspace_active = !self.app_view_open();
         let inbox_unread = self
             .inbox
             .as_ref()
@@ -703,43 +683,11 @@ impl Shell {
                 tabs.push(tab);
             }
         }
-        let mono_rail =
-            if self.workspace.project_rail_monos_pinned && self.workspace.preferences.monos {
-                self.monos
-                    .clone()
-                    .filter(|m| !m.read(cx).roster.monos.is_empty())
-                    .map(|m| m.update(cx, |m, cx| m.project_navigation_rail(true, cx)))
-            } else {
-                None
-            };
-        let active_mono = self
-            .monos
-            .as_ref()
-            .filter(|_| self.workspace.preferences.monos)
-            .and_then(|manager| {
-                let manager = manager.read(cx);
-                manager.current().map(|mono| {
-                    let status = manager
-                        .chat()
-                        .map_or("idle", |chat| chat.read(cx).mono_status());
-                    (
-                        mono.label(),
-                        crate::monos::avatar::avatar(&mono.mascot, mono.color, status, 16., true),
-                    )
-                })
-            });
-        let (picker_label, picker_mark) = active_mono.map_or_else(
-            || {
-                (
-                    format!(
-                        "Switch project, {}",
-                        self.project_label(&self.workspace.project)
-                    ),
-                    self.project_mark(&self.workspace.project, 16.),
-                )
-            },
-            |(name, mark)| (format!("Switch project, current mono {name}"), mark),
+        let picker_label = format!(
+            "Switch project, {}",
+            self.project_label(&self.workspace.project)
         );
+        let picker_mark = self.project_mark(&self.workspace.project, 16.);
         div()
             .w_full()
             .py(px(6.))
@@ -747,10 +695,6 @@ impl Shell {
             .flex_col()
             .items_center()
             .gap(px(6.))
-            .when_some(mono_rail, |d, monos| {
-                d.child(monos)
-                    .child(div().w(px(24.)).h(px(1.)).bg(content(0.07)))
-            })
             .child(
                 div()
                     .id("rail-current-project")
@@ -823,9 +767,6 @@ impl Shell {
                 .on_click(cx.listener(move |this, _, w, cx| {
                     this.leave_app_views(cx);
                     this.leave_app_search(cx);
-                    if let Some(m) = &this.monos {
-                        m.update(cx, |m, cx| m.close(cx));
-                    }
                     this.select_classic_sidebar_tab(tab, w, cx);
                     this.projects_frame.update(cx, |_, cx| cx.notify());
                 }))
@@ -1169,8 +1110,7 @@ impl Shell {
             .iter()
             .position(|p| p == &path)
             .unwrap_or(ix);
-        let selected =
-            self.workspace.project == path && !self.app_view_open() && !self.mono_active(cx);
+        let selected = self.workspace.project == path && !self.app_view_open();
         let label = self.project_label(&path);
         let tooltip = label.clone();
         let menu_path = path.clone();
@@ -1920,7 +1860,6 @@ mod tests {
             .update(visual, |shell, _, cx| {
                 shell.workspace.classic_layout = true;
                 shell.workspace.project_rail_open = true;
-                shell.workspace.preferences.monos = false;
                 shell.workspace.project = "/rail/a".into();
                 shell.workspace.projects = ["/rail/a", "/rail/b", "/rail/c", "/rail/d"]
                     .into_iter()

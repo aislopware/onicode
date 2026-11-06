@@ -14,7 +14,7 @@ impl Directory {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
             "monocode-remote-runtime-{}",
-            onicode_core::mono::new_id()
+            onicode_core::new_id()
         ));
         std::fs::create_dir_all(&path).unwrap();
         Self(path)

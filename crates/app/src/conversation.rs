@@ -1,4 +1,5 @@
 mod accounts;
+mod app_launch;
 mod approvals;
 mod attachment_drop;
 mod background_tasks;
@@ -12,7 +13,7 @@ mod follow_up;
 pub(crate) mod git_actions;
 mod history;
 mod mobile;
-mod mono;
+mod model_controls;
 mod notifications;
 mod remote;
 pub(crate) mod remote_plans;
@@ -26,7 +27,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
-pub(crate) use accounts::UsageResumed;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Context, CursorStyle, Entity, EventEmitter, Focusable, MouseButton, Role,
@@ -35,7 +35,6 @@ use gpui::{
 pub(crate) use mobile::{
     Waiting as MobileWaiting, mobile_access_modes, usage_state as mobile_usage_state,
 };
-pub(crate) use mono::{QueueChanged as MonoQueueChanged, Submitted as MonoSubmitted};
 use onicode_core::agent::{AccessMode, Approval, Control, Decision, Settings};
 use onicode_core::catalog::{self, Model};
 use onicode_core::provider::Kind;
@@ -107,7 +106,7 @@ enum ComposerMenu {
     Access,
     Account,
     Workspace,
-    /// A Mono's model setting pill: 0 is effort, then each model control.
+    /// A model setting pill beside the composer: 0 is effort, then each model control.
     Setting(usize),
     /// The commit pill's chevron above the composer.
     GitActions,
@@ -180,9 +179,8 @@ pub(crate) struct Conversation {
     model: Option<String>,
     resolved_model: Option<String>,
     pub(crate) settings: Settings,
-    pub(crate) mono_turn: u64,
     pub(crate) submission_generation: u64,
-    mono_ui: mono::ChatState,
+    controls_ui: model_controls::ModelControlsState,
     project_appearance: onicode_core::project_appearance::ProjectAppearance,
     classic_layout: bool,
     catalog: Vec<Model>,
@@ -601,9 +599,8 @@ impl Conversation {
             btw_home: (AnchorSlot::default(), 1.),
             _btw_observer: None,
             store,
-            mono_turn: 0,
             submission_generation: 0,
-            mono_ui: mono::ChatState::default(),
+            controls_ui: model_controls::ModelControlsState::default(),
             transcript,
             review,
             _review_events: review_events,
@@ -715,14 +712,7 @@ impl Conversation {
             return;
         }
         self.transcript
-            .update(cx, |view, cx| view.reveal_saved_search(row, &query, cx));
-    }
-
-    /// Reads this conversation's older turns for the transcript as it scrolls.
-    pub(crate) fn history_pager(&self) -> crate::transcript::HistoryPager {
-        let store = self.store.clone();
-        let id = self.summary.id;
-        Arc::new(move |before, all| locked(&store)?.load_before(id, before, all))
+            .update(cx, |view, cx| view.reveal_search(row, &query, cx));
     }
 
     pub(crate) fn load(&mut self, cx: &mut Context<Self>) {
@@ -741,34 +731,20 @@ impl Conversation {
         self.refresh_catalog(cx);
         let store = self.store.clone();
         let id = self.summary.id;
-        let mono = self.settings.mono.is_some();
         let work = cx.background_executor().spawn(async move {
             let settings = locked(&store).and_then(|s| s.agent_settings(id));
             (
-                locked(&store)
-                    .and_then(|s| {
-                        let history = s.load(id)?;
-                        let edits = if mono {
-                            Vec::new()
-                        } else {
-                            git_actions::restored_session_edits(&s, id, &history.rows)?
-                        };
-                        Ok((history, edits))
-                    })
-                    .map(|(history, edits)| {
-                        (
-                            crate::transcript::PreparedHistory::new(history.rows, mono),
-                            edits,
-                        )
-                    }),
+                locked(&store).and_then(|s| s.load(id)).map(|history| {
+                    let edits = crate::runtime::edited_paths(&history.rows);
+                    (crate::transcript::PreparedHistory::new(history.rows), edits)
+                }),
                 settings,
                 locked(&store).and_then(|s| s.context_usage(id)),
                 locked(&store).and_then(|s| s.follow_ups(id)),
-                locked(&store).and_then(|s| s.history_before(id)),
             )
         });
         cx.spawn(async move |this, cx| {
-            let (result, settings, context, follow_ups, before) = work.await;
+            let (result, settings, context, follow_ups) = work.await;
             let _ = this.update(cx, |this, cx| {
                 this.loading = false;
                 this.context = context.ok().flatten();
@@ -813,21 +789,16 @@ impl Conversation {
                             .unwrap_or_default();
                     }
                     this.model = settings.model.clone();
-                    let mono = this.settings.mono.take();
                     let environment = std::mem::take(&mut this.settings.environment);
                     this.settings = settings;
                     this.attach_account(cx);
-                    this.settings.mono = mono;
                     this.settings.environment = environment;
                 }
                 match result {
                     Ok((history, edits)) => {
                         this.remember_session_edits(edits);
-                        let pager = this.history_pager();
-                        this.transcript.update(cx, |v, cx| {
-                            v.install_prepared_history(history, cx);
-                            v.set_history_pager(before.ok().flatten(), Some(pager));
-                        });
+                        this.transcript
+                            .update(cx, |v, cx| v.install_prepared_history(history, cx));
                         this.status = "Ready".into();
                         this.loaded = true;
                         if let Some((row, query)) = this.pending_search.take() {
@@ -845,7 +816,6 @@ impl Conversation {
                     this.git = Some(git);
                 }
                 this.load_git(cx);
-                this.mono_flush_external(cx);
                 cx.emit(SessionChanged);
                 cx.notify();
             });
@@ -910,21 +880,6 @@ impl Conversation {
             return;
         }
         if self.handle_local_command(cx) {
-            return;
-        }
-        if self.settings.mono.is_some() {
-            if self.attaching || self.input.read(cx).is_composing() {
-                return;
-            }
-            let text = self
-                .input
-                .update(cx, |input, cx| input.take(cx))
-                .unwrap_or_default();
-            let attachments = std::mem::take(&mut self.attachments);
-            if !text.trim().is_empty() || !attachments.is_empty() {
-                cx.emit(mono::Submitted { text, attachments });
-                cx.notify();
-            }
             return;
         }
         if self.settings.worktree_removed {
@@ -1032,8 +987,7 @@ impl Conversation {
         cx: &gpui::App,
     ) -> Option<(&'static str, &'static str)> {
         // Stop and provider switches send the message as the next turn.
-        if self.settings.mono.is_some()
-            || self.is_remote()
+        if self.is_remote()
             || self.stopping
             || self.settings.pending_provider_switch.is_some()
             || !self.sends_as_follow_up()
@@ -1187,11 +1141,10 @@ impl Conversation {
             settings.worktree_base = settings.worktree_base.or(self.branch.clone());
             self.status = "Creating worktree…".into();
         }
-        if settings.mono.is_none()
-            && settings
-                .remote_action
-                .as_ref()
-                .is_none_or(|action| action["type"] == "send")
+        if settings
+            .remote_action
+            .as_ref()
+            .is_none_or(|action| action["type"] == "send")
         {
             self.transcript
                 .update(cx, |view, cx| view.submit_prompt(&prompt, &settings, cx));
@@ -1276,11 +1229,6 @@ impl Conversation {
                         let needed_approval = this.needs_approval();
                         let incoming_notification_input = !stopping
                             && (!update.approvals.is_empty() || !update.questions.is_empty());
-                        let mono_queue_changed = this.settings.mono.is_some()
-                            && (update.turn_ready
-                                || update.delivered.is_some()
-                                || !update.follow_up_delivered.is_empty()
-                                || !update.follow_up_errors.is_empty());
                         this.transcript.update(cx, |v, cx| {
                             v.patch(update.start, update.rows, cx);
                             if stopping {
@@ -1364,25 +1312,13 @@ impl Conversation {
                             this.follow_ups.ready = true;
                         }
                         for id in update.follow_up_delivered {
-                            if this.settings.mono.is_some() {
-                                this.mono_message_delivered(id, cx);
-                            } else {
-                                this.follow_up_delivered(&id, cx);
-                            }
+                            this.follow_up_delivered(&id, cx);
                         }
                         for (id, error) in update.follow_up_errors {
-                            if this.settings.mono.is_some() {
-                                this.mono_message_failed(id, error);
-                            } else {
-                                this.fail_follow_up(&id, error, cx);
-                            }
+                            this.fail_follow_up(&id, error, cx);
                         }
                         if let Some(id) = update.delivered {
-                            if this.settings.mono.is_some() {
-                                this.mono_message_delivered(id, cx);
-                            } else {
-                                this.follow_up_delivered(&id, cx);
-                            }
+                            this.follow_up_delivered(&id, cx);
                         }
                         if !stopping || finished {
                             this.status = update.status;
@@ -1535,10 +1471,8 @@ impl Conversation {
                             this.save_settings(cx);
                             this.refresh_git(cx);
                             this.run_history_actions(cx);
-                            this.mono_flush_external(cx);
                             cx.emit(SessionChanged);
                         } else if incoming_notification_input
-                            || mono_queue_changed
                             || needed_approval != this.needs_approval()
                         {
                             cx.emit(SessionChanged);
@@ -1568,10 +1502,6 @@ impl Conversation {
         self.review
             .update(cx, |review, cx| review.set_busy(true, cx));
         self.follow_ups.ready = false;
-        self.mono_turn = self
-            .mono_turn
-            .wrapping_add(1)
-            .max(onicode_core::time::now_ms() & 0xffff_ffff);
         self.summary.updated_at = onicode_core::time::now_ms();
         self.transcript.update(cx, |v, cx| v.streaming(true, cx));
         self.summary.has_messages = true;
@@ -1599,14 +1529,10 @@ impl Conversation {
         if self.needs_history_restore() || self.stopping {
             self.defer_history_action(
                 move |this, cx| {
-                    // Mono callers may configure their live context immediately
-                    // after installing a transfer. Keep that context at replay.
-                    let mono = this.settings.mono.take();
+                    // Callers may configure their app environment immediately
+                    // after installing a transfer. Keep it at replay.
                     let environment = std::mem::take(&mut this.settings.environment);
                     let mut settings = settings;
-                    if settings.mono.is_none() {
-                        settings.mono = mono;
-                    }
                     settings.environment.extend(environment);
                     match prompt {
                         Some(prompt) if this.preserve_new_composer(cx) => {
@@ -1645,6 +1571,19 @@ impl Conversation {
         cx.notify();
     }
 
+    fn quote_selection(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.input.read(cx).is_composing() {
+            return;
+        }
+        self.input.update(cx, |i, cx| {
+            i.set_text(
+                onicode_core::composer::append_selection_quote(&i.content, text),
+                cx,
+            );
+        });
+        window.focus(&self.input.focus_handle(cx), cx);
+    }
+
     fn response_request(
         &mut self,
         request: &ResponseRequest,
@@ -1655,7 +1594,7 @@ impl Conversation {
             ResponseRequest::RemotePlan { id, text, build } => {
                 self.remote_plan_request(id, text, *build, cx)
             }
-            ResponseRequest::QuoteSelection { text } => self.mono_quote(text, window, cx),
+            ResponseRequest::QuoteSelection { text } => self.quote_selection(text, window, cx),
             ResponseRequest::EditLastTurn { turn } => self.begin_edit_last_turn(*turn, window, cx),
             ResponseRequest::Draft { send } => self.draft_action(*send, cx),
             ResponseRequest::SaveNote {
@@ -1792,7 +1731,7 @@ impl Conversation {
     /// The review card follows the checkout and rereads its recorded turn.
     pub(crate) fn sync_review(&mut self, cx: &mut Context<Self>) {
         self.sync_tool_paths(cx);
-        if self.settings.mono.is_some() || self.is_remote() {
+        if self.is_remote() {
             return;
         }
         self.collect_session_edits(cx);
@@ -2417,7 +2356,7 @@ impl Conversation {
             ComposerMenu::Workspace => &self.workspace_anchor,
             ComposerMenu::GitActions => &self.git_action_anchor,
             ComposerMenu::Setting(ix) => self
-                .mono_ui
+                .controls_ui
                 .setting_anchors
                 .get(ix)
                 .unwrap_or(&self.model_anchor),
@@ -2436,10 +2375,10 @@ impl Conversation {
                 .try_global::<crate::settings::Preferences>()
                 .is_some_and(|p| p.model_controls == "beside")
         {
-            self.toggle_mono_models(window, cx);
+            self.toggle_model_list(window, cx);
             return;
         }
-        self.mono_ui.models = None;
+        self.controls_ui.models = None;
         if self.menu.as_ref().is_some_and(|open| open.kind == kind) {
             self.close_menu(window, cx);
             return;
@@ -2662,7 +2601,7 @@ impl Conversation {
                     .try_global::<crate::settings::Preferences>()
                     .is_none_or(|p| p.model_controls != "beside")
                 {
-                    self.mono_model_options()
+                    self.model_options()
                 } else {
                     Vec::new()
                 };
@@ -2693,27 +2632,23 @@ impl Conversation {
                 MenuStyle::Recent,
             ),
             ComposerMenu::Access => {
-                let items = self.mono_access_options();
+                let items = self.access_options();
                 ("Access", items, 288., MenuStyle::Access)
             }
-            ComposerMenu::Setting(ix) => self.mono_setting_menu(ix),
+            ComposerMenu::Setting(ix) => self.setting_menu(ix),
         }
     }
 
     /// The model trigger: the composer's model menu.
     #[cfg(test)]
     pub(crate) fn toggle_model_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.settings.mono.is_some() {
-            self.toggle_mono_models(window, cx);
-            return;
-        }
         self.toggle_menu(ComposerMenu::Model, window, cx);
     }
 
     /// `App: Switch Model` (Cmd+.): toggles the recent models, as ModelPicker's
     /// hotkey does.
     pub(crate) fn toggle_recent_models(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.mono_ui.models = None;
+        self.controls_ui.models = None;
         self.toggle_menu(ComposerMenu::Recent, window, cx);
     }
 
@@ -2817,11 +2752,9 @@ impl Conversation {
         &mut self,
         cx: &mut Context<Self>,
     ) -> Option<Entity<crate::composer_runner::Runner>> {
-        // A Mono already signs its turns with its own mascot.
-        if self.settings.mono.is_some()
-            || cx
-                .try_global::<crate::settings::Preferences>()
-                .is_some_and(|p| !p.composer_mascot)
+        if cx
+            .try_global::<crate::settings::Preferences>()
+            .is_some_and(|p| !p.composer_mascot)
         {
             return None;
         }
@@ -2897,7 +2830,7 @@ impl Conversation {
             .children(menu)
             .children(self.model_list_popover(cx))
             .children(self.orchestration_card(cx))
-            .children(if self.is_remote() { None } else { self.usage_notice(false, cx) })
+            .children(if self.is_remote() { None } else { self.usage_notice(cx) })
             .child(self.changes_shelf(window, cx))
             .child(self.background_shelf(window, cx))
             .child(self.message_queue(window, cx))
@@ -3042,7 +2975,7 @@ impl Conversation {
                                                     .unwrap_or_default()
                                             ))
                                             .child(self.model_anchor.probe())
-                                            .aria_expanded(self.menu_is(ComposerMenu::Model) || self.menu_is(ComposerMenu::Recent) || self.mono_ui.models.is_some())
+                                            .aria_expanded(self.menu_is(ComposerMenu::Model) || self.menu_is(ComposerMenu::Recent) || self.controls_ui.models.is_some())
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.toggle_menu(ComposerMenu::Model, window, cx)
                                             }))
@@ -3858,9 +3791,6 @@ impl Render for Conversation {
                 },
             ));
         }
-        if self.settings.mono.is_some() {
-            return self.render_mono(window, cx);
-        }
         if !self.summary.has_messages {
             return self.empty(window, cx);
         }
@@ -4196,7 +4126,7 @@ mod menu_tests {
         window
             .update(visual, |view, _, _| {
                 assert!(
-                    view.mono_ui.setting_anchors[0].get().is_some(),
+                    view.controls_ui.setting_anchors[0].get().is_some(),
                     "beside mode paints its effort control"
                 );
             })

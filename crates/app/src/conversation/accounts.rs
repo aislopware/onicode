@@ -3,8 +3,6 @@ use onicode_core::accounts::Profile;
 use onicode_core::usage::{self, Limit};
 
 use super::*;
-pub(crate) struct UsageResumed;
-impl EventEmitter<UsageResumed> for Conversation {}
 impl Conversation {
     /// Update notifications refresh the account-specific picker after a CLI update.
     pub(crate) fn refresh_models_after_harness_update(&mut self, cx: &mut Context<Self>) {
@@ -203,12 +201,6 @@ impl Conversation {
         }
         self.status = "Ready".into();
         self.save_settings(cx);
-        if self.settings.mono.is_some() {
-            cx.emit(UsageResumed);
-            cx.emit(SessionChanged);
-            cx.notify();
-            return;
-        }
         self.launch_prompt("Continue from where you left off.".into(), cx);
         cx.emit(SessionChanged);
         cx.notify();
@@ -225,9 +217,6 @@ impl Conversation {
         }
         self.save_settings(cx);
         self.save_follow_ups(cx);
-        if self.settings.mono.is_some() {
-            cx.emit(UsageResumed);
-        }
         cx.emit(SessionChanged);
         cx.notify();
     }
@@ -260,13 +249,12 @@ impl Conversation {
         let thread = self.summary.provider_id.clone();
         let expected = thread.clone();
         let kind = Kind::from_id(&self.summary.provider);
-        let can_transfer = !(kind == Kind::Codex && self.settings.mono.is_some());
         let to = profile.clone();
         self.account_switching = true;
         let work = cx.background_executor().spawn(async move {
             thread
                 .as_ref()
-                .is_some_and(|id| can_transfer && from.transfer(&to, kind, id).is_ok())
+                .is_some_and(|id| from.transfer(&to, kind, id).is_ok())
         });
         let old = self.settings.account.id.clone();
         cx.spawn(async move |this, cx| {
@@ -359,7 +347,7 @@ impl Conversation {
         cx.notify();
     }
 
-    pub(super) fn usage_notice(&self, mono: bool, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(super) fn usage_notice(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let limit = self.settings.usage_limit.as_ref()?;
         let now = usage::now_ms();
         let waiting = limit.waiting(now);
@@ -367,36 +355,7 @@ impl Conversation {
         let switching = self.account_switching;
         let kind = Kind::from_id(&self.summary.provider);
         let reset = usage_reset_label(limit, now);
-        let mut controls = div()
-            .flex()
-            .when(!mono, |d| d.flex_shrink_0())
-            .items_center()
-            .gap(px(if mono { 12. } else { 8. }))
-            .when(mono, |d| d.flex_wrap().gap_y(px(6.)))
-            .when(mono, |d| {
-                d.child(
-                    usage_button(
-                        "usage-model-picker",
-                        "Choose another model",
-                        false,
-                        switching,
-                        true,
-                    )
-                    .h(px(26.))
-                    .gap(px(4.))
-                    .text_size(px(11.))
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(content(1.))
-                    .bg(content(0.1))
-                    .child("Choose another model")
-                    .child(icon("chevron-down", 11.).text_color(content(0.5)))
-                    .when(!switching, |d| {
-                        d.on_click(cx.listener(|this, _, window, cx| {
-                            this.toggle_menu(ComposerMenu::Model, window, cx)
-                        }))
-                    }),
-                )
-            });
+        let mut controls = div().flex().flex_shrink_0().items_center().gap(px(8.));
         if onicode_core::accounts::supports_profiles(kind)
             && crate::accounts::get(cx).is_some_and(|center| {
                 center
@@ -413,21 +372,12 @@ impl Conversation {
                     "Choose another account",
                     false,
                     switching,
-                    mono,
                 )
                 .relative()
                 .gap(px(4.))
-                .when(mono, |d| {
-                    d.h(px(26.))
-                        .text_size(px(11.))
-                        .text_color(content(1.))
-                        .bg(content(0.1))
-                })
                 .child(self.account_anchor.probe())
                 .child(if switching {
                     "Switching…"
-                } else if mono {
-                    "Choose another account"
                 } else {
                     "Switch account"
                 })
@@ -459,15 +409,13 @@ impl Conversation {
                     },
                     waiting && armed,
                     switching,
-                    false,
                 )
-                .when(mono && !(waiting && armed), |d| d.text_color(content(0.6)))
                 .child(
                     icon(if waiting { "clock" } else { "play" }, 14.)
                         .text_color(if waiting && armed {
                             gpui::rgb(AMBER_400).into()
                         } else {
-                            content(if mono { 0.6 } else { 0.55 })
+                            content(0.55)
                         })
                         .group_hover("resume-usage-limit", |s| s.text_color(content(1.))),
                 )
@@ -485,29 +433,26 @@ impl Conversation {
                     }))
                 }),
             )
-            .when(!mono, |controls| {
-                controls.child(
-                    usage_button(
-                        "dismiss-usage-limit",
-                        "Dismiss usage limit notice",
-                        false,
-                        false,
-                        false,
-                    )
-                    .w(px(24.))
-                    .px_0()
-                    .child(
-                        icon("close", 14.)
-                            .text_color(content(0.55))
-                            .group_hover("dismiss-usage-limit", |s| s.text_color(content(1.))),
-                    )
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.settings.usage_limit = None;
-                        this.save_settings(cx);
-                        cx.notify();
-                    })),
+            .child(
+                usage_button(
+                    "dismiss-usage-limit",
+                    "Dismiss usage limit notice",
+                    false,
+                    false,
                 )
-            });
+                .w(px(24.))
+                .px_0()
+                .child(
+                    icon("close", 14.)
+                        .text_color(content(0.55))
+                        .group_hover("dismiss-usage-limit", |s| s.text_color(content(1.))),
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.settings.usage_limit = None;
+                    this.save_settings(cx);
+                    cx.notify();
+                })),
+            );
         let heading = div()
             .flex()
             .flex_shrink_0()
@@ -519,11 +464,7 @@ impl Conversation {
                 div()
                     .text_size(px(12.))
                     .text_color(content(0.85))
-                    .child(if mono {
-                        format!("{} usage limit reached", kind.label())
-                    } else {
-                        "Usage limit reached".into()
-                    }),
+                    .child("Usage limit reached"),
             );
         let notice = div()
             .id("usage-limit-notice")
@@ -532,17 +473,8 @@ impl Conversation {
             .aria_label("Usage limit reached")
             .text_size(px(12.))
             .line_height(px(16.))
-            .text_color(content(if mono { 0.6 } else { 0.55 }));
-        Some(if mono {
-            notice.mx(px(6.)).mb(px(8.)).rounded(px(8.)).border_1().border_color(tint(AMBER_400,0.2)).bg(tint(AMBER_400,0.06))
-                .px(px(12.)).py(px(10.)).child(heading)
-                .child(div().pl(px(22.))
-                    .child(div().mt(px(4.)).text_size(px(12.)).line_height(px(19.5)).text_color(content(0.6))
-                        .child("Your conversation is saved. Choose another model or account to keep going."))
-                    .children(reset.map(|label| div().mt(px(4.)).text_color(content(0.45)).child(label)))
-                    .child(controls.mt(px(8.))))
-                .into_any_element()
-        } else {
+            .text_color(content(0.55));
+        Some(
             notice
                 .px(px(8.))
                 .child(
@@ -569,8 +501,8 @@ impl Conversation {
                         )
                         .child(controls),
                 )
-                .into_any_element()
-        })
+                .into_any_element(),
+        )
     }
 }
 
@@ -579,7 +511,6 @@ fn usage_button(
     label: &'static str,
     primary: bool,
     disabled: bool,
-    raised: bool,
 ) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
@@ -605,10 +536,8 @@ fn usage_button(
         })
         .when(disabled, |d| d.opacity(0.45))
         .when(!disabled, |d| {
-            d.cursor_pointer().hover(move |s| {
-                s.bg(content(if raised { 0.15 } else { 0.1 }))
-                    .text_color(content(1.))
-            })
+            d.cursor_pointer()
+                .hover(move |s| s.bg(content(0.1)).text_color(content(1.)))
         })
 }
 
@@ -828,58 +757,5 @@ mod tests {
                 .update(visual, |v, _, _| v.settings.usage_limit.is_none())
                 .unwrap()
         );
-    }
-
-    #[gpui::test]
-    fn subscription_limits_persist_and_release_a_mono_only_once_when_armed(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
-        let summary = locked(&store).unwrap().create("codex", "/fixture").unwrap();
-        let id = summary.id;
-        let view = cx.new(|cx| Conversation::new(summary, store.clone(), cx));
-        cx.run_until_parked();
-        view.update(cx, |v, cx| {
-            v.settings.mono = Some(onicode_core::agent::MonoContext {
-                mono: Default::default(),
-                root: "/fixture".into(),
-                executable: "/fixture/binary".into(),
-            });
-            v.status = "Usage limit reached: Fixture subscription exhausted".into();
-            v.detect_usage_limit(cx);
-            assert!(v.settings.usage_limit.is_some());
-            assert!(v.follow_ups.state.paused);
-        });
-        cx.run_until_parked();
-        assert!(
-            locked(&store)
-                .unwrap()
-                .agent_settings(id)
-                .unwrap()
-                .unwrap()
-                .usage_limit
-                .is_some()
-        );
-        let resumed = std::rc::Rc::new(std::cell::Cell::new(0));
-        cx.update(|cx| {
-            let count = resumed.clone();
-            cx.subscribe(&view, move |_, _: &UsageResumed, _| {
-                count.set(count.get() + 1)
-            })
-            .detach();
-        });
-        view.update(cx, |v, cx| {
-            v.settings.usage_limit.as_mut().unwrap().resets_at = Some(usage::now_ms() - 31_000);
-            v.tick_usage(cx);
-            assert!(v.settings.usage_limit.is_some());
-            v.settings.usage_limit.as_mut().unwrap().resume_at_reset = true;
-            v.tick_usage(cx);
-            assert!(v.settings.usage_limit.is_none());
-            v.tick_usage(cx);
-        });
-        cx.run_until_parked();
-        assert_eq!(resumed.get(), 1);
     }
 }

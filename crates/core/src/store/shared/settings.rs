@@ -115,7 +115,7 @@ mod tests {
         let receipt = "large result".repeat(100_000);
         let values = BTreeMap::from([
             ("workspace", "saved tabs"),
-            ("mono-app-receipt:1:request", receipt.as_str()),
+            ("operator-app-receipt:1:request", receipt.as_str()),
         ]);
         let original = serde_json::to_vec(&values).unwrap();
         std::fs::write(&old, &original).unwrap();
@@ -126,7 +126,7 @@ mod tests {
             Some("saved tabs")
         );
         assert_eq!(
-            store.setting("mono-app-receipt:1:request").unwrap(),
+            store.setting("operator-app-receipt:1:request").unwrap(),
             Some(receipt.clone())
         );
         store.save_setting("workspace", "new tabs").unwrap();
@@ -139,7 +139,7 @@ mod tests {
             Some("new tabs")
         );
         assert_eq!(
-            reopened.setting("mono-app-receipt:1:request").unwrap(),
+            reopened.setting("operator-app-receipt:1:request").unwrap(),
             Some(receipt)
         );
         #[cfg(unix)]
@@ -161,7 +161,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open_monocode(&dir.path().join("monocode.db")).unwrap();
         store
-            .save_setting("mono-app-receipt:1:large", &"x".repeat(10_000_000))
+            .save_setting("operator-app-receipt:1:large", &"x".repeat(10_000_000))
             .unwrap();
         let conn = store.shared.as_ref().unwrap().extras_db.as_ref().unwrap();
         conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")

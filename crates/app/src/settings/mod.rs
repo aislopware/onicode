@@ -47,7 +47,6 @@ pub(crate) struct ArchivedSession {
 pub(crate) struct SettingsContext {
     /// The desktop's shared remote connection and SSH setup service.
     pub remote: Option<std::sync::Arc<onicode_core::remote::Connections>>,
-    pub monos: Vec<MonoSetting>,
     pub classic: bool,
     pub new_layout_boxy: bool,
     /// The selected project, or empty outside one.
@@ -74,8 +73,7 @@ impl PartialEq for SettingsContext {
             (None, Some(_)) | (Some(_), None) => return false,
             _ => {}
         }
-        self.monos == other.monos
-            && self.classic == other.classic
+        self.classic == other.classic
             && self.new_layout_boxy == other.new_layout_boxy
             && self.cwd == other.cwd
             && self.project_label == other.project_label
@@ -89,16 +87,6 @@ impl PartialEq for SettingsContext {
             && self.mobile == other.mobile
             && self.mobile_invite == other.mobile_invite
     }
-}
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct MonoSetting {
-    pub id: String,
-    pub name: String,
-    pub mascot: String,
-    pub color: u32,
-    pub projects: Vec<String>,
-    pub show: bool,
-    pub folders: bool,
 }
 
 pub(crate) enum SettingsEvent {
@@ -122,8 +110,6 @@ pub(crate) enum SettingsEvent {
         path: String,
         delete_sessions: bool,
     },
-    ResetMono(String),
-    MonoSidebar(String, bool, bool),
     /// Read mobile access again: the router and pairing change on their own.
     MobileRefresh,
     MobileConfigure {

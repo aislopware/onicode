@@ -130,22 +130,6 @@ pub(super) fn present(call: &ToolCall, fallback_cwd: Option<&str>) -> ToolPresen
             steps: Vec::new(),
         };
     }
-    if app_tool(&call.name) {
-        let input = serde_json::from_str::<Value>(&call.input).unwrap_or(Value::Null);
-        let (action, target) = app_activity(
-            input["action"].as_str().unwrap_or(""),
-            call.state == ToolState::Running,
-        );
-        return ToolPresentation {
-            action: action.into(),
-            target: target.into(),
-            file_path: None,
-            start_line: None,
-            command: None,
-            description: None,
-            steps: Vec::new(),
-        };
-    }
     let mut input = serde_json::from_str::<Value>(&call.input).unwrap_or(Value::Null);
     normalize_inputs(&mut input, 0);
     let desktop = call.display.as_ref().unwrap_or(&input["__desktop"]);
@@ -367,17 +351,8 @@ pub fn visual_tool(name: &str) -> Option<VisualStep> {
     }
 }
 
-/// A Mono's app tool however a provider names it: `mcp__monocode_app__app`,
-/// `monocode_app.app` or `monocode_app:app`.
-pub fn app_tool(name: &str) -> bool {
-    name.rsplit_once("__")
-        .or_else(|| name.rsplit_once(':'))
-        .or_else(|| name.rsplit_once('.'))
-        .is_some_and(|(server, tool)| server.contains("monocode_app") && tool == "app")
-}
-
-/// The action of a Mono's app CLI call in a shell command:
-/// `'/Applications/Monocode.app/…/monocode-gpui' app memory.add --json …`.
+/// The action of an Operator app CLI call in a shell command:
+/// `'/Applications/Monocode.app/…/monocode-gpui' app sessions.start --json …`.
 pub fn app_cli_action(command: &str) -> Option<&str> {
     let words: Vec<&str> = command.split_whitespace().collect();
     words.windows(3).find_map(|w| {
@@ -392,25 +367,15 @@ pub fn app_cli_action(command: &str) -> Option<&str> {
 /// once done, and what to.
 pub fn app_activity(action: &str, running: bool) -> (&'static str, &'static str) {
     let (doing, done, target) = match action {
-        "memory.add" | "memory.replace" | "memory.remove" => ("Remembering", "Remembered", "that"),
-        "memory.read" | "memory.search" => ("Checking", "Checked", "memory"),
         "sessions.start" => ("Starting", "Started", "a session"),
         "sessions.send" | "sessions.draft" => ("Messaging", "Messaged", "a session"),
         "sessions.list" | "sessions.read" => ("Checking", "Checked", "sessions"),
         "sessions.stop" | "sessions.archive" | "sessions.delete" => {
             ("Updating", "Updated", "a session")
         }
-        "artifacts.write" => ("Writing", "Wrote", "a document"),
-        "artifacts.list" | "artifacts.read" => ("Reading", "Read", "documents"),
         "notes.write" => ("Writing", "Wrote", "a note"),
         "notes.list" | "notes.read" => ("Reading", "Read", "notes"),
-        "habits.list" => ("Checking", "Checked", "habits"),
-        "habits.run" => ("Running", "Ran", "a habit"),
-        a if a.starts_with("habits.") => ("Updating", "Updated", "habits"),
-        "soul.update" => ("Updating", "Updated", "instructions"),
-        "soul.read" => ("Checking", "Checked", "instructions"),
         "models.list" => ("Checking", "Checked", "models"),
-        "chat.card" => ("Preparing", "Prepared", "a card"),
         a if a.starts_with("worktrees.") || a.starts_with("folders.") => {
             ("Organizing", "Organized", "the project")
         }
@@ -844,38 +809,25 @@ mod tests {
     }
 
     #[test]
-    fn mono_app_calls_read_as_what_they_do() {
-        assert!(app_tool("mcp__monocode_app__app"));
-        assert!(app_tool("monocode_app.app"));
-        assert!(!app_tool("mcp__other__app"));
-        assert!(!app_tool("mcp__monocode_visual__visual_show"));
+    fn operator_app_calls_read_as_what_they_do() {
         assert_eq!(
             app_cli_action(
-                r#"'/Applications/Monocode.app/Contents/MacOS/monocode-gpui' app memory.add --json '{"fact":"x"}'"#
+                r#"'/Applications/Monocode.app/Contents/MacOS/monocode-gpui' app sessions.start --json '{"prompt":"x"}'"#
             ),
-            Some("memory.add")
+            Some("sessions.start")
         );
-        assert_eq!(app_cli_action("git log app memory.add"), None);
+        assert_eq!(app_cli_action("git log app sessions.start"), None);
         assert_eq!(app_cli_action("monocode-gpui app help"), None);
 
-        let running = call(
-            "mcp__monocode_app__app",
-            json!({"action":"sessions.start","input":{"prompt":"x"}}),
-        );
-        let shown = running.presentation();
-        assert_eq!(
-            (shown.action.as_str(), shown.target.as_str()),
-            ("Starting", "a session")
-        );
         let mut done = call(
             "Bash",
-            json!({"command":"/opt/monocode-gpui app memory.add --json '{\"fact\":\"x\"}'"}),
+            json!({"command":"/opt/monocode-gpui app notes.write --json '{\"body\":\"x\"}'"}),
         );
         done.state = ToolState::Completed;
         let shown = done.presentation();
         assert_eq!(
             (shown.action.as_str(), shown.target.as_str()),
-            ("Remembered", "that")
+            ("Wrote", "a note")
         );
     }
 

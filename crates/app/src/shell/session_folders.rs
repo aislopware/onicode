@@ -239,7 +239,7 @@ impl Shell {
                     match target {
                         Target::Existing(folder) => groups.add_to_folder(folder, id),
                         Target::New(name) => {
-                            let folder = onicode_core::mono::new_id();
+                            let folder = onicode_core::new_id();
                             groups.create_folder(&[id], folder.clone());
                             groups.rename_folder(&folder, name);
                         }

@@ -12,6 +12,39 @@ impl Shell {
         }
     }
 
+    /// The menu-bar icon, while the preference keeps it. Its quick composer
+    /// is its own panel: the workspace window stays where it is.
+    #[cfg(all(target_os = "macos", not(test)))]
+    pub(super) fn sync_status_item(&mut self, window: &Window, cx: &mut Context<Self>) {
+        use crate::status_item::{StatusAction, StatusItem};
+        if !self.workspace.preferences.menu_bar_icon {
+            self.status_item = None;
+            return;
+        }
+        if self.status_item.is_some() {
+            return;
+        }
+        let shell = cx.weak_entity();
+        let handle = window.window_handle();
+        let app = std::cell::RefCell::new(cx.to_async());
+        let run = std::rc::Rc::new(move |action: StatusAction| {
+            let _ = shell.update(&mut *app.borrow_mut(), |_, cx| match action {
+                StatusAction::Quit => cx.quit(),
+                StatusAction::QuickComposer => {
+                    let shell = cx.weak_entity();
+                    let app: &mut App = cx;
+                    app.defer(move |cx| {
+                        let _ = handle.update(cx, |_, window, cx| {
+                            let _ =
+                                shell.update(cx, |shell, cx| shell.show_quick_composer(window, cx));
+                        });
+                    });
+                }
+            });
+        });
+        self.status_item = StatusItem::new(run);
+    }
+
     fn toggle_quick_composer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(handle) = self.quick.window
             && handle
@@ -99,7 +132,7 @@ impl Shell {
             },
             move |window, cx| {
                 #[cfg(all(target_os = "macos", not(test)))]
-                crate::traffic_lights::floating_panel(window, false);
+                crate::traffic_lights::floating_panel(window);
                 let view = cx.new(|cx| {
                     crate::quick_composer::QuickComposer::new(projects, appearance, choice, cx)
                 });

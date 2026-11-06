@@ -20,18 +20,11 @@ impl Shell {
             .collect();
         archived.sort_by_key(|s| std::cmp::Reverse(s.updated_at));
         let mut catalogs = HashMap::new();
-        let active = self
-            .monos
-            .as_ref()
-            .filter(|_| self.mono_active(cx))
-            .and_then(|m| m.read(cx).chat())
-            .or_else(|| {
-                self.workspace.active.and_then(|id| {
-                    self.sessions
-                        .get(&self.workspace.session_for_pane(id))
-                        .cloned()
-                })
-            });
+        let active = self.workspace.active.and_then(|id| {
+            self.sessions
+                .get(&self.workspace.session_for_pane(id))
+                .cloned()
+        });
         let mut profiles: HashMap<_, _> = Kind::ALL
             .into_iter()
             .map(|kind| {
@@ -86,26 +79,6 @@ impl Shell {
                     )
                 })
                 .collect(),
-            monos: self
-                .monos
-                .as_ref()
-                .map(|m| {
-                    m.read(cx)
-                        .roster
-                        .monos
-                        .iter()
-                        .map(|m| crate::settings::MonoSetting {
-                            id: m.id.clone(),
-                            name: m.label(),
-                            mascot: m.mascot.clone(),
-                            color: m.color,
-                            projects: m.projects.iter().map(|p| self.project_label(p)).collect(),
-                            show: m.show_started_sessions_in_sidebar,
-                            folders: m.use_sidebar_folders,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
             catalogs,
             classic: self.workspace.classic_layout,
             new_layout_boxy: self.workspace.new_layout_boxy,
@@ -222,27 +195,6 @@ impl Shell {
                     cx,
                 ),
                 SettingsEvent::ChooseBackground => this.choose_chat_background(cx),
-                SettingsEvent::ResetMono(id) => {
-                    if let Some(m) = this.monos.clone() {
-                        let reset = m.update(cx, |m, cx| m.reset_defaults(id, cx));
-                        cx.spawn(async move |this, cx| {
-                            let result = reset.await;
-                            let _ = this.update(cx, |this, cx| {
-                                if let Some(settings) = &this.settings {
-                                    settings.update(cx, |s, cx| s.management_finished(result, cx));
-                                }
-                                this.sync_settings(cx);
-                            });
-                        })
-                        .detach();
-                    }
-                }
-                SettingsEvent::MonoSidebar(id, show, folders) => {
-                    if let Some(m) = this.monos.clone() {
-                        m.update(cx, |m, cx| m.sidebar_preferences(id, *show, *folders, cx));
-                    }
-                    this.sync_settings(cx);
-                }
                 SettingsEvent::MobileRefresh => this.sync_settings(cx),
                 SettingsEvent::MobileConfigure {
                     enabled,
@@ -365,14 +317,10 @@ impl Shell {
             self.invalidate_chrome(cx);
         }
         onicode_core::cli::initialize(&self.workspace.preferences.binary_paths);
-        self.keep_visible_idle_agents(cx);
+        self.keep_visible_idle_agents();
         onicode_core::provider::configure_idle_agents(
             self.workspace.preferences.idle_agents as usize,
         );
-        if let Some(monos) = &self.monos {
-            let prefs = self.workspace.preferences.clone();
-            monos.update(cx, |m, cx| m.set_preferences(prefs, cx));
-        }
         crate::settings::apply_keybindings(&self.workspace.preferences, cx);
         // After the keymap, so the menu shows rebound shortcuts.
         crate::app_menu::install(&self.workspace.preferences, cx);
@@ -730,7 +678,6 @@ mod tests {
             "settings-nav-providers",
             "settings-nav-mcp",
             "settings-nav-skills",
-            "settings-nav-monos",
             "settings-nav-inbox",
             "settings-nav-archive",
             "settings-nav-worktrees",

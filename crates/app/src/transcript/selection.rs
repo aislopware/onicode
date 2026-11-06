@@ -613,15 +613,8 @@ impl TranscriptView {
             .when(quote, |d| {
                 d.child(
                     button("selection-chat", "Add to chat", "comment-add").on_click(cx.listener(
-                        move |this, _, window, cx| {
-                            if this.mono {
-                                cx.emit(MonoResponseAction::Quote {
-                                    text: text.clone(),
-                                    window: window.window_handle(),
-                                })
-                            } else {
-                                cx.emit(ResponseRequest::QuoteSelection { text: text.clone() })
-                            }
+                        move |this, _, _, cx| {
+                            cx.emit(ResponseRequest::QuoteSelection { text: text.clone() });
                             this.selection.clear();
                             cx.notify();
                         },

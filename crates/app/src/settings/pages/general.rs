@@ -197,6 +197,22 @@ impl SettingsView {
                 )],
             ));
         }
+        if cfg!(target_os = "macos") {
+            workspace.push(self.row(
+                Some("menu-bar-icon"),
+                false,
+                "Menu bar icon",
+                Some("Open the quick composer from the macOS menu bar. Turn this off to hide the icon.".into()),
+                vec![self.toggle(
+                    "menu-bar-icon",
+                    "Menu bar icon",
+                    p.menu_bar_icon,
+                    false,
+                    cx,
+                    |this, on, cx| this.update(cx, |p| p.menu_bar_icon = on),
+                )],
+            ));
+        }
         let version = crate::notifications::updater::version();
         let about = vec![
             self.row(

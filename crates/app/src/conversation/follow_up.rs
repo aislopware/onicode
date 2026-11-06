@@ -307,7 +307,6 @@ impl Conversation {
         if self.settings.usage_limit.is_some()
             || self.settings.worktree_removed
             || self.account_switching
-            || self.settings.mono.is_some()
             || !self.loaded
             || self.preparing_worktree
             || (self.follow_ups.state.paused && self.follow_ups.requested.is_none())

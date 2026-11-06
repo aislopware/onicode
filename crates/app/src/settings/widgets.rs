@@ -107,7 +107,7 @@ fn button_base(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Stat
         .whitespace_nowrap()
 }
 
-/// Borderless, square icon actions used by SkillsPage and MonoRow.
+/// Borderless, square icon actions used by SkillsPage.
 pub(super) fn icon_action(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -270,9 +270,7 @@ impl SettingsView {
                     | "show-remaining-usage"
                     | "mask-emails"
                     | "claude-hooks"
-                    | "monos-enabled"
-                    | "rail-monos-pinned"
-                    | "mono-menu-bar-icon"
+                    | "menu-bar-icon"
                     | "show-archived"
             )
         });

@@ -6,7 +6,6 @@ mod edit;
 mod settings;
 #[cfg(test)]
 mod tests;
-mod window;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -14,7 +13,6 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-pub use window::{HistoryPage, PAGE_TURNS};
 
 use super::{Reminder, Session, Store};
 use crate::agent::Settings;
@@ -27,8 +25,6 @@ pub(super) struct Shared {
     extras: RefCell<BTreeMap<String, String>>,
     extras_db: Option<Connection>,
     snapshots: RefCell<HashMap<i64, HistoryRevision>>,
-    /// The first block sequence of each indexed Mono's row numbering.
-    windows: RefCell<HashMap<i64, i64>>,
     queues: RefCell<HashMap<i64, String>>,
     account_source: RefCell<Option<crate::accounts::Book>>,
     preferences: std::sync::Arc<crate::desktop_preferences::DesktopPreferences>,
@@ -291,7 +287,6 @@ impl Store {
                 extras: RefCell::new(extras),
                 extras_db,
                 snapshots: RefCell::new(HashMap::new()),
-                windows: RefCell::new(HashMap::new()),
                 queues: RefCell::new(HashMap::new()),
                 account_source: RefCell::new(None),
                 preferences: preferences.unwrap_or_else(|| {
@@ -316,15 +311,6 @@ impl Store {
 
     pub fn uses_monocode_schema(&self) -> bool {
         self.shared.is_some()
-    }
-
-    /// Where native-only tables live: the sidecar beside a desktop database,
-    /// which the desktop schema never sees, or a prototype database itself.
-    pub(super) fn native_db(&self) -> Option<&Connection> {
-        match &self.shared {
-            Some(shared) => shared.extras_db.as_ref(),
-            None => Some(&self.conn),
-        }
     }
 
     /// A read-only snapshot of desktop preferences, shared by this store's
@@ -577,8 +563,8 @@ impl Store {
             });
         }
         // Keep the source sidebar's compatibility exception for hidden
-        // /operator launches. A Mono's own hidden conversation cannot be a
-        // listed caller. The UI also checks project/worktree and Mono scope.
+        // /operator launches. A hidden conversation cannot be a listed
+        // caller. The UI also checks project/worktree scope.
         let shown: HashMap<_, _> = result
             .iter()
             .filter(|s| !hidden.contains(&s.id) && s.has_messages)
@@ -996,54 +982,16 @@ impl Store {
         }))
     }
 
-    /// The blocks whose rows this store numbers: an indexed Mono's window, or
-    /// the whole history of one stored as a blob.
     pub(super) fn shared_blocks(&self, id: i64) -> Result<Vec<Value>, String> {
-        let original = self.persisted_session_id(id)?;
-        if let Some(from) = self.shared_window(id, &original)? {
-            self.shared_indexed_blocks(&original, from, i64::MAX)
-        } else {
-            let raw: String = sql(self.conn.query_row(
-                "SELECT blocks_json FROM sessions WHERE id=?1",
-                [original],
-                |r| r.get(0),
-            ))?;
-            parse(&raw)
-        }
+        let raw: String = sql(self.conn.query_row(
+            "SELECT blocks_json FROM sessions WHERE id=?1",
+            [self.persisted_session_id(id)?],
+            |r| r.get(0),
+        ))?;
+        parse(&raw)
     }
 
     pub(super) fn shared_load(&self, id: i64) -> Result<Transcript, String> {
-        let original = self.persisted_session_id(id)?;
-        if let Some(from) = self.shared_window(id, &original)? {
-            // Project one source block at a time. A long Mono must not retain
-            // a second complete JSON history alongside its display rows.
-            // The scalar count and the rows share one SQLite read snapshot.
-            let mut query = sql(self.conn.prepare(
-                "SELECT block_json,(SELECT count(*) FROM mono_blocks WHERE session_id=?1 AND seq>=?2)
-                 FROM mono_blocks WHERE session_id=?1 AND seq>=?2 ORDER BY seq",
-            ))?;
-            let mut records = sql(query.query(params![original, from]))?;
-            let mut rows = Vec::new();
-            let mut digest = HistoryRevision::start(0);
-            let mut first = true;
-            while let Some(record) = sql(records.next())? {
-                if first {
-                    digest = HistoryRevision::start(sql(record.get::<_, i64>(1))? as usize);
-                    first = false;
-                }
-                let raw: String = sql(record.get(0))?;
-                let block: Value = parse(&raw)?;
-                HistoryRevision::push(&mut digest, &block);
-                rows.extend(blocks::project(std::slice::from_ref(&block))?);
-            }
-            self.shared
-                .as_ref()
-                .unwrap()
-                .snapshots
-                .borrow_mut()
-                .insert(id, HistoryRevision(digest.finalize().into()));
-            return Ok(Transcript { rows });
-        }
         let blocks = self.shared_blocks(id)?;
         let rows = blocks::project(&blocks)?;
         self.shared
@@ -1056,25 +1004,11 @@ impl Store {
     }
 
     pub(super) fn shared_store_blocks(&self, id: i64, blocks: &[Value]) -> Result<(), String> {
-        let original = self.persisted_session_id(id)?;
-        let (has_user, draft) = if let Some(from) = self.shared_window(id, &original)? {
-            self.shared_store_indexed_blocks(&original, from, blocks)?;
-            // Blocks before the window count too, and were never read.
-            sql(self.conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM mono_blocks WHERE session_id=?1 AND is_user=1),
-                 EXISTS(SELECT 1 FROM mono_blocks WHERE session_id=?1 AND is_user=1 AND is_draft=1)",
-                [&original],
-                |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
-            ))?
-        } else {
-            self.shared_patch(id, &[("blocks_json", json!(encode(&blocks)?))])?;
-            (
-                blocks.iter().any(|b| b["role"] == "user"),
-                blocks
-                    .iter()
-                    .any(|b| b["role"] == "user" && b["draft"] == true),
-            )
-        };
+        self.shared_patch(id, &[("blocks_json", json!(encode(&blocks)?))])?;
+        let has_user = blocks.iter().any(|b| b["role"] == "user");
+        let draft = blocks
+            .iter()
+            .any(|b| b["role"] == "user" && b["draft"] == true);
         self.shared_patch(
             id,
             &[
@@ -1084,124 +1018,12 @@ impl Store {
         )
     }
 
-    /// Replace the window's blocks, from sequence `from` on. Earlier blocks are
-    /// outside every row index this store handed out, so they stay untouched.
-    fn shared_store_indexed_blocks(
-        &self,
-        original: &str,
-        from: i64,
-        blocks: &[Value],
-    ) -> Result<(), String> {
-        let mut query = sql(self.conn.prepare(
-            "SELECT seq,block_id,block_json FROM mono_blocks WHERE session_id=?1 AND seq>=?2 ORDER BY seq",
-        ))?;
-        let mut old = HashMap::new();
-        // New blocks always land inside the window, after everything stored.
-        let first = from.max(1);
-        let mut max_seq = sql(self.conn.query_row(
-            "SELECT coalesce(max(seq),0) FROM mono_blocks WHERE session_id=?1",
-            [original],
-            |row| row.get::<_, i64>(0),
-        ))?
-        .max(first - 1);
-        for row in sql(query.query_map(params![original, from], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        }))? {
-            let (seq, id, raw) = sql(row)?;
-            old.insert(id, (seq, parse::<Value>(&raw)?));
-        }
-        let retained: HashSet<_> = blocks.iter().filter_map(|b| b["id"].as_str()).collect();
-        if retained.len() != blocks.len() {
-            return Err("Indexed conversation contains missing or duplicate block IDs".into());
-        }
-        let mut previous = 0;
-        let mut appended = false;
-        let mut resequence = false;
-        for block in blocks {
-            if let Some((seq, _)) = old.get(block["id"].as_str().unwrap()) {
-                if appended || *seq <= previous {
-                    resequence = true;
-                }
-                previous = *seq;
-            } else {
-                appended = true;
-            }
-        }
-        if resequence {
-            // An explicit insertion/reorder changes turn positions. Payloads
-            // and block identities survive, in one enclosing transaction.
-            sql(self.conn.execute(
-                "DELETE FROM mono_turns WHERE session_id=?1 AND seq>=?2",
-                params![original, from],
-            ))?;
-            sql(self.conn.execute(
-                "DELETE FROM mono_blocks WHERE session_id=?1 AND seq>=?2",
-                params![original, from],
-            ))?;
-            old.clear();
-            max_seq = first - 1;
-        } else {
-            for (id, (seq, _)) in &old {
-                if !retained.contains(id.as_str()) {
-                    sql(self.conn.execute(
-                        "DELETE FROM mono_turns WHERE session_id=?1 AND seq=?2",
-                        params![original, seq],
-                    ))?;
-                    sql(self.conn.execute(
-                        "DELETE FROM mono_blocks WHERE session_id=?1 AND block_id=?2",
-                        params![original, id],
-                    ))?;
-                }
-            }
-        }
-        let mut after_handoff = false;
-        for (ix, block) in blocks.iter().enumerate() {
-            let id = block["id"].as_str().unwrap();
-            let (seq, changed) = match old.get(id) {
-                Some((seq, old)) => (*seq, old != block),
-                None => {
-                    max_seq += 1;
-                    (max_seq, true)
-                }
-            };
-            if changed {
-                let search = [
-                    block["text"].as_str(),
-                    block["tool"]["title"].as_str(),
-                    block["tool"]["detail"].as_str(),
-                    block["image"]["name"].as_str(),
-                    block["image"]["alt"].as_str(),
-                    block["tool"]["preview"]["path"].as_str(),
-                    block["tool"]["preview"]["query"].as_str(),
-                    block["tool"]["preview"]["output"].as_str(),
-                ]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
-                .join("\n")
-                .to_lowercase();
-                sql(self.conn.execute("INSERT INTO mono_blocks(session_id,seq,block_id,block_json,search_text,is_user,is_draft)
-                    VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(session_id,seq) DO UPDATE SET block_json=excluded.block_json,
-                    search_text=excluded.search_text,is_user=excluded.is_user,is_draft=excluded.is_draft",
-                    params![original,seq,id,encode(block)?,search,block["role"]=="user",block["draft"]==true]))?;
-            }
-            if ix == 0
-                || after_handoff
-                || (block["role"] == "user" && block["internal"] != true)
-                || block.get("monoHabit").is_some()
-            {
-                sql(self.conn.execute(
-                    "INSERT OR IGNORE INTO mono_turns(session_id,seq) VALUES(?1,?2)",
-                    params![original, seq],
-                ))?;
-            }
-            after_handoff = block["role"] == "handoff";
-        }
-        Ok(())
+    /// Whether any block of the history records this accepted message.
+    fn shared_delivered(&self, id: i64, message: &str) -> Result<bool, String> {
+        Ok(self
+            .shared_blocks(id)?
+            .iter()
+            .any(|b| b["appRequestId"].as_str() == Some(message)))
     }
 
     pub(super) fn shared_write_rows(
@@ -1542,9 +1364,6 @@ impl Store {
         let tx = sql(self.conn.unchecked_transaction())?;
         for (table, column) in [
             ("session_reminders", "session_id"),
-            ("mono_blocks", "session_id"),
-            ("mono_turns", "session_id"),
-            ("mono_transcripts", "session_id"),
             ("in_flight_sessions", "session_id"),
             ("orchestration_workers", "session_id"),
             ("orchestration_sidebar", "lead_id"),
@@ -1627,7 +1446,7 @@ impl Store {
                 if cancel.load(Ordering::Acquire) {
                     return Ok((Vec::new(), false));
                 }
-                let rows = blocks::project(&self.shared_all_blocks(summary.id)?)?;
+                let rows = blocks::project(&self.shared_blocks(summary.id)?)?;
                 let mut ix = 0;
                 while ix < rows.len() {
                     if cancel.load(Ordering::Acquire) {

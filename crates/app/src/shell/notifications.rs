@@ -129,14 +129,7 @@ impl Shell {
             return;
         }
         let ended = self.notification_state.responding.remove(&id) && !chat.busy;
-        if !ended
-            || chat.notification_was_cancelled()
-            || chat.summary.archived
-            || self
-                .monos
-                .as_ref()
-                .is_some_and(|monos| monos.read(cx).is_mono_session(id))
-        {
+        if !ended || chat.notification_was_cancelled() || chat.summary.archived {
             // Ended with no finish to send, as when stopped.
             if ended {
                 self.mobile_turn_ended(id);
@@ -199,7 +192,7 @@ impl Shell {
                     decision,
                 } => {
                     if let Ok(id) = session_id.parse()
-                        && let Some(view) = this.notification_chat(id, cx)
+                        && let Some(view) = this.notification_chat(id)
                     {
                         view.update(cx, |view, cx| {
                             view.decide_notification_request(request_id, decision.clone(), cx);
@@ -273,35 +266,6 @@ impl Shell {
                 cx.notify();
             },
         ));
-        if let Some(monos) = self.monos.clone() {
-            self.observations.push(cx.subscribe(
-                &monos,
-                |this, _, _: &crate::monos::NotificationChanged, cx| {
-                    this.process_notification_inputs(cx);
-                    cx.notify()
-                },
-            ));
-            self.observations.push(cx.subscribe(
-                &monos,
-                |this, _, event: &crate::monos::NotificationPosted, cx| {
-                    this.notify_mobile_post(event.session, &event.body, cx)
-                },
-            ));
-            self.observations.push(cx.subscribe(
-                &monos,
-                |this, _, event: &crate::monos::NotificationFinished, cx| {
-                    if !event.was_cancelled && !event.habit && !event.summary.archived {
-                        this.deliver_session_notice(
-                            &event.summary,
-                            "agentFinished",
-                            &event.body,
-                            Some(crate::sound::Cue::Finished),
-                            cx,
-                        );
-                    }
-                },
-            ));
-        }
         let store = self.store.clone();
         let work = cx.background_executor().spawn(async move {
             locked(&store).and_then(|store| app_update::consume_installed_update(&store))
@@ -376,20 +340,12 @@ impl Shell {
 
     fn notification_chats(&self, cx: &App) -> Vec<Entity<Conversation>> {
         let mut views: Vec<_> = self.sessions.values().cloned().collect();
-        if let Some(monos) = &self.monos {
-            views.extend(monos.read(cx).all_notification_chats(cx));
-        }
-        let mut seen = HashSet::new();
-        views.retain(|view| seen.insert(view.read(cx).summary.id));
         views.sort_by_key(|view| view.read(cx).summary.id);
         views
     }
 
-    pub(super) fn notification_chat(&self, id: i64, cx: &App) -> Option<Entity<Conversation>> {
-        self.sessions
-            .get(&id)
-            .cloned()
-            .or_else(|| self.monos.as_ref()?.read(cx).notification_entity(id, cx))
+    pub(super) fn notification_chat(&self, id: i64) -> Option<Entity<Conversation>> {
+        self.sessions.get(&id).cloned()
     }
 
     /// Advance banners and the Dock badge while an occluded window skips render.
@@ -425,7 +381,7 @@ impl Shell {
         }
         for (session, input) in self.notification_state.announcements.reconcile(&snapshots) {
             if let Ok(id) = session.session_id.parse()
-                && let Some(view) = self.notification_chat(id, cx)
+                && let Some(view) = self.notification_chat(id)
             {
                 let summary = view.read(cx).summary.clone();
                 let body = if input.kind == approvals::InputKind::Approval {
@@ -444,16 +400,9 @@ impl Shell {
         }
     }
 
-    pub(super) fn notice_session_visible(&self, id: i64, cx: &App) -> bool {
+    pub(super) fn notice_session_visible(&self, id: i64) -> bool {
         if self.app_view_open() || self.settings.is_some() || self.search_page() {
             return false;
-        }
-        if self.mono_active(cx) {
-            return self
-                .monos
-                .as_ref()
-                .and_then(|m| m.read(cx).active_notification_session(cx))
-                == Some(id);
         }
         self.workspace.active_tab().is_some_and(|tab| {
             self.workspace
@@ -494,10 +443,6 @@ impl Shell {
                 if !chat.notification_was_cancelled()
                     && !chat.summary.archived
                     && self.sessions.contains_key(&id)
-                    && !self
-                        .monos
-                        .as_ref()
-                        .is_some_and(|monos| monos.read(cx).is_mono_session(id))
                 {
                     completed.push((chat.summary.clone(), chat.notification_reply_body(cx)));
                 } else {
@@ -506,7 +451,6 @@ impl Shell {
                 }
             }
             directories.insert(id.to_string(), chat.summary.cwd.clone());
-            let mono_visible = self.mono_active(cx) && self.notice_session_visible(id, cx);
             snapshots.push(SessionInputs {
                 session_id: id.to_string(),
                 title: chat.display_title().to_owned(),
@@ -516,8 +460,8 @@ impl Shell {
                 inbox_ask: false,
                 orchestration_worker: self.orchestration_worker(id),
                 conversation_focused: self.window_active
-                    && (self.workspace.active == Some(id) || mono_visible)
-                    && self.notice_session_visible(id, cx)
+                    && self.workspace.active == Some(id)
+                    && self.notice_session_visible(id)
                     && chat.composer_focused(window, cx),
             });
         }
@@ -539,7 +483,7 @@ impl Shell {
         let announcements = self.notification_state.announcements.reconcile(&snapshots);
         for (session, input) in announcements {
             if let Ok(id) = session.session_id.parse()
-                && let Some(view) = self.notification_chat(id, cx)
+                && let Some(view) = self.notification_chat(id)
             {
                 let summary = view.read(cx).summary.clone();
                 self.deliver_session_notice(
@@ -664,7 +608,7 @@ impl Shell {
             prefs.notifications,
             self.notification_state.permission,
             self.window_active,
-            category != "reminders" && self.notice_session_visible(summary.id, cx),
+            category != "reminders" && self.notice_session_visible(summary.id),
         );
         if !notify {
             if prefs.sounds
@@ -730,38 +674,6 @@ impl Shell {
                 this.close_settings(window, cx);
                 this.leave_app_views(cx);
                 this.leave_app_search(cx);
-                if let Some(monos) = this.monos.clone()
-                    && monos.update(cx, |m, cx| m.open_notification_session(id, window, cx))
-                {
-                    window.activate_window();
-                    return;
-                }
-                // Habit runs share their live Conversation with the Mono
-                // manager. Adopt that entity so controls answer the running
-                // provider, rather than constructing a disconnected history.
-                if !this.sessions.contains_key(&id)
-                    && let Some(view) = this.notification_chat(id, cx)
-                {
-                    let summary = view.read(cx).summary.clone();
-                    this.session_summaries.insert(id, summary.clone());
-                    this.session_marks
-                        .insert(id, cx.new(|_| SessionMark::new(summary.provider.clone())));
-                    this.tab_marks
-                        .insert(id, cx.new(|_| SessionMark::tab(summary.provider.clone())));
-                    this.observations.push(cx.subscribe(
-                        &view,
-                        move |this, _, _: &SessionChanged, cx| {
-                            this.refresh_session_mark(id, cx);
-                            this.notification_session_changed(id, cx);
-                            this.invalidate_chrome(cx);
-                            cx.notify();
-                        },
-                    ));
-                    this.sessions.insert(id, view);
-                    if !this.order.contains(&id) {
-                        this.order.push(id);
-                    }
-                }
                 if this.session_summaries.contains_key(&id) {
                     // `open` normally dismisses today's due reminder. A stale
                     // OS target must preserve a newer occurrence instead.
@@ -940,13 +852,6 @@ impl Shell {
 
     pub(super) fn notices_overlay(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let state = &self.notification_state;
-        let mono_error = self.monos.as_ref().and_then(|monos| {
-            monos
-                .read(cx)
-                .error
-                .clone()
-                .map(|message| (monos.clone(), message))
-        });
         let stack = div()
             .id("notification-stack")
             .absolute()
@@ -968,17 +873,6 @@ impl Shell {
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.error = None;
                             cx.notify();
-                        })),
-                ))
-            })
-            .when_some(mono_error, |stack, (monos, message)| {
-                stack.child(errors::card(
-                    "mono-error",
-                    message,
-                    icon_button("mono-error-close", "Dismiss Mono error", "close")
-                        .debug_selector(|| "mono-error-close".into())
-                        .on_click(cx.listener(move |_, _, _, cx| {
-                            monos.update(cx, |monos, cx| monos.dismiss_error(cx));
                         })),
                 ))
             })
@@ -1007,7 +901,7 @@ impl Shell {
                         .child(state.approvals.clone()),
                 )
             });
-        // Toasts remain actionable above dialogs, including Mono settings.
+        // Toasts remain actionable above dialogs.
         gpui::deferred(stack).with_priority(110).into_any_element()
     }
 
@@ -1230,7 +1124,7 @@ impl Shell {
     }
 
     /// The pane host positions the returned card at top/right 12px, clipped to
-    /// the exact session surface, so split chats and Mono sessions stay scoped.
+    /// the exact session surface, so split chats stay scoped.
     pub(super) fn linked_notice(
         &mut self,
         id: i64,
@@ -1286,13 +1180,8 @@ impl Shell {
                 cx.spawn(async move |this, cx| {
                     let _ = this.update_in(cx, |this, window, cx| {
                         this.close_settings(window, cx);
-                        let opened_mono = this.monos.clone().is_some_and(|monos| {
-                            monos.update(cx, |m, cx| m.open_notification_session(id, window, cx))
-                        });
-                        if !opened_mono {
-                            this.open(id, window, cx);
-                        }
-                        if let Some(view) = this.notification_chat(id, cx) {
+                        this.open(id, window, cx);
+                        if let Some(view) = this.notification_chat(id) {
                             let input = view.read(cx).input.clone();
                             if !input.read(cx).is_composing() {
                                 input.update(cx, |input, cx| {

@@ -1,8 +1,7 @@
-//! Operator's project actions. Monos share the launch/request helpers but keep
-//! their own project grants, visibility preference and completion bookkeeping.
+//! Operator's project actions.
 use onicode_core::agent::Settings;
 use onicode_core::app_access as app;
-use onicode_core::mono::bridge::{Call, Server};
+use onicode_core::app_access::bridge::{Call, Server};
 use serde_json::{Value, json};
 
 use super::*;
@@ -247,7 +246,6 @@ impl Shell {
         caller: i64,
         project: &str,
         manage: bool,
-        cx: &App,
     ) -> Result<i64, String> {
         let id = session_id(input, "sessionId", &self.store)?;
         let summary = self
@@ -257,14 +255,7 @@ impl Shell {
         if onicode_core::files::path_key(&summary.cwd) != onicode_core::files::path_key(project) {
             return Err("Session is outside this project.".into());
         }
-        if manage
-            && (id == caller
-                || self.orchestration_worker(id)
-                || self
-                    .monos
-                    .as_ref()
-                    .is_some_and(|m| m.read(cx).is_mono_session(id)))
-        {
+        if manage && (id == caller || self.orchestration_worker(id)) {
             return Err("Only other regular project sessions can be managed here".into());
         }
         Ok(id)
@@ -334,7 +325,7 @@ impl Shell {
             "sessions.list" => Ok(
                 json!({"cwd":project,"sessions":self.order.iter().filter_map(|id|{
                 let metadata=self.session_metadata(*id,cx);
-                if metadata.summary.cwd!=project || self.monos.as_ref().is_some_and(|m|m.read(cx).hidden_session(*id)) || self.orchestration_worker(*id){return None;}
+                if metadata.summary.cwd!=project || self.orchestration_worker(*id){return None;}
                 let live=self.sessions.get(id).map(|v|v.read(cx));
                 Some(json!({"id":id,"sessionId":id,"title":metadata.summary.title,"harness":metadata.summary.provider,"model":live.and_then(|v|v.settings.model.clone()).or_else(||self.session_details.get(id).and_then(|m|m.model.clone())),"busy":metadata.busy,"hasDraft":live.is_some_and(|v|v.has_saved_draft() || !v.input.read(cx).content.is_empty()) || self.draft_sessions.contains(id),"archived":metadata.summary.archived}))
             }).collect::<Vec<_>>()}),
@@ -407,7 +398,7 @@ impl Shell {
                 },cx);
                 return;
             }
-            "sessions.read" => match self.app_target(&input, call.session, &project, false, cx) {
+            "sessions.read" => match self.app_target(&input, call.session, &project, false) {
                 Ok(id) => {
                     let busy = self.session_metadata(id, cx).busy;
                     let draft = self
@@ -432,7 +423,7 @@ impl Shell {
             "sessions.send" | "sessions.draft" | "sessions.stop" | "sessions.archive"
             | "sessions.delete" => {
                 match self
-                    .app_target(&input, call.session, &project, true, cx)
+                    .app_target(&input, call.session, &project, true)
                     .and_then(|id| {
                         self.ensure_session(id, cx)
                             .map(|view| (id, view))
@@ -547,7 +538,7 @@ impl Shell {
             "folders.list" => Ok(
                 json!({"cwd":project,"folders":self.groups.get(&project).cloned().unwrap_or_default().folders.iter().map(|f|json!({"id":f.id,"name":f.name,"sessionIds":f.session_ids})).collect::<Vec<_>>()}),
             ),
-            "folders.move" => match self.app_target(&input, call.session, &project, false, cx) {
+            "folders.move" => match self.app_target(&input, call.session, &project, false) {
                 Err(e) => Err(e),
                 Ok(id) => {
                     let mut groups = self.groups.get(&project).cloned().unwrap_or_default();
@@ -561,7 +552,7 @@ impl Shell {
                             } else {
                                 let folder = if let Some(name) = name {
                                     let folder = groups
-                                        .create_folder(&[id], onicode_core::mono::new_id())
+                                        .create_folder(&[id], onicode_core::new_id())
                                         .unwrap();
                                     groups.rename_folder(&folder, &name);
                                     folder

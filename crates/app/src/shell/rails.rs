@@ -67,7 +67,7 @@ pub(super) fn step(last: bool, child: impl IntoElement) -> gpui::Div {
 
 impl Shell {
     fn in_play(&self, id: i64, cx: &App) -> bool {
-        (self.workspace.active == Some(id) && !self.mono_active(cx))
+        self.workspace.active == Some(id)
             || self.selected_sessions.contains(&id)
             || self
                 .sessions
@@ -309,8 +309,7 @@ impl Shell {
         };
         let session = self.session_metadata(id, cx);
         let selected = self.selected_sessions.contains(&id);
-        let active =
-            self.workspace.active == Some(id) && !self.mono_active(cx) && !self.app_view_open();
+        let active = self.workspace.active == Some(id) && !self.app_view_open();
         let draft = session.has_saved_draft();
         let approval = session.needs_approval();
         let orchestration = matches!(rail, Some((Rail::Agents(_), true)));
@@ -318,9 +317,7 @@ impl Shell {
         let started_in_view = match rail {
             Some((Rail::Started(children), _)) => children.iter().any(|child| {
                 self.selected_sessions.contains(child)
-                    || (self.workspace.active == Some(*child)
-                        && !self.mono_active(cx)
-                        && !self.app_view_open())
+                    || (self.workspace.active == Some(*child) && !self.app_view_open())
             }),
             _ => false,
         };

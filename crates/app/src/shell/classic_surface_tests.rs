@@ -10,7 +10,6 @@ enum Surface {
     Notes,
     Automations,
     Search,
-    Mono,
 }
 
 impl Surface {
@@ -28,34 +27,19 @@ impl Surface {
                 shell.open_automations(window, cx);
             }
             Self::Search => shell.open_app_search(window, cx),
-            Self::Mono => {
-                let project = shell.workspace.project.clone();
-                let session = shell.workspace.active;
-                shell.mono_manager().update(cx, |monos, cx| {
-                    let id = monos.roster.create(vec![project]).id.clone();
-                    let mono = monos.roster.get_mut(&id).unwrap();
-                    mono.name = "Parity Mono".into();
-                    mono.session_id = session;
-                    monos.open(&id, window, cx);
-                });
-            }
         }
     }
 
-    fn close(self, shell: &mut Shell, session: i64, window: &mut Window, cx: &mut Context<Shell>) {
+    fn close(self, shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) {
         match self {
             Self::Inbox | Self::Notes | Self::Automations => shell.close_app_view(window, cx),
             Self::Search => shell.close_app_search(window, cx),
-            // Returning to a conversation is the same route used by the
-            // original project rail and by opening a Mono's launched session.
-            Self::Mono => shell.open(session, window, cx),
         }
     }
 
     fn header(self) -> &'static str {
         match self {
             Self::Search => "app-search-header",
-            Self::Mono => "classic-mono-title",
             _ => "classic-app-surface-header",
         }
     }
@@ -63,7 +47,6 @@ impl Surface {
     fn icon_left(self, visual: &mut VisualTestContext) -> Pixels {
         let (label, offset) = match self {
             Self::Search => ("app-search-field", 22.),
-            Self::Mono => ("original-mono-name", 24.),
             _ => ("classic-app-surface-title", 22.),
         };
         visual.debug_bounds(label).unwrap().left() - px(offset)
@@ -136,92 +119,6 @@ fn original_project_plus_offers_local_and_remote_folders(cx: &mut TestAppContext
         .unwrap();
 }
 
-#[gpui::test]
-fn original_collapsed_picker_selects_monos_and_projects_with_search_and_keyboard(
-    cx: &mut TestAppContext,
-) {
-    cx.update(crate::input::bind);
-    let (window, session) = setup(cx, true, false);
-    let visual = &mut VisualTestContext::from_window(window.into(), cx);
-    let ids = window
-        .update(visual, |shell, _, cx| {
-            let ids = shell.mono_manager().update(cx, |manager, cx| {
-                let mut ids = Vec::new();
-                for (name, project) in [
-                    ("Alpha assistant", "/work/monocode"),
-                    ("Beta helper", "/work/another-project"),
-                ] {
-                    let id = manager.roster.create(vec![project.into()]).id.clone();
-                    manager.roster.get_mut(&id).unwrap().name = name.into();
-                    ids.push(id);
-                }
-                cx.notify();
-                ids
-            });
-            shell.workspace.project_rail_open = false;
-            shell.layout_changed(cx);
-            ids
-        })
-        .unwrap();
-    visual.run_until_parked();
-    let open = |visual: &mut VisualTestContext| {
-        visual.refresh().unwrap();
-        let mascot = visual.debug_bounds("rail-current-project").unwrap();
-        visual.simulate_click(mascot.center(), Default::default());
-        visual.run_until_parked();
-        visual.refresh().unwrap();
-        assert!(visual.debug_bounds("project-picker").is_some());
-    };
-    let alpha: &'static str = Box::leak(format!("project-picker-mono-{}", ids[0]).into_boxed_str());
-    let beta: &'static str = Box::leak(format!("project-picker-mono-{}", ids[1]).into_boxed_str());
-    open(visual);
-    let alpha_row = visual.debug_bounds(alpha).unwrap();
-    let beta_row = visual.debug_bounds(beta).unwrap();
-    let project_row = visual.debug_bounds("project-picker-project-0").unwrap();
-    assert!(alpha_row.top() < beta_row.top() && beta_row.top() < project_row.top());
-    visual.simulate_input("bEtA");
-    visual.run_until_parked();
-    visual.refresh().unwrap();
-    assert!(visual.debug_bounds(alpha).is_none());
-    assert!(visual.debug_bounds(beta).is_some());
-    assert!(visual.debug_bounds("project-picker-project-0").is_none());
-    visual.simulate_keystrokes("enter");
-    visual.run_until_parked();
-    window
-        .read_with(visual, |shell, cx| {
-            assert!(shell.menu.is_none());
-            assert_eq!(shell.mono_manager().read(cx).active.as_ref(), Some(&ids[1]));
-            assert_eq!(shell.workspace.project, "/work/monocode");
-            assert!(
-                shell
-                    .visible_tabs(cx)
-                    .iter()
-                    .all(|tab| !matches!(tab, TitleTab::Mono { .. }))
-            );
-        })
-        .unwrap();
-    open(visual);
-    visual.simulate_keystrokes("down down enter");
-    visual.run_until_parked();
-    window
-        .read_with(visual, |shell, cx| {
-            assert!(shell.menu.is_none());
-            assert!(!shell.mono_active(cx));
-            assert_eq!(shell.workspace.active, Some(session));
-            assert!(!shell.workspace.project_rail_open);
-        })
-        .unwrap();
-    open(visual);
-    let row = visual.debug_bounds(alpha).unwrap();
-    visual.simulate_click(row.center(), Default::default());
-    visual.run_until_parked();
-    window
-        .read_with(visual, |shell, cx| {
-            assert_eq!(shell.mono_manager().read(cx).active.as_ref(), Some(&ids[0]));
-        })
-        .unwrap();
-}
-
 fn assert_original_surface(surface: Surface, cx: &mut TestAppContext) {
     let (window, session) = setup(cx, true, false);
     let visual = &mut VisualTestContext::from_window(window.into(), cx);
@@ -276,16 +173,13 @@ fn assert_original_surface(surface: Surface, cx: &mut TestAppContext) {
         .unwrap();
 
     window
-        .update(visual, |shell, window, cx| {
-            surface.close(shell, session, window, cx)
-        })
+        .update(visual, |shell, window, cx| surface.close(shell, window, cx))
         .unwrap();
     visual.run_until_parked();
     visual.refresh().unwrap();
     assert!(visual.debug_bounds("sidebar-content").is_some());
     assert!(visual.debug_bounds("title-tab-strip").is_some());
     assert!(visual.debug_bounds("classic-app-surface-header").is_none());
-    assert!(visual.debug_bounds("classic-mono-title").is_none());
     window
         .read_with(visual, |shell, _| {
             assert!(shell.workspace.sidebar_visible);
@@ -320,354 +214,8 @@ fn original_app_surfaces_search_uses_search_field_header_and_restores_sessions(
 }
 
 #[gpui::test]
-fn original_app_surfaces_mono_uses_identity_header_and_restores_sessions(cx: &mut TestAppContext) {
-    assert_original_surface(Surface::Mono, cx);
-}
-
-#[gpui::test]
-fn original_app_surfaces_mono_overview_and_rail_back_use_original_controls(
-    cx: &mut TestAppContext,
-) {
-    let (window, session) = setup(cx, true, false);
-    let visual = &mut VisualTestContext::from_window(window.into(), cx);
-    window
-        .update(visual, |shell, window, cx| {
-            Surface::Mono.open(shell, window, cx)
-        })
-        .unwrap();
-    visual.run_until_parked();
-    visual.refresh().unwrap();
-    let overview = visual.debug_bounds("classic-mono-overview").unwrap();
-    visual.simulate_click(overview.center(), Default::default());
-    visual.run_until_parked();
-    visual.refresh().unwrap();
-
-    let header = visual
-        .debug_bounds("original-mono-overview-header")
-        .unwrap();
-    assert_eq!(header.top(), px(0.));
-    assert_eq!(header.size.height, px(40.));
-    assert!(visual.debug_bounds("mono-overview-tabs").is_some());
-    let first_tab = visual.debug_bounds("mono-overview-Overview").unwrap();
-    assert_eq!(first_tab.left() - header.left(), px(8.));
-    assert!((first_tab.center().y - header.center().y).abs() <= px(0.5));
-    assert!(visual.debug_bounds("sidebar-content").is_none());
-    assert!(visual.debug_bounds("title-tab-strip").is_none());
-    window
-        .read_with(visual, |shell, cx| {
-            assert!(shell.mono_active(cx));
-            assert!(shell.workspace.right_panel_open);
-            assert!(shell.workspace.sidebar_visible);
-        })
-        .unwrap();
-
-    let hide = visual.debug_bounds("original-hide-mono-overview").unwrap();
-    visual.simulate_click(hide.center(), Default::default());
-    visual.run_until_parked();
-    visual.refresh().unwrap();
-    assert!(
-        visual
-            .debug_bounds("original-mono-overview-header")
-            .is_none()
-    );
-    window
-        .read_with(visual, |shell, cx| {
-            assert!(!shell.workspace.right_panel_open);
-            assert!(shell.mono_active(cx), "hiding overview keeps the Mono open");
-        })
-        .unwrap();
-
-    let back = visual.debug_bounds("visit-back").unwrap();
-    visual.simulate_click(back.center(), Default::default());
-    visual.run_until_parked();
-    visual.refresh().unwrap();
-    window
-        .read_with(visual, |shell, cx| {
-            assert!(!shell.mono_active(cx));
-            assert_eq!(shell.workspace.active, Some(session));
-            assert!(shell.workspace.sidebar_visible);
-            assert!(shell.workspace.project_rail_open);
-            assert_eq!(shell.workspace.sidebar_width, 260.);
-        })
-        .unwrap();
-    assert!(visual.debug_bounds("classic-mono-title").is_none());
-    assert!(visual.debug_bounds("title-tab-strip").is_some());
-    assert!(visual.debug_bounds("sidebar-content").is_some());
-}
-
-#[gpui::test]
-fn project_clicks_leave_monos_in_original_layout(cx: &mut TestAppContext) {
-    for boxy in [false, true] {
-        let (window, _) = setup(cx, true, boxy);
-        let visual = &mut VisualTestContext::from_window(window.into(), cx);
-        let mut targets = Vec::new();
-        for path in ["/work/monocode", "/work/another-project"] {
-            let target = window
-                .update(visual, |shell, window, cx| {
-                    shell.select_project(path.into(), window, cx);
-                    Surface::Mono.open(shell, window, cx);
-                    let ix = shell
-                        .workspace
-                        .projects
-                        .iter()
-                        .position(|p| p == path)
-                        .unwrap();
-                    let mono = shell.mono_manager().read(cx).active.clone().unwrap();
-                    let project_selector = format!("rail-project-button-{ix}");
-                    (
-                        path,
-                        Box::leak(project_selector.into_boxed_str()) as &'static str,
-                        Box::leak(format!("mono-rail-{mono}").into_boxed_str()) as &'static str,
-                        mono,
-                    )
-                })
-                .unwrap();
-            visual.run_until_parked();
-            targets.push(target);
-        }
-        // Visit both projects repeatedly after each has remembered a Mono.
-        // Exercise the real rail/space buttons, including a same-project click.
-        for (path, project_selector, mono_selector, mono) in targets.iter().cycle().take(4) {
-            for reopen in [true, false] {
-                visual.refresh().unwrap();
-                let project = visual.debug_bounds(project_selector).unwrap();
-                visual.simulate_click(project.center(), Default::default());
-                visual.run_until_parked();
-                visual.refresh().unwrap();
-                window
-                    .read_with(visual, |shell, cx| {
-                        assert_eq!(&shell.workspace.project, path);
-                        assert!(
-                            !shell.mono_active(cx),
-                            "original-layout project clicks leave the Mono (boxy={boxy})"
-                        );
-                        let session = shell.workspace.active.expect("the project shows a session");
-                        assert_eq!(shell.session_metadata(session, cx).summary.cwd, *path);
-                    })
-                    .unwrap();
-                if reopen {
-                    let row = visual.debug_bounds(mono_selector).unwrap();
-                    visual.simulate_click(row.center(), Default::default());
-                    visual.run_until_parked();
-                    window
-                        .read_with(visual, |shell, cx| {
-                            assert_eq!(shell.mono_manager().read(cx).active.as_ref(), Some(mono));
-                        })
-                        .unwrap();
-                }
-            }
-        }
-    }
-}
-
-#[gpui::test]
-fn new_layout_projects_restore_the_last_session_or_mono_tab(cx: &mut TestAppContext) {
-    for boxy in [false, true] {
-        let (window, _) = setup(cx, false, boxy);
-        let visual = &mut VisualTestContext::from_window(window.into(), cx);
-        let stable = |value: String| Box::leak(value.into_boxed_str()) as &'static str;
-        let mut targets = Vec::new();
-        for path in ["/work/monocode", "/work/another-project"] {
-            let target = window
-                .update(visual, |shell, window, cx| {
-                    shell.select_project(path.into(), window, cx);
-                    let session = shell.workspace.active.unwrap();
-                    Surface::Mono.open(shell, window, cx);
-                    let mono = shell.mono_manager().read(cx).active.clone().unwrap();
-                    let ix = shell
-                        .workspace
-                        .projects
-                        .iter()
-                        .position(|p| p == path)
-                        .unwrap();
-                    (stable(format!("project-space-{ix}")), session, mono)
-                })
-                .unwrap();
-            visual.run_until_parked();
-            targets.push(target);
-        }
-        let click = |selector: &'static str, visual: &mut VisualTestContext| {
-            visual.refresh().unwrap();
-            let bounds = visual.debug_bounds(selector).unwrap();
-            visual.simulate_click(bounds.center(), Default::default());
-            visual.run_until_parked();
-            visual.refresh().unwrap();
-        };
-        let assert_mono = |ix: usize, visual: &mut VisualTestContext| {
-            window
-                .read_with(visual, |shell, cx| {
-                    assert_eq!(
-                        shell.mono_manager().read(cx).active.as_ref(),
-                        Some(&targets[ix].2)
-                    );
-                    assert!(
-                        shell
-                            .visible_tabs(cx)
-                            .contains(&shell.mono_tab(targets[ix].2.clone()))
-                    );
-                })
-                .unwrap();
-            assert!(
-                visual
-                    .debug_bounds(stable(format!("mono-title-tab-{}", targets[ix].2)))
-                    .is_some()
-            );
-        };
-        click(targets[0].0, visual);
-        assert_mono(0, visual);
-        click(stable(format!("title-tab-{}", targets[0].1)), visual);
-        click(targets[1].0, visual);
-        assert_mono(1, visual);
-        click(targets[0].0, visual);
-        window
-            .read_with(visual, |shell, cx| {
-                assert!(!shell.mono_active(cx));
-                assert_eq!(shell.workspace.active, Some(targets[0].1));
-            })
-            .unwrap();
-        click(stable(format!("mono-rail-{}", targets[0].2)), visual);
-        assert_mono(0, visual);
-        // Both same-project clicks and returning from another project restore
-        // a selected Mono in either new frame style.
-        click(targets[0].0, visual);
-        assert_mono(0, visual);
-        click(targets[1].0, visual);
-        assert_mono(1, visual);
-        click(targets[0].0, visual);
-        assert_mono(0, visual);
-    }
-}
-
-#[gpui::test]
-fn original_monos_leave_project_tabs_unchanged_and_close_as_surfaces(cx: &mut TestAppContext) {
-    cx.update(super::bind_keys);
-    for boxy in [false, true] {
-        let (window, session) = setup(cx, true, boxy);
-        let visual = &mut VisualTestContext::from_window(window.into(), cx);
-        let (order, focus, mono, project_selector) = window
-            .update(visual, |shell, window, cx| {
-                let order = shell.workspace.title_order.clone();
-                let focus = shell.workspace.scope_focus.clone();
-                Surface::Mono.open(shell, window, cx);
-                let mono = shell.mono_manager().read(cx).active.clone().unwrap();
-                let ix = shell
-                    .workspace
-                    .projects
-                    .iter()
-                    .position(|p| p == &shell.workspace.project)
-                    .unwrap();
-                (
-                    order,
-                    focus,
-                    mono,
-                    Box::leak(format!("rail-project-button-{ix}").into_boxed_str()) as &'static str,
-                )
-            })
-            .unwrap();
-        visual.run_until_parked();
-        window
-            .read_with(visual, |shell, cx| {
-                assert_eq!(shell.workspace.title_order, order);
-                assert_eq!(shell.workspace.scope_focus, focus);
-                assert!(
-                    shell
-                        .visible_tabs(cx)
-                        .iter()
-                        .all(|tab| !matches!(tab, TitleTab::Mono { .. }))
-                );
-            })
-            .unwrap();
-        let mono_selector = Box::leak(format!("mono-title-tab-{mono}").into_boxed_str());
-        visual.refresh().unwrap();
-        let project = visual.debug_bounds(project_selector).unwrap();
-        visual.simulate_click(project.center(), Default::default());
-        visual.run_until_parked();
-        visual.refresh().unwrap();
-        assert!(visual.debug_bounds("title-tab-strip").is_some());
-        assert!(visual.debug_bounds(mono_selector).is_none());
-
-        window
-            .update(visual, |shell, window, cx| {
-                shell
-                    .mono_manager()
-                    .update(cx, |m, cx| m.open(&mono, window, cx));
-            })
-            .unwrap();
-        visual.run_until_parked();
-        visual.simulate_keystrokes("cmd-w");
-        visual.run_until_parked();
-        window
-            .read_with(visual, |shell, cx| {
-                assert!(!shell.mono_active(cx));
-                assert_eq!(shell.workspace.active, Some(session));
-                assert_eq!(shell.workspace.title_order, order);
-            })
-            .unwrap();
-
-        window
-            .update(visual, |shell, window, cx| {
-                shell
-                    .mono_manager()
-                    .update(cx, |m, cx| m.open(&mono, window, cx));
-                shell.toggle_layout(cx);
-            })
-            .unwrap();
-        visual.run_until_parked();
-        visual.refresh().unwrap();
-        assert!(
-            visual.debug_bounds(mono_selector).is_some(),
-            "switching to either new layout gives the open Mono a tab"
-        );
-    }
-}
-
-#[gpui::test]
-fn original_layout_hides_saved_mono_tabs_until_returning_to_new_layout(cx: &mut TestAppContext) {
-    for boxy in [false, true] {
-        let (window, session) = setup(cx, false, boxy);
-        let visual = &mut VisualTestContext::from_window(window.into(), cx);
-        window
-            .update(visual, |shell, window, cx| {
-                Surface::Mono.open(shell, window, cx)
-            })
-            .unwrap();
-        visual.run_until_parked();
-        let (mono_tab, mono_selector) = window
-            .update(visual, |shell, _, cx| {
-                let id = shell.mono_manager().read(cx).active.clone().unwrap();
-                let tab = shell.mono_tab(id.clone());
-                assert!(shell.visible_tabs(cx).contains(&tab));
-                shell.toggle_layout(cx);
-                (
-                    tab,
-                    Box::leak(format!("mono-title-tab-{id}").into_boxed_str()) as &'static str,
-                )
-            })
-            .unwrap();
-        visual.run_until_parked();
-        window
-            .update(visual, |shell, window, cx| {
-                assert!(shell.workspace.title_order.contains(&mono_tab));
-                assert!(!shell.visible_tabs(cx).contains(&mono_tab));
-                shell.open(session, window, cx);
-            })
-            .unwrap();
-        visual.run_until_parked();
-        visual.refresh().unwrap();
-        assert!(visual.debug_bounds("title-tab-strip").is_some());
-        assert!(visual.debug_bounds(mono_selector).is_none());
-        window
-            .update(visual, |shell, _, cx| shell.toggle_layout(cx))
-            .unwrap();
-        visual.run_until_parked();
-        visual.refresh().unwrap();
-        assert!(visual.debug_bounds(mono_selector).is_some());
-    }
-}
-
-#[gpui::test]
 fn original_app_surfaces_keep_icon_rail_and_remember_closed_sessions(cx: &mut TestAppContext) {
-    let (window, session) = setup(cx, true, false);
+    let (window, _) = setup(cx, true, false);
     let visual = &mut VisualTestContext::from_window(window.into(), cx);
     window
         .update(visual, |shell, _, cx| {
@@ -693,7 +241,6 @@ fn original_app_surfaces_keep_icon_rail_and_remember_closed_sessions(cx: &mut Te
         Surface::Notes,
         Surface::Automations,
         Surface::Search,
-        Surface::Mono,
     ] {
         window
             .update(visual, |shell, window, cx| surface.open(shell, window, cx))
@@ -789,9 +336,7 @@ fn original_app_surfaces_keep_icon_rail_and_remember_closed_sessions(cx: &mut Te
             assert!(visual.debug_bounds("rail-expand-projects").is_none());
         }
         window
-            .update(visual, |shell, window, cx| {
-                surface.close(shell, session, window, cx)
-            })
+            .update(visual, |shell, window, cx| surface.close(shell, window, cx))
             .unwrap();
         visual.run_until_parked();
         visual.refresh().unwrap();
@@ -810,14 +355,13 @@ fn original_app_surfaces_keep_icon_rail_and_remember_closed_sessions(cx: &mut Te
 #[gpui::test]
 fn original_app_surfaces_leave_both_new_layout_styles_tabbed(cx: &mut TestAppContext) {
     for boxy in [false, true] {
-        let (window, session) = setup(cx, false, boxy);
+        let (window, _) = setup(cx, false, boxy);
         let visual = &mut VisualTestContext::from_window(window.into(), cx);
         for surface in [
             Surface::Inbox,
             Surface::Notes,
             Surface::Automations,
             Surface::Search,
-            Surface::Mono,
         ] {
             window
                 .update(visual, |shell, window, cx| surface.open(shell, window, cx))
@@ -847,12 +391,11 @@ fn original_app_surfaces_leave_both_new_layout_styles_tabbed(cx: &mut TestAppCon
                 window
                     .read_with(visual, |shell, cx| {
                         assert!(shell.visible_tabs(cx).contains(&TitleTab::App(app)));
-                        assert_eq!(shell.active_title_tab(cx), Some(TitleTab::App(app)));
+                        assert_eq!(shell.active_title_tab(), Some(TitleTab::App(app)));
                     })
                     .unwrap();
             }
             assert!(visual.debug_bounds("classic-app-surface-header").is_none());
-            assert!(visual.debug_bounds("classic-mono-title").is_none());
             assert!(visual.debug_bounds("project-rail-frame").is_none());
             window
                 .read_with(visual, |shell, _| {
@@ -862,9 +405,7 @@ fn original_app_surfaces_leave_both_new_layout_styles_tabbed(cx: &mut TestAppCon
                 })
                 .unwrap();
             window
-                .update(visual, |shell, window, cx| {
-                    surface.close(shell, session, window, cx)
-                })
+                .update(visual, |shell, window, cx| surface.close(shell, window, cx))
                 .unwrap();
             visual.run_until_parked();
         }
@@ -935,7 +476,7 @@ fn new_layout_app_tabs_survive_frame_changes_and_close_like_session_tabs(cx: &mu
             visual.run_until_parked();
         }
         window
-            .read_with(visual, |shell, cx| {
+            .read_with(visual, |shell, _| {
                 assert!(!shell.app_view_open());
                 assert_eq!(shell.workspace.active, Some(session));
                 assert!(
@@ -945,7 +486,7 @@ fn new_layout_app_tabs_survive_frame_changes_and_close_like_session_tabs(cx: &mu
                         .iter()
                         .all(|tab| !matches!(tab, TitleTab::App(_)))
                 );
-                assert_eq!(shell.active_title_tab(cx), Some(TitleTab::Session(session)));
+                assert_eq!(shell.active_title_tab(), Some(TitleTab::Session(session)));
             })
             .unwrap();
     }

@@ -12,7 +12,7 @@ struct Sprite {
     eyes: [Vec<[u32; 2]>; 2],
 }
 static SPRITES: LazyLock<Vec<Sprite>> =
-    LazyLock::new(|| serde_json::from_str(include_str!("sprites.json")).unwrap());
+    LazyLock::new(|| serde_json::from_str(include_str!("../assets/pixel-mascots.json")).unwrap());
 fn tone(mut c: Hsla, t: f32) -> Hsla {
     c.l = if t >= 0. {
         c.l + (1. - c.l) * t

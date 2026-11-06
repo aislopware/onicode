@@ -19,7 +19,7 @@ impl TranscriptView {
     }
 
     pub(super) fn provider_separator(&self, start: usize) -> Option<gpui::AnyElement> {
-        if self.mono || self.document || self.source.get(start)?.role != "user" {
+        if self.document || self.source.get(start)?.role != "user" {
             return None;
         }
         let previous = self.source[..start]

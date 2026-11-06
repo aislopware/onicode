@@ -14,7 +14,6 @@ pub(crate) enum Section {
     Providers,
     Mcp,
     Skills,
-    Monos,
     Inbox,
     Archive,
     Worktrees,
@@ -37,7 +36,6 @@ pub(crate) const GROUPS: [(&str, &[Section]); 3] = [
             Section::Providers,
             Section::Mcp,
             Section::Skills,
-            Section::Monos,
         ],
     ),
     (
@@ -47,7 +45,7 @@ pub(crate) const GROUPS: [(&str, &[Section]); 3] = [
 ];
 
 impl Section {
-    pub(crate) const ALL: [Section; 12] = [
+    pub(crate) const ALL: [Section; 11] = [
         Section::General,
         Section::Connections,
         Section::Appearance,
@@ -56,7 +54,6 @@ impl Section {
         Section::Providers,
         Section::Mcp,
         Section::Skills,
-        Section::Monos,
         Section::Inbox,
         Section::Archive,
         Section::Worktrees,
@@ -72,7 +69,6 @@ impl Section {
             Section::Providers => "providers",
             Section::Mcp => "mcp",
             Section::Skills => "skills",
-            Section::Monos => "monos",
             Section::Inbox => "inbox",
             Section::Archive => "archive",
             Section::Worktrees => "worktrees",
@@ -89,7 +85,6 @@ impl Section {
             Section::Providers => "Providers",
             Section::Mcp => "MCP",
             Section::Skills => "Skills",
-            Section::Monos => "Monos",
             Section::Inbox => "Inbox",
             Section::Archive => "Archive",
             Section::Worktrees => "Worktrees",
@@ -118,7 +113,6 @@ impl Section {
             Section::Skills => {
                 "Discover and manage file skills from project, personal, and harness folders."
             }
-            Section::Monos => "The resident agent beside your tabs, and which projects have one.",
             Section::Inbox => {
                 "Manage Inbox services and notification preferences for each project."
             }
@@ -145,7 +139,6 @@ impl Section {
                 "tools servers connections oauth authenticate login claude codex cursor opencode"
             }
             Section::Skills => "skill instructions prompt",
-            Section::Monos => "mono resident agent mascot claim project title bar",
             Section::Inbox => {
                 "github gitlab linear jira atlassian azure devops connect token integration"
             }
@@ -165,7 +158,6 @@ impl Section {
             Section::Providers => "bot",
             Section::Mcp => "globe",
             Section::Skills => "sparkles",
-            Section::Monos => "ghost",
             Section::Inbox => "inbox-hi",
             Section::Archive => "archive",
             Section::Worktrees => "folder-tree",
@@ -198,24 +190,6 @@ pub(crate) const INDEX: &[(&str, Section, &str, &str)] = &[
         Section::Mcp,
         "MCP servers",
         "claude tools connections oauth authenticate login add remove",
-    ),
-    (
-        "monos-enabled",
-        Section::Monos,
-        "Show monos",
-        "mono agent rail hide",
-    ),
-    (
-        "rail-monos-pinned",
-        Section::Monos,
-        "Pin monos to the icon rail",
-        "mono rail compact collapsed icons top divider project picker",
-    ),
-    (
-        "mono-list",
-        Section::Monos,
-        "Your monos",
-        "mono reset soul name projects sessions sidebar visibility hidden show",
     ),
     (
         "project-worktrees",

@@ -9,7 +9,6 @@ use super::*;
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Row {
     Navigation,
-    Monos,
     Pinned,
     Folders,
     Group(Entry),
@@ -119,8 +118,8 @@ impl SidebarList {
             );
         }
         self.rows = rows;
-        // Navigation and the Mono overview can change height independently.
-        self.state.remeasure_items(0..self.rows.len().min(2));
+        // Navigation can change height without the list changing.
+        self.state.remeasure_items(0..self.rows.len().min(1));
     }
 }
 
@@ -288,7 +287,7 @@ impl Shell {
         }
         let groups = self.project_groups();
         let now = onicode_core::time::now_ms();
-        let mut rows = vec![Row::Navigation, Row::Monos];
+        let mut rows = vec![Row::Navigation];
         let mut folders = false;
         for entry in entries {
             let (members, collapsed) = match entry {
@@ -376,7 +375,7 @@ impl Shell {
     fn prepare_classic_sidebar_list(&mut self, entries: &[Entry]) {
         let groups = self.project_groups();
         // Original Sidebar.tsx: the list has p-1.5, gap-0.5 and pb-10.
-        // Its project navigation and Mono roster belong to the first rail.
+        // Its project navigation belongs to the first rail.
         let mut rows = vec![Row::ClassicGap(6)];
         for (ix, entry) in entries.iter().enumerate() {
             if ix > 0 {
@@ -482,17 +481,6 @@ impl Shell {
         self.sidebar_list.visible_rows.borrow_mut().push(ix);
         let content = match row {
             Row::Navigation => return self.sidebar_navigation(cx),
-            Row::Monos => {
-                return self
-                    .monos
-                    .clone()
-                    .map(|monos| {
-                        monos.update(cx, |monos, cx| {
-                            monos.rail(Some(self.workspace.project.clone()), cx)
-                        })
-                    })
-                    .unwrap_or_else(|| div().into_any());
-            }
             Row::Pinned => section_label("Pinned").into_any(),
             Row::Folders => section_label("Folders").into_any(),
             Row::Group(entry) => {
@@ -582,10 +570,6 @@ impl Shell {
                 .icon("inbox")
                 .toggle(self.workspace.sidebar_inbox_visible)
                 .into(),
-            MenuAction::new("sidebar-monos", "Monos")
-                .icon("ghost")
-                .toggle(self.workspace.preferences.monos)
-                .into(),
             MenuAction::new("sidebar-activity", "Activity")
                 .icon("response-activity")
                 .toggle(self.workspace.sidebar_activity_visible)
@@ -605,16 +589,11 @@ impl Shell {
             "sidebar-notes" => &mut self.workspace.sidebar_notes_visible,
             "sidebar-automations" => &mut self.workspace.sidebar_automations_visible,
             "sidebar-inbox" => &mut self.workspace.sidebar_inbox_visible,
-            "sidebar-monos" => &mut self.workspace.preferences.monos,
             "sidebar-activity" => &mut self.workspace.sidebar_activity_visible,
             "compact-session-cards" => &mut self.workspace.compact_session_cards,
             _ => return,
         };
         *value = !*value;
-        if action == "sidebar-monos" {
-            self.apply_preferences(cx);
-            self.sync_settings(cx);
-        }
         self.close_preview(cx);
         self.sidebar_list.remeasure();
         self.persist(cx);
@@ -837,7 +816,6 @@ impl Shell {
     fn active_session_is_blank(&self, cx: &App) -> bool {
         !self.app_view_open()
             && self.app_search.is_none()
-            && !self.mono_active(cx)
             && self.workspace.active.is_some_and(|id| {
                 self.session_summaries.contains_key(&id)
                     && !self.session_metadata(id, cx).summary.has_messages
@@ -1118,13 +1096,12 @@ mod tests {
             .debug_bounds("menu-action-sidebar-automations")
             .unwrap();
         let inbox = visual.debug_bounds("menu-action-sidebar-inbox").unwrap();
-        let monos = visual.debug_bounds("menu-action-sidebar-monos").unwrap();
         let activity = visual.debug_bounds("menu-action-sidebar-activity").unwrap();
         let compact = visual
             .debug_bounds("menu-action-compact-session-cards")
             .unwrap();
         assert!(notes.bottom() <= automations.top() && automations.bottom() <= inbox.top());
-        assert!(inbox.bottom() <= monos.top() && monos.bottom() <= activity.top());
+        assert!(inbox.bottom() <= activity.top());
         assert!(
             activity.bottom() < compact.top(),
             "a divider separates Compact view"
@@ -1137,7 +1114,6 @@ mod tests {
                 "sidebar-navigation-Automations",
             ),
             ("menu-action-sidebar-inbox", "sidebar-navigation-Inbox"),
-            ("menu-action-sidebar-monos", "new-mono"),
         ] {
             assert!(visual.debug_bounds(navigation).is_some());
             let row = visual.debug_bounds(action).unwrap();
@@ -1164,18 +1140,15 @@ mod tests {
                     "sidebar-notes",
                     "sidebar-automations",
                     "sidebar-inbox",
-                    "sidebar-monos",
                 ] {
                     assert_eq!(menu.toggle_state(id), Some(false));
                 }
-                assert!(!cx.global::<crate::settings::Preferences>().monos);
                 let saved = shell.latest_state.lock().unwrap().clone();
                 let restored = Workspace::restore(Some(&saved), &[], "/work/monocode");
                 assert!(!restored.sidebar_search_visible);
                 assert!(!restored.sidebar_notes_visible);
                 assert!(!restored.sidebar_automations_visible);
                 assert!(!restored.sidebar_inbox_visible);
-                assert!(!restored.preferences.monos);
             })
             .unwrap();
         for (action, navigation) in [
@@ -1186,43 +1159,12 @@ mod tests {
                 "sidebar-navigation-Automations",
             ),
             ("menu-action-sidebar-inbox", "sidebar-navigation-Inbox"),
-            ("menu-action-sidebar-monos", "new-mono"),
         ] {
             let row = visual.debug_bounds(action).unwrap();
             visual.simulate_click(row.center(), Default::default());
             visual.run_until_parked();
             assert!(visual.debug_bounds(navigation).is_some());
         }
-        visual.simulate_click(options.center(), Default::default());
-        visual.run_until_parked();
-        window
-            .update(visual, |shell, w, cx| {
-                shell.open_settings(crate::settings::Section::Monos, w, cx)
-            })
-            .unwrap();
-        visual.run_until_parked();
-        let toggle = visual
-            .debug_bounds("settings-toggle-monos-enabled")
-            .unwrap();
-        visual.simulate_click(toggle.center(), Default::default());
-        visual.run_until_parked();
-        window
-            .update(visual, |shell, w, cx| {
-                assert!(!shell.workspace.preferences.monos);
-                shell.close_settings(w, cx);
-            })
-            .unwrap();
-        visual.run_until_parked();
-        assert!(visual.debug_bounds("new-mono").is_none());
-        let options = visual.debug_bounds("sidebar-options").unwrap();
-        visual.simulate_click(options.center(), Default::default());
-        visual.run_until_parked();
-        window
-            .update(visual, |shell, _, cx| {
-                let menu = shell.menu.as_ref().unwrap().menu.read(cx);
-                assert_eq!(menu.toggle_state("sidebar-monos"), Some(false));
-            })
-            .unwrap();
     }
 
     #[gpui::test]

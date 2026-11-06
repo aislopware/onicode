@@ -113,8 +113,10 @@ fn operator_thread_access_survives_reopen_without_enabling_other_sessions() {
 }
 
 #[test]
-fn operator_rejects_unknown_fields_and_mono_only_capabilities() {
+fn operator_rejects_unknown_actions_fields_and_types() {
     for (action, input) in [
+        ("sessions.start", json!({"prompt":"x","draft":"false"})),
+        ("sessions.delete", json!({"sessionId":1,"force":true})),
         ("sessions.start", json!({"prompt":"x","sidebarHidden":true})),
         ("sessions.start", json!({"prompt":"x","reveal":"false"})),
         (

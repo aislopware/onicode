@@ -2,10 +2,9 @@
 use super::*;
 
 impl Shell {
-    pub(crate) fn keep_visible_idle_agents(&self, cx: &App) {
+    pub(crate) fn keep_visible_idle_agents(&self) {
         let mut ids = Vec::new();
         if !self.app_view_open()
-            && !self.mono_active(cx)
             && let Some(tab) = self.workspace.active_tab()
         {
             ids.extend(
@@ -18,9 +17,6 @@ impl Shell {
         }
         if let Some(preview) = &self.session_preview {
             ids.push(preview.id);
-        }
-        if let Some(monos) = &self.monos {
-            ids.extend(monos.read(cx).visible_idle_sessions(cx));
         }
         onicode_core::provider::keep_idle_agents(ids);
     }
