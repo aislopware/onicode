@@ -498,6 +498,16 @@ void uniffi_onicode_mobile_fn_free_coreclient(uint64_t handle, RustCallStatus *_
 uint64_t uniffi_onicode_mobile_fn_constructor_coreclient_new(RustBuffer config, RustBuffer mode, uint64_t listener, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ACT_ON_ALERT
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ACT_ON_ALERT
+void uniffi_onicode_mobile_fn_method_coreclient_act_on_alert(uint64_t ptr, RustBuffer payload, RustBuffer action, RustBuffer text, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ALERTS
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ALERTS
+RustBuffer uniffi_onicode_mobile_fn_method_coreclient_alerts(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ARCHIVE_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_ARCHIVE_SESSION
 void uniffi_onicode_mobile_fn_method_coreclient_archive_session(uint64_t ptr, RustBuffer chat_id, RustCallStatus *_Nonnull out_status
@@ -736,6 +746,11 @@ RustBuffer uniffi_onicode_mobile_fn_method_coreclient_session_config(uint64_t pt
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_SESSION_ROW
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_SESSION_ROW
 RustBuffer uniffi_onicode_mobile_fn_method_coreclient_session_row(uint64_t ptr, RustBuffer chat_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_SET_ALERT_FOCUS
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_SET_ALERT_FOCUS
+void uniffi_onicode_mobile_fn_method_coreclient_set_alert_focus(uint64_t ptr, RustBuffer chat_id, int8_t in_front, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_METHOD_CORECLIENT_SET_NETWORK_ONLINE
@@ -1654,6 +1669,12 @@ RustBuffer uniffi_onicode_mobile_fn_func_core_version(RustCallStatus *_Nonnull o
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_ALERT_CATEGORIES
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_ALERT_CATEGORIES
+RustBuffer uniffi_onicode_mobile_fn_func_alert_categories(RustCallStatus *_Nonnull out_status
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_FALLBACK_HARNESSES
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_FN_FUNC_FALLBACK_HARNESSES
 RustBuffer uniffi_onicode_mobile_fn_func_fallback_harnesses(RustCallStatus *_Nonnull out_status
@@ -2021,6 +2042,12 @@ uint16_t uniffi_onicode_mobile_checksum_func_core_version(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_ALERT_CATEGORIES
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_ALERT_CATEGORIES
+uint16_t uniffi_onicode_mobile_checksum_func_alert_categories(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_FALLBACK_HARNESSES
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_FUNC_FALLBACK_HARNESSES
 uint16_t uniffi_onicode_mobile_checksum_func_fallback_harnesses(void
@@ -2144,6 +2171,18 @@ uint16_t uniffi_onicode_mobile_checksum_method_captionfader_frame(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CLIENTLISTENER_ON_EVENT
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CLIENTLISTENER_ON_EVENT
 uint16_t uniffi_onicode_mobile_checksum_method_clientlistener_on_event(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_ACT_ON_ALERT
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_ACT_ON_ALERT
+uint16_t uniffi_onicode_mobile_checksum_method_coreclient_act_on_alert(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_ALERTS
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_ALERTS
+uint16_t uniffi_onicode_mobile_checksum_method_coreclient_alerts(void
     
 );
 #endif
@@ -2432,6 +2471,12 @@ uint16_t uniffi_onicode_mobile_checksum_method_coreclient_session_config(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_SESSION_ROW
 #define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_SESSION_ROW
 uint16_t uniffi_onicode_mobile_checksum_method_coreclient_session_row(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_SET_ALERT_FOCUS
+#define UNIFFI_FFIDEF_UNIFFI_ONICODE_MOBILE_CHECKSUM_METHOD_CORECLIENT_SET_ALERT_FOCUS
+uint16_t uniffi_onicode_mobile_checksum_method_coreclient_set_alert_focus(void
     
 );
 #endif

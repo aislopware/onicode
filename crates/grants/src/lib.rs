@@ -7,11 +7,10 @@
 //!   helper's command line ([`helper`]), the bundle layout ([`bundle`]), and the drag guide's state
 //!   machine and geometry ([`guide::Guide`], [`guide::place`]).
 //! - **macOS:** `access` reads the app's own rows without a prompt and asks them on a click;
-//!   `probe_helper` and `request_in_helper` do the same for the helper's rows by running the
-//!   helper through Launch Services; `agent` registers the helper as a login item;
-//!   `restart_when_granted` restarts desktopd once a new process sees Screen Recording;
-//!   `guide::show` puts the drag panel beside System Settings; `microphone` and [`paste`] are
-//!   shared with voice and clipboard sync.
+//!   `probe_helper` and `request_in_helper` do the same for the helper's rows by running the helper
+//!   through Launch Services; `agent` registers the helper as a login item; `restart_when_granted`
+//!   restarts desktopd once a new process sees Screen Recording; `guide::show` puts the drag panel
+//!   beside System Settings; `microphone` and [`paste`] are shared with voice and clipboard sync.
 //!
 //! Nothing prompts unasked: every request runs from the person's click in the checklist (or in
 //! the feature that needs it), never from a test or a background process on its own.

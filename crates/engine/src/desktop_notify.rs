@@ -1039,7 +1039,7 @@ mod tests {
     #[test]
     fn agent_updates_banner_once_per_release() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut notifier, posted, _) = notifier(dir.path());
+        let (mut notifier, posted, _, _) = notifier(dir.path());
         let status = |phase: &str, version: Option<&str>| -> HarnessUpdateStatus {
             serde_json::from_value(serde_json::json!({
                 "harness": "codex",

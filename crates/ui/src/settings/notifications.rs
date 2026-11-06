@@ -14,31 +14,28 @@ use crate::settings::widgets;
 use crate::theme::Theme;
 use crate::{icons, popover};
 
+/// The page's whole preference set, which the shell persists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotificationPrefs {
+    pub sound: bool,
+    pub completion_sound: bool,
+    pub input_sound: bool,
+    pub attention_sound: bool,
+    pub desktop: bool,
+    pub background_only: bool,
+    pub agent_updates: bool,
+    pub keep_awake: bool,
+}
+
 #[derive(Debug, Clone)]
 pub enum NotificationsEvent {
     /// A toggle flipped — persist the complete notification preference set.
-    Changed {
-        sound: bool,
-        completion_sound: bool,
-        input_sound: bool,
-        attention_sound: bool,
-        desktop: bool,
-        background_only: bool,
-        agent_updates: bool,
-        keep_awake: bool,
-    },
+    Changed(NotificationPrefs),
 }
 
 pub struct NotificationsPage {
     scroll: widgets::PageScroll,
-    sound: bool,
-    completion_sound: bool,
-    input_sound: bool,
-    attention_sound: bool,
-    desktop: bool,
-    background_only: bool,
-    agent_updates: bool,
-    keep_awake: bool,
+    prefs: NotificationPrefs,
 }
 
 impl EventEmitter<NotificationsEvent> for NotificationsPage {}
@@ -81,55 +78,26 @@ fn interactive_switch(
 }
 
 impl NotificationsPage {
-    pub fn new(
-        sound: bool,
-        completion_sound: bool,
-        input_sound: bool,
-        attention_sound: bool,
-        desktop: bool,
-        background_only: bool,
-        agent_updates: bool,
-        keep_awake: bool,
-    ) -> Self {
+    pub fn new(prefs: NotificationPrefs) -> Self {
         Self {
             scroll: widgets::PageScroll::default(),
-            sound,
-            completion_sound,
-            input_sound,
-            attention_sound,
-            desktop,
-            background_only,
-            agent_updates,
-            keep_awake,
+            prefs,
         }
-    }
-
-    fn emit(&self, cx: &mut Context<Self>) {
-        cx.emit(NotificationsEvent::Changed {
-            sound: self.sound,
-            completion_sound: self.completion_sound,
-            input_sound: self.input_sound,
-            attention_sound: self.attention_sound,
-            desktop: self.desktop,
-            background_only: self.background_only,
-            agent_updates: self.agent_updates,
-            keep_awake: self.keep_awake,
-        });
     }
 
     fn toggle(&mut self, preference: NotificationPreference, cx: &mut Context<Self>) {
         let value = match preference {
-            NotificationPreference::Sound => &mut self.sound,
-            NotificationPreference::CompletionSound => &mut self.completion_sound,
-            NotificationPreference::InputSound => &mut self.input_sound,
-            NotificationPreference::AttentionSound => &mut self.attention_sound,
-            NotificationPreference::Desktop => &mut self.desktop,
-            NotificationPreference::BackgroundOnly => &mut self.background_only,
-            NotificationPreference::AgentUpdates => &mut self.agent_updates,
-            NotificationPreference::KeepAwake => &mut self.keep_awake,
+            NotificationPreference::Sound => &mut self.prefs.sound,
+            NotificationPreference::CompletionSound => &mut self.prefs.completion_sound,
+            NotificationPreference::InputSound => &mut self.prefs.input_sound,
+            NotificationPreference::AttentionSound => &mut self.prefs.attention_sound,
+            NotificationPreference::Desktop => &mut self.prefs.desktop,
+            NotificationPreference::BackgroundOnly => &mut self.prefs.background_only,
+            NotificationPreference::AgentUpdates => &mut self.prefs.agent_updates,
+            NotificationPreference::KeepAwake => &mut self.prefs.keep_awake,
         };
         *value = !*value;
-        self.emit(cx);
+        cx.emit(NotificationsEvent::Changed(self.prefs));
         cx.notify();
     }
 
@@ -154,14 +122,14 @@ impl Render for NotificationsPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).for_settings_surface();
         let accent = theme.accent;
-        let sound = self.sound;
-        let completion_sound = self.completion_sound;
-        let input_sound = self.input_sound;
-        let attention_sound = self.attention_sound;
-        let desktop = self.desktop;
-        let background_only = self.background_only;
-        let agent_updates = self.agent_updates;
-        let keep_awake = self.keep_awake;
+        let sound = self.prefs.sound;
+        let completion_sound = self.prefs.completion_sound;
+        let input_sound = self.prefs.input_sound;
+        let attention_sound = self.prefs.attention_sound;
+        let desktop = self.prefs.desktop;
+        let background_only = self.prefs.background_only;
+        let agent_updates = self.prefs.agent_updates;
+        let keep_awake = self.prefs.keep_awake;
         let toggle = |id: &'static str, label: &'static str, enabled: bool, interactive: bool| {
             // Keep the visual inside its 56×40 activation target.
             // Disabled subordinate controls remain named switches in the

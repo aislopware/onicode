@@ -1,7 +1,8 @@
 //! Agent alerts on a device without an engine (`docs/onicode/decisions/alerts.md`): the shared
 //! [`Alerter`] over this device's mirror of the registry, stepped after every re-derivation and at
 //! its own deadlines, and a [`Board`] that pairs a needs-you alert with the open question of its
-//! session. The platform reads [`Client::alerts`] after [`ClientEvent::AlertsChanged`], posts
+//! session. The platform reads [`Client::alerts`] after
+//! [`ClientEvent::AlertsChanged`](crate::events::ClientEvent::AlertsChanged), posts
 //! local notifications for them, and hands a button back to [`Client::act_on_alert`].
 //!
 //! Alerts are stepped while the app runs, in front or briefly behind; a suspended app steps
@@ -20,7 +21,6 @@ use tokio::sync::Notify;
 use crate::client::ClientInner;
 use crate::connectivity::ConnectivityState;
 use crate::error::{ClientError, Result};
-use crate::events::ClientEvent;
 use crate::session::{BusyPolicy, SendRequest};
 use crate::{Client, lock};
 

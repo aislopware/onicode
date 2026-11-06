@@ -337,7 +337,11 @@ pub(crate) fn activate_main_window(cx: &mut App) {
 
 /// A clicked banner: bring Onicode forward on its chat or settings destination,
 /// reopening the main window first if ⌘W closed it.
-pub(crate) fn open_notification_target(target: String, state: &gpui::Entity<state::AppState>, cx: &mut App) {
+pub(crate) fn open_notification_target(
+    target: String,
+    state: &gpui::Entity<state::AppState>,
+    cx: &mut App,
+) {
     activate_main_window(cx);
     let shell = cx
         .windows()

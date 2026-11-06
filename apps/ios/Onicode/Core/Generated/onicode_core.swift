@@ -1036,6 +1036,18 @@ public func FfiConverterTypeClientListener_lower(_ value: ClientListener) -> UIn
  */
 public protocol CoreClientProtocol: AnyObject, Sendable {
     
+    /**
+     * Run a notification's button: `payload` as `AgentAlert::payload` gave it, `action` the
+     * button's id, `text` what was typed for Reply.
+     */
+    func actOnAlert(payload: String, action: String, text: String?) throws 
+    
+    /**
+     * The agent alerts to show now, oldest first. Pull after `ClientEvent::Alerts`; post each
+     * as a local notification with `chat_id` as its id, and take down the ones that left.
+     */
+    func alerts()  -> [AgentAlert]
+    
     func archiveSession(chatId: String) throws 
     
     func archivedSessions()  -> [SessionRow]
@@ -1226,6 +1238,12 @@ public protocol CoreClientProtocol: AnyObject, Sendable {
     func sessionRow(chatId: String)  -> SessionRow?
     
     /**
+     * The chat on screen (if any) and whether the app is in front: no alert is raised for what
+     * the owner is looking at.
+     */
+    func setAlertFocus(chatId: String?, inFront: Bool) 
+    
+    /**
      * OS network path: `false` only for a definitive "unsatisfied".
      */
     func setNetworkOnline(online: Bool) 
@@ -1410,6 +1428,34 @@ public convenience init(config: CoreConfig, mode: ClientMode, listener: ClientLi
 
     
 
+    
+    /**
+     * Run a notification's button: `payload` as `AgentAlert::payload` gave it, `action` the
+     * button's id, `text` what was typed for Reply.
+     */
+open func actOnAlert(payload: String, action: String, text: String?)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
+        uniffiCallStatus in
+    uniffi_onicode_mobile_fn_method_coreclient_act_on_alert(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(payload),
+        FfiConverterString.lower(action),
+        FfiConverterOptionString.lower(text),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The agent alerts to show now, oldest first. Pull after `ClientEvent::Alerts`; post each
+     * as a local notification with `chat_id` as its id, and take down the ones that left.
+     */
+open func alerts() -> [AgentAlert]  {
+    return try!  FfiConverterSequenceTypeAgentAlert.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_onicode_mobile_fn_method_coreclient_alerts(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
     
 open func archiveSession(chatId: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
@@ -2009,6 +2055,20 @@ open func sessionRow(chatId: String) -> SessionRow?  {
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * The chat on screen (if any) and whether the app is in front: no alert is raised for what
+     * the owner is looking at.
+     */
+open func setAlertFocus(chatId: String?, inFront: Bool)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_onicode_mobile_fn_method_coreclient_set_alert_focus(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(chatId),
+        FfiConverterBool.lower(inFront),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -7027,6 +7087,103 @@ public func FfiConverterTypeVoiceSessionListener_lower(_ value: VoiceSessionList
 
 
 /**
+ * An agent alert to post as a local notification.
+ */
+public struct AgentAlert: Equatable, Hashable {
+    /**
+     * The notification's id and thread: a newer alert for a chat replaces the older.
+     */
+    public var chatId: String
+    public var title: String
+    public var body: String
+    /**
+     * One of `alert_categories()`.
+     */
+    public var category: String
+    /**
+     * Breaks through a Focus (a question waiting on the owner).
+     */
+    public var urgent: Bool
+    /**
+     * Kept in the notification's `userInfo` and handed back to `act_on_alert`.
+     */
+    public var payload: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The notification's id and thread: a newer alert for a chat replaces the older.
+         */chatId: String, title: String, body: String, 
+        /**
+         * One of `alert_categories()`.
+         */category: String, 
+        /**
+         * Breaks through a Focus (a question waiting on the owner).
+         */urgent: Bool, 
+        /**
+         * Kept in the notification's `userInfo` and handed back to `act_on_alert`.
+         */payload: String) {
+        self.chatId = chatId
+        self.title = title
+        self.body = body
+        self.category = category
+        self.urgent = urgent
+        self.payload = payload
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AgentAlert: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAgentAlert: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AgentAlert {
+        return
+            try AgentAlert(
+                chatId: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                body: FfiConverterString.read(from: &buf), 
+                category: FfiConverterString.read(from: &buf), 
+                urgent: FfiConverterBool.read(from: &buf), 
+                payload: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AgentAlert, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.chatId, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.body, into: &buf)
+        FfiConverterString.write(value.category, into: &buf)
+        FfiConverterBool.write(value.urgent, into: &buf)
+        FfiConverterString.write(value.payload, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAgentAlert_lift(_ buf: RustBuffer) throws -> AgentAlert {
+    return try FfiConverterTypeAgentAlert.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAgentAlert_lower(_ value: AgentAlert) -> RustBuffer {
+    return FfiConverterTypeAgentAlert.lower(value)
+}
+
+
+/**
  * How an agent signs in, from the rules every platform's Providers follows.
  */
 public struct AgentLoginRules: Equatable, Hashable {
@@ -7132,6 +7289,137 @@ public func FfiConverterTypeAgentLoginRules_lift(_ buf: RustBuffer) throws -> Ag
 #endif
 public func FfiConverterTypeAgentLoginRules_lower(_ value: AgentLoginRules) -> RustBuffer {
     return FfiConverterTypeAgentLoginRules.lower(value)
+}
+
+
+public struct AlertButton: Equatable, Hashable {
+    public var id: String
+    public var title: String
+    /**
+     * Shown in red: it stops the run.
+     */
+    public var destructive: Bool
+    /**
+     * Opens a text field (Reply).
+     */
+    public var textInput: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, title: String, 
+        /**
+         * Shown in red: it stops the run.
+         */destructive: Bool, 
+        /**
+         * Opens a text field (Reply).
+         */textInput: Bool) {
+        self.id = id
+        self.title = title
+        self.destructive = destructive
+        self.textInput = textInput
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AlertButton: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAlertButton: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlertButton {
+        return
+            try AlertButton(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                destructive: FfiConverterBool.read(from: &buf), 
+                textInput: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AlertButton, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterBool.write(value.destructive, into: &buf)
+        FfiConverterBool.write(value.textInput, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlertButton_lift(_ buf: RustBuffer) throws -> AlertButton {
+    return try FfiConverterTypeAlertButton.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlertButton_lower(_ value: AlertButton) -> RustBuffer {
+    return FfiConverterTypeAlertButton.lower(value)
+}
+
+
+/**
+ * A notification category: the buttons an alert offers.
+ */
+public struct AlertCategory: Equatable, Hashable {
+    public var id: String
+    public var actions: [AlertButton]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, actions: [AlertButton]) {
+        self.id = id
+        self.actions = actions
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AlertCategory: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAlertCategory: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlertCategory {
+        return
+            try AlertCategory(
+                id: FfiConverterString.read(from: &buf), 
+                actions: FfiConverterSequenceTypeAlertButton.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AlertCategory, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterSequenceTypeAlertButton.write(value.actions, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlertCategory_lift(_ buf: RustBuffer) throws -> AlertCategory {
+    return try FfiConverterTypeAlertCategory.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlertCategory_lower(_ value: AlertCategory) -> RustBuffer {
+    return FfiConverterTypeAlertCategory.lower(value)
 }
 
 
@@ -14240,6 +14528,10 @@ public enum ClientEvent: Equatable, Hashable {
     )
     case connectivity(connectivity: Connectivity
     )
+    /**
+     * `alerts()` changed.
+     */
+    case alerts
 
 
 
@@ -14273,6 +14565,8 @@ public struct FfiConverterTypeClientEvent: FfiConverterRustBuffer {
         case 4: return .connectivity(connectivity: try FfiConverterTypeConnectivity.read(from: &buf)
         )
         
+        case 5: return .alerts
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -14302,6 +14596,10 @@ public struct FfiConverterTypeClientEvent: FfiConverterRustBuffer {
             writeInt(&buf, Int32(4))
             FfiConverterTypeConnectivity.write(connectivity, into: &buf)
             
+        
+        case .alerts:
+            writeInt(&buf, Int32(5))
+        
         }
     }
 }
@@ -19962,6 +20260,81 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeAgentAlert: FfiConverterRustBuffer {
+    typealias SwiftType = [AgentAlert]
+
+    public static func write(_ value: [AgentAlert], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAgentAlert.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AgentAlert] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AgentAlert]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAgentAlert.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeAlertButton: FfiConverterRustBuffer {
+    typealias SwiftType = [AlertButton]
+
+    public static func write(_ value: [AlertButton], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAlertButton.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AlertButton] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AlertButton]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAlertButton.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeAlertCategory: FfiConverterRustBuffer {
+    typealias SwiftType = [AlertCategory]
+
+    public static func write(_ value: [AlertCategory], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAlertCategory.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AlertCategory] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AlertCategory]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAlertCategory.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBoxPrim: FfiConverterRustBuffer {
     typealias SwiftType = [BoxPrim]
 
@@ -21068,6 +21441,16 @@ public func coreVersion() -> String  {
 })
 }
 /**
+ * Every notification category an agent alert posts under, to register at launch.
+ */
+public func alertCategories() -> [AlertCategory]  {
+    return try!  FfiConverterSequenceTypeAlertCategory.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_onicode_mobile_fn_func_alert_categories(uniffiCallStatus
+    )
+})
+}
+/**
  * Static harness catalog (the device-unreachable fallback).
  */
 public func fallbackHarnesses() -> [HarnessInfo]  {
@@ -21304,6 +21687,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_onicode_mobile_checksum_func_core_version() != 57518) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_onicode_mobile_checksum_func_alert_categories() != 18517) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_onicode_mobile_checksum_func_fallback_harnesses() != 53066) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -21365,6 +21751,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_onicode_mobile_checksum_method_clientlistener_on_event() != 18267) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_onicode_mobile_checksum_method_coreclient_act_on_alert() != 58067) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_onicode_mobile_checksum_method_coreclient_alerts() != 32441) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_onicode_mobile_checksum_method_coreclient_archive_session() != 38400) {
@@ -21509,6 +21901,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_onicode_mobile_checksum_method_coreclient_session_row() != 28521) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_onicode_mobile_checksum_method_coreclient_set_alert_focus() != 31077) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_onicode_mobile_checksum_method_coreclient_set_network_online() != 63846) {

@@ -42,7 +42,7 @@ use crate::settings::archived::ArchivedPage;
 use crate::settings::devices::DevicesPage;
 use crate::settings::files::{FilesSettingsEvent, FilesSettingsPage};
 use crate::settings::harnesses::HarnessesPage;
-use crate::settings::notifications::{NotificationsEvent, NotificationsPage};
+use crate::settings::notifications::{NotificationPrefs, NotificationsEvent, NotificationsPage};
 use crate::settings::shortcuts::{ShortcutsEvent, ShortcutsPage};
 use crate::settings::{
     self, CHAT_PANEL_MIN, ComposerSendBehavior, FILES_PANEL_MIN, JUMP_SLOTS, KeymapConfig,
@@ -5569,22 +5569,22 @@ impl Shell {
             SettingsSection::Notifications => {
                 if self.notifications_page.is_none() {
                     let page = cx.new(|_| {
-                        NotificationsPage::new(
-                            self.settings.sound_enabled,
-                            self.settings.sound_completion_enabled,
-                            self.settings.sound_input_enabled,
-                            self.settings.sound_attention_enabled,
-                            self.settings.notifications_enabled,
-                            self.settings.notifications_background_only,
-                            self.settings.agent_update_notifications,
-                            self.settings.keep_awake_while_agents_run,
-                        )
+                        NotificationsPage::new(NotificationPrefs {
+                            sound: self.settings.sound_enabled,
+                            completion_sound: self.settings.sound_completion_enabled,
+                            input_sound: self.settings.sound_input_enabled,
+                            attention_sound: self.settings.sound_attention_enabled,
+                            desktop: self.settings.notifications_enabled,
+                            background_only: self.settings.notifications_background_only,
+                            agent_updates: self.settings.agent_update_notifications,
+                            keep_awake: self.settings.keep_awake_while_agents_run,
+                        })
                     });
                     // Persist the flags whenever the page flips one.
                     self.notifications_sub = Some(cx.subscribe(
                         &page,
                         |this: &mut Shell, _, event: &NotificationsEvent, cx| {
-                            let NotificationsEvent::Changed {
+                            let NotificationsEvent::Changed(NotificationPrefs {
                                 sound,
                                 completion_sound,
                                 input_sound,
@@ -5593,7 +5593,7 @@ impl Shell {
                                 background_only,
                                 agent_updates,
                                 keep_awake,
-                            } = *event;
+                            }) = *event;
                             this.settings.sound_enabled = sound;
                             this.settings.sound_completion_enabled = completion_sound;
                             this.settings.sound_input_enabled = input_sound;
