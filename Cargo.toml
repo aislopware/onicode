@@ -153,7 +153,9 @@ similar = "2"
 # async / net
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
-libc = "0.2"
+# 0.2.190 made SYSPROTO_CONTROL macOS-only while nix 0.31.3 (via webrtc) still reads it on every
+# Apple target, which breaks the iOS build; hold until nix stops using it there.
+libc = "=0.2.189"
 gethostname = "1"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures = "0.3"
