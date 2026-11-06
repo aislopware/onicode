@@ -2,6 +2,7 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, FontWeight, Role, div, px};
 
+use crate::settings::keymap::HOST_OS;
 use crate::settings::{Preferences, SettingsView};
 use crate::theme::*;
 #[derive(Clone, Copy)]
@@ -600,7 +601,7 @@ impl SettingsView {
             });
             return;
         }
-        let shortcut = key.unparse();
+        let shortcut = key.unparse(HOST_OS);
         self.recording_preview = shortcut_label(&shortcut);
         if bare || (!key.modifiers.platform && !key.modifiers.control && !key.modifiers.alt) {
             self.recording_error = Some("Use Command, Control, or Option with a key.".into());
@@ -667,6 +668,10 @@ fn default_shortcuts(row: &Binding) -> Vec<String> {
     };
     chords
         .into_iter()
-        .filter_map(|s| gpui::Keystroke::parse(&s).ok().map(|s| s.unparse()))
+        .filter_map(|s| {
+            gpui::Keystroke::parse_with_os(&s, HOST_OS)
+                .ok()
+                .map(|s| s.unparse(HOST_OS))
+        })
         .collect()
 }

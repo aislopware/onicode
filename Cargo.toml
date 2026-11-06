@@ -252,6 +252,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 
+# GPUI is aislopware/gpui-fast (retained mode, list and scroll layers), pinned by rev on its main: the rev
+# that carries monocode's renderer parity (backdrop blur, linear edge fades and text reveal, rounded clip, the
+# project background's layer mask, drop shadows outside, 3:2 dashes, role cursor, wheel glide, content zoom,
+# atlas clear; its FORK.md "Onicode"), so the app draws as monocode's patched GPUI snapshot did
+# (docs/onicode/golden.md).
+gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "f0e9052d0e228532cb387c3e917e26e3ac7cdbe4", default-features = false }
+gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "f0e9052d0e228532cb387c3e917e26e3ac7cdbe4", default-features = false }
+# The headless Metal renderer, the CoreText text system and the GPU memory snapshot.
+gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "f0e9052d0e228532cb387c3e917e26e3ac7cdbe4" }
+
 # storage
 rusqlite = { version = "0.40.2", features = ["bundled", "hooks"], default-features = false }
 
@@ -324,14 +334,7 @@ lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
 
-# monocode's vendored GPUI snapshot (zed 93d7456 as gpui-pre 0.3.9) with its renderer patches: backdrop blur,
-# edge fades, alpha, font matching, display-link recovery, no screen-capture crate. Replaced by gpui-fast in M1.
 [patch.crates-io]
-gpui-pre = { path = "vendor/gpui-pre" }
-gpui-pre-apple = { path = "vendor/gpui-pre-apple" }
-gpui-pre-linux = { path = "vendor/gpui-pre-linux" }
-gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
-gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
 # The QUIC stack under onicode-net: n0's noq-proto and noq-udp with slopty's and axolotty's
 # patches (vendor/noq-proto/SLOPTY.md, vendor/noq-udp/SLOPTY.md list each).
 noq-proto = { path = "vendor/noq-proto" }

@@ -990,19 +990,17 @@ impl VisualView {
                             cx.stop_propagation();
                         }),
                     )
-                    .on_scroll_wheel(cx.listener(
-                        move |this, event: &gpui::ScrollWheelEvent, _, cx| {
-                            // Modifier zoom leaves ordinary transcript scrolling available.
-                            if event.modifiers.control || event.modifiers.platform {
-                                let orbit = this.orbits.entry(wheel_key.clone()).or_default();
-                                orbit.zoom = (orbit.zoom
-                                    * (event.delta.pixel_delta(px(16.)).y.as_f32() * 0.008).exp())
-                                .clamp(0.15, 8.);
-                                cx.notify();
-                                cx.stop_propagation();
-                            }
-                        },
-                    ))
+                    .on_scroll_wheel(cx.listener(move |this, event: &gpui::ScrollEvent, _, cx| {
+                        // Modifier zoom leaves ordinary transcript scrolling available.
+                        if event.modifiers.control || event.modifiers.platform {
+                            let orbit = this.orbits.entry(wheel_key.clone()).or_default();
+                            orbit.zoom = (orbit.zoom
+                                * (event.delta.pixel_delta(px(16.)).y.as_f32() * 0.008).exp())
+                            .clamp(0.15, 8.);
+                            cx.notify();
+                            cx.stop_propagation();
+                        }
+                    }))
                     .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {
                         let orbit = this.orbits.entry(keyboard_key.clone()).or_default();
                         match event.keystroke.key.as_str() {

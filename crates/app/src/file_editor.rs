@@ -49,15 +49,14 @@ actions!(
     ]
 );
 pub(crate) fn bind(cx: &mut App) {
-    let m = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl"
-    };
     cx.bind_keys([
-        KeyBinding::new(&format!("{m}-s"), Save, Some("FileEditor")),
-        KeyBinding::new(&format!("{m}-f"), Find, Some("FileEditor")),
-        KeyBinding::new(&format!("{m}-alt-f"), Replace, Some("FileEditor")),
+        KeyBinding::new(os_keys!("cmd-s", "ctrl-s"), Save, Some("FileEditor")),
+        KeyBinding::new(os_keys!("cmd-f", "ctrl-f"), Find, Some("FileEditor")),
+        KeyBinding::new(
+            os_keys!("cmd-alt-f", "ctrl-alt-f"),
+            Replace,
+            Some("FileEditor"),
+        ),
         KeyBinding::new("alt-shift-f", Format, Some("FileEditor")),
         KeyBinding::new("alt-z", ToggleWordWrap, Some("FileEditor")),
         KeyBinding::new("alt-c", MatchCase, Some("FileEditor")),
@@ -67,8 +66,12 @@ pub(crate) fn bind(cx: &mut App) {
         KeyBinding::new("shift-f3", FindPrevious, Some("FileEditor")),
         KeyBinding::new("alt-up", PreviousChange, Some("FileEditor")),
         KeyBinding::new("alt-down", NextChange, Some("FileEditor")),
-        KeyBinding::new(&format!("{m}-g"), FindNext, Some("FileEditor")),
-        KeyBinding::new(&format!("{m}-shift-g"), FindPrevious, Some("FileEditor")),
+        KeyBinding::new(os_keys!("cmd-g", "ctrl-g"), FindNext, Some("FileEditor")),
+        KeyBinding::new(
+            os_keys!("cmd-shift-g", "ctrl-shift-g"),
+            FindPrevious,
+            Some("FileEditor"),
+        ),
         KeyBinding::new("escape", DismissSearch, Some("FileEditor")),
     ]);
 }

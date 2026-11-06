@@ -1006,7 +1006,7 @@ impl Input {
 
     pub(super) fn code_scroll(
         &mut self,
-        e: &gpui::ScrollWheelEvent,
+        e: &gpui::ScrollEvent,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {

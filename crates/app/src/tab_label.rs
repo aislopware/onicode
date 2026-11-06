@@ -46,26 +46,7 @@ pub(crate) fn tab_label(text: impl Into<SharedString>) -> impl IntoElement {
         },
         |bounds, (line, overflow), window, cx| {
             window.with_content_mask(Some(ContentMask { bounds }), |window| {
-                #[cfg(target_os = "macos")]
-                let marker = |begin, window: &mut gpui::Window| {
-                    if overflow {
-                        window.paint_layer(bounds, |window| {
-                            window.paint_quad(gpui::fill(bounds, gpui::black()).border_color(
-                                gpui_apple::metal_renderer::horizontal_fade_marker(
-                                    begin,
-                                    40. * window.scale_factor(),
-                                ),
-                            ));
-                        });
-                    }
-                };
-                #[cfg(not(target_os = "macos"))]
-                let _ = overflow;
-                #[cfg(target_os = "macos")]
-                marker(true, window);
-                // Keep both marker quads on separate layers from the glyphs:
-                // GPUI otherwise batches a layer's quads before its text.
-                window.paint_layer(bounds, |window| {
+                let mut paint = |window: &mut gpui::Window| {
                     let _ = line.paint(
                         bounds.origin,
                         bounds.size.height,
@@ -74,9 +55,20 @@ pub(crate) fn tab_label(text: impl Into<SharedString>) -> impl IntoElement {
                         window,
                         cx,
                     );
-                });
+                };
+                // Overflowing labels fade out over their last 40px.
                 #[cfg(target_os = "macos")]
-                marker(false, window);
+                if overflow {
+                    let fade = crate::mask::mask_fade(gpui::Edges {
+                        right: px(40.),
+                        ..Default::default()
+                    });
+                    window.with_edge_fade(bounds, fade, paint);
+                    return;
+                }
+                #[cfg(not(target_os = "macos"))]
+                let _ = overflow;
+                paint(window);
             });
         },
     )
@@ -86,9 +78,9 @@ pub(crate) fn tab_label(text: impl Into<SharedString>) -> impl IntoElement {
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use gpui::{App, Context, Render, TestAppContext, Window, div};
-    use gpui_apple::metal_renderer::horizontal_fade_marker;
 
     use super::*;
+    use crate::mask::probe::{fade_widths, sprite_fades};
 
     struct Label {
         width: f32,
@@ -105,6 +97,12 @@ mod tests {
     }
     #[gpui::test]
     fn short_labels_stay_clear_and_overflow_is_remeasured_after_resize(cx: &mut TestAppContext) {
+        // Glyphs carry the fade they are drawn in: shape and rasterize them with CoreText.
+        let cx = &mut TestAppContext::build_with_text_system(
+            cx.dispatcher.clone(),
+            None,
+            std::sync::Arc::new(gpui_apple::AppleTextSystem::new()),
+        );
         let window = cx.update(|cx: &mut App| {
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|_| Label {
@@ -118,25 +116,11 @@ mod tests {
             cx.refresh().unwrap();
             window
                 .update(cx, |_, window, _| {
-                    let quads = window.painted_quads();
-                    let begin = quads.iter().find(|quad| {
-                        quad.border_color
-                            == horizontal_fade_marker(true, 40. * window.scale_factor())
-                    });
-                    if let Some(begin) = begin {
-                        let end = quads
-                            .iter()
-                            .find(|quad| {
-                                quad.border_color
-                                    == horizontal_fade_marker(false, 40. * window.scale_factor())
-                            })
-                            .unwrap();
-                        assert!(
-                            begin.order < end.order,
-                            "the mask must bracket the glyph layer"
-                        );
-                    }
-                    usize::from(begin.is_some())
+                    let scale = window.scale_factor();
+                    sprite_fades(window)
+                        .iter()
+                        .filter(|ramps| fade_widths(ramps, scale) == [0., 0., 40., 0.])
+                        .count()
                 })
                 .unwrap()
         };

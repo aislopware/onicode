@@ -680,18 +680,17 @@ impl Render for QuestionCard {
                 canvas(
                     |_, _, _| {},
                     move |bounds, _, window, _| {
-                        let surface = gpui::fill(bounds, fill).corner_radii(px(RADIUS - 1.));
                         #[cfg(any(target_os = "macos", target_os = "windows"))]
-                        let surface = if blur > 0. {
-                            surface.border_color(gpui::backdrop_blur_marker(
-                                blur * window.scale_factor(),
-                            ))
-                        } else {
-                            surface
-                        };
+                        if blur > 0. {
+                            window.paint_backdrop_blur(
+                                bounds,
+                                gpui::Corners::all(px(RADIUS - 1.)),
+                                px(blur),
+                            );
+                        }
                         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
                         let _ = blur;
-                        window.paint_quad(surface);
+                        window.paint_quad(gpui::fill(bounds, fill).corner_radii(px(RADIUS - 1.)));
                     },
                 )
                 .absolute()

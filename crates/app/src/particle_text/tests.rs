@@ -54,6 +54,12 @@ impl Render for Preview {
 #[cfg(target_os = "macos")]
 #[gpui::test]
 fn mount_remount_same_title_zero_width_and_reduced_motion_do_not_replay(cx: &mut TestAppContext) {
+    // Glyphs carry the reveal they are drawn in: shape and rasterize them with CoreText.
+    let cx = &mut TestAppContext::build_with_text_system(
+        cx.dispatcher.clone(),
+        None,
+        Arc::new(gpui_apple::AppleTextSystem::new()),
+    );
     let window = cx.update(|cx| {
         cx.open_window(Default::default(), |_, cx| {
             cx.new(|_| Preview {
@@ -68,11 +74,9 @@ fn mount_remount_same_title_zero_width_and_reduced_motion_do_not_replay(cx: &mut
         cx.refresh().unwrap();
         window
             .update(cx, |_, window, _| {
-                let hue = gpui_apple::metal_renderer::text_reveal_marker(true, 0., 18.).h;
-                window
-                    .painted_quads()
+                crate::mask::probe::sprite_fades(window)
                     .iter()
-                    .filter(|quad| quad.border_color.h == hue)
+                    .filter(|fade| fade.rate[0] != 0. || fade.rate[2] != 0.)
                     .count()
             })
             .unwrap()

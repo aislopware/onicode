@@ -70,11 +70,14 @@ impl Element for Masked {
         cx: &mut App,
     ) {
         window.paint_layer(bounds, |window| self.child.paint(window, cx));
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
-        let quad = gpui::fill(bounds, content(0.02))
-            .border_color(gpui::backdrop_blur_marker(5. * window.scale_factor()));
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        let quad = gpui::fill(bounds, pane_fill());
-        window.paint_layer(bounds, |window| window.paint_quad(quad));
+        window.paint_layer(bounds, |window| {
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            {
+                window.paint_backdrop_blur(bounds, gpui::Corners::default(), gpui::px(5.));
+                window.paint_quad(gpui::fill(bounds, content(0.02)));
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            window.paint_quad(gpui::fill(bounds, pane_fill()));
+        });
     }
 }

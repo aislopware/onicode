@@ -1580,7 +1580,7 @@ impl TranscriptView {
                             // The working time redraws the whole transcript;
                             // skip it while the tab or the app is out of view.
                             if this.streaming && this.visible && crate::pulse::app_active(cx) {
-                                cx.notify_paint();
+                                cx.notify();
                             }
                             this.streaming
                         })
@@ -2909,9 +2909,6 @@ impl TranscriptView {
             return;
         }
         let mut changed_phases = HashSet::new();
-        // Revealing words keeps every size but the revealed rows', which
-        // measure again by their content; anything else here resizes rows.
-        let mut resized = self.agent_panels.animating() || !self.motions.is_empty();
         for start in self.agent_panels.animate() {
             for (ix, row) in self.rows.iter().enumerate() {
                 if row.key.0 == start {
@@ -2970,12 +2967,7 @@ impl TranscriptView {
         self.list
             .remeasure_items(self.footer_ix()..self.footer_ix() + 1);
         self.index_messages();
-        resized |= self.agent_panels.animating() || !self.motions.is_empty();
-        if resized {
-            cx.notify();
-        } else {
-            cx.notify_paint();
-        }
+        cx.notify();
     }
 
     fn highlight(&mut self, fence: &Arc<Fence>, cx: &mut Context<Self>) {
@@ -4403,14 +4395,16 @@ impl Render for TranscriptView {
                             this.schedule_frame(resized, window, cx);
                         });
                     },
-                    |bounds, _, window, _| paint_edge_fade(bounds, true, window),
+                    |_, _, _, _| {},
                 )
                 .absolute()
                 .top_0()
                 .left_0()
                 .size_full(),
             )
-            .child(
+            // A color overlay cannot mask text without tinting the pane and creating a seam above
+            // the composer: the rows fade out at the top and above the composer.
+            .child(gpui::edge_fade(
                 list(
                     self.list.clone(),
                     cx.processor(|this, ix: usize, window, cx| {
@@ -4424,7 +4418,8 @@ impl Render for TranscriptView {
                 )
                 .pt(px(TOP_INSET))
                 .size_full(),
-            )
+                crate::mask::mask_fade_y(px(TOP_FADE), px(BOTTOM_INSET)),
+            ))
             .child(
                 canvas(
                     move |_, _, cx| {
@@ -4433,7 +4428,7 @@ impl Render for TranscriptView {
                             this.update_outline(cx);
                         });
                     },
-                    |bounds, _, window, _| paint_edge_fade(bounds, false, window),
+                    |_, _, _, _| {},
                 )
                 .absolute()
                 .top_0()
@@ -4507,11 +4502,10 @@ pub(crate) fn floating_surface() -> impl IntoElement {
         |bounds, _, window, _| {
             let radius = bounds.size.height / 2.;
             #[cfg(any(target_os = "macos", target_os = "windows"))]
-            window.paint_quad(
-                gpui::fill(bounds, content(0.04))
-                    .corner_radii(radius)
-                    .border_color(gpui::backdrop_blur_marker(12. * window.scale_factor())),
-            );
+            {
+                window.paint_backdrop_blur(bounds, gpui::Corners::all(radius), px(12.));
+                window.paint_quad(gpui::fill(bounds, content(0.04)).corner_radii(radius));
+            }
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             window.paint_quad(gpui::fill(bounds, rgb(CHAT)).corner_radii(radius));
         },
@@ -4520,21 +4514,6 @@ pub(crate) fn floating_surface() -> impl IntoElement {
     .top_0()
     .left_0()
     .size_full()
-}
-
-fn paint_edge_fade(bounds: Bounds<Pixels>, begin: bool, window: &mut Window) {
-    #[cfg(target_os = "macos")]
-    window.paint_quad(gpui::fill(bounds, gpui::black()).border_color(
-        gpui_apple::metal_renderer::edge_fade_marker(
-            begin,
-            TOP_FADE * window.scale_factor(),
-            BOTTOM_INSET * window.scale_factor(),
-        ),
-    ));
-    // A color overlay cannot mask text without tinting the pane and creating
-    // a seam above the composer. Only the Metal backend supports a real mask.
-    #[cfg(not(target_os = "macos"))]
-    let _ = (bounds, begin, window);
 }
 
 #[cfg(test)]
@@ -5499,30 +5478,20 @@ mod scroll_tests {
             .update(cx, |view, w, cx| {
                 #[cfg(target_os = "macos")]
                 {
-                    let markers: Vec<_> = w
-                        .painted_quads()
-                        .into_iter()
-                        .filter(|q| {
-                            q.border_color
-                                == gpui_apple::metal_renderer::edge_fade_marker(
-                                    true,
-                                    TOP_FADE * w.scale_factor(),
-                                    BOTTOM_INSET * w.scale_factor(),
-                                )
-                                || q.border_color
-                                    == gpui_apple::metal_renderer::edge_fade_marker(
-                                        false,
-                                        TOP_FADE * w.scale_factor(),
-                                        BOTTOM_INSET * w.scale_factor(),
-                                    )
-                        })
-                        .collect();
-                    assert_eq!(
-                        markers.len(),
-                        2,
-                        "both mask boundaries must be painted inside the viewport"
+                    use crate::mask::probe::{fade_widths, held_fades};
+                    let scale = w.scale_factor();
+                    let (top, bottom) = (
+                        view.viewport.top().as_f32() * scale,
+                        view.viewport.bottom().as_f32() * scale,
                     );
-                    assert_eq!(markers[0].bounds, markers[1].bounds);
+                    assert!(
+                        held_fades(w).iter().any(|fade| {
+                            fade_widths(fade, scale) == [0., TOP_FADE, 0., BOTTOM_INSET]
+                                && (fade.edge[1] - top).abs() <= 1.
+                                && (fade.edge[3] - bottom).abs() <= 1.
+                        }),
+                        "the rows fade out at the top and above the composer, over the viewport"
+                    );
                 }
                 let prompt = view
                     .rows

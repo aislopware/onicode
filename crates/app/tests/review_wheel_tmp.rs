@@ -1,7 +1,7 @@
 use gpui::prelude::*;
 use gpui::{
     Context, FollowMode, IntoElement, ListAlignment, ListOffset, ListState, Render, ScrollDelta,
-    ScrollWheelEvent, TestAppContext, Window, div, list, point, px, size,
+    ScrollEvent, TestAppContext, Window, div, list, point, px, size,
 };
 
 struct Rows(ListState);
@@ -30,7 +30,7 @@ fn pending_wheel_must_not_cancel_jump_to_bottom(cx: &mut TestAppContext) {
         offset_in_item: px(0.),
     });
     draw(cx, &state);
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         position: point(px(1.), px(1.)),
         delta: ScrollDelta::Lines(point(0., 3.)),
         ..Default::default()
@@ -57,7 +57,7 @@ fn pending_wheel_must_not_survive_reset(cx: &mut TestAppContext) {
         offset_in_item: px(0.),
     });
     draw(cx, &state);
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         position: point(px(1.), px(1.)),
         delta: ScrollDelta::Lines(point(0., -3.)),
         ..Default::default()
@@ -77,7 +77,7 @@ fn wheel_glide_must_preserve_input_distance(cx: &mut TestAppContext) {
     let cx = cx.add_empty_window();
     let state = ListState::new(50, ListAlignment::Top, px(10.)).measure_all();
     draw(cx, &state);
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         position: point(px(1.), px(1.)),
         delta: ScrollDelta::Lines(point(0., -10.)),
         ..Default::default()

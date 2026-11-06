@@ -171,7 +171,7 @@ impl Photo {
         .detach();
         cx.on_release(|this, cx| {
             if let Some(source) = this.source.take() {
-                source.evict(cx);
+                source.evict(None, cx);
             }
         })
         .detach();
@@ -367,7 +367,7 @@ mod tests {
 
         // Views release their images from outside any window update.
         let app: &TestAppContext = cx;
-        app.update(|cx| source.evict(cx));
+        app.update(|cx| source.evict(None, cx));
         assert!(!cx.update(|window, _| window.has_image_atlas_entry(&image)));
         assert!(!cx.update(|_, cx| source.is_asset_cached(cx)));
         let _ = std::fs::remove_file(path);

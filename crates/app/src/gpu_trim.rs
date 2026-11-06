@@ -1,7 +1,8 @@
 //! Gives GPU memory back once the app goes quiet. Sprite atlases keep every
-//! glyph, icon and image any frame drew, and renderers keep the buffers of
-//! their busiest frame, so without this the footprint only ever grows.
-//! Trimming clears them and redraws once; only what is on screen comes back.
+//! glyph, icon and image any frame drew, so without this the footprint only
+//! ever grows (GPUI shrinks its instance buffers and drops idle scratch
+//! textures itself). Trimming clears the atlases and redraws once; only what
+//! is on screen comes back.
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -55,8 +56,6 @@ pub(crate) fn start(cx: &mut App) {
 }
 
 fn trim(cx: &mut App) {
-    #[cfg(target_os = "macos")]
-    gpui_apple::metal_renderer::trim();
     cx.clear_sprite_atlases();
 }
 

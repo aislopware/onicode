@@ -2,7 +2,7 @@
 //! as HTML; playback is paused when its tab leaves the visible workspace.
 use gpui::{
     Bounds, ClipboardEntry, ClipboardItem, ExternalPaths, ImageSource, MouseButton, Point,
-    RenderImage, ScrollHandle, ScrollWheelEvent, canvas, fill, point, size,
+    RenderImage, ScrollEvent, ScrollHandle, canvas, fill, point, size,
 };
 
 use super::*;
@@ -331,7 +331,7 @@ impl MediaPreview {
         cx.stop_propagation();
     }
 
-    fn wheel(&mut self, e: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn wheel(&mut self, e: &ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
         if e.modifiers.control || e.modifiers.platform {
             let delta = e.delta.pixel_delta(px(16.)).y.as_f32();
             self.zoom_at(

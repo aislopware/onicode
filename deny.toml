@@ -68,22 +68,18 @@ deny = [
 skip = [
     { crate = "base64@0.22.1", reason = "via alacritty_terminal, hdrhistogram, hyper-util and more" },
     { crate = "bit-set@0.8.0", reason = "via fancy-regex" },
-    { crate = "bit-set@0.9.1", reason = "via naga, wgpu-core, wgpu-hal" },
     { crate = "bit-vec@0.8.0", reason = "via bit-set" },
-    { crate = "bit-vec@0.9.1", reason = "via bit-set, wgpu-core" },
-    { crate = "bitflags@1.3.2", reason = "via cocoa, cocoa-foundation, core-graphics and more" },
     { crate = "block-buffer@0.10.4", reason = "via digest" },
     { crate = "convert_case@0.10.0", reason = "via derive_more-impl" },
     { crate = "core-foundation@0.9.4", reason = "via cocoa, cocoa-foundation, core-graphics and more" },
     { crate = "cpufeatures@0.2.17", reason = "via aes, chacha20, curve25519-dalek and more" },
     { crate = "crypto-common@0.1.7", reason = "via aead, cipher, digest and more" },
     { crate = "digest@0.10.7", reason = "via ecdsa, elliptic-curve, hmac and more" },
-    { crate = "foldhash@0.1.5", reason = "via hashbrown" },
     { crate = "font-types@0.11.3", reason = "via read-fonts" },
+    { crate = "fontdb@0.23.0", reason = "via cosmic-text (gpui_wgpu), mermaid-rs-renderer" },
     { crate = "getrandom@0.2.17", reason = "via const-random-macro, loro-internal, rand_core and more" },
     { crate = "getrandom@0.3.4", reason = "via ahash, gpui, rand_core and more" },
-    { crate = "hashbrown@0.14.5", reason = "via hashlink, zed-xim" },
-    { crate = "hashbrown@0.15.5", reason = "via gpu-descriptor, onicode-text" },
+    { crate = "harfrust@0.5.2", reason = "via cosmic-text (gpui_wgpu)" },
     { crate = "hashbrown@0.16.1", reason = "via accesskit_consumer, accesskit_macos and more" },
     { crate = "heck@0.4.1", reason = "via cbindgen, enum-as-inner, glib-macros" },
     { crate = "hmac@0.12.1", reason = "via hkdf, oo7, pbkdf2" },
@@ -91,7 +87,6 @@ skip = [
     { crate = "objc2-app-kit@0.2.2", reason = "via accesskit_macos" },
     { crate = "objc2-foundation@0.2.2", reason = "via accesskit_macos, objc2-app-kit, objc2-core-data and more" },
     { crate = "objc2@0.5.3", reason = "via accesskit_macos, objc2-app-kit, objc2-foundation" },
-    { crate = "png@0.17.16", reason = "via tiny-skia" },
     { crate = "pollster@0.2.5", reason = "via postage" },
     { crate = "quick-error@1.2.3", reason = "via rusty-fork" },
     { crate = "rand@0.8.8", reason = "via loro-internal, loro_fractional_index, phf_generator and more" },
@@ -102,7 +97,6 @@ skip = [
     { crate = "read-fonts@0.37.0", reason = "via harfrust, skrifa" },
     { crate = "roxmltree@0.20.0", reason = "via fontconfig-parser" },
     { crate = "rustc-hash@1.1.0", reason = "via naga, wgpu-core" },
-    { crate = "serde_spanned@0.6.9", reason = "via toml, toml_edit" },
     { crate = "sha2@0.10.9", reason = "via onicode-client, onicode-engine, onicode-harness and more" },
     { crate = "skrifa@0.40.0", reason = "via cosmic-text" },
     { crate = "spin@0.9.9", reason = "via flume, heapless" },
@@ -111,7 +105,6 @@ skip = [
     { crate = "system-configuration@0.6.1", reason = "via netdev" },
     { crate = "thiserror-impl@1.0.69", reason = "via thiserror" },
     { crate = "thiserror@1.0.69", reason = "via asn1-rs, cairo-rs, filedescriptor and more" },
-    { crate = "toml@0.8.23", reason = "via cbindgen, onicode-engine, system-deps" },
     { crate = "toml_datetime@0.6.11", reason = "via toml, toml_edit" },
     { crate = "toml_edit@0.22.27", reason = "via toml" },
     { crate = "webpki-roots@0.26.11", reason = "via tokio-tungstenite" },
@@ -123,5 +116,16 @@ unknown-registry = "deny"
 unknown-git = "deny"
 required-git-spec = "rev"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# Every git dependency is a pinned rev from an aislopware fork (docs/onicode/upstream.md); none today.
-allow-git = []
+# Every git dependency is a pinned rev. The forks onicode owns live under aislopware (gpui-fast); the rest are
+# what gpui-fast pins by rev, named one by one (docs/onicode/upstream.md).
+allow-git = [
+    # gpui-fast's CoreText font loading (zed's fork of font-kit).
+    "https://github.com/zed-industries/font-kit",
+    # gpui-fast's renderer on Linux pins wgpu by rev.
+    "https://github.com/gfx-rs/wgpu",
+    # gpui-fast's keychain on Linux (zed's fork of oo7).
+    "https://github.com/zed-industries/oo7",
+]
+
+[sources.allow-org]
+github = ["aislopware"]

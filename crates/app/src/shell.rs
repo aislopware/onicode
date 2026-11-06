@@ -192,77 +192,72 @@ pub(crate) struct ActivateTab(pub isize);
 pub(crate) fn bind_keys(cx: &mut App) {
     session_groups::bind(cx);
     session_folders::bind(cx);
-    let modifier = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl"
-    };
     // Scoped to the shell, so the focused composer, menus and pickers outrank
     // these: GPUI ranks an unscoped binding above every context.
     let context = Some("Workspace");
     cx.bind_keys([
-        KeyBinding::new(&format!("{modifier}-n"), NewCodex, context),
-        KeyBinding::new(&format!("{modifier}-t"), NewCodex, context),
-        KeyBinding::new(&format!("{modifier}-shift-n"), NewClaude, context),
-        KeyBinding::new(&format!("{modifier}-o"), OpenProject, context),
-        KeyBinding::new(&format!("{modifier}-p"), GoToFile, context),
-        KeyBinding::new(&format!("{modifier}-shift-p"), OpenCommandPalette, context),
-        KeyBinding::new(&format!("{modifier}-,"), OpenSettings, context),
-        KeyBinding::new(&format!("{modifier}-w"), CloseTab, context),
-        KeyBinding::new(&format!("{modifier}-shift-w"), CloseAllTabs, context),
+        KeyBinding::new(os_keys!("cmd-n", "ctrl-n"), NewCodex, context),
+        KeyBinding::new(os_keys!("cmd-t", "ctrl-t"), NewCodex, context),
+        KeyBinding::new(os_keys!("cmd-shift-n", "ctrl-shift-n"), NewClaude, context),
+        KeyBinding::new(os_keys!("cmd-o", "ctrl-o"), OpenProject, context),
+        KeyBinding::new(os_keys!("cmd-p", "ctrl-p"), GoToFile, context),
+        KeyBinding::new(os_keys!("cmd-shift-p", "ctrl-shift-p"), OpenCommandPalette, context),
+        KeyBinding::new(os_keys!("cmd-,", "ctrl-,"), OpenSettings, context),
+        KeyBinding::new(os_keys!("cmd-w", "ctrl-w"), CloseTab, context),
+        KeyBinding::new(os_keys!("cmd-shift-w", "ctrl-shift-w"), CloseAllTabs, context),
         KeyBinding::new(
-            &format!("{modifier}-shift-a"),
+            os_keys!("cmd-shift-a", "ctrl-shift-a"),
             ArchiveSession,
             Some("Session > (Composer || TranscriptSelection) && !CodeEditor && !Completion && !PopoverMenu && !Prompt"),
         ),
-        KeyBinding::new(&format!("{modifier}-["), VisitBack, context),
-        KeyBinding::new(&format!("{modifier}-]"), VisitForward, context),
+        KeyBinding::new(os_keys!("cmd-[", "ctrl-["), VisitBack, context),
+        KeyBinding::new(os_keys!("cmd-]", "ctrl-]"), VisitForward, context),
         KeyBinding::new("escape", DismissMenu, context),
-        KeyBinding::new(&format!("{modifier}-b"), ToggleSidebar, context),
-        KeyBinding::new(&format!("{modifier}-k"), FocusSearch, context),
-        KeyBinding::new(&format!("{modifier}-shift-f"), SearchFiles, context),
-        KeyBinding::new(&format!("{modifier}-alt-t"), CloseOtherTabs, context),
-        KeyBinding::new(&format!("{modifier}-shift-]"), NextTab, context),
-        KeyBinding::new(&format!("{modifier}-}}"), NextTab, context),
-        KeyBinding::new(&format!("{modifier}-shift-["), PreviousTab, context),
-        KeyBinding::new(&format!("{modifier}-{{"), PreviousTab, context),
-        KeyBinding::new(&format!("{modifier}-1"), ActivateTab(0), context),
-        KeyBinding::new(&format!("{modifier}-2"), ActivateTab(1), context),
-        KeyBinding::new(&format!("{modifier}-3"), ActivateTab(2), context),
-        KeyBinding::new(&format!("{modifier}-4"), ActivateTab(3), context),
-        KeyBinding::new(&format!("{modifier}-5"), ActivateTab(4), context),
-        KeyBinding::new(&format!("{modifier}-6"), ActivateTab(5), context),
-        KeyBinding::new(&format!("{modifier}-7"), ActivateTab(6), context),
-        KeyBinding::new(&format!("{modifier}-8"), ActivateTab(7), context),
-        KeyBinding::new(&format!("{modifier}-9"), ActivateTab(-1), context),
-        KeyBinding::new(&format!("{modifier}-shift-up"), PreviousSession, context),
-        KeyBinding::new(&format!("{modifier}-shift-down"), NextSession, context),
-        KeyBinding::new(&format!("{modifier}-up"), PreviousSessionInTab, context),
-        KeyBinding::new(&format!("{modifier}-down"), NextSessionInTab, context),
-        KeyBinding::new(&format!("{modifier}-shift-left"), PreviousProject, context),
-        KeyBinding::new(&format!("{modifier}-shift-right"), NextProject, context),
-        KeyBinding::new(&format!("{modifier}-alt-shift-left"), MoveProjectBack, context),
-        KeyBinding::new(&format!("{modifier}-alt-shift-right"), MoveProjectForward, context),
-        KeyBinding::new(&format!("{modifier}-."), SwitchModel, context),
-        KeyBinding::new(&format!("{modifier}-shift-b"), ToggleRightPanel, context),
-        KeyBinding::new(&format!("{modifier}-d"), SplitRight, context),
-        KeyBinding::new(&format!("{modifier}-j"), ToggleTerminal, context),
-        KeyBinding::new(&format!("{modifier}-shift-j"), SplitTerminal, context),
-        KeyBinding::new(&format!("{modifier}-`"), NewTerminal, context),
+        KeyBinding::new(os_keys!("cmd-b", "ctrl-b"), ToggleSidebar, context),
+        KeyBinding::new(os_keys!("cmd-k", "ctrl-k"), FocusSearch, context),
+        KeyBinding::new(os_keys!("cmd-shift-f", "ctrl-shift-f"), SearchFiles, context),
+        KeyBinding::new(os_keys!("cmd-alt-t", "ctrl-alt-t"), CloseOtherTabs, context),
+        KeyBinding::new(os_keys!("cmd-shift-]", "ctrl-shift-]"), NextTab, context),
+        KeyBinding::new(os_keys!("cmd-}}", "ctrl-}}"), NextTab, context),
+        KeyBinding::new(os_keys!("cmd-shift-[", "ctrl-shift-["), PreviousTab, context),
+        KeyBinding::new(os_keys!("cmd-{{", "ctrl-{{"), PreviousTab, context),
+        KeyBinding::new(os_keys!("cmd-1", "ctrl-1"), ActivateTab(0), context),
+        KeyBinding::new(os_keys!("cmd-2", "ctrl-2"), ActivateTab(1), context),
+        KeyBinding::new(os_keys!("cmd-3", "ctrl-3"), ActivateTab(2), context),
+        KeyBinding::new(os_keys!("cmd-4", "ctrl-4"), ActivateTab(3), context),
+        KeyBinding::new(os_keys!("cmd-5", "ctrl-5"), ActivateTab(4), context),
+        KeyBinding::new(os_keys!("cmd-6", "ctrl-6"), ActivateTab(5), context),
+        KeyBinding::new(os_keys!("cmd-7", "ctrl-7"), ActivateTab(6), context),
+        KeyBinding::new(os_keys!("cmd-8", "ctrl-8"), ActivateTab(7), context),
+        KeyBinding::new(os_keys!("cmd-9", "ctrl-9"), ActivateTab(-1), context),
+        KeyBinding::new(os_keys!("cmd-shift-up", "ctrl-shift-up"), PreviousSession, context),
+        KeyBinding::new(os_keys!("cmd-shift-down", "ctrl-shift-down"), NextSession, context),
+        KeyBinding::new(os_keys!("cmd-up", "ctrl-up"), PreviousSessionInTab, context),
+        KeyBinding::new(os_keys!("cmd-down", "ctrl-down"), NextSessionInTab, context),
+        KeyBinding::new(os_keys!("cmd-shift-left", "ctrl-shift-left"), PreviousProject, context),
+        KeyBinding::new(os_keys!("cmd-shift-right", "ctrl-shift-right"), NextProject, context),
+        KeyBinding::new(os_keys!("cmd-alt-shift-left", "ctrl-alt-shift-left"), MoveProjectBack, context),
+        KeyBinding::new(os_keys!("cmd-alt-shift-right", "ctrl-alt-shift-right"), MoveProjectForward, context),
+        KeyBinding::new(os_keys!("cmd-.", "ctrl-."), SwitchModel, context),
+        KeyBinding::new(os_keys!("cmd-shift-b", "ctrl-shift-b"), ToggleRightPanel, context),
+        KeyBinding::new(os_keys!("cmd-d", "ctrl-d"), SplitRight, context),
+        KeyBinding::new(os_keys!("cmd-j", "ctrl-j"), ToggleTerminal, context),
+        KeyBinding::new(os_keys!("cmd-shift-j", "ctrl-shift-j"), SplitTerminal, context),
+        KeyBinding::new(os_keys!("cmd-`", "ctrl-`"), NewTerminal, context),
         // Switch between the original two-sidebar layout and the new layout.
-        KeyBinding::new(&format!("{modifier}-shift-l"), ToggleLayout, context),
+        KeyBinding::new(os_keys!("cmd-shift-l", "ctrl-shift-l"), ToggleLayout, context),
         // Switch the Focused layout between its rounded and boxy workspace.
-        KeyBinding::new(&format!("{modifier}-alt-l"), ToggleWorkspaceStyle, context),
-        KeyBinding::new(&format!("{modifier}-shift-d"), SplitDown, context),
-        KeyBinding::new(&format!("{modifier}-="), ZoomIn, context),
-        KeyBinding::new(&format!("{modifier}-+"), ZoomIn, context),
-        KeyBinding::new(&format!("{modifier}--"), ZoomOut, context),
-        KeyBinding::new(&format!("{modifier}-0"), ResetZoom, context),
-        KeyBinding::new(&format!("{modifier}-shift-r"), Reload, context),
-        KeyBinding::new(&format!("{modifier}-alt-left"), FocusPaneLeft, context),
-        KeyBinding::new(&format!("{modifier}-alt-right"), FocusPaneRight, context),
-        KeyBinding::new(&format!("{modifier}-alt-up"), FocusPaneUp, context),
-        KeyBinding::new(&format!("{modifier}-alt-down"), FocusPaneDown, context),
+        KeyBinding::new(os_keys!("cmd-alt-l", "ctrl-alt-l"), ToggleWorkspaceStyle, context),
+        KeyBinding::new(os_keys!("cmd-shift-d", "ctrl-shift-d"), SplitDown, context),
+        KeyBinding::new(os_keys!("cmd-=", "ctrl-="), ZoomIn, context),
+        KeyBinding::new(os_keys!("cmd-+", "ctrl-+"), ZoomIn, context),
+        KeyBinding::new(os_keys!("cmd--", "ctrl--"), ZoomOut, context),
+        KeyBinding::new(os_keys!("cmd-0", "ctrl-0"), ResetZoom, context),
+        KeyBinding::new(os_keys!("cmd-shift-r", "ctrl-shift-r"), Reload, context),
+        KeyBinding::new(os_keys!("cmd-alt-left", "ctrl-alt-left"), FocusPaneLeft, context),
+        KeyBinding::new(os_keys!("cmd-alt-right", "ctrl-alt-right"), FocusPaneRight, context),
+        KeyBinding::new(os_keys!("cmd-alt-up", "ctrl-alt-up"), FocusPaneUp, context),
+        KeyBinding::new(os_keys!("cmd-alt-down", "ctrl-alt-down"), FocusPaneDown, context),
         KeyBinding::new("ctrl-tab", NextTab, context),
         KeyBinding::new("ctrl-shift-tab", PreviousTab, context),
         KeyBinding::new("tab", FocusNext, context),
@@ -11070,10 +11065,13 @@ mod tests {
             window
                 .update(cx, |_, w, _| {
                     let (blur, radius) = (24., 11.);
-                    let marker = gpui::backdrop_blur_marker(blur * w.scale_factor());
+                    let scale = w.scale_factor();
                     assert!(
-                        w.painted_quads().iter().any(|q| q.border_color == marker
-                            && q.corner_radii.top_left.0 == radius * w.scale_factor()),
+                        w.painted_scene()
+                            .backdrop_blurs()
+                            .iter()
+                            .any(|b| b.blur_radius.0 == blur * scale
+                                && b.corner_radii.top_left.0 == radius * scale),
                         "composer frosting keeps the same blur and radius in both layouts"
                     );
                 })

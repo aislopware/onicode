@@ -31,26 +31,21 @@ pub(crate) fn start(cx: &mut App) {
 }
 
 fn sample() -> String {
-    let gpu = gpui_apple::metal_renderer::gpu_memory();
-    let mb = |bytes: u64| bytes as f64 / (1024. * 1024.);
+    let gpu = gpui_apple::fast::gpu_stats::snapshot();
+    let mb = |bytes: usize| bytes as f64 / (1024. * 1024.);
     format!(
-        "{} footprint={:.1}MB gpu={:.1}MB instance_buffer={:.1}MB effect_textures={:.1}MB \
-         windows={} drawables={:.1}MP atlas_mono={:.1}MB atlas_poly={:.1}MB atlas_textures={} \
-         glyphs={:.1}MB svgs={:.1}MB images={:.1}MB trims={}",
+        "{} footprint={:.1}MB gpu={:.1}MB instance_buffer={:.1}MB backdrop={:.1}MB paths={:.1}MB \
+         tiles={:.1}MB windows={} atlas={:.1}MB atlas_textures={}",
         chrono::Local::now().format("%H:%M:%S"),
-        mb(footprint()),
-        mb(gpu.allocated),
-        mb(gpu.instance_buffer),
-        mb(gpu.scratch),
+        mb(footprint() as usize),
+        mb(gpu.device),
+        mb(gpu.pooled_buffers * gpu.buffer_size),
+        mb(gpu.backdrop),
+        mb(gpu.paths),
+        mb(gpu.tiles),
         gpu.renderers,
-        gpu.drawable_pixels as f64 / 1e6,
-        mb(gpu.atlas.monochrome),
-        mb(gpu.atlas.polychrome),
-        gpu.atlas.textures,
-        mb(gpu.atlas.glyph_tiles),
-        mb(gpu.atlas.svg_tiles),
-        mb(gpu.atlas.image_tiles),
-        gpu.trims,
+        mb(gpu.atlas),
+        gpu.atlas_textures,
     )
 }
 

@@ -441,22 +441,7 @@ fn paint_text(
     window.with_content_mask(Some(ContentMask { bounds }), |window| {
         #[cfg(target_os = "macos")]
         {
-            let marker = |begin, window: &mut Window| {
-                if let Some((start, end)) = mask {
-                    let scale = window.scale_factor();
-                    window.paint_layer(bounds, |window| {
-                        window.paint_quad(fill(bounds, gpui::black()).border_color(
-                            gpui_apple::metal_renderer::text_reveal_marker(
-                                begin,
-                                start * scale,
-                                end * scale,
-                            ),
-                        ));
-                    });
-                }
-            };
-            marker(true, window);
-            window.paint_layer(bounds, |window| {
+            let mut paint = |window: &mut Window| {
                 let _ = line.paint(
                     bounds.origin,
                     bounds.size.height,
@@ -465,8 +450,14 @@ fn paint_text(
                     window,
                     cx,
                 );
-            });
-            marker(false, window);
+            };
+            match mask {
+                // Two opposed CSS gradients, whole at `start` and gone at `end`.
+                Some((start, end)) => {
+                    window.with_edge_fade(bounds, gpui::EdgeFade::ramp_x(px(start), px(end)), paint)
+                }
+                None => paint(window),
+            }
         }
         #[cfg(not(target_os = "macos"))]
         {

@@ -137,23 +137,47 @@ fn age_label(updated_at: u64, now: u64) -> &'static str {
 }
 
 // Match sidebar-session-scroll: 40px below, and 28px above scrolled Focused rows.
-// Mask only the edge bands so the virtual list never needs a full-pane copy.
-fn sidebar_edge_mask(
-    state: ListState,
+fn sidebar_fade_heights(
+    state: &ListState,
     top_fade: bool,
-    #[cfg_attr(target_os = "macos", allow(unused_variables))] inset: bool,
-    begin: bool,
-) -> impl IntoElement {
+    bounds: Bounds<Pixels>,
+) -> (Pixels, Pixels) {
+    let offset = state.logical_scroll_top();
+    let bottom = px(40.).min(bounds.size.height);
+    let top = if top_fade && (offset.item_ix > 0 || offset.offset_in_item > px(0.)) {
+        px(28.).min((bounds.size.height - bottom).max(px(0.)))
+    } else {
+        px(0.)
+    };
+    (top, bottom)
+}
+
+/// The rows, faded out over [`sidebar_fade_heights`].
+fn sidebar_faded(rows: impl IntoElement, state: ListState, top_fade: bool) -> impl IntoElement {
+    crate::mask::fade_by(rows, move |bounds, _, _| {
+        let (top, bottom) = sidebar_fade_heights(&state, top_fade, bounds);
+        crate::mask::mask_fade_y(top, bottom)
+    })
+}
+
+/// Without Metal's fade, the background painted over the rows' edges.
+#[cfg(not(target_os = "macos"))]
+fn sidebar_edge_wash(state: ListState, top_fade: bool, inset: bool) -> impl IntoElement {
     gpui::canvas(
         |_, _, _| {},
         move |bounds, _, window, _| {
-            let offset = state.logical_scroll_top();
-            let bottom_height = px(40.).min(bounds.size.height);
-            let top_height = if top_fade && (offset.item_ix > 0 || offset.offset_in_item > px(0.)) {
-                px(28.).min((bounds.size.height - bottom_height).max(px(0.)))
+            let (top_height, bottom_height) = sidebar_fade_heights(&state, top_fade, bounds);
+            let background = if inset {
+                shell_fill().blend(inset_chrome_wash())
             } else {
-                px(0.)
+                shell_fill()
             };
+            // Without a mask the fade paints the background over the
+            // rows. Over Windows' glass that becomes an opaque band,
+            // so a translucent background keeps the list's hard edge.
+            if cfg!(target_os = "windows") && background.a < 1. {
+                return;
+            }
             for (at_top, height) in [(true, top_height), (false, bottom_height)] {
                 if height <= px(0.) {
                     continue;
@@ -169,51 +193,21 @@ fn sidebar_edge_mask(
                     ),
                     gpui::size(bounds.size.width, height),
                 );
-                #[cfg(target_os = "macos")]
-                window.paint_quad(gpui::fill(band, gpui::black()).border_color(
-                    gpui_apple::metal_renderer::edge_fade_marker(
-                        begin,
-                        if at_top {
-                            height.as_f32() * window.scale_factor()
-                        } else {
-                            0.
-                        },
-                        if at_top {
-                            0.
-                        } else {
-                            height.as_f32() * window.scale_factor()
-                        },
-                    ),
-                ));
-                #[cfg(not(target_os = "macos"))]
-                if !begin {
-                    let background = if inset {
-                        shell_fill().blend(inset_chrome_wash())
+                for y in 0..height.as_f32().ceil() as usize {
+                    let mut color = background;
+                    color.a = (1. - (y as f32 + 0.5) / height.as_f32()).clamp(0., 1.);
+                    let y = if at_top {
+                        band.top() + px(y as f32)
                     } else {
-                        shell_fill()
+                        band.bottom() - px(y as f32 + 1.)
                     };
-                    // Without a mask the fade paints the background over the
-                    // rows. Over Windows' glass that becomes an opaque band,
-                    // so a translucent background keeps the list's hard edge.
-                    if cfg!(target_os = "windows") && background.a < 1. {
-                        continue;
-                    }
-                    for y in 0..height.as_f32().ceil() as usize {
-                        let mut color = background;
-                        color.a = (1. - (y as f32 + 0.5) / height.as_f32()).clamp(0., 1.);
-                        let y = if at_top {
-                            band.top() + px(y as f32)
-                        } else {
-                            band.bottom() - px(y as f32 + 1.)
-                        };
-                        window.paint_quad(gpui::fill(
-                            gpui::Bounds::new(
-                                gpui::point(band.left(), y),
-                                gpui::size(band.size.width, px(1.)),
-                            ),
-                            color,
-                        ));
-                    }
+                    window.paint_quad(gpui::fill(
+                        gpui::Bounds::new(
+                            gpui::point(band.left(), y),
+                            gpui::size(band.size.width, px(1.)),
+                        ),
+                        color,
+                    ));
                 }
             }
         },
@@ -444,7 +438,7 @@ impl Shell {
     }
 
     pub(super) fn virtual_sidebar(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        div()
+        let sidebar = div()
             .id("sidebar-scroll")
             .debug_selector(|| "sidebar-sessions".into())
             .relative()
@@ -452,26 +446,22 @@ impl Shell {
             .min_h_0()
             .overflow_hidden()
             .on_scroll_wheel(cx.listener(|this, _, _, cx| this.sidebar_scrolled(cx)))
-            .child(sidebar_edge_mask(
-                self.sidebar_list.state.clone(),
-                !self.workspace.classic_layout,
-                !self.workspace.boxy_layout(),
-                true,
-            ))
-            .child(
+            .child(sidebar_faded(
                 list(
                     self.sidebar_list.state.clone(),
                     cx.processor(|this, ix, _, cx| this.sidebar_list_row(ix, cx)),
                 )
                 .size_full(),
-            )
-            .child(sidebar_edge_mask(
                 self.sidebar_list.state.clone(),
                 !self.workspace.classic_layout,
-                !self.workspace.boxy_layout(),
-                false,
-            ))
-            .into_any()
+            ));
+        #[cfg(not(target_os = "macos"))]
+        let sidebar = sidebar.child(sidebar_edge_wash(
+            self.sidebar_list.state.clone(),
+            !self.workspace.classic_layout,
+            !self.workspace.boxy_layout(),
+        ));
+        sidebar.into_any()
     }
 
     fn sidebar_list_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {

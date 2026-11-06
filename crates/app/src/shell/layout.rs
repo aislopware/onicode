@@ -19,82 +19,62 @@ use crate::workspace::TitleTab;
 
 const CARD_RADIUS: f32 = 10.;
 
-// GPUI overflow clips rectangles. Capture outside the bordered frame so the
-// final mask includes its background, border and children at the outer radius.
-// A mask inside the frame only covers its inset content rectangle.
-fn card_corner_mask(begin: bool) -> impl IntoElement {
+// The card is clipped to its outer radius (`mask::rounded_clip`), its background, border and
+// children alike; this washes the areas outside the curve as the surrounding chrome.
+fn card_corner_wash() -> impl IntoElement {
     gpui::canvas(
         |_, _, _| {},
         move |bounds, _, window, _| {
             let r = px(CARD_RADIUS)
                 .min(bounds.size.width / 2.)
                 .min(bounds.size.height / 2.);
+            // The areas outside the curve belong to the surrounding
+            // chrome, just like the gutters and footer. Restoring the
+            // window's unwashed glass here leaves dark square corners.
             #[cfg(target_os = "macos")]
-            let corners = [
-                bounds.origin,
-                gpui::point(bounds.right() - r, bounds.top()),
-                gpui::point(bounds.right() - r, bounds.bottom() - r),
-                gpui::point(bounds.left(), bounds.bottom() - r),
+            let outside = inset_chrome_wash();
+            // Without the clip an opaque fill covers whatever the card
+            // painted past its curve. Over Windows' glass the root's
+            // translucent fill is already there, and a second one darkens
+            // the corners.
+            #[cfg(target_os = "windows")]
+            let outside = if shell_fill().a < 1. {
+                inset_chrome_wash()
+            } else {
+                shell_fill().blend(inset_chrome_wash())
+            };
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            let outside = shell_fill().blend(inset_chrome_wash());
+            let vertices = [
+                (
+                    bounds.origin,
+                    gpui::point(bounds.left() + r, bounds.top()),
+                    gpui::point(bounds.left(), bounds.top() + r),
+                ),
+                (
+                    gpui::point(bounds.right(), bounds.top()),
+                    gpui::point(bounds.right(), bounds.top() + r),
+                    gpui::point(bounds.right() - r, bounds.top()),
+                ),
+                (
+                    gpui::point(bounds.right(), bounds.bottom()),
+                    gpui::point(bounds.right() - r, bounds.bottom()),
+                    gpui::point(bounds.right(), bounds.bottom() - r),
+                ),
+                (
+                    gpui::point(bounds.left(), bounds.bottom()),
+                    gpui::point(bounds.left(), bounds.bottom() - r),
+                    gpui::point(bounds.left() + r, bounds.bottom()),
+                ),
             ];
-            #[cfg(target_os = "macos")]
-            for (corner, origin) in corners.into_iter().enumerate() {
-                window.paint_quad(
-                    gpui::fill(gpui::Bounds::new(origin, gpui::size(r, r)), gpui::black())
-                        .border_color(gpui_apple::metal_renderer::corner_clip_marker(
-                            begin,
-                            corner as u8,
-                        )),
-                );
-            }
-            if !begin {
-                // The areas outside the curve belong to the surrounding
-                // chrome, just like the gutters and footer. Restoring the
-                // window's unwashed glass here leaves dark square corners.
-                #[cfg(target_os = "macos")]
-                let outside = inset_chrome_wash();
-                // Without the mask an opaque fill covers whatever the card
-                // painted past its curve. Over Windows' glass the root's
-                // translucent fill is already there, and a second one darkens
-                // the corners.
-                #[cfg(target_os = "windows")]
-                let outside = if shell_fill().a < 1. {
-                    inset_chrome_wash()
-                } else {
-                    shell_fill().blend(inset_chrome_wash())
-                };
-                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                let outside = shell_fill().blend(inset_chrome_wash());
-                let vertices = [
-                    (
-                        bounds.origin,
-                        gpui::point(bounds.left() + r, bounds.top()),
-                        gpui::point(bounds.left(), bounds.top() + r),
-                    ),
-                    (
-                        gpui::point(bounds.right(), bounds.top()),
-                        gpui::point(bounds.right(), bounds.top() + r),
-                        gpui::point(bounds.right() - r, bounds.top()),
-                    ),
-                    (
-                        gpui::point(bounds.right(), bounds.bottom()),
-                        gpui::point(bounds.right() - r, bounds.bottom()),
-                        gpui::point(bounds.right(), bounds.bottom() - r),
-                    ),
-                    (
-                        gpui::point(bounds.left(), bounds.bottom()),
-                        gpui::point(bounds.left(), bounds.bottom() - r),
-                        gpui::point(bounds.left() + r, bounds.bottom()),
-                    ),
-                ];
-                for (corner, start, end) in vertices {
-                    let mut path = gpui::PathBuilder::fill();
-                    path.move_to(corner);
-                    path.line_to(start);
-                    path.arc_to(gpui::point(r, r), px(0.), false, false, end);
-                    path.close();
-                    if let Ok(path) = path.build() {
-                        window.paint_path(path, outside);
-                    }
+            for (corner, start, end) in vertices {
+                let mut path = gpui::PathBuilder::fill();
+                path.move_to(corner);
+                path.line_to(start);
+                path.arc_to(gpui::point(r, r), px(0.), false, false, end);
+                path.close();
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, outside);
                 }
             }
         },
@@ -245,8 +225,8 @@ impl Shell {
             .min_w_0()
             .flex()
             .overflow_hidden()
-            .child(card_corner_mask(true))
-            .child(
+            .child(crate::mask::rounded_clip(
+                CARD_RADIUS,
                 div()
                     .flex_1()
                     .min_h_0()
@@ -258,8 +238,8 @@ impl Shell {
                     .border_1()
                     .border_color(content(0.08))
                     .child(card),
-            )
-            .child(card_corner_mask(false));
+            ))
+            .child(card_corner_wash());
         let footer = self.footer_row(cx);
         vec![
             div()

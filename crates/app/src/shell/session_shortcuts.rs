@@ -49,15 +49,8 @@ mod tests {
 
     use super::*;
 
-    fn shortcut() -> String {
-        format!(
-            "{}-shift-a",
-            if cfg!(target_os = "macos") {
-                "cmd"
-            } else {
-                "ctrl"
-            }
-        )
+    fn shortcut() -> &'static str {
+        os_keys!("cmd-shift-a", "ctrl-shift-a")
     }
 
     fn setup(cx: &mut TestAppContext) {
@@ -76,7 +69,7 @@ mod tests {
         window
             .update(cx, |shell, window, cx| shell.open(first, window, cx))
             .unwrap();
-        cx.simulate_keystrokes(window.into(), &shortcut());
+        cx.simulate_keystrokes(window.into(), shortcut());
         cx.run_until_parked();
         let next = window
             .update(cx, |shell, _, cx| {
@@ -98,7 +91,7 @@ mod tests {
             })
             .unwrap();
         // The test keyboard sends key-down events only, reproducing auto-repeat.
-        cx.simulate_keystrokes(window.into(), &shortcut());
+        cx.simulate_keystrokes(window.into(), shortcut());
         cx.run_until_parked();
         window
             .update(cx, |shell, _, cx| {
@@ -108,13 +101,13 @@ mod tests {
         cx.update_window(window.into(), |_, window, cx| {
             window.dispatch_event(
                 gpui::PlatformInput::KeyUp(KeyUpEvent {
-                    keystroke: Keystroke::parse(&shortcut()).unwrap(),
+                    keystroke: Keystroke::parse(shortcut()).unwrap(),
                 }),
                 cx,
             );
         })
         .unwrap();
-        cx.simulate_keystrokes(window.into(), &shortcut());
+        cx.simulate_keystrokes(window.into(), shortcut());
         cx.run_until_parked();
         window
             .update(cx, |shell, _, _| {
@@ -138,7 +131,7 @@ mod tests {
                 crate::settings::apply_keybindings(&shell.workspace.preferences, cx);
             })
             .unwrap();
-        cx.simulate_keystrokes(window.into(), &shortcut());
+        cx.simulate_keystrokes(window.into(), shortcut());
         window
             .update(cx, |shell, _, cx| {
                 assert!(!shell.sessions[&active].read(cx).summary.archived);
@@ -155,7 +148,7 @@ mod tests {
                 crate::settings::apply_keybindings(&shell.workspace.preferences, cx);
             })
             .unwrap();
-        cx.simulate_keystrokes(window.into(), &shortcut());
+        cx.simulate_keystrokes(window.into(), shortcut());
         window
             .update(cx, |shell, _, cx| {
                 assert!(!shell.sessions[&active].read(cx).summary.archived)
@@ -186,7 +179,7 @@ mod tests {
                 shell.open_quick_open(false, window, cx);
             })
             .unwrap();
-        cx.simulate_keystrokes(window.into(), &shortcut());
+        cx.simulate_keystrokes(window.into(), shortcut());
         window
             .update(cx, |shell, window, cx| {
                 assert!(!shell.sessions[&active].read(cx).summary.archived);
@@ -195,7 +188,7 @@ mod tests {
                     .update(cx, |session, cx| session.toggle_model_menu(window, cx));
             })
             .unwrap();
-        cx.simulate_keystrokes(window.into(), &shortcut());
+        cx.simulate_keystrokes(window.into(), shortcut());
         cx.run_until_parked();
         window
             .update(cx, |shell, _, cx| {

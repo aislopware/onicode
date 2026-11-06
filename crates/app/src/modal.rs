@@ -89,8 +89,8 @@ pub(crate) fn surface(radius: f32) -> impl IntoElement {
             let quad = if light {
                 gpui::fill(bounds, opaque)
             } else {
+                window.paint_backdrop_blur(bounds, gpui::Corners::all(px(radius)), px(BLUR));
                 gpui::fill(bounds, tint)
-                    .border_color(gpui::backdrop_blur_marker(BLUR * window.scale_factor()))
             };
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             let quad = {

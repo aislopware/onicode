@@ -2,9 +2,18 @@
 //! focus predicate. Resetting restores defaults without accumulating bindings.
 use std::collections::{HashMap, HashSet};
 
-use gpui::{App, Global, KeyBinding};
+use gpui::{App, Global, KeyBinding, OperatingSystem};
 
 use super::Preferences;
+
+/// The system keystrokes are spelled for, parsed and printed: the one the app is built for.
+pub(crate) const HOST_OS: OperatingSystem = if cfg!(target_os = "macos") {
+    OperatingSystem::Mac
+} else if cfg!(target_os = "windows") {
+    OperatingSystem::Windows
+} else {
+    OperatingSystem::Linux
+};
 struct Defaults {
     bindings: Vec<KeyBinding>,
     applied: HashMap<String, Option<String>>,
@@ -41,7 +50,7 @@ pub(crate) fn apply(prefs: &Preferences, cx: &mut App) {
                 binding.predicate(),
                 false,
                 binding.action_input(),
-                &gpui::DummyKeyboardMapper,
+                cx,
             )
         {
             bindings.push(custom);
@@ -52,7 +61,7 @@ pub(crate) fn apply(prefs: &Preferences, cx: &mut App) {
     cx.global_mut::<Defaults>().applied = prefs.keybindings.clone();
 }
 fn command(binding: &KeyBinding) -> Option<&'static str> {
-    let keys = binding.keystrokes().first()?.unparse();
+    let keys = binding.keystrokes().first()?.unparse(HOST_OS);
     Some(match binding.action().name() {
         "workspace::GoToFile" => "App: Go to File",
         "workspace::OpenCommandPalette" => "App: Command Palette",

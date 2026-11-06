@@ -241,21 +241,15 @@ impl ProjectBackground {
             |_, _, _| {},
             move |bounds, _, window, _| {
                 #[cfg(target_os = "macos")]
-                window.paint_quad(
-                    gpui::fill(bounds, gpui::black())
-                        .corner_radii(corners(
-                            bounds,
-                            preview,
-                            clip.as_ref().and_then(AnchorSlot::get),
-                        ))
-                        .border_widths(gpui::Edges {
-                            left: px(1.),
-                            ..Default::default()
-                        })
-                        .border_color(gpui_apple::metal_renderer::background_mask_marker(
-                            begin, empty, haze, preview, opacity,
-                        )),
-                );
+                if begin {
+                    window.begin_layer_mask(
+                        bounds,
+                        corners(bounds, preview, clip.as_ref().and_then(AnchorSlot::get)),
+                        gpui::LayerMask::project_background(empty, haze, preview, opacity),
+                    );
+                } else {
+                    window.end_layer_mask();
+                }
                 #[cfg(not(target_os = "macos"))]
                 if !begin {
                     // Other backends have an opaque chat surface. Reveal that
@@ -561,23 +555,12 @@ mod tests {
                         );
                         #[cfg(target_os = "macos")]
                         {
-                            let marker = gpui_apple::metal_renderer::background_mask_marker(
-                                false, true, false, true, 0.24,
-                            );
-                            let quads = _window.painted_quads();
-                            let mask = quads
+                            let mask = gpui::LayerMask::project_background(true, false, true, 0.24);
+                            let cuts = _window.painted_scene().layer_masks();
+                            let mask = cuts
                                 .iter()
-                                .find(|q| q.border_color == marker)
-                                .unwrap_or_else(|| {
-                                    panic!(
-                                        "missing background mask in {} painted quads: {:?}",
-                                        quads.len(),
-                                        quads
-                                            .iter()
-                                            .map(|q| (q.bounds, q.border_color))
-                                            .collect::<Vec<_>>()
-                                    )
-                                });
+                                .find(|cut| cut.begin && cut.mask == mask)
+                                .unwrap_or_else(|| panic!("missing background mask in {cuts:?}"));
                             assert_eq!(
                                 mask.bounds.origin,
                                 gpui::point(gpui::ScaledPixels(0.), gpui::ScaledPixels(0.))

@@ -89,13 +89,8 @@ pub(crate) enum CodeAction {
 pub struct Rejected(pub &'static str);
 
 pub fn bind(cx: &mut App) {
-    let selection_modifier = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl"
-    };
     cx.bind_keys([KeyBinding::new(
-        &format!("{selection_modifier}-c"),
+        os_keys!("cmd-c", "ctrl-c"),
         Copy,
         Some("TranscriptSelection"),
     )]);
@@ -117,14 +112,13 @@ pub fn bind(cx: &mut App) {
         KeyBinding::new("shift-enter", Newline, Some("Composer")),
         KeyBinding::new("enter", Submit, Some("Composer")),
     ]);
-    let modifier = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl"
-    };
     cx.bind_keys([
-        KeyBinding::new(&format!("{modifier}-z"), Undo, Some("CodeEditor")),
-        KeyBinding::new(&format!("{modifier}-shift-z"), Redo, Some("CodeEditor")),
+        KeyBinding::new(os_keys!("cmd-z", "ctrl-z"), Undo, Some("CodeEditor")),
+        KeyBinding::new(
+            os_keys!("cmd-shift-z", "ctrl-shift-z"),
+            Redo,
+            Some("CodeEditor"),
+        ),
         KeyBinding::new("ctrl-space", Complete, Some("CodeEditor")),
         KeyBinding::new("cmd-alt-[", FoldCode, Some("CodeEditor")),
         KeyBinding::new("cmd-alt-]", UnfoldCode, Some("CodeEditor")),
@@ -137,12 +131,12 @@ pub fn bind(cx: &mut App) {
         KeyBinding::new("shift-tab", Outdent, Some("CodeEditor")),
     ]);
     cx.bind_keys([
-        KeyBinding::new(&format!("{modifier}-a"), SelectAll, Some("Composer")),
-        KeyBinding::new(&format!("{modifier}-c"), Copy, Some("Composer")),
-        KeyBinding::new(&format!("{modifier}-v"), Paste, Some("Composer")),
-        KeyBinding::new(&format!("{modifier}-x"), Cut, Some("Composer")),
+        KeyBinding::new(os_keys!("cmd-a", "ctrl-a"), SelectAll, Some("Composer")),
+        KeyBinding::new(os_keys!("cmd-c", "ctrl-c"), Copy, Some("Composer")),
+        KeyBinding::new(os_keys!("cmd-v", "ctrl-v"), Paste, Some("Composer")),
+        KeyBinding::new(os_keys!("cmd-x", "ctrl-x"), Cut, Some("Composer")),
         KeyBinding::new(
-            &format!("{modifier}-enter"),
+            os_keys!("cmd-enter", "ctrl-enter"),
             SubmitSecondary,
             Some("Composer"),
         ),
@@ -168,35 +162,34 @@ pub fn bind(cx: &mut App) {
             KeyBinding::new("ctrl-shift-end", SelectDocumentEnd, Some("Composer")),
         ]);
     }
-    let word_modifier = if cfg!(target_os = "macos") {
-        "alt"
-    } else {
-        "ctrl"
-    };
     cx.bind_keys([
-        KeyBinding::new(&format!("{word_modifier}-left"), WordLeft, Some("Composer")),
         KeyBinding::new(
-            &format!("{word_modifier}-right"),
+            os_keys!("alt-left", "ctrl-left"),
+            WordLeft,
+            Some("Composer"),
+        ),
+        KeyBinding::new(
+            os_keys!("alt-right", "ctrl-right"),
             WordRight,
             Some("Composer"),
         ),
         KeyBinding::new(
-            &format!("{word_modifier}-shift-left"),
+            os_keys!("alt-shift-left", "ctrl-shift-left"),
             SelectWordLeft,
             Some("Composer"),
         ),
         KeyBinding::new(
-            &format!("{word_modifier}-shift-right"),
+            os_keys!("alt-shift-right", "ctrl-shift-right"),
             SelectWordRight,
             Some("Composer"),
         ),
         KeyBinding::new(
-            &format!("{word_modifier}-backspace"),
+            os_keys!("alt-backspace", "ctrl-backspace"),
             DeleteWordLeft,
             Some("Composer"),
         ),
         KeyBinding::new(
-            &format!("{word_modifier}-delete"),
+            os_keys!("alt-delete", "ctrl-delete"),
             DeleteWordRight,
             Some("Composer"),
         ),
@@ -623,12 +616,7 @@ impl Input {
         })
     }
 
-    fn scroll(
-        &mut self,
-        event: &gpui::ScrollWheelEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn scroll(&mut self, event: &gpui::ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.code.is_some() {
             self.code_scroll(event, window, cx);
             return;
@@ -2190,11 +2178,12 @@ mod native_input_tests {
             })
             .unwrap();
         assert!(before > px(80.));
-        visual.simulate_event(gpui::ScrollWheelEvent {
+        visual.simulate_event(gpui::ScrollEvent {
             position,
             delta: gpui::ScrollDelta::Pixels(point(px(0.), px(80.))),
             modifiers: Default::default(),
             touch_phase: gpui::TouchPhase::Moved,
+            ..Default::default()
         });
         visual.run_until_parked();
         let scrolled = window

@@ -28,7 +28,7 @@ use gpui::{
     App, Bounds, ClipboardItem, Context, Element, ElementId, Entity, EventEmitter, FocusHandle,
     Focusable, FontStyle, FontWeight, GlobalElementId, Hsla, InspectorElementId, KeyBinding,
     KeyDownEvent, Keystroke, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, ScrollDelta,
-    ScrollWheelEvent, ShapedLine, SharedString, Size, StrikethroughStyle, Style, Task, TextAlign,
+    ScrollEvent, ShapedLine, SharedString, Size, StrikethroughStyle, Style, Task, TextAlign,
     TextRun, UnderlineStyle, Window, actions, div, point, px, rgb, size,
 };
 use shell::default_shell;
@@ -43,20 +43,15 @@ actions!(
 );
 
 pub(crate) fn bind(cx: &mut App) {
-    let m = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl-shift"
-    };
     let c = Some("Terminal");
     // The shell owns these keys while a terminal has focus.
     cx.bind_keys([
         KeyBinding::new("tab", SendTab, c),
         KeyBinding::new("shift-tab", SendBackTab, c),
         KeyBinding::new("escape", SendEscape, c),
-        KeyBinding::new(&format!("{m}-c"), Copy, c),
-        KeyBinding::new(&format!("{m}-v"), Paste, c),
-        KeyBinding::new(&format!("{m}-a"), SelectAll, c),
+        KeyBinding::new(os_keys!("cmd-c", "ctrl-shift-c"), Copy, c),
+        KeyBinding::new(os_keys!("cmd-v", "ctrl-shift-v"), Paste, c),
+        KeyBinding::new(os_keys!("cmd-a", "ctrl-shift-a"), SelectAll, c),
     ]);
 }
 
@@ -688,7 +683,7 @@ impl Terminal {
         }
     }
 
-    fn scroll(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) {
+    fn scroll(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) {
         let line = self.geometry.get().map_or(16., |g| g.cell.height.as_f32());
         let delta = match event.delta {
             ScrollDelta::Lines(lines) => lines.y,
@@ -1519,10 +1514,10 @@ mod tests {
         );
     }
 
-    fn key(spec: &str) -> Keystroke {
+    fn key(spec: &'static str) -> Keystroke {
         Keystroke::parse(spec).unwrap()
     }
-    fn bytes(spec: &str) -> Option<Vec<u8>> {
+    fn bytes(spec: &'static str) -> Option<Vec<u8>> {
         key_bytes(&key(spec), TermMode::empty())
     }
 

@@ -13,7 +13,7 @@ use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Bounds, Context, EventEmitter, FocusHandle, Focusable, FontWeight,
     HighlightStyle, Hsla, KeyBinding, ListAlignment, ListOffset, ListState, MouseButton,
-    MouseDownEvent, MouseMoveEvent, Pixels, Role, ScrollWheelEvent, SharedString, StyledText,
+    MouseDownEvent, MouseMoveEvent, Pixels, Role, ScrollEvent, SharedString, StyledText,
     Subscription, Task, Window, actions, canvas, div, list, px, rgb,
 };
 use onicode_core::diff::{self, Block, Line, LineKind};
@@ -731,7 +731,7 @@ impl DiffView {
     /// as React's `stopJump`. Each gesture keeps to the axis it started on:
     /// a sideways one scrolls the code lanes and never the list, a vertical
     /// one never drifts the lanes. Returns whether it took the event.
-    fn wheel(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) -> bool {
+    fn wheel(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) -> bool {
         use gpui::TouchPhase;
         self.pending = None;
         let delta = event.delta.pixel_delta(px(LINE));
@@ -1399,10 +1399,10 @@ fn blur() -> impl IntoElement {
         |_, _, _| {},
         move |bounds, _, window, _| {
             #[cfg(any(target_os = "macos", target_os = "windows"))]
-            // Keep the tint on the blur quad itself. GPUI treats a fully
-            // transparent fill as border-only and strips its interior.
-            let quad = gpui::fill(bounds, content(0.02))
-                .border_color(gpui::backdrop_blur_marker(24. * window.scale_factor()));
+            let quad = {
+                window.paint_backdrop_blur(bounds, gpui::Corners::default(), px(24.));
+                gpui::fill(bounds, content(0.02))
+            };
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             let quad = gpui::fill(bounds, rgb(CHAT));
             window.paint_quad(quad);
@@ -1698,21 +1698,19 @@ impl Render for DiffView {
                             },
                             move |bounds, _, window, _| {
                                 let weak = weak.clone();
-                                window.on_mouse_event(
-                                    move |event: &ScrollWheelEvent, phase, _, cx| {
-                                        if phase != gpui::DispatchPhase::Capture
-                                            || !bounds.contains(&event.position)
-                                        {
-                                            return;
-                                        }
-                                        let took = weak
-                                            .update(cx, |this, cx| this.wheel(event, cx))
-                                            .unwrap_or(false);
-                                        if took {
-                                            cx.stop_propagation();
-                                        }
-                                    },
-                                );
+                                window.on_mouse_event(move |event: &ScrollEvent, phase, _, cx| {
+                                    if phase != gpui::DispatchPhase::Capture
+                                        || !bounds.contains(&event.position)
+                                    {
+                                        return;
+                                    }
+                                    let took = weak
+                                        .update(cx, |this, cx| this.wheel(event, cx))
+                                        .unwrap_or(false);
+                                    if took {
+                                        cx.stop_propagation();
+                                    }
+                                });
                             },
                         )
                         .absolute()
@@ -1833,7 +1831,7 @@ mod tests {
     }
     #[gpui::test]
     fn sideways_swipes_end_jumps_and_never_scroll_the_list(cx: &mut gpui::TestAppContext) {
-        use gpui::{ScrollDelta, ScrollWheelEvent, TouchPhase, point};
+        use gpui::{ScrollDelta, ScrollEvent, TouchPhase, point};
         let wide: String = (0..80)
             .map(|i| format!("{i} {}\n", "x".repeat(300)))
             .collect();
@@ -1859,11 +1857,12 @@ mod tests {
             (TouchPhase::Moved, -40., 6.),
             (TouchPhase::Moved, -40., 8.),
         ] {
-            cx.simulate_event(ScrollWheelEvent {
+            cx.simulate_event(ScrollEvent {
                 position: point(px(300.), px(200.)),
                 delta: ScrollDelta::Pixels(point(px(dx), px(dy))),
                 modifiers: Default::default(),
                 touch_phase: phase,
+                ..Default::default()
             });
         }
         cx.run_until_parked();
@@ -1898,16 +1897,20 @@ mod tests {
         cx.refresh().unwrap();
         window
             .update(cx, |_, window, _| {
-                let marker = gpui::backdrop_blur_marker(24. * window.scale_factor());
-                let quads = window.painted_quads();
-                let glass = quads.iter().find(|q| q.border_color == marker).expect(
-                    "the sticky header's blur must survive GPUI's transparent-quad culling",
-                );
-                assert_eq!(glass.background, content(0.02).into());
-                assert_eq!(
-                    glass.bounds.size.height.0,
-                    FILE_HEADER * window.scale_factor()
-                );
+                let scale = window.scale_factor();
+                let blur = window
+                    .painted_scene()
+                    .backdrop_blurs()
+                    .iter()
+                    .find(|blur| blur.blur_radius.0 == 24. * scale)
+                    .expect("the sticky header is frosted");
+                assert_eq!(blur.bounds.size.height.0, FILE_HEADER * scale);
+                let tint = window
+                    .painted_quads()
+                    .into_iter()
+                    .find(|q| q.bounds == blur.bounds)
+                    .expect("the sticky header is tinted over its blur");
+                assert_eq!(tint.background, content(0.02).into());
             })
             .unwrap();
     }

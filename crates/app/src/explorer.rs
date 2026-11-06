@@ -97,11 +97,6 @@ actions!(
 );
 
 pub(crate) fn bind(cx: &mut App) {
-    let m = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl"
-    };
     let c = Some("Explorer");
     cx.bind_keys([
         KeyBinding::new("down", Down, c),
@@ -118,10 +113,10 @@ pub(crate) fn bind(cx: &mut App) {
         KeyBinding::new("delete", Delete, c),
         KeyBinding::new("backspace", Delete, c),
         KeyBinding::new("escape", ClearCut, c),
-        KeyBinding::new(&format!("{m}-c"), CopyEntry, c),
-        KeyBinding::new(&format!("{m}-x"), CutEntry, c),
-        KeyBinding::new(&format!("{m}-v"), PasteEntry, c),
-        KeyBinding::new(&format!("{m}-shift-c"), CopyPath, c),
+        KeyBinding::new(os_keys!("cmd-c", "ctrl-c"), CopyEntry, c),
+        KeyBinding::new(os_keys!("cmd-x", "ctrl-x"), CutEntry, c),
+        KeyBinding::new(os_keys!("cmd-v", "ctrl-v"), PasteEntry, c),
+        KeyBinding::new(os_keys!("cmd-shift-c", "ctrl-shift-c"), CopyPath, c),
         KeyBinding::new("escape", CancelName, Some("ExplorerName")),
     ]);
 }

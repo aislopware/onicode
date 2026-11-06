@@ -20,8 +20,7 @@ pub(super) struct Measurements {
     retained: HashMap<(usize, usize), RetainedHeight>,
     frame: u64,
     /// Advances on every frame that may have resized rows for reasons their
-    /// own content doesn't show: anything but animation steps notified the
-    /// transcript or a view inside it, or rows or panels are moving.
+    /// own content doesn't show: every frame that renders the transcript.
     layout_epoch: u64,
     #[cfg(test)]
     pub(super) fresh: usize,
@@ -187,12 +186,9 @@ impl TranscriptView {
             self.measurements.viewport = self.viewport.size;
         }
         self.measurements.rows.clear();
-        if window.view_layout_dirty(cx.entity_id())
-            || !self.motions.is_empty()
-            || self.agent_panels.animating()
-        {
-            self.measurements.layout_epoch = self.measurements.layout_epoch.wrapping_add(1);
-        }
+        // GPUI has no paint-only notify, so every frame that renders the transcript may have
+        // resized rows.
+        self.measurements.layout_epoch = self.measurements.layout_epoch.wrapping_add(1);
         let motions = &self.motions;
         let previous = self.measurements.frame;
         self.measurements.frame = previous.wrapping_add(1);
@@ -262,7 +258,7 @@ impl TranscriptView {
                 cx,
             )
             .height;
-        gpui::frame_stats::add(kind, started.elapsed().as_micros() as u32);
+        crate::frame_log::add(kind, started.elapsed().as_micros() as u32);
         #[cfg(test)]
         {
             self.measurements.fresh += 1;

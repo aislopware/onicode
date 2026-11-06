@@ -1,21 +1,49 @@
-//! Real Metal regression for the translucent inset shell. No window is opened.
+//! Real Metal regressions for the translucent inset shell and the masks it draws with: the
+//! rounded clip, edge fades, text reveal, project background mask and backdrop blur, each built
+//! as a window would build it. No window is opened.
 use std::sync::Arc;
 
-use gpui::{Bounds, ContentMask, Corners, DevicePixels, Quad, ScaledPixels, Scene, point, size};
-// `backdrop_marker_blurs_only_inside_its_rounded_bounds` also needs Edges, Hsla.
+use gpui::{
+    Bounds, ContentMask, Corners, DevicePixels, EdgeFade, EdgeFadeRamps, Edges, Hsla, Quad,
+    ScaledPixels, Scene, black, point, px, size, white,
+};
 use gpui_apple::metal_renderer::{InstanceBufferPool, MetalRenderer};
 
 use crate::theme::{content, pane_fill, shell_fill};
 
-#[test]
-#[ignore = "Requires a Metal device; run explicitly on macOS"]
-fn rounded_children_restore_each_translucent_corner_without_touching_the_footer() {
-    use gpui::{Hsla, black, white};
-    use gpui_apple::metal_renderer::corner_clip_marker;
+/// A headless renderer over a translucent window's backdrop.
+fn renderer() -> MetalRenderer {
     let mut renderer = MetalRenderer::new_headless(Arc::new(parking_lot::Mutex::new(
         InstanceBufferPool::default(),
-    )));
+    )))
+    .unwrap();
     renderer.update_transparency(true);
+    renderer
+}
+
+/// A plain quad of `color` over `bounds`, shown anywhere inside `full`.
+fn fill(full: Bounds<ScaledPixels>, bounds: Bounds<ScaledPixels>, color: Hsla) -> Quad {
+    Quad {
+        order: 0,
+        border_style: Default::default(),
+        bounds,
+        content_mask: ContentMask { bounds: full },
+        background: color.into(),
+        border_color: Default::default(),
+        corner_radii: Default::default(),
+        border_widths: Default::default(),
+    }
+}
+
+/// The ramps `fade` draws over `region` at a scale of 1, as `crate::mask` paints them.
+fn ramps(fade: EdgeFade, region: Bounds<ScaledPixels>) -> EdgeFadeRamps {
+    fade.ramps_over(region, 1.)
+}
+
+#[test]
+#[ignore = "Requires a Metal device; run explicitly on macOS"]
+fn rounded_clip_restores_each_translucent_corner_without_touching_the_footer() {
+    let mut renderer = renderer();
     let full = Bounds::new(
         point(ScaledPixels(0.), ScaledPixels(0.)),
         size(ScaledPixels(64.), ScaledPixels(48.)),
@@ -24,55 +52,29 @@ fn rounded_children_restore_each_translucent_corner_without_touching_the_footer(
         point(ScaledPixels(8.), ScaledPixels(8.)),
         size(ScaledPixels(48.), ScaledPixels(32.)),
     );
-    let corners = [(8., 8.), (48., 8.), (48., 32.), (8., 32.)];
-    let quad = |bounds, color: Hsla, marker: Hsla| Quad {
-        order: 0,
-        border_style: Default::default(),
-        bounds,
-        content_mask: ContentMask { bounds: full },
-        background: color.into(),
-        border_color: marker,
-        corner_radii: Default::default(),
-        border_widths: Default::default(),
-    };
     let render = |renderer: &mut MetalRenderer, children: bool| {
         let mut scene = Scene::default();
         for x in 0..64u32 {
-            scene.insert_primitive(quad(
+            scene.insert_primitive(fill(
+                full,
                 Bounds::new(
                     point(ScaledPixels(x as f32), ScaledPixels(0.)),
                     size(ScaledPixels(1.), ScaledPixels(48.)),
                 ),
                 gpui::rgba(((x * 3) << 24) | 0x00305080).into(),
-                Default::default(),
             ));
         }
         if children {
-            let outside = Bounds::new(
-                point(ScaledPixels(-12.), ScaledPixels(-12.)),
-                size(ScaledPixels(8.), ScaledPixels(8.)),
+            // `mask::rounded_clip`: the card and everything in it cut along 8px corners.
+            let clip = scene
+                .add_edge_fade(EdgeFadeRamps::NONE.rounded(pane, Corners::all(ScaledPixels(8.))));
+            scene.insert_faded_primitive(fill(full, pane, white()), clip);
+            // A child overflowing the card below is cut at the card's edge.
+            let footer = Bounds::new(
+                point(ScaledPixels(0.), ScaledPixels(40.)),
+                size(ScaledPixels(64.), ScaledPixels(8.)),
             );
-            // Fully clipped corners do not occupy an unallocated scratch slot.
-            scene.insert_primitive(quad(outside, black(), corner_clip_marker(true, 0)));
-            let marker = |begin, corner: usize| {
-                let (x, y) = corners[corner];
-                quad(
-                    Bounds::new(
-                        point(ScaledPixels(x), ScaledPixels(y)),
-                        size(ScaledPixels(8.), ScaledPixels(8.)),
-                    ),
-                    black(),
-                    corner_clip_marker(begin, corner as u8),
-                )
-            };
-            for corner in 0..4 {
-                scene.insert_primitive(marker(true, corner));
-            }
-            scene.insert_primitive(quad(pane, white(), Default::default()));
-            for corner in 0..4 {
-                scene.insert_primitive(marker(false, corner));
-            }
-            scene.insert_primitive(quad(outside, black(), corner_clip_marker(false, 0)));
+            scene.insert_faded_primitive(fill(full, footer, black()), clip);
         }
         scene.finish();
         renderer
@@ -92,40 +94,21 @@ fn rounded_children_restore_each_translucent_corner_without_touching_the_footer(
 #[test]
 #[ignore = "Requires a Metal device; run explicitly on macOS"]
 fn title_particle_reveal_matches_opposed_css_masks_over_a_translucent_backdrop() {
-    use gpui::{Hsla, black, white};
-    use gpui_apple::metal_renderer::text_reveal_marker;
-    let mut renderer = MetalRenderer::new_headless(Arc::new(parking_lot::Mutex::new(
-        InstanceBufferPool::default(),
-    )));
-    renderer.update_transparency(true);
+    let mut renderer = renderer();
     let full = Bounds::new(
         point(ScaledPixels(0.), ScaledPixels(0.)),
         size(ScaledPixels(120.), ScaledPixels(40.)),
     );
-    let quad = |bounds, color: Hsla, marker: Hsla| Quad {
-        order: 0,
-        border_style: Default::default(),
-        bounds,
-        content_mask: ContentMask { bounds: full },
-        background: color.into(),
-        border_color: marker,
-        corner_radii: Default::default(),
-        border_widths: Default::default(),
-    };
     for (start, end) in [(-36., -18.), (32., 50.), (59., 41.), (100., 118.)] {
         let label = Bounds::new(
             point(ScaledPixels(10.), ScaledPixels(5.)),
             size(ScaledPixels(100.), ScaledPixels(30.)),
         );
         let mut scene = Scene::default();
-        scene.insert_primitive(quad(
-            full,
-            gpui::rgba(0x20408080).into(),
-            Default::default(),
-        ));
-        scene.insert_primitive(quad(label, black(), text_reveal_marker(true, start, end)));
-        scene.insert_primitive(quad(label, white(), Default::default()));
-        scene.insert_primitive(quad(label, black(), text_reveal_marker(false, start, end)));
+        scene.insert_primitive(fill(full, full, gpui::rgba(0x20408080).into()));
+        // `particle_text`'s reveal: a raw ramp along x from the label's left.
+        let reveal = scene.add_edge_fade(ramps(EdgeFade::ramp_x(px(start), px(end)), label));
+        scene.insert_faded_primitive(fill(full, label, white()), reveal);
         scene.finish();
         let image = renderer
             .render_scene_to_image(&scene, size(DevicePixels(120), DevicePixels(40)))
@@ -150,12 +133,7 @@ fn title_particle_reveal_matches_opposed_css_masks_over_a_translucent_backdrop()
 #[test]
 #[ignore = "Requires a Metal device; run explicitly on macOS"]
 fn background_artwork_mask_rounds_fades_and_blurs_without_touching_the_backdrop() {
-    use gpui::{Edges, Hsla, black, white};
-    use gpui_apple::metal_renderer::background_mask_marker;
-    let mut renderer = MetalRenderer::new_headless(Arc::new(parking_lot::Mutex::new(
-        InstanceBufferPool::default(),
-    )));
-    renderer.update_transparency(true);
+    let mut renderer = renderer();
     let full = Bounds::new(
         point(ScaledPixels(0.), ScaledPixels(0.)),
         size(ScaledPixels(128.), ScaledPixels(200.)),
@@ -164,36 +142,28 @@ fn background_artwork_mask_rounds_fades_and_blurs_without_touching_the_backdrop(
         point(ScaledPixels(8.), ScaledPixels(8.)),
         size(ScaledPixels(112.), ScaledPixels(184.)),
     );
-    let quad = |bounds, color: Hsla| Quad {
-        order: 0,
-        border_style: Default::default(),
-        bounds,
-        content_mask: ContentMask { bounds: full },
-        background: color.into(),
-        border_color: Default::default(),
-        corner_radii: Default::default(),
-        border_widths: Default::default(),
-    };
     let render = |renderer: &mut MetalRenderer, haze, empty, alpha| {
         let mut scene = Scene::default();
-        scene.insert_primitive(quad(full, gpui::rgba(0x20408080).into()));
-        let marker = |begin| {
-            let mut q = quad(layer, black());
-            q.border_color = background_mask_marker(begin, empty, haze, false, 0.65);
-            q.border_widths = Edges {
-                left: ScaledPixels(1.),
-                ..Default::default()
-            };
-            q.corner_radii = Corners::all(ScaledPixels(12.));
-            q
+        scene.insert_primitive(fill(full, full, gpui::rgba(0x20408080).into()));
+        // `project_background`'s mask around the artwork.
+        let cut = |begin| gpui::LayerMaskCut {
+            order: 0,
+            id: 0,
+            begin,
+            bounds: layer,
+            content_mask: ContentMask { bounds: full },
+            corner_radii: Corners::all(ScaledPixels(12.)),
+            mask: gpui::LayerMask::project_background(empty, haze, false, 0.65),
+            scale: 1.,
         };
-        scene.insert_primitive(marker(true));
+        scene.insert_layer_mask(cut(true));
         for x in 8..120 {
             let stripe = Bounds::new(
                 point(ScaledPixels(x as f32), ScaledPixels(8.)),
                 size(ScaledPixels(1.), ScaledPixels(184.)),
             );
-            scene.insert_primitive(quad(
+            scene.insert_primitive(fill(
+                full,
                 stripe,
                 if x % 2 == 0 {
                     black().opacity(alpha)
@@ -202,7 +172,7 @@ fn background_artwork_mask_rounds_fades_and_blurs_without_touching_the_backdrop(
                 },
             ));
         }
-        scene.insert_primitive(marker(false));
+        scene.insert_layer_mask(cut(false));
         scene.finish();
         renderer
             .render_scene_to_image(&scene, size(DevicePixels(128), DevicePixels(200)))
@@ -266,12 +236,7 @@ fn background_artwork_mask_rounds_fades_and_blurs_without_touching_the_backdrop(
 #[test]
 #[ignore = "Requires a Metal device; run explicitly on macOS"]
 fn tab_title_fade_preserves_the_background_and_only_fades_the_right_edge() {
-    use gpui::{Hsla, black, white};
-    use gpui_apple::metal_renderer::horizontal_fade_marker;
-    let mut renderer = MetalRenderer::new_headless(Arc::new(parking_lot::Mutex::new(
-        InstanceBufferPool::default(),
-    )));
-    renderer.update_transparency(true);
+    let mut renderer = renderer();
     let full = Bounds::new(
         point(ScaledPixels(0.), ScaledPixels(0.)),
         size(ScaledPixels(192.), ScaledPixels(32.)),
@@ -280,31 +245,20 @@ fn tab_title_fade_preserves_the_background_and_only_fades_the_right_edge() {
         point(ScaledPixels(8.), ScaledPixels(4.)),
         size(ScaledPixels(80.), ScaledPixels(24.)),
     );
-    let quad = |bounds, color: Hsla, marker: Hsla| Quad {
-        order: 0,
-        border_style: Default::default(),
-        bounds,
-        content_mask: ContentMask { bounds: full },
-        background: color.into(),
-        border_color: marker,
-        corner_radii: Default::default(),
-        border_widths: Default::default(),
-    };
     let mut scene = Scene::default();
-    scene.insert_primitive(quad(
-        full,
-        gpui::rgba(0x20408080).into(),
-        Default::default(),
-    ));
-    // Disjoint labels share draw orders. The renderer must pair their masks
-    // even when GPUI batches both begins before both ends.
+    scene.insert_primitive(fill(full, full, gpui::rgba(0x20408080).into()));
+    // Disjoint labels share draw orders; each carries its own fade.
     for label in [
         label,
         Bounds::new(point(ScaledPixels(104.), ScaledPixels(4.)), label.size),
     ] {
-        scene.insert_primitive(quad(label, black(), horizontal_fade_marker(true, 40.)));
-        scene.insert_primitive(quad(label, white(), Default::default()));
-        scene.insert_primitive(quad(label, black(), horizontal_fade_marker(false, 40.)));
+        // `tab_label`'s overflow fade.
+        let fade = crate::mask::mask_fade(Edges {
+            right: px(40.),
+            ..Edges::default()
+        });
+        let fade = scene.add_edge_fade(ramps(fade, label));
+        scene.insert_faded_primitive(fill(full, label, white()), fade);
     }
     scene.finish();
     let image = renderer
@@ -348,31 +302,20 @@ fn tab_title_fade_preserves_the_background_and_only_fades_the_right_edge() {
 #[test]
 #[ignore = "Requires a Metal device; run explicitly on macOS"]
 fn tab_strip_fade_ramps_each_requested_side() {
-    use gpui::{Hsla, black, white};
-    use gpui_apple::metal_renderer::side_fade_marker;
-    let mut renderer = MetalRenderer::new_headless(Arc::new(parking_lot::Mutex::new(
-        InstanceBufferPool::default(),
-    )));
-    renderer.update_transparency(true);
+    let mut renderer = renderer();
     let full = Bounds::new(
         point(ScaledPixels(0.), ScaledPixels(0.)),
         size(ScaledPixels(200.), ScaledPixels(16.)),
     );
-    let quad = |bounds, color: Hsla, marker: Hsla| Quad {
-        order: 0,
-        border_style: Default::default(),
-        bounds,
-        content_mask: ContentMask { bounds: full },
-        background: color.into(),
-        border_color: marker,
-        corner_radii: Default::default(),
-        border_widths: Default::default(),
-    };
     let mut render = |left: f32, right: f32| {
         let mut scene = Scene::default();
-        scene.insert_primitive(quad(full, black(), side_fade_marker(true, left, right)));
-        scene.insert_primitive(quad(full, white(), Default::default()));
-        scene.insert_primitive(quad(full, black(), side_fade_marker(false, left, right)));
+        let fade = crate::mask::mask_fade(Edges {
+            left: px(left),
+            right: px(right),
+            ..Edges::default()
+        });
+        let fade = scene.add_edge_fade(ramps(fade, full));
+        scene.insert_faded_primitive(fill(full, full, white()), fade);
         scene.finish();
         renderer
             .render_scene_to_image(&scene, size(DevicePixels(200), DevicePixels(16)))
@@ -398,13 +341,8 @@ fn tab_strip_fade_ramps_each_requested_side() {
 
 #[test]
 #[ignore = "Requires a Metal device; run explicitly on macOS"]
-fn transcript_fades_mask_the_group_and_preserve_the_native_background() {
-    use gpui::{Hsla, black, white};
-    use gpui_apple::metal_renderer::edge_fade_marker;
-    let mut renderer = MetalRenderer::new_headless(Arc::new(parking_lot::Mutex::new(
-        InstanceBufferPool::default(),
-    )));
-    renderer.update_transparency(true);
+fn transcript_fades_each_fill_and_preserve_the_native_background() {
+    let mut renderer = renderer();
     let full = Bounds::new(
         point(ScaledPixels(0.), ScaledPixels(0.)),
         size(ScaledPixels(32.), ScaledPixels(96.)),
@@ -413,38 +351,34 @@ fn transcript_fades_mask_the_group_and_preserve_the_native_background() {
         point(ScaledPixels(4.), ScaledPixels(8.)),
         size(ScaledPixels(24.), ScaledPixels(80.)),
     );
-    let quad = |bounds, color: Hsla, marker: Hsla| Quad {
-        order: 0,
-        border_style: Default::default(),
-        bounds,
-        content_mask: ContentMask { bounds: full },
-        background: color.into(),
-        border_color: marker,
-        corner_radii: Default::default(),
-        border_widths: Default::default(),
-    };
     let mut scene = Scene::default();
-    scene.insert_primitive(quad(
-        full,
-        gpui::rgba(0x20408080).into(),
-        Default::default(),
-    ));
-    scene.insert_primitive(quad(mask, black(), edge_fade_marker(true, 16., 24.)));
-    // Overlapping fills must fade as one group, rather than accumulate alpha.
-    scene.insert_primitive(quad(mask, white().opacity(0.6), Default::default()));
-    scene.insert_primitive(quad(mask, white().opacity(0.6), Default::default()));
-    scene.insert_primitive(quad(mask, black(), edge_fade_marker(false, 16., 24.)));
-    // A control drawn after the mask must remain fully visible.
+    scene.insert_primitive(fill(full, full, gpui::rgba(0x20408080).into()));
+    // The transcript's fade: 16px at the top, 24px at the bottom.
+    let fade = scene.add_edge_fade(ramps(crate::mask::mask_fade_y(px(16.), px(24.)), mask));
+    // gpui-fast fades each primitive, not the group as monocode's marker did: overlapping fills
+    // each fade, then composite.
+    scene.insert_faded_primitive(fill(full, mask, white().opacity(0.6)), fade);
+    scene.insert_faded_primitive(fill(full, mask, white().opacity(0.6)), fade);
+    // A control drawn after the fade must remain fully visible.
     let control = Bounds::new(
         point(ScaledPixels(18.), ScaledPixels(82.)),
         size(ScaledPixels(6.), ScaledPixels(4.)),
     );
-    scene.insert_primitive(quad(control, white(), Default::default()));
+    scene.insert_primitive(fill(full, control, white()));
     scene.finish();
     let image = renderer
         .render_scene_to_image(&scene, size(DevicePixels(32), DevicePixels(96)))
         .unwrap();
     let alpha = |y| image.get_pixel(8, y)[3] as i32;
+    // Two 60% fills, each faded by `fade`, over the 50% backdrop.
+    let expected = |y: u32| {
+        let center = y as f32 + 0.5;
+        let fade = ((center - 8.) / 16.)
+            .min((88. - center) / 24.)
+            .clamp(0., 1.);
+        let through = 1. - 0.6 * fade;
+        (255. * (1. - (127. / 255.) * through * through)).round() as i32
+    };
     assert_eq!(
         image.get_pixel(0, 48)[3],
         128,
@@ -458,28 +392,25 @@ fn transcript_fades_mask_the_group_and_preserve_the_native_background() {
         (232..=237).contains(&alpha(48)),
         "center retains both overlapping fills"
     );
-    assert!(
-        (alpha(16) - ((128 + alpha(48)) / 2)).abs() < 7,
-        "top midpoint fades the composite once"
-    );
-    assert!(
-        (alpha(76) - ((128 + alpha(48)) / 2)).abs() < 7,
-        "bottom midpoint uses its own fade height"
-    );
+    for y in [12, 16, 20, 70, 76, 82] {
+        assert!(
+            (alpha(y) - expected(y)).abs() <= 3,
+            "at {y}: {} where the ramps give {}",
+            alpha(y),
+            expected(y)
+        );
+    }
     assert_eq!(
         image.get_pixel(20, 83)[3],
         255,
-        "floating controls sit above the mask"
+        "floating controls sit above the fade"
     );
 }
 
 #[test]
 #[ignore = "Requires a Metal device; run explicitly on macOS"]
 fn overlapping_shell_pane_and_hover_preserve_source_over_alpha() {
-    let mut renderer = MetalRenderer::new_headless(Arc::new(parking_lot::Mutex::new(
-        InstanceBufferPool::default(),
-    )));
-    renderer.update_transparency(true);
+    let mut renderer = renderer();
     let bounds = Bounds::new(
         point(ScaledPixels(0.), ScaledPixels(0.)),
         size(ScaledPixels(16.), ScaledPixels(16.)),
@@ -524,50 +455,43 @@ fn overlapping_shell_pane_and_hover_preserve_source_over_alpha() {
         "hover fill must not accumulate alpha additively"
     );
 }
+
 #[test]
 #[ignore = "Requires a Metal device; run explicitly on macOS"]
-fn backdrop_marker_blurs_only_inside_its_rounded_bounds() {
-    use gpui::{Edges, Hsla, black, white};
+fn backdrop_blur_blurs_only_inside_its_bounds() {
     let mut renderer = MetalRenderer::new_headless(Arc::new(parking_lot::Mutex::new(
         InstanceBufferPool::default(),
-    )));
+    )))
+    .unwrap();
     let full = Bounds::new(
         point(ScaledPixels(0.), ScaledPixels(0.)),
         size(ScaledPixels(64.), ScaledPixels(32.)),
     );
-    let quad = |order, bounds: Bounds<ScaledPixels>, background: Hsla, border_color| Quad {
-        order,
-        border_style: Default::default(),
-        bounds,
-        content_mask: ContentMask { bounds: full },
-        background: background.into(),
-        border_color,
-        corner_radii: Corners::all(ScaledPixels(0.)),
-        border_widths: Edges::default(),
-    };
     let mut scene = Scene::default();
     // A hard black|white edge down the middle.
-    scene.insert_primitive(quad(0, full, black(), Default::default()));
-    scene.insert_primitive(quad(
-        1,
+    scene.insert_primitive(fill(full, full, black()));
+    scene.insert_primitive(fill(
+        full,
         Bounds::new(
             full.center() - point(ScaledPixels(0.), ScaledPixels(16.)),
             size(ScaledPixels(32.), ScaledPixels(32.)),
         ),
         white(),
-        Default::default(),
     ));
-    // Frosted glass over the left half's right side, with no tint of its own.
+    // Frosted glass across the edge, with no tint of its own.
     let glass = Bounds::new(
         point(ScaledPixels(16.), ScaledPixels(0.)),
         size(ScaledPixels(32.), ScaledPixels(32.)),
     );
-    scene.insert_primitive(quad(
-        2,
-        glass,
-        gpui::transparent_black(),
-        gpui_apple::metal_renderer::backdrop_blur_marker(6.),
-    ));
+    scene.insert_backdrop_blur(gpui::BackdropBlur {
+        order: 0,
+        fade: 0,
+        bounds: glass,
+        content_mask: ContentMask { bounds: full },
+        corner_radii: Corners::default(),
+        blur_radius: ScaledPixels(6.),
+        opacity: 1.,
+    });
     scene.finish();
     let pixels = renderer
         .render_scene_to_image(&scene, size(DevicePixels(64), DevicePixels(32)))
@@ -591,10 +515,7 @@ fn backdrop_marker_blurs_only_inside_its_rounded_bounds() {
 #[test]
 #[ignore = "Requires a Metal device; run explicitly on macOS"]
 fn drop_shadows_paint_only_outside_their_element() {
-    let mut renderer = MetalRenderer::new_headless(Arc::new(parking_lot::Mutex::new(
-        InstanceBufferPool::default(),
-    )));
-    renderer.update_transparency(true);
+    let mut renderer = renderer();
     let full = Bounds::new(
         point(ScaledPixels(0.), ScaledPixels(0.)),
         size(ScaledPixels(48.), ScaledPixels(48.)),

@@ -2,8 +2,8 @@
 
 ## monocode
 
-The app (`crates/app`), its core (`crates/core`) and the vendored GPUI snapshot (`vendor/gpui-pre*`) come from
-monocode's native preview, https://github.com/hardbeat920/monocode at 1de99e7b, under the MIT License:
+The app (`crates/app`) and its core (`crates/core`) come from monocode's native preview,
+https://github.com/hardbeat920/monocode at 1de99e7b, under the MIT License:
 
 > Copyright (c) 2026 Nick
 >
@@ -23,7 +23,13 @@ monocode's native preview, https://github.com/hardbeat920/monocode at 1de99e7b, 
 
 monocode's own notices (GPUI under Apache-2.0, mermaid-rs-renderer under MIT, the embedded icon sets and editor
 bundles) are in `docs/monocode/NOTICE` and `docs/monocode/native/LICENSE-*`, and their license files sit beside
-the assets in `crates/app/assets/`.
+the assets in `crates/app/assets/`. monocode's GPUI snapshot is no longer vendored: the app draws with
+aislopware/gpui-fast (below).
+
+## GPUI
+
+GPUI comes from https://github.com/aislopware/gpui-fast, a fork of longbridge/gpui-fast and Zed Industries'
+GPUI, under the Apache License 2.0 (its `LICENSE`); `Cargo.toml` pins the rev.
 
 ## zeron
 

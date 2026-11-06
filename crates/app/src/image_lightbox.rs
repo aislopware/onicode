@@ -28,15 +28,18 @@ pub(crate) struct Open {
 actions!(image_lightbox, [Close, ZoomIn, ZoomOut, ResetZoom]);
 
 pub(crate) fn bind(cx: &mut App) {
-    for modifier in ["cmd", "ctrl"] {
-        cx.bind_keys([
-            KeyBinding::new(&format!("{modifier}-+"), ZoomIn, Some("ImageLightbox")),
-            KeyBinding::new(&format!("{modifier}-="), ZoomIn, Some("ImageLightbox")),
-            KeyBinding::new(&format!("{modifier}--"), ZoomOut, Some("ImageLightbox")),
-            KeyBinding::new(&format!("{modifier}-0"), ResetZoom, Some("ImageLightbox")),
-        ]);
-    }
-    cx.bind_keys([KeyBinding::new("escape", Close, Some("ImageLightbox"))]);
+    let context = Some("ImageLightbox");
+    cx.bind_keys([
+        KeyBinding::new("cmd-+", ZoomIn, context),
+        KeyBinding::new("cmd-=", ZoomIn, context),
+        KeyBinding::new("cmd--", ZoomOut, context),
+        KeyBinding::new("cmd-0", ResetZoom, context),
+        KeyBinding::new("ctrl-+", ZoomIn, context),
+        KeyBinding::new("ctrl-=", ZoomIn, context),
+        KeyBinding::new("ctrl--", ZoomOut, context),
+        KeyBinding::new("ctrl-0", ResetZoom, context),
+    ]);
+    cx.bind_keys([KeyBinding::new("escape", Close, context)]);
 }
 
 const MIN_SCALE: f32 = 1.;
@@ -345,7 +348,7 @@ impl Render for ImageLightbox {
                     cx.notify();
                 }),
             )
-            .on_scroll_wheel(cx.listener(|this, event: &gpui::ScrollWheelEvent, _, cx| {
+            .on_scroll_wheel(cx.listener(|this, event: &gpui::ScrollEvent, _, cx| {
                 let delta = event.delta.pixel_delta(px(16.));
                 if event.modifiers.control || event.modifiers.platform {
                     // GPUI's wheel deltas have the opposite sign to DOM wheel deltas.
@@ -374,11 +377,9 @@ impl Render for ImageLightbox {
                 canvas(
                     |_, _, _| {},
                     |bounds, _, window, _| {
-                        let quad = gpui::fill(bounds, black(0.85));
                         #[cfg(any(target_os = "macos", target_os = "windows"))]
-                        let quad = quad
-                            .border_color(gpui::backdrop_blur_marker(4. * window.scale_factor()));
-                        window.paint_quad(quad);
+                        window.paint_backdrop_blur(bounds, gpui::Corners::default(), px(4.));
+                        window.paint_quad(gpui::fill(bounds, black(0.85)));
                     },
                 )
                 .absolute()
@@ -450,12 +451,10 @@ impl Render for ImageLightbox {
                             |_, _, _| {},
                             |bounds, _, window, _| {
                                 #[cfg(any(target_os = "macos", target_os = "windows"))]
-                                window.paint_quad(
-                                    gpui::fill(bounds, gpui::transparent_black())
-                                        .corner_radii(px(18.))
-                                        .border_color(gpui::backdrop_blur_marker(
-                                            12. * window.scale_factor(),
-                                        )),
+                                window.paint_backdrop_blur(
+                                    bounds,
+                                    gpui::Corners::all(px(18.)),
+                                    px(12.),
                                 );
                                 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
                                 let _ = (bounds, window);
@@ -488,7 +487,7 @@ pub(crate) fn overlay(view: &Entity<ImageLightbox>) -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use gpui::{
-        Modifiers, ScrollDelta, ScrollWheelEvent, TestAppContext, TouchPhase, VisualTestContext,
+        Modifiers, ScrollDelta, ScrollEvent, TestAppContext, TouchPhase, VisualTestContext,
         WindowBounds, WindowOptions,
     };
 
@@ -601,11 +600,12 @@ mod tests {
                 )
             })
             .unwrap();
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: pointer,
             delta: ScrollDelta::Pixels(point(px(20.), px(-30.))),
             modifiers: Default::default(),
             touch_phase: TouchPhase::Moved,
+            ..Default::default()
         });
         window
             .update(visual, |view, _, _| {
@@ -619,7 +619,7 @@ mod tests {
                 )
             })
             .unwrap();
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: pointer,
             delta: ScrollDelta::Lines(point(0., 1.)),
             modifiers: Modifiers {

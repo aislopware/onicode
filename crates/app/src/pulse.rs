@@ -194,7 +194,7 @@ fn tick(cx: &mut App) -> bool {
             callback(cx);
         } else {
             // A loop's frames keep its size; views can keep their measurements.
-            cx.notify_paint(view);
+            cx.notify(view);
         }
     }
     true

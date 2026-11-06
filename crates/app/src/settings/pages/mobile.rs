@@ -1109,11 +1109,8 @@ fn pairing_backdrop(classic: bool) -> impl IntoElement {
                 fill
             };
             #[cfg(any(target_os = "macos", target_os = "windows"))]
-            let quad = gpui::fill(bounds, fill)
-                .border_color(gpui::backdrop_blur_marker(24. * window.scale_factor()));
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            let quad = gpui::fill(bounds, fill);
-            window.paint_quad(quad.corner_radii(px(DIALOG_RADIUS)));
+            window.paint_backdrop_blur(bounds, gpui::Corners::all(px(DIALOG_RADIUS)), px(24.));
+            window.paint_quad(gpui::fill(bounds, fill).corner_radii(px(DIALOG_RADIUS)));
         },
     )
     .absolute()
@@ -1135,15 +1132,7 @@ fn expired_qr_blur() -> impl IntoElement {
         |bounds, _, window, _| {
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
-                // A fully transparent fill is optimized out by GPUI before
-                // reaching Metal. This invisible white tint retains the
-                // marker without changing the dimmed QR's appearance.
-                let mut tint: gpui::Hsla = rgb(0xffffff).into();
-                tint.a = 0.000001;
-                window.paint_quad(
-                    gpui::fill(bounds, tint)
-                        .border_color(gpui::backdrop_blur_marker(2. * window.scale_factor())),
-                );
+                window.paint_backdrop_blur(bounds, gpui::Corners::default(), px(2.));
             });
             // Other renderers keep the dimmed expired image and the usable
             // New code control; they have no backdrop-blur primitive.

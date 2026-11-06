@@ -3,6 +3,18 @@
     windows_subsystem = "windows"
 )]
 
+/// A keystroke as macOS spells it or as the other desktops do, as the `&'static str`
+/// `KeyBinding::new` takes: `os_keys!("cmd-n", "ctrl-n")`.
+macro_rules! os_keys {
+    ($mac:literal, $other:literal) => {
+        if cfg!(target_os = "macos") {
+            $mac
+        } else {
+            $other
+        }
+    };
+}
+
 mod accounts;
 mod activity;
 mod app_log;
@@ -44,6 +56,7 @@ mod ink_field;
 mod input;
 mod markdown;
 mod markdown_model;
+mod mask;
 #[cfg(target_os = "macos")]
 mod memory_log;
 #[cfg(all(test, target_os = "macos"))]
@@ -387,12 +400,7 @@ fn main() {
             diff_view::bind(cx);
             fonts::init(cx);
             terminal::bind(cx);
-            let modifier = if cfg!(target_os = "macos") {
-                "cmd"
-            } else {
-                "ctrl"
-            };
-            cx.bind_keys([KeyBinding::new(&format!("{modifier}-q"), Quit, None)]);
+            cx.bind_keys([KeyBinding::new(os_keys!("cmd-q", "ctrl-q"), Quit, None)]);
             shell::bind_keys(cx);
             app_menu::bind(cx);
             usage_footer::bind(cx);

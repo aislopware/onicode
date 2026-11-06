@@ -364,11 +364,12 @@ fn tall_visual_uses_full_height_and_wheel_scrolls_the_conversation(cx: &mut Test
         })
         .unwrap();
     let viewport = visual.debug_bounds("visual-test-conversation").unwrap();
-    visual.simulate_event(gpui::ScrollWheelEvent {
+    visual.simulate_event(gpui::ScrollEvent {
         position: viewport.center(),
         delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-180.))),
         modifiers: Default::default(),
         touch_phase: gpui::TouchPhase::Moved,
+        ..Default::default()
     });
     visual.run_until_parked();
     window
