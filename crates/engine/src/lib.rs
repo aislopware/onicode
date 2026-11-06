@@ -611,14 +611,19 @@ impl EngineCore {
             .map(|cloud| cloud.broker().clone())
     }
 
+    /// Each phase's time goes to the log, so a slow quit names its cause.
     pub async fn shutdown(&self) {
+        let mut phases = ShutdownPhases::new();
         // Stop the runner heartbeat + credential refresher first.
         self.cloud
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
+        phases.end("cloud");
         self.previews.shutdown().await;
+        phases.end("previews");
         self.harness_updates.shutdown().await;
+        phases.end("harness_updates");
         // A run interruption transitions its chat to Idle, and Idle normally
         // releases the next queued row. Freeze first so quitting never starts
         // recovered work while the engine is being torn down.
@@ -634,10 +639,14 @@ impl EngineCore {
             self.sessions.forgo_revival();
         }
         self.sessions.shutdown().await;
+        phases.end("sessions");
         self.terminals.shutdown();
+        phases.end("terminals");
         self.sessions.stop_activity_projection().await;
+        phases.end("activity_projection");
         self.agent_accounts.shutdown();
         self.change_requests.shutdown();
+        phases.end("accounts_and_change_requests");
         // Cancel + await every worker that can reach Edge before flushing: a
         // replaced synced runtime must not keep polling releases or draining
         // the attachment outbox under the old identity after Local boots.
@@ -658,15 +667,65 @@ impl EngineCore {
         if let Some(updater) = updater {
             updater.shutdown().await;
         }
+        phases.end("updater");
         self.diff_sync.shutdown().await;
+        phases.end("diff_sync");
         self.workspace_files.shutdown().await;
+        phases.end("workspace_files");
         self.spaces_sync.shutdown().await;
+        phases.end("spaces_sync");
         self.doc_host.shutdown_workers().await;
+        phases.end("doc_workers");
         self.doc_host.flush_all();
+        phases.end("doc_flush");
         self.workspace.shutdown();
+        phases.end("workspace");
         // Break the sessions ⇄ doc-host retain cycle so the replaced graph can
         // actually be freed once the last handle drops.
         self.sessions.clear_doc_host();
+        phases.finish();
+    }
+}
+
+/// Times the sequential phases of [`EngineCore::shutdown`]: each at debug,
+/// and one info line with the total and the slowest phase.
+struct ShutdownPhases {
+    started: std::time::Instant,
+    last: std::time::Instant,
+    slowest: (&'static str, std::time::Duration),
+}
+
+impl ShutdownPhases {
+    fn new() -> Self {
+        let now = std::time::Instant::now();
+        Self {
+            started: now,
+            last: now,
+            slowest: ("none", std::time::Duration::ZERO),
+        }
+    }
+
+    fn end(&mut self, phase: &'static str) {
+        let now = std::time::Instant::now();
+        let took = now.duration_since(self.last);
+        self.last = now;
+        tracing::debug!(
+            phase,
+            took_ms = took.as_millis() as u64,
+            "engine shutdown phase"
+        );
+        if took > self.slowest.1 {
+            self.slowest = (phase, took);
+        }
+    }
+
+    fn finish(self) {
+        tracing::info!(
+            total_ms = self.started.elapsed().as_millis() as u64,
+            slowest = self.slowest.0,
+            slowest_ms = self.slowest.1.as_millis() as u64,
+            "engine shut down"
+        );
     }
 }
 
