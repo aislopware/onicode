@@ -308,7 +308,7 @@ struct DocHostInner {
     executing: Mutex<HashSet<String>>,
     /// Peer links (engine assembly, edge runtimes only) — the transport that
     /// pushes queued attachment bytes to a remote host.
-    links: OnceLock<Arc<onicode_rpc::LinkCache>>,
+    links: OnceLock<Arc<onicode_peer::PeerLinks>>,
     /// Shared client for sidecar blob PUT/GET (30s timeout, uploads.rs
     /// discipline — diff_sync's untimed client hung on dead links).
     http: reqwest::Client,
@@ -1354,7 +1354,7 @@ impl DocHost {
 
     /// Wire the peer-link cache (engine assembly, edge runtimes only) — the
     /// transport for queued attachment transfers to a remote host.
-    pub fn set_links(&self, links: Arc<onicode_rpc::LinkCache>) {
+    pub fn set_links(&self, links: Arc<onicode_peer::PeerLinks>) {
         let _ = self.inner.links.set(links);
     }
 

@@ -1,22 +1,18 @@
-//! M4b integration: `targetDeviceId` routing — engine A forwards device-addressed RPCs
-//! to engine B through B's device-room relay (host relay on B, link cache on A), with a
-//! minimal in-memory device-room standing in for the edge DO (route client→host with
-//! `from` stamped, host→client by `to`).
+//! `targetDeviceId` routing: engine A forwards device-addressed RPCs to engine B over
+//! their tailnet link, on a simulated tailnet (`support/tailnet.rs`).
 
-// tungstenite's `accept_hdr_async` callback signature fixes the Err type as a full
-// `Response` — its size is not ours to shrink.
-#![allow(clippy::result_large_err)]
+#[path = "support/tailnet.rs"]
+mod tailnet;
 
-use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use futures::StreamExt;
 use futures::stream::BoxStream;
-use futures::{SinkExt, StreamExt};
 use onicode_doc::SessionCommandPayload;
 use onicode_engine::{
     BranchHeadContext, ChangeRequestError, CheckoutChangeRequestLookup, CheckoutChangeRequests,
@@ -27,104 +23,7 @@ use onicode_proto::{
     AgentEvent, ChangeRequestState, ChangeRequestSummary, DoneStatus, HarnessId, Model,
     ReasoningLevel, RunRequest, SandboxLevel, SteeringMode,
 };
-use onicode_rpc::{
-    DeviceFrameHeader, HostRelay, HostRelayConfig, LinkCache, LinkCacheConfig, RpcError, RpcReply,
-    RpcService, StaticToken, decode_device_frame, encode_device_frame, methods,
-};
-use tokio::net::TcpListener;
-use tokio::sync::mpsc;
-use tokio_tungstenite::tungstenite::Message as WsMessage;
-use tokio_tungstenite::tungstenite::handshake::server::{
-    Request as WsRequest, Response as WsResponse,
-};
-
-// ---------------------------------------------------------------------------
-// Minimal in-memory device room (route-only subset of the DO semantics)
-// ---------------------------------------------------------------------------
-
-#[derive(Default)]
-struct RelayState {
-    host: Option<mpsc::UnboundedSender<Vec<u8>>>,
-    clients: HashMap<String, mpsc::UnboundedSender<Vec<u8>>>,
-}
-
-async fn fake_device_room() -> (String, tokio::task::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind relay");
-    let url = format!(
-        "http://127.0.0.1:{}",
-        listener.local_addr().expect("addr").port()
-    );
-    let state = Arc::new(Mutex::new(RelayState::default()));
-    let task = tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                break;
-            };
-            let state = state.clone();
-            tokio::spawn(async move {
-                let mut uri = String::new();
-                let Ok(ws) = tokio_tungstenite::accept_hdr_async(
-                    stream,
-                    |req: &WsRequest, res: WsResponse| {
-                        uri = req.uri().to_string();
-                        Ok(res)
-                    },
-                )
-                .await
-                else {
-                    return;
-                };
-                let query = uri.split_once('?').map(|(_, q)| q).unwrap_or("");
-                let is_host = query.contains("role=host");
-                let conn_id = query
-                    .split('&')
-                    .find_map(|kv| kv.strip_prefix("connId="))
-                    .unwrap_or("anon")
-                    .to_string();
-                let (mut sink, mut ws_stream) = ws.split();
-                let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
-                {
-                    let mut st = state.lock().expect("lock");
-                    if is_host {
-                        st.host = Some(tx);
-                    } else {
-                        st.clients.insert(conn_id.clone(), tx);
-                    }
-                }
-                let writer = tokio::spawn(async move {
-                    while let Some(bytes) = rx.recv().await {
-                        if sink.send(WsMessage::Binary(bytes)).await.is_err() {
-                            break;
-                        }
-                    }
-                });
-                while let Some(Ok(message)) = ws_stream.next().await {
-                    let WsMessage::Binary(bytes) = message else {
-                        continue;
-                    };
-                    let Ok((header, payload)) = decode_device_frame(&bytes) else {
-                        break;
-                    };
-                    let st = state.lock().expect("lock");
-                    if is_host {
-                        let Some(to) = header.to else { continue };
-                        if let Some(client) = st.clients.get(&to) {
-                            let stripped = DeviceFrameHeader::new(header.s, header.k);
-                            let _ = client
-                                .send(encode_device_frame(&stripped, &payload).expect("encode"));
-                        }
-                    } else if let Some(host) = &st.host {
-                        let mut routed = DeviceFrameHeader::new(header.s, header.k);
-                        routed.from = Some(conn_id.clone());
-                        let _ = host.send(encode_device_frame(&routed, &payload).expect("encode"));
-                    }
-                }
-                writer.abort();
-            });
-        }
-    });
-    (url, task)
-}
+use onicode_rpc::{RpcError, RpcService, methods};
 
 // ---------------------------------------------------------------------------
 // Engine fixtures
@@ -239,24 +138,6 @@ struct StaticChangeRequestLookup {
     resolves: AtomicUsize,
 }
 
-/// Models a host from before the checkout change-request watch existed.
-struct LegacyChangeRequestService {
-    list_harnesses_calls: AtomicUsize,
-}
-
-#[async_trait]
-impl RpcService for LegacyChangeRequestService {
-    async fn handle(&self, method: &str, _params: serde_json::Value) -> Result<RpcReply, RpcError> {
-        match method {
-            methods::LIST_HARNESSES => {
-                self.list_harnesses_calls.fetch_add(1, Ordering::AcqRel);
-                RpcReply::value(&serde_json::json!([]))
-            }
-            other => Err(RpcError::UnknownMethod(other.into())),
-        }
-    }
-}
-
 #[async_trait]
 impl CheckoutChangeRequestLookup for StaticChangeRequestLookup {
     async fn inspect_checkout(
@@ -311,52 +192,41 @@ fn change_request_lookup(root: &std::path::Path) -> Arc<StaticChangeRequestLooku
     })
 }
 
-/// Exercise the device-room wire format used by the native iOS relay client,
-/// without routing through another desktop engine first.
+/// A phone (a viewer on the tailnet, serving nothing) watching `cwd`'s change request on
+/// device-b: its first item.
 async fn simulated_ios_change_request(
-    relay_url: &str,
-    conn_id: &str,
+    tailnet: &tailnet::Tailnet,
+    device: &str,
     cwd: &std::path::Path,
 ) -> serde_json::Value {
-    let ws_url = relay_url.replacen("http://", "ws://", 1);
-    let url = format!("{ws_url}/device/device-b/ws?role=client&connId={conn_id}&token=ios-token");
-    let (mut socket, _) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("iOS relay client connects");
-    let request = serde_json::json!({
-        "id": 7,
-        "method": methods::WATCH_CHECKOUT_CHANGE_REQUEST,
-        "params": { "cwd": cwd },
-    });
-    let header = DeviceFrameHeader::new("rpc", "rpc");
-    let frame = encode_device_frame(&header, request.to_string().as_bytes()).expect("encode RPC");
-    socket
-        .send(WsMessage::Binary(frame))
-        .await
-        .expect("send iOS subscription");
-
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    loop {
-        let message = tokio::time::timeout_at(deadline, socket.next())
+    let phone = tailnet
+        .join(tailnet.node(), device, onicode_net::Role::Viewer, None)
+        .await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    let mut items = loop {
+        match phone
+            .links
+            .subscribe(
+                "device-b",
+                methods::WATCH_CHECKOUT_CHANGE_REQUEST,
+                serde_json::json!({ "cwd": cwd }),
+            )
             .await
-            .expect("iOS item before timeout")
-            .expect("iOS relay remains connected")
-            .expect("valid iOS relay frame");
-        let WsMessage::Binary(bytes) = message else {
-            continue;
-        };
-        let (header, payload) = decode_device_frame(&bytes).expect("decode iOS relay frame");
-        assert_eq!(header.k, "rpc");
-        let response: serde_json::Value =
-            serde_json::from_slice(&payload).expect("decode RPC response");
-        assert_eq!(response["id"], 7);
-        if let Some(error) = response["err"].as_str() {
-            panic!("iOS subscription failed: {error}");
+        {
+            Ok(items) => break items,
+            Err(error) => {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "the phone never reached device-b: {error}"
+                );
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
         }
-        if let Some(item) = response.get("item") {
-            return item.clone();
-        }
-    }
+    };
+    tokio::time::timeout(Duration::from_secs(5), items.recv())
+        .await
+        .expect("an item before the timeout")
+        .expect("the subscription stays open")
 }
 
 fn assert_public_change_request_payload(item: &serde_json::Value) {
@@ -402,7 +272,6 @@ fn assert_public_change_request_payload(item: &serde_json::Value) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn checkout_change_request_stream_matches_locally_and_through_device_routing() {
-    let (relay_url, _relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().expect("tempdir");
     let checkout = dirs.path().join("checkout");
     init_git_repo(&checkout);
@@ -441,13 +310,8 @@ async fn checkout_change_request_stream_matches_locally_and_through_device_routi
         .await
         .expect("local change request subscribe");
     let local_frame = local.recv().await.expect("local initial frame");
-
-    let _host = core_b.start_host_relay(&relay_url);
     let core_a = assemble(&dirs.path().join("a"), "device-a");
-    let mut link_config =
-        LinkCacheConfig::new(relay_url.clone(), Arc::new(StaticToken("test-user".into())));
-    link_config.probe_timeout = Duration::from_secs(5);
-    core_a.set_links(LinkCache::new(link_config));
+    let (tailnet, _peers) = tailnet::mesh(&[&core_a, &core_b], 41).await;
     let client = onicode_rpc::memory_client(core_a.rpc_service());
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
@@ -496,13 +360,12 @@ async fn checkout_change_request_stream_matches_locally_and_through_device_routi
         .expect("second desktop initial frame");
     assert_eq!(second_desktop_frame, local_frame);
 
-    let ios_frame = simulated_ios_change_request(&relay_url, "ios-1", &checkout).await;
+    let ios_frame = simulated_ios_change_request(&tailnet, "ios-1", &checkout).await;
     assert_eq!(ios_frame, local_frame);
     assert_public_change_request_payload(&ios_frame);
 
-    // Reconnecting creates a new relay peer and receives a fresh initial
-    // snapshot from the still-warm host cache.
-    let reconnected_ios_frame = simulated_ios_change_request(&relay_url, "ios-2", &checkout).await;
+    // Another phone receives a fresh initial snapshot from the still-warm host cache.
+    let reconnected_ios_frame = simulated_ios_change_request(&tailnet, "ios-2", &checkout).await;
     assert_eq!(reconnected_ios_frame, local_frame);
     assert_eq!(
         lookup.resolves.load(Ordering::Acquire),
@@ -510,14 +373,7 @@ async fn checkout_change_request_stream_matches_locally_and_through_device_routi
         "all device-boundary subscribers must share one host resolution"
     );
 
-    core_a.disconnect_edge();
-    assert!(
-        tokio::time::timeout(Duration::from_secs(5), remote.recv())
-            .await
-            .expect("remote stream closes after link")
-            .is_none()
-    );
-
+    drop(remote);
     core_a.shutdown().await;
     core_b.shutdown().await;
 }
@@ -594,83 +450,7 @@ async fn checkout_change_request_accepts_a_local_chats_source_root() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unsupported_remote_change_request_watch_keeps_the_shared_device_link() {
-    let (relay_url, _relay) = fake_device_room().await;
-    let dirs = tempfile::tempdir().expect("tempdir");
-    let legacy = Arc::new(LegacyChangeRequestService {
-        list_harnesses_calls: AtomicUsize::new(0),
-    });
-    let _legacy_host = HostRelay::spawn(
-        HostRelayConfig::new(
-            &relay_url,
-            "legacy-device",
-            Arc::new(StaticToken("test-user".into())),
-        ),
-        legacy.clone(),
-        Arc::new(|_| true),
-    );
-
-    let core = assemble(&dirs.path().join("new"), "new-device");
-    let mut link_config =
-        LinkCacheConfig::new(relay_url, Arc::new(StaticToken("test-user".into())));
-    link_config.probe_timeout = Duration::from_secs(5);
-    core.set_links(LinkCache::new(link_config));
-    let client = onicode_rpc::memory_client(core.rpc_service());
-
-    // The host can take a moment to attach to the room. Once attached, an old
-    // host rejects only the capability added by this version.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    for watch_method in [
-        methods::WATCH_CHECKOUT_CHANGE_REQUEST,
-        methods::WATCH_WORKSPACE_GIT_STATUS,
-    ] {
-        loop {
-            match client
-                .subscribe_checked(
-                    watch_method,
-                    serde_json::json!({
-                        "cwd": "/legacy-checkout",
-                        "targetDeviceId": "legacy-device",
-                    }),
-                )
-                .await
-            {
-                Err(RpcError::UnknownMethod(method)) => {
-                    assert_eq!(method, watch_method);
-                    break;
-                }
-                Ok(_) => panic!("legacy host must reject the change-request watch"),
-                Err(error) => {
-                    assert!(
-                        tokio::time::Instant::now() < deadline,
-                        "legacy host never came up: {error}"
-                    );
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                }
-            }
-        }
-    }
-
-    let harnesses = client
-        .call(
-            methods::LIST_HARNESSES,
-            serde_json::json!({ "targetDeviceId": "legacy-device" }),
-        )
-        .await
-        .expect("a capability rejection must not sever the shared link");
-    assert_eq!(harnesses, serde_json::json!([]));
-    assert_eq!(
-        legacy.list_harnesses_calls.load(Ordering::Acquire),
-        2,
-        "one readiness probe and one forwarded call prove the existing link was reused"
-    );
-
-    core.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn git_status_is_computed_on_the_checkout_host_through_the_relay() {
-    let (relay_url, _relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().unwrap();
     let root = dirs.path().join("checkout");
     init_git_repo(&root);
@@ -711,12 +491,8 @@ async fn git_status_is_computed_on_the_checkout_host_through_the_relay() {
     assert_eq!(expected["status"]["files"][0]["path"], "new/remote.rs");
     assert_eq!(expected["status"]["deviceId"], "host-device");
     assert!(expected["status"].get("patch").is_none());
-
-    let _host_relay = host.start_host_relay(&relay_url);
     let consumer = assemble(&dirs.path().join("consumer"), "consumer-device");
-    let mut config = LinkCacheConfig::new(relay_url, Arc::new(StaticToken("test-user".into())));
-    config.probe_timeout = Duration::from_secs(5);
-    consumer.set_links(LinkCache::new(config));
+    let _mesh = tailnet::mesh(&[&consumer, &host], 43).await;
     let client = onicode_rpc::memory_client(consumer.rpc_service());
     // The consumer has no corresponding space/chat: resolving locally must fail.
     assert!(
@@ -759,19 +535,14 @@ async fn git_status_is_computed_on_the_checkout_host_through_the_relay() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn target_device_id_routes_over_the_relay() {
-    let (relay_url, _relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().expect("tempdir");
 
     // Engine B hosts its device room on the fake relay.
     let core_b = assemble(&dirs.path().join("b"), "device-b");
-    let _host = core_b.start_host_relay(&relay_url);
 
     // Engine A dials peers through the same relay.
     let core_a = assemble(&dirs.path().join("a"), "device-a");
-    let mut link_config =
-        LinkCacheConfig::new(relay_url.clone(), Arc::new(StaticToken("test-user".into())));
-    link_config.probe_timeout = Duration::from_secs(5);
-    core_a.set_links(LinkCache::new(link_config));
+    let _mesh = tailnet::mesh(&[&core_a, &core_b], 44).await;
 
     // Seed a transcript on B only — proves reads come from B, not A's (empty) doc.
     let handle_b = core_b.doc_host.open("chat-remote").expect("open chat on B");
@@ -1349,8 +1120,6 @@ async fn projectless_terminal_stream_proxies_over_the_relay() {
 async fn exercise_terminal_relay(projectless: bool) {
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
-
-    let (relay_url, _relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().expect("tempdir");
     let cwd = dirs.path().join("work");
     std::fs::create_dir_all(&cwd).expect("cwd");
@@ -1383,7 +1152,6 @@ async fn exercise_terminal_relay(projectless: bool) {
             None,
         )
         .expect("chat row on B");
-    let _host = core_b.start_host_relay(&relay_url);
 
     let core_a = assemble(&dirs.path().join("a"), "device-a");
     // A conflicting local row makes accidental local dispatch observable even
@@ -1403,10 +1171,7 @@ async fn exercise_terminal_relay(projectless: bool) {
             ),
         )
         .expect("decoy chat row on A");
-    let mut link_config =
-        LinkCacheConfig::new(relay_url.clone(), Arc::new(StaticToken("test-user".into())));
-    link_config.probe_timeout = Duration::from_secs(5);
-    core_a.set_links(LinkCache::new(link_config));
+    let _mesh = tailnet::mesh(&[&core_a, &core_b], 45).await;
     let client = onicode_rpc::memory_client(core_a.rpc_service());
 
     // OpenTerminal forwards to B once the relay session is up.
@@ -1535,7 +1300,6 @@ async fn exercise_terminal_relay(projectless: bool) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn workspace_file_surface_proxies_over_the_relay() {
-    let (relay_url, _relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().expect("tempdir");
     let repo_b = dirs.path().join("repo-b");
     init_workspace_repo(&repo_b).await;
@@ -1555,13 +1319,9 @@ async fn workspace_file_surface_proxies_over_the_relay() {
         .workspace
         .create_chat("chat-files", Some("space-files"), None, None, None)
         .expect("chat on B");
-    let _host = core_b.start_host_relay(&relay_url);
 
     let core_a = assemble(&dirs.path().join("a-files"), "device-a");
-    let mut link_config =
-        LinkCacheConfig::new(relay_url, Arc::new(StaticToken("test-user".into())));
-    link_config.probe_timeout = Duration::from_secs(5);
-    core_a.set_links(LinkCache::new(link_config));
+    let _mesh = tailnet::mesh(&[&core_a, &core_b], 46).await;
     let client = onicode_rpc::memory_client(core_a.rpc_service());
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
@@ -1880,7 +1640,6 @@ async fn remote_target_without_links_fails_clearly() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn queue_watch_and_single_consumption_route_to_the_remote_chat_host() {
-    let (relay_url, _relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().expect("tempdir");
 
     // Seed B's session doc while the workspace temporarily names A as host.
@@ -1904,13 +1663,9 @@ async fn queue_watch_and_single_consumption_route_to_the_remote_chat_host() {
             true,
         )
         .expect("seed held queue row");
-    let _host = core_b.start_host_relay(&relay_url);
 
     let core_a = assemble(&dirs.path().join("a"), "device-a");
-    let mut link_config =
-        LinkCacheConfig::new(relay_url, Arc::new(StaticToken("test-user".into())));
-    link_config.probe_timeout = Duration::from_secs(5);
-    core_a.set_links(LinkCache::new(link_config));
+    let _mesh = tailnet::mesh(&[&core_a, &core_b], 47).await;
     let remote_client = onicode_rpc::memory_client(core_a.rpc_service());
     let local_client = onicode_rpc::memory_client(core_b.rpc_service());
 
@@ -2043,14 +1798,10 @@ async fn queue_watch_and_single_consumption_route_to_the_remote_chat_host() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn workspace_entry_mutations_are_forwarded_to_the_owning_plain_folder() {
-    let (relay_url, _relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().unwrap();
     let host = assemble(&dirs.path().join("host"), "mutation-host");
-    let _host_relay = host.start_host_relay(&relay_url);
     let viewer = assemble(&dirs.path().join("viewer"), "mutation-viewer");
-    let mut config = LinkCacheConfig::new(relay_url, Arc::new(StaticToken("test-user".into())));
-    config.probe_timeout = Duration::from_secs(5);
-    viewer.set_links(LinkCache::new(config));
+    let _mesh = tailnet::mesh(&[&viewer, &host], 48).await;
     let folder = dirs.path().join("plain-folder");
     std::fs::create_dir(&folder).unwrap();
     std::fs::write(folder.join("original.txt"), "host only").unwrap();
@@ -2107,8 +1858,6 @@ async fn workspace_entry_mutations_are_forwarded_to_the_owning_plain_folder() {
 async fn mcp_standalone_session_executes_on_the_selected_device() {
     use onicode_mcp::{Onicode, Origin, Tools};
     use serde_json::json;
-
-    let (relay_url, relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().unwrap();
     let a = assemble(&dirs.path().join("a"), "device-a");
     // Mock is deliberately disabled in production catalogs. Offer a scripted
@@ -2128,10 +1877,7 @@ async fn mcp_standalone_session_executes_on_the_selected_device() {
     let registry = onicode_sync::registry::mock_server::MockRegistryServer::start().await;
     a.workspace.connect_registry_url(&registry.url());
     b.workspace.connect_registry_url(&registry.url());
-    let host = b.start_host_relay(&relay_url);
-    let mut config = LinkCacheConfig::new(relay_url, Arc::new(StaticToken("test-user".into())));
-    config.probe_timeout = Duration::from_secs(5);
-    a.set_links(LinkCache::new(config));
+    let _mesh = tailnet::mesh(&[&a, &b], 49).await;
     let client = onicode_rpc::memory_client(a.rpc_service());
     let tools = Tools::new(Arc::new(Onicode::with_client(
         client,
@@ -2277,8 +2023,6 @@ async fn mcp_standalone_session_executes_on_the_selected_device() {
     }
     a.shutdown().await;
     b.shutdown().await;
-    drop(host);
-    relay.abort();
 }
 
 /// A device answering `UpdateStatus` with one report and then staying quiet, as an
@@ -2308,26 +2052,21 @@ impl RpcService for OneStatus {
 /// another device, goes on hearing about it on the same subscription.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn update_status_follows_another_device_through_its_restart() {
-    let (relay_url, _relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().expect("tempdir");
+    let tailnet = tailnet::Tailnet::new(50);
+    let machine = tailnet.node();
     let host = |version: &'static str| {
-        HostRelay::spawn(
-            HostRelayConfig::new(
-                &relay_url,
-                "other-device",
-                Arc::new(StaticToken("test-user".into())),
-            ),
-            Arc::new(OneStatus(version)),
-            Arc::new(|_| true),
+        tailnet.join(
+            machine,
+            "other-device",
+            onicode_net::Role::Engine,
+            Some(Arc::new(OneStatus(version))),
         )
     };
-    let before = host("1.0.0");
+    let before = host("1.0.0").await;
 
     let core = assemble(&dirs.path().join("asker"), "asking-device");
-    let mut link_config =
-        LinkCacheConfig::new(relay_url.clone(), Arc::new(StaticToken("test-user".into())));
-    link_config.probe_timeout = Duration::from_secs(5);
-    core.set_links(LinkCache::new(link_config));
+    let _asker = tailnet.engine(&core).await;
     let client = onicode_rpc::memory_client(core.rpc_service());
 
     let params = serde_json::json!({ "targetDeviceId": "other-device" });
@@ -2355,10 +2094,10 @@ async fn update_status_follows_another_device_through_its_restart() {
 
     drop(before);
     tokio::time::sleep(Duration::from_secs(1)).await;
-    let _after = host("2.0.0");
+    let _after = host("2.0.0").await;
 
-    // The test room doesn't say a host went, as a device dying without a word
-    // doesn't: this is the follow asking again.
+    // Nothing says the host went, as a device dying without a word doesn't: this is the
+    // follow asking again.
     let item = tokio::time::timeout(Duration::from_secs(90), updates.recv())
         .await
         .expect("a report after the restart")
@@ -2369,13 +2108,9 @@ async fn update_status_follows_another_device_through_its_restart() {
 /// Asking a device that isn't there says so plainly, and nothing has started.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn updating_a_device_that_cannot_be_reached_says_so_plainly() {
-    let (relay_url, _relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().expect("tempdir");
     let core = assemble(&dirs.path().join("asker"), "asking-device");
-    let mut link_config =
-        LinkCacheConfig::new(relay_url, Arc::new(StaticToken("test-user".into())));
-    link_config.probe_timeout = Duration::from_secs(2);
-    core.set_links(LinkCache::new(link_config));
+    let _mesh = tailnet::mesh(&[&core], 51).await;
     let client = onicode_rpc::memory_client(core.rpc_service());
     let error = client
         .call(

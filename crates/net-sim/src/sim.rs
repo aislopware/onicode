@@ -572,6 +572,25 @@ pub struct Socket {
     timer: Option<Pin<Box<Sleep>>>,
 }
 
+/// A closed socket frees its address, as the OS frees a port: a process restarted on the
+/// same machine binds it again.
+impl Drop for Socket {
+    fn drop(&mut self) {
+        let mut fabric = self.net.fabric.lock();
+        let Some(public) = fabric.ends.get(self.end).map(|end| end.public) else {
+            return;
+        };
+        if fabric.routes.get(&public) == Some(&self.end) {
+            fabric.routes.remove(&public);
+        }
+        if let Some(end) = fabric.ends.get_mut(self.end) {
+            // No longer this address's socket, for `rebind`'s lookup by address.
+            end.local = SocketAddr::from(([0, 0, 0, 0], 0));
+            end.inbox.clear();
+        }
+    }
+}
+
 impl AsyncUdpSocket for Socket {
     fn create_sender(&self) -> Pin<Box<dyn UdpSender>> {
         Box::pin(Sender {

@@ -46,9 +46,9 @@
 //! ## Device-addressed routing (`targetDeviceId`, feature-inventory §2.1)
 //!
 //! ControlRpc methods are relay-forwardable: params may carry `targetDeviceId`. When it
-//! names another device, the call is forwarded verbatim over that device's relay DO via
-//! the [`LinkCache`] — the remote engine sees its own id and handles locally, so the
-//! forward can never loop. Streaming methods are proxied by re-subscribing remotely and
+//! names another device, the call is forwarded verbatim over that device's tailnet link
+//! ([`onicode_peer::PeerLinks`]): the remote engine sees its own id and handles locally, so
+//! the forward can never loop. Streaming methods are proxied by re-subscribing remotely and
 //! piping items. To make another method device-addressable, nothing per-method is needed
 //! beyond listing it in `forwardable` (and `is_stream_method` if it streams);
 //! handlers stay transport-agnostic. This includes the workspace file surface,
@@ -69,9 +69,7 @@ use onicode_proto::{
     AgentEvent, ChatConfig, CreateWorktreeOutcome, EngineInfo, HarnessId, HarnessUpdatePolicy,
     ProjectActionDraft, Space, ToolCall, WorkspaceScope,
 };
-use onicode_rpc::{
-    LinkCache, RpcError, RpcReply, RpcService, capability_errors, methods, parse_params,
-};
+use onicode_rpc::{RpcError, RpcReply, RpcService, capability_errors, methods, parse_params};
 use serde::Deserialize;
 use tokio::sync::watch;
 
@@ -832,7 +830,7 @@ pub struct EngineRpc {
     uploads: Uploads,
     agent_accounts: AgentAccounts,
     auth: Option<Auth>,
-    links: Option<std::sync::Arc<LinkCache>>,
+    links: Option<std::sync::Arc<onicode_peer::PeerLinks>>,
     updater: Option<onicode_update::Updater>,
     harness_updates: Option<crate::harness_updates::HarnessUpdateCoordinator>,
     local_import: Option<crate::local_import::LocalImporter>,
@@ -925,7 +923,7 @@ impl EngineRpc {
     }
 
     /// Attach the peer link cache — enables `targetDeviceId` relay forwarding.
-    pub fn with_links(mut self, links: std::sync::Arc<LinkCache>) -> Self {
+    pub fn with_links(mut self, links: std::sync::Arc<onicode_peer::PeerLinks>) -> Self {
         self.links = Some(links);
         self
     }
@@ -1721,7 +1719,7 @@ impl EngineRpc {
                     | methods::WATCH_WORKSPACE_GIT_STATUS
                     | methods::WATCH_HARNESS_UPDATES
             ) {
-                let rx = match client.subscribe_checked(method, params).await {
+                let rx = match client.subscribe(method, params).await {
                     Ok(rx) => rx,
                     Err(err) => {
                         if should_invalidate_link(&err) {
@@ -1735,7 +1733,7 @@ impl EngineRpc {
                 });
                 return Ok(RpcReply::Stream(stream.boxed()));
             }
-            let rx = match client.subscribe_scoped(method, params).await {
+            let rx = match client.subscribe(method, params).await {
                 Ok(rx) => rx,
                 Err(err) => {
                     if should_invalidate_link(&err) {

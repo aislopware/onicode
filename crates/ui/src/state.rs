@@ -308,6 +308,8 @@ impl EngineHandle {
             default_harness: config.default_harness,
             org_id: config.org_id,
             workos_client_id: config.workos_client_id,
+            // The app joins the tailnet; this crate's tests never do.
+            peers: !cfg!(test),
         };
         let launching = LAUNCH_BACKGROUND_ENGINE.load(std::sync::atomic::Ordering::SeqCst);
         if Self::should_launch_background(launching, engine_config.ipc_port).await

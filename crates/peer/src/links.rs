@@ -338,6 +338,16 @@ impl PeerLinks {
         }
     }
 
+    /// An RPC client to `device` that opens a stream of its own for each call.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::ready`].
+    pub async fn client(&self, device: &str) -> Result<CarrierClient, PeerError> {
+        let link = self.ready(device).await?;
+        Ok(CarrierClient::new(Arc::new(PeerCarrier::new(link))))
+    }
+
     /// Calls `method` on `device` over a stream of its own.
     ///
     /// # Errors

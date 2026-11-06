@@ -2,22 +2,20 @@
 //! a command for a chat hosted on engine B, A's chat2 rows can NEVER reach an
 //! edge (none is configured — the 03:45 incident shape, rows dark while the
 //! peer link lives), so after the rows grace A relay-forwards the entry over
-//! the device-room link. B claims the client-minted id in its processed
+//! the tailnet link. B claims the client-minted id in its processed
 //! ledger before executing — so when the doc row later "arrives" (simulated
 //! by writing the same entry into B's doc), the drain dedupes it to a no-op:
 //! exactly-once across both roads.
 
-// tungstenite's `accept_hdr_async` callback signature fixes the Err type as a
-// full `Response` — its size is not ours to shrink.
-#![allow(clippy::result_large_err)]
+#[path = "support/tailnet.rs"]
+mod tailnet;
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::StreamExt;
 use futures::stream::BoxStream;
-use futures::{SinkExt, StreamExt};
 use onicode_doc::{MessageRole, MessageStatus, SessionCommandPayload};
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::{Harness, HarnessError, RunControls};
@@ -25,104 +23,9 @@ use onicode_proto::{
     AgentEvent, Device, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SteeringMode,
 };
-use onicode_rpc::{
-    DeviceFrameHeader, LinkCache, LinkCacheConfig, StaticToken, decode_device_frame,
-    encode_device_frame, methods,
-};
-use tokio::net::TcpListener;
-use tokio::sync::mpsc;
-use tokio_tungstenite::tungstenite::Message as WsMessage;
-use tokio_tungstenite::tungstenite::handshake::server::{
-    Request as WsRequest, Response as WsResponse,
-};
+use onicode_rpc::methods;
 
 const CHAT: &str = "chat-relay-fallback";
-
-// Minimal in-memory device room (route-only subset of the DO semantics) —
-// same shape as device_routing.rs.
-#[derive(Default)]
-struct RelayState {
-    host: Option<mpsc::UnboundedSender<Vec<u8>>>,
-    clients: HashMap<String, mpsc::UnboundedSender<Vec<u8>>>,
-}
-
-async fn fake_device_room() -> (String, tokio::task::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind relay");
-    let url = format!(
-        "http://127.0.0.1:{}",
-        listener.local_addr().expect("addr").port()
-    );
-    let state = Arc::new(Mutex::new(RelayState::default()));
-    let task = tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                break;
-            };
-            let state = state.clone();
-            tokio::spawn(async move {
-                let mut uri = String::new();
-                let Ok(ws) = tokio_tungstenite::accept_hdr_async(
-                    stream,
-                    |req: &WsRequest, res: WsResponse| {
-                        uri = req.uri().to_string();
-                        Ok(res)
-                    },
-                )
-                .await
-                else {
-                    return;
-                };
-                let query = uri.split_once('?').map(|(_, q)| q).unwrap_or("");
-                let is_host = query.contains("role=host");
-                let conn_id = query
-                    .split('&')
-                    .find_map(|kv| kv.strip_prefix("connId="))
-                    .unwrap_or("anon")
-                    .to_string();
-                let (mut sink, mut ws_stream) = ws.split();
-                let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
-                {
-                    let mut st = state.lock().expect("lock");
-                    if is_host {
-                        st.host = Some(tx);
-                    } else {
-                        st.clients.insert(conn_id.clone(), tx);
-                    }
-                }
-                let writer = tokio::spawn(async move {
-                    while let Some(bytes) = rx.recv().await {
-                        if sink.send(WsMessage::Binary(bytes)).await.is_err() {
-                            break;
-                        }
-                    }
-                });
-                while let Some(Ok(message)) = ws_stream.next().await {
-                    let WsMessage::Binary(bytes) = message else {
-                        continue;
-                    };
-                    let Ok((header, payload)) = decode_device_frame(&bytes) else {
-                        break;
-                    };
-                    let st = state.lock().expect("lock");
-                    if is_host {
-                        let Some(to) = header.to else { continue };
-                        if let Some(client) = st.clients.get(&to) {
-                            let stripped = DeviceFrameHeader::new(header.s, header.k);
-                            let _ = client
-                                .send(encode_device_frame(&stripped, &payload).expect("encode"));
-                        }
-                    } else if let Some(host) = &st.host {
-                        let mut routed = DeviceFrameHeader::new(header.s, header.k);
-                        routed.from = Some(conn_id.clone());
-                        let _ = host.send(encode_device_frame(&routed, &payload).expect("encode"));
-                    }
-                }
-                writer.abort();
-            });
-        }
-    });
-    (url, task)
-}
 
 struct InstantHarness;
 
@@ -205,20 +108,15 @@ fn complete_assistant_count(core: &EngineCore) -> usize {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rows_dark_command_delivers_over_the_peer_relay_exactly_once() {
-    let (relay_url, _relay) = fake_device_room().await;
     let dirs = tempfile::tempdir().expect("tempdir");
 
-    // Engine B hosts its device room on the fake relay.
+    // Engine B hosts the chat.
     let core_b = assemble(&dirs.path().join("b"), "device-b");
-    let _host = core_b.start_host_relay(&relay_url);
 
-    // Engine A dials peers through the same relay — and has NO edge, so its
+    // Engine A reaches B over the tailnet — and has NO edge, so its
     // chat2 rows can never flush (the rows-dark half of the incident shape).
     let core_a = assemble(&dirs.path().join("a"), "device-a");
-    let mut link_config =
-        LinkCacheConfig::new(relay_url.clone(), Arc::new(StaticToken("test-user".into())));
-    link_config.probe_timeout = Duration::from_secs(5);
-    core_a.set_links(LinkCache::new(link_config));
+    let _mesh = tailnet::mesh(&[&core_a, &core_b], 60).await;
 
     // A knows the chat is hosted on B (local registry writes).
     core_a.workspace.upsert_device_row(&Device {

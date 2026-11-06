@@ -42,6 +42,7 @@ pub fn engine_config_from_env() -> onicode_engine::EngineConfig {
         // Real auth against production by default; see
         // `workos_client_id_from_env` for the dev-mode escape hatches.
         workos_client_id: workos_client_id_from_env(&edge_token),
+        peers: true,
         edge_token,
     }
 }

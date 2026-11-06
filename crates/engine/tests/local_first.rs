@@ -28,6 +28,7 @@ fn config(
         default_harness: HarnessId::Mock,
         org_id: None,
         workos_client_id: workos_client_id.map(str::to_string),
+        peers: false,
     }
 }
 
@@ -421,10 +422,6 @@ async fn transient_refresh_failure_keeps_synced_recovery_supervisors_alive() {
         "network errors are not revocation"
     );
     assert!(
-        runtime.core().links().is_some(),
-        "peer routing must recover without restarting the app"
-    );
-    assert!(
         runtime.core().updater().is_some(),
         "the Edge updater supervisor must survive an offline boot"
     );
@@ -508,7 +505,7 @@ async fn development_without_an_explicit_bearer_stays_offline() {
 }
 
 #[tokio::test]
-async fn explicit_dev_bearer_keeps_online_routing_enabled() {
+async fn explicit_dev_bearer_opens_the_development_profile() {
     let dir = tempfile::tempdir().unwrap();
     let config = config(
         dir.path(),
@@ -527,7 +524,6 @@ async fn explicit_dev_bearer_keeps_online_routing_enabled() {
         .unwrap();
 
     assert_eq!(runtime.workspace_scope(), WorkspaceScope::Development);
-    assert!(runtime.core().links().is_some());
     assert!(dir.path().join("orgs/dev-org/dev-user").is_dir());
     runtime.shutdown().await;
 }
@@ -629,11 +625,6 @@ async fn headless_sign_out_closes_joined_edge_rooms_and_stops_daemon() {
     wait_until(
         || edge.active_matching("/registry/") > 0,
         "registry room did not connect",
-    )
-    .await;
-    wait_until(
-        || edge.active_matching("/device/") > 0,
-        "device relay did not connect",
     )
     .await;
 

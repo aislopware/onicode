@@ -359,8 +359,8 @@ async fn remote_cancel_before_prepare_and_owner_drop_preserve_other_calls() {
 }
 
 #[cfg(unix)]
-#[path = "support/voice_relay.rs"]
-mod voice_relay;
+#[path = "support/tailnet.rs"]
+mod tailnet;
 
 #[cfg(unix)]
 #[tokio::test]
@@ -369,7 +369,6 @@ async fn remote_voice_crosses_two_engines_and_owner_drop_releases_host() {
     use std::time::Duration;
 
     use onicode_proto::voice::{VoiceEvent, remote as wire};
-    use onicode_rpc::{HostRelay, HostRelayConfig, LinkCache, LinkCacheConfig, StaticToken};
     let temp = tempfile::tempdir().unwrap();
     let host = native_core(&temp).await;
     std::fs::remove_file(
@@ -377,16 +376,6 @@ async fn remote_voice_crosses_two_engines_and_owner_drop_releases_host() {
             .join("codex-package/codex-resources/voice/bin/codex-voice-host"),
     )
     .unwrap();
-    let (url, room) = voice_relay::fake_device_room().await;
-    let relay = HostRelay::spawn(
-        HostRelayConfig::new(
-            &url,
-            host.device_id.clone(),
-            Arc::new(StaticToken("test".into())),
-        ),
-        host.rpc_service(),
-        Arc::new(|_| true),
-    );
     let viewer_dir = tempfile::tempdir().unwrap();
     let viewer = EngineCore::assemble_with_profile(
         EngineProfile::local(viewer_dir.path()).unwrap(),
@@ -395,9 +384,7 @@ async fn remote_voice_crosses_two_engines_and_owner_drop_releases_host() {
         None,
     )
     .unwrap();
-    let mut links = LinkCacheConfig::new(url, Arc::new(StaticToken("test".into())));
-    links.probe_timeout = Duration::from_secs(3);
-    viewer.set_links(LinkCache::new(links));
+    let mesh = tailnet::mesh(&[&viewer, &host], 70).await;
     let client = onicode_rpc::memory_client(viewer.rpc_service());
     let wrap = |p: serde_json::Value| json!({"targetDeviceId":host.device_id,"payload":p});
     tokio::time::timeout(Duration::from_secs(12), async {
@@ -494,8 +481,7 @@ async fn remote_voice_crosses_two_engines_and_owner_drop_releases_host() {
         .await
         .unwrap();
     assert!(!temp.path().join("codex-package/helper-wire.jsonl").exists());
-    drop(relay);
-    room.abort();
+    drop(mesh);
     host.sessions.shutdown().await;
     viewer.sessions.shutdown().await;
 }

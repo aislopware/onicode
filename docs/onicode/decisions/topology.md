@@ -11,3 +11,9 @@ The desktop UI keeps talking only to its own engine over localhost IPC, and that
 Thin clients (iOS, `onicode-client`) dial every engine directly. The host device stays the sole executor of a chat;
 session documents sync replica to replica by Loro version vectors; registry rows replicate with a per-origin
 version vector. Research: `.research/p2p-transport.md` (local only).
+
+The engine joins the tailnet itself: on boot (`EngineConfig.peers`) it binds a `PeerEndpoint` as `Role::Engine`,
+discovers the other engines through `PeerDirectory`, and serves its own RPC to them through `PeerLinks`. Forwarded
+calls and subscriptions take that link; the edge room and its fake-device relay are gone. Links are admitted by
+tailscale whois, not by account scope, so an edge sign-out no longer cuts them. Tests and fixtures never join the real
+tailnet: they run engines over `onicode-net-sim`, whose seeded tailnet gives each engine its own node.

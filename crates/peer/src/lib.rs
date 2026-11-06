@@ -80,3 +80,13 @@ pub enum PeerError {
     #[error("the links are shut down")]
     Shutdown,
 }
+
+impl From<PeerError> for onicode_rpc::RpcError {
+    /// A call that never reached its peer: transient, so the caller may retry.
+    fn from(error: PeerError) -> Self {
+        match error {
+            PeerError::Rpc(error) => error,
+            error => Self::Transport(error.to_string()),
+        }
+    }
+}

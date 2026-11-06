@@ -54,6 +54,7 @@ pub mod instance_lock;
 pub mod local_import;
 pub mod managed;
 mod model_catalogs;
+pub mod peers;
 pub mod profile;
 pub mod project_actions;
 pub mod registry;
@@ -157,6 +158,9 @@ pub struct EngineConfig {
     pub org_id: Option<String>,
     /// WorkOS client id — enables real auth; `None` = dev mode (bearer = `edge_token`).
     pub workos_client_id: Option<String>,
+    /// Join the tailnet: serve this engine to the user's other engines and reach theirs.
+    /// Off for tests and fixtures, which must never show up on a real tailnet.
+    pub peers: bool,
 }
 
 /// The assembled engine core — also constructible without the IPC server for tests
@@ -188,7 +192,7 @@ pub struct EngineCore {
     /// Auth service (attached by [`Engine::run`]; a lazy dev-mode instance otherwise).
     auth: std::sync::Mutex<Option<Auth>>,
     /// Peer link cache for `targetDeviceId` routing (attached when edge+auth are ready).
-    links: std::sync::Mutex<Option<Arc<onicode_rpc::LinkCache>>>,
+    links: std::sync::Mutex<Option<Arc<onicode_peer::PeerLinks>>>,
     /// Release checker (attached by [`Engine::assemble_runtime`]) — the
     /// UpdateStatus stream + ApplyUpdate.
     updater: std::sync::Mutex<Option<onicode_update::Updater>>,
@@ -453,9 +457,9 @@ impl EngineCore {
         .clone()
     }
 
-    /// Attach the peer link cache — enables `targetDeviceId` routing,
+    /// Attach the links to the user's other engines: `targetDeviceId` routing,
     /// [`Self::dial_device`], and the doc host's queued-attachment transfers.
-    pub fn set_links(&self, links: Arc<onicode_rpc::LinkCache>) {
+    pub fn set_links(&self, links: Arc<onicode_peer::PeerLinks>) {
         self.doc_host.set_links(links.clone());
         *self
             .links
@@ -463,7 +467,7 @@ impl EngineCore {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(links);
     }
 
-    pub fn links(&self) -> Option<Arc<onicode_rpc::LinkCache>> {
+    pub fn links(&self) -> Option<Arc<onicode_peer::PeerLinks>> {
         self.links
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -492,12 +496,12 @@ impl EngineCore {
             .clone()
     }
 
-    /// A live RPC client to another device's engine through its relay DO (the router's
-    /// dial seam). Cached per device; invalidated + re-dialed on failure.
+    /// An RPC client to another device's engine over its tailnet link (the router's dial
+    /// seam), dialled if there is none.
     pub async fn dial_device(
         &self,
         device_id: &str,
-    ) -> Result<Arc<onicode_rpc::RpcClient>, EngineError> {
+    ) -> Result<onicode_rpc::CarrierClient, EngineError> {
         let links = self
             .links()
             .ok_or_else(|| EngineError::Other("peer links unavailable (offline)".into()))?;
@@ -505,32 +509,6 @@ impl EngineCore {
             .client(device_id)
             .await
             .map_err(|e| EngineError::Other(e.to_string()))
-    }
-
-    /// Start hosting our device room: serve the full RPC surface to relay clients and
-    /// warm-open chat docs on nudges (§7 cold-chat command delivery). The token source
-    /// re-reads auth on every (re)dial, so token refreshes take effect at reconnect.
-    pub fn start_host_relay(&self, edge_url: &str) -> onicode_rpc::HostRelay {
-        let auth = self.auth();
-        let config =
-            onicode_rpc::HostRelayConfig::new(edge_url, self.device_id.clone(), Arc::new(auth));
-        let doc_host = self.doc_host.clone();
-        let on_nudge: onicode_rpc::NudgeHandler = Arc::new(move |chat_id: String| {
-            match doc_host.enqueue_wakeup(&chat_id) {
-                Ok(()) => true,
-                Err(err) => {
-                    tracing::warn!(chat = %chat_id, %err, "nudge: durable admission failed; withholding ACK");
-                    false
-                }
-            }
-        });
-        let mut service: Arc<dyn RpcService> = self.rpc_service();
-        // Cloud runner: requests served to remote devices are the heartbeat's
-        // `clients` activity (idle sleep), counted at the relay boundary.
-        if let Some(activity) = self.relay_activity() {
-            service = activity.wrap(service);
-        }
-        onicode_rpc::HostRelay::spawn(config, service, on_nudge)
     }
 
     pub fn rpc_service(&self) -> Arc<EngineRpc> {
@@ -574,9 +552,6 @@ impl EngineCore {
     /// clearing credentials alone is not a security boundary.
     pub fn disconnect_edge(&self) {
         self.previews.stop();
-        if let Some(links) = self.links() {
-            links.disconnect_all();
-        }
         self.doc_host.disconnect_edge();
         self.workspace.disconnect_edge();
     }
@@ -733,12 +708,12 @@ pub struct Engine {
     pub config: EngineConfig,
 }
 
-/// A fully assembled identity-scoped engine plus the relay handle whose lifetime
+/// A fully assembled identity-scoped engine plus its place on the tailnet, whose lifetime
 /// keeps this device reachable. Used by both the headless server and the headed
 /// in-process engine so their production authentication paths cannot diverge.
 pub struct EngineRuntime {
     core: EngineCore,
-    host_relay: std::sync::Mutex<Option<onicode_rpc::HostRelay>>,
+    peers: std::sync::Mutex<Option<peers::Peers>>,
     /// Desktop banners for this engine's sessions (desktop engines only).
     notifier: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
@@ -787,18 +762,16 @@ impl EngineRuntime {
     }
 
     pub fn disconnect_edge(&self) {
-        // Revoke remote reachability before graceful draining. Sessions may
-        // need time to settle; no authenticated relay RPC may enter during
-        // that window after sign-out.
-        self.host_relay
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
         self.core.disconnect_edge();
     }
 
     pub async fn shutdown(&self) {
         self.stop_notifier();
+        // Off the tailnet before draining: no peer call may start work meanwhile.
+        self.peers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         self.disconnect_edge();
         self.core.shutdown().await;
     }
@@ -818,7 +791,7 @@ impl EngineRuntime {
 impl Drop for EngineRuntime {
     fn drop(&mut self) {
         self.stop_notifier();
-        self.host_relay
+        self.peers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
@@ -1137,31 +1110,26 @@ impl Engine {
             onicode_harness::acp::prewarm_managed_adapters();
         }
 
-        let host_relay = edge.as_ref().map(|edge| {
-            let mut link_config =
-                onicode_rpc::LinkCacheConfig::new(edge.url.clone(), Arc::new(auth.clone()));
-            // Registry-dark dial gate: devices with no recent presence fail
-            // fast with zero dials; presence returning un-parks them (the
-            // peer-alive hook below clears any cooldown at the same moment).
-            let workspace_for_liveness = core.workspace.clone();
-            link_config.liveness = Some(Arc::new(move |device_id: &str| {
-                workspace_for_liveness.peer_liveness(device_id)
-            }));
-            let links = onicode_rpc::LinkCache::new(link_config);
-            let links_for_presence = links.clone();
-            core.workspace
-                .set_peer_alive_hook(Arc::new(move |device_id: &str| {
-                    links_for_presence.reset_cooldown(device_id);
-                }));
-            core.set_links(links);
-            core.start_host_relay(&edge.url)
-        });
+        let peers = if config.peers {
+            match peers::Peers::start(&core.device_id, core.rpc_service()).await {
+                Ok(peers) => {
+                    core.set_links(peers.links.clone());
+                    Some(peers)
+                }
+                Err(error) => {
+                    tracing::info!(%error, "not on a tailnet: this engine serves its own clients only");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let notifier = desktop_notify::enabled()
             .then(|| desktop_notify::spawn(&core, config.data_dir.clone()));
         Ok(EngineRuntime {
             core,
-            host_relay: std::sync::Mutex::new(host_relay),
+            peers: std::sync::Mutex::new(peers),
             notifier: std::sync::Mutex::new(notifier),
         })
     }

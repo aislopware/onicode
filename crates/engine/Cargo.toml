@@ -16,6 +16,9 @@ onicode-sync.workspace = true
 onicode-harness.workspace = true
 semver = "1"
 onicode-rpc.workspace = true
+onicode-net.workspace = true
+onicode-peer.workspace = true
+onicode-tailnet.workspace = true
 onicode-update.workspace = true
 onicode-notify.workspace = true
 onicode-visual.workspace = true
@@ -53,6 +56,8 @@ tempfile.workspace = true
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
 [dev-dependencies]
+onicode-net-sim.workspace = true
+noq.workspace = true
 tracing-subscriber.workspace = true
 onicode-mcp.workspace = true
 onicode-harness = { workspace = true, features = ["installer-fixture"] }
