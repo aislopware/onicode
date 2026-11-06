@@ -123,21 +123,26 @@ keyed there by the store's row id beside their `SessionId`, because folders, rem
 until `SessionKey`; `SessionSummary.key` is the id other tools know a session by. The engine runs the reminder and
 automation schedulers on its own clock (a beat at start, then every 30 s in process; tests beat in virtual time),
 recovers runs an earlier engine claimed, keeps and retries Inbox event claims, generates titles and worktree branch
-names, stores notes and keeps orchestration summaries; a plan's dispatch is the pure `orchestration::Run`. The shell
-mirrors the watch into the maps its views already read and echoes each call in the same frame until its receipt.
+names, stores notes under the id the viewer minted (`CreateNote` refuses a taken one, so a new note opens in the
+frame it is made) and keeps orchestration summaries; a plan's dispatch is the pure `orchestration::Run`. A session's
+summary marks a saved draft as `SaveQueue` stores or clears it. The shell mirrors the watch into the maps its views
+already read, moving only the fields whose engine value changed (a title, pin or draft mark the app set stays until
+the engine moves that field), and echoes each call in the same frame until its receipt; a refused echo returns to
+the engine's value.
 A conversation reads its record and transcript (`ReadSession`, `ReadTranscript`) and saves its queue (`SaveQueue`)
 through the Session calls. `SendNow` and `SteerNow` take a stored queued message by its `MessageId`; the desktop
 steers with `SteerNow` and still launches a queued message with `Send`. `EditLastTurn` replaces the turn that
 `RecallLastTurn` holds. A side question (`Btw`, `ReadBtw`, `SaveBtw`, `StopBtw`) streams its answer as `BtwText`
-events to a watch that holds no turns. Title generation and branch naming outlive the conversation that asked, and
-closing the side sheet no longer stops its answer. `Rewind`, `Fork` and `SwitchProvider` stay unserved until the
+events to a watch that holds no turns. Deleting a session stops its title generation, work item lookup and branch
+naming, so no provider or `gh` runs for it after it goes; closing the conversation stops its side answers with
+`StopBtw`, as monocode's drop did. `Rewind`, `Fork` and `SwitchProvider` stay unserved until the
 composer and accounts move (step 6).
 App-side for now: a run's prompt still goes through the conversation, since the composer and accounts move in step
 6 (the engine claims the run, creates its session and records its end); the Inbox view still fetches from its
 providers and reports what appeared (`ClaimInboxEvents`) until the providers' fetch moves with a watch of its own;
 the Automations view edits definitions, and the app bridge (`sessions.create`, `sessions.read`, notes actions,
 receipts) uses the store, until settings move (step 6); the layout and seen markers are preferences (step 6); note
-images, attachments, worktree removal and session search are files and search (step 5). `PROTOCOL` is 3; the golden
+images, attachments, worktree removal and session search are files and search (step 5). `PROTOCOL` is 4; the golden
 file is re-recorded with `ONICODE_GOLDEN=record`.
 
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.

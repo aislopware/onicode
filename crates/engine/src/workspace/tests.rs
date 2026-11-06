@@ -4,7 +4,7 @@
 //! showing the hub, and a snapshot plus the events after it must be the later snapshot. Nothing
 //! here waits on a clock, runs a provider or touches the network.
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures::executor::{LocalPool, block_on};
@@ -13,12 +13,15 @@ use futures::stream::BoxStream;
 use futures::task::LocalSpawnExt;
 use futures::{FutureExt, StreamExt};
 use onicode_core::automations::{AutomationUpsert, Service};
+use onicode_core::follow_up::{Message, State};
 use onicode_core::session_groups::{Folder, Groups, WorkItem};
 use onicode_core::session_title::{GeneratedTitle, TextModel, WorkItemHint};
 use onicode_core::store::Store;
+use onicode_protocol::session::SaveQueue;
 use onicode_protocol::workspace::{
-    Archive, CreateSession, Created, Delete, GenerateTitle, NewSession, Pin, ReminderChange,
-    Rename, SaveGroups, SetReminder, SetWorkItem, WatchWorkspace, WorkspaceEvent, WorkspaceState,
+    Archive, CreateNote, CreateSession, Created, Delete, GenerateTitle, NameWorktree, Named,
+    NewSession, Pin, ReminderChange, Rename, SaveGroups, SetReminder, SetWorkItem, WatchWorkspace,
+    WorkspaceEvent, WorkspaceState,
 };
 use onicode_protocol::{Cursor, Item, OpId, Outcome, Rejection, SessionId};
 use proptest::prelude::*;
@@ -42,8 +45,14 @@ impl Spawn for Queued {
     }
 }
 
-/// Chores that answer at once: a title from the prompt, a work item from a pasted link.
-struct Scripted;
+/// Chores that answer at once: a title from the prompt, a work item from a pasted link, a
+/// branch named after the prompt. Each counts the times it ran, as a provider or `gh` would.
+#[derive(Default)]
+struct Scripted {
+    titles: AtomicUsize,
+    links: AtomicUsize,
+    branches: AtomicUsize,
+}
 
 impl Chores for Scripted {
     fn title(
@@ -53,6 +62,7 @@ impl Chores for Scripted {
         message: &str,
         _: Arc<AtomicBool>,
     ) -> Option<GeneratedTitle> {
+        self.titles.fetch_add(1, Ordering::Relaxed);
         Some(GeneratedTitle {
             title: format!("About {message}"),
             work_item: None,
@@ -60,11 +70,24 @@ impl Chores for Scripted {
     }
 
     fn work_item(&self, message: &str, _: &Path, _: Option<&WorkItemHint>) -> Option<WorkItem> {
+        self.links.fetch_add(1, Ordering::Relaxed);
         onicode_core::session_groups::parse_github_work_item(message)
     }
 
-    fn branch(&self, _: TextModel, _: &Path, _: &str, _: Arc<AtomicBool>) -> Option<String> {
-        None
+    fn branch(&self, _: TextModel, _: &Path, message: &str, _: Arc<AtomicBool>) -> Option<String> {
+        self.branches.fetch_add(1, Ordering::Relaxed);
+        Some(format!("mc/{}", message.replace(' ', "-")))
+    }
+}
+
+impl Scripted {
+    /// How many chores ran: titles, work item lookups and branch names.
+    fn ran(&self) -> (usize, usize, usize) {
+        (
+            self.titles.load(Ordering::Relaxed),
+            self.links.load(Ordering::Relaxed),
+            self.branches.load(Ordering::Relaxed),
+        )
     }
 }
 
@@ -73,6 +96,7 @@ const PROJECT: &str = "/project";
 struct Harness {
     pool: LocalPool,
     work: Work,
+    chores: Arc<Scripted>,
     hub: Arc<WorkspaceHub>,
     store: Database,
 }
@@ -86,16 +110,18 @@ impl Harness {
     /// A hub over `store` that started at `started` (Unix ms), as after a restart.
     fn over(store: Database, limits: Limits, started: u64) -> Self {
         let work = Work::default();
+        let chores = Arc::new(Scripted::default());
         let hub = WorkspaceHub::build(
             store.clone(),
             Arc::new(Queued(work.clone())),
-            Arc::new(Scripted),
+            chores.clone(),
             limits,
             started,
         );
         Self {
             pool: LocalPool::new(),
             work,
+            chores,
             hub,
             store,
         }
@@ -917,4 +943,278 @@ fn a_session_nobody_prompted_goes_when_its_last_viewer_closes_it() {
     assert!(rows.contains(&written.session.id));
     viewer.pump(&harness.hub);
     assert_eq!(json(viewer.state.as_ref().unwrap()), json(&harness.state()));
+}
+
+fn text_model() -> TextModel {
+    TextModel::automatic(
+        onicode_core::provider::Kind::Codex,
+        onicode_core::accounts::Profile::default(),
+    )
+}
+
+/// Name session `row` from `message`, its title still `placeholder`.
+fn titling(row: i64, placeholder: &str, message: &str) -> GenerateTitle {
+    GenerateTitle {
+        session: row,
+        message: message.into(),
+        placeholder: placeholder.into(),
+        seed: message.into(),
+        cwd: PROJECT.into(),
+        model: text_model(),
+    }
+}
+
+fn summary_of(state: &WorkspaceState, row: i64) -> &onicode_protocol::workspace::SessionSummary {
+    state
+        .sessions
+        .iter()
+        .find(|summary| summary.session.id == row)
+        .expect("the session is shown")
+}
+
+#[test]
+fn deleting_a_session_stops_its_title_generation_before_a_provider_runs() {
+    let mut harness = Harness::new(Limits::default());
+    let hub = harness.hub.clone();
+    let created = harness.create(None, None).session.unwrap();
+    let row = created.session.id;
+    let mut viewer = Viewer::join(&hub);
+    let message = "review https://github.com/acme/app/pull/7";
+    block_on(hub.generate_title(None, titling(row, &created.session.title, message))).unwrap();
+    block_on(hub.delete(None, Delete { session: row })).unwrap();
+    let at = hub.snapshot().unwrap().0;
+    harness.settle();
+    assert_eq!(
+        harness.chores.ran(),
+        (0, 0, 0),
+        "no provider or gh runs for a deleted chat"
+    );
+    assert_eq!(hub.snapshot().unwrap().0, at, "and nothing lands for it");
+    viewer.pump(&hub);
+    assert!(viewer.state.as_ref().unwrap().sessions.is_empty());
+}
+
+#[test]
+fn a_first_prompt_links_a_pasted_pull_request_and_never_replaces_a_link() {
+    let mut harness = Harness::new(Limits::default());
+    let hub = harness.hub.clone();
+    let placeholder = "New Codex session";
+    let prompt =
+        "hey lets review this pr\n\nhttps://github.com/acme/app/pull/1142 its for the native one";
+    let fresh = |harness: &Harness| {
+        let created = harness.create(None, Some(placeholder.into()));
+        created.session.unwrap().session.id
+    };
+    let stored = |harness: &Harness, row: i64| {
+        let sessions = harness.store.lock().unwrap().sessions().unwrap();
+        let session = sessions.into_iter().find(|session| session.id == row);
+        session.unwrap().work_item
+    };
+
+    let row = fresh(&harness);
+    block_on(hub.generate_title(None, titling(row, placeholder, prompt))).unwrap();
+    harness.settle();
+    let linked = summary_of(&harness.state(), row)
+        .session
+        .work_item
+        .clone()
+        .expect("the pasted pull request links the session");
+    assert_eq!((linked.kind.as_str(), linked.number), ("pr", 1142));
+    assert_eq!(linked.url, "https://github.com/acme/app/pull/1142");
+    assert_eq!(
+        stored(&harness, row),
+        Some(linked),
+        "the store keeps the link"
+    );
+
+    // A link the person made first stays.
+    let row = fresh(&harness);
+    let manual =
+        onicode_core::session_groups::parse_github_work_item("https://github.com/a/b/issues/7");
+    block_on(hub.set_work_item(
+        None,
+        SetWorkItem {
+            session: row,
+            item: manual.clone(),
+            if_unlinked: false,
+        },
+    ))
+    .unwrap();
+    block_on(hub.generate_title(None, titling(row, placeholder, prompt))).unwrap();
+    harness.settle();
+    assert_eq!(summary_of(&harness.state(), row).session.work_item, manual);
+    assert_eq!(stored(&harness, row), manual);
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let output = std::process::Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn a_new_worktree_is_named_and_a_deleted_session_gets_no_late_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    std::fs::create_dir(&project).unwrap();
+    git(&project, &["init", "-q", "-b", "main"]);
+    git(
+        &project,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "Base",
+        ],
+    );
+    let root = project.to_string_lossy().into_owned();
+    let mut harness = Harness::new(Limits::default());
+    let hub = harness.hub.clone();
+    for deleted in [false, true] {
+        let created = block_on(hub.create_session(
+            None,
+            CreateSession {
+                session: SessionId::new(),
+                provider: "codex".into(),
+                cwd: root.clone(),
+                title: None,
+                start: NewSession::Bare,
+                started_by: None,
+            },
+        ))
+        .unwrap();
+        let row = created.session.unwrap().session.id;
+        let path = onicode_core::git::create_worktree(&project, "HEAD", row).unwrap();
+        let temporary = onicode_core::git::naming::temporary_branch(&path, row).unwrap();
+        let cwd = path.to_string_lossy().into_owned();
+        let settings = onicode_core::agent::Settings {
+            worktree_cwd: Some(cwd.clone()),
+            ..Default::default()
+        };
+        crate::turn::locked(&harness.store)
+            .unwrap()
+            .save_agent_settings(row, &settings)
+            .unwrap();
+        let message = format!("descriptive name {row}");
+        let body = NameWorktree {
+            session: row,
+            root: root.clone(),
+            cwd,
+            message: message.clone(),
+            model: text_model(),
+        };
+        let reply: Arc<Mutex<Option<Named>>> = Arc::default();
+        let (naming, slot) = (hub.clone(), reply.clone());
+        harness
+            .pool
+            .spawner()
+            .spawn_local(async move {
+                let named = naming.name_worktree(Some(OpId::new()), body).await;
+                *slot.lock().unwrap() = Some(named.unwrap());
+            })
+            .unwrap();
+        // The name is being generated when the session goes.
+        harness.pool.run_until_stalled();
+        let branches = harness.chores.ran().2;
+        if deleted {
+            block_on(hub.delete(None, Delete { session: row })).unwrap();
+        }
+        harness.settle();
+        let current = onicode_core::git::snapshot(&path).unwrap().current;
+        let named = reply.lock().unwrap().take().expect("the call answered");
+        if deleted {
+            assert_eq!(
+                current,
+                Some(temporary),
+                "a deleted chat's checkout keeps its branch"
+            );
+            assert_eq!(named, Named { branch: None });
+            assert_eq!(harness.chores.ran().2, branches, "and no provider named it");
+        } else {
+            let generated = format!("mc/{}", message.replace(' ', "-"));
+            assert_eq!(current.as_deref(), Some(generated.as_str()));
+            assert_eq!(named.branch, Some(generated));
+        }
+    }
+}
+
+#[test]
+fn a_saved_draft_marks_the_session_for_every_viewer() {
+    let harness = Harness::new(Limits::default());
+    let hub = harness.hub.clone();
+    let row = harness.create(None, None).session.unwrap().session.id;
+    let sessions = crate::session::SessionHub::with_runner(
+        harness.store.clone(),
+        Arc::new(Queued(harness.work.clone())),
+        Arc::new(|_: crate::session::TurnJob| {}),
+    );
+    sessions.attach(hub.clone());
+    let session = sessions.session_id(row).unwrap();
+    let mut viewer = Viewer::join(&hub);
+    let save = |revision: u64, draft: Option<&str>| {
+        let queue = State {
+            revision,
+            draft: draft.map(|text| Message {
+                id: "draft".into(),
+                text: text.into(),
+                ..Message::default()
+            }),
+            ..State::default()
+        };
+        block_on(sessions.save_queue(None, SaveQueue { session, queue })).unwrap();
+    };
+    let marked = |viewer: &Viewer| summary_of(viewer.state.as_ref().unwrap(), row).draft;
+    viewer.pump(&hub);
+    assert!(!marked(&viewer));
+    save(1, Some("Unsent"));
+    viewer.pump(&hub);
+    assert!(marked(&viewer), "a saved draft marks the session");
+    let at = hub.snapshot().unwrap().0;
+    save(2, Some("Still unsent"));
+    assert_eq!(
+        hub.snapshot().unwrap().0,
+        at,
+        "a draft that stays changes nothing"
+    );
+    save(3, None);
+    viewer.pump(&hub);
+    assert!(!marked(&viewer), "a sent or cleared draft unmarks it");
+}
+
+#[test]
+fn a_note_takes_the_viewers_id_and_a_create_never_overwrites_one() {
+    let harness = Harness::new(Limits::default());
+    let hub = harness.hub.clone();
+    let id = onicode_core::notes::new_id();
+    let create = || CreateNote {
+        id: id.clone(),
+        cwd: Some(PROJECT.into()),
+    };
+    let op = OpId::new();
+    let note = block_on(hub.create_note(Some(op), create())).unwrap();
+    assert_eq!(note.id, id);
+    assert_eq!(
+        (note.title.as_str(), note.slug.as_str()),
+        ("Untitled", "untitled")
+    );
+    let again = block_on(hub.create_note(Some(op), create())).unwrap();
+    assert_eq!(again, note, "a repeated op gets the first note");
+    assert!(
+        block_on(hub.create_note(Some(OpId::new()), create())).is_err(),
+        "another create under the id is refused"
+    );
+    assert_eq!(harness.state().notes, 1);
 }

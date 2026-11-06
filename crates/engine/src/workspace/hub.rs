@@ -72,6 +72,22 @@ struct Watcher {
     notify: Arc<Notify>,
 }
 
+/// A title generation running for a session.
+#[derive(Clone, Default)]
+struct Titling {
+    /// Set when the person renamed the session or a newer generation replaced this one: the
+    /// generated title is dropped, and a pasted work item still links.
+    title: Arc<AtomicBool>,
+    /// Set when the session went: nothing more runs for it.
+    gone: Arc<AtomicBool>,
+}
+
+impl Titling {
+    fn is(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.title, &other.title)
+    }
+}
+
 /// The automation scheduler's own state.
 #[derive(Default)]
 struct Automations {
@@ -97,8 +113,11 @@ struct Inner {
     /// Sessions with a turn running, and with a turn finished since a viewer showed them.
     busy: HashSet<i64>,
     unread: HashSet<i64>,
-    /// Title generations running, by session: renaming the session cancels its own.
-    titles: HashMap<i64, Arc<AtomicBool>>,
+    /// Title generations running, by session: renaming the session drops its generated title,
+    /// and deleting it stops the generation (monocode's conversation stopped both when it went).
+    titles: HashMap<i64, Titling>,
+    /// Worktree branch namings running, by session: deleting the session stops its own.
+    namings: HashMap<i64, Arc<AtomicBool>>,
     automations: Automations,
     /// Sessions this run created (`CreateSession`) that no turn has started in yet: closed by
     /// their last viewer with nothing in them, they go.
@@ -170,6 +189,7 @@ impl WorkspaceHub {
                 busy: HashSet::new(),
                 unread: HashSet::new(),
                 titles: HashMap::new(),
+                namings: HashMap::new(),
                 automations: Automations::default(),
                 unprompted: HashSet::new(),
             }),
@@ -372,8 +392,8 @@ impl WorkspaceHub {
                 }
                 None => {
                     store.title(body.session, &body.title)?;
-                    if let Some(cancel) = inner.titles.remove(&body.session) {
-                        cancel.store(true, Ordering::Relaxed);
+                    if let Some(titling) = inner.titles.get(&body.session) {
+                        titling.title.store(true, Ordering::Relaxed);
                     }
                 }
             }
@@ -633,9 +653,9 @@ impl WorkspaceHub {
                 summary.session.title.clone_from(&body.seed);
                 events.push(WorkspaceEvent::Session(Box::new(summary)));
             }
-            let cancel = Arc::new(AtomicBool::new(false));
-            if let Some(previous) = inner.titles.insert(body.session, cancel.clone()) {
-                previous.store(true, Ordering::Relaxed);
+            let titling = Titling::default();
+            if let Some(previous) = inner.titles.insert(body.session, titling.clone()) {
+                previous.title.store(true, Ordering::Relaxed);
             }
             let mut model = body.model.clone();
             if model.account.id != onicode_core::accounts::DEFAULT {
@@ -643,39 +663,48 @@ impl WorkspaceHub {
             }
             let work = hub.clone();
             hub.spawn.spawn(Box::pin(async move {
-                work.titled(body, model, titled, cancel);
+                work.titled(body, model, titled, titling);
             }));
             Ok((Outcome::Applied, Outcome::Applied, events))
         })
         .await
     }
 
-    /// Runs a title's generation and work item lookup, then applies what they found.
+    /// Runs a title's generation and work item lookup, then applies what they found. A session
+    /// deleted meanwhile gets neither, and no provider or `gh` runs for it after it went.
     fn titled(
         &self,
         body: GenerateTitle,
         model: onicode_core::session_title::TextModel,
         titled: bool,
-        cancel: Arc<AtomicBool>,
+        titling: Titling,
     ) {
         let cwd = Path::new(&body.cwd);
-        let generated = if titled {
-            self.chores.title(model, cwd, &body.message, cancel.clone())
+        let generated = if titled && !titling.title.load(Ordering::Relaxed) {
+            self.chores
+                .title(model, cwd, &body.message, titling.title.clone())
         } else {
             None
         };
-        let linked = self.chores.work_item(
-            &body.message,
-            cwd,
-            generated.as_ref().and_then(|g| g.work_item.as_ref()),
-        );
+        let linked = if titling.gone.load(Ordering::Relaxed) {
+            None
+        } else {
+            self.chores.work_item(
+                &body.message,
+                cwd,
+                generated.as_ref().and_then(|g| g.work_item.as_ref()),
+            )
+        };
         let mut inner = self.lock();
         if inner
             .titles
             .get(&body.session)
-            .is_some_and(|running| Arc::ptr_eq(running, &cancel))
+            .is_some_and(|running| running.is(&titling))
         {
             inner.titles.remove(&body.session);
+        }
+        if titling.gone.load(Ordering::Relaxed) {
+            return;
         }
         let Ok(store) = locked(&self.store) else {
             return;
@@ -684,7 +713,7 @@ impl WorkspaceHub {
             return;
         };
         let mut changed = false;
-        if !cancel.load(Ordering::Relaxed)
+        if !titling.title.load(Ordering::Relaxed)
             && let Some(generated) = generated
             && store
                 .replace_title(body.session, &body.seed, &generated.title)
@@ -708,7 +737,7 @@ impl WorkspaceHub {
     }
 
     /// `NameWorktree`: renames a new checkout's temporary branch once its name is generated,
-    /// unless the session left the checkout or the branch moved meanwhile.
+    /// unless the session went, left the checkout or the branch moved meanwhile.
     pub async fn name_worktree(
         self: &Arc<Self>,
         op: Option<OpId>,
@@ -720,10 +749,24 @@ impl WorkspaceHub {
             if model.account.id != onicode_core::accounts::DEFAULT {
                 model.account.root = locked(&hub.store)?.data_dir().map(Path::to_path_buf);
             }
+            let cancel = Arc::new(AtomicBool::new(false));
+            if let Some(previous) = hub.lock().namings.insert(body.session, cancel.clone()) {
+                previous.store(true, Ordering::Relaxed);
+            }
             let (reply, answer) = futures::channel::oneshot::channel();
             let work = hub.clone();
             hub.spawn.spawn(Box::pin(async move {
-                let _ = reply.send(work.named(&body, model));
+                let named = work.named(&body, model, &cancel);
+                let mut inner = work.lock();
+                if inner
+                    .namings
+                    .get(&body.session)
+                    .is_some_and(|running| Arc::ptr_eq(running, &cancel))
+                {
+                    inner.namings.remove(&body.session);
+                }
+                drop(inner);
+                let _ = reply.send(named);
             }));
             Ok(Named {
                 branch: answer.await.ok().flatten(),
@@ -736,18 +779,24 @@ impl WorkspaceHub {
         &self,
         body: &NameWorktree,
         model: onicode_core::session_title::TextModel,
+        cancel: &Arc<AtomicBool>,
     ) -> Option<String> {
         use onicode_core::git::{self, naming};
         let path = Path::new(&body.cwd);
         let expected = naming::temporary_branch(path, body.session)?;
-        if git::snapshot(path).ok()?.current.as_deref() != Some(expected.as_str()) {
+        if cancel.load(Ordering::Relaxed)
+            || git::snapshot(path).ok()?.current.as_deref() != Some(expected.as_str())
+        {
             return None;
         }
-        let branch =
-            self.chores
-                .branch(model, path, &body.message, Arc::new(AtomicBool::new(false)))?;
+        let branch = self
+            .chores
+            .branch(model, path, &body.message, cancel.clone())?;
         // A deleted session, or a checkout chosen while the name was generated, gets no late
         // name.
+        if cancel.load(Ordering::Relaxed) {
+            return None;
+        }
         let retained = locked(&self.store).ok()?.session_worktrees().ok()?;
         if retained.get(&body.session).and_then(Option::as_deref) != Some(body.cwd.as_str()) {
             return None;
@@ -771,14 +820,14 @@ impl WorkspaceHub {
         locked(&self.store)?.list_notes()
     }
 
-    /// `CreateNote`.
+    /// `CreateNote`: a new empty note under the viewer's id.
     pub async fn create_note(
         &self,
         op: Option<OpId>,
         body: CreateNote,
     ) -> Result<onicode_core::notes::Note, String> {
         self.mutate(op, move |_, store| {
-            let note = store.create_note(body.cwd)?;
+            let note = store.create_note(&body.id, body.cwd)?;
             let events = vec![WorkspaceEvent::Notes(store.list_notes()?.len())];
             Ok((note, Outcome::Applied, events))
         })
@@ -1029,6 +1078,25 @@ impl WorkspaceHub {
         }
     }
 
+    /// Session `row`'s queue was saved: its summary's draft mark follows the store.
+    pub fn draft_saved(&self, row: i64, draft: bool) {
+        let mut inner = self.lock();
+        if !inner.loaded {
+            return;
+        }
+        let Some(mut summary) = inner
+            .state
+            .sessions
+            .iter()
+            .find(|known| known.session.id == row && known.draft != draft)
+            .cloned()
+        else {
+            return;
+        };
+        summary.draft = draft;
+        publish(&mut inner, vec![WorkspaceEvent::Session(Box::new(summary))]);
+    }
+
     /// `WatchWorkspace`: a snapshot (or, with a `since` the ring covers, only what was missed),
     /// then every event. After `Resync` the stream ends; resubscribe with the last cursor.
     pub fn watch(
@@ -1205,6 +1273,14 @@ fn remove(inner: &mut Inner, store: &mut Store, row: i64) -> Result<Vec<Workspac
     inner.busy.remove(&row);
     inner.unread.remove(&row);
     inner.unprompted.remove(&row);
+    // Its title generation and branch naming stop: no provider work runs for a deleted chat.
+    if let Some(titling) = inner.titles.remove(&row) {
+        titling.title.store(true, Ordering::Relaxed);
+        titling.gone.store(true, Ordering::Relaxed);
+    }
+    if let Some(naming) = inner.namings.remove(&row) {
+        naming.store(true, Ordering::Relaxed);
+    }
     let mut events = vec![WorkspaceEvent::Removed(row)];
     if inner
         .state

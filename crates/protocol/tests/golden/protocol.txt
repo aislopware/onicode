@@ -1,4 +1,4 @@
-protocol 3
+protocol 4
 call Hello agent params=e9de24ac3b14849e reply=e9de24ac3b14849e
 call EngineInfo agent params=fa64ac005d4e6ec1 reply=ea30e297db7e7c2b
 call UpdateEngine params=76bcbe41f03a0f3d reply=caf76c905cccc628
@@ -42,7 +42,7 @@ call SaveOrchestration params=7a86210ed34f8ea4 reply=5b317dbd01f7735e
 call GenerateTitle params=b91104aaaff39752 reply=5b317dbd01f7735e
 call NameWorktree params=4375da78efe56695 reply=4cbd7508da5ece7f
 call ListNotes agent params=6d3b1e52bc0b3aa9 reply=da15ebcd9427db1d
-call CreateNote params=c249cc8b56958f35 reply=f2fd39f08d78c26c
+call CreateNote params=6ab83f798ee75a43 reply=f2fd39f08d78c26c
 call UpsertNote agent params=92d6f357c77e471c reply=f2fd39f08d78c26c
 call DeleteNote params=764ff086d1d5edd7 reply=5b317dbd01f7735e
 call SaveResponseNote params=de91897051238b62 reply=5b317dbd01f7735e

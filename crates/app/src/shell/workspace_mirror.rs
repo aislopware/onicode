@@ -4,6 +4,13 @@
 //! owns (session summaries, folders, reminders, orchestration summaries and the note count), and
 //! the shell changes them only through calls under ops it mints. A call's effect is echoed in
 //! the same frame and laid over every update until the engine's receipt for its op arrives.
+//!
+//! A session's fields reach the shell's maps and its open conversation only when the engine's
+//! value of them moves (`follow`). A conversation changes some ahead of the engine (a title
+//! seeded from the first prompt, a provider's placeholder title, its `has_messages` and time)
+//! and the store's draft mark follows its saved queue; an update about anything else, or one
+//! that leaves those fields as they were, never puts back an older value, so nothing on the
+//! sidebar flickers or loses its mark when a snapshot or an event lands.
 use onicode_core::agent::Settings;
 use onicode_protocol::workspace::{
     CreateSession, NewSession, SessionSummary, WorkspaceEvent, WorkspaceState,
@@ -21,6 +28,8 @@ struct Echoed {
     echo: Echo,
     /// The call has answered; a snapshot already holds its effect.
     settled: bool,
+    /// The sessions the echo marks: shown as the engine holds them again if it refuses the call.
+    rows: HashSet<i64>,
 }
 
 #[derive(Default)]
@@ -28,6 +37,8 @@ pub(super) struct Mirror {
     /// The workspace as the engine last showed it; `None` until its snapshot arrives.
     state: Option<WorkspaceState>,
     echoes: Vec<Echoed>,
+    /// While an echo first runs, the sessions it marks.
+    marking: Option<HashSet<i64>>,
     _watch: Option<gpui::Task<()>>,
 }
 
@@ -69,6 +80,23 @@ impl Mirror {
     }
 }
 
+/// Lays the fields of `now` whose engine value moved since `before` over `shown`; with no
+/// `before`, every field differs. Returns whether `shown` changed.
+macro_rules! follow {
+    ($shown:expr, $before:expr, $now:expr; $($field:ident),+) => {{
+        let mut changed = false;
+        $(
+            if $before.is_none_or(|before: &Session| before.$field != $now.$field)
+                && $shown.$field != $now.$field
+            {
+                $shown.$field.clone_from(&$now.$field);
+                changed = true;
+            }
+        )+
+        changed
+    }};
+}
+
 /// Every reminder occurrence still waiting to fire.
 fn armed(reminders: &[onicode_core::store::Reminder]) -> HashSet<(i64, u64)> {
     reminders
@@ -104,29 +132,34 @@ impl Shell {
         let mut removed = Vec::new();
         let mut due = Vec::new();
         let mut receipts = Vec::new();
+        // What the engine showed of each session this update changes, from before it.
+        let mut before: HashMap<i64, Option<SessionSummary>> = HashMap::new();
         match update {
             WorkspaceUpdate::Snapshot(state) => {
-                if let Some(previous) = &self.mirror.state {
-                    let rows: HashSet<i64> = state
-                        .sessions
-                        .iter()
-                        .map(|summary| summary.session.id)
-                        .collect();
-                    removed.extend(
-                        previous
-                            .sessions
-                            .iter()
-                            .map(|summary| summary.session.id)
-                            .filter(|row| !rows.contains(row)),
-                    );
-                }
+                let mut known: HashMap<i64, SessionSummary> = self
+                    .mirror
+                    .state
+                    .take()
+                    .map(|previous| previous.sessions)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|summary| (summary.session.id, summary))
+                    .collect();
                 for summary in &state.sessions {
-                    if summary.draft && self.mirror.summary(summary.session.id).is_none() {
-                        self.draft_sessions.insert(summary.session.id);
+                    let prior = known.remove(&summary.session.id);
+                    if prior.as_ref() != Some(summary) {
+                        before.insert(summary.session.id, prior);
                     }
                 }
+                removed.extend(known.into_keys());
                 due.extend(state.automations.iter().cloned());
-                self.mirror.echoes.retain(|echoed| !echoed.settled);
+                // The snapshot holds what became of every answered call: its sessions show it.
+                self.mirror.echoes.retain(|echoed| {
+                    if echoed.settled {
+                        before.extend(echoed.rows.iter().map(|row| (*row, None)));
+                    }
+                    !echoed.settled
+                });
                 self.mirror.state = Some(*state);
             }
             WorkspaceUpdate::Events(events) => {
@@ -135,15 +168,18 @@ impl Shell {
                     match event {
                         WorkspaceEvent::Removed(row) => removed.push(*row),
                         WorkspaceEvent::AutomationDue(run) => due.push(run.as_ref().clone()),
-                        WorkspaceEvent::Receipt { op, .. } => receipts.push(*op),
-                        WorkspaceEvent::Session(summary)
-                            if summary.draft
-                                && !state
+                        WorkspaceEvent::Receipt { op, outcome } => {
+                            receipts.push((*op, outcome.clone()))
+                        }
+                        WorkspaceEvent::Session(summary) => {
+                            let row = summary.session.id;
+                            before.entry(row).or_insert_with(|| {
+                                state
                                     .sessions
                                     .iter()
-                                    .any(|known| known.session.id == summary.session.id) =>
-                        {
-                            self.draft_sessions.insert(summary.session.id);
+                                    .find(|known| known.session.id == row)
+                                    .cloned()
+                            });
                         }
                         _ => {}
                     }
@@ -151,9 +187,17 @@ impl Shell {
                 }
             }
         }
-        self.mirror
-            .echoes
-            .retain(|echoed| !receipts.contains(&echoed.op));
+        // An echo the engine refused leaves its sessions as the engine holds them, whole.
+        self.mirror.echoes.retain(|echoed| {
+            let Some((_, outcome)) = receipts.iter().find(|(op, _)| *op == echoed.op) else {
+                return true;
+            };
+            if matches!(outcome, Outcome::Rejected(_)) {
+                before.extend(echoed.rows.iter().map(|row| (*row, None)));
+            }
+            false
+        });
+        self.show_sessions(&before, cx);
         self.show_workspace(cx);
         for row in removed {
             if !self.deleting.contains(&row) && self.session_summaries.contains_key(&row) {
@@ -179,31 +223,68 @@ impl Shell {
         cx.notify();
     }
 
-    /// Lays the engine's workspace over the shell's maps, then the echoes still in flight.
-    fn show_workspace(&mut self, cx: &mut Context<Self>) {
+    /// Lays what the engine changed of the sessions in `before` over the shell's maps and their
+    /// open conversations: only the fields whose engine value moved since `before`, every field
+    /// of a session the mirror had not seen.
+    fn show_sessions(
+        &mut self,
+        before: &HashMap<i64, Option<SessionSummary>>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(state) = self.mirror.state.as_ref() else {
             return;
         };
         for summary in &state.sessions {
             let row = summary.session.id;
-            let session = &summary.session;
+            let Some(prior) = before.get(&row) else {
+                continue;
+            };
+            let was = prior.as_ref().map(|prior| &prior.session);
+            let now = &summary.session;
+            // A draft the engine's store gained or lost; a session new to the mirror only adds
+            // its mark, since the shell may have marked it first.
+            let draft = match prior {
+                Some(prior) if prior.draft != summary.draft => Some(summary.draft),
+                None if summary.draft => Some(true),
+                _ => None,
+            };
             if let Some(view) = self.sessions.get(&row) {
                 view.update(cx, |view, cx| {
-                    let shown = &mut view.summary;
-                    if shown.title != session.title
-                        || shown.pinned != session.pinned
-                        || shown.archived != session.archived
-                        || shown.work_item != session.work_item
+                    // The conversation owns the rest of its summary.
+                    let mut changed =
+                        follow!(view.summary, was, now; title, pinned, archived, work_item);
+                    if let Some(draft) = draft
+                        && view.draft_hint != draft
                     {
-                        shown.title.clone_from(&session.title);
-                        shown.pinned = session.pinned;
-                        shown.archived = session.archived;
-                        shown.work_item.clone_from(&session.work_item);
+                        view.draft_hint = draft;
+                        changed = true;
+                    }
+                    if changed {
                         cx.notify();
                     }
                 });
             }
-            self.session_summaries.insert(row, session.clone());
+            match self.session_summaries.get_mut(&row) {
+                Some(shown) if was.is_some() => {
+                    follow!(
+                        shown, was, now;
+                        title, provider, cwd, provider_id, has_messages, updated_at, archived,
+                        pinned, work_item
+                    );
+                }
+                _ => {
+                    self.session_summaries.insert(row, now.clone());
+                }
+            }
+            match draft {
+                Some(true) => {
+                    self.draft_sessions.insert(row);
+                }
+                Some(false) => {
+                    self.draft_sessions.remove(&row);
+                }
+                None => {}
+            }
             if !self.order.contains(&row) {
                 self.order.push(row);
             }
@@ -219,6 +300,22 @@ impl Shell {
                     .insert(row, automation.clone());
             }
         }
+    }
+
+    /// Lays the sessions at `rows` over the shell's maps whole as the engine holds them, then
+    /// the rest of the workspace: what an echo the engine refused leaves behind.
+    fn reshow_workspace(&mut self, rows: HashSet<i64>, cx: &mut Context<Self>) {
+        let before = rows.into_iter().map(|row| (row, None)).collect();
+        self.show_sessions(&before, cx);
+        self.show_workspace(cx);
+    }
+
+    /// Lays the engine's folders, reminders, orchestration summaries and note count over the
+    /// shell's maps, then the echoes still in flight.
+    fn show_workspace(&mut self, cx: &mut Context<Self>) {
+        let Some(state) = self.mirror.state.as_ref() else {
+            return;
+        };
         for project in &state.projects {
             self.groups
                 .insert(project.path.clone(), project.groups.clone());
@@ -246,6 +343,9 @@ impl Shell {
         cx: &mut Context<Self>,
         change: impl Fn(&mut Session),
     ) {
+        if let Some(rows) = self.mirror.marking.as_mut() {
+            rows.insert(row);
+        }
         if let Some(summary) = self.session_summaries.get_mut(&row) {
             change(summary);
         }
@@ -272,11 +372,14 @@ impl Shell {
     {
         let op = OpId::new();
         if let Some(echo) = echo {
+            self.mirror.marking = Some(HashSet::new());
             echo(self, cx);
+            let rows = self.mirror.marking.take().unwrap_or_default();
             self.mirror.echoes.push(Echoed {
                 op,
                 echo,
                 settled: false,
+                rows,
             });
         }
         let previous = self.group_writes.take();
@@ -292,8 +395,15 @@ impl Shell {
             let reply = call.await;
             let _ = this.update(cx, |this, cx| {
                 if reply.is_err() {
-                    this.mirror.echoes.retain(|echoed| echoed.op != op);
-                    this.show_workspace(cx);
+                    let mut rows = HashSet::new();
+                    this.mirror.echoes.retain(|echoed| {
+                        let refused = echoed.op == op;
+                        if refused {
+                            rows.extend(echoed.rows.iter().copied());
+                        }
+                        !refused
+                    });
+                    this.reshow_workspace(rows, cx);
                 } else if let Some(echoed) =
                     this.mirror.echoes.iter_mut().find(|echoed| echoed.op == op)
                 {
@@ -370,5 +480,113 @@ impl Shell {
         C::Reply: Send + 'static,
     {
         engine_client::call::<C>(&self.store, None, body, cx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::TestAppContext;
+    use onicode_core::follow_up::{Message, State};
+    use onicode_protocol::session::SaveQueue;
+    use onicode_protocol::workspace::{Pin, Rename};
+
+    use super::*;
+
+    /// Saves session `row`'s queue in its engine, with a draft or without one.
+    fn save_draft(shell: &Shell, row: i64, revision: u64, draft: bool, cx: &mut App) {
+        let queue = State {
+            revision,
+            draft: draft.then(|| Message {
+                id: "draft".into(),
+                text: "Unsent".into(),
+                ..Message::default()
+            }),
+            ..State::default()
+        };
+        engine_client::session_call::<SaveQueue>(
+            &shell.store,
+            row,
+            Some(OpId::new()),
+            move |session| SaveQueue { session, queue },
+            cx,
+        )
+        .detach();
+    }
+
+    #[gpui::test]
+    fn the_engine_moves_only_what_it_changed_so_no_mark_flickers(cx: &mut TestAppContext) {
+        let (window, a, b) = crate::shell::tests::window(cx);
+        // The conversation names itself from its first prompt before the engine hears of it,
+        // and another session's draft lands in the engine's store.
+        window
+            .update(cx, |shell, _, cx| {
+                shell.sessions[&a].update(cx, |chat, _| {
+                    chat.summary.title = "Seeded from the prompt".into();
+                });
+                save_draft(shell, b, 1, true, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |shell, _, cx| {
+                assert!(
+                    shell.draft_sessions.contains(&b),
+                    "the engine's draft marks it"
+                );
+                // An event for the session that leaves its title alone, and one for another.
+                shell.workspace_write::<Pin>(
+                    "pin the sessions",
+                    Pin {
+                        sessions: vec![a, b],
+                        pinned: true,
+                    },
+                    None,
+                    cx,
+                );
+            })
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |shell, _, cx| {
+                let chat = shell.sessions[&a].read(cx);
+                assert_eq!(chat.summary.title, "Seeded from the prompt");
+                assert!(chat.summary.pinned, "what the engine changed still moves");
+                assert!(shell.draft_sessions.contains(&b), "and no mark was lost");
+                save_draft(shell, b, 2, false, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |shell, _, cx| {
+                assert!(
+                    !shell.draft_sessions.contains(&b),
+                    "a sent draft unmarks it"
+                );
+                // A rename the engine refuses: the echo shows at once, then the engine's title.
+                let echo: Echo = Box::new(move |shell: &mut Shell, cx: &mut Context<Shell>| {
+                    shell.mark_session(a, cx, |summary| summary.title = "Refused".into());
+                });
+                shell.workspace_write::<Rename>(
+                    "rename the session",
+                    Rename {
+                        session: a,
+                        title: "Refused".into(),
+                        expected: Some("A title it never had".into()),
+                    },
+                    Some(echo),
+                    cx,
+                );
+                assert_eq!(shell.sessions[&a].read(cx).summary.title, "Refused");
+            })
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |shell, _, cx| {
+                let engine = shell.mirror.session(a).unwrap().title;
+                assert_ne!(engine, "Refused");
+                assert_eq!(shell.sessions[&a].read(cx).summary.title, engine);
+                assert_eq!(shell.session_summaries[&a].title, engine);
+            })
+            .unwrap();
     }
 }

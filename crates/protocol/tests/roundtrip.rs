@@ -1170,7 +1170,7 @@ proptest! {
         })?;
         round_trips(&NameWorktree { session, root: project.clone(), cwd: project.clone(), message, model })?;
         round_trips(&Named { branch })?;
-        round_trips(&CreateNote { cwd: Some(project) })?;
+        round_trips(&CreateNote { id: run.clone(), cwd: Some(project) })?;
         round_trips(&DeleteNote { id: run.clone() })?;
         round_trips(&FinishAutomationRun { run, status: "succeeded".into(), error: None })?;
         round_trips(&ClaimInboxEvents::default())?;

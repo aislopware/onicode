@@ -76,6 +76,8 @@ pub(super) struct Target {
 pub(super) struct Btw {
     session: i64,
     store: Database,
+    /// The engine its answers run in, for stopping them when the sheet goes.
+    engine: crate::engine_client::Engine,
     parent_input: Entity<input::Input>,
     input: Entity<input::Input>,
     transcript: Entity<TranscriptView>,
@@ -109,6 +111,14 @@ pub(super) struct Btw {
     _submit: Subscription,
     _changed: Subscription,
     response_subscription: Option<Subscription>,
+}
+impl Drop for Btw {
+    /// The conversation went: its side answers stop, as monocode's did.
+    fn drop(&mut self) {
+        for thread in std::mem::take(&mut self.running) {
+            self.stop_answer(thread);
+        }
+    }
 }
 impl Btw {
     pub(super) fn new(
@@ -171,6 +181,7 @@ impl Btw {
         .detach();
         Self {
             session,
+            engine: crate::engine_client::engine(&store, cx),
             store,
             parent_input,
             input,
@@ -676,21 +687,18 @@ impl Btw {
         if let Some(id) = self.active.clone()
             && self.running.contains(&id)
         {
-            self.stop_answer(id, cx);
+            self.stop_answer(id);
         }
         cx.notify();
     }
 
     /// Stops a running answer; its reply then says "Stopped".
-    fn stop_answer(&self, thread: String, cx: &mut Context<Self>) {
-        crate::engine_client::session_call::<StopBtw>(
-            &self.store,
-            self.session,
-            Some(OpId::new()),
-            move |session| StopBtw { session, thread },
-            cx,
-        )
-        .detach();
+    fn stop_answer(&self, thread: String) {
+        self.engine
+            .session_send::<StopBtw>(self.session, Some(OpId::new()), move |session| StopBtw {
+                session,
+                thread,
+            });
     }
 
     fn retry(&mut self, cx: &mut Context<Self>) {
@@ -717,7 +725,7 @@ impl Btw {
 
     fn remove(&mut self, id: &str, cx: &mut Context<Self>) {
         if self.running.remove(id) {
-            self.stop_answer(id.to_owned(), cx);
+            self.stop_answer(id.to_owned());
         }
         self.threads.retain(|thread| thread.id != id);
         if self.active.as_deref() == Some(id) {
@@ -1856,5 +1864,47 @@ mod tests {
         assert!(!text.contains("private"));
         assert!(text.contains("Why?"));
         assert!(text.chars().count() <= SNAPSHOT_CHARS);
+    }
+    #[gpui::test]
+    fn closing_the_conversation_stops_its_running_side_answers(cx: &mut gpui::TestAppContext) {
+        let store: Database = std::sync::Arc::new(std::sync::Mutex::new(
+            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
+        ));
+        let row = cx
+            .update(|cx| crate::engine_client::create_for_test(&store, "codex", "/project", cx))
+            .id;
+        let target = Target {
+            source_turn: 0,
+            snapshot: String::new(),
+            provider: Kind::Codex,
+            model: None,
+            cwd: "/project".into(),
+            settings: Settings::default(),
+        };
+        let btw = cx.new(|cx| {
+            let parent = cx.new(input::Input::side_question);
+            Btw::new(
+                row,
+                store.clone(),
+                parent,
+                AnchorSlot::default(),
+                target,
+                cx,
+            )
+        });
+        cx.run_until_parked();
+        btw.update(cx, |btw, _| {
+            btw.running.insert("btw-answering".into());
+        });
+        drop(btw);
+        cx.update(|_| {});
+        cx.run_until_parked();
+        let calls = cx.update(|cx| crate::engine_client::calls_for_test(&store, cx));
+        let stopped: Vec<_> = calls
+            .iter()
+            .filter(|(name, _)| *name == StopBtw::NAME)
+            .map(|(_, params)| params["body"]["thread"].clone())
+            .collect();
+        assert_eq!(stopped, vec![serde_json::json!("btw-answering")]);
     }
 }

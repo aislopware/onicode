@@ -321,9 +321,11 @@ pub struct Named {
 pub struct ListNotes {}
 workspace_call!(ListNotes, agent: true, reply: Vec<Note>);
 
-/// A new empty note, in the project at `cwd` when there is one.
+/// A new empty note under the viewer's id, in the project at `cwd` when there is one. The viewer
+/// mints the id, so the note opens before the engine answers; an id already in use is refused.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateNote {
+    pub id: String,
     pub cwd: Option<String>,
 }
 workspace_call!(CreateNote, agent: false, reply: Note);

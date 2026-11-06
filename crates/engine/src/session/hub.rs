@@ -1172,7 +1172,13 @@ impl SessionHub {
             })
             .await?;
         match outcome {
-            Outcome::Applied => Ok(queue),
+            Outcome::Applied => {
+                // The sidebar marks a session that holds a saved draft.
+                if let Some(workspace) = self.workspace.get() {
+                    workspace.draft_saved(row, queue.draft.is_some());
+                }
+                Ok(queue)
+            }
             Outcome::Rejected(rejection) => Err(format!("The queue was not saved: {rejection:?}")),
         }
     }

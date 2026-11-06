@@ -28,6 +28,7 @@ use onicode_protocol::session::{
 use onicode_protocol::workspace::{WatchWorkspace, WorkspaceEvent, WorkspaceState};
 use onicode_protocol::{Call, Cursor, Item, MessageId, OpId, Outcome, Routed, SessionId, Watch};
 use onicode_rpc::{RpcClient, RpcReply, RpcService};
+use tokio::sync::Notify;
 
 /// The engine's tokio thread: it serves the in-memory transport.
 static RUNTIME: LazyLock<Option<tokio::runtime::Runtime>> = LazyLock::new(|| {
@@ -108,6 +109,9 @@ pub(crate) struct EngineClient {
     workspace: Arc<WorkspaceHub>,
     link: Link,
     executor: BackgroundExecutor,
+    /// Every call made, by name with its routed params, for a test to assert on.
+    #[cfg(test)]
+    calls: Mutex<Vec<(&'static str, serde_json::Value)>>,
 }
 
 fn lock(viewer: &Mutex<Viewer>) -> MutexGuard<'_, Viewer> {
@@ -188,6 +192,8 @@ impl EngineClient {
             workspace,
             link,
             executor,
+            #[cfg(test)]
+            calls: Mutex::default(),
         });
         cx.default_global::<Engines>().0.push(engine.clone());
         engine
@@ -200,6 +206,11 @@ impl EngineClient {
             body,
         })
         .map_err(|error| error.to_string())?;
+        #[cfg(test)]
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((C::NAME, params.clone()));
         let reply = match &self.link {
             Link::Rpc(client) => client
                 .call(C::NAME, params)
@@ -292,6 +303,8 @@ pub(crate) struct EngineControls {
     engine: Arc<EngineClient>,
     session: SessionId,
     viewer: Arc<Mutex<Viewer>>,
+    /// Wakes the turn's forwarder to hand the conversation what the viewer holds now.
+    nudge: Arc<Notify>,
 }
 
 impl EngineControls {
@@ -305,10 +318,13 @@ impl EngineControls {
                 // The queued message is stored already: the engine takes it out of the queue by
                 // its id, and the receipt names it delivered or failed.
                 let Ok(queued) = message.id.parse::<MessageId>() else {
+                    // Failed before it left: the conversation shows it now, not at the turn's
+                    // next update.
                     lock(&self.viewer).fail_steer(
                         message.id,
                         "This message has no id the engine knows".to_owned(),
                     );
+                    self.nudge.notify_one();
                     return;
                 };
                 lock(&self.viewer).expect(op, Expect::Steer { id: message.id });
@@ -410,10 +426,13 @@ pub(crate) fn start_turn(
     );
     let forwarder = engine.clone();
     let held = viewer.clone();
+    let nudge = Arc::new(Notify::new());
+    let nudged = nudge.clone();
     engine
         .executor
         .spawn(async move {
-            if let Err(status) = forward(forwarder, session, op, send, &held, &updates).await
+            let turn = forward(forwarder, session, op, send, &held, &nudged, &updates).await;
+            if let Err(status) = turn
                 && let Some(update) = refuse(&held, status)
             {
                 let _ = updates.send(update).await;
@@ -424,6 +443,7 @@ pub(crate) fn start_turn(
         engine,
         session,
         viewer,
+        nudge,
     })
 }
 
@@ -431,6 +451,20 @@ enum Next {
     Item(Box<Option<Item<SessionState, SessionEvent>>>),
     Refused(String),
     Sent,
+    /// The conversation's side changed what the viewer holds (a steer that failed before it
+    /// left): hand it on now.
+    Nudged,
+}
+
+/// The session's items as a turn's forwarder reads them.
+type Items = BoxStream<'static, Item<SessionState, SessionEvent>>;
+
+fn watching(session: SessionId, since: Option<Cursor>) -> WatchSession {
+    WatchSession {
+        session,
+        since,
+        window_turns: 1,
+    }
 }
 
 /// Watches the session, sends the turn and forwards what arrives until the turn finishes or the
@@ -441,15 +475,13 @@ async fn forward(
     op: OpId,
     send: session::Send,
     viewer: &Mutex<Viewer>,
+    nudge: &Notify,
     updates: &async_channel::Sender<Update>,
 ) -> Result<(), String> {
-    let watch = |since| WatchSession {
-        session,
-        since,
-        window_turns: 1,
-    };
     // Watch first: the turn's events follow the snapshot.
-    let mut items = engine.watch::<WatchSession>(watch(None)).await?;
+    let mut items = engine
+        .watch::<WatchSession>(watching(session, None))
+        .await?;
     let first = items.next().await.ok_or("The engine closed this session")?;
     absorb(viewer, first);
     let (refusal, refusals) = async_channel::bounded(1);
@@ -464,20 +496,50 @@ async fn forward(
             }
         })
         .detach();
-    let mut refused = Some(refusals);
+    relay(
+        &engine,
+        session,
+        items,
+        Some(refusals),
+        viewer,
+        nudge,
+        updates,
+    )
+    .await
+}
+
+/// Folds the session's `items` into one update per beat until the turn finishes or the
+/// conversation stops listening. `refused` names why the turn never started; a `nudge` hands on
+/// what the viewer holds without waiting for the session's next event.
+async fn relay(
+    engine: &EngineClient,
+    session: SessionId,
+    mut items: Items,
+    mut refused: Option<async_channel::Receiver<String>>,
+    viewer: &Mutex<Viewer>,
+    nudge: &Notify,
+    updates: &async_channel::Sender<Update>,
+) -> Result<(), String> {
+    let rewatch = |viewer: &Mutex<Viewer>| watching(session, cursor(viewer));
     loop {
+        let nudged = pin!(nudge.notified());
+        let beat = select(items.next(), nudged);
         let next = match &refused {
-            Some(receiver) => match select(items.next(), pin!(receiver.recv())).await {
-                Either::Left((item, _)) => Next::Item(Box::new(item)),
+            Some(receiver) => match select(beat, pin!(receiver.recv())).await {
+                Either::Left((Either::Left((item, _)), _)) => Next::Item(Box::new(item)),
+                Either::Left((Either::Right(((), _)), _)) => Next::Nudged,
                 Either::Right((Ok(reason), _)) => Next::Refused(reason),
                 Either::Right((Err(_), _)) => Next::Sent,
             },
-            None => Next::Item(Box::new(items.next().await)),
+            None => match beat.await {
+                Either::Left((item, _)) => Next::Item(Box::new(item)),
+                Either::Right(((), _)) => Next::Nudged,
+            },
         };
         let mut finished = match next {
             Next::Item(item) => match *item {
                 Some(Item::Resync) => {
-                    items = engine.watch::<WatchSession>(watch(cursor(viewer))).await?;
+                    items = engine.watch::<WatchSession>(rewatch(viewer)).await?;
                     continue;
                 }
                 Some(item) => absorb(viewer, item),
@@ -492,11 +554,12 @@ async fn forward(
                 refused = None;
                 continue;
             }
+            Next::Nudged => false,
         };
         // Whatever else is ready joins this beat's update.
         while !finished && let Some(Some(item)) = items.next().now_or_never() {
             if matches!(item, Item::Resync) {
-                items = engine.watch::<WatchSession>(watch(cursor(viewer))).await?;
+                items = engine.watch::<WatchSession>(rewatch(viewer)).await?;
                 continue;
             }
             finished = absorb(viewer, item);
@@ -549,6 +612,40 @@ where
         let session = engine.hub.session_id(row)?;
         engine.call::<C>(op, body(session)).await
     })
+}
+
+/// The engine serving a store, held by a view for the calls it makes where no `App` is at hand:
+/// its `Drop`.
+#[derive(Clone)]
+pub(crate) struct Engine(Arc<EngineClient>);
+
+/// The engine serving `store`.
+pub(crate) fn engine(store: &Database, cx: &mut App) -> Engine {
+    Engine(EngineClient::get(store, cx))
+}
+
+impl Engine {
+    /// Makes a call naming the session stored at `row`, off the main thread, and lets it go:
+    /// what it came to reaches the views through the watches.
+    pub(crate) fn session_send<C: Call + 'static>(
+        &self,
+        row: i64,
+        op: Option<OpId>,
+        body: impl FnOnce(SessionId) -> C::Params + Send + 'static,
+    ) where
+        C::Params: Send + 'static,
+        C::Reply: Send + 'static,
+    {
+        let engine = self.0.clone();
+        self.0
+            .executor
+            .spawn(async move {
+                if let Ok(session) = engine.hub.session_id(row) {
+                    let _ = engine.call::<C>(op, body(session)).await;
+                }
+            })
+            .detach();
+    }
 }
 
 /// How often a session event watcher checks whether its receiver is still there.
@@ -750,4 +847,84 @@ pub(crate) fn refresh_session(store: &Database, row: i64, cx: &mut App) {
 #[cfg(test)]
 pub(crate) fn tick(store: &Database, now: u64, cx: &mut App) -> Result<(), String> {
     EngineClient::get(store, cx).workspace.tick(now)
+}
+
+/// Every call the engine serving `store` was asked, by name with its routed params.
+#[cfg(test)]
+pub(crate) fn calls_for_test(
+    store: &Database,
+    cx: &mut App,
+) -> Vec<(&'static str, serde_json::Value)> {
+    EngineClient::get(store, cx)
+        .calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use onicode_core::follow_up::Message;
+    use onicode_core::store::Store;
+
+    use super::*;
+
+    #[gpui::test]
+    fn a_steer_that_fails_before_it_leaves_shows_at_once(cx: &mut gpui::TestAppContext) {
+        let store: Database = Arc::new(Mutex::new(Store::open(Path::new(":memory:")).unwrap()));
+        let engine = cx.update(|cx| EngineClient::get(&store, cx));
+        let session = SessionId::new();
+        let viewer = Arc::new(Mutex::new(Viewer::default()));
+        let nudge = Arc::new(Notify::new());
+        let (updates, received) = async_channel::bounded(1);
+        // The turn started, and its session sends nothing more.
+        let (_refusal, refusals) = async_channel::bounded::<String>(1);
+        let relayed = {
+            let (engine, viewer, nudge) = (engine.clone(), viewer.clone(), nudge.clone());
+            cx.executor().spawn(async move {
+                let items: Items = futures::stream::pending().boxed();
+                relay(
+                    &engine,
+                    session,
+                    items,
+                    Some(refusals),
+                    &viewer,
+                    &nudge,
+                    &updates,
+                )
+                .await
+            })
+        };
+        cx.run_until_parked();
+        assert!(received.try_recv().is_err(), "nothing to hand on yet");
+        let controls = EngineControls {
+            engine,
+            session,
+            viewer,
+            nudge,
+        };
+        controls.send(Control {
+            id: "steer".into(),
+            decision: Decision::Steer(Message {
+                id: "not-a-message-id".into(),
+                text: "Look at the build".into(),
+                ..Message::default()
+            }),
+        });
+        cx.run_until_parked();
+        let update = received
+            .try_recv()
+            .expect("the failure reaches the conversation without a session event");
+        assert_eq!(
+            update.follow_up_errors,
+            vec![(
+                "not-a-message-id".to_owned(),
+                "This message has no id the engine knows".to_owned()
+            )]
+        );
+        assert!(!update.finished, "the turn runs on");
+        drop(relayed);
+    }
 }
