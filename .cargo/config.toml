@@ -5,6 +5,6 @@
 t = "nextest run --no-tests=fail --workspace --lib --bins --tests --features onicode-harness/native-fixture"
 lint = "clippy --locked --workspace --all-targets --features onicode-harness/native-fixture -- -D warnings"
 # The binaries in the feature set the two above resolve to: their dev-dependencies turn on harness
-# `installer-fixture` and sync `mock-server`, which a plain `cargo build` leaves off, rebuilding sync,
-# harness and the eleven crates above them (ui, engine, client, onicode...) a second time.
-bins = "build --locked --workspace --bins --features onicode-harness/native-fixture,onicode-harness/installer-fixture,onicode-sync/mock-server"
+# `installer-fixture`, which a plain `cargo build` leaves off, rebuilding harness and the crates above
+# it (ui, engine, client, onicode...) a second time.
+bins = "build --locked --workspace --bins --features onicode-harness/native-fixture,onicode-harness/installer-fixture"

@@ -39,6 +39,8 @@ members = [
     "crates/net-sim",
     "crates/tailnet",
     "crates/peer",
+    # Remote desktop (.research/remote-desktop.md §5).
+    "crates/desktop-media",
 ]
 # The vendored QUIC crates are workspace roots of their own, reached only through
 # [patch.crates-io] below.
@@ -51,6 +53,9 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+# gpui-fast's renderer pins wgpu by rev; onicode's shader checks and offscreen visuals take the same one.
+wgpu = { git = "https://github.com/gfx-rs/wgpu", rev = "cddb2f5d80dc0009b2ef6767635140cacf90a007" }
+naga = { git = "https://github.com/gfx-rs/wgpu", rev = "cddb2f5d80dc0009b2ef6767635140cacf90a007" }
 onicode-voice-session = { path = "crates/voice-session" }
 onicode-orb = { path = "crates/orb" }
 onicode-veil = { path = "crates/veil" }
@@ -85,6 +90,11 @@ onicode-net = { path = "crates/net" }
 onicode-net-sim = { path = "crates/net-sim" }
 onicode-peer = { path = "crates/peer" }
 onicode-tailnet = { path = "crates/tailnet" }
+# Systematic Reed–Solomon parity for video frames (NEON on Apple silicon).
+reed-solomon-simd = "3.1.0"
+# Fixed little-endian wire layouts read in place. 0.9 is an alpha with a new API and no measured
+# gain here.
+zerocopy = { version = "0.8.63", features = ["derive"] }
 # n0's QUIC, held to 1.4.x: noq-proto and noq-udp are the vendored, patched copies
 # (vendor/*/SLOPTY.md), and the patches are written against 1.4.0.
 noq = { version = "~1.4.0", default-features = false, features = ["runtime-tokio"] }
@@ -100,11 +110,18 @@ http-body-util = "0.1.5"
 
 # CRDT
 loro = "1.17"
+# Block compression for doc-sync frames; the version loro already brings in.
+lz4_flex = "0.11.6"
+# Property and model tests; the version noq-proto's tests already lock.
+proptest = "1.12"
+pretty_assertions = "1.4.1"
+# Structured fuzz inputs; desktop-media's tests replay its fuzz corpora through them.
+arbitrary = { version = "1.5.0", features = ["derive"] }
 
-# GPUI is aislopware/gpui-fast (retained mode, docs/onicode/decisions/rendering.md), pinned by rev at
-# its onicode/integration branch; the gpui-pre crates it reaches are patched to the same rev below,
-# so the graph holds exactly one GPUI. Components are aislopware/gpui-kit's base crate at its
-# onicode/integration branch (upstream longbridge/gpui-kit plus the caret and gutter fixes).
+# GPUI is aislopware/gpui-fast (retained mode, docs/onicode/decisions/rendering.md), pinned by rev on
+# its main; the gpui-pre crates it reaches are patched to the same rev below, so the graph holds
+# exactly one GPUI. Components are aislopware/gpui-kit's base crate on its main (upstream
+# longbridge/gpui-kit plus the caret and gutter fixes).
 gpui = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
 gpui_platform = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185", features = [
     "font-kit",
@@ -115,7 +132,7 @@ gpui_tokio = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6
 gpui_apple = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185", features = [
     "font-kit",
 ] }
-gpui-base = { git = "https://github.com/aislopware/gpui-kit.git", rev = "5e93a78759d4c416d9d5fa7b4ef9fe240952b1de" }
+gpui-base = { git = "https://github.com/aislopware/gpui-kit.git", rev = "a15e2658c44497a4b4861baac66e30d59de297df" }
 
 # diffs
 similar = "2"
@@ -123,9 +140,7 @@ similar = "2"
 # async / net
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
-# 0.2.190 made SYSPROTO_CONTROL macOS-only while nix 0.31.3 (via webrtc) still reads it on every
-# Apple target, which breaks the iOS build; hold until nix stops using it there.
-libc = "=0.2.189"
+libc = "0.2"
 gethostname = "1"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures = "0.3"
@@ -168,7 +183,6 @@ alacritty_terminal = "0.26"
 pulldown-cmark = "0.12"
 unicode-segmentation = "1"
 unicode-width = "0.2"
-fontdb = "0.23"
 ttf-parser = "0.25.1"
 # Packaged GUI apps do not inherit shell proxy variables; honor the macOS
 # system proxy for provider usage probes and other HTTP clients.

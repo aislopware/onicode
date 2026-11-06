@@ -1846,19 +1846,12 @@ fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     }
 }
 
-#[async_trait::async_trait]
-impl onicode_preview::signaling::TokenSource for Auth {
-    async fn token(&self) -> anyhow::Result<String> {
-        Ok(self.access_token().await?)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn concurrent_dns_failure_is_shared_with_http_and_room_consumers() {
+    async fn concurrent_dns_failure_is_shared_with_every_bearer_consumer() {
         use std::sync::atomic::Ordering;
 
         use crate::http_error::test_support::FailingDns;
@@ -1898,8 +1891,8 @@ mod tests {
 
         let edge = crate::EdgeConfig::new("https://edge.invalid", Arc::new(auth.clone()));
         assert!(matches!(
-            edge.room_url("/registry/org_1/ws").url().await,
-            Err(onicode_sync::SyncError::TemporarilyUnavailable(message)) if &message == reason
+            edge.bearer().await,
+            Err(TokenError::TemporarilyUnavailable(message)) if &message == reason
         ));
         assert!(matches!(
             auth.list_orgs().await,

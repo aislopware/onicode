@@ -1,10 +1,10 @@
-//! Terminals on other devices, for any viewer — the desktop engine and the
-//! phone run the same code:
+//! Terminals on other devices, for any viewer: the desktop engine and the phone run the same
+//! code, over the peer link to the terminal's host.
 //!
-//! - [`link`]: the direct peer-to-peer link's framed protocol (both ends);
-//! - [`remote`]: the hub carrying a terminal's I/O over the direct link when the devices can reach
-//!   each other and the relay when they can't, switching mid-session with no gap, no repeat and no
-//!   lost keystroke.
+//! - [`link`]: one terminal's stream (`StreamKind::Terminal`, named by its id), both ends, and the
+//!   datagram copies of keys and echoes;
+//! - [`remote`]: the viewer's hub, which numbers input, reopens a stream its link dropped and
+//!   resumes after the last event it delivered: no gap, no repeat, no lost keystroke.
 
 pub mod link;
 pub mod remote;

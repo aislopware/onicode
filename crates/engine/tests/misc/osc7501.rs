@@ -208,7 +208,7 @@ async fn pty_states_match_sidebar_mcp_and_synced_registry_without_a_viewport() {
     stale.updated_at =
         chrono::DateTime::from_timestamp_millis(Utc::now().timestamp_millis() - 46_000).unwrap();
     let mut registry = core.workspace.watch_session_rows();
-    core.workspace.record_session(&stale);
+    core.workspace.record_foreign_session(&stale);
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             if registry.borrow_and_update().iter().any(|row| row == &stale) {

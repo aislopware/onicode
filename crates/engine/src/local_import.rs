@@ -5,12 +5,10 @@
 //! the synced profile — through the same write paths every live mutation
 //! uses, so nothing here invents a second persistence or sync mechanism:
 //!
-//!  - chat docs land via `save_snapshot_with_cursor(chat_id, bytes, 0, CHAT2_DOC_EPOCH)`, which is
-//!    exactly the "born chat2" shape: cursor 0 makes the first room join push the doc's full update
-//!    log from VV zero (doc_host first-contact push), and epoch 2 keeps `DocHost::open` off the s2
-//!    discard-and-adopt branch that would drop the transcript.
+//!  - chat docs land as plain snapshots: peers that open the chat sync from them by version vector
+//!    like any other doc.
 //!  - registry rows go through `WorkspaceHost::import_chat_row` / `import_space_row` (live upserts:
-//!    persisted, pushed, watched).
+//!    persisted, replicated, watched).
 //!  - attachments are NOT copied or rewritten. Transcripts embed absolute paths under the local
 //!    profile's uploads root, so that root becomes a read-only jail root of the synced profile —
 //!    the exact mechanism the legacy-uploads adoption already uses
@@ -29,7 +27,6 @@ use onicode_sync::DocsStore;
 use serde::{Deserialize, Serialize};
 
 use crate::EngineError;
-use crate::chat2_host::CHAT2_DOC_EPOCH;
 use crate::run_journal::journal_paths;
 use crate::uploads::Uploads;
 use crate::workspace_host::WorkspaceHost;
@@ -403,12 +400,7 @@ impl LocalImporter {
         if let Some(bytes) = source_store.load_snapshot(&chat.id)?
             && !self.inner.target_store.has_snapshot(&chat.id)?
         {
-            self.inner.target_store.save_snapshot_with_cursor(
-                &chat.id,
-                &bytes,
-                0,
-                CHAT2_DOC_EPOCH,
-            )?;
+            self.inner.target_store.save_snapshot(&chat.id, &bytes)?;
         }
 
         let mut copied = false;
@@ -425,12 +417,8 @@ impl LocalImporter {
         }
 
         // Row last: once it appears in watchers the chat is clickable, and by
-        // then its doc + journal are already in place. Chat2 lineage is
-        // explicit so `DocHost::open` never routes the import down the legacy
-        // s2 adopt branch.
-        let mut row = chat.clone();
-        row.room_gen = Some(CHAT2_DOC_EPOCH);
-        self.inner.workspace.import_chat_row(&row)?;
+        // then its doc + journal are already in place.
+        self.inner.workspace.import_chat_row(chat)?;
         Ok(copied)
     }
 }

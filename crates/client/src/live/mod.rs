@@ -1,20 +1,18 @@
-//! Live mode: the edge transports behind [`crate::Client`].
+//! Live mode: what syncs behind [`crate::Client`].
 //!
-//! - registry: `RegistryClient` over the shared [`onicode_doc::RegistryDoc`] (WS + HTTPS
-//!   pull/push), persisted in the docs store, presence beats, sidebar-pin reconciliation once
-//!   synced;
-//! - rooms ([`room`]): one chat2 `ChatClient` per open session;
-//! - relay ([`relay`]): host RPCs over the device room (`LinkCache`), chunked uploads / attachment
-//!   reads, PR-status watches;
+//! - registry: mirrored from one engine over a `registry` peer stream ([`onicode_sync::registry`]):
+//!   the engine's rows come in, this device's writes go out, and the engine replicates them on;
+//!   persisted in the docs store, sidebar pins reconciled once caught up. Presence is the tailnet:
+//!   an engine is online while the client holds a live link to it or the directory's last probe
+//!   found it.
+//! - rooms ([`room`]): each open chat follows its host over a `doc/{chatId}` peer stream;
+//!   [`room::spawn_owed`] reopens chats that still owe their host after a restart;
+//! - relay ([`relay`]): host RPCs, chunked uploads / attachment reads, PR-status watches;
 //! - escorts ([`escort`]): `pending://` attachment bytes pushed to the host.
 //!
-//! Every loop here retries forever with bounded backoff that event wakes
-//! (system resume, any successful dial, OS path restored, token change) cut
-//! short — the legacy client's one-shot chat join left chats dark until a
-//! relaunch.
+//! Every loop here retries forever with bounded backoff that event wakes (the links set, a
+//! path change, the foreground) cut short.
 
-pub(crate) mod delivery;
-pub(crate) mod direct;
 pub(crate) mod escort;
 pub(crate) mod relay;
 pub(crate) mod room;
@@ -25,29 +23,28 @@ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
-use futures::future::BoxFuture;
-use onicode_doc::{REGISTRY_DOC_ID, RegistryDoc};
-use onicode_sync::{
-    DocsStore, RegistryClient, RegistryEvent, RegistryTransport, RegistryTuning, SyncError,
-    UrlProvider,
-};
-use tokio::sync::Notify;
+use onicode_doc::{REGISTRY_DOC_ID, RegistryDoc, RegistryRow, Vv};
+use onicode_net::{Role, StreamHead, StreamKind};
+use onicode_peer::PeerLinks;
+use onicode_sync::registry::{self, End, Replica};
+use onicode_sync::{DocsStore, SyncError};
+use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::client::ClientInner;
 use crate::error::{ClientError, Result};
 use crate::{lock, now_ms};
 
-/// First-join retry curve (engine workspace_host JOIN_RETRY_*).
-pub(crate) const JOIN_RETRY_BASE: Duration = Duration::from_millis(500);
-pub(crate) const JOIN_RETRY_CAP: Duration = Duration::from_secs(16);
-/// This device's presence beat cadence.
-const PRESENCE_INTERVAL: Duration = Duration::from_secs(15);
 /// Registry snapshot debounce.
 const REGISTRY_SAVE_DEBOUNCE: Duration = Duration::from_secs(1);
 /// While the OS says there is no path, backoffs park at least this long
 /// (any online event still cuts them short).
 const OFFLINE_PARK: Duration = Duration::from_secs(30);
+/// How long opening the registry stream may take before the engine counts as away.
+const REGISTRY_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
+/// The first wait before mirroring again; doubles to [`REGISTRY_RETRY_CAP`].
+const REGISTRY_RETRY_BASE: Duration = Duration::from_millis(500);
+const REGISTRY_RETRY_CAP: Duration = Duration::from_secs(16);
 
 /// Sleep `wait` (jittered), cut short by wake/online events. `false` when
 /// cancelled.
@@ -69,7 +66,7 @@ pub(crate) async fn wait_backoff(cancel: &CancellationToken, wait: Duration) -> 
     }
 }
 
-/// Fresh bearer for every dial/request, from the client's token provider.
+/// Fresh bearer for every request, from the client's token provider.
 #[derive(Clone)]
 pub(crate) struct Bearer(pub(crate) Weak<ClientInner>);
 
@@ -99,86 +96,6 @@ impl onicode_rpc::TokenSource for Bearer {
     }
 }
 
-struct RegistryUrl {
-    bearer: Bearer,
-    edge: String,
-    org_id: String,
-    device_id: String,
-}
-
-impl UrlProvider for RegistryUrl {
-    fn url(&self) -> BoxFuture<'static, std::result::Result<String, SyncError>> {
-        let bearer = self.bearer.clone();
-        let (edge, org, device) = (
-            self.edge.clone(),
-            self.org_id.clone(),
-            self.device_id.clone(),
-        );
-        Box::pin(async move {
-            let token = bearer.get().await?;
-            Ok(urls::registry_ws(&edge, &org, &token, &device))
-        })
-    }
-}
-
-/// HTTPS pull (doubles as a presence beat) / push.
-struct RegistryHttp {
-    bearer: Bearer,
-    edge: String,
-    org_id: String,
-    device_id: String,
-}
-
-fn http_err(err: reqwest::Error) -> SyncError {
-    SyncError::WebSocket(err.to_string())
-}
-
-impl RegistryTransport for RegistryHttp {
-    fn fetch(&self, since: u64) -> BoxFuture<'static, std::result::Result<String, SyncError>> {
-        let bearer = self.bearer.clone();
-        let url = urls::registry_rows(&self.edge, &self.org_id, &self.device_id, since);
-        Box::pin(async move {
-            let token = bearer.get().await?;
-            let response = crate::auth::http()
-                .get(url)
-                .bearer_auth(token)
-                .send()
-                .await
-                .map_err(http_err)?;
-            if !response.status().is_success() {
-                return Err(SyncError::Protocol(format!(
-                    "registry pull http {}",
-                    response.status()
-                )));
-            }
-            response.text().await.map_err(http_err)
-        })
-    }
-
-    fn push(&self, body: String) -> BoxFuture<'static, std::result::Result<String, SyncError>> {
-        let bearer = self.bearer.clone();
-        let url = urls::registry_push(&self.edge, &self.org_id, &self.device_id);
-        Box::pin(async move {
-            let token = bearer.get().await?;
-            let response = crate::auth::http()
-                .post(url)
-                .bearer_auth(token)
-                .header("content-type", "application/json")
-                .body(body)
-                .send()
-                .await
-                .map_err(http_err)?;
-            if !response.status().is_success() {
-                return Err(SyncError::Protocol(format!(
-                    "registry push http {}",
-                    response.status()
-                )));
-            }
-            response.text().await.map_err(http_err)
-        })
-    }
-}
-
 /// Raw registry posture sampled by the connectivity recompute.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RegistryPosture {
@@ -188,26 +105,89 @@ pub(crate) struct RegistryPosture {
     pub last_failure: Option<String>,
 }
 
+/// Where the registry mirror stands.
+#[derive(Default)]
+struct RegistryState {
+    /// A session with the mirrored engine is running.
+    connected: AtomicBool,
+    /// An engine's whole registry has been merged this process.
+    synced: AtomicBool,
+    /// When the next attempt is due, while no engine answers.
+    retry_at_ms: AtomicI64,
+    failure: Mutex<Option<String>>,
+}
+
+/// The client's registry as one side of a `registry` session with the engine it mirrors.
+struct ClientRegistry {
+    inner: Weak<ClientInner>,
+    doc: Arc<Mutex<RegistryDoc>>,
+    changes: Arc<watch::Sender<u64>>,
+    state: Arc<RegistryState>,
+}
+
+impl Replica for ClientRegistry {
+    fn read<T>(&self, f: impl FnOnce(&RegistryDoc) -> T) -> T {
+        f(&lock(&self.doc))
+    }
+
+    fn merge(&self, rows: &[RegistryRow], vv: Option<&Vv>) {
+        let changed = {
+            let mut doc = lock(&self.doc);
+            let before = doc.vv().clone();
+            doc.merge_remote(rows, vv) || *doc.vv() != before
+        };
+        if !changed {
+            return;
+        }
+        self.changes.send_modify(|n| *n = n.wrapping_add(1));
+        // A raised vv alone must still reach the snapshot.
+        if let Some(inner) = self.inner.upgrade() {
+            inner.registry_changed();
+        }
+    }
+
+    fn changes(&self) -> watch::Receiver<u64> {
+        self.changes.subscribe()
+    }
+
+    fn caught_up(&self) {
+        self.state.synced.store(true, Ordering::Release);
+        if let Some(inner) = self.inner.upgrade() {
+            inner.registry_changed();
+        }
+    }
+}
+
+/// The engine to mirror: one with a live link, else one the directory found.
+fn mirror(links: &PeerLinks) -> Option<String> {
+    links
+        .links()
+        .into_iter()
+        .find(|link| link.peer.role == Role::Engine)
+        .map(|link| link.device)
+        .or_else(|| {
+            let mut peers = links.directory().peers();
+            peers.sort_by(|a, b| a.device_id.cmp(&b.device_id));
+            peers.into_iter().next().map(|peer| peer.device_id)
+        })
+}
+
 pub(crate) struct LiveBackend {
     pub(crate) edge: String,
     pub(crate) store: Arc<DocsStore>,
-    registry: Mutex<Option<RegistryClient>>,
-    /// First-join retry deadline while the registry has never joined.
-    registry_retry_at: AtomicI64,
-    registry_failure: Mutex<Option<String>>,
+    inner: Weak<ClientInner>,
+    registry: Arc<RegistryState>,
+    /// Ticks on every local registry write: the mirror session pushes it.
+    registry_changes: Arc<watch::Sender<u64>>,
+    /// Cuts the mirror's backoff short.
+    registry_kick: Arc<Notify>,
     registry_save: Arc<Notify>,
     registry_save_gate: Mutex<()>,
     registry_dirty: Arc<AtomicBool>,
-    last_liveness_probe: AtomicI64,
     pub(crate) relay: relay::Relay,
-    /// Direct peer connections (terminals), started with the backend.
-    pub(crate) direct: std::sync::OnceLock<Option<onicode_preview::viewer::ViewerPeers>>,
     pub(crate) escorts: escort::Escorts,
-    pub(crate) delivery_wake: Arc<Notify>,
-    /// An outgoing chat row was ACKed (`notify_waiters`): host wakes that
-    /// were accepted while their rows were still in flight resend and settle
-    /// their receipt now instead of on the next backoff tick.
-    pub(crate) outbox_acked: Arc<Notify>,
+    /// Rescans the chats that owe their host something ([`room::spawn_owed`]).
+    pub(crate) owed_wake: Arc<Notify>,
     cancel: CancellationToken,
 }
 
@@ -235,90 +215,66 @@ impl LiveBackend {
         let store = Arc::new(store);
         Self {
             relay: relay::Relay::new(inner, &edge, bearer),
-            direct: std::sync::OnceLock::new(),
             escorts: escort::Escorts::new(&inner.config.data_dir),
-            delivery_wake: Arc::new(Notify::new()),
-            outbox_acked: Arc::new(Notify::new()),
+            owed_wake: Arc::new(Notify::new()),
             edge,
             store,
-            registry: Mutex::new(None),
-            registry_retry_at: AtomicI64::new(0),
-            registry_failure: Mutex::new(None),
+            inner: Arc::downgrade(inner),
+            registry: Arc::default(),
+            registry_changes: Arc::new(watch::channel(0).0),
+            registry_kick: Arc::new(Notify::new()),
             registry_save: Arc::new(Notify::new()),
             registry_save_gate: Mutex::new(()),
             registry_dirty: Arc::new(AtomicBool::new(false)),
-            last_liveness_probe: AtomicI64::new(0),
             cancel: inner.cancel.child_token(),
         }
     }
 
-    pub(crate) fn bearer(inner: &Arc<ClientInner>) -> Bearer {
-        Bearer(Arc::downgrade(inner))
-    }
-
-    /// Spawn the registry join/event loop, the presence beat, and the
-    /// registry saver.
+    /// Spawn the registry mirror, the registry saver, the presence watch, the escorts and the
+    /// owed-chat scan.
     pub(crate) fn start(&self, inner: &Arc<ClientInner>) {
-        // Signaling first: pairing with a host can then start the moment a
-        // terminal wants it.
-        let _ = self.direct.set(direct::start(inner));
         self.spawn_registry(inner);
+        self.spawn_presence(inner);
         self.spawn_registry_saver(inner);
         self.escorts.respawn(inner);
-        delivery::start(inner, self.delivery_wake.clone(), self.cancel.clone());
-    }
-
-    /// The direct peers, when they started.
-    pub(crate) fn direct(&self) -> Option<&onicode_preview::viewer::ViewerPeers> {
-        self.direct.get().and_then(Option::as_ref)
+        room::spawn_owed(inner, self.owed_wake.clone(), self.cancel.clone());
     }
 
     pub(crate) fn stop(&self) {
-        if let Some(direct) = self.direct() {
-            direct.stop();
-        }
         self.cancel.cancel();
-        if let Some(client) = lock(&self.registry).take() {
-            crate::runtime::shared().spawn(client.shutdown());
-        }
         self.relay.shutdown();
         self.flush_registry_now_with(None);
     }
 
     pub(crate) fn registry_posture(&self) -> RegistryPosture {
-        match lock(&self.registry).as_ref() {
-            Some(client) => {
-                let stats = client.stats();
-                let reconnect = client.reconnect_state();
-                RegistryPosture {
-                    connected: stats.connected,
-                    synced: stats.synced,
-                    retry_at_ms: (reconnect.retry_at_ms > 0).then_some(reconnect.retry_at_ms),
-                    last_failure: reconnect.last_failure,
-                }
-            }
-            None => {
-                let at = self.registry_retry_at.load(Ordering::Acquire);
-                RegistryPosture {
-                    connected: false,
-                    synced: false,
-                    retry_at_ms: (at > 0).then_some(at),
-                    last_failure: lock(&self.registry_failure).clone(),
-                }
-            }
+        let at = self.registry.retry_at_ms.load(Ordering::Acquire);
+        RegistryPosture {
+            connected: self.registry.connected.load(Ordering::Acquire),
+            synced: self.registry.synced.load(Ordering::Acquire),
+            retry_at_ms: (at > 0).then_some(at),
+            last_failure: lock(&self.registry.failure).clone(),
         }
     }
 
-    /// Remote devices' live presence (within the registry's TTL).
+    /// The devices online now: those the client holds a live link to, and the engines the
+    /// directory's last probe found. `None` before the links are set.
     pub(crate) fn presence(&self) -> Option<HashMap<String, i64>> {
-        lock(&self.registry).as_ref().map(RegistryClient::presence)
+        let inner = self.inner.upgrade()?;
+        let links = inner.peer_links.get()?;
+        let now = now_ms();
+        let linked = links.links().into_iter().map(|link| link.device);
+        let found = links
+            .directory()
+            .peers()
+            .into_iter()
+            .map(|peer| peer.device_id);
+        Some(linked.chain(found).map(|device| (device, now)).collect())
     }
 
     /// Local registry write landed: push now, persist soon.
     pub(crate) fn registry_written(&self) {
-        if let Some(client) = lock(&self.registry).as_ref() {
-            client.nudge();
-        }
+        self.registry_changes
+            .send_modify(|n| *n = n.wrapping_add(1));
         self.mark_registry_dirty();
     }
 
@@ -328,7 +284,7 @@ impl LiveBackend {
     }
 
     /// Cheap edge reachability check (`GET /health`, 3s): a 200 un-parks
-    /// every backoff in the process at once (legacy `probeEdgeHealth`).
+    /// every backoff in the process at once.
     pub(crate) fn probe_health(&self) {
         let url = urls::health(&self.edge);
         crate::runtime::shared().spawn(async move {
@@ -344,37 +300,10 @@ impl LiveBackend {
         });
     }
 
-    /// Deaf-socket guard (called from the 1 Hz tick): a connected registry
-    /// that hasn't PUSHED anything for a minute — while other devices beat
-    /// every 15s — gets a deadline-checked probe (≤ one per minute).
-    pub(crate) fn check_registry_liveness(&self, peers_known: bool) {
-        if !peers_known {
-            return;
-        }
-        let guard = lock(&self.registry);
-        let Some(client) = guard.as_ref() else { return };
-        let stats = client.stats();
-        let now = now_ms();
-        let last_probe = self.last_liveness_probe.load(Ordering::Acquire);
-        if stats.connected
-            && stats.last_pushed_ms > 0
-            && now - stats.last_pushed_ms > 60_000
-            && now - last_probe > 60_000
-        {
-            self.last_liveness_probe.store(now, Ordering::Release);
-            client.probe();
-        }
-    }
-
-    /// Foreground / network restored: probe the registry now.
+    /// Foreground / network restored: mirror the registry again now.
     pub(crate) fn kick(&self) {
-        if let Some(client) = lock(&self.registry).as_ref() {
-            if client.stats().connected {
-                client.probe();
-            } else {
-                client.redial();
-            }
-        }
+        self.registry_kick.notify_one();
+        self.owed_wake.notify_one();
         onicode_sync::wake::notify_online();
     }
 
@@ -441,95 +370,132 @@ impl LiveBackend {
         });
     }
 
-    fn spawn_registry(&self, inner: &Arc<ClientInner>) {
+    /// Republishes presence whenever a link or the directory changes.
+    fn spawn_presence(&self, inner: &Arc<ClientInner>) {
         let weak = Arc::downgrade(inner);
         let cancel = self.cancel.clone();
-        let provider: Arc<dyn UrlProvider> = Arc::new(RegistryUrl {
-            bearer: Self::bearer(inner),
-            edge: self.edge.clone(),
-            org_id: inner.credentials.org_id().to_owned(),
-            device_id: inner.config.device_id.clone(),
-        });
-        let transport: Arc<dyn RegistryTransport> = Arc::new(RegistryHttp {
-            bearer: Self::bearer(inner),
-            edge: self.edge.clone(),
-            org_id: inner.credentials.org_id().to_owned(),
-            device_id: inner.config.device_id.clone(),
-        });
-        let doc = inner.workspace.doc().clone();
-        let device_id = inner.config.device_id.clone();
+        let links_set = inner.terminals_wake.clone();
         crate::runtime::shared().spawn(async move {
-            let mut backoff = JOIN_RETRY_BASE;
-            let client = loop {
-                let attempt = RegistryClient::connect_via_transport(
-                    provider.clone(),
-                    doc.clone(),
-                    &device_id,
-                    RegistryTuning::default(),
-                    transport.clone(),
-                );
-                let result = tokio::select! {
-                    _ = cancel.cancelled() => return,
-                    result = tokio::time::timeout(Duration::from_secs(60), attempt) => result,
-                };
-                let failure = match result {
-                    Ok(Ok(client)) => break client,
-                    Ok(Err(err)) => err.to_string(),
-                    Err(_) => "registry join timed out".to_owned(),
-                };
+            let links = loop {
+                let set = links_set.notified();
                 let Some(inner) = weak.upgrade() else { return };
-                if let Some(live) = inner.live() {
-                    *lock(&live.registry_failure) = Some(failure);
-                    live.registry_retry_at
-                        .store(now_ms() + backoff.as_millis() as i64, Ordering::Release);
+                if let Some(links) = inner.peer_links.get() {
+                    break links.clone();
                 }
                 drop(inner);
-                if !wait_backoff(&cancel, backoff).await {
-                    return;
-                }
-                backoff = (backoff * 2).min(JOIN_RETRY_CAP);
-            };
-            client.set_presence(now_ms());
-            let mut events = client.events();
-            {
-                let Some(inner) = weak.upgrade() else { return };
-                let Some(live) = inner.live() else { return };
-                live.registry_retry_at.store(0, Ordering::Release);
-                *lock(&live.registry_failure) = None;
-                *lock(&live.registry) = Some(client);
-                drop(inner);
-            }
-            if let Some(inner) = weak.upgrade() {
-                inner.registry_changed();
-            }
-            let mut beat = tokio::time::interval(PRESENCE_INTERVAL);
-            beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            beat.tick().await;
-            loop {
                 tokio::select! {
-                    _ = cancel.cancelled() => return,
-                    _ = beat.tick() => {
-                        let Some(inner) = weak.upgrade() else { return };
-                        if let Some(live) = inner.live()
-                            && let Some(client) = lock(&live.registry).as_ref()
-                        {
-                            client.set_presence(now_ms());
-                        }
-                        inner.presence_changed();
-                    }
-                    event = events.recv() => {
-                        let Some(inner) = weak.upgrade() else { return };
-                        match event {
-                            Ok(RegistryEvent::Applied | RegistryEvent::Connected) => inner.registry_changed(),
-                            Ok(RegistryEvent::Presence) => inner.presence_changed(),
-                            Ok(RegistryEvent::Disconnected) => inner.connectivity_changed(),
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => inner.registry_changed(),
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
-                        }
-                    }
+                    () = cancel.cancelled() => return,
+                    () = set => {}
+                }
+            };
+            let mut link_changes = links.subscribe_changes();
+            let mut found = links.directory().subscribe();
+            drop(links);
+            loop {
+                let Some(inner) = weak.upgrade() else { return };
+                inner.presence_changed();
+                drop(inner);
+                tokio::select! {
+                    () = cancel.cancelled() => return,
+                    changed = link_changes.changed() => if changed.is_err() { return },
+                    changed = found.changed() => if changed.is_err() { return },
                 }
             }
         });
+    }
+
+    /// Mirrors the registry from one engine for the client's whole life: one session at a time,
+    /// opened again (on another engine if need be) whenever it ends.
+    fn spawn_registry(&self, inner: &Arc<ClientInner>) {
+        let replica = ClientRegistry {
+            inner: Arc::downgrade(inner),
+            doc: inner.workspace.doc().clone(),
+            changes: self.registry_changes.clone(),
+            state: self.registry.clone(),
+        };
+        let weak = Arc::downgrade(inner);
+        let cancel = self.cancel.clone();
+        let kick = self.registry_kick.clone();
+        let links_set = inner.terminals_wake.clone();
+        crate::runtime::shared().spawn(async move {
+            let state = replica.state.clone();
+            let head = StreamHead::new(StreamKind::Registry, "");
+            let mut retry = REGISTRY_RETRY_BASE;
+            loop {
+                let woken = links_set.notified();
+                let kicked = kick.notified();
+                let Some(inner) = weak.upgrade() else { return };
+                let links = inner.peer_links.get().cloned();
+                drop(inner);
+                let mut link_changes = links.as_ref().map(|links| links.subscribe_changes());
+                let target = links.as_ref().and_then(|links| mirror(links));
+                let failure = match (links, target) {
+                    (Some(links), Some(engine)) => {
+                        match tokio::time::timeout(
+                            REGISTRY_OPEN_TIMEOUT,
+                            links.open(&engine, &head),
+                        )
+                        .await
+                        {
+                            Ok(Ok((tx, rx))) => {
+                                state.connected.store(true, Ordering::Release);
+                                state.retry_at_ms.store(0, Ordering::Release);
+                                *lock(&state.failure) = None;
+                                connectivity_changed(&weak);
+                                let end = tokio::select! {
+                                    () = cancel.cancelled() => return,
+                                    end = registry::run(&replica, tx, rx) => end,
+                                };
+                                state.connected.store(false, Ordering::Release);
+                                match end {
+                                    Ok(End::Gone) => return,
+                                    Ok(End::Closed) => {
+                                        retry = REGISTRY_RETRY_BASE;
+                                        None
+                                    }
+                                    Err(error) => Some(error.to_string()),
+                                }
+                            }
+                            Ok(Err(error)) => Some(error.to_string()),
+                            Err(_elapsed) => Some(format!("{engine} did not answer")),
+                        }
+                    }
+                    (Some(_), None) => Some("no engine found on the tailnet yet".to_owned()),
+                    // Not on the tailnet yet: nothing to retry until the links are set.
+                    (None, _) => None,
+                };
+                if let Some(failure) = failure {
+                    *lock(&state.failure) = Some(failure);
+                    let wait = i64::try_from(retry.as_millis()).unwrap_or(i64::MAX);
+                    state
+                        .retry_at_ms
+                        .store(now_ms().saturating_add(wait), Ordering::Release);
+                }
+                connectivity_changed(&weak);
+                let changed = async {
+                    match link_changes.as_mut() {
+                        Some(changes) => {
+                            let _ = changes.changed().await;
+                        }
+                        None => std::future::pending().await,
+                    }
+                };
+                tokio::select! {
+                    () = cancel.cancelled() => return,
+                    () = tokio::time::sleep(retry) => {}
+                    () = woken => retry = REGISTRY_RETRY_BASE,
+                    () = kicked => retry = REGISTRY_RETRY_BASE,
+                    () = changed => {}
+                }
+                retry = (retry * 2).min(REGISTRY_RETRY_CAP);
+            }
+        });
+    }
+}
+
+fn connectivity_changed(weak: &Weak<ClientInner>) {
+    if let Some(inner) = weak.upgrade() {
+        inner.connectivity_changed();
     }
 }
 

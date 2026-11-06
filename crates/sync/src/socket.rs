@@ -14,7 +14,9 @@ use tokio_tungstenite::tungstenite::protocol::frame::coding::{Data, OpCode};
 mod progress;
 pub use progress::{Connection, Progress, ProgressIo};
 
+#[cfg(test)]
 const PING_INTERVAL: Duration = Duration::from_secs(15);
+#[cfg(test)]
 const SILENCE_LEASE: Duration = Duration::from_secs(45);
 
 // Control frames can pass between fragments even before the peer has the
@@ -45,6 +47,7 @@ where
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) async fn pump<S, T>(
     ws: Connection<S>,
     out_rx: mpsc::Receiver<T>,

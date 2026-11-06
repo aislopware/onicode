@@ -142,13 +142,13 @@ fn main() -> anyhow::Result<()> {
     core.workspace
         .rename_chat("preview-fixture", "Build the Fieldnotes workspace")?;
     let root = project.clone();
-    runtime.block_on(core.previews.start(
-        Arc::new(move || onicode_engine::PreviewScope {
-            chats: vec![("preview-fixture".into(), root.clone())],
-            ..Default::default()
-        }),
-        None,
-    ));
+    runtime.block_on(
+        core.previews
+            .start(Arc::new(move || onicode_engine::PreviewScope {
+                chats: vec![("preview-fixture".into(), root.clone())],
+                ..Default::default()
+            })),
+    );
     let ipc_port = port();
     let data = temp.path().join("ui");
     std::fs::create_dir(&data)?;

@@ -27,7 +27,7 @@ use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
 use noq::{Connection, ConnectionError, PathId, RecvStream, SendStream, VarInt};
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 use tokio::time::Instant;
 
 use crate::NetError;
@@ -311,12 +311,14 @@ impl Link {
         let pending = Arc::new(AtomicUsize::new(0));
         let total = Arc::clone(&self.0.total);
         let window = Arc::clone(&self.0.window);
+        let drained = Arc::new(Drained::default());
         let _ = stream.set_priority(priority);
         let writer = StreamTx {
             tx,
             pending: Arc::clone(&pending),
             total: Arc::clone(&total),
             priority: Arc::new(AtomicI32::new(priority)),
+            drained: Arc::clone(&drained),
         };
         tokio::spawn(async move {
             let mut end = End::Finish;
@@ -331,6 +333,7 @@ impl Link {
                         let sent = stream.write_chunk(b).await;
                         pending.fetch_sub(n, Ordering::Relaxed);
                         total.fetch_sub(n, Ordering::Relaxed);
+                        drained.notify.notify_waiters();
                         if sent.is_err() {
                             end = End::Gone;
                             break;
@@ -351,6 +354,8 @@ impl Link {
                     total.fetch_sub(b.len(), Ordering::Relaxed);
                 }
             }
+            drained.ended.store(true, Ordering::Relaxed);
+            drained.notify.notify_waiters();
             match end {
                 End::Finish => {
                     let _ = stream.finish();
@@ -386,6 +391,14 @@ pub struct StreamTx {
     pending: Arc<AtomicUsize>,
     total: Arc<AtomicUsize>,
     priority: Arc<AtomicI32>,
+    drained: Arc<Drained>,
+}
+
+/// Told whenever a stream's queued bytes are taken by QUIC, and when its writer ends.
+#[derive(Debug, Default)]
+struct Drained {
+    notify: Notify,
+    ended: AtomicBool,
 }
 
 impl std::fmt::Debug for Out {
@@ -448,6 +461,25 @@ impl StreamTx {
     #[must_use]
     pub fn is_closed(&self) -> bool {
         self.tx.is_closed()
+    }
+
+    /// Resolves once at most `below` bytes are queued, or the stream has ended: a writer that
+    /// must not run ahead of the link (a tunnel's upload) waits on it between writes. Holds no
+    /// borrow of the stream.
+    pub fn room(&self, below: usize) -> impl Future<Output = ()> + Send + 'static {
+        let (pending, drained) = (Arc::clone(&self.pending), Arc::clone(&self.drained));
+        async move {
+            loop {
+                let notified = drained.notify.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                if pending.load(Ordering::Relaxed) <= below || drained.ended.load(Ordering::Relaxed)
+                {
+                    return;
+                }
+                notified.await;
+            }
+        }
     }
 
     /// Finishes the stream once what is queued is written.

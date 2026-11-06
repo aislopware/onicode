@@ -1,0 +1,27 @@
+[package]
+name = "onicode-desktop-media"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Remote-desktop media transport policy: the media wire, datagram packetizer, Reed–Solomon FEC, reassembly, NACK/refresh, rate, clock sync and pacing"
+
+[dependencies]
+bytes.workspace = true
+reed-solomon-simd.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+zerocopy.workspace = true
+
+[dev-dependencies]
+# The fuzz targets' sources, replayed over their committed corpora (`tests/fuzz_corpus.rs`).
+arbitrary.workspace = true
+# The wire's channel and datagram budget are checked against the transport's.
+onicode-net.workspace = true
+pretty_assertions.workspace = true
+proptest.workspace = true
+
+# `tests/fuzz_corpus.rs` reads the fuzz targets' sources through `#[path]`, which cargo-shear does not
+# follow; they take their inputs through `arbitrary`.
+[package.metadata.cargo-shear]
+ignored = ["arbitrary"]

@@ -70,8 +70,11 @@ pub mod channel {
     /// A copy of a terminal's input or small output, sent a moment after the stream copy; the
     /// receiver keeps whichever comes first, by sequence number.
     pub const TERMINAL_COPY: u8 = 1;
-    /// Remote-desktop video slices (later).
+    /// Remote desktop, host to client: video, audio, cursor and clock
+    /// (`onicode_desktop_media::wire`).
     pub const MEDIA: u8 = 2;
+    /// Remote desktop, client to host: NACKs, refresh requests and clock reports.
+    pub const FEEDBACK: u8 = 3;
 }
 
 /// What a stream is, written by its opener before anything else.

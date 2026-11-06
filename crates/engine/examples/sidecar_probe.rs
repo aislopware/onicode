@@ -3,7 +3,7 @@
 //! zero-blobs-in-prod mystery (refs stamped, uploads absent, no warns).
 use std::sync::Arc;
 
-use onicode_engine::doc_host::{DocHost, DocHostConfig, EdgeConfig};
+use onicode_engine::{DocHost, DocHostConfig, EdgeConfig};
 use onicode_sync::DocsStore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

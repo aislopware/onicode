@@ -2,8 +2,8 @@
 //! device A but runs on device B redirects A's browser to
 //! `localhost:<port>`, while the CLI waiting for that redirect listens on B's
 //! loopback. A binds the same port on its own loopback for the life of the
-//! login and pipes each connection over the authenticated P2P mux to B, whose
-//! connector dials the one registered port — nothing else.
+//! login and pipes each connection through a tunnel stream on the peer link to
+//! B, whose connector dials the one registered port — nothing else.
 //!
 //! B's routes are keyed by login id, bound to the device that started the
 //! login, expire with the login, and are removed the moment it ends; A's
@@ -16,12 +16,11 @@ use std::time::{Duration, Instant};
 
 use futures::future::BoxFuture;
 use tokio::net::TcpListener;
-use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
-use crate::mux::BoxIo;
+use crate::tunnel::BoxIo;
 
-/// Mux service ids of sign-in callbacks: the prefix, then the login id.
+/// Tunnel names of sign-in callbacks: the prefix, then the login id.
 pub const SERVICE_PREFIX: &str = "agent-login:";
 /// Concurrent browser connections one forwarder carries (a redirect plus a
 /// favicon or retry — never a page's worth of assets).
@@ -41,19 +40,9 @@ struct Route {
 #[derive(Clone, Default)]
 pub struct CallbackRoutes {
     routes: Arc<Mutex<HashMap<String, Route>>>,
-    /// Told of every new route, so signaling can rejoin as a sign-in.
-    registered: Arc<Notify>,
 }
 
 impl CallbackRoutes {
-    /// Routes that notify `registered` whenever one is added.
-    pub(crate) fn notifying(registered: Arc<Notify>) -> Self {
-        Self {
-            routes: Default::default(),
-            registered,
-        }
-    }
-
     /// Let `peer` reach loopback `port` for `login_id` until `ttl` passes or
     /// [`Self::remove`] — whichever comes first.
     pub fn register(&self, login_id: &str, port: u16, peer: &str, ttl: Duration) {
@@ -65,7 +54,6 @@ impl CallbackRoutes {
                 expires: Instant::now() + ttl,
             },
         );
-        self.registered.notify_one();
     }
 
     pub fn remove(&self, login_id: &str) {
@@ -76,19 +64,9 @@ impl CallbackRoutes {
         self.routes.lock().unwrap().contains_key(login_id)
     }
 
-    /// Whether any login is waiting for a peer's callback right now.
-    pub(crate) fn any_live(&self) -> bool {
-        let now = Instant::now();
-        self.routes
-            .lock()
-            .unwrap()
-            .values()
-            .any(|route| route.expires > now)
-    }
-
     /// The loopback port of a live login `peer` started — for a device that
     /// relays the browser's callback request itself rather than piping a
-    /// connection (the phone has no P2P mux).
+    /// connection (the phone forwards no ports).
     pub fn port_for(&self, login_id: &str, peer: &str) -> anyhow::Result<u16> {
         match self.target(Some(peer), &service_id(login_id)) {
             Some(result) => result,
@@ -125,8 +103,8 @@ impl CallbackRoutes {
     }
 }
 
-/// Opens one stream to the remote login's callback (a mux stream in
-/// production, anything bidirectional in tests).
+/// Opens one stream to the remote login's callback (a tunnel in production,
+/// anything bidirectional in tests).
 pub type Opener = Arc<dyn Fn() -> BoxFuture<'static, anyhow::Result<BoxIo>> + Send + Sync>;
 
 /// The requesting device's side: a loopback listener on the login's port that
@@ -238,15 +216,6 @@ impl CallbackTunnels {
     pub fn close(&self, login_id: &str) {
         self.0.lock().unwrap().remove(login_id);
     }
-
-    /// Whether any forwarder is still listening.
-    pub(crate) fn any_live(&self) -> bool {
-        self.0
-            .lock()
-            .unwrap()
-            .values()
-            .any(|forwarder| !forwarder.stop.is_cancelled())
-    }
 }
 
 #[cfg(test)]
@@ -254,7 +223,7 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;
-    use crate::mux::{Connector, Mux, PeerScoped, SocketTransport};
+    use crate::tunnel::Connector;
 
     /// The running device's connector, reduced to its sign-in routes.
     struct Routes(CallbackRoutes);
@@ -291,34 +260,13 @@ mod tests {
         (port, task)
     }
 
-    /// A mux pair standing in for the P2P link: `requester` opens streams that
-    /// the running device serves as `peer`.
-    fn link(routes: &CallbackRoutes, peer: &str, stop: &CancellationToken) -> Mux {
-        let (a, b) = tokio::net::UnixStream::pair().unwrap();
-        let (ar, aw) = tokio::io::split(a);
-        let (br, bw) = tokio::io::split(b);
-        let connector: Arc<dyn Connector> = Arc::new(Routes(routes.clone()));
-        Mux::start(
-            Arc::new(SocketTransport::new(br, bw)),
-            Arc::new(PeerScoped::new(peer, connector.clone())),
-            false,
-            stop.child_token(),
-        );
-        Mux::start(
-            Arc::new(SocketTransport::new(ar, aw)),
-            connector,
-            true,
-            stop.child_token(),
-        )
-    }
-
-    fn opener(mux: &Mux, login_id: &str) -> Opener {
-        let mux = mux.clone();
-        let service = service_id(login_id);
+    /// Stands in for a tunnel on the peer link: each open reaches the running
+    /// device's routes as `peer`.
+    fn opener(routes: &CallbackRoutes, peer: &str, login_id: &str) -> Opener {
+        let (routes, peer, service) = (routes.clone(), peer.to_owned(), service_id(login_id));
         Arc::new(move || {
-            let mux = mux.clone();
-            let service = service.clone();
-            Box::pin(async move { Ok(Box::new(mux.open(&service, false).await?) as BoxIo) })
+            let (routes, peer, service) = (routes.clone(), peer.clone(), service.clone());
+            Box::pin(async move { Routes(routes).connect_from(Some(&peer), &service).await })
         })
     }
 
@@ -342,40 +290,43 @@ mod tests {
 
     #[tokio::test]
     async fn forwards_the_callback_to_the_registered_port_for_the_starting_device() {
-        let stop = CancellationToken::new();
         let (callback, _server) = callback_server().await;
         let (_decoy, _decoy_server) = callback_server().await;
         let routes = CallbackRoutes::default();
         routes.register("login-1", callback, "device-a", Duration::from_secs(60));
-        let mux = link(&routes, "device-a", &stop);
-        let forwarder =
-            CallbackForwarder::bind(0, Duration::from_secs(60), opener(&mux, "login-1"))
-                .await
-                .unwrap();
+        let forwarder = CallbackForwarder::bind(
+            0,
+            Duration::from_secs(60),
+            opener(&routes, "device-a", "login-1"),
+        )
+        .await
+        .unwrap();
         let reply = round_trip(forwarder.port()).await.unwrap();
         assert_eq!(reply, format!("{callback}:GET /callback"));
-        stop.cancel();
     }
 
     #[tokio::test]
     async fn another_device_or_an_unknown_login_is_refused() {
-        let stop = CancellationToken::new();
         let (callback, _server) = callback_server().await;
         let routes = CallbackRoutes::default();
         routes.register("login-1", callback, "device-a", Duration::from_secs(60));
         // The link authenticates as device-b, which did not start login-1.
-        let other = link(&routes, "device-b", &stop);
-        let forwarder =
-            CallbackForwarder::bind(0, Duration::from_secs(60), opener(&other, "login-1"))
-                .await
-                .unwrap();
+        let forwarder = CallbackForwarder::bind(
+            0,
+            Duration::from_secs(60),
+            opener(&routes, "device-b", "login-1"),
+        )
+        .await
+        .unwrap();
         assert!(refused(forwarder.port()).await);
         // Same device, but a login it never registered.
-        let mux = link(&routes, "device-a", &stop);
-        let forwarder =
-            CallbackForwarder::bind(0, Duration::from_secs(60), opener(&mux, "login-2"))
-                .await
-                .unwrap();
+        let forwarder = CallbackForwarder::bind(
+            0,
+            Duration::from_secs(60),
+            opener(&routes, "device-a", "login-2"),
+        )
+        .await
+        .unwrap();
         assert!(refused(forwarder.port()).await);
         // Local opens carry no peer at all.
         assert!(
@@ -385,21 +336,21 @@ mod tests {
                 .is_err()
         );
         assert!(routes.target(Some("device-a"), "preview-service").is_none());
-        stop.cancel();
     }
 
     #[tokio::test]
     async fn the_route_and_the_forwarder_end_with_the_login() {
-        let stop = CancellationToken::new();
         let (callback, _server) = callback_server().await;
         let routes = CallbackRoutes::default();
         routes.register("login-1", callback, "device-a", Duration::from_secs(60));
-        let mux = link(&routes, "device-a", &stop);
         let tunnels = CallbackTunnels::default();
-        let forwarder =
-            CallbackForwarder::bind(0, Duration::from_secs(60), opener(&mux, "login-1"))
-                .await
-                .unwrap();
+        let forwarder = CallbackForwarder::bind(
+            0,
+            Duration::from_secs(60),
+            opener(&routes, "device-a", "login-1"),
+        )
+        .await
+        .unwrap();
         let port = forwarder.port();
         tunnels.insert("login-1", forwarder);
         assert!(
@@ -426,7 +377,6 @@ mod tests {
                 .unwrap()
                 .is_err()
         );
-        stop.cancel();
     }
 
     #[tokio::test]
@@ -442,35 +392,6 @@ mod tests {
         assert!(
             message.contains(&format!("Port {port} is already in use")),
             "{message}"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_sign_in_counts_as_live_only_while_it_can_be_reached() {
-        let registered = Arc::new(Notify::new());
-        let routes = CallbackRoutes::notifying(registered.clone());
-        assert!(!routes.any_live());
-        routes.register("login-1", 1234, "device-a", Duration::from_secs(60));
-        assert!(routes.any_live());
-        // Registering woke signaling (the permit waits for it).
-        tokio::time::timeout(Duration::from_secs(1), registered.notified())
-            .await
-            .expect("a new route wakes signaling");
-        routes.remove("login-1");
-        routes.register("login-2", 1234, "device-a", Duration::ZERO);
-        assert!(!routes.any_live(), "an expired route is no sign-in");
-
-        let tunnels = CallbackTunnels::default();
-        let open: Opener = Arc::new(|| Box::pin(async { anyhow::bail!("never dialed") }));
-        let forwarder = CallbackForwarder::bind(0, Duration::from_millis(50), open)
-            .await
-            .unwrap();
-        tunnels.insert("login-1", forwarder);
-        assert!(tunnels.any_live());
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        assert!(
-            !tunnels.any_live(),
-            "a forwarder past its lifetime is no sign-in"
         );
     }
 

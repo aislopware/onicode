@@ -354,7 +354,7 @@ fn face_is_fixed_width(font: &ttf_parser::Face) -> bool {
 /// emits a warning. Inspect the installed files first so those families never
 /// appear in an interface-font picker.
 fn installed_families_with_latin_metrics() -> BTreeMap<String, bool> {
-    let mut database = fontdb::Database::new();
+    let mut database = usvg::fontdb::Database::new();
     database.load_system_fonts();
 
     let mut families = BTreeMap::new();

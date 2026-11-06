@@ -83,9 +83,12 @@ pub(crate) struct ClientInner {
     /// `owner/name`): starting a Cloud session needs one, and reading it
     /// again would hold the new chat up.
     pub(crate) cloud_repos: Mutex<HashMap<String, crate::cloud::CloudRepoRef>>,
-    /// Terminals on other devices: direct link or relay, switching
-    /// mid-session (the desktop engine runs the same hub).
+    /// Terminals on other devices, over the peer links (the desktop engine
+    /// runs the same hub).
     pub(crate) remote_terminals: onicode_term_link::remote::RemoteTerminals,
+    /// The links to the user's engines on the tailnet, once the app has
+    /// joined it ([`Client::set_peer_links`]).
+    pub(crate) peer_links: OnceLock<Arc<onicode_peer::PeerLinks>>,
     /// Wakes terminal streams waiting to reconnect (foreground, network back).
     pub(crate) terminals_wake: Arc<tokio::sync::Notify>,
     /// When the app last went to the background.
@@ -124,6 +127,17 @@ impl ClientInner {
 
     pub(crate) fn session_core(&self, chat_id: &str) -> Option<Arc<SessionCore>> {
         lock(&self.sessions).get(chat_id).cloned()
+    }
+
+    /// Forget `core` (its replica went stale), so the next open loads the chat afresh.
+    pub(crate) fn forget_session(&self, core: &Arc<SessionCore>) {
+        let mut sessions = lock(&self.sessions);
+        if sessions
+            .get(&core.chat_id)
+            .is_some_and(|open| Arc::ptr_eq(open, core))
+        {
+            sessions.remove(&core.chat_id);
+        }
     }
 
     pub(crate) fn cores(&self) -> Vec<Arc<SessionCore>> {
@@ -166,7 +180,7 @@ impl ClientInner {
         self.recompute_workspace();
     }
 
-    /// Live: registry rows/acks applied (or (re)joined).
+    /// Live: registry rows merged, or the mirror caught up.
     pub(crate) fn registry_changed(self: &Arc<Self>) {
         let Some(live) = self.live() else { return };
         let posture = live.registry_posture();
@@ -190,13 +204,13 @@ impl ClientInner {
         self.recompute_connectivity();
         self.recompute_workspace();
         self.reconcile_change_request_watches();
-        // New rows may flip a chat's roomGen / host: attach rooms.
+        // New rows may bring a chat an open session lacked: attach its room.
         for core in self.cores() {
             core.ensure_room(self);
         }
     }
 
-    /// Live: a presence beat arrived (or the local beat ticked).
+    /// Live: a link or the tailnet directory changed (or the tick came round).
     pub(crate) fn presence_changed(self: &Arc<Self>) {
         let Some(live) = self.live() else { return };
         if let Some(presence) = live.presence() {
@@ -247,16 +261,12 @@ impl ClientInner {
         live.relay.reconcile_watches(self, targets);
     }
 
-    /// Durable wake: retry until the edge accepts it, including after relaunch.
-    pub(crate) fn nudge_host(self: &Arc<Self>, chat_id: &str) {
-        let Some(live) = self.live() else { return };
-        if let Err(err) = live
-            .store
-            .schedule_sync_job(chat_id, crate::live::delivery::JOB)
-        {
-            tracing::warn!(chat = %chat_id, error = %err, "host wake persistence failed");
+    /// The chat owes its host something: rescan the owed chats, so a closed session reopens
+    /// and carries it.
+    pub(crate) fn nudge_host(self: &Arc<Self>) {
+        if let Some(live) = self.live() {
+            live.owed_wake.notify_one();
         }
-        live.delivery_wake.notify_one();
     }
 
     pub(crate) fn resume_delivery(self: &Arc<Self>, chat_id: &str) -> Result<SessionHandle> {
@@ -451,10 +461,24 @@ impl ClientInner {
                 if has_attachments {
                     live.escorts.respawn_chat(self, &core.chat_id);
                 }
-                // SessionCore::write already persisted the wake receipt.
-                live.delivery_wake.notify_one();
+                // The room pushes the outbox row itself; the scan keeps the session open
+                // until the host acks it.
+                live.owed_wake.notify_one();
             }
         }
+    }
+
+    /// Dial `device` in the background, so a stream to it finds the link up.
+    pub(crate) fn warm_link(&self, device: &str) {
+        let Some(links) = self.peer_links.get().cloned() else {
+            return;
+        };
+        let device = device.to_owned();
+        crate::runtime::shared().spawn(async move {
+            if let Err(error) = links.ready(&device).await {
+                tracing::debug!(%error, %device, "no link to warm");
+            }
+        });
     }
 
     pub(crate) async fn host_rpc(
@@ -487,10 +511,10 @@ impl ClientInner {
         }
     }
 
-    /// Fresh socket for the chat's room (retry delivery).
+    /// Open the chat's stream again now (retry delivery).
     pub(crate) fn kick_room(&self, chat_id: &str) {
         if let Some(room) = self.session_core(chat_id).and_then(|c| c.room()) {
-            room.redial();
+            room.kick();
         }
         if let Some(live) = self.live() {
             live.kick();
@@ -519,17 +543,8 @@ impl ClientInner {
     }
 
     fn tick(self: &Arc<Self>) {
-        if let Some(live) = self.live() {
-            if let Some(presence) = live.presence() {
-                self.workspace.replace_presence(presence);
-            }
-            let peers_known = self
-                .workspace
-                .snapshot()
-                .devices
-                .iter()
-                .any(|d| d.is_execution_host);
-            live.check_registry_liveness(peers_known);
+        if let Some(presence) = self.live().and_then(|live| live.presence()) {
+            self.workspace.replace_presence(presence);
         }
         self.recompute_connectivity();
         self.recompute_workspace();
@@ -588,12 +603,7 @@ impl Client {
         // Live: restore the registry replica + open the docs store first, so
         // the very first snapshot renders the cached workspace (instant).
         let (registry, store) = if credentials.is_demo() {
-            // Demo has no edge: nothing would ever ack a queued write, so the
-            // replica folds writes straight into its rows (as the engine does
-            // for edge-less profiles).
-            let mut registry = RegistryDoc::new(config.device_id.clone());
-            registry.set_local_only(true);
-            (registry, None)
+            (RegistryDoc::new(config.device_id.clone()), None)
         } else {
             let (store, registry) = LiveBackend::open(&config.data_dir, &config.device_id)?;
             (registry, Some(store))
@@ -621,6 +631,7 @@ impl Client {
             harness_catalogs: Mutex::new(HashMap::new()),
             cloud_repos: Mutex::new(HashMap::new()),
             remote_terminals: Default::default(),
+            peer_links: OnceLock::new(),
             terminals_wake: Arc::new(tokio::sync::Notify::new()),
             backgrounded_at: Mutex::new(None),
             credentials: credentials.clone(),
@@ -734,8 +745,8 @@ impl Client {
 
     // ── workspace writes ───────────────────────────────────────────────────
 
-    /// Mint a chat row (born on chat2: `roomGen: 2`). The row is written
-    /// before any session doc opens, so the host never reads it as legacy.
+    /// Mint a chat row for its host. This device creates it, so its placement (cwd, space,
+    /// branch) stands; the host writes its own fields once it runs.
     pub fn create_session(&self, new: NewSession) -> Result<String> {
         let (state, _) = self.inner.workspace.state();
         let id = crate::new_id();
@@ -796,7 +807,7 @@ impl Client {
             harness_session_harness: None,
             space_id,
             last_seen_at: None,
-            room_gen: Some(2),
+            room_gen: None,
             parent_chat_id: None,
             child_kind: None,
         };
@@ -831,7 +842,7 @@ impl Client {
         chat.harness_session_id = None;
         chat.harness_session_cwd = None;
         chat.harness_session_harness = None;
-        chat.room_gen = Some(2);
+        chat.room_gen = None;
         let id = chat.id.clone();
         self.inner.registry_write(|doc| doc.upsert_chat(&chat))?;
         Ok(id)
@@ -1248,14 +1259,14 @@ impl Client {
         if self.inner.workspace.chat(chat_id).is_none() {
             return Err(ClientError::NotFound(chat_id.to_owned()));
         }
-        let (doc, cursor, hydrated) = match self.inner.backend() {
-            Backend::Demo(demo) => (demo.session_doc(chat_id)?, 0, true),
+        let (doc, hydrated) = match self.inner.backend() {
+            Backend::Demo(demo) => (demo.session_doc(chat_id)?, true),
             Backend::Live(live) => {
                 let local = crate::live::room::load_local(&live.store, chat_id);
-                (local.doc, local.cursor, local.had_content)
+                (local.doc, local.had_content)
             }
         };
-        let core = SessionCore::new(chat_id, &self.inner, doc, cursor);
+        let core = SessionCore::new(chat_id, &self.inner, doc);
         let core = {
             let mut sessions = lock(&self.inner.sessions);
             sessions
@@ -1269,18 +1280,6 @@ impl Client {
         core.ensure_room(&self.inner);
         core.touch();
         core.refresh();
-        // Upgrade recovery: older clients could persist an ACKed command
-        // without its wake. Opening that chat must re-arm host discovery.
-        if let Some(live) = self.inner.live()
-            && core.send_state().is_some()
-            && live
-                .store
-                .sync_job_version(chat_id, crate::live::delivery::JOB)
-                .ok()
-                == Some(None)
-        {
-            self.inner.nudge_host(chat_id);
-        }
         if let Some(demo) = self.inner.demo() {
             demo.session_opened(&core);
         }
@@ -1663,24 +1662,35 @@ impl Client {
     }
 
     /// The OS network path changed (another interface, a new address): the
-    /// direct connections' paths are gone, so they re-pair now and the
-    /// terminals on them carry on over the relay meanwhile.
+    /// links' paths may be gone, so every backoff ends and they redial now.
     pub fn network_path_changed(&self) {
-        if let Some(direct) = self.inner.live().and_then(|live| live.direct()) {
-            direct.network_changed();
+        if let Some(links) = self.inner.peer_links.get() {
+            links.reset();
         }
         self.inner.terminals_wake.notify_waiters();
     }
 
-    /// Start pairing with the device hosting `chat_id`, so a terminal opened
-    /// on it next starts on the direct link (a terminal screen opening).
-    pub fn warm_direct(&self, chat_id: &str) {
-        if let (Some(direct), Ok(device)) = (
-            self.inner.live().and_then(|live| live.direct()),
-            self.chat_host(chat_id),
-        ) {
-            direct.warm(&device);
+    /// Dial the device hosting `chat_id`, so a terminal opened on it next
+    /// finds its link up (a terminal screen opening).
+    pub fn warm_link(&self, chat_id: &str) {
+        if let Ok(device) = self.chat_host(chat_id) {
+            self.inner.warm_link(&device);
         }
+    }
+
+    /// Hand the client its links to the user's engines on the tailnet.
+    /// Terminals ride them; until then they wait. Set once.
+    pub fn set_peer_links(&self, links: Arc<onicode_peer::PeerLinks>) {
+        if self.inner.peer_links.set(links).is_err() {
+            tracing::debug!("peer links were already set");
+        }
+        self.inner.terminals_wake.notify_waiters();
+    }
+
+    /// Takes what the hosts send on the client's links: the datagram copies
+    /// of terminal output (its links' handler).
+    pub fn peer_handler(&self) -> Arc<dyn onicode_peer::StreamHandler> {
+        Arc::new(self.inner.remote_terminals.clone())
     }
 
     /// App returned to the foreground: resume ticking, probe the registry
@@ -1692,8 +1702,10 @@ impl Client {
             .take()
             .map(|at| at.elapsed())
             .unwrap_or_default();
-        if let Some(direct) = self.inner.live().and_then(|live| live.direct()) {
-            direct.foreground(away);
+        if !away.is_zero()
+            && let Some(links) = self.inner.peer_links.get()
+        {
+            links.reset();
         }
         self.inner.terminals_wake.notify_waiters();
         if let Some(live) = self.inner.live() {
@@ -1738,8 +1750,7 @@ impl Client {
             .pinned
             .iter()
             .chain(front.sections.iter().flat_map(|s| s.sessions.iter()))
-            .chain(front.recent.iter())
-            .filter(|row| row.room_gen >= 2);
+            .chain(front.recent.iter());
         for row in candidates.take(PRELOAD_CAP) {
             if self.inner.session_core(&row.id).is_none() {
                 let _ = self.open_session(&row.id);
@@ -1778,7 +1789,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn demo_replica_is_local_only_and_never_queues() {
+    fn demo_renames_land_in_the_local_replica() {
         let dir = tempfile::tempdir().unwrap();
         let mut config = ClientConfig::new("https://edge.invalid", dir.path());
         config.device_id = "ios-test".into();
@@ -1802,13 +1813,10 @@ mod tests {
                 .rename_session(&chat_id, &format!("title {i}"))
                 .unwrap();
         }
-        let (pending, title) = client.inner.workspace.mutate(|doc| {
-            (
-                doc.pending_len(),
-                doc.chat(&chat_id).unwrap().unwrap().title,
-            )
-        });
-        assert_eq!(pending, 0);
+        let title = client
+            .inner
+            .workspace
+            .mutate(|doc| doc.chat(&chat_id).unwrap().unwrap().title);
         assert_eq!(title.as_deref(), Some("title 19"));
     }
 }

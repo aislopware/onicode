@@ -1,7 +1,8 @@
-//! HTTP/1 reverse proxy. Hyper owns HTTP framing; upgrades carry their original
-//! bytes through the same multiplexed stream, including WebSocket close frames.
+//! HTTP/1 reverse proxy. Hyper owns HTTP framing; a preview on this device is dialled directly,
+//! one on another device through a tunnel stream on the link to it, and upgrades carry their
+//! original bytes through the same connection, including WebSocket close frames.
 use std::convert::Infallible;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use bytes::Bytes;
 use http_body_util::combinators::UnsyncBoxBody;
@@ -10,12 +11,12 @@ use hyper::body::Incoming;
 use hyper::header::{self, HeaderMap, HeaderValue};
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
+use onicode_peer::PeerLinks;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
 use crate::catalog::Catalog;
-use crate::mux::{Mux, Stream};
-use crate::peer::Peers;
+use crate::tunnel::{self, BoxIo, Connector};
 
 type Body = UnsyncBoxBody<Bytes, hyper::Error>;
 fn tunnel_slot() -> anyhow::Result<tokio::sync::SemaphorePermit<'static>> {
@@ -25,16 +26,22 @@ fn tunnel_slot() -> anyhow::Result<tokio::sync::SemaphorePermit<'static>> {
 #[derive(Clone)]
 pub struct Router {
     pub catalog: Catalog,
-    pub local: Mux,
-    pub peers: Peers,
+    /// This device's own services.
+    pub local: Arc<dyn Connector>,
+    /// The links to the other devices, once the tailnet is up.
+    pub links: Arc<OnceLock<Arc<PeerLinks>>>,
+    /// Ends every upgraded connection still open.
+    pub stop: CancellationToken,
 }
 impl Router {
-    async fn open(&self, device: &str, service: &str, websocket: bool) -> anyhow::Result<Stream> {
+    async fn open(&self, device: &str, service: &str) -> anyhow::Result<BoxIo> {
         if device == self.catalog.device_id() {
-            self.local.open(service, websocket).await
-        } else {
-            self.peers.open(device, service, websocket).await
+            return self.local.connect(service).await;
         }
+        let links = self.links.get().ok_or_else(|| {
+            anyhow::anyhow!("This preview runs on another device, which isn't reachable yet.")
+        })?;
+        Ok(Box::new(tunnel::open(links, device, service).await?) as BoxIo)
     }
 
     /// The macOS browser's per-domain CONNECT proxy for preview hostnames
@@ -58,13 +65,13 @@ impl Router {
             "unknown preview CONNECT target"
         );
         let permit = tunnel_slot()?;
-        let lifecycle = self.local.clone();
+        let lifecycle = self.stop.clone();
         let mut socket =
             tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)).await?;
         let upgrade = hyper::upgrade::on(&mut request);
         tokio::spawn(async move {
             let _permit = permit;
-            tokio::select! { _ = lifecycle.closed() => {}, _ = async {
+            tokio::select! { _ = lifecycle.cancelled() => {}, _ = async {
                 if let Ok(browser) = upgrade.await {
                     let _ = tokio::io::copy_bidirectional(&mut TokioIo::new(browser), &mut socket).await;
                 }
@@ -125,25 +132,26 @@ impl Router {
             .insert("x-forwarded-proto", HeaderValue::from_static("http"));
         // Never pass client-supplied proxy credentials to a project server.
         request.headers_mut().remove(header::PROXY_AUTHORIZATION);
-        let stream = self.open(&service.device_id, &service.id, upgrade).await?;
+        let stream = self.open(&service.device_id, &service.id).await?;
         let (mut sender, connection) =
             hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
         let connection = tokio::spawn(async move {
             let _ = connection.with_upgrades().await;
         });
         // Aborting a disconnected browser's pending request tears down its
-        // upstream mux stream too, even when no response headers arrive.
+        // upstream connection too (a tunnel resets), even when no response
+        // headers arrive.
         let guard = AbortOnDrop(Some(connection.abort_handle()));
         let mut response = sender.send_request(request).await?;
         if response.status() == StatusCode::SWITCHING_PROTOCOLS {
             anyhow::ensure!(upgrade, "unsolicited server upgrade");
             let server_upgrade = hyper::upgrade::on(&mut response);
             let browser_upgrade = browser_upgrade.unwrap();
-            let lifecycle = self.local.clone();
+            let lifecycle = self.stop.clone();
             tokio::spawn(async move {
                 let _guard = guard;
                 let _permit = tunnel_permit;
-                tokio::select! { _ = lifecycle.closed() => {}, _ = async {
+                tokio::select! { _ = lifecycle.cancelled() => {}, _ = async {
                     if let Ok((browser, server)) = tokio::try_join!(browser_upgrade, server_upgrade) {
                         let _ = tokio::io::copy_bidirectional(&mut TokioIo::new(browser), &mut TokioIo::new(server)).await;
                     }

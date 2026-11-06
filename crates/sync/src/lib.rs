@@ -1,19 +1,18 @@
-//! onicode-sync — the edge room clients (registry rows + chat2 row protocol over
-//! WebSocket against the TS edge) and the local `DocsStore` (SQLite snapshots +
-//! processed-command ledger).
+//! onicode-sync — replica sync over peer streams and the local `DocsStore`.
 //!
-//! - [`ChatClient`]: joins a ChatRoom DO (`wss://…/chat2/{chatId}/ws?token=`), catches up via
-//!   checkpoint + row backfill, pushes local loro updates as rows, and reconnects with exponential
-//!   backoff.
-//! - [`RegistryClient`]: the per-profile workspace registry room (sidebar rows, presence).
-//! - [`DocsStore`]: snapshot persistence (the doc IS the outbox — commands + user entries flush
-//!   immediately) and the processed-command ledger with mark-BEFORE-execute semantics.
+//! - [`peer_doc`]: a session doc synced replica to replica by Loro version vectors over one
+//!   `doc/{chatId}` stream.
+//! - [`registry`]: the workspace registry replicated by per-origin version vectors over one
+//!   `registry` stream.
+//! - [`DocsStore`]: SQLite snapshots, the processed-command ledger (mark before execute), the
+//!   outbox of local sends the host has not acked yet, and durable sync jobs.
+//! - [`socket`], [`dial`], [`wake`]: the WebSocket helpers the device room still uses.
 
 pub mod budget;
-pub mod chat_client;
-pub mod chat_frames;
 pub mod dial;
+pub mod frames;
 pub mod net_path;
+pub mod peer_doc;
 pub mod registry;
 pub mod socket;
 mod store;
@@ -21,11 +20,6 @@ mod sync_jobs;
 mod types;
 pub mod wake;
 
-pub use chat_client::{
-    ChatClient, ChatDocSink, ChatEvent, ChatStatsSnapshot, ChatTuning, CheckpointFetcher,
-};
-pub use registry::{
-    ReconnectState, RegistryClient, RegistryEvent, RegistryTransport, RegistryTuning,
-};
-pub use store::{DocsStore, StoreError};
-pub use types::{RoomStatsSnapshot, StaticUrl, SyncError, UrlProvider};
+pub use store::{DocsStore, OutboxRow, StoreError};
+pub use sync_jobs::FORWARD;
+pub use types::SyncError;

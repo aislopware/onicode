@@ -153,11 +153,10 @@ image = { version = "0.25.10", default-features = false, features = [
     "tiff",
     "ico",
 ] }
-usvg = "0.46"
+usvg = "0.48.1"
 mermaid-rs-renderer = { version = "=0.3.1", default-features = false }
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
-fontdb.workspace = true
 ttf-parser.workspace = true
 uuid.workspace = true
 chrono.workspace = true

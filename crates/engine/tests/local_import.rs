@@ -62,9 +62,7 @@ async fn seed_local(data_dir: &std::path::Path) -> (String, String, String) {
     let bytes = doc.export_snapshot().expect("snapshot");
     let store = onicode_sync::DocsStore::open(data_dir.join("profiles").join("local"))
         .expect("open local store");
-    store
-        .save_snapshot_with_cursor("chat-doc", &bytes, 0, 2)
-        .expect("save doc");
+    store.save_snapshot("chat-doc", &bytes).expect("save doc");
     drop(store);
 
     // Journal + resume budget as a run leaves them.
@@ -134,14 +132,13 @@ async fn local_work_imports_into_synced_profile_once() {
     assert_eq!((imported_chats, imported_spaces), (2, 1));
     assert_eq!((skipped_chats, skipped_spaces), (0, 0));
 
-    // Rows landed with chat2 lineage and their content intact.
+    // Rows landed with their content intact.
     let row = synced
         .workspace
         .chat(&chat_doc)
         .expect("read chat")
         .expect("imported chat row");
     assert_eq!(row.title.as_deref(), Some("Fix the flaky test"));
-    assert_eq!(row.room_gen, Some(2), "imported chats must be chat2-born");
     assert_eq!(row.space_id.as_deref(), Some("space-1"));
     assert!(
         synced
@@ -159,15 +156,13 @@ async fn local_work_imports_into_synced_profile_once() {
             .is_some()
     );
 
-    // Doc bytes present in the synced store in born-chat2 shape (cursor 0,
-    // epoch 2) — the shape DocHost pushes from VV zero on first room join.
+    // Doc bytes present in the synced store, which peers sync from by version vector.
     let store = onicode_sync::DocsStore::open(dir.path().join("orgs").join("org1").join("user1"))
         .expect("open synced store");
-    let (bytes, cursor, epoch) = store
-        .load_snapshot_with_cursor(&chat_doc)
+    let bytes = store
+        .load_snapshot(&chat_doc)
         .expect("load")
         .expect("imported doc row");
-    assert_eq!((cursor, epoch), (0, 2));
     let source_store = onicode_sync::DocsStore::open(dir.path().join("profiles").join("local"))
         .expect("open source store");
     assert_eq!(

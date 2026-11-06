@@ -32,7 +32,7 @@ upstream = "longbridge/gpui-kit"
 branch = "main"
 fork = "aislopware/gpui-kit"
 checkout = "forks/gpui-kit"
-base = "2c150ee566c6b3b97cbb77a6e56eba0f47cee51b"
+base = "6309631aae1748ae0d05ac1f3ff2dd6ca379cb85"
 base_date = "2026-11-06"
 every_minutes = 0
 

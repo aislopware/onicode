@@ -170,7 +170,8 @@ impl DemoHost {
                     let _ = client.registry_write(|doc| {
                         for mut session in live {
                             session.updated_at = Utc::now();
-                            doc.upsert_session(&session)?;
+                            let host = session.device_id.clone();
+                            doc.write_as(&host, |doc| doc.upsert_session(&session))?;
                         }
                         Ok(())
                     });
@@ -468,22 +469,26 @@ impl DemoHost {
             .iter()
             .find(|s| s.chat_id == chat_id)
             .and_then(|s| s.started_at);
+        // The demo plays the host: a session row is its host's to write.
+        let writer = host.clone();
         let _ = client.registry_write(|doc| {
-            doc.upsert_session(&Session {
-                last_completed_turn: completed.map(str::to_owned),
-                last_turn_outcome: None,
-                terminal_activity: None,
-                running_subagents: 0,
-                background_tasks: Vec::new(),
-                chat_id: chat_id.to_owned(),
-                device_id: host,
-                status,
-                started_at: match status {
-                    SessionStatus::Working => Some(now),
-                    SessionStatus::AwaitingInput => started.or(Some(now)),
-                    _ => None,
-                },
-                updated_at: now,
+            doc.write_as(&writer, |doc| {
+                doc.upsert_session(&Session {
+                    last_completed_turn: completed.map(str::to_owned),
+                    last_turn_outcome: None,
+                    terminal_activity: None,
+                    running_subagents: 0,
+                    background_tasks: Vec::new(),
+                    chat_id: chat_id.to_owned(),
+                    device_id: host,
+                    status,
+                    started_at: match status {
+                        SessionStatus::Working => Some(now),
+                        SessionStatus::AwaitingInput => started.or(Some(now)),
+                        _ => None,
+                    },
+                    updated_at: now,
+                })
             })
         });
     }
@@ -584,11 +589,13 @@ impl DemoHost {
                 .chat(chat_id)
                 .is_some_and(|c| c.title.is_none());
             let _ = client.registry_write(|doc| {
-                doc.set_chat_last_message(
-                    chat_id,
-                    &onicode_proto::view::single_line(&preview),
-                    Utc::now(),
-                )?;
+                doc.write_as(&host, |doc| {
+                    doc.set_chat_last_message(
+                        chat_id,
+                        &onicode_proto::view::single_line(&preview),
+                        Utc::now(),
+                    )
+                })?;
                 if untitled {
                     let title: String = onicode_proto::view::single_line(&preview)
                         .chars()
@@ -749,7 +756,9 @@ impl DemoHost {
         let viewing = core.snapshot().revision > 0 && self.is_viewing(&core);
         let _ = client.registry_write(|doc| {
             if !preview.is_empty() {
-                doc.set_chat_last_message(chat_id, &preview, Utc::now())?;
+                doc.write_as(&host, |doc| {
+                    doc.set_chat_last_message(chat_id, &preview, Utc::now())
+                })?;
             }
             if viewing {
                 doc.set_chat_seen(chat_id, Utc::now() + chrono::Duration::milliseconds(1))?;
@@ -989,8 +998,10 @@ impl DemoHost {
                 chat.created_at = Utc::now();
                 chat.last_message_at = Some(Utc::now());
                 chat.last_seen_at = Some(Utc::now());
+                // The source's host forks it, so the fork is the host's.
+                let host = chat.device_id.clone();
                 client
-                    .registry_write(|doc| doc.upsert_chat(&chat))
+                    .registry_write(|doc| doc.write_as(&host, |doc| doc.upsert_chat(&chat)))
                     .map_err(|e| ClientError::Internal(e.to_string()))?;
                 serde_json::to_value(&chat).unwrap_or_default()
             }

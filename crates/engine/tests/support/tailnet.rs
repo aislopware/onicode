@@ -65,9 +65,12 @@ impl Tailnet {
         .await
         .expect("the device joins the simulated tailnet")
     }
+}
 
-    /// `core` on a machine of its own, with links to every engine on the tailnet.
-    pub async fn engine(&self, core: &EngineCore) -> Peers {
+impl Tailnet {
+    /// `core` on a machine of its own, with links to every engine on the tailnet: the machine
+    /// and the links.
+    pub async fn engine(&self, core: &EngineCore) -> (NodeId, Peers) {
         let node = self.node();
         let peers = self
             .join(
@@ -79,26 +82,27 @@ impl Tailnet {
             )
             .await;
         core.set_links(peers.links.clone());
-        peers
+        (node, peers)
     }
 }
 
-/// `cores` each on a machine of their own on one tailnet, linked while the result lives.
-pub async fn mesh(cores: &[&EngineCore], seed: u64) -> (Tailnet, Vec<Peers>) {
+/// `cores` each on a machine of their own on one tailnet, linked while the result lives: each
+/// one's machine and its links, in the order given.
+pub async fn mesh(cores: &[&EngineCore], seed: u64) -> (Tailnet, Vec<(NodeId, Peers)>) {
     let tailnet = Tailnet::new(seed);
-    let mut peers = Vec::new();
+    let mut joined = Vec::new();
     for core in cores {
-        peers.push(tailnet.engine(core).await);
+        joined.push(tailnet.engine(core).await);
     }
     // Each directory reads the tailnet once all have joined, so none waits on the watch
     // that reports the later ones.
-    for peer in &peers {
-        let found = peer
+    for (_, peers) in &joined {
+        let found = peers
             .directory
             .refresh()
             .await
             .expect("the simulated tailnet answers");
         assert_eq!(found.len(), cores.len() - 1, "every other engine is found");
     }
-    (tailnet, peers)
+    (tailnet, joined)
 }

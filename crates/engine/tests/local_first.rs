@@ -1,7 +1,7 @@
 //! Local-first startup boundaries and captured synced-session behavior.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use base64::Engine as _;
@@ -61,7 +61,6 @@ async fn rejecting_edge() -> (String, Arc<AtomicUsize>, tokio::task::JoinHandle<
 
 struct DaemonEdge {
     url: String,
-    offline: Arc<AtomicBool>,
     active: Arc<Mutex<HashMap<String, usize>>>,
     task: tokio::task::JoinHandle<()>,
 }
@@ -71,8 +70,6 @@ impl DaemonEdge {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let active = Arc::new(Mutex::new(HashMap::new()));
-        let offline = Arc::new(AtomicBool::new(false));
-        let offline_for_task = offline.clone();
         let active_for_task = active.clone();
         let task = tokio::spawn(async move {
             loop {
@@ -80,30 +77,10 @@ impl DaemonEdge {
                     return;
                 };
                 let active = active_for_task.clone();
-                let offline = offline_for_task.clone();
-                tokio::spawn(async move {
-                    if !offline.load(Ordering::SeqCst) {
-                        serve_daemon_edge(stream, active).await;
-                    }
-                });
+                tokio::spawn(serve_daemon_edge(stream, active));
             }
         });
-        Self {
-            url,
-            offline,
-            active,
-            task,
-        }
-    }
-
-    fn active_matching(&self, prefix: &str) -> usize {
-        self.active
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(path, _)| path.starts_with(prefix))
-            .map(|(_, count)| *count)
-            .sum()
+        Self { url, active, task }
     }
 
     fn active_total(&self) -> usize {
@@ -429,55 +406,6 @@ async fn transient_refresh_failure_keeps_synced_recovery_supervisors_alive() {
 }
 
 #[tokio::test]
-async fn workspace_recovers_from_an_unreachable_edge_without_restarting() {
-    let edge = DaemonEdge::start().await;
-    edge.offline.store(true, Ordering::SeqCst);
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(
-        dir.path().join("session.json"),
-        r#"{"refreshToken":"still-valid","user":{"id":"user_1","email":"u@example.com"},"orgId":"org_1"}"#,
-    ).unwrap();
-    let config = config(dir.path(), edge.url.clone(), Some("client_test"), None);
-    let auth = Engine::build_auth(&config).await;
-    let scope = Engine::initial_workspace_scope(&auth);
-    let profile = Engine::resolve_profile(&config, &auth, scope)
-        .unwrap()
-        .unwrap();
-    let runtime = Engine::assemble_runtime(&config, auth.clone(), profile)
-        .await
-        .unwrap();
-    let refresh_loop = auth.spawn_refresh_loop();
-    assert!(matches!(
-        auth.access_token().await,
-        Err(onicode_rpc::TokenError::TemporarilyUnavailable(_))
-    ));
-    wait_until(
-        || runtime.core().workspace.sync_status().is_some(),
-        "temporary token failure must not retire the registry supervisor",
-    )
-    .await;
-
-    // The same engine must recover through its timers; no Retry or path event.
-    edge.offline.store(false, Ordering::SeqCst);
-    wait_until(
-        || {
-            runtime
-                .core()
-                .workspace
-                .sync_status()
-                .is_some_and(|s| s.connected)
-        },
-        "workspace must reconnect after the edge becomes reachable",
-    )
-    .await;
-    assert!(auth.state().is_signed_in());
-    assert!(dir.path().join("session.json").exists());
-    assert_eq!(scope, WorkspaceScope::Synced);
-    refresh_loop.abort();
-    runtime.shutdown().await;
-}
-
-#[tokio::test]
 async fn development_without_an_explicit_bearer_stays_offline() {
     let dir = tempfile::tempdir().unwrap();
     let (edge_url, requests, edge_task) = rejecting_edge().await;
@@ -596,7 +524,7 @@ async fn headless_stop_rpc_drains_the_daemon_and_releases_ipc() {
 }
 
 #[tokio::test]
-async fn headless_sign_out_closes_joined_edge_rooms_and_stops_daemon() {
+async fn headless_sign_out_closes_edge_sockets_and_stops_daemon() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("session.json"),
@@ -622,12 +550,6 @@ async fn headless_sign_out_closes_joined_edge_rooms_and_stops_daemon() {
     })
     .await
     .expect("headless IPC did not start");
-    wait_until(
-        || edge.active_matching("/registry/") > 0,
-        "registry room did not connect",
-    )
-    .await;
-
     assert_eq!(
         client
             .call(methods::SIGN_OUT, serde_json::json!({}))
@@ -652,8 +574,8 @@ async fn headless_sign_out_closes_joined_edge_rooms_and_stops_daemon() {
 }
 
 /// Replacing a synced/online runtime must be a real ownership boundary: after
-/// `shutdown()` returns, no worker may send another Edge request (updater,
-/// room joins), and dropping the runtime must actually free
+/// `shutdown()` returns, no worker may send another Edge request (the
+/// updater), and dropping the runtime must actually free
 /// the engine graph — the sessions ⇄ doc-host cycle and the strong-`self`
 /// worker loops previously kept a replaced runtime alive and polling forever.
 #[tokio::test]
@@ -672,13 +594,13 @@ async fn online_runtime_shutdown_stops_edge_workers_and_retires_the_graph() {
         .unwrap();
     let retired = runtime.core().doc_host.retirement_probe();
 
-    // Live traffic proof: the woken release checker (and the room joins) must
-    // be hitting the counting edge before the boundary is exercised.
+    // Live traffic proof: the woken release checker must be hitting the
+    // counting edge before the boundary is exercised.
     if let Some(updater) = runtime.core().updater() {
         updater.check_now();
     }
     wait_until(
-        || requests.load(Ordering::SeqCst) >= 2,
+        || requests.load(Ordering::SeqCst) >= 1,
         "edge workers never produced traffic before shutdown",
     )
     .await;

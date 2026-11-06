@@ -5,10 +5,11 @@ session. The empty tab lists its running services. **Open** navigates to
 `http://<device>.<project>.localhost:7331`; additional services receive persistent
 names such as `<device>.<project>-api.localhost:7331`.
 
-The daemon owns this listener, discovery and peer connections. Closing a browser
-tab does not stop discovery or change an address. Account teardown cancels the
-proxy, discovery, signaling, and existing peer streams before the next profile
-starts. A busy proxy port produces an inline error instead of changing the URL.
+The daemon owns this listener, discovery and the tunnels to other devices.
+Closing a browser tab does not stop discovery or change an address. Account
+teardown cancels the proxy, discovery, catalog feeds and open tunnels before the
+next profile starts. A busy proxy port produces an inline error instead of
+changing the URL.
 
 ## Discovery and identities
 
@@ -56,20 +57,16 @@ The CONNECT endpoint admits only known preview names at the proxy port, and its
 tunnels share bounded limits and account cancellation. Other website traffic
 retains normal routing.
 
-The loopback proxy validates the Host against its catalog, then opens an opaque
-service ID through a transport-independent multiplexer. Locally, framed streams
-travel over a socket pair. Remotely, the identical frames travel over one ordered,
-reliable WebRTC DataChannel. Remote metadata never authorizes an arbitrary TCP
-address: the hosting device resolves only its own live service IDs.
-
-Frames have a one-byte kind, a big-endian 32-bit stream ID, and a bounded payload.
-Kinds are OPEN, DATA, END, CANCEL, WS_OPEN, WS_DATA, WS_CLOSE, READY and CREDIT.
-Socket transport prefixes frames with a big-endian 32-bit length; DataChannel
-messages already provide framing. Peers allocate opposite stream-ID parity.
-DATA payloads are at most 8 KiB. Each stream has a 64 KiB receive window; connection
-queues and the SCTP send buffer are bounded. Up to 64 streams share a connection.
-END half-closes; CANCEL tears down both directions. Graceful shutdown drains the
-last buffered bytes, whereas dropping an unfinished request cancels promptly.
+The loopback proxy validates the Host against its catalog, then opens the
+service by its opaque ID. A local service is a TCP connection to its listener. A
+service on another device is a tunnel: one QUIC stream (`StreamKind::Tunnel`,
+named by the service ID) on the peer link to that device, carrying the
+connection's raw bytes both ways (`onicode_preview::tunnel`). Tunnels are sent
+behind terminals and RPC on the same link, and a writer waits once 256 KiB is
+queued. A clean close half-closes the stream; a reset at either end (the browser
+giving up, the dev server failing) reaches the other end as a reset. Remote
+metadata never authorizes an arbitrary TCP address: the hosting device resolves
+only its own live service IDs.
 
 Hyper streams request and response bodies. The proxy removes hop-by-hop headers,
 preserves Host and Origin together (including Next.js Server Actions), sets
@@ -77,39 +74,23 @@ X-Forwarded-Host, and rewrites absolute localhost redirects. Set-Cookie and othe
 end-to-end headers remain intact. WebSocket upgrades retain their byte stream,
 subprotocol and close handshake, allowing Vite HMR through the same URL.
 
-## Presence and P2P
+## Catalogs across devices
 
-The Worker authenticates the existing access token, verifies the organization
-claim, and derives a PreviewRoom name from the verified organization and user.
-Clients cannot select another user's room. The coordinator stamps device sender
-identity and accepts only bounded service catalogs and pairing SDP. Gathered ICE
-candidates are included in SDP, along with the DTLS fingerprint. Binary frames
-and arbitrary proxy protocol messages are rejected.
-
-Presence has a heartbeat lease, hibernation-safe catalog storage and periodic
-credential refresh. Disconnects clear advertised routes and peer connections.
-Only the lexicographically lower device creates offers, avoiding simultaneous
-offer collisions. DataChannels are opened lazily when a preview is requested.
-DTLS authenticates the fingerprint exchanged through the authenticated signaling
-connection. Application requests, response bodies and WebSocket messages never
-pass through the Durable Object.
-
-The initial transport uses host candidates and public STUN, without a TURN
-service or a cloud byte-relay fallback. Networks that prohibit direct ICE
-connectivity return a bounded connection error. Deploy the Worker with its v4
-PreviewRoom migration to enable cross-device coordination; local previews work
-independently of edge availability. macOS and Linux currently provide discovery.
+Devices meet over the tailnet; there is no coordinator. Each engine opens a
+stream named `catalog` to every engine it has a live peer link to, and the host
+sends its local services there as JSON whenever they change. The services are
+listed under that device until the stream or the link ends. Peers admit each
+other by tailscale whois, so a user's previews reach only that user's devices.
+Local previews work without any link.
 
 ## Validation
 
-`cargo test --locked -p zeron-preview` covers real process/cwd isolation, non-HTTP
-exclusion, live disappearance, persistent aliases, port changes, concurrent
-streams, slow readers, cancellation, large bodies, streaming HTTP headers and
-redirects, WebSocket traffic, and a real WebRTC pair in both directions.
-
-`npm --prefix edge test` includes real workerd tests for room isolation,
-organization authorization, stamped signaling, disconnect cleanup and binary
-traffic rejection. CI runs networking tests on Linux and macOS.
+`cargo nextest run -E 'package(onicode-preview)'` covers real process/cwd
+isolation, non-HTTP exclusion, live disappearance, persistent aliases, port
+changes, streaming HTTP headers and redirects, WebSocket traffic and
+cancellation through the proxy. `tests/sim.rs` runs two devices on a simulated
+tailnet in virtual time: an HTTP exchange larger than the tunnel window both
+ways, and resets and clean finishes reaching the other end.
 
 Build `cargo build -p zeron-ui --example preview-fixture --features browser-fixture`.
 Run the fixture with an output directory, an available display and `VITE_BINARY`
@@ -118,8 +99,3 @@ an isolated project, discovers them through daemon RPC and waits for a native
 click on Vite's Open button. It then verifies HMR, disappearance and a port-change
 restart while capturing the native UI. Screenshots/videos belong in PR user
 attachments, not the repository.
-
-The opt-in `coordinator` integration test connects two authenticated clients to a
-local Worker, advertises a service, pairs over SDP/ICE, then transfers a 4 MiB
-HTTP response through the remote hostname. Run it with
-`ZERON_PREVIEW_TEST_EDGE=http://127.0.0.1:27641 cargo test -p zeron-preview --test coordinator -- --ignored`.

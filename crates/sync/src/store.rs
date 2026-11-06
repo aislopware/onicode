@@ -1,12 +1,13 @@
-//! `DocsStore` — local SQLite persistence for doc snapshots and the
-//! processed-command ledger (ARCHITECTURE §2 command plane: entries are marked
-//! processed BEFORE execution so a crash can never double-execute a command).
+//! `DocsStore` — local SQLite persistence for doc snapshots, the processed-command ledger
+//! (ARCHITECTURE §2 command plane: entries are marked processed BEFORE execution so a crash can
+//! never double-execute a command), and the outbox of local sends the chat's host has not acked.
 
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use loro::VersionVector;
 use rusqlite::{Connection, OptionalExtension, params};
 
 /// Errors surfaced by [`DocsStore`].
@@ -16,6 +17,21 @@ pub enum StoreError {
     Sqlite(#[from] rusqlite::Error),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    /// A stored value no longer parses.
+    #[error("corrupt row: {0}")]
+    Corrupt(String),
+}
+
+/// One local write the chat's host has not acked yet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutboxRow {
+    /// Order of the write.
+    pub ordinal: i64,
+    /// The write's Loro update bytes, replayed into the doc on open in case the snapshot
+    /// holding them was never saved.
+    pub bytes: Vec<u8>,
+    /// The version that holds the write; the row retires once the host's acked vv covers it.
+    pub end: VersionVector,
 }
 
 /// Synchronous command/doc callbacks still need commit-before-send semantics.
@@ -74,6 +90,22 @@ const MIGRATIONS: &[&str] = &[
     CREATE TABLE sync_job_clock (id INTEGER PRIMARY KEY CHECK(id=1), value INTEGER NOT NULL) STRICT;
     INSERT INTO sync_job_clock VALUES (1,0);",
     "ALTER TABLE chat_sync_jobs ADD COLUMN cursor TEXT NOT NULL DEFAULT '';",
+    // v7 — replicas sync by version vector over peer streams: no room cursor or epoch, and an
+    // outbox row retires when the host's acked vv covers its end.
+    "DROP TABLE chat_outbox;
+     DROP TABLE chat_outbox_initialized;
+     ALTER TABLE snapshots DROP COLUMN cursor;
+     ALTER TABLE snapshots DROP COLUMN epoch;
+     ALTER TABLE snapshots DROP COLUMN cursor_verified;
+     DELETE FROM chat_sync_jobs;
+     ALTER TABLE chat_sync_jobs DROP COLUMN cursor;
+     CREATE TABLE chat_outbox (
+        ordinal INTEGER PRIMARY KEY AUTOINCREMENT,
+        doc_id TEXT NOT NULL,
+        end_vv BLOB NOT NULL,
+        bytes BLOB NOT NULL
+     ) STRICT;
+     CREATE INDEX chat_outbox_doc ON chat_outbox(doc_id,ordinal);",
 ];
 
 const STORE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -134,42 +166,70 @@ impl DocsStore {
         })
     }
 
-    /// Insert before sending. Stable IDs make crash-after-ACK replay idempotent.
-    pub fn enqueue_chat_update(
+    /// Records a local write before anything else sees it, so it survives a crash before the
+    /// next snapshot and stays "sending" until the host acks `end`.
+    ///
+    /// # Errors
+    ///
+    /// SQLite's; the doc is then remembered as owing a forward, made durable by its next
+    /// snapshot save.
+    pub fn enqueue_outbox(
         &self,
         doc_id: &str,
-        batch_id: &str,
         bytes: &[u8],
+        end: &VersionVector,
     ) -> Result<(), StoreError> {
-        store_blocking(|| self.enqueue_chat_update_blocking(doc_id, batch_id, bytes))
+        store_blocking(|| {
+            let result = self.conn().execute(
+                "INSERT INTO chat_outbox(doc_id,end_vv,bytes) VALUES (?1,?2,?3)",
+                params![doc_id, end.encode(), bytes],
+            );
+            if result.is_err() {
+                self.failed_publications
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .insert(doc_id.to_string());
+            }
+            result?;
+            Ok(())
+        })
     }
 
-    fn enqueue_chat_update_blocking(
-        &self,
-        doc_id: &str,
-        batch_id: &str,
-        bytes: &[u8],
-    ) -> Result<(), StoreError> {
-        let result = self.conn().execute(
-            "INSERT OR IGNORE INTO chat_outbox(doc_id,batch_id,bytes) VALUES (?1,?2,?3)",
-            params![doc_id, batch_id, bytes],
-        );
-        if result.is_err() {
-            self.failed_publications
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .insert(doc_id.to_string());
-        }
-        result?;
-        Ok(())
+    /// The doc's unacked local writes, oldest first.
+    ///
+    /// # Errors
+    ///
+    /// SQLite's, or [`StoreError::Corrupt`] for a row whose vv does not parse.
+    pub fn outbox(&self, doc_id: &str) -> Result<Vec<OutboxRow>, StoreError> {
+        store_blocking(|| {
+            let conn = self.conn();
+            let mut stmt = conn.prepare(
+                "SELECT ordinal,end_vv,bytes FROM chat_outbox WHERE doc_id=?1 ORDER BY ordinal",
+            )?;
+            let rows = stmt
+                .query_map(params![doc_id], |r| {
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?, r.get(2)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows.into_iter()
+                .map(|(ordinal, end, bytes)| {
+                    Ok(OutboxRow {
+                        ordinal,
+                        bytes,
+                        end: VersionVector::decode(&end)
+                            .map_err(|e| StoreError::Corrupt(e.to_string()))?,
+                    })
+                })
+                .collect()
+        })
     }
 
-    pub fn pending_chat_updates(&self, doc_id: &str) -> Result<Vec<(String, Vec<u8>)>, StoreError> {
-        store_blocking(|| self.pending_chat_updates_blocking(doc_id))
-    }
-
-    /// Admission/lifetime checks must not copy the pending payloads.
-    pub fn has_pending_chat_updates(&self, doc_id: &str) -> Result<bool, StoreError> {
+    /// Whether the doc has unacked local writes, without reading them.
+    ///
+    /// # Errors
+    ///
+    /// SQLite's.
+    pub fn has_outbox(&self, doc_id: &str) -> Result<bool, StoreError> {
         store_blocking(|| {
             Ok(self.conn().query_row(
                 "SELECT EXISTS(SELECT 1 FROM chat_outbox WHERE doc_id=?1)",
@@ -179,111 +239,69 @@ impl DocsStore {
         })
     }
 
-    fn pending_chat_updates_blocking(
-        &self,
-        doc_id: &str,
-    ) -> Result<Vec<(String, Vec<u8>)>, StoreError> {
-        let conn = self.conn();
-        let mut stmt = conn
-            .prepare("SELECT batch_id,bytes FROM chat_outbox WHERE doc_id=?1 ORDER BY ordinal")?;
-        Ok(stmt
-            .query_map(params![doc_id], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<Result<_, _>>()?)
-    }
-
-    pub fn reject_chat_update(&self, doc_id: &str, batch_id: &str) -> Result<(), StoreError> {
-        store_blocking(|| self.reject_chat_update_blocking(doc_id, batch_id))
-    }
-
-    fn reject_chat_update_blocking(&self, doc_id: &str, batch_id: &str) -> Result<(), StoreError> {
-        self.conn().execute(
-            "UPDATE chat_outbox SET needs_checkpoint=1 WHERE doc_id=?1 AND batch_id=?2",
-            params![doc_id, batch_id],
-        )?;
-        Ok(())
-    }
-
-    pub fn rejected_chat_updates(
-        &self,
-        doc_id: &str,
-    ) -> Result<Vec<(String, Vec<u8>)>, StoreError> {
-        store_blocking(|| self.rejected_chat_updates_blocking(doc_id))
-    }
-
-    fn rejected_chat_updates_blocking(
-        &self,
-        doc_id: &str,
-    ) -> Result<Vec<(String, Vec<u8>)>, StoreError> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare("SELECT batch_id,bytes FROM chat_outbox WHERE doc_id=?1 AND needs_checkpoint=1 ORDER BY ordinal")?;
-        Ok(stmt
-            .query_map(params![doc_id], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<Result<_, _>>()?)
-    }
-
-    pub fn acknowledge_chat_update(&self, doc_id: &str, batch_id: &str) -> Result<(), StoreError> {
-        store_blocking(|| self.acknowledge_chat_update_blocking(doc_id, batch_id))
-    }
-
-    fn acknowledge_chat_update_blocking(
-        &self,
-        doc_id: &str,
-        batch_id: &str,
-    ) -> Result<(), StoreError> {
-        self.conn().execute(
-            "DELETE FROM chat_outbox WHERE doc_id=?1 AND batch_id=?2",
-            params![doc_id, batch_id],
-        )?;
-        Ok(())
-    }
-
-    pub fn chat_outbox_initialized(&self, doc_id: &str) -> Result<bool, StoreError> {
-        store_blocking(|| self.chat_outbox_initialized_blocking(doc_id))
-    }
-
-    fn chat_outbox_initialized_blocking(&self, doc_id: &str) -> Result<bool, StoreError> {
-        Ok(self
-            .conn()
-            .query_row(
-                "SELECT 1 FROM chat_outbox_initialized WHERE doc_id=?1",
+    /// How many unacked local writes the doc has, without reading them.
+    ///
+    /// # Errors
+    ///
+    /// SQLite's.
+    pub fn outbox_len(&self, doc_id: &str) -> Result<u64, StoreError> {
+        store_blocking(|| {
+            Ok(self.conn().query_row(
+                "SELECT count(*) FROM chat_outbox WHERE doc_id=?1",
                 params![doc_id],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some())
+                |row| row.get(0),
+            )?)
+        })
     }
 
-    /// Upgrade legacy snapshots (including orphaned local history) once. The
-    /// marker and complete replay obligation commit together; never reset cursors.
-    pub fn initialize_chat_outbox(
+    /// Retires the doc's rows whose end `covered` includes; returns how many.
+    ///
+    /// # Errors
+    ///
+    /// SQLite's, or [`StoreError::Corrupt`].
+    pub fn retire_outbox(
         &self,
         doc_id: &str,
-        updates: &[Vec<u8>],
-    ) -> Result<(), StoreError> {
-        store_blocking(|| self.initialize_chat_outbox_blocking(doc_id, updates))
-    }
-
-    fn initialize_chat_outbox_blocking(
-        &self,
-        doc_id: &str,
-        updates: &[Vec<u8>],
-    ) -> Result<(), StoreError> {
-        let mut conn = self.conn();
-        let tx = conn.transaction()?;
-        if tx.execute(
-            "INSERT OR IGNORE INTO chat_outbox_initialized(doc_id) VALUES (?1)",
-            params![doc_id],
-        )? != 0
-        {
-            for bytes in updates {
-                tx.execute(
-                    "INSERT INTO chat_outbox(doc_id,batch_id,bytes) VALUES (?1,?2,?3)",
-                    params![doc_id, uuid::Uuid::new_v4().to_string(), bytes],
-                )?;
-            }
+        covered: &VersionVector,
+    ) -> Result<usize, StoreError> {
+        let done: Vec<i64> = self
+            .outbox_ends(doc_id)?
+            .into_iter()
+            .filter(|(_, end)| covered.includes_vv(end))
+            .map(|(ordinal, _)| ordinal)
+            .collect();
+        if done.is_empty() {
+            return Ok(0);
         }
-        tx.commit()?;
-        Ok(())
+        store_blocking(|| {
+            let mut conn = self.conn();
+            let tx = conn.transaction()?;
+            for ordinal in &done {
+                tx.execute("DELETE FROM chat_outbox WHERE ordinal=?1", params![ordinal])?;
+            }
+            tx.commit()?;
+            Ok(done.len())
+        })
+    }
+
+    fn outbox_ends(&self, doc_id: &str) -> Result<Vec<(i64, VersionVector)>, StoreError> {
+        store_blocking(|| {
+            let conn = self.conn();
+            let mut stmt =
+                conn.prepare("SELECT ordinal,end_vv FROM chat_outbox WHERE doc_id=?1")?;
+            let rows = stmt
+                .query_map(params![doc_id], |r| {
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows.into_iter()
+                .map(|(ordinal, end)| {
+                    VersionVector::decode(&end)
+                        .map(|end| (ordinal, end))
+                        .map_err(|e| StoreError::Corrupt(e.to_string()))
+                })
+                .collect()
+        })
     }
 
     /// Latest saved snapshot for `doc_id`, if any.
@@ -318,147 +336,38 @@ impl DocsStore {
         )?;
         self.invalidate_failed_publication(&tx, doc_id)?;
         tx.commit()?;
+        self.failed_publications
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(doc_id);
         Ok(())
     }
 
-    /// Save the snapshot together with its chat2 room cursor and doc epoch —
-    /// ONE transaction, so bytes and cursor can never disagree (the C2 rule;
-    /// a divergent pair is exactly the restored-backup redownload bug).
-    pub fn save_snapshot_with_cursor(
-        &self,
-        doc_id: &str,
-        bytes: &[u8],
-        cursor: u64,
-        epoch: u32,
-    ) -> Result<(), StoreError> {
-        store_blocking(|| self.save_snapshot_with_cursor_blocking(doc_id, bytes, cursor, epoch))
-    }
-
-    fn save_snapshot_with_cursor_blocking(
-        &self,
-        doc_id: &str,
-        bytes: &[u8],
-        cursor: u64,
-        epoch: u32,
-    ) -> Result<(), StoreError> {
-        let mut conn = self.conn();
-        let tx = conn.transaction()?;
-        tx.execute(
-            "INSERT INTO snapshots (doc_id, bytes, saved_at, cursor, epoch) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(doc_id) DO UPDATE SET bytes = excluded.bytes, saved_at = excluded.saved_at,
-                 cursor = excluded.cursor, epoch = excluded.epoch, cursor_verified = 0",
-            params![doc_id, bytes, now_ms(), cursor as i64, epoch as i64],
-        )?;
-        self.invalidate_failed_publication(&tx, doc_id)?;
-        tx.commit()?;
-        Ok(())
-    }
-
-    pub fn save_verified_snapshot_with_cursor(
-        &self,
-        doc_id: &str,
-        bytes: &[u8],
-        cursor: u64,
-        epoch: u32,
-    ) -> Result<(), StoreError> {
+    /// Replaces the doc with one adopted from a peer's snapshot, which already holds this
+    /// replica's own unacked writes: the outbox empties, and a [`crate::FORWARD`] job keeps the
+    /// doc owing its host until the host acks it.
+    ///
+    /// # Errors
+    ///
+    /// SQLite's; nothing changes then.
+    pub fn adopt_snapshot(&self, doc_id: &str, bytes: &[u8]) -> Result<(), StoreError> {
         store_blocking(|| {
-            self.save_verified_snapshot_with_cursor_blocking(doc_id, bytes, cursor, epoch)
+            let mut conn = self.conn();
+            let tx = conn.transaction()?;
+            tx.execute(
+                "INSERT INTO snapshots (doc_id, bytes, saved_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(doc_id) DO UPDATE SET bytes = excluded.bytes, saved_at = excluded.saved_at",
+                params![doc_id, bytes, now_ms()],
+            )?;
+            tx.execute("DELETE FROM chat_outbox WHERE doc_id = ?1", params![doc_id])?;
+            crate::sync_jobs::schedule_in(&tx, doc_id, crate::FORWARD)?;
+            tx.commit()?;
+            self.failed_publications
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(doc_id);
+            Ok(())
         })
-    }
-
-    fn save_verified_snapshot_with_cursor_blocking(
-        &self,
-        doc_id: &str,
-        bytes: &[u8],
-        cursor: u64,
-        epoch: u32,
-    ) -> Result<(), StoreError> {
-        let mut conn = self.conn();
-        let tx = conn.transaction()?;
-        tx.execute(
-            "INSERT INTO snapshots (doc_id, bytes, saved_at, cursor, epoch, cursor_verified) VALUES (?1, ?2, ?3, ?4, ?5, 1)
-             ON CONFLICT(doc_id) DO UPDATE SET bytes = excluded.bytes, saved_at = excluded.saved_at,
-                 cursor = excluded.cursor, epoch = excluded.epoch, cursor_verified = 1",
-            params![doc_id, bytes, now_ms(), cursor as i64, epoch as i64],
-        )?;
-        self.invalidate_failed_publication(&tx, doc_id)?;
-        tx.commit()?;
-        Ok(())
-    }
-
-    pub fn snapshot_cursor(&self, doc_id: &str) -> Result<u64, StoreError> {
-        store_blocking(|| {
-            Ok(self
-                .conn()
-                .query_row(
-                    "SELECT COALESCE(cursor, 0) FROM snapshots WHERE doc_id = ?1",
-                    params![doc_id],
-                    |row| row.get::<_, i64>(0),
-                )
-                .optional()?
-                .unwrap_or(0) as u64)
-        })
-    }
-
-    pub fn snapshot_cursor_verified(&self, doc_id: &str) -> Result<bool, StoreError> {
-        store_blocking(|| self.snapshot_cursor_verified_blocking(doc_id))
-    }
-
-    fn snapshot_cursor_verified_blocking(&self, doc_id: &str) -> Result<bool, StoreError> {
-        Ok(self
-            .conn()
-            .query_row(
-                "SELECT cursor_verified FROM snapshots WHERE doc_id = ?1",
-                params![doc_id],
-                |row| row.get(0),
-            )
-            .optional()?
-            .unwrap_or(false))
-    }
-
-    /// Snapshot + chat2 cursor + epoch. Pre-migration rows (or rows written
-    /// by [`Self::save_snapshot`]) read back as `(bytes, 0, 0)`.
-    pub fn load_snapshot_with_cursor(
-        &self,
-        doc_id: &str,
-    ) -> Result<Option<(Vec<u8>, u64, u32)>, StoreError> {
-        store_blocking(|| self.load_snapshot_with_cursor_blocking(doc_id))
-    }
-
-    /// Read admission metadata without fetching or decoding the snapshot blob.
-    pub fn snapshot_epoch(&self, doc_id: &str) -> Result<u32, StoreError> {
-        store_blocking(|| {
-            Ok(self
-                .conn()
-                .query_row(
-                    "SELECT COALESCE(epoch, 0) FROM snapshots WHERE doc_id = ?1",
-                    params![doc_id],
-                    |row| row.get::<_, u32>(0),
-                )
-                .optional()?
-                .unwrap_or(0))
-        })
-    }
-
-    fn load_snapshot_with_cursor_blocking(
-        &self,
-        doc_id: &str,
-    ) -> Result<Option<(Vec<u8>, u64, u32)>, StoreError> {
-        let row = self
-            .conn()
-            .query_row(
-                "SELECT bytes, cursor, epoch FROM snapshots WHERE doc_id = ?1",
-                params![doc_id],
-                |row| {
-                    Ok((
-                        row.get::<_, Vec<u8>>(0)?,
-                        row.get::<_, Option<i64>>(1)?.unwrap_or(0) as u64,
-                        row.get::<_, Option<i64>>(2)?.unwrap_or(0) as u32,
-                    ))
-                },
-            )
-            .optional()?;
-        Ok(row)
     }
 
     /// Delete the snapshot row for `doc_id` (destructive schema breaks: the
@@ -474,10 +383,6 @@ impl DocsStore {
         tx.execute("DELETE FROM chat_outbox WHERE doc_id = ?1", params![doc_id])?;
         tx.execute(
             "DELETE FROM chat_sync_jobs WHERE doc_id = ?1",
-            params![doc_id],
-        )?;
-        tx.execute(
-            "DELETE FROM chat_outbox_initialized WHERE doc_id = ?1",
             params![doc_id],
         )?;
         tx.commit()?;
@@ -569,9 +474,8 @@ impl DocsStore {
         Ok(changed > 0)
     }
 
-    // Every snapshot path, including ACK/cursor persistence, must retain a
-    // replay obligation for operations whose outbox write failed. Invalidate
-    // the marker atomically with those operations becoming durable in a snapshot.
+    // Writes whose outbox insert failed become durable only in a snapshot; the snapshot that
+    // holds them also records that the doc owes its host a forward, in the same transaction.
     fn invalidate_failed_publication(
         &self,
         tx: &rusqlite::Transaction<'_>,
@@ -583,10 +487,7 @@ impl DocsStore {
             .unwrap_or_else(PoisonError::into_inner)
             .contains(doc_id)
         {
-            tx.execute(
-                "DELETE FROM chat_outbox_initialized WHERE doc_id=?1",
-                params![doc_id],
-            )?;
+            crate::sync_jobs::schedule_in(tx, doc_id, crate::sync_jobs::FORWARD)?;
         }
         Ok(())
     }
@@ -778,34 +679,6 @@ mod tests {
     }
 
     #[test]
-    fn verified_cursor_marker_tracks_atomic_snapshot_writes() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = DocsStore::open(dir.path()).unwrap();
-        store
-            .save_snapshot_with_cursor("chat", b"old", 69000, 2)
-            .unwrap();
-        assert!(!store.snapshot_cursor_verified("chat").unwrap());
-        store
-            .save_verified_snapshot_with_cursor("chat", b"safe", 69001, 2)
-            .unwrap();
-        assert!(store.snapshot_cursor_verified("chat").unwrap());
-        drop(store);
-        let store = DocsStore::open(dir.path()).unwrap();
-        assert!(store.snapshot_cursor_verified("chat").unwrap());
-        assert_eq!(
-            store.load_snapshot_with_cursor("chat").unwrap(),
-            Some((b"safe".to_vec(), 69001, 2))
-        );
-        store
-            .save_snapshot_with_cursor("chat", b"replacement", 0, 2)
-            .unwrap();
-        assert!(
-            !store.snapshot_cursor_verified("chat").unwrap(),
-            "unverified replacement invalidates trust"
-        );
-    }
-
-    #[test]
     fn snapshot_roundtrip_and_overwrite() {
         let dir = tempfile::tempdir().unwrap();
         let store = DocsStore::open(dir.path()).unwrap();
@@ -827,36 +700,6 @@ mod tests {
             store.load_snapshot("chat-1").unwrap().as_deref(),
             Some(&b"v2-longer-bytes"[..])
         );
-    }
-
-    #[test]
-    fn cursor_rides_the_snapshot_row() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = DocsStore::open(dir.path()).unwrap();
-
-        // Plain saves (pre-chat2 path) read back with cursor/epoch 0.
-        store.save_snapshot("chat-1", b"v1").unwrap();
-        assert_eq!(
-            store.load_snapshot_with_cursor("chat-1").unwrap(),
-            Some((b"v1".to_vec(), 0, 0))
-        );
-        // Cursor and bytes land together; a re-save moves both.
-        store
-            .save_snapshot_with_cursor("chat-1", b"v2", 41, 2)
-            .unwrap();
-        assert_eq!(
-            store.load_snapshot_with_cursor("chat-1").unwrap(),
-            Some((b"v2".to_vec(), 41, 2))
-        );
-        // Plain load still works for cursor-written rows.
-        assert_eq!(
-            store.load_snapshot("chat-1").unwrap().as_deref(),
-            Some(&b"v2"[..])
-        );
-        // A plain save (legacy caller) clears nothing — cursor persists…
-        store.save_snapshot("chat-1", b"v3").unwrap();
-        let (bytes, cursor, epoch) = store.load_snapshot_with_cursor("chat-1").unwrap().unwrap();
-        assert_eq!((bytes.as_slice(), cursor, epoch), (&b"v3"[..], 41, 2));
     }
 
     #[test]
@@ -892,85 +735,80 @@ mod tests {
 }
 
 #[cfg(test)]
-mod publication_tests {
+mod outbox_tests {
+    use loro::{ID, VersionVector};
+
     use super::*;
+
+    fn vv(peer: u64, end: i32) -> VersionVector {
+        let mut vv = VersionVector::new();
+        vv.set_end(ID::new(peer, end));
+        vv
+    }
+
     #[test]
-    fn outbox_survives_restart_initializes_once_and_preserves_cursor() {
+    fn outbox_survives_restart_and_retires_only_what_the_ack_covers() {
         let dir = tempfile::tempdir().unwrap();
-        let original;
         {
             let store = DocsStore::open(dir.path()).unwrap();
+            store.enqueue_outbox("chat", b"first", &vv(1, 3)).unwrap();
+            store.enqueue_outbox("chat", b"second", &vv(1, 7)).unwrap();
             store
-                .save_snapshot_with_cursor("chat", b"snapshot", 40229, 2)
-                .unwrap();
-            store
-                .initialize_chat_outbox("chat", &[b"legacy-tail".to_vec()])
-                .unwrap();
-            original = store.pending_chat_updates("chat").unwrap();
-            store
-                .enqueue_chat_update("chat", "stable-id", b"new-turn")
-                .unwrap();
-            store
-                .enqueue_chat_update("chat", "stable-id", b"new-turn")
+                .enqueue_outbox("other", b"elsewhere", &vv(1, 1))
                 .unwrap();
         }
         let store = DocsStore::open(dir.path()).unwrap();
-        store
-            .initialize_chat_outbox("chat", &[b"must-not-reseed".to_vec()])
-            .unwrap();
-        let pending = store.pending_chat_updates("chat").unwrap();
-        assert_eq!(pending.len(), 2);
-        assert_eq!(pending[0], original[0]);
-        assert_eq!(pending[1], ("stable-id".into(), b"new-turn".to_vec()));
+        let rows = store.outbox("chat").unwrap();
         assert_eq!(
-            store.load_snapshot_with_cursor("chat").unwrap().unwrap(),
-            (b"snapshot".to_vec(), 40229, 2)
+            rows.iter().map(|r| r.bytes.as_slice()).collect::<Vec<_>>(),
+            [&b"first"[..], &b"second"[..]]
         );
-        store
-            .acknowledge_chat_update("other-chat", "stable-id")
-            .unwrap();
-        assert_eq!(store.pending_chat_updates("chat").unwrap().len(), 2);
-        store.acknowledge_chat_update("chat", "stable-id").unwrap();
-        assert_eq!(store.pending_chat_updates("chat").unwrap(), original);
-        store.delete_snapshot("chat").unwrap();
-        assert!(store.pending_chat_updates("chat").unwrap().is_empty());
-        assert!(!store.chat_outbox_initialized("chat").unwrap());
-    }
-}
+        assert_eq!(rows[1].end, vv(1, 7));
 
-#[cfg(test)]
-mod publication_failure_tests {
-    use super::*;
+        // An ack from a replica that lacks the second write retires the first only.
+        assert_eq!(store.retire_outbox("chat", &vv(1, 5)).unwrap(), 1);
+        assert_eq!(store.outbox("chat").unwrap().len(), 1);
+        // Another peer's ops do not cover ours.
+        assert_eq!(store.retire_outbox("chat", &vv(2, 100)).unwrap(), 0);
+        assert_eq!(store.retire_outbox("chat", &vv(1, 7)).unwrap(), 1);
+        assert!(!store.has_outbox("chat").unwrap());
+        assert!(store.has_outbox("other").unwrap(), "retiring is per doc");
+
+        store.delete_snapshot("other").unwrap();
+        assert!(!store.has_outbox("other").unwrap());
+    }
+
     #[test]
-    fn cursor_save_after_failed_outbox_write_keeps_a_durable_replay_obligation() {
-        for cursor_save in [false, true] {
-            let dir = tempfile::tempdir().unwrap();
-            let store = DocsStore::open(dir.path()).unwrap();
-            store
-                .save_snapshot_with_cursor("chat", b"before", 42, 2)
-                .unwrap();
-            store.initialize_chat_outbox("chat", &[]).unwrap();
-            store.conn().execute_batch("CREATE TRIGGER fail_publication BEFORE INSERT ON chat_outbox BEGIN SELECT RAISE(FAIL, 'injected disk failure'); END;").unwrap();
-            assert!(
-                store
-                    .enqueue_chat_update("chat", "batch", b"cleanup")
-                    .is_err()
-            );
-            if cursor_save {
-                store
-                    .save_snapshot_with_cursor("chat", b"after", 43, 2)
-                    .unwrap();
-            } else {
-                store.save_snapshot("chat", b"after").unwrap();
-            }
-            drop(store);
-            let reopened = DocsStore::open(dir.path()).unwrap();
-            assert!(!reopened.chat_outbox_initialized("chat").unwrap());
-            assert_eq!(
-                reopened.load_snapshot_with_cursor("chat").unwrap().unwrap(),
-                (b"after".to_vec(), if cursor_save { 43 } else { 42 }, 2)
-            );
-        }
+    fn a_failed_outbox_write_leaves_a_forward_owed_by_the_next_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DocsStore::open(dir.path()).unwrap();
+        store.save_snapshot("chat", b"before").unwrap();
+        store
+            .conn()
+            .execute_batch(
+                "CREATE TRIGGER fail_publication BEFORE INSERT ON chat_outbox \
+                 BEGIN SELECT RAISE(FAIL, 'injected disk failure'); END;",
+            )
+            .unwrap();
+        assert!(store.enqueue_outbox("chat", b"send", &vv(1, 1)).is_err());
+        assert!(store.pending_forwards("", 8).unwrap().is_empty());
+        store.save_snapshot("chat", b"after").unwrap();
+        drop(store);
+        let reopened = DocsStore::open(dir.path()).unwrap();
+        assert_eq!(reopened.pending_forwards("", 8).unwrap(), ["chat"]);
+    }
+
+    #[test]
+    fn an_adopted_snapshot_replaces_the_outbox_with_a_forward() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DocsStore::open(dir.path()).unwrap();
+        store.save_snapshot("chat", b"behind").unwrap();
+        store.enqueue_outbox("chat", b"mine", &vv(1, 1)).unwrap();
+        assert_eq!(store.outbox_len("chat").unwrap(), 1);
+        store.adopt_snapshot("chat", b"adopted").unwrap();
+        assert_eq!(store.load_snapshot("chat").unwrap().unwrap(), b"adopted");
+        assert_eq!(store.outbox_len("chat").unwrap(), 0);
+        assert_eq!(store.pending_forwards("", 8).unwrap(), ["chat"]);
     }
 }
 

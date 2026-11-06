@@ -2,116 +2,67 @@
 //! end: the agent (tests/fixtures/fake-registry-login.py, added on device B
 //! as the registry would add it) runs its own sign-in on B, its browser
 //! captured; B's login reports the page and publishes the page's loopback
-//! callback for device A alone; A forwards the same port over the P2P login
-//! tunnel (two preview services, paired through a stand-in for the edge's
-//! room); A's "browser" lands the redirect, which reaches the agent on B,
-//! and the sign-in finishes. Unix: the recording browser is a shell script.
+//! callback for device A alone; A forwards the same port over a tunnel on its
+//! peer link to B (two preview services on a simulated tailnet); A's "browser"
+//! lands the redirect, which reaches the agent on B, and the sign-in finishes.
+//! Unix: the recording browser is a shell script.
 
 #![cfg(unix)]
 
+use std::io;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::{SinkExt, StreamExt};
+use onicode_engine::peers::{Peers, StreamRouter};
 use onicode_engine::{AgentAccounts, AgentAccountsConfig};
-use onicode_preview::{PreviewService, Scope, signaling};
+use onicode_net::transport::endpoint_on;
+use onicode_net::{Role, StreamKind};
+use onicode_net_sim::{Faults, Net, NodeSpec, SimTailnet};
+use onicode_peer::{PeerConfig, Sockets};
+use onicode_preview::{PreviewService, Scope};
 use onicode_proto::{AgentLoginStatus, HarnessId, RegistryAgent};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Mutex, mpsc};
-use tokio_tungstenite::tungstenite::Message;
 
-struct Token;
-#[async_trait::async_trait]
-impl signaling::TokenSource for Token {
-    async fn token(&self) -> anyhow::Result<String> {
-        Ok("token".into())
+struct SimSockets(Net);
+
+impl Sockets for SimSockets {
+    fn endpoint(&self, local: SocketAddr, seed: Option<u64>) -> io::Result<noq::Endpoint> {
+        endpoint_on(Box::new(self.0.bind(local)?), true, seed)
     }
 }
 
-type Sockets = Arc<Mutex<std::collections::HashMap<String, mpsc::UnboundedSender<String>>>>;
-
-/// Relays `signal`s between connected devices, as the edge's preview room.
-async fn coordinator() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let sockets: Sockets = Default::default();
-    tokio::spawn(async move {
-        while let Ok((socket, _)) = listener.accept().await {
-            let sockets = sockets.clone();
-            tokio::spawn(async move {
-                use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
-                let mut device = String::new();
-                #[expect(
-                    clippy::result_large_err,
-                    reason = "tungstenite's handshake callback fixes its ErrorResponse type"
-                )]
-                let admit = |request: &Request, response: Response| {
-                    let query = request.uri().query().unwrap_or_default();
-                    for (key, value) in query.split('&').filter_map(|p| p.split_once('=')) {
-                        if key == "device" {
-                            device = value.to_owned();
-                        }
-                    }
-                    Ok(response)
-                };
-                let Ok(ws) = tokio_tungstenite::accept_hdr_async(socket, admit).await else {
-                    return;
-                };
-                let (mut write, mut read) = ws.split();
-                let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-                sockets.lock().await.insert(device.clone(), tx);
-                tokio::spawn(async move {
-                    while let Some(text) = rx.recv().await {
-                        if write.send(Message::Text(text)).await.is_err() {
-                            break;
-                        }
-                    }
-                });
-                while let Some(Ok(message)) = read.next().await {
-                    let Message::Text(text) = message else {
-                        continue;
-                    };
-                    if text.as_str() == "ping" {
-                        if let Some(me) = sockets.lock().await.get(&device) {
-                            let _ = me.send("pong".into());
-                        }
-                        continue;
-                    }
-                    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
-                    if value["type"] == "signal" {
-                        let to = value["to"].as_str().unwrap().to_owned();
-                        let out = serde_json::json!({"type":"signal","from":device,"signal":value["signal"]});
-                        if let Some(target) = sockets.lock().await.get(&to) {
-                            let _ = target.send(out.to_string());
-                        }
-                    }
-                }
-            });
-        }
-    });
-    format!("http://{address}")
-}
-
-async fn service(dir: &std::path::Path, device: &str, edge: &str) -> PreviewService {
+/// A preview service as `device`, on a machine of its own on `tailnet`, serving tunnels to
+/// its peers.
+async fn service(
+    tailnet: &SimTailnet,
+    dir: &std::path::Path,
+    device: &str,
+    seed: u64,
+) -> (PreviewService, Peers) {
     let service = PreviewService::new(
         dir.join(format!("{device}.json")),
         device.into(),
         device.into(),
     )
     .unwrap();
-    service
-        .start(
-            Arc::new(Scope::default),
-            Some(signaling::Config {
-                edge_url: edge.into(),
-                org_id: "org".into(),
-                tokens: Arc::new(Token),
-            }),
-        )
-        .await;
-    service
+    service.start(Arc::new(Scope::default)).await;
+    let streams = Arc::new(StreamRouter::default());
+    streams.serve(StreamKind::Tunnel, service.tunnels());
+    let node = tailnet.add(NodeSpec::owned(device, 1));
+    let peers = Peers::start_on(
+        tailnet.local_api(node),
+        &SimSockets(tailnet.net().clone()),
+        PeerConfig::new(device, Role::Engine).with_seed(seed),
+        None,
+        Some(streams),
+    )
+    .await
+    .expect("the device joins the simulated tailnet");
+    service.set_links(peers.links.clone());
+    (service, peers)
 }
 
 fn fixture() -> PathBuf {
@@ -159,9 +110,16 @@ async fn sign_in(tunnel: bool) {
     let dir = tempfile::tempdir().unwrap();
     let agent = added();
 
-    let edge = coordinator().await;
-    let host = service(dir.path(), "device-b", &edge).await;
-    let requester = service(dir.path(), "device-a", &edge).await;
+    let tailnet = SimTailnet::new(Faults::CLEAR, 90);
+    let (host, host_peers) = service(&tailnet, dir.path(), "device-b", 90).await;
+    let (requester, requester_peers) = service(&tailnet, dir.path(), "device-a", 91).await;
+    for peers in [&host_peers, &requester_peers] {
+        peers
+            .directory
+            .refresh()
+            .await
+            .expect("the simulated tailnet answers");
+    }
     let accounts = AgentAccounts::with_callback_routes(
         AgentAccountsConfig::isolated(&dir.path().join("accounts")),
         host.callback_routes(),
@@ -253,9 +211,7 @@ async fn a_registry_agents_sign_in_publishes_its_callback_for_the_requester_and_
     }
 }
 
-/// The whole way, over WebRTC between two preview services on this machine
-/// (as `onicode-preview`'s login_tunnel_e2e; a network that refuses loopback
-/// WebRTC fails both alike).
+/// The whole way, over a tunnel on the peer link between two preview services.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_registry_agents_sign_in_finishes_through_the_requesters_browser() {
     if has_python() {

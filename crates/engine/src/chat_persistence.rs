@@ -1,5 +1,6 @@
-//! Coalesced chat snapshots. Cursor is sampled BEFORE export; snapshot and
-//! cursor commit atomically. Queue/lock waits never occupy a Tokio worker.
+//! Coalesced chat snapshots: a burst of changes saves once, and queue or lock waits never occupy a
+//! Tokio worker. On the chat's host a saved snapshot is the host holding its own writes, so the
+//! save retires the outbox rows it covers.
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -10,23 +11,27 @@ use tokio::sync::mpsc;
 
 const SAVE_INTERVAL: Duration = Duration::from_secs(1);
 
+/// Whether this engine hosts the chat, asked at each save.
+pub(crate) type IsHost = Box<dyn Fn() -> bool + Send + Sync>;
+
 pub(crate) struct ChatPersistence {
     doc: Weak<SessionDoc>,
     store: Arc<DocsStore>,
     chat_id: String,
-    cursor: AtomicU64,
     generation: AtomicU64,
     saved: AtomicU64,
     snapshot_bytes: AtomicUsize,
     urgent: AtomicBool,
+    /// Set once an adopted snapshot replaced this doc on disk: this copy must never overwrite it.
+    retired: AtomicBool,
+    is_host: IsHost,
+    /// Set by the outbox feed when a local write missed the outbox; a snapshot exported after
+    /// that holds the write, so a landed save clears it.
+    publication_failed: Arc<AtomicBool>,
     write: Mutex<()>,
     wake: Option<mpsc::Sender<()>>,
-    /// Seeded from the store, then set by the first verified write: cursor
-    /// repair is once per legacy snapshot, never once per rejoin. The thin
-    /// client reads the same flag from the store (client/src/live/room.rs).
-    cursor_verified: AtomicBool,
     #[cfg(test)]
-    writes: std::sync::atomic::AtomicUsize,
+    writes: AtomicUsize,
     #[cfg(test)]
     before_export: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
@@ -36,27 +41,26 @@ impl ChatPersistence {
         doc: &Arc<SessionDoc>,
         store: Arc<DocsStore>,
         chat_id: String,
-        cursor: u64,
+        is_host: IsHost,
+        publication_failed: Arc<AtomicBool>,
     ) -> Arc<Self> {
-        let verified = store.snapshot_cursor_verified(&chat_id).unwrap_or(false);
         let runtime = tokio::runtime::Handle::try_current().ok();
         let (tx, rx) = mpsc::channel(1);
         let this = Arc::new(Self {
             doc: Arc::downgrade(doc),
             store,
             chat_id,
-            // Legacy cursors can have holes. Don't certify one before the
-            // one-time repair has established a contiguous applied prefix.
-            cursor: AtomicU64::new(if verified { cursor } else { 0 }),
             generation: AtomicU64::new(0),
             saved: AtomicU64::new(0),
             snapshot_bytes: AtomicUsize::new(0),
             urgent: AtomicBool::new(false),
+            retired: AtomicBool::new(false),
+            is_host,
+            publication_failed,
             write: Mutex::new(()),
             wake: runtime.as_ref().map(|_| tx),
-            cursor_verified: AtomicBool::new(verified),
             #[cfg(test)]
-            writes: std::sync::atomic::AtomicUsize::new(0),
+            writes: AtomicUsize::new(0),
             #[cfg(test)]
             before_export: Mutex::new(None),
         });
@@ -64,14 +68,6 @@ impl ChatPersistence {
             runtime.spawn(Self::run(Arc::downgrade(&this), rx));
         }
         this
-    }
-
-    pub(crate) fn cursor(&self) -> u64 {
-        self.cursor.load(Ordering::Acquire)
-    }
-
-    pub(crate) fn cursor_verified(&self) -> bool {
-        self.cursor_verified.load(Ordering::Acquire)
     }
 
     pub(crate) fn is_clean(&self) -> bool {
@@ -82,15 +78,10 @@ impl ChatPersistence {
         self.snapshot_bytes.load(Ordering::Relaxed)
     }
 
-    pub(crate) fn applied(&self, cursor: u64, immediate: bool) {
-        self.cursor.fetch_max(cursor, Ordering::AcqRel);
-        self.dirty(immediate);
-    }
-
-    pub(crate) fn reset_cursor(&self, cursor: u64) {
-        if self.cursor.swap(cursor, Ordering::AcqRel) != cursor {
-            self.dirty(true);
-        }
+    /// Stops every further save: the doc on disk was replaced and this copy is stale.
+    pub(crate) fn retire(&self) {
+        let _write = self.write.lock().unwrap_or_else(|e| e.into_inner());
+        self.retired.store(true, Ordering::Release);
     }
 
     pub(crate) fn dirty(&self, immediate: bool) {
@@ -117,7 +108,7 @@ impl ChatPersistence {
                     break;
                 }
                 tokio::select! {
-                    _ = tokio::time::sleep_until(deadline) => break,
+                    () = tokio::time::sleep_until(deadline) => break,
                     message = rx.recv() => if message.is_none() { return; },
                 }
             }
@@ -137,7 +128,7 @@ impl ChatPersistence {
             if this.doc.strong_count() == 0 {
                 return;
             }
-            if this.saved.load(Ordering::Acquire) != this.generation.load(Ordering::Acquire) {
+            if !this.is_clean() {
                 // Includes failed writes and changes during export. Retry on
                 // the next interval even if the document has gone quiet.
                 if let Some(wake) = &this.wake {
@@ -154,14 +145,23 @@ impl ChatPersistence {
             if generation == self.saved.load(Ordering::Acquire) {
                 return;
             }
+            if self.retired.load(Ordering::Acquire) {
+                self.saved.store(generation, Ordering::Release);
+                return;
+            }
             let Some(doc) = self.doc.upgrade() else {
                 return;
             };
-            // Never read the cursor AFTER exporting: a concurrent import
-            // could then label an older snapshot with a newer cursor.
-            let cursor = self.cursor.load(Ordering::Acquire);
+            // Sampled before the export, so the snapshot holds at least this much.
+            let held = doc.doc().oplog_vv();
+            let failed_before = self.publication_failed.swap(false, Ordering::AcqRel);
             #[cfg(test)]
-            if let Some(hook) = self.before_export.lock().unwrap().take() {
+            if let Some(hook) = self
+                .before_export
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take()
+            {
                 hook();
             }
             let result = doc
@@ -170,28 +170,30 @@ impl ChatPersistence {
                 .and_then(|bytes| {
                     self.snapshot_bytes.store(bytes.len(), Ordering::Relaxed);
                     self.store
-                        .save_verified_snapshot_with_cursor(
-                            &self.chat_id,
-                            &bytes,
-                            cursor,
-                            super::chat2_host::CHAT2_DOC_EPOCH,
-                        )
+                        .save_snapshot(&self.chat_id, &bytes)
                         .map_err(|e| e.to_string())
                 });
             match result {
                 Ok(()) => {
                     #[cfg(test)]
                     self.writes.fetch_add(1, Ordering::Relaxed);
-                    self.cursor_verified.store(true, Ordering::Release);
                     self.saved.store(generation, Ordering::Release);
+                    if (self.is_host)()
+                        && let Err(error) = self.store.retire_outbox(&self.chat_id, &held)
+                    {
+                        tracing::warn!(chat = %self.chat_id, %error, "outbox retire failed");
+                    }
                 }
                 Err(error) => {
-                    tracing::warn!(chat = %self.chat_id, %error, "chat snapshot failed; retrying")
+                    if failed_before {
+                        self.publication_failed.store(true, Ordering::Release);
+                    }
+                    tracing::warn!(chat = %self.chat_id, %error, "chat snapshot failed; retrying");
                 }
             }
         };
-        // Compatibility for synchronous shutdown/eviction and command APIs.
-        // Async persisters already execute this on the blocking pool.
+        // Synchronous shutdown/eviction and command APIs call this directly.
+        // Async persisters already execute it on the blocking pool.
         if tokio::runtime::Handle::try_current()
             .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread)
         {
@@ -204,77 +206,13 @@ impl ChatPersistence {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    /// Runs only on an explicitly supplied local snapshot; never writes back
-    /// to it or connects to an edge/production room.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "requires ONICODE_WHALE_SNAPSHOT; reads privately supplied snapshot into a temporary store"]
-    async fn real_whale_replay_keeps_146_heartbeats_running_on_two_workers() {
-        let bytes = std::fs::read(std::env::var("ONICODE_WHALE_SNAPSHOT").unwrap()).unwrap();
-        let raw = loro::LoroDoc::new();
-        raw.import(&bytes).unwrap();
-        let doc = Arc::new(SessionDoc::from_doc(raw));
-        let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(DocsStore::open(dir.path()).unwrap());
-        let persistence = ChatPersistence::new(&doc, store.clone(), "whale".into(), 0);
-        let worst = Arc::new(AtomicU64::new(0));
-        let beats = Arc::new(AtomicUsize::new(0));
-        let mut heartbeat_tasks = Vec::new();
-        for _ in 0..146 {
-            let worst = worst.clone();
-            let beats = beats.clone();
-            heartbeat_tasks.push(tokio::spawn(async move {
-                loop {
-                    let start = std::time::Instant::now();
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                    worst.fetch_max(start.elapsed().as_millis() as u64, Ordering::Relaxed);
-                    beats.fetch_add(1, Ordering::Relaxed);
-                }
-            }));
-        }
-        let other_store = store.clone();
-        let contender = tokio::spawn(async move {
-            for _ in 0..32 {
-                other_store
-                    .save_snapshot("registry", b"other room")
-                    .unwrap();
-                let _ = other_store.load_snapshot("whale").unwrap();
-                tokio::time::sleep(Duration::from_millis(125)).await;
-            }
-        });
-        let mut cadence = tokio::time::interval(Duration::from_millis(125));
-        for cursor in 1..=32 {
-            cadence.tick().await;
-            doc.doc()
-                .get_map("persistence-test")
-                .insert("applied", cursor as i64)
-                .unwrap();
-            doc.doc().commit();
-            persistence.applied(cursor, false);
-        }
-        contender.await.unwrap();
-        persistence.flush_sync();
-        for task in heartbeat_tasks {
-            task.abort();
-        }
-        let writes = persistence.writes.load(Ordering::Relaxed);
-        eprintln!(
-            "snapshot_bytes={} rows=32 writes={} heartbeat_count={} worst_50ms_heartbeat_ms={}",
-            bytes.len(),
-            writes,
-            beats.load(Ordering::Relaxed),
-            worst.load(Ordering::Relaxed)
-        );
-        assert!(writes <= 6, "replay must not export/write per row");
-        assert!(beats.load(Ordering::Relaxed) > 146 * 50);
-        assert!(
-            worst.load(Ordering::Relaxed) < 300,
-            "network timers starved"
-        );
-        assert_eq!(store.snapshot_cursor("whale").unwrap(), 32);
-    }
+    use loro::LoroDoc;
 
-    fn fixture() -> (
+    use super::*;
+
+    fn fixture(
+        is_host: bool,
+    ) -> (
         tempfile::TempDir,
         Arc<SessionDoc>,
         Arc<DocsStore>,
@@ -283,155 +221,161 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(DocsStore::open(dir.path()).unwrap());
         let doc = Arc::new(SessionDoc::init("whale").unwrap());
-        let persistence = ChatPersistence::new(&doc, store.clone(), "whale".into(), 0);
+        let persistence = ChatPersistence::new(
+            &doc,
+            store.clone(),
+            "whale".into(),
+            Box::new(move || is_host),
+            Arc::new(AtomicBool::new(false)),
+        );
         (dir, doc, store, persistence)
     }
 
-    #[test]
-    fn an_unverified_cursor_opens_at_zero() {
-        let (_dir, doc, store, _) = fixture();
-        let bytes = doc.export_snapshot().unwrap();
-        store
-            .save_snapshot_with_cursor("legacy", &bytes, 500, 2)
-            .unwrap();
-        let persistence = ChatPersistence::new(&doc, store, "legacy".into(), 500);
-        assert_eq!(persistence.cursor(), 0);
+    fn write(doc: &SessionDoc, n: i64) {
+        doc.doc().get_map("test").insert("applied", n).unwrap();
+        doc.doc().commit();
     }
 
-    #[tokio::test]
-    async fn replay_burst_coalesces_and_flush_bypasses_debounce() {
-        let (_dir, doc, store, persistence) = fixture();
-        for cursor in 1..=1000 {
-            doc.doc()
-                .get_map("test")
-                .insert("applied", cursor as i64)
-                .unwrap();
-            doc.doc().commit();
-            persistence.applied(cursor, false);
+    #[tokio::test(start_paused = true)]
+    async fn a_burst_coalesces_and_flush_bypasses_the_debounce() {
+        let (_dir, doc, store, persistence) = fixture(false);
+        for n in 1..=1000 {
+            write(&doc, n);
+            persistence.dirty(false);
         }
         assert_eq!(
             persistence.writes.load(Ordering::Relaxed),
             0,
-            "no per-row writes"
+            "no per-change writes"
         );
-        // The debounce schedules a blocking SQLite write; a loaded CI runner
-        // may not finish that write within 200 ms of the debounce deadline.
-        // Wait for completion, then still require the entire burst to coalesce.
-        tokio::time::timeout(Duration::from_secs(10), async {
-            while persistence.writes.load(Ordering::Relaxed) == 0 {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        })
-        .await
-        .expect("debounced snapshot should finish");
+        while persistence.writes.load(Ordering::Relaxed) == 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
         assert_eq!(persistence.writes.load(Ordering::Relaxed), 1);
-        let (bytes, cursor, _) = store.load_snapshot_with_cursor("whale").unwrap().unwrap();
-        assert_eq!(cursor, 1000);
-        assert!(store.snapshot_cursor_verified("whale").unwrap());
-        let restored = loro::LoroDoc::new();
-        restored.import(&bytes).unwrap();
+        let restored = LoroDoc::new();
+        restored
+            .import(&store.load_snapshot("whale").unwrap().unwrap())
+            .unwrap();
         assert_eq!(
             restored.get_map("test").get_deep_value(),
             doc.doc().get_map("test").get_deep_value()
         );
-        persistence.applied(1001, true);
-        tokio::time::timeout(Duration::from_millis(500), async {
-            while persistence.writes.load(Ordering::Relaxed) != 2 {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        })
-        .await
-        .unwrap();
-        persistence.applied(1002, false);
+        write(&doc, 1001);
+        persistence.dirty(false);
         persistence.flush_sync(); // shutdown/eviction must not await the timer
-        assert_eq!(store.snapshot_cursor("whale").unwrap(), 1002);
-        persistence.reset_cursor(0);
-        persistence.flush_sync();
-        assert_eq!(
-            store.snapshot_cursor("whale").unwrap(),
-            0,
-            "server-reset cursor must be allowed to decrease"
-        );
+        assert!(persistence.is_clean());
+        assert_eq!(persistence.writes.load(Ordering::Relaxed), 2);
     }
 
     #[test]
-    fn first_verified_write_ends_legacy_cursor_repair() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(DocsStore::open(dir.path()).unwrap());
-        let doc = Arc::new(SessionDoc::init("born").unwrap());
-        // A cold reader's first open stamps an unverified lineage.
-        store
-            .save_snapshot_with_cursor(
-                "born",
-                &doc.export_snapshot().unwrap(),
-                0,
-                crate::chat2_host::CHAT2_DOC_EPOCH,
-            )
-            .unwrap();
-        let persistence = ChatPersistence::new(&doc, store.clone(), "born".into(), 0);
-        assert!(!persistence.cursor_verified());
-        persistence.applied(7, true); // no runtime: flushes inline
-        assert!(persistence.cursor_verified(), "the next join would rewind");
-        assert!(ChatPersistence::new(&doc, store, "born".into(), 7).cursor_verified());
-    }
-
-    /// Only a write that landed certifies the cursor: a failed one leaves
-    /// the legacy repair in place until a retry succeeds.
-    #[test]
-    fn failed_write_keeps_legacy_cursor_repair() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(DocsStore::open(dir.path()).unwrap());
-        let doc = Arc::new(SessionDoc::init("born").unwrap());
-        store
-            .save_snapshot_with_cursor(
-                "born",
-                &doc.export_snapshot().unwrap(),
-                0,
-                crate::chat2_host::CHAT2_DOC_EPOCH,
-            )
-            .unwrap();
-        let persistence = ChatPersistence::new(&doc, store.clone(), "born".into(), 0);
+    fn a_failed_write_stays_dirty_until_a_retry_lands() {
+        let (dir, doc, _store, persistence) = fixture(false);
         let db = rusqlite::Connection::open(dir.path().join("docs.sqlite3")).unwrap();
         db.execute_batch(
-            "CREATE TRIGGER fail_update BEFORE UPDATE ON snapshots BEGIN SELECT RAISE(FAIL, 'injected disk failure'); END;
-             CREATE TRIGGER fail_insert BEFORE INSERT ON snapshots BEGIN SELECT RAISE(FAIL, 'injected disk failure'); END;",
+            "CREATE TRIGGER fail_insert BEFORE INSERT ON snapshots BEGIN SELECT RAISE(FAIL, 'injected disk failure'); END;",
         )
         .unwrap();
-        persistence.applied(7, true); // no runtime: flushes inline, and fails
+        write(&doc, 7);
+        persistence.dirty(true); // no runtime: flushes inline, and fails
         assert!(!persistence.is_clean(), "the write failed");
-        assert!(!persistence.cursor_verified());
-        assert!(!store.snapshot_cursor_verified("born").unwrap());
-        db.execute_batch("DROP TRIGGER fail_update; DROP TRIGGER fail_insert;")
-            .unwrap();
+        db.execute_batch("DROP TRIGGER fail_insert;").unwrap();
         persistence.flush_sync();
         assert!(persistence.is_clean());
-        assert!(persistence.cursor_verified());
+    }
+
+    #[test]
+    fn a_landed_save_clears_a_missed_outbox_write_and_a_failed_one_keeps_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(DocsStore::open(dir.path()).unwrap());
+        let doc = Arc::new(SessionDoc::init("whale").unwrap());
+        let failed = Arc::new(AtomicBool::new(true));
+        let persistence = ChatPersistence::new(
+            &doc,
+            store,
+            "whale".into(),
+            Box::new(|| false),
+            failed.clone(),
+        );
+        let db = rusqlite::Connection::open(dir.path().join("docs.sqlite3")).unwrap();
+        db.execute_batch(
+            "CREATE TRIGGER fail_insert BEFORE INSERT ON snapshots BEGIN SELECT RAISE(FAIL, 'injected disk failure'); END;",
+        )
+        .unwrap();
+        write(&doc, 1);
+        persistence.dirty(true);
+        assert!(
+            failed.load(Ordering::Acquire),
+            "nothing durable holds the write yet"
+        );
+        db.execute_batch("DROP TRIGGER fail_insert;").unwrap();
+        persistence.flush_sync();
+        assert!(!failed.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn the_hosts_save_retires_the_outbox_rows_it_holds() {
+        let (_dir, doc, store, persistence) = fixture(true);
+        write(&doc, 1);
+        store
+            .enqueue_outbox("whale", b"bytes", &doc.doc().oplog_vv())
+            .unwrap();
+        let mut ahead = doc.doc().oplog_vv();
+        ahead.set_end(loro::ID::new(99, 1));
+        store.enqueue_outbox("whale", b"later", &ahead).unwrap();
+        persistence.dirty(true);
+        let left = store.outbox("whale").unwrap();
+        assert_eq!(left.len(), 1, "only what the snapshot holds retires");
+        assert_eq!(left[0].bytes, b"later");
+    }
+
+    #[test]
+    fn a_viewers_save_leaves_the_outbox_for_the_hosts_ack() {
+        let (_dir, doc, store, persistence) = fixture(false);
+        write(&doc, 1);
+        store
+            .enqueue_outbox("whale", b"bytes", &doc.doc().oplog_vv())
+            .unwrap();
+        persistence.dirty(true);
+        assert_eq!(store.outbox("whale").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_retired_copy_never_overwrites_the_adopted_snapshot() {
+        let (_dir, doc, store, persistence) = fixture(false);
+        store.save_snapshot("whale", b"adopted").unwrap();
+        persistence.retire();
+        write(&doc, 1);
+        persistence.dirty(true);
+        assert!(persistence.is_clean());
+        assert_eq!(store.load_snapshot("whale").unwrap().unwrap(), b"adopted");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn concurrent_import_cannot_label_an_older_export_with_a_newer_cursor() {
-        let (_dir, doc, store, persistence) = fixture();
-        persistence.applied(1, false);
+    async fn the_held_version_is_read_before_the_export() {
+        let (_dir, doc, store, persistence) = fixture(true);
+        write(&doc, 1);
+        let first = doc.doc().oplog_vv();
         let (started_tx, started_rx) = std::sync::mpsc::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
         *persistence.before_export.lock().unwrap() = Some(Box::new(move || {
             started_tx.send(()).unwrap();
             release_rx.recv().unwrap();
         }));
+        persistence.generation.fetch_add(1, Ordering::Release);
         let p = persistence.clone();
         let job = tokio::task::spawn_blocking(move || p.flush_sync());
         started_rx.recv().unwrap();
-        doc.doc().get_map("test").insert("second", true).unwrap();
-        doc.doc().commit();
-        persistence.applied(2, false);
+        write(&doc, 2);
+        store
+            .enqueue_outbox("whale", b"second", &doc.doc().oplog_vv())
+            .unwrap();
         release_tx.send(()).unwrap();
         job.await.unwrap();
+        assert!(!first.includes_vv(&doc.doc().oplog_vv()));
         assert_eq!(
-            store.snapshot_cursor("whale").unwrap(),
+            store.outbox("whale").unwrap().len(),
             1,
-            "cursor must have been captured before export"
+            "a write made during the export is not retired by it"
         );
-        persistence.flush_sync();
-        assert_eq!(store.snapshot_cursor("whale").unwrap(), 2);
     }
 }

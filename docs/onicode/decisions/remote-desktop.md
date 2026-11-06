@@ -11,3 +11,13 @@ Screen Recording and Accessibility grants and its own QUIC endpoint. Video goes 
 references, FEC and NACK over QUIC datagrams. The client decodes with VideoToolbox into a gpui-fast `VideoLayer`
 and shows the system cursor. It ports slopty's media code once the peer transport and the gpui-fast migration have
 landed.
+
+P0 has landed as `onicode-desktop-media` (`crates/desktop-media`): slopty's pure media core ported whole with its
+tests and fuzz corpora, namely packetizing with Reed–Solomon parity, reassembly with NACK and refresh, adaptive
+redundancy, rate control with the chroma gate and encoder watch, clock sync, still refinement, audio copies,
+temporal layers, heartbeats, cursor moves and the client's present-on-arrival pacer. Window streams, regions and
+crops are gone: one stream is one display, or one stripe of it. Its wire lives in `wire`: a 16-byte media header
+on datagram channel 2 (`MEDIA`, host to client) and client feedback on channel 3 (`FEEDBACK`), each after the
+channel byte `onicode-net` adds, sized so a datagram fits a 1232-byte tailnet packet whatever the connection id.
+The wire's canonical encoding is pinned byte for byte in a test, so no layout changes by accident: a deliberate
+change updates the pinned bytes and bumps `wire::VERSION` in the same commit.

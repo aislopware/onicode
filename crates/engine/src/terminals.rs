@@ -62,8 +62,8 @@ struct LiveTerminal {
     /// `pump_output`).
     support_replies: u32,
     support_window: std::time::Instant,
-    /// Highest input seq applied per remote viewer, so input replayed after
-    /// a path change (direct link ↔ relay) is applied exactly once.
+    /// Highest input seq applied per remote viewer, so input replayed on a
+    /// new stream, or doubled by its datagram copy, is applied exactly once.
     applied_inputs: HashMap<String, u64>,
 }
 
@@ -118,6 +118,25 @@ impl LiveTerminal {
         self.seq += 1;
         self.seq
     }
+}
+
+/// Write input to a live terminal, its lock held.
+fn write_live(session: &mut LiveTerminal, bytes: &[u8]) -> Result<(), EngineError> {
+    if bytes.len() > MAX_INPUT_BYTES {
+        return Err(EngineError::Other("Terminal input is too large".into()));
+    }
+    if session.exited {
+        return Err(EngineError::Other("Terminal has exited".into()));
+    }
+    session.last_active_at = std::time::Instant::now();
+    let writer = session
+        .writer
+        .as_mut()
+        .ok_or_else(|| EngineError::Other("Terminal has exited".into()))?;
+    writer
+        .write_all(bytes)
+        .and_then(|_| writer.flush())
+        .map_err(|e| EngineError::Other(format!("Terminal write failed: {e}")))
 }
 
 struct TerminalsInner {
@@ -538,23 +557,9 @@ impl Terminals {
 
     /// Write trusted host-side bytes without applying the RPC base64 decoder.
     pub fn write_bytes(&self, terminal_id: &str, bytes: &[u8]) -> Result<(), EngineError> {
-        if bytes.len() > MAX_INPUT_BYTES {
-            return Err(EngineError::Other("Terminal input is too large".into()));
-        }
         let session = self.session(terminal_id)?;
         let mut session = lock(&session);
-        if session.exited {
-            return Err(EngineError::Other("Terminal has exited".into()));
-        }
-        session.last_active_at = std::time::Instant::now();
-        let writer = session
-            .writer
-            .as_mut()
-            .ok_or_else(|| EngineError::Other("Terminal has exited".into()))?;
-        writer
-            .write_all(bytes)
-            .and_then(|_| writer.flush())
-            .map_err(|e| EngineError::Other(format!("Terminal write failed: {e}")))
+        write_live(&mut session, bytes)
     }
 
     /// Write input a remote viewer numbered: applied only if `seq` is newer
@@ -568,22 +573,48 @@ impl Terminals {
         seq: u64,
         bytes: &[u8],
     ) -> Result<bool, EngineError> {
-        {
-            let session = self.session(terminal_id)?;
-            let mut session = lock(&session);
-            let applied = session.applied_inputs.get(client).copied().unwrap_or(0);
-            if seq <= applied {
-                return Ok(false);
-            }
-            if !session.applied_inputs.contains_key(client)
-                && session.applied_inputs.len() >= MAX_INPUT_CLIENTS
-                && let Some(oldest) = session.applied_inputs.keys().next().cloned()
-            {
-                session.applied_inputs.remove(&oldest);
-            }
-            session.applied_inputs.insert(client.to_owned(), seq);
+        self.write_numbered(terminal_id, client, seq, bytes, |applied| seq > applied)
+    }
+
+    /// [`Self::write_sequenced`] for a datagram copy: applied only if `seq`
+    /// is the very next one from `client`, since a copy can arrive ahead of
+    /// earlier input still on its stream.
+    pub fn write_next(
+        &self,
+        terminal_id: &str,
+        client: &str,
+        seq: u64,
+        bytes: &[u8],
+    ) -> Result<bool, EngineError> {
+        self.write_numbered(terminal_id, client, seq, bytes, |applied| {
+            applied.checked_add(1) == Some(seq)
+        })
+    }
+
+    /// Marks and writes `seq` under one lock when `takes(last applied)`, so a
+    /// stream copy and a datagram copy racing each other never reorder input.
+    fn write_numbered(
+        &self,
+        terminal_id: &str,
+        client: &str,
+        seq: u64,
+        bytes: &[u8],
+        takes: impl Fn(u64) -> bool,
+    ) -> Result<bool, EngineError> {
+        let session = self.session(terminal_id)?;
+        let mut session = lock(&session);
+        let applied = session.applied_inputs.get(client).copied().unwrap_or(0);
+        if !takes(applied) {
+            return Ok(false);
         }
-        self.write_bytes(terminal_id, bytes)?;
+        write_live(&mut session, bytes)?;
+        if !session.applied_inputs.contains_key(client)
+            && session.applied_inputs.len() >= MAX_INPUT_CLIENTS
+            && let Some(oldest) = session.applied_inputs.keys().next().cloned()
+        {
+            session.applied_inputs.remove(&oldest);
+        }
+        session.applied_inputs.insert(client.to_owned(), seq);
         Ok(true)
     }
 

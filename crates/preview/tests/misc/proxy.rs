@@ -12,9 +12,8 @@ use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 use onicode_preview::catalog::Catalog;
 use onicode_preview::discovery::Listener;
-use onicode_preview::mux::{self, BoxIo, Connector};
-use onicode_preview::peer::Peers;
 use onicode_preview::proxy::{self, Router};
+use onicode_preview::tunnel::{BoxIo, Connector};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::WebSocketStream;
@@ -176,14 +175,12 @@ async fn streaming_headers_websocket_cancellation_and_restart() {
         let active = Arc::new(AtomicUsize::new(0));
         let backend_port = server(backend_stop.clone(), active.clone()).await;
         observe(&catalog, backend_port, 1);
-        let connector = Arc::new(Backend(catalog.clone()));
-        let local = mux::local(connector.clone(), stop.clone());
-        let (peers, _) = Peers::new("local".into(), connector, stop.clone());
         let (port, _listeners) = proxy::serve(
             Router {
                 catalog: catalog.clone(),
-                local,
-                peers,
+                local: Arc::new(Backend(catalog.clone())),
+                links: Arc::default(),
+                stop: stop.clone(),
             },
             0,
             stop.clone(),

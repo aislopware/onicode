@@ -1,8 +1,8 @@
 //! The workspace registry replica and its derived [`WorkspaceSnapshot`].
 //!
-//! The replica is a [`RegistryDoc`] shared (`Arc<Mutex<_>>`) with the
-//! `onicode_sync::RegistryClient` in live mode; Demo mode's replica is
-//! local-only (writes fold straight into its rows). Reads materialize
+//! The replica is a [`RegistryDoc`] shared (`Arc<Mutex<_>>`) with the live
+//! registry mirror, which merges one engine's rows into it; Demo mode's replica
+//! never syncs. Reads materialize
 //! the rows once per registry *generation* (cached), so the 1 Hz time-driven
 //! re-derivation (staleness, presence expiry, send grace) never re-decodes.
 
@@ -52,8 +52,7 @@ impl WorkspaceStore {
         }
     }
 
-    /// The shared replica (handed to `RegistryClient` in live mode).
-    #[allow(dead_code)] // live registry client
+    /// The shared replica (the live registry mirror merges into it).
     pub(crate) fn doc(&self) -> &Arc<Mutex<RegistryDoc>> {
         &self.doc
     }

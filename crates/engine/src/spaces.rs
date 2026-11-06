@@ -284,10 +284,10 @@ async fn check_space(inner: &Arc<SpacesSyncInner>, space_id: &str, path: &Path) 
 /// Host-side repair: delete OUR chats whose `spaceId` dangles (create-vs-delete
 /// race). Chats hosted by other devices are left alone.
 fn sweep_orphans(inner: &Arc<SpacesSyncInner>) {
-    // NEVER sweep off a replica that hasn't heard from the server this boot:
-    // a gapped/pre-heal/offline-at-boot view is missing rows, and "space row
-    // absent" on it is not evidence the space was deleted — sweeping there
-    // globally destroys live chats (2026-08-23 missing-sessions audit).
+    // NEVER sweep off a replica that hasn't caught up with a peer this boot:
+    // a behind/offline-at-boot view is missing rows, and "space row absent"
+    // on it is not evidence the space was deleted — sweeping there globally
+    // destroys live chats (2026-08-23 missing-sessions audit).
     if !inner.workspace.registry_synced() {
         tracing::debug!("spaces: orphan sweep skipped (registry not yet synced this boot)");
         return;

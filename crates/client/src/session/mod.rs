@@ -182,10 +182,8 @@ struct CoreState {
 pub(crate) struct SessionCore {
     pub(crate) chat_id: String,
     client: Weak<ClientInner>,
-    /// Live chat2 room (declared before `doc`: it drops — and flushes — first).
+    /// The chat's peer sync (declared before `doc`: it drops — and flushes — first).
     room: Mutex<Option<Arc<crate::live::room::Room>>>,
-    /// Verified cursor restored with the local snapshot (room join cursor).
-    initial_cursor: u64,
     refresh_wake: Arc<tokio::sync::Notify>,
     tasks: tokio_util::sync::CancellationToken,
     doc: Arc<SessionDoc>,
@@ -204,12 +202,7 @@ pub(crate) struct SessionCore {
 }
 
 impl SessionCore {
-    pub(crate) fn new(
-        chat_id: &str,
-        client: &Arc<ClientInner>,
-        doc: SessionDoc,
-        cursor: u64,
-    ) -> Arc<Self> {
+    pub(crate) fn new(chat_id: &str, client: &Arc<ClientInner>, doc: SessionDoc) -> Arc<Self> {
         let doc = Arc::new(doc);
         let dirty = Arc::new(Mutex::new(Dirty::all()));
         let sink = dirty.clone();
@@ -227,7 +220,6 @@ impl SessionCore {
             chat_id: chat_id.to_owned(),
             client: Arc::downgrade(client),
             room: Mutex::new(None),
-            initial_cursor: cursor,
             refresh_wake: refresh_wake.clone(),
             tasks: tasks.clone(),
             doc,
@@ -290,23 +282,10 @@ impl SessionCore {
         drop(room);
     }
 
-    /// Live: join the chat's chat2 room once its row says it's dialable
-    /// (roomGen ≥ 2). Idempotent.
+    /// Live: follow the chat's host over a `doc` peer stream. Idempotent.
     pub(crate) fn ensure_room(self: &Arc<Self>, client: &Arc<ClientInner>) {
         let Some(live) = client.live() else { return };
-        if lock(&self.room).is_some() {
-            return;
-        }
-        let Some(chat) = client.workspace.chat(&self.chat_id) else {
-            return;
-        };
-        if chat.room_gen.unwrap_or(1) < 2 {
-            // A retired legacy (s2) room: nothing to dial. Show what's local
-            // instead of an endless loader.
-            let newly = !std::mem::replace(&mut lock(&self.state).hydrated, true);
-            if newly {
-                self.schedule_refresh();
-            }
+        if lock(&self.room).is_some() || client.workspace.chat(&self.chat_id).is_none() {
             return;
         }
         let core = Arc::downgrade(self);
@@ -337,19 +316,40 @@ impl SessionCore {
                 }
             }
         });
+        let host_client = Arc::downgrade(client);
+        let chat_id = self.chat_id.clone();
+        let host: Arc<dyn Fn() -> Option<String> + Send + Sync> = Arc::new(move || {
+            let client = host_client.upgrade()?;
+            client.workspace.chat(&chat_id).map(|chat| chat.device_id)
+        });
+        let links_client = Arc::downgrade(client);
+        let links: Arc<dyn Fn() -> Option<Arc<onicode_peer::PeerLinks>> + Send + Sync> =
+            Arc::new(move || links_client.upgrade()?.peer_links.get().cloned());
+        let adopted_client = Arc::downgrade(client);
+        let adopted_core = Arc::downgrade(self);
+        let on_adopted: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            // The store holds the adopted snapshot now; this in-memory replica is behind its
+            // root. Drop it so the next open loads the snapshot.
+            if let (Some(client), Some(core)) = (adopted_client.upgrade(), adopted_core.upgrade()) {
+                client.forget_session(&core);
+                core.close_room();
+                client.recompute_connectivity();
+                // Reopens it if it still owes the host.
+                client.nudge_host();
+            }
+        });
         let room = crate::live::room::Room::start(
             &self.doc,
             &self.chat_id,
-            self.initial_cursor,
             crate::live::room::RoomDeps {
-                bearer: crate::live::LiveBackend::bearer(client),
-                edge: live.edge.clone(),
                 device_id: client.config.device_id.clone(),
-                host_device_id: chat.device_id.clone(),
                 store: live.store.clone(),
+                host,
+                links,
+                wake: client.terminals_wake.clone(),
                 on_applied,
                 on_status,
-                outbox_acked: live.outbox_acked.clone(),
+                on_adopted,
                 cancel: client.cancel.clone(),
             },
         );
@@ -388,15 +388,13 @@ impl SessionCore {
             let client = self.client()?;
             if let Some(live) = client.live() {
                 // A new chat's registry row must survive alongside its outbox:
-                // recovery needs its host and room generation before any UI opens it.
+                // recovery needs its host before any UI opens it.
                 live.persist_registry(&client)?;
             }
             let result = f(&self.doc)?;
             if let Some(live) = client.live() {
-                live.store
-                    .schedule_sync_job(&self.chat_id, crate::live::delivery::JOB)
-                    .map_err(|err| ClientError::Storage(err.to_string()))?;
-                live.delivery_wake.notify_one();
+                // Keeps the session open until the host acks the write, even once its view closes.
+                live.owed_wake.notify_one();
             }
             result
         };

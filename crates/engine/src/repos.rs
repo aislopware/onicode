@@ -1899,10 +1899,13 @@ fn fuzzy_score(query: &str, candidate: &str) -> Option<usize> {
         })
 }
 
-/// Match a history commit using the same semantics as the history UI.
+/// Match a history commit using the same semantics as the history UI: a sha by its prefix, a
+/// subject fuzzily.
 ///
 /// This remains the shared entry point so RPC filtering and client-side
-/// filtering cannot disagree about Unicode case normalization.
+/// filtering cannot disagree about Unicode case normalization. The sha is never matched fuzzily:
+/// eight hex characters are a subsequence of many another commit's forty, so a pasted prefix
+/// would bring back commits it does not name.
 pub fn git_history_matches(query: &str, commit: &GitHistoryCommit) -> bool {
     let query = query.trim();
     if query.is_empty() {
@@ -1910,7 +1913,7 @@ pub fn git_history_matches(query: &str, commit: &GitHistoryCommit) -> bool {
     }
     let normalized = query.to_ascii_lowercase();
     commit.sha.to_ascii_lowercase().starts_with(&normalized)
-        || fuzzy_score(query, &format!("{} {}", commit.sha, commit.subject)).is_some()
+        || fuzzy_score(query, &commit.subject).is_some()
 }
 
 /// Contract hidden commits to their nearest visible ancestors. Search results
@@ -2876,6 +2879,18 @@ tmpfs /run tmpfs rw 0 0
         let mut paths: Vec<&String> = drives.iter().map(|d| &d.path).collect();
         paths.dedup();
         assert_eq!(paths.len(), drives.len());
+    }
+
+    #[test]
+    fn a_sha_prefix_names_only_its_commit() {
+        // "a1b2c3d4" runs through this sha in order without being its prefix.
+        let mut other = history_commit("fa0f1bb2c3cd4e5f60718293a4b5c6d7e8f90a1b".into(), None);
+        other.subject = "tidy the sidebar".into();
+        let mut named = history_commit("a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4".into(), None);
+        named.subject = "polish the graph".into();
+
+        assert!(git_history_matches("a1b2c3d4", &named));
+        assert!(!git_history_matches("a1b2c3d4", &other));
     }
 
     #[test]

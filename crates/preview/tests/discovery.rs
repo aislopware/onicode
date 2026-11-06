@@ -106,7 +106,7 @@ async fn only_agent_started_http_processes_are_exposed_and_removals_are_live() {
     .unwrap();
     let occupied = tokio::net::TcpListener::bind("127.0.0.1:7331").await.ok();
     service
-        .start(Arc::new(move || projects.lock().unwrap().clone()), None)
+        .start(Arc::new(move || projects.lock().unwrap().clone()))
         .await;
     wait(&service, Some(local.0.id())).await;
     // (7331 is taken either way: held here, or by another engine already.)
@@ -194,7 +194,7 @@ async fn a_discovered_server_is_probed_once_not_every_cycle() {
     )
     .unwrap();
     let roots = scope(&[(chat.as_str(), &app)]);
-    service.start(Arc::new(move || roots.clone()), None).await;
+    service.start(Arc::new(move || roots.clone())).await;
     wait(&service, Some(server.0.id())).await;
     // Several scan cycles (2s cadence) pass while the server stays discovered.
     tokio::time::sleep(Duration::from_secs(7)).await;
@@ -288,7 +288,7 @@ c.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK'
     )
     .unwrap();
     let roots = scope(&[(chat.as_str(), &app)]);
-    service.start(Arc::new(move || roots.clone()), None).await;
+    service.start(Arc::new(move || roots.clone())).await;
     wait(&service, Some(server.0.id())).await;
     // Discovery actually runs, including multiple cycles after the ordinary
     // development server is found. The callback must remain entirely untouched.
@@ -420,7 +420,7 @@ async fn backgrounded_scrubbed_terminal_and_out_of_tree_servers_stay_attributed(
     .unwrap();
     let mut roots = scope(&[(chat.as_str(), &app)]);
     roots.terminals.insert(terminal.clone(), chat.clone());
-    service.start(Arc::new(move || roots.clone()), None).await;
+    service.start(Arc::new(move || roots.clone())).await;
     let app = app.canonicalize().unwrap();
     let services = tokio::time::timeout(Duration::from_secs(12), async {
         loop {

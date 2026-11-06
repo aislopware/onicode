@@ -7,8 +7,8 @@ import Foundation
 // Depending on the consumer's build setup, the low-level FFI code
 // might be in a separate module, or it might be compiled inline into
 // this module. This is a bit of light hackery to work with both.
-#if canImport(zeron_coreFFI)
-import zeron_coreFFI
+#if canImport(onicode_coreFFI)
+import onicode_coreFFI
 #endif
 
 fileprivate extension RustBuffer {
@@ -25,13 +25,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_zeron_mobile_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_onicode_mobile_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_zeron_mobile_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_onicode_mobile_rustbuffer_free(self, $0) }
     }
 }
 
@@ -327,7 +327,7 @@ private func makeRustCall<T, E: Swift.Error>(
     _ callback: (UnsafeMutablePointer<RustCallStatus>) -> T,
     errorHandler: ((RustBuffer) throws -> E)?
 ) throws -> T {
-    uniffiEnsureZeronMobileInitialized()
+    uniffiEnsureOnicodeMobileInitialized()
     var callStatus = RustCallStatus.init()
     let returnedVal = callback(&callStatus)
     try uniffiCheckCallStatus(callStatus: callStatus, errorHandler: errorHandler)
@@ -737,13 +737,13 @@ open class CaptionFader: CaptionFaderProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_captionfader(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_captionfader(self.handle, $0) }
     }
 public convenience init(maxChars: UInt32) {
     let handle =
         try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_constructor_captionfader_new(
+    uniffi_onicode_mobile_fn_constructor_captionfader_new(
         FfiConverterUInt32.lower(maxChars),uniffiCallStatus
     )
 }
@@ -756,7 +756,7 @@ public convenience init(maxChars: UInt32) {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_captionfader(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_captionfader(handle, $0) }
     }
 
     
@@ -765,7 +765,7 @@ public convenience init(maxChars: UInt32) {
 open func frame(item: String?, text: String, reducedMotion: Bool) -> CaptionFrame  {
     return try!  FfiConverterTypeCaptionFrame_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_captionfader_frame(
+    uniffi_onicode_mobile_fn_method_captionfader_frame(
             self.uniffiCloneHandle(),
         FfiConverterOptionString.lower(item),
         FfiConverterString.lower(text),
@@ -874,7 +874,7 @@ open class ClientListenerImpl: ClientListener, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_clientlistener(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_clientlistener(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -884,7 +884,7 @@ open class ClientListenerImpl: ClientListener, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_clientlistener(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_clientlistener(handle, $0) }
     }
 
     
@@ -892,7 +892,7 @@ open class ClientListenerImpl: ClientListener, @unchecked Sendable {
     
 open func onEvent(event: ClientEvent)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_clientlistener_on_event(
+    uniffi_onicode_mobile_fn_method_clientlistener_on_event(
             self.uniffiCloneHandle(),
         FfiConverterTypeClientEvent_lower(event),uniffiCallStatus
     )
@@ -967,7 +967,7 @@ fileprivate struct UniffiCallbackInterfaceClientListener {
 }
 
 private func uniffiCallbackInitClientListener() {
-    uniffi_zeron_mobile_fn_init_callback_vtable_clientlistener(UniffiCallbackInterfaceClientListener.vtablePtr)
+    uniffi_onicode_mobile_fn_init_callback_vtable_clientlistener(UniffiCallbackInterfaceClientListener.vtablePtr)
 }
 
 #if swift(>=5.8)
@@ -1131,8 +1131,8 @@ public protocol CoreClientProtocol: AnyObject, Sendable {
     func movePin(chatId: String, after: String?, before: String?) throws 
     
     /**
-     * The OS network path changed (another interface or route): direct
-     * connections re-pair now; terminals ride the relay meanwhile.
+     * The OS network path changed (another interface or route): the links
+     * to the user's computers redial now.
      */
     func networkPathChanged() 
     
@@ -1265,10 +1265,10 @@ public protocol CoreClientProtocol: AnyObject, Sendable {
     func userId()  -> String
     
     /**
-     * Start pairing with the computer hosting `chat_id` (a terminal is
-     * about to open there), so it starts on the direct link.
+     * Dial the computer hosting `chat_id` (a terminal is about to open
+     * there), so its stream finds the link up.
      */
-    func warmDirect(chatId: String) 
+    func warmLink(chatId: String) 
     
     /**
      * The whole derived workspace.
@@ -1479,7 +1479,7 @@ open class CoreClient: CoreClientProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_coreclient(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_coreclient(self.handle, $0) }
     }
     /**
      * Build and start. Never blocks on the network: live mode hydrates from
@@ -1489,7 +1489,7 @@ public convenience init(config: CoreConfig, credentials: Credentials, listener: 
     let handle =
         try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_constructor_coreclient_new(
+    uniffi_onicode_mobile_fn_constructor_coreclient_new(
         FfiConverterTypeCoreConfig_lower(config),
         FfiConverterTypeCredentials_lower(credentials),
         FfiConverterTypeClientListener_lower(listener),uniffiCallStatus
@@ -1504,7 +1504,7 @@ public convenience init(config: CoreConfig, credentials: Credentials, listener: 
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_coreclient(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_coreclient(handle, $0) }
     }
 
     
@@ -1512,7 +1512,7 @@ public convenience init(config: CoreConfig, credentials: Credentials, listener: 
     
 open func archiveSession(chatId: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_archive_session(
+    uniffi_onicode_mobile_fn_method_coreclient_archive_session(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
@@ -1522,7 +1522,7 @@ open func archiveSession(chatId: String)throws   {try rustCallWithError(FfiConve
 open func archivedSessions() -> [SessionRow]  {
     return try!  FfiConverterSequenceTypeSessionRow.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_archived_sessions(
+    uniffi_onicode_mobile_fn_method_coreclient_archived_sessions(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -1533,7 +1533,7 @@ open func archivedSessions() -> [SessionRow]  {
      */
 open func assignSection(chatId: String, sectionId: String?)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_assign_section(
+    uniffi_onicode_mobile_fn_method_coreclient_assign_section(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),
         FfiConverterOptionString.lower(sectionId),uniffiCallStatus
@@ -1547,7 +1547,7 @@ open func assignSection(chatId: String, sectionId: String?)throws   {try rustCal
 open func childSessions(parentId: String) -> [SessionRow]  {
     return try!  FfiConverterSequenceTypeSessionRow.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_child_sessions(
+    uniffi_onicode_mobile_fn_method_coreclient_child_sessions(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(parentId),uniffiCallStatus
     )
@@ -1559,7 +1559,7 @@ open func childSessions(parentId: String) -> [SessionRow]  {
      */
 open func closeSession(chatId: String)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_close_session(
+    uniffi_onicode_mobile_fn_method_coreclient_close_session(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
@@ -1574,13 +1574,13 @@ open func cloudModels(harness: String)async  -> [ModelInfo]  {
     return
         try!  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_cloud_models(
+                uniffi_onicode_mobile_fn_method_coreclient_cloud_models(
                         self.uniffiCloneHandle(),FfiConverterString.lower(harness)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeModelInfo.lift,
             errorHandler: nil
             
@@ -1590,7 +1590,7 @@ open func cloudModels(harness: String)async  -> [ModelInfo]  {
 open func connectivity() -> Connectivity  {
     return try!  FfiConverterTypeConnectivity_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_connectivity(
+    uniffi_onicode_mobile_fn_method_coreclient_connectivity(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -1603,13 +1603,13 @@ open func createProject(deviceId: String, path: String, gitDetected: Bool)async 
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_create_project(
+                uniffi_onicode_mobile_fn_method_coreclient_create_project(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(path),FfiConverterBool.lower(gitDetected)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterString.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -1621,7 +1621,7 @@ open func createProject(deviceId: String, path: String, gitDetected: Bool)async 
 open func createSection(name: String)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_create_section(
+    uniffi_onicode_mobile_fn_method_coreclient_create_section(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(name),uniffiCallStatus
     )
@@ -1634,7 +1634,7 @@ open func createSection(name: String)throws  -> String  {
 open func createSession(newSession: NewSession)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_create_session(
+    uniffi_onicode_mobile_fn_method_coreclient_create_session(
             self.uniffiCloneHandle(),
         FfiConverterTypeNewSession_lower(newSession),uniffiCallStatus
     )
@@ -1648,13 +1648,13 @@ open func createWorktree(deviceId: String, spaceId: String, repoPath: String, ba
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_create_worktree(
+                uniffi_onicode_mobile_fn_method_coreclient_create_worktree(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(spaceId),FfiConverterString.lower(repoPath),FfiConverterString.lower(base)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterString.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -1662,7 +1662,7 @@ open func createWorktree(deviceId: String, spaceId: String, repoPath: String, ba
     
 open func deleteProject(spaceId: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_delete_project(
+    uniffi_onicode_mobile_fn_method_coreclient_delete_project(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(spaceId),uniffiCallStatus
     )
@@ -1671,7 +1671,7 @@ open func deleteProject(spaceId: String)throws   {try rustCallWithError(FfiConve
     
 open func deleteSection(sectionId: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_delete_section(
+    uniffi_onicode_mobile_fn_method_coreclient_delete_section(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(sectionId),uniffiCallStatus
     )
@@ -1680,7 +1680,7 @@ open func deleteSection(sectionId: String)throws   {try rustCallWithError(FfiCon
     
 open func deleteSession(chatId: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_delete_session(
+    uniffi_onicode_mobile_fn_method_coreclient_delete_session(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
@@ -1690,7 +1690,7 @@ open func deleteSession(chatId: String)throws   {try rustCallWithError(FfiConver
 open func deviceId() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_device_id(
+    uniffi_onicode_mobile_fn_method_coreclient_device_id(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -1699,7 +1699,7 @@ open func deviceId() -> String  {
 open func devices() -> [DeviceView]  {
     return try!  FfiConverterSequenceTypeDeviceView.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_devices(
+    uniffi_onicode_mobile_fn_method_coreclient_devices(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -1711,7 +1711,7 @@ open func devices() -> [DeviceView]  {
 open func executionDevices() -> [DeviceView]  {
     return try!  FfiConverterSequenceTypeDeviceView.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_execution_devices(
+    uniffi_onicode_mobile_fn_method_coreclient_execution_devices(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -1723,7 +1723,7 @@ open func executionDevices() -> [DeviceView]  {
 open func frontPage() -> FrontPage  {
     return try!  FfiConverterTypeFrontPage_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_front_page(
+    uniffi_onicode_mobile_fn_method_coreclient_front_page(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -1732,7 +1732,7 @@ open func frontPage() -> FrontPage  {
 open func isDemo() -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_is_demo(
+    uniffi_onicode_mobile_fn_method_coreclient_is_demo(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -1745,13 +1745,13 @@ open func listFolders(deviceId: String, path: String?)async throws  -> FolderLis
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_list_folders(
+                uniffi_onicode_mobile_fn_method_coreclient_list_folders(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterOptionString.lower(path)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeFolderListing_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -1765,13 +1765,13 @@ open func listHarnesses(deviceId: String)async  -> [HarnessInfo]  {
     return
         try!  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_list_harnesses(
+                uniffi_onicode_mobile_fn_method_coreclient_list_harnesses(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeHarnessInfo.lift,
             errorHandler: nil
             
@@ -1785,13 +1785,13 @@ open func listModels(deviceId: String, harness: String)async  -> [ModelInfo]  {
     return
         try!  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_list_models(
+                uniffi_onicode_mobile_fn_method_coreclient_list_models(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(harness)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeModelInfo.lift,
             errorHandler: nil
             
@@ -1802,13 +1802,13 @@ open func listRefs(deviceId: String, repoPath: String)async throws  -> [RepoRef]
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_list_refs(
+                uniffi_onicode_mobile_fn_method_coreclient_list_refs(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(repoPath)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeRepoRef.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -1816,7 +1816,7 @@ open func listRefs(deviceId: String, repoPath: String)async throws  -> [RepoRef]
     
 open func markSeen(chatId: String)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_mark_seen(
+    uniffi_onicode_mobile_fn_method_coreclient_mark_seen(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
@@ -1828,7 +1828,7 @@ open func markSeen(chatId: String)  {try! rustCall() {
      */
 open func movePin(chatId: String, after: String?, before: String?)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_move_pin(
+    uniffi_onicode_mobile_fn_method_coreclient_move_pin(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),
         FfiConverterOptionString.lower(after),
@@ -1838,12 +1838,12 @@ open func movePin(chatId: String, after: String?, before: String?)throws   {try 
 }
     
     /**
-     * The OS network path changed (another interface or route): direct
-     * connections re-pair now; terminals ride the relay meanwhile.
+     * The OS network path changed (another interface or route): the links
+     * to the user's computers redial now.
      */
 open func networkPathChanged()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_network_path_changed(
+    uniffi_onicode_mobile_fn_method_coreclient_network_path_changed(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -1854,7 +1854,7 @@ open func networkPathChanged()  {try! rustCall() {
      */
 open func onBackground()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_on_background(
+    uniffi_onicode_mobile_fn_method_coreclient_on_background(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -1865,7 +1865,7 @@ open func onBackground()  {try! rustCall() {
      */
 open func onForeground()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_on_foreground(
+    uniffi_onicode_mobile_fn_method_coreclient_on_foreground(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -1877,7 +1877,7 @@ open func onForeground()  {try! rustCall() {
 open func openSession(chatId: String)throws  -> SessionHandle  {
     return try  FfiConverterTypeSessionHandle_lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_open_session(
+    uniffi_onicode_mobile_fn_method_coreclient_open_session(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
@@ -1887,7 +1887,7 @@ open func openSession(chatId: String)throws  -> SessionHandle  {
 open func orgId() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_org_id(
+    uniffi_onicode_mobile_fn_method_coreclient_org_id(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -1895,7 +1895,7 @@ open func orgId() -> String  {
     
 open func pinSession(chatId: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_pin_session(
+    uniffi_onicode_mobile_fn_method_coreclient_pin_session(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
@@ -1907,7 +1907,7 @@ open func pinSession(chatId: String)throws   {try rustCallWithError(FfiConverter
      */
 open func pinSessionAt(chatId: String, after: String?, before: String?)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_pin_session_at(
+    uniffi_onicode_mobile_fn_method_coreclient_pin_session_at(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),
         FfiConverterOptionString.lower(after),
@@ -1922,7 +1922,7 @@ open func pinSessionAt(chatId: String, after: String?, before: String?)throws   
      */
 open func placeSession(chatId: String, sectionId: String?, after: String?, before: String?)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_place_session(
+    uniffi_onicode_mobile_fn_method_coreclient_place_session(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),
         FfiConverterOptionString.lower(sectionId),
@@ -1937,7 +1937,7 @@ open func placeSession(chatId: String, sectionId: String?, after: String?, befor
      */
 open func preloadSessions()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_preload_sessions(
+    uniffi_onicode_mobile_fn_method_coreclient_preload_sessions(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -1946,7 +1946,7 @@ open func preloadSessions()  {try! rustCall() {
 open func project(spaceId: String) -> ProjectView?  {
     return try!  FfiConverterOptionTypeProjectView.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_project(
+    uniffi_onicode_mobile_fn_method_coreclient_project(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(spaceId),uniffiCallStatus
     )
@@ -1959,7 +1959,7 @@ open func project(spaceId: String) -> ProjectView?  {
 open func projectlessSessions() -> [SessionRow]  {
     return try!  FfiConverterSequenceTypeSessionRow.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_projectless_sessions(
+    uniffi_onicode_mobile_fn_method_coreclient_projectless_sessions(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -1968,7 +1968,7 @@ open func projectlessSessions() -> [SessionRow]  {
 open func projects() -> [ProjectView]  {
     return try!  FfiConverterSequenceTypeProjectView.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_projects(
+    uniffi_onicode_mobile_fn_method_coreclient_projects(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -1977,7 +1977,7 @@ open func projects() -> [ProjectView]  {
 open func pullRequests() -> PullRequestGroups  {
     return try!  FfiConverterTypePullRequestGroups_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_pull_requests(
+    uniffi_onicode_mobile_fn_method_coreclient_pull_requests(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -1990,13 +1990,13 @@ open func readAttachment(deviceId: String, path: String)async throws  -> Data  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_read_attachment(
+                uniffi_onicode_mobile_fn_method_coreclient_read_attachment(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(path)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterData.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2010,13 +2010,13 @@ open func registerPushTarget(token: String, environment: String, prefs: PushPref
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_register_push_target(
+                uniffi_onicode_mobile_fn_method_coreclient_register_push_target(
                         self.uniffiCloneHandle(),FfiConverterString.lower(token),FfiConverterString.lower(environment),FfiConverterTypePushPrefs_lower(prefs)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_void,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_void,
-            freeFunc: ffi_zeron_mobile_rust_future_free_void,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_void,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_void,
+            freeFunc: ffi_onicode_mobile_rust_future_free_void,
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2024,7 +2024,7 @@ open func registerPushTarget(token: String, environment: String, prefs: PushPref
     
 open func renameProject(spaceId: String, name: String?)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_rename_project(
+    uniffi_onicode_mobile_fn_method_coreclient_rename_project(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(spaceId),
         FfiConverterOptionString.lower(name),uniffiCallStatus
@@ -2034,7 +2034,7 @@ open func renameProject(spaceId: String, name: String?)throws   {try rustCallWit
     
 open func renameSection(sectionId: String, name: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_rename_section(
+    uniffi_onicode_mobile_fn_method_coreclient_rename_section(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(sectionId),
         FfiConverterString.lower(name),uniffiCallStatus
@@ -2044,7 +2044,7 @@ open func renameSection(sectionId: String, name: String)throws   {try rustCallWi
     
 open func renameSession(chatId: String, title: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_rename_session(
+    uniffi_onicode_mobile_fn_method_coreclient_rename_session(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),
         FfiConverterString.lower(title),uniffiCallStatus
@@ -2055,7 +2055,7 @@ open func renameSession(chatId: String, title: String)throws   {try rustCallWith
 open func search(query: String, limit: UInt32) -> [SearchHit]  {
     return try!  FfiConverterSequenceTypeSearchHit.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_search(
+    uniffi_onicode_mobile_fn_method_coreclient_search(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(query),
         FfiConverterUInt32.lower(limit),uniffiCallStatus
@@ -2071,13 +2071,13 @@ open func searchFiles(deviceId: String, chatId: String?, spaceId: String?, query
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_search_files(
+                uniffi_onicode_mobile_fn_method_coreclient_search_files(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterOptionString.lower(chatId),FfiConverterOptionString.lower(spaceId),FfiConverterString.lower(query)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeFileMatch.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2089,7 +2089,7 @@ open func searchFiles(deviceId: String, chatId: String?, spaceId: String?, query
 open func session(chatId: String) -> SessionHandle?  {
     return try!  FfiConverterOptionTypeSessionHandle.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_session(
+    uniffi_onicode_mobile_fn_method_coreclient_session(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
@@ -2099,7 +2099,7 @@ open func session(chatId: String) -> SessionHandle?  {
 open func sessionConfig(chatId: String) -> ChatConfig?  {
     return try!  FfiConverterOptionTypeChatConfig.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_session_config(
+    uniffi_onicode_mobile_fn_method_coreclient_session_config(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
@@ -2112,7 +2112,7 @@ open func sessionConfig(chatId: String) -> ChatConfig?  {
 open func sessionRow(chatId: String) -> SessionRow?  {
     return try!  FfiConverterOptionTypeSessionRow.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_session_row(
+    uniffi_onicode_mobile_fn_method_coreclient_session_row(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
@@ -2124,7 +2124,7 @@ open func sessionRow(chatId: String) -> SessionRow?  {
      */
 open func setNetworkOnline(online: Bool)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_set_network_online(
+    uniffi_onicode_mobile_fn_method_coreclient_set_network_online(
             self.uniffiCloneHandle(),
         FfiConverterBool.lower(online),uniffiCallStatus
     )
@@ -2133,7 +2133,7 @@ open func setNetworkOnline(online: Bool)  {try! rustCall() {
     
 open func setSectionCollapsed(sectionId: String, collapsed: Bool)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_set_section_collapsed(
+    uniffi_onicode_mobile_fn_method_coreclient_set_section_collapsed(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(sectionId),
         FfiConverterBool.lower(collapsed),uniffiCallStatus
@@ -2143,7 +2143,7 @@ open func setSectionCollapsed(sectionId: String, collapsed: Bool)throws   {try r
     
 open func setSessionConfig(chatId: String, config: ChatConfig)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_set_session_config(
+    uniffi_onicode_mobile_fn_method_coreclient_set_session_config(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),
         FfiConverterTypeChatConfig_lower(config),uniffiCallStatus
@@ -2156,7 +2156,7 @@ open func setSessionConfig(chatId: String, config: ChatConfig)throws   {try rust
      */
 open func shutdown()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_shutdown(
+    uniffi_onicode_mobile_fn_method_coreclient_shutdown(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -2169,13 +2169,13 @@ open func switchRef(deviceId: String, repoPath: String, refName: String)async th
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_switch_ref(
+                uniffi_onicode_mobile_fn_method_coreclient_switch_ref(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(repoPath),FfiConverterString.lower(refName)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_void,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_void,
-            freeFunc: ffi_zeron_mobile_rust_future_free_void,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_void,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_void,
+            freeFunc: ffi_onicode_mobile_rust_future_free_void,
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2188,13 +2188,13 @@ open func switchSessionRef(chatId: String, reference: RepoRef)async throws   {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_switch_session_ref(
+                uniffi_onicode_mobile_fn_method_coreclient_switch_session_ref(
                         self.uniffiCloneHandle(),FfiConverterString.lower(chatId),FfiConverterTypeRepoRef_lower(reference)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_void,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_void,
-            freeFunc: ffi_zeron_mobile_rust_future_free_void,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_void,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_void,
+            freeFunc: ffi_onicode_mobile_rust_future_free_void,
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2202,7 +2202,7 @@ open func switchSessionRef(chatId: String, reference: RepoRef)async throws   {
     
 open func unarchiveSession(chatId: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_unarchive_session(
+    uniffi_onicode_mobile_fn_method_coreclient_unarchive_session(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
@@ -2211,7 +2211,7 @@ open func unarchiveSession(chatId: String)throws   {try rustCallWithError(FfiCon
     
 open func unpinSession(chatId: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_unpin_session(
+    uniffi_onicode_mobile_fn_method_coreclient_unpin_session(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
@@ -2225,13 +2225,13 @@ open func unregisterPushTarget()async throws   {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_unregister_push_target(
+                uniffi_onicode_mobile_fn_method_coreclient_unregister_push_target(
                         self.uniffiCloneHandle()
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_void,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_void,
-            freeFunc: ffi_zeron_mobile_rust_future_free_void,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_void,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_void,
+            freeFunc: ffi_onicode_mobile_rust_future_free_void,
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2242,7 +2242,7 @@ open func unregisterPushTarget()async throws   {
      */
 open func updateTokens(tokens: AuthTokens)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_update_tokens(
+    uniffi_onicode_mobile_fn_method_coreclient_update_tokens(
             self.uniffiCloneHandle(),
         FfiConverterTypeAuthTokens_lower(tokens),uniffiCallStatus
     )
@@ -2256,13 +2256,13 @@ open func uploadAttachment(deviceId: String, name: String, data: Data, progress:
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_upload_attachment(
+                uniffi_onicode_mobile_fn_method_coreclient_upload_attachment(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(name),FfiConverterData.lower(data),FfiConverterOptionTypeUploadProgress.lower(progress)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterString.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2271,19 +2271,19 @@ open func uploadAttachment(deviceId: String, name: String, data: Data, progress:
 open func userId() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_user_id(
+    uniffi_onicode_mobile_fn_method_coreclient_user_id(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
     
     /**
-     * Start pairing with the computer hosting `chat_id` (a terminal is
-     * about to open there), so it starts on the direct link.
+     * Dial the computer hosting `chat_id` (a terminal is about to open
+     * there), so its stream finds the link up.
      */
-open func warmDirect(chatId: String)  {try! rustCall() {
+open func warmLink(chatId: String)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_warm_direct(
+    uniffi_onicode_mobile_fn_method_coreclient_warm_link(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chatId),uniffiCallStatus
     )
@@ -2296,7 +2296,7 @@ open func warmDirect(chatId: String)  {try! rustCall() {
 open func workspace() -> WorkspaceSnapshot  {
     return try!  FfiConverterTypeWorkspaceSnapshot_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_workspace(
+    uniffi_onicode_mobile_fn_method_coreclient_workspace(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -2308,7 +2308,7 @@ open func workspace() -> WorkspaceSnapshot  {
 open func workspaceRevision() -> UInt64  {
     return try!  FfiConverterUInt64.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_workspace_revision(
+    uniffi_onicode_mobile_fn_method_coreclient_workspace_revision(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -2322,13 +2322,13 @@ open func billingCheckout(kind: String, plan: String?, packs: UInt32?)async thro
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_billing_checkout(
+                uniffi_onicode_mobile_fn_method_coreclient_billing_checkout(
                         self.uniffiCloneHandle(),FfiConverterString.lower(kind),FfiConverterOptionString.lower(plan),FfiConverterOptionUInt32.lower(packs)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterString.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2341,13 +2341,13 @@ open func billingPortal()async throws  -> String  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_billing_portal(
+                uniffi_onicode_mobile_fn_method_coreclient_billing_portal(
                         self.uniffiCloneHandle()
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterString.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2357,13 +2357,13 @@ open func billingStatus()async throws  -> BillingInfo  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_billing_status(
+                uniffi_onicode_mobile_fn_method_coreclient_billing_status(
                         self.uniffiCloneHandle()
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeBillingInfo_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2376,13 +2376,13 @@ open func cloudEnable()async throws  -> CloudInfo  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_cloud_enable(
+                uniffi_onicode_mobile_fn_method_coreclient_cloud_enable(
                         self.uniffiCloneHandle()
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeCloudInfo_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2396,13 +2396,13 @@ open func cloudSessionAction(chatId: String, wake: Bool)async throws  -> CloudSe
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_cloud_session_action(
+                uniffi_onicode_mobile_fn_method_coreclient_cloud_session_action(
                         self.uniffiCloneHandle(),FfiConverterString.lower(chatId),FfiConverterBool.lower(wake)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeCloudSessionInfo_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2412,13 +2412,13 @@ open func cloudSessions()async throws  -> [CloudSessionInfo]  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_cloud_sessions(
+                uniffi_onicode_mobile_fn_method_coreclient_cloud_sessions(
                         self.uniffiCloneHandle()
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeCloudSessionInfo.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2431,13 +2431,13 @@ open func cloudStatus()async throws  -> CloudInfo  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_cloud_status(
+                uniffi_onicode_mobile_fn_method_coreclient_cloud_status(
                         self.uniffiCloneHandle()
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeCloudInfo_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2450,13 +2450,13 @@ open func createCloudProject(repo: String)async throws  -> String  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_create_cloud_project(
+                uniffi_onicode_mobile_fn_method_coreclient_create_cloud_project(
                         self.uniffiCloneHandle(),FfiConverterString.lower(repo)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterString.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2470,13 +2470,13 @@ open func createCloudSession(spaceId: String, config: ChatConfig?, branch: Strin
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_create_cloud_session(
+                uniffi_onicode_mobile_fn_method_coreclient_create_cloud_session(
                         self.uniffiCloneHandle(),FfiConverterString.lower(spaceId),FfiConverterOptionTypeChatConfig.lower(config),FfiConverterOptionString.lower(branch),FfiConverterOptionString.lower(title)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterString.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2486,13 +2486,13 @@ open func githubBranches(repo: String)async throws  -> [String]  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_github_branches(
+                uniffi_onicode_mobile_fn_method_coreclient_github_branches(
                         self.uniffiCloneHandle(),FfiConverterString.lower(repo)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceString.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2502,13 +2502,13 @@ open func githubConnectPoll(flowId: String)async throws  -> GithubConnectInfo  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_github_connect_poll(
+                uniffi_onicode_mobile_fn_method_coreclient_github_connect_poll(
                         self.uniffiCloneHandle(),FfiConverterString.lower(flowId)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeGithubConnectInfo_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2518,13 +2518,13 @@ open func githubConnectStart()async throws  -> GithubDeviceFlowInfo  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_github_connect_start(
+                uniffi_onicode_mobile_fn_method_coreclient_github_connect_start(
                         self.uniffiCloneHandle()
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeGithubDeviceFlowInfo_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2537,13 +2537,13 @@ open func githubRepos(query: String?)async throws  -> [GithubRepoInfo]  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_github_repos(
+                uniffi_onicode_mobile_fn_method_coreclient_github_repos(
                         self.uniffiCloneHandle(),FfiConverterOptionString.lower(query)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeGithubRepoInfo.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2554,7 +2554,7 @@ open func githubRepos(query: String?)async throws  -> [GithubRepoInfo]  {
      */
 open func providerLoginCancel(loginId: String)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_provider_login_cancel(
+    uniffi_onicode_mobile_fn_method_coreclient_provider_login_cancel(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(loginId),uniffiCallStatus
     )
@@ -2568,13 +2568,13 @@ open func providerLoginFinish(loginId: String)async throws   {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_provider_login_finish(
+                uniffi_onicode_mobile_fn_method_coreclient_provider_login_finish(
                         self.uniffiCloneHandle(),FfiConverterString.lower(loginId)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_void,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_void,
-            freeFunc: ffi_zeron_mobile_rust_future_free_void,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_void,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_void,
+            freeFunc: ffi_onicode_mobile_rust_future_free_void,
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2588,13 +2588,13 @@ open func providerLoginStart(provider: String, doneUrl: String)async throws  -> 
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_provider_login_start(
+                uniffi_onicode_mobile_fn_method_coreclient_provider_login_start(
                         self.uniffiCloneHandle(),FfiConverterString.lower(provider),FfiConverterString.lower(doneUrl)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeProviderLoginInfo_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2607,13 +2607,13 @@ open func vaultAccounts(provider: String)async throws  -> [CloudAccountInfo]  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_vault_accounts(
+                uniffi_onicode_mobile_fn_method_coreclient_vault_accounts(
                         self.uniffiCloneHandle(),FfiConverterString.lower(provider)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeCloudAccountInfo.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2626,13 +2626,13 @@ open func vaultActivate(provider: String, slot: String)async throws  -> [CloudAc
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_vault_activate(
+                uniffi_onicode_mobile_fn_method_coreclient_vault_activate(
                         self.uniffiCloneHandle(),FfiConverterString.lower(provider),FfiConverterString.lower(slot)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeCloudAccountInfo.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2642,13 +2642,13 @@ open func vaultForget(provider: String, slot: String)async throws  -> [CloudAcco
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_vault_forget(
+                uniffi_onicode_mobile_fn_method_coreclient_vault_forget(
                         self.uniffiCloneHandle(),FfiConverterString.lower(provider),FfiConverterString.lower(slot)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeCloudAccountInfo.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2661,13 +2661,13 @@ open func vaultPutApiKey(provider: String, key: String)async throws   {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_vault_put_api_key(
+                uniffi_onicode_mobile_fn_method_coreclient_vault_put_api_key(
                         self.uniffiCloneHandle(),FfiConverterString.lower(provider),FfiConverterString.lower(key)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_void,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_void,
-            freeFunc: ffi_zeron_mobile_rust_future_free_void,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_void,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_void,
+            freeFunc: ffi_onicode_mobile_rust_future_free_void,
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2677,13 +2677,13 @@ open func vaultStatus()async throws  -> VaultInfo  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_vault_status(
+                uniffi_onicode_mobile_fn_method_coreclient_vault_status(
                         self.uniffiCloneHandle()
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeVaultInfo_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2696,13 +2696,13 @@ open func vaultUsage(provider: String, slot: String)async throws  -> CloudUsageI
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_vault_usage(
+                uniffi_onicode_mobile_fn_method_coreclient_vault_usage(
                         self.uniffiCloneHandle(),FfiConverterString.lower(provider),FfiConverterString.lower(slot)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeCloudUsageInfo_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2715,7 +2715,7 @@ open func vaultUsage(provider: String, slot: String)async throws  -> CloudUsageI
 open func createSideChat(parentId: String)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_create_side_chat(
+    uniffi_onicode_mobile_fn_method_coreclient_create_side_chat(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(parentId),uniffiCallStatus
     )
@@ -2730,13 +2730,13 @@ open func forkSideChat(sourceId: String)async throws  -> String  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_fork_side_chat(
+                uniffi_onicode_mobile_fn_method_coreclient_fork_side_chat(
                         self.uniffiCloneHandle(),FfiConverterString.lower(sourceId)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterString.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2749,13 +2749,13 @@ open func deviceActivateAccount(deviceId: String, harness: String, accountId: St
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_device_activate_account(
+                uniffi_onicode_mobile_fn_method_coreclient_device_activate_account(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(harness),FfiConverterString.lower(accountId)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeDeviceAccountInfo.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2768,13 +2768,13 @@ open func deviceAgentAccounts(deviceId: String)async throws  -> [DeviceAccountIn
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_device_agent_accounts(
+                uniffi_onicode_mobile_fn_method_coreclient_device_agent_accounts(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeDeviceAccountInfo.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2787,13 +2787,13 @@ open func deviceForgetAccount(deviceId: String, harness: String, accountId: Stri
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_device_forget_account(
+                uniffi_onicode_mobile_fn_method_coreclient_device_forget_account(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(harness),FfiConverterString.lower(accountId)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeDeviceAccountInfo.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2801,7 +2801,7 @@ open func deviceForgetAccount(deviceId: String, harness: String, accountId: Stri
     
 open func deviceLoginCancel(deviceId: String, loginId: String)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_device_login_cancel(
+    uniffi_onicode_mobile_fn_method_coreclient_device_login_cancel(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(deviceId),
         FfiConverterString.lower(loginId),uniffiCallStatus
@@ -2816,13 +2816,13 @@ open func deviceLoginComplete(deviceId: String, loginId: String, code: String)as
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_device_login_complete(
+                uniffi_onicode_mobile_fn_method_coreclient_device_login_complete(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(loginId),FfiConverterString.lower(code)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeDeviceAccountInfo.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2832,13 +2832,13 @@ open func deviceLoginPoll(deviceId: String, loginId: String, doneUrl: String)asy
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_device_login_poll(
+                uniffi_onicode_mobile_fn_method_coreclient_device_login_poll(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(loginId),FfiConverterString.lower(doneUrl)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeDeviceLoginPollInfo_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2852,13 +2852,13 @@ open func deviceLoginStart(deviceId: String, harness: String, provider: String?,
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_device_login_start(
+                uniffi_onicode_mobile_fn_method_coreclient_device_login_start(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(harness),FfiConverterOptionString.lower(provider),FfiConverterString.lower(doneUrl)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeDeviceLoginInfo_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2871,13 +2871,13 @@ open func setHarnessEnabled(deviceId: String, harness: String, enabled: Bool)asy
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_set_harness_enabled(
+                uniffi_onicode_mobile_fn_method_coreclient_set_harness_enabled(
                         self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterString.lower(harness),FfiConverterBool.lower(enabled)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeHarnessInfo.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -2890,7 +2890,7 @@ open func setHarnessEnabled(deviceId: String, harness: String, enabled: Bool)asy
 open func startVoice(hostDeviceId: String, voice: String?, media: VoiceMediaListener, listener: VoiceSessionListener) -> VoiceCall  {
     return try!  FfiConverterTypeVoiceCall_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_start_voice(
+    uniffi_onicode_mobile_fn_method_coreclient_start_voice(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(hostDeviceId),
         FfiConverterOptionString.lower(voice),
@@ -2907,7 +2907,7 @@ open func startVoice(hostDeviceId: String, voice: String?, media: VoiceMediaList
 open func attachTerminal(terminal: TerminalRef, cols: UInt16, rows: UInt16, listener: TerminalListener) -> TerminalSession  {
     return try!  FfiConverterTypeTerminalSession_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_coreclient_attach_terminal(
+    uniffi_onicode_mobile_fn_method_coreclient_attach_terminal(
             self.uniffiCloneHandle(),
         FfiConverterTypeTerminalRef_lower(terminal),
         FfiConverterUInt16.lower(cols),
@@ -2924,13 +2924,13 @@ open func openTerminal(chatId: String, cols: UInt16, rows: UInt16, listener: Ter
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_coreclient_open_terminal(
+                uniffi_onicode_mobile_fn_method_coreclient_open_terminal(
                         self.uniffiCloneHandle(),FfiConverterString.lower(chatId),FfiConverterUInt16.lower(cols),FfiConverterUInt16.lower(rows),FfiConverterTypeTerminalListener_lower(listener)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_u64,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_u64,
-            freeFunc: ffi_zeron_mobile_rust_future_free_u64,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_u64,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_u64,
+            freeFunc: ffi_onicode_mobile_rust_future_free_u64,
             liftFunc: FfiConverterTypeTerminalSession_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -3077,7 +3077,7 @@ open class LayoutFrame: LayoutFrameProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_layoutframe(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_layoutframe(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -3087,7 +3087,7 @@ open class LayoutFrame: LayoutFrameProtocol, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_layoutframe(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_layoutframe(handle, $0) }
     }
 
     
@@ -3096,7 +3096,7 @@ open class LayoutFrame: LayoutFrameProtocol, @unchecked Sendable {
 open func buildMicros() -> UInt64  {
     return try!  FfiConverterUInt64.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_build_micros(
+    uniffi_onicode_mobile_fn_method_layoutframe_build_micros(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -3105,7 +3105,7 @@ open func buildMicros() -> UInt64  {
 open func display(index: UInt32) -> RowDisplay?  {
     return try!  FfiConverterOptionTypeRowDisplay.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_display(
+    uniffi_onicode_mobile_fn_method_layoutframe_display(
             self.uniffiCloneHandle(),
         FfiConverterUInt32.lower(index),uniffiCallStatus
     )
@@ -3118,7 +3118,7 @@ open func display(index: UInt32) -> RowDisplay?  {
 open func indexAt(y: Float) -> UInt32?  {
     return try!  FfiConverterOptionUInt32.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_index_at(
+    uniffi_onicode_mobile_fn_method_layoutframe_index_at(
             self.uniffiCloneHandle(),
         FfiConverterFloat.lower(y),uniffiCallStatus
     )
@@ -3128,7 +3128,7 @@ open func indexAt(y: Float) -> UInt32?  {
 open func indexOf(key: UInt64) -> UInt32?  {
     return try!  FfiConverterOptionUInt32.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_index_of(
+    uniffi_onicode_mobile_fn_method_layoutframe_index_of(
             self.uniffiCloneHandle(),
         FfiConverterUInt64.lower(key),uniffiCallStatus
     )
@@ -3141,7 +3141,7 @@ open func indexOf(key: UInt64) -> UInt32?  {
 open func messageText(index: UInt32) -> String?  {
     return try!  FfiConverterOptionString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_message_text(
+    uniffi_onicode_mobile_fn_method_layoutframe_message_text(
             self.uniffiCloneHandle(),
         FfiConverterUInt32.lower(index),uniffiCallStatus
     )
@@ -3151,7 +3151,7 @@ open func messageText(index: UInt32) -> String?  {
 open func placement(index: UInt32) -> RowPlacement?  {
     return try!  FfiConverterOptionTypeRowPlacement.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_placement(
+    uniffi_onicode_mobile_fn_method_layoutframe_placement(
             self.uniffiCloneHandle(),
         FfiConverterUInt32.lower(index),uniffiCallStatus
     )
@@ -3164,7 +3164,7 @@ open func placement(index: UInt32) -> RowPlacement?  {
 open func plainText() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_plain_text(
+    uniffi_onicode_mobile_fn_method_layoutframe_plain_text(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -3176,7 +3176,7 @@ open func plainText() -> String  {
 open func preparedHeapBytes() -> UInt64  {
     return try!  FfiConverterUInt64.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_prepared_heap_bytes(
+    uniffi_onicode_mobile_fn_method_layoutframe_prepared_heap_bytes(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -3185,7 +3185,7 @@ open func preparedHeapBytes() -> UInt64  {
 open func revision() -> UInt64  {
     return try!  FfiConverterUInt64.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_revision(
+    uniffi_onicode_mobile_fn_method_layoutframe_revision(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -3194,7 +3194,7 @@ open func revision() -> UInt64  {
 open func rowCount() -> UInt32  {
     return try!  FfiConverterUInt32.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_row_count(
+    uniffi_onicode_mobile_fn_method_layoutframe_row_count(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -3206,7 +3206,7 @@ open func rowCount() -> UInt32  {
 open func rowsIn(y0: Float, y1: Float) -> [RowPlacement]  {
     return try!  FfiConverterSequenceTypeRowPlacement.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_rows_in(
+    uniffi_onicode_mobile_fn_method_layoutframe_rows_in(
             self.uniffiCloneHandle(),
         FfiConverterFloat.lower(y0),
         FfiConverterFloat.lower(y1),uniffiCallStatus
@@ -3217,7 +3217,7 @@ open func rowsIn(y0: Float, y1: Float) -> [RowPlacement]  {
 open func styleCount() -> UInt32  {
     return try!  FfiConverterUInt32.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_style_count(
+    uniffi_onicode_mobile_fn_method_layoutframe_style_count(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -3226,7 +3226,7 @@ open func styleCount() -> UInt32  {
 open func styles() -> [StyleDesc]  {
     return try!  FfiConverterSequenceTypeStyleDesc.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_styles(
+    uniffi_onicode_mobile_fn_method_layoutframe_styles(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -3235,7 +3235,7 @@ open func styles() -> [StyleDesc]  {
 open func totalHeight() -> Float  {
     return try!  FfiConverterFloat.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_total_height(
+    uniffi_onicode_mobile_fn_method_layoutframe_total_height(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -3244,7 +3244,7 @@ open func totalHeight() -> Float  {
 open func width() -> Float  {
     return try!  FfiConverterFloat.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutframe_width(
+    uniffi_onicode_mobile_fn_method_layoutframe_width(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -3348,7 +3348,7 @@ open class LayoutListenerImpl: LayoutListener, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_layoutlistener(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_layoutlistener(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -3358,7 +3358,7 @@ open class LayoutListenerImpl: LayoutListener, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_layoutlistener(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_layoutlistener(handle, $0) }
     }
 
     
@@ -3366,7 +3366,7 @@ open class LayoutListenerImpl: LayoutListener, @unchecked Sendable {
     
 open func frameReady(revision: UInt64)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_layoutlistener_frame_ready(
+    uniffi_onicode_mobile_fn_method_layoutlistener_frame_ready(
             self.uniffiCloneHandle(),
         FfiConverterUInt64.lower(revision),uniffiCallStatus
     )
@@ -3441,7 +3441,7 @@ fileprivate struct UniffiCallbackInterfaceLayoutListener {
 }
 
 private func uniffiCallbackInitLayoutListener() {
-    uniffi_zeron_mobile_fn_init_callback_vtable_layoutlistener(UniffiCallbackInterfaceLayoutListener.vtablePtr)
+    uniffi_onicode_mobile_fn_init_callback_vtable_layoutlistener(UniffiCallbackInterfaceLayoutListener.vtablePtr)
 }
 
 #if swift(>=5.8)
@@ -3565,7 +3565,7 @@ open class OrbRenderer: OrbRendererProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_orbrenderer(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_orbrenderer(self.handle, $0) }
     }
     /**
      * Crossfades state changes over 300 ms, like the desktop voice orbs.
@@ -3574,7 +3574,7 @@ public convenience init(preset: OrbPreset, orb: VoiceOrb) {
     let handle =
         try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_constructor_orbrenderer_new(
+    uniffi_onicode_mobile_fn_constructor_orbrenderer_new(
         FfiConverterTypeOrbPreset_lower(preset),
         FfiConverterTypeVoiceOrb_lower(orb),uniffiCallStatus
     )
@@ -3588,7 +3588,7 @@ public convenience init(preset: OrbPreset, orb: VoiceOrb) {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_orbrenderer(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_orbrenderer(handle, $0) }
     }
 
     
@@ -3601,7 +3601,7 @@ public convenience init(preset: OrbPreset, orb: VoiceOrb) {
 open func nextFrame(animating: Bool, reducedMotion: Bool) -> OrbFrame  {
     return try!  FfiConverterTypeOrbFrame_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_orbrenderer_next_frame(
+    uniffi_onicode_mobile_fn_method_orbrenderer_next_frame(
             self.uniffiCloneHandle(),
         FfiConverterBool.lower(animating),
         FfiConverterBool.lower(reducedMotion),uniffiCallStatus
@@ -3614,7 +3614,7 @@ open func nextFrame(animating: Bool, reducedMotion: Bool) -> OrbFrame  {
      */
 open func setAudioLevels(microphone: Float, speaker: Float)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_orbrenderer_set_audio_levels(
+    uniffi_onicode_mobile_fn_method_orbrenderer_set_audio_levels(
             self.uniffiCloneHandle(),
         FfiConverterFloat.lower(microphone),
         FfiConverterFloat.lower(speaker),uniffiCallStatus
@@ -3624,7 +3624,7 @@ open func setAudioLevels(microphone: Float, speaker: Float)  {try! rustCall() {
     
 open func setOrb(orb: VoiceOrb)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_orbrenderer_set_orb(
+    uniffi_onicode_mobile_fn_method_orbrenderer_set_orb(
             self.uniffiCloneHandle(),
         FfiConverterTypeVoiceOrb_lower(orb),uniffiCallStatus
     )
@@ -3741,7 +3741,7 @@ open class PlatformMeasurerImpl: PlatformMeasurer, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_platformmeasurer(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_platformmeasurer(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -3751,7 +3751,7 @@ open class PlatformMeasurerImpl: PlatformMeasurer, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_platformmeasurer(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_platformmeasurer(handle, $0) }
     }
 
     
@@ -3760,7 +3760,7 @@ open class PlatformMeasurerImpl: PlatformMeasurer, @unchecked Sendable {
 open func measure(face: FaceRole, size: Float, ligatures: Bool, text: String) -> Float  {
     return try!  FfiConverterFloat.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_platformmeasurer_measure(
+    uniffi_onicode_mobile_fn_method_platformmeasurer_measure(
             self.uniffiCloneHandle(),
         FfiConverterTypeFaceRole_lower(face),
         FfiConverterFloat.lower(size),
@@ -3779,7 +3779,7 @@ open func measure(face: FaceRole, size: Float, ligatures: Bool, text: String) ->
 open func measureRun(face: FaceRole, size: Float, ligatures: Bool, text: String) -> [Float]  {
     return try!  FfiConverterSequenceFloat.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_platformmeasurer_measure_run(
+    uniffi_onicode_mobile_fn_method_platformmeasurer_measure_run(
             self.uniffiCloneHandle(),
         FfiConverterTypeFaceRole_lower(face),
         FfiConverterFloat.lower(size),
@@ -3893,7 +3893,7 @@ fileprivate struct UniffiCallbackInterfacePlatformMeasurer {
 }
 
 private func uniffiCallbackInitPlatformMeasurer() {
-    uniffi_zeron_mobile_fn_init_callback_vtable_platformmeasurer(UniffiCallbackInterfacePlatformMeasurer.vtablePtr)
+    uniffi_onicode_mobile_fn_init_callback_vtable_platformmeasurer(UniffiCallbackInterfacePlatformMeasurer.vtablePtr)
 }
 
 #if swift(>=5.8)
@@ -4082,7 +4082,7 @@ open class SessionHandle: SessionHandleProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_sessionhandle(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_sessionhandle(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -4092,7 +4092,7 @@ open class SessionHandle: SessionHandleProtocol, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_sessionhandle(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_sessionhandle(handle, $0) }
     }
 
     
@@ -4105,7 +4105,7 @@ open class SessionHandle: SessionHandleProtocol, @unchecked Sendable {
 open func subagents() -> [SubagentRow]  {
     return try!  FfiConverterSequenceTypeSubagentRow.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_subagents(
+    uniffi_onicode_mobile_fn_method_sessionhandle_subagents(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -4115,13 +4115,13 @@ open func beginQueuedEdit(id: String, instanceId: String)async  -> QueueEditStar
     return
         try!  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_sessionhandle_begin_queued_edit(
+                uniffi_onicode_mobile_fn_method_sessionhandle_begin_queued_edit(
                         self.uniffiCloneHandle(),FfiConverterString.lower(id),FfiConverterString.lower(instanceId)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeQueueEditStart_lift,
             errorHandler: nil
             
@@ -4131,7 +4131,7 @@ open func beginQueuedEdit(id: String, instanceId: String)async  -> QueueEditStar
 open func chatId() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_chat_id(
+    uniffi_onicode_mobile_fn_method_sessionhandle_chat_id(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -4139,7 +4139,7 @@ open func chatId() -> String  {
     
 open func clearQueueError()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_clear_queue_error(
+    uniffi_onicode_mobile_fn_method_sessionhandle_clear_queue_error(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -4151,7 +4151,7 @@ open func clearQueueError()  {try! rustCall() {
 open func composer() -> ComposerState  {
     return try!  FfiConverterTypeComposerState_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_composer(
+    uniffi_onicode_mobile_fn_method_sessionhandle_composer(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -4165,13 +4165,13 @@ open func deliverQueuedNow(id: String)async throws  -> Bool  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_sessionhandle_deliver_queued_now(
+                uniffi_onicode_mobile_fn_method_sessionhandle_deliver_queued_now(
                         self.uniffiCloneHandle(),FfiConverterString.lower(id)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_i8,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_i8,
-            freeFunc: ffi_zeron_mobile_rust_future_free_i8,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_i8,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_i8,
+            freeFunc: ffi_onicode_mobile_rust_future_free_i8,
             liftFunc: FfiConverterBool.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -4183,7 +4183,7 @@ open func deliverQueuedNow(id: String)async throws  -> Bool  {
 open func enqueue(text: String, attachments: [String], holdForTurnEnd: Bool)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_enqueue(
+    uniffi_onicode_mobile_fn_method_sessionhandle_enqueue(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(text),
         FfiConverterSequenceString.lower(attachments),
@@ -4196,13 +4196,13 @@ open func finishQueuedEdit(lease: QueueEditLease, action: QueueEditAction, text:
     return
         try!  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_sessionhandle_finish_queued_edit(
+                uniffi_onicode_mobile_fn_method_sessionhandle_finish_queued_edit(
                         self.uniffiCloneHandle(),FfiConverterTypeQueueEditLease_lower(lease),FfiConverterTypeQueueEditAction_lower(action),FfiConverterOptionString.lower(text)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeQueueEditFinish_lift,
             errorHandler: nil
             
@@ -4211,7 +4211,7 @@ open func finishQueuedEdit(lease: QueueEditLease, action: QueueEditAction, text:
     
 open func interrupt()throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_interrupt(
+    uniffi_onicode_mobile_fn_method_sessionhandle_interrupt(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -4219,7 +4219,7 @@ open func interrupt()throws   {try rustCallWithError(FfiConverterTypeCoreError_l
     
 open func markSeen()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_mark_seen(
+    uniffi_onicode_mobile_fn_method_sessionhandle_mark_seen(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -4231,7 +4231,7 @@ open func markSeen()  {try! rustCall() {
 open func messageText(entryId: String) -> String?  {
     return try!  FfiConverterOptionString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_message_text(
+    uniffi_onicode_mobile_fn_method_sessionhandle_message_text(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(entryId),uniffiCallStatus
     )
@@ -4244,7 +4244,7 @@ open func messageText(entryId: String) -> String?  {
 open func moveQueued(id: String, to: UInt32)throws  -> Bool  {
     return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_move_queued(
+    uniffi_onicode_mobile_fn_method_sessionhandle_move_queued(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(id),
         FfiConverterUInt32.lower(to),uniffiCallStatus
@@ -4258,7 +4258,7 @@ open func moveQueued(id: String, to: UInt32)throws  -> Bool  {
 open func moveQueuedBy(id: String, delta: Int32)throws  -> Bool  {
     return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_move_queued_by(
+    uniffi_onicode_mobile_fn_method_sessionhandle_move_queued_by(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(id),
         FfiConverterInt32.lower(delta),uniffiCallStatus
@@ -4273,13 +4273,13 @@ open func removeQueued(id: String)async throws  -> Bool  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_sessionhandle_remove_queued(
+                uniffi_onicode_mobile_fn_method_sessionhandle_remove_queued(
                         self.uniffiCloneHandle(),FfiConverterString.lower(id)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_i8,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_i8,
-            freeFunc: ffi_zeron_mobile_rust_future_free_i8,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_i8,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_i8,
+            freeFunc: ffi_onicode_mobile_rust_future_free_i8,
             liftFunc: FfiConverterBool.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -4289,13 +4289,13 @@ open func renewQueuedEdit(lease: QueueEditLease)async  -> Bool  {
     return
         try!  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_sessionhandle_renew_queued_edit(
+                uniffi_onicode_mobile_fn_method_sessionhandle_renew_queued_edit(
                         self.uniffiCloneHandle(),FfiConverterTypeQueueEditLease_lower(lease)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_i8,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_i8,
-            freeFunc: ffi_zeron_mobile_rust_future_free_i8,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_i8,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_i8,
+            freeFunc: ffi_onicode_mobile_rust_future_free_i8,
             liftFunc: FfiConverterBool.lift,
             errorHandler: nil
             
@@ -4304,7 +4304,7 @@ open func renewQueuedEdit(lease: QueueEditLease)async  -> Bool  {
     
 open func respondInput(requestId: String, answers: [UserInputAnswer])throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_respond_input(
+    uniffi_onicode_mobile_fn_method_sessionhandle_respond_input(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(requestId),
         FfiConverterSequenceTypeUserInputAnswer.lower(answers),uniffiCallStatus
@@ -4317,7 +4317,7 @@ open func respondInput(requestId: String, answers: [UserInputAnswer])throws   {t
      */
 open func retryDelivery()throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_retry_delivery(
+    uniffi_onicode_mobile_fn_method_sessionhandle_retry_delivery(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -4329,7 +4329,7 @@ open func retryDelivery()throws   {try rustCallWithError(FfiConverterTypeCoreErr
 open func send(request: SendRequest)throws  -> SendOutcome  {
     return try  FfiConverterTypeSendOutcome_lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_send(
+    uniffi_onicode_mobile_fn_method_sessionhandle_send(
             self.uniffiCloneHandle(),
         FfiConverterTypeSendRequest_lower(request),uniffiCallStatus
     )
@@ -4343,13 +4343,13 @@ open func sendQueuedNow(id: String)async throws  -> Bool  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_method_sessionhandle_send_queued_now(
+                uniffi_onicode_mobile_fn_method_sessionhandle_send_queued_now(
                         self.uniffiCloneHandle(),FfiConverterString.lower(id)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_i8,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_i8,
-            freeFunc: ffi_zeron_mobile_rust_future_free_i8,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_i8,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_i8,
+            freeFunc: ffi_onicode_mobile_rust_future_free_i8,
             liftFunc: FfiConverterBool.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -4360,7 +4360,7 @@ open func sendQueuedNow(id: String)async throws  -> Bool  {
      */
 open func setViewAttached(attached: Bool)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_set_view_attached(
+    uniffi_onicode_mobile_fn_method_sessionhandle_set_view_attached(
             self.uniffiCloneHandle(),
         FfiConverterBool.lower(attached),uniffiCallStatus
     )
@@ -4370,7 +4370,7 @@ open func setViewAttached(attached: Bool)  {try! rustCall() {
 open func transcriptStatus() -> TranscriptStatus  {
     return try!  FfiConverterTypeTranscriptStatus_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_sessionhandle_transcript_status(
+    uniffi_onicode_mobile_fn_method_sessionhandle_transcript_status(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -4481,7 +4481,7 @@ open class TerminalListenerImpl: TerminalListener, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_terminallistener(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_terminallistener(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -4491,7 +4491,7 @@ open class TerminalListenerImpl: TerminalListener, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_terminallistener(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_terminallistener(handle, $0) }
     }
 
     
@@ -4499,7 +4499,7 @@ open class TerminalListenerImpl: TerminalListener, @unchecked Sendable {
     
 open func changed()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminallistener_changed(
+    uniffi_onicode_mobile_fn_method_terminallistener_changed(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -4510,7 +4510,7 @@ open func changed()  {try! rustCall() {
      */
 open func bell()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminallistener_bell(
+    uniffi_onicode_mobile_fn_method_terminallistener_bell(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -4604,7 +4604,7 @@ fileprivate struct UniffiCallbackInterfaceTerminalListener {
 }
 
 private func uniffiCallbackInitTerminalListener() {
-    uniffi_zeron_mobile_fn_init_callback_vtable_terminallistener(UniffiCallbackInterfaceTerminalListener.vtablePtr)
+    uniffi_onicode_mobile_fn_init_callback_vtable_terminallistener(UniffiCallbackInterfaceTerminalListener.vtablePtr)
 }
 
 #if swift(>=5.8)
@@ -4692,11 +4692,6 @@ public protocol TerminalSessionProtocol: AnyObject, Sendable {
     func frame()  -> TerminalFrame
     
     func info()  -> TerminalRef
-    
-    /**
-     * Riding a direct link to the host right now.
-     */
-    func isDirect()  -> Bool
     
     func paste(text: String) 
     
@@ -4796,7 +4791,7 @@ open class TerminalSession: TerminalSessionProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_terminalsession(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_terminalsession(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -4806,7 +4801,7 @@ open class TerminalSession: TerminalSessionProtocol, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_terminalsession(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_terminalsession(handle, $0) }
     }
 
     
@@ -4814,7 +4809,7 @@ open class TerminalSession: TerminalSessionProtocol, @unchecked Sendable {
     
 open func clearSelection()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_clear_selection(
+    uniffi_onicode_mobile_fn_method_terminalsession_clear_selection(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -4827,7 +4822,7 @@ open func clearSelection()  {try! rustCall() {
 open func click(row: UInt16, col: UInt16) -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_click(
+    uniffi_onicode_mobile_fn_method_terminalsession_click(
             self.uniffiCloneHandle(),
         FfiConverterUInt16.lower(row),
         FfiConverterUInt16.lower(col),uniffiCallStatus
@@ -4840,7 +4835,7 @@ open func click(row: UInt16, col: UInt16) -> Bool  {
      */
 open func close()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_close(
+    uniffi_onicode_mobile_fn_method_terminalsession_close(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -4851,7 +4846,7 @@ open func close()  {try! rustCall() {
      */
 open func detach()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_detach(
+    uniffi_onicode_mobile_fn_method_terminalsession_detach(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -4859,7 +4854,7 @@ open func detach()  {try! rustCall() {
     
 open func extendSelection(row: UInt16, col: UInt16)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_extend_selection(
+    uniffi_onicode_mobile_fn_method_terminalsession_extend_selection(
             self.uniffiCloneHandle(),
         FfiConverterUInt16.lower(row),
         FfiConverterUInt16.lower(col),uniffiCallStatus
@@ -4870,7 +4865,7 @@ open func extendSelection(row: UInt16, col: UInt16)  {try! rustCall() {
 open func frame() -> TerminalFrame  {
     return try!  FfiConverterTypeTerminalFrame_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_frame(
+    uniffi_onicode_mobile_fn_method_terminalsession_frame(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -4879,19 +4874,7 @@ open func frame() -> TerminalFrame  {
 open func info() -> TerminalRef  {
     return try!  FfiConverterTypeTerminalRef_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_info(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-    
-    /**
-     * Riding a direct link to the host right now.
-     */
-open func isDirect() -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_is_direct(
+    uniffi_onicode_mobile_fn_method_terminalsession_info(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -4899,7 +4882,7 @@ open func isDirect() -> Bool  {
     
 open func paste(text: String)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_paste(
+    uniffi_onicode_mobile_fn_method_terminalsession_paste(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(text),uniffiCallStatus
     )
@@ -4909,7 +4892,7 @@ open func paste(text: String)  {try! rustCall() {
 open func phase() -> TerminalPhase  {
     return try!  FfiConverterTypeTerminalPhase_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_phase(
+    uniffi_onicode_mobile_fn_method_terminalsession_phase(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -4917,7 +4900,7 @@ open func phase() -> TerminalPhase  {
     
 open func press(key: TerminalKey, modifiers: KeyModifiers)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_press(
+    uniffi_onicode_mobile_fn_method_terminalsession_press(
             self.uniffiCloneHandle(),
         FfiConverterTypeTerminalKey_lower(key),
         FfiConverterTypeKeyModifiers_lower(modifiers),uniffiCallStatus
@@ -4931,7 +4914,7 @@ open func press(key: TerminalKey, modifiers: KeyModifiers)  {try! rustCall() {
      */
 open func resize(cols: UInt16, rows: UInt16)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_resize(
+    uniffi_onicode_mobile_fn_method_terminalsession_resize(
             self.uniffiCloneHandle(),
         FfiConverterUInt16.lower(cols),
         FfiConverterUInt16.lower(rows),uniffiCallStatus
@@ -4942,7 +4925,7 @@ open func resize(cols: UInt16, rows: UInt16)  {try! rustCall() {
 open func revision() -> UInt64  {
     return try!  FfiConverterUInt64.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_revision(
+    uniffi_onicode_mobile_fn_method_terminalsession_revision(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -4954,7 +4937,7 @@ open func revision() -> UInt64  {
      */
 open func scrollToPosition(back: Float)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_scroll_to_position(
+    uniffi_onicode_mobile_fn_method_terminalsession_scroll_to_position(
             self.uniffiCloneHandle(),
         FfiConverterFloat.lower(back),uniffiCallStatus
     )
@@ -4966,7 +4949,7 @@ open func scrollToPosition(back: Float)  {try! rustCall() {
      */
 open func select(row: UInt16, col: UInt16, word: Bool)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_select(
+    uniffi_onicode_mobile_fn_method_terminalsession_select(
             self.uniffiCloneHandle(),
         FfiConverterUInt16.lower(row),
         FfiConverterUInt16.lower(col),
@@ -4978,7 +4961,7 @@ open func select(row: UInt16, col: UInt16, word: Bool)  {try! rustCall() {
 open func selection() -> TerminalSelection?  {
     return try!  FfiConverterOptionTypeTerminalSelection.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_selection(
+    uniffi_onicode_mobile_fn_method_terminalsession_selection(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -4989,7 +4972,7 @@ open func selection() -> TerminalSelection?  {
      */
 open func setDark(dark: Bool)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_set_dark(
+    uniffi_onicode_mobile_fn_method_terminalsession_set_dark(
             self.uniffiCloneHandle(),
         FfiConverterBool.lower(dark),uniffiCallStatus
     )
@@ -5001,7 +4984,7 @@ open func setDark(dark: Bool)  {try! rustCall() {
      */
 open func setFocused(focused: Bool)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_set_focused(
+    uniffi_onicode_mobile_fn_method_terminalsession_set_focused(
             self.uniffiCloneHandle(),
         FfiConverterBool.lower(focused),uniffiCallStatus
     )
@@ -5014,7 +4997,7 @@ open func setFocused(focused: Bool)  {try! rustCall() {
 open func text(all: Bool) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_text(
+    uniffi_onicode_mobile_fn_method_terminalsession_text(
             self.uniffiCloneHandle(),
         FfiConverterBool.lower(all),uniffiCallStatus
     )
@@ -5027,7 +5010,7 @@ open func text(all: Bool) -> String  {
 open func title() -> String?  {
     return try!  FfiConverterOptionString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_title(
+    uniffi_onicode_mobile_fn_method_terminalsession_title(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -5038,7 +5021,7 @@ open func title() -> String?  {
      */
 open func typeText(text: String, modifiers: KeyModifiers)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_type_text(
+    uniffi_onicode_mobile_fn_method_terminalsession_type_text(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(text),
         FfiConverterTypeKeyModifiers_lower(modifiers),uniffiCallStatus
@@ -5055,7 +5038,7 @@ open func typeText(text: String, modifiers: KeyModifiers)  {try! rustCall() {
 open func wheel(rows: Float, row: UInt16, col: UInt16) -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_terminalsession_wheel(
+    uniffi_onicode_mobile_fn_method_terminalsession_wheel(
             self.uniffiCloneHandle(),
         FfiConverterFloat.lower(rows),
         FfiConverterUInt16.lower(row),
@@ -5160,13 +5143,13 @@ open class TextSystem: TextSystemProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_textsystem(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_textsystem(self.handle, $0) }
     }
 public convenience init(faces: [FaceData], measurer: PlatformMeasurer?) {
     let handle =
         try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_constructor_textsystem_new(
+    uniffi_onicode_mobile_fn_constructor_textsystem_new(
         FfiConverterSequenceTypeFaceData.lower(faces),
         FfiConverterOptionTypePlatformMeasurer.lower(measurer),uniffiCallStatus
     )
@@ -5180,7 +5163,7 @@ public convenience init(faces: [FaceData], measurer: PlatformMeasurer?) {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_textsystem(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_textsystem(handle, $0) }
     }
 
     
@@ -5336,13 +5319,13 @@ open class TranscriptView: TranscriptViewProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_transcriptview(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_transcriptview(self.handle, $0) }
     }
 public convenience init(text: TextSystem, listener: LayoutListener) {
     let handle =
         try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_constructor_transcriptview_new(
+    uniffi_onicode_mobile_fn_constructor_transcriptview_new(
         FfiConverterTypeTextSystem_lower(text),
         FfiConverterTypeLayoutListener_lower(listener),uniffiCallStatus
     )
@@ -5356,7 +5339,7 @@ public convenience init(text: TextSystem, listener: LayoutListener) {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_transcriptview(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_transcriptview(handle, $0) }
     }
 
     
@@ -5369,7 +5352,7 @@ public convenience init(text: TextSystem, listener: LayoutListener) {
 open func attach(client: CoreClient, chatId: String) -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_transcriptview_attach(
+    uniffi_onicode_mobile_fn_method_transcriptview_attach(
             self.uniffiCloneHandle(),
         FfiConverterTypeCoreClient_lower(client),
         FfiConverterString.lower(chatId),uniffiCallStatus
@@ -5385,7 +5368,7 @@ open func attach(client: CoreClient, chatId: String) -> Bool  {
 open func attachSubagent(client: CoreClient, chatId: String, docId: String, frozen: Bool) -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_transcriptview_attach_subagent(
+    uniffi_onicode_mobile_fn_method_transcriptview_attach_subagent(
             self.uniffiCloneHandle(),
         FfiConverterTypeCoreClient_lower(client),
         FfiConverterString.lower(chatId),
@@ -5397,7 +5380,7 @@ open func attachSubagent(client: CoreClient, chatId: String, docId: String, froz
     
 open func close()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_transcriptview_close(
+    uniffi_onicode_mobile_fn_method_transcriptview_close(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -5409,7 +5392,7 @@ open func close()  {try! rustCall() {
 open func frame() -> LayoutFrame  {
     return try!  FfiConverterTypeLayoutFrame_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_transcriptview_frame(
+    uniffi_onicode_mobile_fn_method_transcriptview_frame(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -5420,7 +5403,7 @@ open func frame() -> LayoutFrame  {
      */
 open func setDebugEntries(entries: [DebugEntry], working: Bool)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_transcriptview_set_debug_entries(
+    uniffi_onicode_mobile_fn_method_transcriptview_set_debug_entries(
             self.uniffiCloneHandle(),
         FfiConverterSequenceTypeDebugEntry.lower(entries),
         FfiConverterBool.lower(working),uniffiCallStatus
@@ -5434,7 +5417,7 @@ open func setDebugEntries(entries: [DebugEntry], working: Bool)  {try! rustCall(
      */
 open func setMath(enabled: Bool, face: MathFace, sizePercent: UInt16)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_transcriptview_set_math(
+    uniffi_onicode_mobile_fn_method_transcriptview_set_math(
             self.uniffiCloneHandle(),
         FfiConverterBool.lower(enabled),
         FfiConverterTypeMathFace_lower(face),
@@ -5445,7 +5428,7 @@ open func setMath(enabled: Bool, face: MathFace, sizePercent: UInt16)  {try! rus
     
 open func setViewport(width: Float, textScale: Float)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_transcriptview_set_viewport(
+    uniffi_onicode_mobile_fn_method_transcriptview_set_viewport(
             self.uniffiCloneHandle(),
         FfiConverterFloat.lower(width),
         FfiConverterFloat.lower(textScale),uniffiCallStatus
@@ -5459,7 +5442,7 @@ open func setViewport(width: Float, textScale: Float)  {try! rustCall() {
      */
 open func setVisualSource(client: CoreClient, deviceId: String, pixelScale: Float)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_transcriptview_set_visual_source(
+    uniffi_onicode_mobile_fn_method_transcriptview_set_visual_source(
             self.uniffiCloneHandle(),
         FfiConverterTypeCoreClient_lower(client),
         FfiConverterString.lower(deviceId),
@@ -5473,7 +5456,7 @@ open func setVisualSource(client: CoreClient, deviceId: String, pixelScale: Floa
      */
 open func toggle(key: UInt64)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_transcriptview_toggle(
+    uniffi_onicode_mobile_fn_method_transcriptview_toggle(
             self.uniffiCloneHandle(),
         FfiConverterUInt64.lower(key),uniffiCallStatus
     )
@@ -5485,7 +5468,7 @@ open func toggle(key: UInt64)  {try! rustCall() {
      */
 open func toggleDetail(row: UInt64, detail: UInt64, `open`: Bool)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_transcriptview_toggle_detail(
+    uniffi_onicode_mobile_fn_method_transcriptview_toggle_detail(
             self.uniffiCloneHandle(),
         FfiConverterUInt64.lower(row),
         FfiConverterUInt64.lower(detail),
@@ -5500,7 +5483,7 @@ open func toggleDetail(row: UInt64, detail: UInt64, `open`: Bool)  {try! rustCal
 open func visual(id: String) -> VisualSession?  {
     return try!  FfiConverterOptionTypeVisualSession.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_transcriptview_visual(
+    uniffi_onicode_mobile_fn_method_transcriptview_visual(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(id),uniffiCallStatus
     )
@@ -5605,7 +5588,7 @@ open class UploadProgressImpl: UploadProgress, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_uploadprogress(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_uploadprogress(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -5615,7 +5598,7 @@ open class UploadProgressImpl: UploadProgress, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_uploadprogress(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_uploadprogress(handle, $0) }
     }
 
     
@@ -5623,7 +5606,7 @@ open class UploadProgressImpl: UploadProgress, @unchecked Sendable {
     
 open func onProgress(fraction: Double)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_uploadprogress_on_progress(
+    uniffi_onicode_mobile_fn_method_uploadprogress_on_progress(
             self.uniffiCloneHandle(),
         FfiConverterDouble.lower(fraction),uniffiCallStatus
     )
@@ -5698,7 +5681,7 @@ fileprivate struct UniffiCallbackInterfaceUploadProgress {
 }
 
 private func uniffiCallbackInitUploadProgress() {
-    uniffi_zeron_mobile_fn_init_callback_vtable_uploadprogress(UniffiCallbackInterfaceUploadProgress.vtablePtr)
+    uniffi_onicode_mobile_fn_init_callback_vtable_uploadprogress(UniffiCallbackInterfaceUploadProgress.vtablePtr)
 }
 
 #if swift(>=5.8)
@@ -5811,7 +5794,7 @@ open class VisualListenerImpl: VisualListener, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_visuallistener(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_visuallistener(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -5821,7 +5804,7 @@ open class VisualListenerImpl: VisualListener, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_visuallistener(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_visuallistener(handle, $0) }
     }
 
     
@@ -5829,7 +5812,7 @@ open class VisualListenerImpl: VisualListener, @unchecked Sendable {
     
 open func display(display: VisualDisplay)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_visuallistener_display(
+    uniffi_onicode_mobile_fn_method_visuallistener_display(
             self.uniffiCloneHandle(),
         FfiConverterTypeVisualDisplay_lower(display),uniffiCallStatus
     )
@@ -5838,7 +5821,7 @@ open func display(display: VisualDisplay)  {try! rustCall() {
     
 open func frame(frame: SurfaceFrame)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_visuallistener_frame(
+    uniffi_onicode_mobile_fn_method_visuallistener_frame(
             self.uniffiCloneHandle(),
         FfiConverterTypeSurfaceFrame_lower(frame),uniffiCallStatus
     )
@@ -5937,7 +5920,7 @@ fileprivate struct UniffiCallbackInterfaceVisualListener {
 }
 
 private func uniffiCallbackInitVisualListener() {
-    uniffi_zeron_mobile_fn_init_callback_vtable_visuallistener(UniffiCallbackInterfaceVisualListener.vtablePtr)
+    uniffi_onicode_mobile_fn_init_callback_vtable_visuallistener(UniffiCallbackInterfaceVisualListener.vtablePtr)
 }
 
 #if swift(>=5.8)
@@ -6075,7 +6058,7 @@ open class VisualSession: VisualSessionProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_visualsession(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_visualsession(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -6085,7 +6068,7 @@ open class VisualSession: VisualSessionProtocol, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_visualsession(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_visualsession(handle, $0) }
     }
 
     
@@ -6096,7 +6079,7 @@ open class VisualSession: VisualSessionProtocol, @unchecked Sendable {
      */
 open func activate(control: UInt64)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_visualsession_activate(
+    uniffi_onicode_mobile_fn_method_visualsession_activate(
             self.uniffiCloneHandle(),
         FfiConverterUInt64.lower(control),uniffiCallStatus
     )
@@ -6108,7 +6091,7 @@ open func activate(control: UInt64)  {try! rustCall() {
      */
 open func attach(listener: VisualListener, dark: Bool, reduceMotion: Bool)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_visualsession_attach(
+    uniffi_onicode_mobile_fn_method_visualsession_attach(
             self.uniffiCloneHandle(),
         FfiConverterTypeVisualListener_lower(listener),
         FfiConverterBool.lower(dark),
@@ -6122,7 +6105,7 @@ open func attach(listener: VisualListener, dark: Bool, reduceMotion: Bool)  {try
      */
 open func detach()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_visualsession_detach(
+    uniffi_onicode_mobile_fn_method_visualsession_detach(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -6133,7 +6116,7 @@ open func detach()  {try! rustCall() {
      */
 open func pointer(surface: UInt64, phase: PointerPhase, x: Float, y: Float)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_visualsession_pointer(
+    uniffi_onicode_mobile_fn_method_visualsession_pointer(
             self.uniffiCloneHandle(),
         FfiConverterUInt64.lower(surface),
         FfiConverterTypePointerPhase_lower(phase),
@@ -6145,7 +6128,7 @@ open func pointer(surface: UInt64, phase: PointerPhase, x: Float, y: Float)  {tr
     
 open func setAppearance(dark: Bool)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_visualsession_set_appearance(
+    uniffi_onicode_mobile_fn_method_visualsession_set_appearance(
             self.uniffiCloneHandle(),
         FfiConverterBool.lower(dark),uniffiCallStatus
     )
@@ -6157,7 +6140,7 @@ open func setAppearance(dark: Bool)  {try! rustCall() {
      */
 open func slide(control: UInt64, fraction: Float)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_visualsession_slide(
+    uniffi_onicode_mobile_fn_method_visualsession_slide(
             self.uniffiCloneHandle(),
         FfiConverterUInt64.lower(control),
         FfiConverterFloat.lower(fraction),uniffiCallStatus
@@ -6168,7 +6151,7 @@ open func slide(control: UInt64, fraction: Float)  {try! rustCall() {
 open func title() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_visualsession_title(
+    uniffi_onicode_mobile_fn_method_visualsession_title(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -6273,7 +6256,7 @@ open class VoiceCall: VoiceCallProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_voicecall(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_voicecall(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -6283,7 +6266,7 @@ open class VoiceCall: VoiceCallProtocol, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_voicecall(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_voicecall(handle, $0) }
     }
 
     
@@ -6294,7 +6277,7 @@ open class VoiceCall: VoiceCallProtocol, @unchecked Sendable {
      */
 open func completeMedia(requestId: UInt64, failure: VoiceMediaFailure?, sdp: String?, microphone: UInt16, speaker: UInt16)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_voicecall_complete_media(
+    uniffi_onicode_mobile_fn_method_voicecall_complete_media(
             self.uniffiCloneHandle(),
         FfiConverterUInt64.lower(requestId),
         FfiConverterOptionTypeVoiceMediaFailure.lower(failure),
@@ -6307,7 +6290,7 @@ open func completeMedia(requestId: UInt64, failure: VoiceMediaFailure?, sdp: Str
     
 open func setMuted(muted: Bool)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_voicecall_set_muted(
+    uniffi_onicode_mobile_fn_method_voicecall_set_muted(
             self.uniffiCloneHandle(),
         FfiConverterBool.lower(muted),uniffiCallStatus
     )
@@ -6316,7 +6299,7 @@ open func setMuted(muted: Bool)  {try! rustCall() {
     
 open func stop()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_voicecall_stop(
+    uniffi_onicode_mobile_fn_method_voicecall_stop(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -6414,7 +6397,7 @@ open class VoiceMediaListenerImpl: VoiceMediaListener, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_voicemedialistener(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_voicemedialistener(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -6424,7 +6407,7 @@ open class VoiceMediaListenerImpl: VoiceMediaListener, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_voicemedialistener(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_voicemedialistener(handle, $0) }
     }
 
     
@@ -6432,7 +6415,7 @@ open class VoiceMediaListenerImpl: VoiceMediaListener, @unchecked Sendable {
     
 open func onRequest(request: VoiceMediaRequest)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_voicemedialistener_on_request(
+    uniffi_onicode_mobile_fn_method_voicemedialistener_on_request(
             self.uniffiCloneHandle(),
         FfiConverterTypeVoiceMediaRequest_lower(request),uniffiCallStatus
     )
@@ -6507,7 +6490,7 @@ fileprivate struct UniffiCallbackInterfaceVoiceMediaListener {
 }
 
 private func uniffiCallbackInitVoiceMediaListener() {
-    uniffi_zeron_mobile_fn_init_callback_vtable_voicemedialistener(UniffiCallbackInterfaceVoiceMediaListener.vtablePtr)
+    uniffi_onicode_mobile_fn_init_callback_vtable_voicemedialistener(UniffiCallbackInterfaceVoiceMediaListener.vtablePtr)
 }
 
 #if swift(>=5.8)
@@ -6617,7 +6600,7 @@ open class VoiceSessionListenerImpl: VoiceSessionListener, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_zeron_mobile_fn_clone_voicesessionlistener(self.handle, $0) }
+        return try! rustCall { uniffi_onicode_mobile_fn_clone_voicesessionlistener(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -6627,7 +6610,7 @@ open class VoiceSessionListenerImpl: VoiceSessionListener, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_zeron_mobile_fn_free_voicesessionlistener(handle, $0) }
+        try! rustCall { uniffi_onicode_mobile_fn_free_voicesessionlistener(handle, $0) }
     }
 
     
@@ -6635,7 +6618,7 @@ open class VoiceSessionListenerImpl: VoiceSessionListener, @unchecked Sendable {
     
 open func onVoiceState(state: VoiceCallState)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_voicesessionlistener_on_voice_state(
+    uniffi_onicode_mobile_fn_method_voicesessionlistener_on_voice_state(
             self.uniffiCloneHandle(),
         FfiConverterTypeVoiceCallState_lower(state),uniffiCallStatus
     )
@@ -6647,7 +6630,7 @@ open func onVoiceState(state: VoiceCallState)  {try! rustCall() {
      */
 open func onVoiceClosed(reason: VoiceEndReason?)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_method_voicesessionlistener_on_voice_closed(
+    uniffi_onicode_mobile_fn_method_voicesessionlistener_on_voice_closed(
             self.uniffiCloneHandle(),
         FfiConverterOptionTypeVoiceEndReason.lower(reason),uniffiCallStatus
     )
@@ -6746,7 +6729,7 @@ fileprivate struct UniffiCallbackInterfaceVoiceSessionListener {
 }
 
 private func uniffiCallbackInitVoiceSessionListener() {
-    uniffi_zeron_mobile_fn_init_callback_vtable_voicesessionlistener(UniffiCallbackInterfaceVoiceSessionListener.vtablePtr)
+    uniffi_onicode_mobile_fn_init_callback_vtable_voicesessionlistener(UniffiCallbackInterfaceVoiceSessionListener.vtablePtr)
 }
 
 #if swift(>=5.8)
@@ -6812,16 +6795,16 @@ public func FfiConverterTypeVoiceSessionListener_lower(_ value: VoiceSessionList
  */
 public struct AgentLoginRules: Equatable, Hashable {
     /**
-     * The agent's display name ("Claude Code"); empty for one Zeron doesn't
+     * The agent's display name ("Claude Code"); empty for one Onicode doesn't
      * sign in to.
      */
     public var name: String
     /**
-     * The agent has accounts Zeron can sign in to at all.
+     * The agent has accounts Onicode can sign in to at all.
      */
     public var signsIn: Bool
     /**
-     * Zeron switches between its accounts (not Hermes, not Antigravity).
+     * Onicode switches between its accounts (not Hermes, not Antigravity).
      */
     public var switches: Bool
     /**
@@ -6839,14 +6822,14 @@ public struct AgentLoginRules: Equatable, Hashable {
     // declare one manually.
     public init(
         /**
-         * The agent's display name ("Claude Code"); empty for one Zeron doesn't
+         * The agent's display name ("Claude Code"); empty for one Onicode doesn't
          * sign in to.
          */name: String, 
         /**
-         * The agent has accounts Zeron can sign in to at all.
+         * The agent has accounts Onicode can sign in to at all.
          */signsIn: Bool, 
         /**
-         * Zeron switches between its accounts (not Hermes, not Antigravity).
+         * Onicode switches between its accounts (not Hermes, not Antigravity).
          */switches: Bool, 
         /**
          * It holds one login: once connected there is nothing to add.
@@ -8564,7 +8547,7 @@ public struct DeviceAccountInfo: Equatable, Hashable {
     public var planLabel: String?
     public var active: Bool
     /**
-     * Can be switched to / removed (false for logins Zeron can't read).
+     * Can be switched to / removed (false for logins Onicode can't read).
      */
     public var switchable: Bool
     /**
@@ -8590,7 +8573,7 @@ public struct DeviceAccountInfo: Equatable, Hashable {
          * `claude-code` · `codex` · …
          */harness: String, email: String?, displayName: String?, planLabel: String?, active: Bool, 
         /**
-         * Can be switched to / removed (false for logins Zeron can't read).
+         * Can be switched to / removed (false for logins Onicode can't read).
          */switchable: Bool, 
         /**
          * An API key rather than an account.
@@ -12665,10 +12648,6 @@ public struct TerminalFrame: Equatable, Hashable {
      */
     public var mouse: Bool
     public var phase: TerminalPhase
-    /**
-     * The terminal rides a direct link to its host (not the relay).
-     */
-    public var direct: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -12691,10 +12670,7 @@ public struct TerminalFrame: Equatable, Hashable {
          */title: String?, altScreen: Bool, 
         /**
          * The program takes touches as pointer events.
-         */mouse: Bool, phase: TerminalPhase, 
-        /**
-         * The terminal rides a direct link to its host (not the relay).
-         */direct: Bool) {
+         */mouse: Bool, phase: TerminalPhase) {
         self.revision = revision
         self.cols = cols
         self.rows = rows
@@ -12709,7 +12685,6 @@ public struct TerminalFrame: Equatable, Hashable {
         self.altScreen = altScreen
         self.mouse = mouse
         self.phase = phase
-        self.direct = direct
     }
 
     
@@ -12741,8 +12716,7 @@ public struct FfiConverterTypeTerminalFrame: FfiConverterRustBuffer {
                 title: FfiConverterOptionString.read(from: &buf), 
                 altScreen: FfiConverterBool.read(from: &buf), 
                 mouse: FfiConverterBool.read(from: &buf), 
-                phase: FfiConverterTypeTerminalPhase.read(from: &buf), 
-                direct: FfiConverterBool.read(from: &buf)
+                phase: FfiConverterTypeTerminalPhase.read(from: &buf)
         )
     }
 
@@ -12761,7 +12735,6 @@ public struct FfiConverterTypeTerminalFrame: FfiConverterRustBuffer {
         FfiConverterBool.write(value.altScreen, into: &buf)
         FfiConverterBool.write(value.mouse, into: &buf)
         FfiConverterTypeTerminalPhase.write(value.phase, into: &buf)
-        FfiConverterBool.write(value.direct, into: &buf)
     }
 }
 
@@ -13629,7 +13602,7 @@ public struct VaultInfo: Equatable, Hashable {
     public var available: Bool
     public var connections: [VaultConnectionInfo]
     /**
-     * Where to install the Zeron GitHub App on more repositories.
+     * Where to install the Onicode GitHub App on more repositories.
      */
     public var githubInstallUrl: String?
 
@@ -13637,7 +13610,7 @@ public struct VaultInfo: Equatable, Hashable {
     // declare one manually.
     public init(available: Bool, connections: [VaultConnectionInfo], 
         /**
-         * Where to install the Zeron GitHub App on more repositories.
+         * Where to install the Onicode GitHub App on more repositories.
          */githubInstallUrl: String?) {
         self.available = available
         self.connections = connections
@@ -14277,6 +14250,76 @@ public func FfiConverterTypeVoiceMediaRequest_lower(_ value: VoiceMediaRequest) 
 }
 
 
+/**
+ * The text an artwork must stay readable behind, for
+ * [`wallpaper_safe_opacity`].
+ */
+public struct WallpaperContrast: Equatable, Hashable {
+    public var textRgb: UInt32
+    public var backgroundRgb: UInt32
+    public var region: Float
+    public var minContrast: Float
+    public var maxOpacity: Float
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(textRgb: UInt32, backgroundRgb: UInt32, region: Float, minContrast: Float, maxOpacity: Float) {
+        self.textRgb = textRgb
+        self.backgroundRgb = backgroundRgb
+        self.region = region
+        self.minContrast = minContrast
+        self.maxOpacity = maxOpacity
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension WallpaperContrast: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWallpaperContrast: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WallpaperContrast {
+        return
+            try WallpaperContrast(
+                textRgb: FfiConverterUInt32.read(from: &buf), 
+                backgroundRgb: FfiConverterUInt32.read(from: &buf), 
+                region: FfiConverterFloat.read(from: &buf), 
+                minContrast: FfiConverterFloat.read(from: &buf), 
+                maxOpacity: FfiConverterFloat.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WallpaperContrast, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.textRgb, into: &buf)
+        FfiConverterUInt32.write(value.backgroundRgb, into: &buf)
+        FfiConverterFloat.write(value.region, into: &buf)
+        FfiConverterFloat.write(value.minContrast, into: &buf)
+        FfiConverterFloat.write(value.maxOpacity, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWallpaperContrast_lift(_ buf: RustBuffer) throws -> WallpaperContrast {
+    return try FfiConverterTypeWallpaperContrast.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWallpaperContrast_lower(_ value: WallpaperContrast) -> RustBuffer {
+    return FfiConverterTypeWallpaperContrast.lower(value)
+}
+
+
 public struct Widget: Equatable, Hashable {
     public var id: UInt32
     public var kind: WidgetKind
@@ -14474,7 +14517,7 @@ public struct WorktreeSpec: Equatable, Hashable {
      */
     public var repoPath: String
     /**
-     * Base ref for the fresh `zeron/<name>` branch.
+     * Base ref for the fresh `onicode/<name>` branch.
      */
     public var base: String
     public var spaceId: String?
@@ -14486,7 +14529,7 @@ public struct WorktreeSpec: Equatable, Hashable {
          * The repo to branch (the project's folder on the host).
          */repoPath: String, 
         /**
-         * Base ref for the fresh `zeron/<name>` branch.
+         * Base ref for the fresh `onicode/<name>` branch.
          */base: String, spaceId: String?) {
         self.repoPath = repoPath
         self.base = base
@@ -18483,7 +18526,7 @@ public enum VoiceEndReason: Equatable, Hashable {
     case busy
     case hostUnavailable
     /**
-     * The host's Zeron is too old or has remote voice disabled.
+     * The host's Onicode is too old or has remote voice disabled.
      */
     case hostIncompatible
     case connectionLost
@@ -21353,7 +21396,7 @@ fileprivate func uniffiRustCallAsync<F, T>(
 ) async throws -> T {
     // Make sure to call the ensure init function since future creation doesn't have a
     // RustCallStatus param, so doesn't use makeRustCall()
-    uniffiEnsureZeronMobileInitialized()
+    uniffiEnsureOnicodeMobileInitialized()
     let rustFuture = rustFutureFunc()
     defer {
         freeFunc(rustFuture)
@@ -21392,17 +21435,17 @@ fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: In
 public func coreVersion() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_core_version(uniffiCallStatus
+    uniffi_onicode_mobile_fn_func_core_version(uniffiCallStatus
     )
 })
 }
 /**
- * OAuth callback scheme (`zeron`).
+ * OAuth callback scheme (`onicode`).
  */
 public func authCallbackScheme() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_auth_callback_scheme(uniffiCallStatus
+    uniffi_onicode_mobile_fn_func_auth_callback_scheme(uniffiCallStatus
     )
 })
 }
@@ -21413,12 +21456,12 @@ public func authExchangeCode(edgeUrl: String, code: String)async throws  -> Auth
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_func_auth_exchange_code(FfiConverterString.lower(edgeUrl),FfiConverterString.lower(code)
+                uniffi_onicode_mobile_fn_func_auth_exchange_code(FfiConverterString.lower(edgeUrl),FfiConverterString.lower(code)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeAuthExchange_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -21430,12 +21473,12 @@ public func authListOrgs(edgeUrl: String, accessToken: String)async throws  -> [
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_func_auth_list_orgs(FfiConverterString.lower(edgeUrl),FfiConverterString.lower(accessToken)
+                uniffi_onicode_mobile_fn_func_auth_list_orgs(FfiConverterString.lower(edgeUrl),FfiConverterString.lower(accessToken)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeAuthOrg.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -21446,7 +21489,7 @@ public func authListOrgs(edgeUrl: String, accessToken: String)async throws  -> [
 public func authProductionEdgeUrl() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_auth_production_edge_url(uniffiCallStatus
+    uniffi_onicode_mobile_fn_func_auth_production_edge_url(uniffiCallStatus
     )
 })
 }
@@ -21457,12 +21500,12 @@ public func authRefresh(edgeUrl: String, refreshToken: String, organizationId: S
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_zeron_mobile_fn_func_auth_refresh(FfiConverterString.lower(edgeUrl),FfiConverterString.lower(refreshToken),FfiConverterOptionString.lower(organizationId)
+                uniffi_onicode_mobile_fn_func_auth_refresh(FfiConverterString.lower(edgeUrl),FfiConverterString.lower(refreshToken),FfiConverterOptionString.lower(organizationId)
                 )
             },
-            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
-            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
-            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            pollFunc: ffi_onicode_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_onicode_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_onicode_mobile_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeAuthTokens_lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
@@ -21473,7 +21516,7 @@ public func authRefresh(edgeUrl: String, refreshToken: String, organizationId: S
 public func fallbackHarnesses() -> [HarnessInfo]  {
     return try!  FfiConverterSequenceTypeHarnessInfo.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_fallback_harnesses(uniffiCallStatus
+    uniffi_onicode_mobile_fn_func_fallback_harnesses(uniffiCallStatus
     )
 })
 }
@@ -21483,7 +21526,7 @@ public func fallbackHarnesses() -> [HarnessInfo]  {
 public func fallbackModels(harness: String) -> [ModelInfo]  {
     return try!  FfiConverterSequenceTypeModelInfo.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_fallback_models(
+    uniffi_onicode_mobile_fn_func_fallback_models(
         FfiConverterString.lower(harness),uniffiCallStatus
     )
 })
@@ -21491,7 +21534,7 @@ public func fallbackModels(harness: String) -> [ModelInfo]  {
 public func harnessLabel(harness: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_harness_label(
+    uniffi_onicode_mobile_fn_func_harness_label(
         FfiConverterString.lower(harness),uniffiCallStatus
     )
 })
@@ -21502,7 +21545,7 @@ public func harnessLabel(harness: String) -> String  {
 public func jwtExpiry(jwt: String) -> Int64?  {
     return try!  FfiConverterOptionInt64.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_jwt_expiry(
+    uniffi_onicode_mobile_fn_func_jwt_expiry(
         FfiConverterString.lower(jwt),uniffiCallStatus
     )
 })
@@ -21513,26 +21556,26 @@ public func jwtExpiry(jwt: String) -> Int64?  {
 public func maxAttachmentBytes() -> UInt64  {
     return try!  FfiConverterUInt64.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_max_attachment_bytes(uniffiCallStatus
+    uniffi_onicode_mobile_fn_func_max_attachment_bytes(uniffiCallStatus
     )
 })
 }
 public func modelLabel(harness: String, model: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_model_label(
+    uniffi_onicode_mobile_fn_func_model_label(
         FfiConverterString.lower(harness),
         FfiConverterString.lower(model),uniffiCallStatus
     )
 })
 }
 /**
- * `code`/`state` (or the provider error) of a `zeron://callback?…` URL.
+ * `code`/`state` (or the provider error) of a `onicode://callback?…` URL.
  */
 public func parseAuthCallback(url: String) -> AuthCallback?  {
     return try!  FfiConverterOptionTypeAuthCallback.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_parse_auth_callback(
+    uniffi_onicode_mobile_fn_func_parse_auth_callback(
         FfiConverterString.lower(url),uniffiCallStatus
     )
 })
@@ -21543,7 +21586,7 @@ public func parseAuthCallback(url: String) -> AuthCallback?  {
 public func parseUserMessage(content: String) -> ParsedUserMessage  {
     return try!  FfiConverterTypeParsedUserMessage_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_parse_user_message(
+    uniffi_onicode_mobile_fn_func_parse_user_message(
         FfiConverterString.lower(content),uniffiCallStatus
     )
 })
@@ -21554,7 +21597,7 @@ public func parseUserMessage(content: String) -> ParsedUserMessage  {
 public func projectColorCount() -> UInt32  {
     return try!  FfiConverterUInt32.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_project_color_count(uniffiCallStatus
+    uniffi_onicode_mobile_fn_func_project_color_count(uniffiCallStatus
     )
 })
 }
@@ -21564,7 +21607,7 @@ public func projectColorCount() -> UInt32  {
 public func projectColorIndex(spacePath: String) -> UInt32  {
     return try!  FfiConverterUInt32.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_project_color_index(
+    uniffi_onicode_mobile_fn_func_project_color_index(
         FfiConverterString.lower(spacePath),uniffiCallStatus
     )
 })
@@ -21572,7 +21615,7 @@ public func projectColorIndex(spacePath: String) -> UInt32  {
 public func reasoningLabel(level: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_reasoning_label(
+    uniffi_onicode_mobile_fn_func_reasoning_label(
         FfiConverterString.lower(level),uniffiCallStatus
     )
 })
@@ -21583,7 +21626,7 @@ public func reasoningLabel(level: String) -> String  {
 public func relativeTimeLabel(atMs: Int64, nowMs: Int64) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_relative_time_label(
+    uniffi_onicode_mobile_fn_func_relative_time_label(
         FfiConverterInt64.lower(atMs),
         FfiConverterInt64.lower(nowMs),uniffiCallStatus
     )
@@ -21595,7 +21638,7 @@ public func relativeTimeLabel(atMs: Int64, nowMs: Int64) -> String  {
 public func workosAuthorizeUrl(state: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_workos_authorize_url(
+    uniffi_onicode_mobile_fn_func_workos_authorize_url(
         FfiConverterString.lower(state),uniffiCallStatus
     )
 })
@@ -21606,18 +21649,18 @@ public func workosAuthorizeUrl(state: String) -> String  {
 public func agentLoginRules(harness: String) -> AgentLoginRules  {
     return try!  FfiConverterTypeAgentLoginRules_lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_agent_login_rules(
+    uniffi_onicode_mobile_fn_func_agent_login_rules(
         FfiConverterString.lower(harness),uniffiCallStatus
     )
 })
 }
 /**
- * The canonical mention link the host understands (`[name](zeron-file:path)`).
+ * The canonical mention link the host understands (`[name](onicode-file:path)`).
  */
 public func fileMentionLink(path: String, isDir: Bool) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_file_mention_link(
+    uniffi_onicode_mobile_fn_func_file_mention_link(
         FfiConverterString.lower(path),
         FfiConverterBool.lower(isDir),uniffiCallStatus
     )
@@ -21629,7 +21672,7 @@ public func fileMentionLink(path: String, isDir: Bool) -> String  {
 public func defaultVoiceStyles() -> [String]  {
     return try!  FfiConverterSequenceString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_default_voice_styles(uniffiCallStatus
+    uniffi_onicode_mobile_fn_func_default_voice_styles(uniffiCallStatus
     )
 })
 }
@@ -21639,7 +21682,7 @@ public func defaultVoiceStyles() -> [String]  {
 public func voiceHostCapability() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_voice_host_capability(uniffiCallStatus
+    uniffi_onicode_mobile_fn_func_voice_host_capability(uniffiCallStatus
     )
 })
 }
@@ -21651,7 +21694,7 @@ public func voiceHostCapability() -> String  {
 public func debugLineStarts(textSystem: TextSystem, face: FaceRole, size: Float, width: Float, text: String) -> [UInt32]  {
     return try!  FfiConverterSequenceUInt32.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_debug_line_starts(
+    uniffi_onicode_mobile_fn_func_debug_line_starts(
         FfiConverterTypeTextSystem_lower(textSystem),
         FfiConverterTypeFaceRole_lower(face),
         FfiConverterFloat.lower(size),
@@ -21666,7 +21709,7 @@ public func debugLineStarts(textSystem: TextSystem, face: FaceRole, size: Float,
 public func layoutFixtureMarkdown() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_layout_fixture_markdown(uniffiCallStatus
+    uniffi_onicode_mobile_fn_func_layout_fixture_markdown(uniffiCallStatus
     )
 })
 }
@@ -21679,7 +21722,7 @@ public func layoutFixtureMarkdown() -> String  {
 public func mathFontData(index: UInt8) -> Data  {
     return try!  FfiConverterData.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_math_font_data(
+    uniffi_onicode_mobile_fn_func_math_font_data(
         FfiConverterUInt8.lower(index),uniffiCallStatus
     )
 })
@@ -21691,7 +21734,7 @@ public func mathFontData(index: UInt8) -> Data  {
 public func wallpaperRender(rgba: Data, width: UInt32, height: UInt32, effect: WallpaperEffect, light: Bool) -> Data  {
     return try!  FfiConverterData.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_wallpaper_render(
+    uniffi_onicode_mobile_fn_func_wallpaper_render(
         FfiConverterData.lower(rgba),
         FfiConverterUInt32.lower(width),
         FfiConverterUInt32.lower(height),
@@ -21707,18 +21750,14 @@ public func wallpaperRender(rgba: Data, width: UInt32, height: UInt32, effect: W
  * tail when text is light, the dark tail when text is dark. Clamped to
  * [0, `max_opacity`].
  */
-public func wallpaperSafeOpacity(rgba: Data, width: UInt32, height: UInt32, textRgb: UInt32, backgroundRgb: UInt32, region: Float, minContrast: Float, maxOpacity: Float) -> Float  {
+public func wallpaperSafeOpacity(rgba: Data, width: UInt32, height: UInt32, goal: WallpaperContrast) -> Float  {
     return try!  FfiConverterFloat.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_zeron_mobile_fn_func_wallpaper_safe_opacity(
+    uniffi_onicode_mobile_fn_func_wallpaper_safe_opacity(
         FfiConverterData.lower(rgba),
         FfiConverterUInt32.lower(width),
         FfiConverterUInt32.lower(height),
-        FfiConverterUInt32.lower(textRgb),
-        FfiConverterUInt32.lower(backgroundRgb),
-        FfiConverterFloat.lower(region),
-        FfiConverterFloat.lower(minContrast),
-        FfiConverterFloat.lower(maxOpacity),uniffiCallStatus
+        FfiConverterTypeWallpaperContrast_lower(goal),uniffiCallStatus
     )
 })
 }
@@ -21734,686 +21773,683 @@ private let initializationResult: InitializationResult = {
     // Get the bindings contract version from our ComponentInterface
     let bindings_contract_version = 30
     // Get the scaffolding contract version by calling the into the dylib
-    let scaffolding_contract_version = ffi_zeron_mobile_uniffi_contract_version()
+    let scaffolding_contract_version = ffi_onicode_mobile_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_core_version() != 46096) {
+    if (uniffi_onicode_mobile_checksum_func_core_version() != 57518) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_auth_callback_scheme() != 8202) {
+    if (uniffi_onicode_mobile_checksum_func_auth_callback_scheme() != 12470) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_auth_exchange_code() != 47073) {
+    if (uniffi_onicode_mobile_checksum_func_auth_exchange_code() != 16379) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_auth_list_orgs() != 21299) {
+    if (uniffi_onicode_mobile_checksum_func_auth_list_orgs() != 56534) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_auth_production_edge_url() != 61532) {
+    if (uniffi_onicode_mobile_checksum_func_auth_production_edge_url() != 21713) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_auth_refresh() != 53630) {
+    if (uniffi_onicode_mobile_checksum_func_auth_refresh() != 18240) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_fallback_harnesses() != 7289) {
+    if (uniffi_onicode_mobile_checksum_func_fallback_harnesses() != 53066) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_fallback_models() != 37563) {
+    if (uniffi_onicode_mobile_checksum_func_fallback_models() != 59130) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_harness_label() != 26297) {
+    if (uniffi_onicode_mobile_checksum_func_harness_label() != 9868) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_jwt_expiry() != 29460) {
+    if (uniffi_onicode_mobile_checksum_func_jwt_expiry() != 8530) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_max_attachment_bytes() != 43171) {
+    if (uniffi_onicode_mobile_checksum_func_max_attachment_bytes() != 57743) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_model_label() != 26905) {
+    if (uniffi_onicode_mobile_checksum_func_model_label() != 30789) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_parse_auth_callback() != 22318) {
+    if (uniffi_onicode_mobile_checksum_func_parse_auth_callback() != 56741) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_parse_user_message() != 19553) {
+    if (uniffi_onicode_mobile_checksum_func_parse_user_message() != 64655) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_project_color_count() != 30925) {
+    if (uniffi_onicode_mobile_checksum_func_project_color_count() != 1470) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_project_color_index() != 14874) {
+    if (uniffi_onicode_mobile_checksum_func_project_color_index() != 61446) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_reasoning_label() != 22513) {
+    if (uniffi_onicode_mobile_checksum_func_reasoning_label() != 3404) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_relative_time_label() != 32740) {
+    if (uniffi_onicode_mobile_checksum_func_relative_time_label() != 53242) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_workos_authorize_url() != 35994) {
+    if (uniffi_onicode_mobile_checksum_func_workos_authorize_url() != 36395) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_agent_login_rules() != 18451) {
+    if (uniffi_onicode_mobile_checksum_func_agent_login_rules() != 20912) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_file_mention_link() != 14340) {
+    if (uniffi_onicode_mobile_checksum_func_file_mention_link() != 51473) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_default_voice_styles() != 30650) {
+    if (uniffi_onicode_mobile_checksum_func_default_voice_styles() != 46862) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_voice_host_capability() != 32424) {
+    if (uniffi_onicode_mobile_checksum_func_voice_host_capability() != 48163) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_debug_line_starts() != 43822) {
+    if (uniffi_onicode_mobile_checksum_func_debug_line_starts() != 46197) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_layout_fixture_markdown() != 37734) {
+    if (uniffi_onicode_mobile_checksum_func_layout_fixture_markdown() != 18074) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_math_font_data() != 16862) {
+    if (uniffi_onicode_mobile_checksum_func_math_font_data() != 11949) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_wallpaper_render() != 28318) {
+    if (uniffi_onicode_mobile_checksum_func_wallpaper_render() != 30353) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_func_wallpaper_safe_opacity() != 57056) {
+    if (uniffi_onicode_mobile_checksum_func_wallpaper_safe_opacity() != 17405) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_captionfader_frame() != 19899) {
+    if (uniffi_onicode_mobile_checksum_method_captionfader_frame() != 31455) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_clientlistener_on_event() != 55106) {
+    if (uniffi_onicode_mobile_checksum_method_clientlistener_on_event() != 18267) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_archive_session() != 22530) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_archive_session() != 38400) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_archived_sessions() != 33517) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_archived_sessions() != 2056) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_assign_section() != 63363) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_assign_section() != 12040) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_child_sessions() != 10159) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_child_sessions() != 7762) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_close_session() != 11270) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_close_session() != 39552) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_cloud_models() != 32016) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_cloud_models() != 37789) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_connectivity() != 51284) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_connectivity() != 42252) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_create_project() != 59427) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_create_project() != 508) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_create_section() != 53295) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_create_section() != 42453) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_create_session() != 13340) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_create_session() != 8441) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_create_worktree() != 42932) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_create_worktree() != 21259) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_delete_project() != 3844) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_delete_project() != 35527) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_delete_section() != 25270) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_delete_section() != 46125) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_delete_session() != 31581) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_delete_session() != 62386) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_device_id() != 9469) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_device_id() != 47056) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_devices() != 57985) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_devices() != 35822) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_execution_devices() != 15578) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_execution_devices() != 31799) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_front_page() != 3792) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_front_page() != 27386) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_is_demo() != 28119) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_is_demo() != 45208) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_list_folders() != 2324) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_list_folders() != 43970) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_list_harnesses() != 2345) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_list_harnesses() != 20654) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_list_models() != 23103) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_list_models() != 12194) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_list_refs() != 27606) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_list_refs() != 61428) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_mark_seen() != 64234) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_mark_seen() != 54143) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_move_pin() != 26081) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_move_pin() != 451) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_network_path_changed() != 38164) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_network_path_changed() != 30234) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_on_background() != 34188) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_on_background() != 28905) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_on_foreground() != 37345) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_on_foreground() != 10294) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_open_session() != 32134) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_open_session() != 34583) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_org_id() != 50248) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_org_id() != 22137) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_pin_session() != 14361) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_pin_session() != 1433) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_pin_session_at() != 16727) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_pin_session_at() != 48153) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_place_session() != 55306) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_place_session() != 3397) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_preload_sessions() != 4026) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_preload_sessions() != 1708) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_project() != 50153) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_project() != 1906) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_projectless_sessions() != 26434) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_projectless_sessions() != 47840) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_projects() != 15952) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_projects() != 61457) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_pull_requests() != 6395) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_pull_requests() != 55920) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_read_attachment() != 50982) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_read_attachment() != 36389) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_register_push_target() != 33942) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_register_push_target() != 6664) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_rename_project() != 6571) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_rename_project() != 34544) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_rename_section() != 28642) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_rename_section() != 24643) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_rename_session() != 49666) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_rename_session() != 31637) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_search() != 33140) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_search() != 49778) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_search_files() != 31096) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_search_files() != 58688) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_session() != 12772) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_session() != 45559) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_session_config() != 4276) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_session_config() != 1082) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_session_row() != 10938) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_session_row() != 28521) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_set_network_online() != 33835) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_set_network_online() != 63846) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_set_section_collapsed() != 55017) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_set_section_collapsed() != 473) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_set_session_config() != 56055) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_set_session_config() != 9650) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_shutdown() != 4352) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_shutdown() != 20729) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_switch_ref() != 45706) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_switch_ref() != 16143) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_switch_session_ref() != 42409) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_switch_session_ref() != 24351) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_unarchive_session() != 9932) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_unarchive_session() != 50303) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_unpin_session() != 9102) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_unpin_session() != 35011) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_unregister_push_target() != 55720) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_unregister_push_target() != 40844) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_update_tokens() != 39229) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_update_tokens() != 20071) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_upload_attachment() != 21501) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_upload_attachment() != 58855) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_user_id() != 27711) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_user_id() != 61721) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_warm_direct() != 53016) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_warm_link() != 46085) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_workspace() != 42501) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_workspace() != 50544) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_workspace_revision() != 48105) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_workspace_revision() != 4985) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_billing_checkout() != 44997) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_billing_checkout() != 64787) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_billing_portal() != 46565) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_billing_portal() != 46818) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_billing_status() != 46884) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_billing_status() != 47482) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_cloud_enable() != 14325) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_cloud_enable() != 48053) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_cloud_session_action() != 15998) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_cloud_session_action() != 8619) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_cloud_sessions() != 26705) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_cloud_sessions() != 55373) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_cloud_status() != 39260) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_cloud_status() != 13327) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_create_cloud_project() != 24057) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_create_cloud_project() != 37856) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_create_cloud_session() != 22992) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_create_cloud_session() != 63684) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_github_branches() != 21291) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_github_branches() != 25067) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_github_connect_poll() != 35425) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_github_connect_poll() != 41408) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_github_connect_start() != 57895) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_github_connect_start() != 43697) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_github_repos() != 61075) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_github_repos() != 36991) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_provider_login_cancel() != 34870) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_provider_login_cancel() != 34535) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_provider_login_finish() != 22587) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_provider_login_finish() != 62915) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_provider_login_start() != 44873) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_provider_login_start() != 28701) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_vault_accounts() != 18199) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_vault_accounts() != 59421) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_vault_activate() != 50516) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_vault_activate() != 26762) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_vault_forget() != 1028) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_vault_forget() != 54430) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_vault_put_api_key() != 28404) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_vault_put_api_key() != 38831) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_vault_status() != 51383) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_vault_status() != 11747) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_vault_usage() != 58618) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_vault_usage() != 15135) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_create_side_chat() != 48923) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_create_side_chat() != 15702) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_fork_side_chat() != 15467) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_fork_side_chat() != 1319) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_device_activate_account() != 7247) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_device_activate_account() != 15671) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_device_agent_accounts() != 45781) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_device_agent_accounts() != 14719) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_device_forget_account() != 47260) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_device_forget_account() != 41022) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_device_login_cancel() != 47230) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_device_login_cancel() != 2078) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_device_login_complete() != 32418) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_device_login_complete() != 33924) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_device_login_poll() != 8555) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_device_login_poll() != 9896) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_device_login_start() != 47566) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_device_login_start() != 32006) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_set_harness_enabled() != 59215) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_set_harness_enabled() != 43102) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_start_voice() != 62086) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_start_voice() != 26563) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_attach_terminal() != 239) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_attach_terminal() != 13067) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_coreclient_open_terminal() != 53658) {
+    if (uniffi_onicode_mobile_checksum_method_coreclient_open_terminal() != 16048) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_uploadprogress_on_progress() != 40458) {
+    if (uniffi_onicode_mobile_checksum_method_uploadprogress_on_progress() != 10663) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_subagents() != 16247) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_subagents() != 9384) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_begin_queued_edit() != 9014) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_begin_queued_edit() != 2425) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_chat_id() != 51345) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_chat_id() != 27793) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_clear_queue_error() != 4521) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_clear_queue_error() != 64644) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_composer() != 12678) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_composer() != 64591) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_deliver_queued_now() != 65003) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_deliver_queued_now() != 55582) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_enqueue() != 37832) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_enqueue() != 6965) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_finish_queued_edit() != 60901) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_finish_queued_edit() != 28259) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_interrupt() != 42793) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_interrupt() != 44629) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_mark_seen() != 7987) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_mark_seen() != 5638) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_message_text() != 60913) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_message_text() != 58706) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_move_queued() != 39105) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_move_queued() != 56586) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_move_queued_by() != 49631) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_move_queued_by() != 37306) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_remove_queued() != 25599) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_remove_queued() != 59369) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_renew_queued_edit() != 7655) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_renew_queued_edit() != 27142) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_respond_input() != 8132) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_respond_input() != 58756) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_retry_delivery() != 40707) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_retry_delivery() != 11486) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_send() != 6874) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_send() != 43052) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_send_queued_now() != 62831) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_send_queued_now() != 42307) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_set_view_attached() != 11843) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_set_view_attached() != 15666) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_sessionhandle_transcript_status() != 12910) {
+    if (uniffi_onicode_mobile_checksum_method_sessionhandle_transcript_status() != 21900) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_voicecall_complete_media() != 130) {
+    if (uniffi_onicode_mobile_checksum_method_voicecall_complete_media() != 1195) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_voicecall_set_muted() != 41942) {
+    if (uniffi_onicode_mobile_checksum_method_voicecall_set_muted() != 41061) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_voicecall_stop() != 33696) {
+    if (uniffi_onicode_mobile_checksum_method_voicecall_stop() != 52469) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_voicemedialistener_on_request() != 10473) {
+    if (uniffi_onicode_mobile_checksum_method_voicemedialistener_on_request() != 3163) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_voicesessionlistener_on_voice_state() != 7593) {
+    if (uniffi_onicode_mobile_checksum_method_voicesessionlistener_on_voice_state() != 8641) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_voicesessionlistener_on_voice_closed() != 14100) {
+    if (uniffi_onicode_mobile_checksum_method_voicesessionlistener_on_voice_closed() != 53118) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_build_micros() != 17231) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_build_micros() != 17481) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_display() != 61509) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_display() != 27747) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_index_at() != 7764) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_index_at() != 27844) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_index_of() != 52386) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_index_of() != 42517) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_message_text() != 60311) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_message_text() != 53226) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_placement() != 14501) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_placement() != 5510) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_plain_text() != 48003) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_plain_text() != 33721) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_prepared_heap_bytes() != 13545) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_prepared_heap_bytes() != 18112) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_revision() != 35752) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_revision() != 15794) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_row_count() != 53856) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_row_count() != 2611) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_rows_in() != 18475) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_rows_in() != 33991) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_style_count() != 46371) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_style_count() != 42650) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_styles() != 21725) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_styles() != 48687) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_total_height() != 27147) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_total_height() != 15308) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutframe_width() != 16219) {
+    if (uniffi_onicode_mobile_checksum_method_layoutframe_width() != 63598) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_layoutlistener_frame_ready() != 31990) {
+    if (uniffi_onicode_mobile_checksum_method_layoutlistener_frame_ready() != 54744) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_platformmeasurer_measure() != 59931) {
+    if (uniffi_onicode_mobile_checksum_method_platformmeasurer_measure() != 45856) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_platformmeasurer_measure_run() != 60773) {
+    if (uniffi_onicode_mobile_checksum_method_platformmeasurer_measure_run() != 29969) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_transcriptview_attach() != 3138) {
+    if (uniffi_onicode_mobile_checksum_method_transcriptview_attach() != 4637) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_transcriptview_attach_subagent() != 48195) {
+    if (uniffi_onicode_mobile_checksum_method_transcriptview_attach_subagent() != 59869) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_transcriptview_close() != 21021) {
+    if (uniffi_onicode_mobile_checksum_method_transcriptview_close() != 6690) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_transcriptview_frame() != 19133) {
+    if (uniffi_onicode_mobile_checksum_method_transcriptview_frame() != 51210) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_transcriptview_set_debug_entries() != 54762) {
+    if (uniffi_onicode_mobile_checksum_method_transcriptview_set_debug_entries() != 8177) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_transcriptview_set_math() != 28799) {
+    if (uniffi_onicode_mobile_checksum_method_transcriptview_set_math() != 41906) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_transcriptview_set_viewport() != 43528) {
+    if (uniffi_onicode_mobile_checksum_method_transcriptview_set_viewport() != 13489) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_transcriptview_set_visual_source() != 22890) {
+    if (uniffi_onicode_mobile_checksum_method_transcriptview_set_visual_source() != 16782) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_transcriptview_toggle() != 51051) {
+    if (uniffi_onicode_mobile_checksum_method_transcriptview_toggle() != 57340) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_transcriptview_toggle_detail() != 17098) {
+    if (uniffi_onicode_mobile_checksum_method_transcriptview_toggle_detail() != 51172) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_transcriptview_visual() != 55147) {
+    if (uniffi_onicode_mobile_checksum_method_transcriptview_visual() != 5409) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_orbrenderer_next_frame() != 6064) {
+    if (uniffi_onicode_mobile_checksum_method_orbrenderer_next_frame() != 33591) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_orbrenderer_set_audio_levels() != 53067) {
+    if (uniffi_onicode_mobile_checksum_method_orbrenderer_set_audio_levels() != 44688) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_orbrenderer_set_orb() != 18211) {
+    if (uniffi_onicode_mobile_checksum_method_orbrenderer_set_orb() != 48551) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminallistener_changed() != 61898) {
+    if (uniffi_onicode_mobile_checksum_method_terminallistener_changed() != 15242) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminallistener_bell() != 37692) {
+    if (uniffi_onicode_mobile_checksum_method_terminallistener_bell() != 53279) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_clear_selection() != 21594) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_clear_selection() != 30353) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_click() != 11833) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_click() != 14912) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_close() != 29698) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_close() != 39695) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_detach() != 65237) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_detach() != 11390) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_extend_selection() != 45725) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_extend_selection() != 40993) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_frame() != 53573) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_frame() != 65276) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_info() != 8072) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_info() != 38760) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_is_direct() != 18472) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_paste() != 59479) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_paste() != 28012) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_phase() != 51452) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_phase() != 64436) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_press() != 2528) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_press() != 56661) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_resize() != 23233) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_resize() != 699) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_revision() != 56694) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_revision() != 13209) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_scroll_to_position() != 58270) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_scroll_to_position() != 4743) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_select() != 31275) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_select() != 8881) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_selection() != 3353) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_selection() != 61503) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_set_dark() != 45746) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_set_dark() != 45170) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_set_focused() != 23236) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_set_focused() != 3922) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_text() != 40435) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_text() != 16779) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_title() != 52542) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_title() != 3478) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_type_text() != 40019) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_type_text() != 34975) {
+    if (uniffi_onicode_mobile_checksum_method_terminalsession_wheel() != 62571) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_terminalsession_wheel() != 32525) {
+    if (uniffi_onicode_mobile_checksum_method_visuallistener_display() != 31209) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_visuallistener_display() != 33821) {
+    if (uniffi_onicode_mobile_checksum_method_visuallistener_frame() != 50921) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_visuallistener_frame() != 6525) {
+    if (uniffi_onicode_mobile_checksum_method_visualsession_activate() != 41127) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_visualsession_activate() != 24011) {
+    if (uniffi_onicode_mobile_checksum_method_visualsession_attach() != 47542) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_visualsession_attach() != 52504) {
+    if (uniffi_onicode_mobile_checksum_method_visualsession_detach() != 39596) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_visualsession_detach() != 6554) {
+    if (uniffi_onicode_mobile_checksum_method_visualsession_pointer() != 62456) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_visualsession_pointer() != 37846) {
+    if (uniffi_onicode_mobile_checksum_method_visualsession_set_appearance() != 20363) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_visualsession_set_appearance() != 2236) {
+    if (uniffi_onicode_mobile_checksum_method_visualsession_slide() != 9881) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_visualsession_slide() != 15641) {
+    if (uniffi_onicode_mobile_checksum_method_visualsession_title() != 8079) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_method_visualsession_title() != 12743) {
+    if (uniffi_onicode_mobile_checksum_constructor_captionfader_new() != 36447) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_constructor_captionfader_new() != 15591) {
+    if (uniffi_onicode_mobile_checksum_constructor_coreclient_new() != 57269) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_constructor_coreclient_new() != 27504) {
+    if (uniffi_onicode_mobile_checksum_constructor_textsystem_new() != 3208) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_constructor_textsystem_new() != 55727) {
+    if (uniffi_onicode_mobile_checksum_constructor_transcriptview_new() != 15423) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zeron_mobile_checksum_constructor_transcriptview_new() != 26914) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_zeron_mobile_checksum_constructor_orbrenderer_new() != 46989) {
+    if (uniffi_onicode_mobile_checksum_constructor_orbrenderer_new() != 62137) {
         return InitializationResult.apiChecksumMismatch
     }
 
@@ -22430,7 +22466,7 @@ private let initializationResult: InitializationResult = {
 
 // Make the ensure init function public so that other modules which have external type references to
 // our types can call it.
-public func uniffiEnsureZeronMobileInitialized() {
+public func uniffiEnsureOnicodeMobileInitialized() {
     switch initializationResult {
     case .ok:
         break

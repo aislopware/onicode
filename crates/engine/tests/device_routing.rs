@@ -1111,26 +1111,26 @@ async fn target_device_id_routes_over_the_relay() {
     core_b.shutdown().await;
 }
 
-/// M5: terminals are device-addressable — OpenTerminal/WriteTerminal forward as
-/// unary calls and SubscribeTerminal proxies its stream through the relay.
+/// M5: terminals are device-addressable — OpenTerminal forwards as a unary call, and
+/// SubscribeTerminal and WriteTerminal ride a terminal stream on the peer link.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn terminal_stream_proxies_over_the_relay() {
-    exercise_terminal_relay(false).await;
+async fn terminal_stream_rides_the_peer_link() {
+    exercise_remote_terminal(false).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn projectless_terminal_stream_proxies_over_the_relay() {
-    exercise_terminal_relay(true).await;
+async fn projectless_terminal_stream_rides_the_peer_link() {
+    exercise_remote_terminal(true).await;
 }
 
-async fn exercise_terminal_relay(projectless: bool) {
+async fn exercise_remote_terminal(projectless: bool) {
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
     let dirs = tempfile::tempdir().expect("tempdir");
     let cwd = dirs.path().join("work");
     std::fs::create_dir_all(&cwd).expect("cwd");
 
-    // Engine B hosts its device room and resolves the terminal cwd from its row.
+    // Engine B hosts the chat and resolves the terminal cwd from its row.
     let core_b = assemble(&dirs.path().join("b"), "device-b");
     if !projectless {
         core_b
@@ -1159,28 +1159,14 @@ async fn exercise_terminal_relay(projectless: bool) {
         )
         .expect("chat row on B");
 
+    // A holds the chat only as B's registry replicates it: a row of its own
+    // under the same id would merge into B's and could hand B a folder that
+    // exists only on A. Where the terminal runs is checked directly below.
     let core_a = assemble(&dirs.path().join("a"), "device-a");
-    // A conflicting local row makes accidental local dispatch observable even
-    // though both engines in this test share the process's home directory.
-    core_a
-        .workspace
-        .create_chat(
-            "chat-term",
-            None,
-            Some("device-b"),
-            None,
-            Some(
-                dirs.path()
-                    .join("missing-on-a")
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
-        )
-        .expect("decoy chat row on A");
     let _mesh = tailnet::mesh(&[&core_a, &core_b], 45).await;
     let client = onicode_rpc::memory_client(core_a.rpc_service());
 
-    // OpenTerminal forwards to B once the relay session is up.
+    // OpenTerminal forwards to B once the link is up.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     let session = loop {
         match client
@@ -1199,13 +1185,21 @@ async fn exercise_terminal_relay(projectless: bool) {
             Err(err) => {
                 assert!(
                     tokio::time::Instant::now() < deadline,
-                    "relay never came up: {err}"
+                    "the link to B never came up: {err}"
                 );
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
         }
     };
     let terminal_id = session["id"].as_str().expect("terminal id").to_string();
+    assert!(
+        core_b.terminals.status(&terminal_id).is_ok(),
+        "the terminal runs on B"
+    );
+    assert!(
+        core_a.terminals.status(&terminal_id).is_err(),
+        "nothing opened on A"
+    );
     let expected_cwd = if projectless {
         // B's own scratch folder for the chat, created when the terminal opened.
         let chat = core_b.workspace.chat("chat-term").unwrap().unwrap();
@@ -1232,7 +1226,7 @@ async fn exercise_terminal_relay(projectless: bool) {
         "cwd from B's chat row"
     );
 
-    // SubscribeTerminal: the stream is proxied item-by-item through the relay.
+    // SubscribeTerminal: B's events arrive on a terminal stream over the link.
     let mut stream = client
         .subscribe(
             methods::SUBSCRIBE_TERMINAL,
@@ -1245,7 +1239,7 @@ async fn exercise_terminal_relay(projectless: bool) {
             methods::WRITE_TERMINAL,
             serde_json::json!({
                 "terminalId": terminal_id,
-                "data": BASE64.encode("echo r3lay-$((20+2))\n"),
+                "data": BASE64.encode("echo l1nk-$((20+2))\n"),
                 "targetDeviceId": "device-b",
             }),
         )
@@ -1264,7 +1258,7 @@ async fn exercise_terminal_relay(projectless: bool) {
                 .expect("valid base64");
             transcript.extend(bytes);
         }
-        if String::from_utf8_lossy(&transcript).contains("r3lay-22") {
+        if String::from_utf8_lossy(&transcript).contains("l1nk-22") {
             break;
         }
     }
@@ -1646,15 +1640,19 @@ async fn remote_target_without_links_fails_clearly() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn queue_watch_and_single_consumption_route_to_the_remote_chat_host() {
+    // A host no engine here answers for.
+    const PARKED: &str = "device-parked";
     let dirs = tempfile::tempdir().expect("tempdir");
 
-    // Seed B's session doc while the workspace temporarily names A as host.
-    // That keeps B's automatic drain from consuming the fixture before the
-    // remote client has subscribed to it.
+    // Seed B's session doc while the workspace parks the chat on a host that
+    // is not on the tailnet. That keeps every drain from consuming the fixture
+    // before the remote client has subscribed to it: B is not the host, and A,
+    // which syncs B's doc as soon as the mesh is up, would be a live host that
+    // takes the row if it were named.
     let core_b = assemble(&dirs.path().join("b"), "device-b");
     core_b
         .workspace
-        .create_chat("chat-queue-remote", None, Some("device-a"), None, None)
+        .create_chat("chat-queue-remote", None, Some(PARKED), None, None)
         .expect("create remote queue chat");
     core_b
         .workspace
@@ -1750,7 +1748,7 @@ async fn queue_watch_and_single_consumption_route_to_the_remote_chat_host() {
     // consumer. The loser gets `sent: false` and can reconcile its projection.
     core_b
         .workspace
-        .set_chat_host("chat-queue-remote", "device-a")
+        .set_chat_host("chat-queue-remote", PARKED)
         .expect("pause B drain");
     let second_id = core_b
         .doc_host
@@ -1858,8 +1856,8 @@ async fn workspace_entry_mutations_are_forwarded_to_the_owning_plain_folder() {
     host.shutdown().await;
 }
 
-/// Full MCP discovery/create/converse flow over two real engines, a shared
-/// registry and the same device relay used by the routing tests above.
+/// Full MCP discovery/create/converse flow over two real engines whose
+/// registries replicate over the same links the routing tests above use.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn mcp_standalone_session_executes_on_the_selected_device() {
     use onicode_mcp::{Onicode, Origin, Tools};
@@ -1880,9 +1878,7 @@ async fn mcp_standalone_session_executes_on_the_selected_device() {
         None,
     )
     .unwrap();
-    let registry = onicode_sync::registry::mock_server::MockRegistryServer::start().await;
-    a.workspace.connect_registry_url(&registry.url());
-    b.workspace.connect_registry_url(&registry.url());
+    // The mesh replicates the registry between the two engines.
     let _mesh = tailnet::mesh(&[&a, &b], 49).await;
     let client = onicode_rpc::memory_client(a.rpc_service());
     let tools = Tools::new(Arc::new(Onicode::with_client(

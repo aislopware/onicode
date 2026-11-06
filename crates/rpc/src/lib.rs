@@ -89,21 +89,14 @@ pub mod methods {
     pub const LIST_COMMANDS: &str = "ListCommands";
     pub const QUEUE_COMMAND: &str = "QueueCommand";
     pub const TAKE_PROJECT_ACTION_SETUP: &str = "TakeProjectActionSetup";
-    /// Peer-to-peer delivery fallback: the SENDER's engine forwards a queued
-    /// command entry (client-minted id and all) straight over the device-room
-    /// link when its chat2 rows can't reach the edge but the host's peer link
-    /// is alive. The host claims the id in its processed ledger before
-    /// executing, so the doc row arriving later dedupes to a no-op —
-    /// exactly-once by construction. Params `{chatId, entry}`.
-    pub const RELAY_COMMAND: &str = "RelayCommand";
     /// User-driven delivery retry for a chat with unadopted queued sends:
-    /// fresh chat2 socket, host nudge, drain pass, and a new delivery escort
-    /// per pending command. Params `{chatId}`; IPC-only.
+    /// follow the host again now, a drain pass, and a new attachment
+    /// delivery per pending command. Params `{chatId}`; IPC-only.
     pub const RETRY_DELIVERY: &str = "RetryDelivery";
     pub const FORK_SIDE_CHAT: &str = "ForkSideChat";
     pub const WATCH_DOC_MESSAGES: &str = "WatchDocMessages";
-    /// Explicit user navigation, `{chatId}`. Prioritizes this device's sync
-    /// connection; automatic subscriptions and retries must not call it.
+    /// Explicit user navigation, `{chatId}`. Opens the chat and follows its
+    /// host now; automatic subscriptions and retries must not call it.
     pub const FOCUS_CHAT: &str = "FocusChat";
     /// `{viewportId, focused}`: an app window gained or lost focus (desktop
     /// banners hold back while one is focused). Focused viewports repeat it;
@@ -131,14 +124,12 @@ pub mod methods {
     /// Steer this row into the live turn without interrupting it.
     /// `{ chatId, id }` → `{ sent }`.
     pub const STEER_QUEUED_MESSAGE_NOW: &str = "SteerQueuedMessageNow";
-    /// Nudge every open room client to verify liveness NOW (window focus,
-    /// app foregrounded). No params; IPC-only. Each room ignores the hint
-    /// unless it has been broadcast-quiet ≥30s, so this is cheap to spam.
+    /// The path may have changed (window focus, app foregrounded): every peer
+    /// link's backoff ends and it redials now. No params; IPC-only.
     pub const PROBE_SYNC: &str = "ProbeSync";
-    /// Live sync introspection (`onicode sync` / debug surfaces): per-room
-    /// connection state, last pushed-frame/ack ages, rejoin/probe/resync
-    /// counters for the workspace room and every open chat doc. No params;
-    /// IPC-only.
+    /// Live sync introspection (`onicode sync` / debug surfaces): whether the
+    /// registry caught up and with whom, and each open chat's host, whether it
+    /// is followed live, and its unacked writes. No params; IPC-only.
     pub const SYNC_STATUS: &str = "SyncStatus";
     /// Pushed edge-connectivity posture (`onicode_proto::Connectivity`):
     /// current value first, then every change — the connection pill /

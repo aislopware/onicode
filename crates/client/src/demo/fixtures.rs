@@ -384,8 +384,8 @@ pub(crate) struct Seeded {
     pub change_requests: Vec<CheckoutChangeRequestStatus>,
 }
 
-/// Write the whole dataset into the replica (as local writes, which the
-/// local-only demo replica folds straight into its rows).
+/// Write the whole dataset into the replica, each row as the device that owns it
+/// ([`RegistryDoc::write_as`]).
 pub(crate) fn seed(
     doc: &mut RegistryDoc,
     fixture: DemoFixture,
@@ -398,14 +398,14 @@ pub(crate) fn seed(
     match fixture {
         DemoFixture::IosOnly => {
             if let Some(phone) = all_devices.iter().find(|d| d.id == self_id) {
-                doc.upsert_device(phone)?;
+                doc.write_as(&phone.id, |doc| doc.upsert_device(phone))?;
             }
             doc.reconcile_sidebar_pins(true)?;
             return Ok(Seeded { change_requests });
         }
         DemoFixture::NoProjects => {
             for device in &all_devices {
-                doc.upsert_device(device)?;
+                doc.write_as(&device.id, |doc| doc.upsert_device(device))?;
             }
             doc.reconcile_sidebar_pins(true)?;
             return Ok(Seeded { change_requests });
@@ -413,11 +413,11 @@ pub(crate) fn seed(
         DemoFixture::Standard => {}
     }
     for device in &all_devices {
-        doc.upsert_device(device)?;
+        doc.write_as(&device.id, |doc| doc.upsert_device(device))?;
     }
     let spaces = spaces(now);
     for space in &spaces {
-        doc.upsert_space(space)?;
+        doc.write_as(&space.device_id, |doc| doc.upsert_space(space))?;
     }
     for demo in chats() {
         let space = demo.space.and_then(|id| spaces.iter().find(|s| s.id == id));
@@ -466,19 +466,22 @@ pub(crate) fn seed(
             parent_chat_id: demo.parent.map(str::to_owned),
             child_kind: None,
         };
-        doc.upsert_chat(&chat)?;
+        // Each row is written by the device that owns it, as on a real tailnet.
+        doc.write_as(demo.device, |doc| doc.upsert_chat(&chat))?;
         if let Some(status) = demo.status {
-            doc.upsert_session(&Session {
-                last_completed_turn: None,
-                last_turn_outcome: None,
-                terminal_activity: None,
-                running_subagents: 0,
-                background_tasks: Vec::new(),
-                chat_id: demo.id.into(),
-                device_id: demo.device.into(),
-                status,
-                started_at: Some(ms(now - 95_000)),
-                updated_at: Utc::now(),
+            doc.write_as(demo.device, |doc| {
+                doc.upsert_session(&Session {
+                    last_completed_turn: None,
+                    last_turn_outcome: None,
+                    terminal_activity: None,
+                    running_subagents: 0,
+                    background_tasks: Vec::new(),
+                    chat_id: demo.id.into(),
+                    device_id: demo.device.into(),
+                    status,
+                    started_at: Some(ms(now - 95_000)),
+                    updated_at: Utc::now(),
+                })
             })?;
         }
         if let (Some((number, state, title)), Some(source)) = (demo.pr, &source_context) {

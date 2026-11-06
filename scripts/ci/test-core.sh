@@ -32,7 +32,7 @@ cd "$(dirname "$0")/../.."
 # Test binaries that run nothing on Linux are left out: they would still be
 # compiled and linked. These are files whose every test is #[ignore]d because
 # it needs a live service or a real CLI.
-skip=" managed_install muse_account_live pi_live real_acp_lifecycle real_quiet_survey coordinator "
+skip=" managed_install muse_account_live pi_live real_acp_lifecycle real_quiet_survey "
 tests=()
 for f in crates/harness/tests/*.rs crates/preview/tests/*.rs crates/doc/tests/*.rs; do
   name="$(basename "$f" .rs)"
@@ -40,7 +40,7 @@ for f in crates/harness/tests/*.rs crates/preview/tests/*.rs crates/doc/tests/*.
 done
 # `misc` (harness, engine and preview): the small suites, one binary each.
 # The orb geometry tests live in onicode-orb's `geometry`.
-for t in misc geometry session_publication restart_resume side_chats message_queue voice_runtime device_routing device_room; do
+for t in misc geometry peer_sync restart_resume side_chats message_queue voice_runtime device_routing device_room; do
   tests+=(--test "$t")
 done
 

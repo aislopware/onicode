@@ -37,7 +37,6 @@ pub fn build_id() -> &'static str {
 pub mod auth;
 mod change_request_store;
 pub mod change_requests;
-pub mod chat2_host;
 mod chat_persistence;
 mod cloud_accounts;
 pub mod cloud_client;
@@ -46,6 +45,8 @@ pub mod deferred;
 pub mod desktop_notify;
 pub mod diff_sync;
 pub mod doc_host;
+mod doc_server;
+pub mod edge;
 mod fs_watch;
 pub mod harness_updates;
 pub(crate) mod home_index;
@@ -54,10 +55,12 @@ pub mod instance_lock;
 pub mod local_import;
 pub mod managed;
 mod model_catalogs;
+mod peer_doc_sink;
 pub mod peers;
 pub mod profile;
 pub mod project_actions;
 pub mod registry;
+mod registry_server;
 pub mod remote_terminals;
 pub mod repos;
 pub mod rpc;
@@ -86,7 +89,8 @@ pub use diff_sync::{
     capture_commit_diff, capture_diff, capture_diff_against, capture_turn_diff,
     discard_working_tree, merge_base, read_diff_file_text, snapshot_tree, working_diff_base,
 };
-pub use doc_host::{ChatDocHandle, DocHost, DocHostConfig, EdgeConfig};
+pub use doc_host::{ChatDocHandle, DocHost, DocHostConfig};
+pub use edge::EdgeConfig;
 pub use instance_lock::InstanceLock;
 pub use onicode_preview::Scope as PreviewScope;
 pub use profile::EngineProfile;
@@ -106,9 +110,7 @@ pub use terminals::Terminals;
 pub use titles::TitleGenerator;
 pub use uploads::{AttachmentChunk, Uploads};
 pub use workspace_files::WorkspaceFiles;
-pub use workspace_host::{
-    DEFAULT_ORG_ID, DEFAULT_USER_ID, WORKSPACE_DOC_ID, WorkspaceHost, WorkspaceHostConfig,
-};
+pub use workspace_host::{DEFAULT_ORG_ID, DEFAULT_USER_ID, WorkspaceHost, WorkspaceHostConfig};
 pub use workspace_search::WorkspaceSearch;
 
 pub(crate) const LEGACY_UNKNOWN_DEVICE_NAME: &str = "unknown-device";
@@ -173,8 +175,10 @@ pub struct EngineCore {
     pub repos: Repos,
     pub workspace_files: WorkspaceFiles,
     pub terminals: Terminals,
-    /// I/O routing for terminals on other devices (direct link or relay).
+    /// Terminals on other devices this engine attaches to, over the peer links.
     pub remote_terminals: remote_terminals::RemoteTerminals,
+    /// Serves this engine's terminals to peers (needs the links for its datagram copies).
+    terminal_service: Arc<terminals::link::TerminalService<Terminals>>,
     pub project_actions: ProjectActionsStore,
     pub previews: onicode_preview::PreviewService,
     pub change_requests: CheckoutChangeRequests,
@@ -311,7 +315,6 @@ impl EngineCore {
                 Err(err) => tracing::error!(error = %err, "stale-session recovery failed"),
             }
         }
-        doc_host.spawn_transcript_salvage(profile.store_root().join("journals"));
         let repos = Repos::new(data_dir, &device_id);
         sessions.set_scratch_root(repos.scratch_root());
         doc_host.set_repos(repos.clone());
@@ -334,9 +337,24 @@ impl EngineCore {
             local_device_name(&device_id),
         )
         .map_err(|e| EngineError::Other(e.to_string()))?;
-        previews.serve_streams(
-            terminals::link::SERVICE_PREFIX,
-            Arc::new(terminals::link::Service::new(terminals.clone())),
+        // Peers open terminals and preview tunnels to this engine as streams on their links;
+        // input and echo copies ride datagrams beside them.
+        let remote_terminals = remote_terminals::RemoteTerminals::default();
+        let terminal_service = Arc::new(terminals::link::TerminalService::new(
+            terminals.clone(),
+            remote_terminals.clone(),
+        ));
+        let streams = Arc::new(peers::StreamRouter::default());
+        streams.serve(onicode_net::StreamKind::Terminal, terminal_service.clone());
+        streams.serve_datagrams(
+            onicode_net::stream::channel::TERMINAL_COPY,
+            terminal_service.clone(),
+        );
+        streams.serve(onicode_net::StreamKind::Tunnel, previews.tunnels());
+        streams.serve(onicode_net::StreamKind::Doc, doc_host.doc_server());
+        streams.serve(
+            onicode_net::StreamKind::Registry,
+            workspace.registry_server(),
         );
         let uploads = Uploads::from_root_with_fallback(
             profile.uploads_root(),
@@ -407,7 +425,8 @@ impl EngineCore {
             repos,
             workspace_files,
             terminals,
-            remote_terminals: Default::default(),
+            remote_terminals,
+            terminal_service,
             project_actions,
             previews,
             change_requests,
@@ -421,7 +440,7 @@ impl EngineCore {
             workspace_scope: profile.scope(),
             auth: std::sync::Mutex::new(None),
             links: std::sync::Mutex::new(None),
-            streams: Arc::default(),
+            streams,
             updater: std::sync::Mutex::new(None),
             updater_wake: std::sync::Mutex::new(None),
             cloud: std::sync::Mutex::new(None),
@@ -462,9 +481,12 @@ impl EngineCore {
     }
 
     /// Attach the links to the user's other engines: `targetDeviceId` routing,
-    /// [`Self::dial_device`], and the doc host's queued-attachment transfers.
+    /// [`Self::dial_device`], session docs and the registry, terminals and previews.
     pub fn set_links(&self, links: Arc<onicode_peer::PeerLinks>) {
         self.doc_host.set_links(links.clone());
+        self.workspace.set_links(links.clone());
+        self.terminal_service.set_links(&links);
+        self.previews.set_links(links.clone());
         *self
             .links
             .lock()
@@ -561,8 +583,6 @@ impl EngineCore {
     /// clearing credentials alone is not a security boundary.
     pub fn disconnect_edge(&self) {
         self.previews.stop();
-        self.doc_host.disconnect_edge();
-        self.workspace.disconnect_edge();
     }
 
     /// Graceful teardown: settle live runs (streaming entries stamped `aborted`),
@@ -994,7 +1014,6 @@ impl Engine {
             EdgeConfig::new(config.edge_url.clone(), Arc::new(auth.clone())).with_device(device_id)
         });
 
-        let preview_org = profile.org_id().to_string();
         let device_root = profile.device_root().to_path_buf();
         let core = match lock {
             Some(lock) => EngineCore::assemble_with_profile_locked(
@@ -1033,15 +1052,6 @@ impl Engine {
                 activity.clone(),
                 runner::HEARTBEAT_INTERVAL,
             );
-            // A session machine can stop without warning (a provider
-            // auto-stop, a crash) after accepting a send: the message is in
-            // its chat's room, but the nudge that said so is spent. Look at
-            // every chat it hosts once the registry has synced.
-            if runner::session().is_some()
-                && let Err(err) = core.doc_host.enqueue_wakeup("*")
-            {
-                tracing::warn!(error = %err, "runner: couldn't schedule the hosted chats' reconcile");
-            }
             // Check the session's project out. Runs dispatched meanwhile
             // show the setup steps live and start once it is done
             // (`runner::setup_pending`).
@@ -1074,12 +1084,7 @@ impl Engine {
             terminals: preview_terminals.chats(),
             reserved_ports: onicode_harness::agent_ports::reserved(),
         });
-        let preview_signaling = edge_enabled.then(|| onicode_preview::signaling::Config {
-            edge_url: config.edge_url.clone(),
-            org_id: preview_org,
-            tokens: Arc::new(auth.clone()),
-        });
-        core.previews.start(projects, preview_signaling).await;
+        core.previews.start(projects).await;
         // Release checker: polls {edge}/releases hourly (wall clock); headless
         // installs with ONICODE_AUTO_UPDATE=1 apply + restart themselves — gated
         // on quiescence so a restart never lands under a live run or open PTY.

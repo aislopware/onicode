@@ -12,10 +12,9 @@ use crate::{EngineConfig, EngineCore, InstanceLock};
 
 /// How long a predecessor gets to let go of the data directory.
 const HANDOFF: Duration = Duration::from_secs(60);
-/// How long a new version gets to reach Onicode's servers. A box nobody can reach
-/// is as stranded as one that doesn't start, and there's no point sitting
-/// through the whole deadline to find out.
-const EDGE_PROOF: Duration = Duration::from_secs(3 * 60);
+/// How long a new version gets to sync with the devices it reaches. A box nobody
+/// can sync with is as stranded as one that doesn't start.
+const PEER_PROOF: Duration = Duration::from_secs(3 * 60);
 /// Still running a moment after being ready: catches a failure just after
 /// startup, before it can't be undone.
 const SETTLE: Duration = Duration::from_secs(5);
@@ -86,36 +85,18 @@ async fn answers_on_its_port(port: u16, data_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether the servers answer at all. If they don't, the network is the problem
-/// and a new version can't be blamed for not reaching them.
-async fn edge_answers(edge_url: &str) -> bool {
-    let url = format!("{}/releases/latest.txt", edge_url.trim_end_matches('/'));
-    let Ok(client) = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-    else {
-        return false;
-    };
-    client
-        .get(url)
-        .send()
-        .await
-        .is_ok_and(|reply| reply.status().is_success())
-}
-
 struct Proof {
     workspace: crate::workspace_host::WorkspaceHost,
     auth: crate::Auth,
     scope: WorkspaceScope,
     port: u16,
     data_dir: PathBuf,
-    edge_url: String,
 }
 
 impl Proof {
     /// Its databases open and read (migrations included: assembly ran them), it
-    /// serves clients, and a signed-in device is back on Onicode's servers, so
-    /// other devices can reach it. Sessions wait until after this.
+    /// serves clients, and a signed-in device syncs with the devices it reaches.
+    /// Sessions wait until after this.
     async fn run(&self) -> Result<(), String> {
         self.workspace
             .read_chats()
@@ -124,14 +105,9 @@ impl Proof {
         if self.scope != WorkspaceScope::Synced {
             return Ok(());
         }
-        let deadline = tokio::time::Instant::now() + EDGE_PROOF;
+        let deadline = tokio::time::Instant::now() + PEER_PROOF;
         loop {
-            if !self.auth.state().is_signed_in()
-                || self
-                    .workspace
-                    .sync_status()
-                    .is_some_and(|room| room.connected)
-            {
+            if !self.auth.state().is_signed_in() || self.workspace.registry_synced() {
                 return Ok(());
             }
             if tokio::time::Instant::now() >= deadline {
@@ -139,10 +115,15 @@ impl Proof {
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        if edge_answers(&self.edge_url).await {
-            return Err("it couldn't connect to Onicode's servers".into());
+        // Linked yet never synced is this version's fault; no peers at all is not.
+        if self
+            .workspace
+            .links()
+            .is_some_and(|links| !links.links().is_empty())
+        {
+            return Err("it couldn't sync with the devices it reaches".into());
         }
-        tracing::warn!("no network during the update trial; not holding that against it");
+        tracing::warn!("no peers during the update trial; not holding that against it");
         Ok(())
     }
 }
@@ -159,7 +140,6 @@ pub(crate) fn prove_and_commit(core: &EngineCore, config: &EngineConfig) {
         scope: core.workspace_scope(),
         port: config.ipc_port,
         data_dir: config.data_dir.clone(),
-        edge_url: config.edge_url.clone(),
     };
     let doc_host = core.doc_host.clone();
     let sessions = core.sessions.clone();

@@ -9,7 +9,7 @@ description = "Sandboxed Luau runtime for agent visuals: scripts build a native 
 [dependencies]
 mlua = { version = "0.12", features = ["luau"] }
 # The GLSL compiler wgpu uses, so a shader is validated exactly as it will run.
-naga = { version = "29", features = ["glsl-in"] }
+naga = { workspace = true, features = ["glsl-in"] }
 # glTF models (`s:model`): `.glb` or self-contained `.gltf`.
 gltf = { version = "1", default-features = false, features = [
     "import",

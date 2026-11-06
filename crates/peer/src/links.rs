@@ -509,6 +509,12 @@ impl PeerLinks {
         links
     }
 
+    /// The directory these links dial from: the engines the tailnet has.
+    #[must_use]
+    pub fn directory(&self) -> &Arc<PeerDirectory> {
+        &self.0.directory
+    }
+
     /// Changes as a counter that moves whenever a link comes, goes or starts dialling.
     #[must_use]
     pub fn subscribe_changes(&self) -> watch::Receiver<u64> {

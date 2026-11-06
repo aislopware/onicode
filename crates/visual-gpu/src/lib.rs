@@ -111,6 +111,8 @@ impl Gpu {
                 power_preference: wgpu::PowerPreference::LowPower,
                 force_fallback_adapter: false,
                 compatible_surface: None,
+                // Trusted code: the adapter's own limits, not a fingerprinting-resistant bucket.
+                apply_limit_buckets: false,
             })
             .await
             .map_err(|e| e.to_string())?;
@@ -181,8 +183,9 @@ impl Gpu {
             });
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         let mut bgra = vec![0u8; (width * height * 4) as usize];
-        if let Ok(Ok(())) = rx.recv() {
-            let mapped = buffer.slice(..).get_mapped_range();
+        if let Ok(Ok(())) = rx.recv()
+            && let Ok(mapped) = buffer.slice(..).get_mapped_range()
+        {
             for y in 0..height as usize {
                 let src = &mapped[y * row as usize..][..width as usize * 4];
                 let dst = &mut bgra[y * width as usize * 4..][..width as usize * 4];

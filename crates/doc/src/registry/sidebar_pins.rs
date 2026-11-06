@@ -4,13 +4,13 @@ use super::*;
 
 impl RegistryDoc {
     pub fn sidebar_pins_initialized(&self) -> bool {
-        self.overlay_row(KIND_PREFERENCES, SIDEBAR_PINS_STATE_ID)
+        self.live_row(KIND_PREFERENCES, SIDEBAR_PINS_STATE_ID)
             .is_some()
     }
 
     pub(super) fn ordered_sidebar_pins(&self) -> Vec<(String, String)> {
         let mut pins: Vec<_> = self
-            .overlay_rows(KIND_SIDEBAR_PINS)
+            .live_rows(KIND_SIDEBAR_PINS)
             .into_iter()
             .filter_map(|row| {
                 if !self.sidebar_location_is_pinned(&row.id, &row) {
@@ -59,8 +59,7 @@ impl RegistryDoc {
         {
             return Err(DocError::Schema("You can pin up to 200 sessions".into()));
         }
-        if matches!(change, SidebarPinChange::Pin { .. })
-            && self.overlay_row(KIND_CHATS, id).is_none()
+        if matches!(change, SidebarPinChange::Pin { .. }) && self.live_row(KIND_CHATS, id).is_none()
         {
             return Err(DocError::Schema("Session no longer exists".into()));
         }
@@ -68,7 +67,7 @@ impl RegistryDoc {
         self.observe_sidebar_row("sidebarLocations", id);
         // Observe this pin's field clocks before a causally subsequent edit,
         // including clocks from a device whose wall clock runs ahead of ours.
-        if let Some(row) = self.overlay_row(KIND_SIDEBAR_PINS, id)
+        if let Some(row) = self.live_row(KIND_SIDEBAR_PINS, id)
             && let Some(clock) = row.max_clock()
         {
             let mut parts = clock.splitn(3, '-');
@@ -118,7 +117,7 @@ impl RegistryDoc {
             set.insert("pinned".into(), json!(true));
             self.write_sidebar_location(id, "pinned");
         }
-        self.enqueue_ops(vec![RowOp {
+        self.apply_local(vec![RowOp {
             kind: KIND_SIDEBAR_PINS.into(),
             id: id.into(),
             op: OpKind::Upsert,

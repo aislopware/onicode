@@ -17,9 +17,9 @@ onicode-proto.workspace = true
 onicode-doc.workspace = true
 onicode-sync.workspace = true
 onicode-rpc.workspace = true
-onicode-preview.workspace = true
+onicode-peer.workspace = true
+onicode-net.workspace = true
 onicode-term-link.workspace = true
-anyhow.workspace = true
 loro.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
@@ -38,7 +38,5 @@ async-trait.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 onicode-visual.workspace = true
-onicode-sync = { workspace = true, features = ["mock-server"] }
-tokio-tungstenite.workspace = true
 async-trait.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

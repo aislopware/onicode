@@ -149,8 +149,8 @@ These measurements demonstrate lighter, successful document synchronization on
 the stated impaired links. They do not prove a globally most reliable transport
 or that every feature works on every aircraft network.
 
-- Generic remote RPC/uploads still require WebSocket; preview uses WebRTC with
-  STUN and lacks an HTTPS byte relay. Document HTTP fallback already exists.
+- Generic remote RPC/uploads still require WebSocket; previews ride QUIC
+  tunnels on the tailnet peer links. Document HTTP fallback already exists.
 - Relay end-to-end echo and room-probe deadlines are separate from transport
   liveness. Large RPC transfers and congested host legs need their own live
   measurements; document results cannot establish those guarantees.

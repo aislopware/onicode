@@ -3,17 +3,17 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use futures::{StreamExt, stream};
+use onicode_peer::{PeerLinks, StreamHandler};
 use tokio_util::sync::CancellationToken;
 
 use crate::catalog::Catalog;
 use crate::login::{self, CallbackForwarder, CallbackRoutes, CallbackTunnels};
-use crate::mux::{self, BoxIo, Connector};
-use crate::peer::Peers;
-use crate::{discovery, proxy, signaling};
+use crate::tunnel::{self, BoxIo, Connector};
+use crate::{discovery, proxy};
 
 /// Discovery must not turn into HTTP traffic against the user's dev servers.
 /// A listening socket is probed until it answers HTTP once; that verdict then
@@ -94,17 +94,11 @@ struct Inner {
     callback_routes: CallbackRoutes,
     /// Sign-in callbacks this device forwards to the device running them.
     callback_tunnels: CallbackTunnels,
-    /// Redials a refused signaling connection when a sign-in starts.
-    signaling_wake: Arc<tokio::sync::Notify>,
-    peers: std::sync::OnceLock<Peers>,
-    /// Engine-provided stream services peers may open, by id prefix.
-    streams: StreamServices,
+    /// What a tunnel reaches here: a preview's dev server or a sign-in callback.
+    connector: Arc<LocalConnector>,
+    /// The links to the user's other engines, once the tailnet is up.
+    links: Arc<OnceLock<Arc<PeerLinks>>>,
 }
-/// Stream services beyond previews (terminals), keyed by service id prefix.
-/// Each handler sees the authenticated peer that opened the stream and
-/// decides itself whether to serve it.
-type StreamServices = Arc<Mutex<Vec<(String, Arc<dyn Connector>)>>>;
-
 /// What discovery serves, re-read every scan.
 #[derive(Clone, Default)]
 pub struct Scope {
@@ -187,61 +181,42 @@ fn candidates(
 }
 impl PreviewService {
     pub fn new(file: PathBuf, device_id: String, device_name: String) -> anyhow::Result<Self> {
-        let signaling_wake = Arc::new(tokio::sync::Notify::new());
+        let catalog = Catalog::open(file, device_id, device_name)?;
+        let callback_routes = CallbackRoutes::default();
         Ok(Self(Arc::new(Inner {
-            catalog: Catalog::open(file, device_id, device_name)?,
+            connector: Arc::new(LocalConnector(catalog.clone(), callback_routes.clone())),
+            catalog,
             stop: CancellationToken::new(),
             started: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
-            callback_routes: CallbackRoutes::notifying(signaling_wake.clone()),
+            callback_routes,
             callback_tunnels: CallbackTunnels::default(),
-            signaling_wake,
-            peers: std::sync::OnceLock::new(),
-            streams: StreamServices::default(),
+            links: Arc::default(),
         })))
     }
 
-    /// Serve stream ids starting with `prefix` from `handler` — to peers and
-    /// to this device alike. Registering a prefix again replaces its handler.
-    pub fn serve_streams(&self, prefix: &str, handler: Arc<dyn Connector>) {
-        let mut streams = self.0.streams.lock().unwrap();
-        streams.retain(|(existing, _)| existing != prefix);
-        streams.push((prefix.to_owned(), handler));
-    }
-
-    /// The open direct connection to `device`, if there is one right now.
-    pub async fn peer_ready(&self, device: &str) -> bool {
-        match self.0.peers.get() {
-            Some(peers) => peers.ready(device).await.is_some(),
-            None => false,
-        }
-    }
-
-    /// Start pairing with `device` in the background, so a stream opened
-    /// shortly after finds the direct connection already up.
-    pub fn warm_peer(&self, device: &str) {
-        let Some(peers) = self.0.peers.get().cloned() else {
+    /// The links to the user's other engines: previews and sign-in callbacks there are reached
+    /// over them, and their catalogs are followed from now on. Set once.
+    pub fn set_links(&self, links: Arc<PeerLinks>) {
+        if self.0.links.set(links.clone()).is_err() {
+            tracing::debug!("preview links were already set");
             return;
-        };
-        let device = device.to_owned();
-        tokio::spawn(async move {
-            if let Err(error) = peers.connect(&device).await {
-                tracing::debug!(%error, "direct connection warm-up failed");
-            }
-        });
+        }
+        let task = tokio::spawn(tunnel::follow_catalogs(
+            links,
+            self.0.catalog.clone(),
+            self.0.stop.child_token(),
+        ));
+        self.0.tasks.lock().unwrap().push(task);
     }
 
-    /// Open stream `service` on `device` directly, pairing first if needed
-    /// (bounded: pairing gives up after 30s).
-    pub async fn open_peer_stream(
-        &self,
-        device: &str,
-        service: &str,
-    ) -> anyhow::Result<mux::Stream> {
-        let peers = self.0.peers.get().cloned().ok_or_else(|| {
-            anyhow::anyhow!("Direct connections to other devices aren't available")
-        })?;
-        peers.open(device, service, false).await
+    /// What serves the tunnels and catalog feeds peers open to this device: register it for
+    /// `StreamKind::Tunnel`.
+    pub fn tunnels(&self) -> Arc<dyn StreamHandler> {
+        Arc::new(tunnel::Tunnels {
+            connector: self.0.connector.clone(),
+            catalog: self.0.catalog.clone(),
+        })
     }
 
     pub fn catalog(&self) -> &Catalog {
@@ -266,22 +241,21 @@ impl PreviewService {
         if self.0.callback_tunnels.contains(login_id) {
             return Ok(());
         }
-        let peers = self.0.peers.get().cloned().ok_or_else(|| {
+        let links = self.0.links.get().cloned().ok_or_else(|| {
             anyhow::anyhow!(
-                "Direct connections to other devices aren't available yet — try again in a moment."
+                "Connections to other devices aren't available yet — try again in a moment."
             )
         })?;
         let device = device.to_owned();
         let service = login::service_id(login_id);
         let open: login::Opener = Arc::new(move || {
-            let (peers, device, service) = (peers.clone(), device.clone(), service.clone());
-            Box::pin(
-                async move { Ok(Box::new(peers.open(&device, &service, false).await?) as BoxIo) },
-            )
+            let (links, device, service) = (links.clone(), device.clone(), service.clone());
+            Box::pin(async move {
+                Ok(Box::new(tunnel::open(&links, &device, &service).await?) as BoxIo)
+            })
         });
         let forwarder = CallbackForwarder::bind(port, lifetime, open).await?;
         self.0.callback_tunnels.insert(login_id, forwarder);
-        self.0.signaling_wake.notify_one();
         Ok(())
     }
 
@@ -289,37 +263,15 @@ impl PreviewService {
         self.0.callback_tunnels.close(login_id);
     }
 
-    /// A provider sign-in's callback rides the direct connection on either
-    /// end — the device running the login, or the one forwarding to it — so
-    /// signaling joins as a sign-in, past the coordinator's device limit.
-    fn signing_in(&self) -> signaling::SigningIn {
-        let (routes, tunnels) = (
-            self.0.callback_routes.clone(),
-            self.0.callback_tunnels.clone(),
-        );
-        Arc::new(move || routes.any_live() || tunnels.any_live())
-    }
-
-    pub async fn start(&self, projects: Projects, signaling: Option<signaling::Config>) {
+    pub async fn start(&self, projects: Projects) {
         if self.0.started.swap(true, Ordering::SeqCst) {
             return;
         }
-        let connector = Arc::new(LocalConnector(
-            self.0.catalog.clone(),
-            self.0.callback_routes.clone(),
-            self.0.streams.clone(),
-        ));
-        let local = mux::local(connector.clone(), self.0.stop.child_token());
-        let (peers, output) = Peers::new(
-            self.0.catalog.device_id().into(),
-            connector,
-            self.0.stop.child_token(),
-        );
-        let _ = self.0.peers.set(peers.clone());
         let router = proxy::Router {
             catalog: self.0.catalog.clone(),
-            local,
-            peers: peers.clone(),
+            local: self.0.connector.clone(),
+            links: self.0.links.clone(),
+            stop: self.0.stop.child_token(),
         };
         let proxy_catalog = self.0.catalog.clone();
         let proxy_stop = self.0.stop.clone();
@@ -408,19 +360,7 @@ impl PreviewService {
                 tokio::select! { _ = stop.cancelled() => break, _ = tokio::time::sleep(Duration::from_secs(2)) => {} }
             }
         });
-        let mut tasks = self.0.tasks.lock().unwrap();
-        tasks.push(scanner);
-        if let Some(config) = signaling {
-            tasks.push(tokio::spawn(signaling::run_signing_in(
-                config,
-                self.0.catalog.clone(),
-                peers,
-                output,
-                self.0.stop.child_token(),
-                self.0.signaling_wake.clone(),
-                self.signing_in(),
-            )));
-        }
+        self.0.tasks.lock().unwrap().push(scanner);
     }
 
     pub fn stop(&self) {
@@ -436,7 +376,9 @@ impl PreviewService {
         }
     }
 }
-struct LocalConnector(Catalog, CallbackRoutes, StreamServices);
+/// This device's own services, by id: a preview's dev server, or a sign-in callback (for the
+/// peer that started the login only).
+struct LocalConnector(Catalog, CallbackRoutes);
 #[async_trait::async_trait]
 impl Connector for LocalConnector {
     async fn connect(&self, id: &str) -> anyhow::Result<BoxIo> {
@@ -444,16 +386,6 @@ impl Connector for LocalConnector {
     }
 
     async fn connect_from(&self, peer: Option<&str>, id: &str) -> anyhow::Result<BoxIo> {
-        let handler = self
-            .2
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|(prefix, _)| id.starts_with(prefix.as_str()))
-            .map(|(_, handler)| handler.clone());
-        if let Some(handler) = handler {
-            return handler.connect_from(peer, id).await;
-        }
         // A sign-in callback: only the registered port, only for the device
         // that started the login, only while it runs.
         if let Some(port) = self.1.target(peer, id) {

@@ -397,7 +397,7 @@ fn empty_fixtures() {
 }
 
 #[test]
-fn new_sessions_are_born_on_chat2() {
+fn new_sessions_open_empty_and_lead_the_front_page() {
     let (client, _dir) = demo(fast());
     let id = client
         .create_session(onicode_client::NewSession {
@@ -411,7 +411,6 @@ fn new_sessions_are_born_on_chat2() {
         })
         .unwrap();
     let row = client.workspace().session(&id).unwrap().clone();
-    assert_eq!(row.room_gen, 2);
     assert_eq!(row.title, "New session");
     assert_eq!(client.workspace().front.recent[0].id, id);
     let session = client.open_session(&id).unwrap();

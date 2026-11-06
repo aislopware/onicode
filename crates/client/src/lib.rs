@@ -59,7 +59,6 @@ pub use onicode_proto::{
     ChangeRequestState, ChangeRequestSummary, ChatConfig, ChatIndicator, ContextUsage,
     UserInputAnswer, UserInputQuestion, WorktreeSpec,
 };
-pub use onicode_term_link::remote::TerminalPath;
 pub use provider_login::{LoginProvider, ProviderLoginStart};
 pub use session::{
     AppendHint, BusyPolicy, ComposerState, Entry, HostCapabilities, HostInfo, InputRequest,

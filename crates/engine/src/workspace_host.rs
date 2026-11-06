@@ -1,142 +1,42 @@
-//! WorkspaceHost — owns the per-user workspace **registry** (docs/
-//! registry-sync.md; replaces the Loro workspace doc after the 2026-07/08
-//! wedge incidents): local snapshot persistence, edge room sync
-//! (`/registry/{orgId}/ws` → room `reg1/{orgId}/{userId}`, offline-tolerant —
-//! spaces/sessions are private to their owner, never org-visible), the device
-//! registry row for THIS device, and the typed watch channels the
-//! WatchChats/WatchDevices/WatchSessions/WatchSidebarPreferences RPC streams
-//! are fed from.
+//! `WorkspaceHost` owns the per-user workspace **registry** (docs/registry-sync.md): its local
+//! snapshot, the `registry` stream sessions that replicate it engine to engine over the tailnet
+//! (`registry_server`), this device's own row, and the typed watch channels the
+//! WatchChats/WatchDevices/WatchSessions/WatchSidebarPreferences streams are fed from.
 //!
-//! Writer discipline (kept from the doc schema): this host writes its own device row,
-//! its own session-status rows, and rows for chats it hosts; renames/archives are LWW
-//! sets accepted from any device (the Mutate surface).
+//! Writer discipline: this host writes its own device row, its own session-status rows and rows
+//! for chats it hosts; peers' merges refuse owner-only fields from anyone else. Renames and
+//! archives are LWW sets accepted from any device (the Mutate surface).
 //!
-//! Liveness: `lastSeenAt` is a row write on boot/shutdown ONLY — the periodic 15s
-//! heartbeat rides the room's presence frames (memory-only on the DO), so staying
-//! online never grows server state.
-//!
-//! Migration: first boot after the update finds no `registry1` snapshot, reads
-//! the legacy `workspace2` Loro snapshot, and seeds the registry from it as
-//! pending upserts (historical HLCs — live writes always win). The overlay
-//! serves the full sidebar before any server contact; the old `ws4` rooms are
-//! simply never joined again. The legacy snapshot is kept for rollback.
+//! Presence: a device is online while this engine holds a live link to it. `lastSeenAt` is a row
+//! write on boot and shutdown only; the overlay stamps live peers on each publish, so staying
+//! online never grows the registry.
 
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 
 use chrono::Utc;
-use onicode_doc::{DeletedSpace, REGISTRY_DOC_ID, RegistryDoc, WorkspaceDoc};
+use onicode_doc::{DeletedSpace, REGISTRY_DOC_ID, RegistryDoc, RegistryRow, Vv};
+use onicode_peer::{PeerLinks, StreamHandler};
 use onicode_proto::{
     Chat, ChatConfig, Device, HarnessId, Session, SidebarPreferencesState, Space, projectless,
 };
-use onicode_sync::{DocsStore, RegistryClient, RegistryTuning};
+use onicode_sync::DocsStore;
 use tokio::sync::watch;
 
-use crate::doc_host::EdgeConfig;
-use crate::http_error::describe_http_error;
+use crate::edge::EdgeConfig;
 use crate::{EngineError, now_ms};
 
-/// Legacy Loro workspace snapshot row — now only read once, as the migration
-/// source for the registry seed. Kept on disk for rollback.
-pub const WORKSPACE_DOC_ID: &str = "workspace2";
-/// Legacy (pre-spaces) snapshot row — best-effort deleted on open.
-const LEGACY_WORKSPACE_DOC_ID: &str = "workspace";
-/// Org used when none is configured (matches the edge's dev-mode `user@org` bearers).
+/// Snapshot rows of the workspace docs the registry replaced; deleted on open.
+const LEGACY_SNAPSHOTS: [&str; 2] = ["workspace", "workspace2"];
+/// Org used when none is configured.
 pub const DEFAULT_ORG_ID: &str = "dev-org";
-/// User used when none is configured (dev mode without a bearer).
+/// User used when none is configured.
 pub const DEFAULT_USER_ID: &str = "dev-user";
-/// Presence beat cadence.
+/// How often the device lists republish, so live peers' `lastSeenAt` keeps moving and a gone
+/// peer's badge goes stale.
 const PRESENCE_INTERVAL_MS: u64 = 15_000;
-/// Dial-gate thresholds (`peer_liveness`): a device is judged `Dark` — dials
-/// parked with zero network traffic — only on POSITIVE evidence: our registry
-/// room joined and warm past the warm-up window, and the device's freshest
-/// known heartbeat (live map ∪ session cache ∪ durable row) older than the
-/// dark window. m1-laptop shape: offline 6 days, yet hot-dialed in 3-dial
-/// bursts every ~60s for the life of the app.
-const DIAL_GATE_WARMUP_MS: i64 = 60_000;
-const DIAL_GATE_DARK_MS: i64 = 5 * 60_000;
-
-/// A presence heartbeat younger than this marks the device alive (3 missed
-/// beats = offline). Also the "peer is reachable" signal that clears the
-/// peer-dial cooldown.
-const PRESENCE_FRESH_MS: i64 = 45_000;
-/// Relay-status probe cadence. Presence heartbeats ride the registry room, so
-/// any registry pathology (or our own room connection being down) silently
-/// starves them — and every device looks offline while its relay works fine.
-/// Before believing "offline", ask the device's DeviceRoom
-/// (`GET /device/{id}/status` → `hostConnected`), which tracks the host socket
-/// authoritatively and shares no machinery with the registry room. Probes only
-/// run for devices whose heartbeat is stale, so the steady state (healthy
-/// room, fresh beats) sends no extra traffic.
-const RELAY_PROBE_INTERVAL_MS: u64 = 30_000;
-/// Per-request timeout for a relay-status probe.
-const RELAY_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Debounce window for local snapshot saves after a change.
 const SNAPSHOT_DEBOUNCE_MS: u64 = 1_000;
-
-/// Initial-join retry backoff (base, cap). A first registry-room join that
-/// fails must not strand the device offline until an app restart — retry until
-/// it lands. Jittered so N devices restarting together don't resynchronize
-/// their retries into a thundering herd on the cold DO.
-pub(crate) const JOIN_RETRY_BASE: std::time::Duration = std::time::Duration::from_millis(500);
-/// 16s, matching the room clients' BACKOFF_CAP: the cap only bounds the dark
-/// window when every event wake (online bus, system wake, token change)
-/// missed, so it trades a few extra dials/minute for a tighter worst case.
-pub(crate) const JOIN_RETRY_CAP: std::time::Duration = std::time::Duration::from_secs(16);
-
-pub(crate) async fn token_changed(changes: &mut Option<tokio::sync::watch::Receiver<u64>>) {
-    match changes {
-        Some(changes) => {
-            let _ = changes.changed().await;
-        }
-        None => std::future::pending::<()>().await,
-    }
-}
-
-async fn token_revoked(token: &Option<Arc<dyn onicode_rpc::TokenSource>>) -> bool {
-    match token {
-        Some(token) => matches!(token.token().await, Err(onicode_rpc::TokenError::SignedOut)),
-        // Fixed test/dev URLs have no revocable credential source.
-        None => false,
-    }
-}
-
-/// Quiet-probe cadence for the registry room: fixed at 15 minutes. One room
-/// per engine, so the fixed cadence costs ~100 DO wakes/day total, and the
-/// probe is deadline-checked — a mute room is detected within
-/// probe cadence + 10s instead of hours (2026-08-04 deaf-socket lesson).
-const REGISTRY_PROBE_QUIET: std::time::Duration = std::time::Duration::from_secs(900);
-/// Deaf-socket escalation: live peer presence dark this long after the
-/// tripwire probe → redial on a fresh socket (see `check_presence_deafness`).
-const PRESENCE_DEAF_REDIAL_MS: i64 = 60_000;
-
-/// State for the presence deafness tripwire. Presence heartbeats ride the
-/// SAME socket and the same DO broadcast fan-out as row updates, so "peers I
-/// was seeing live via this room all went dark at once" is a *delivery*
-/// signal, and it is bounded (~45-60s) at zero server cost — every device
-/// already heartbeats each 15s. The monotonic seen-cache and the relay
-/// status probe deliberately keep devices *fresh-looking* through other
-/// paths; they must never feed this tripwire (they'd mask exactly the
-/// failure it exists to catch — 2026-08-04 deaf-socket incident).
-#[derive(Default)]
-struct PresenceWatch {
-    /// Armed once at least one OTHER device has been seen live via the
-    /// room's presence map this session.
-    armed: bool,
-    /// Epoch ms when live peers first all went dark (0 = not dark).
-    dark_since_ms: i64,
-    /// The cheap first response (probe) already fired.
-    probed: bool,
-}
-
-/// Cheap decorrelation jitter (0–500ms) without pulling in a rng — derived from
-/// the sub-nanosecond wall clock. Mirrors the device relay's `jitter()`.
-pub(crate) fn join_retry_jitter() -> std::time::Duration {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or(0);
-    std::time::Duration::from_millis(u64::from(nanos) % 500)
-}
 
 /// A new projectless chat's cwd: the scratch folder the creating client
 /// already picked, else one named for the chat. Older clients send `~` (or
@@ -171,17 +71,11 @@ pub struct WorkspaceHostConfig {
     /// `std::env::consts::OS`-style platform string.
     pub platform: String,
     pub org_id: String,
-    /// The signed-in user — registries are per-user (`reg1/{orgId}/{userId}`):
-    /// spaces/sessions are private to their owner, never org-visible.
+    /// The signed-in user.
     pub user_id: String,
-    /// When present, the host joins `/registry/{orgId}/ws`. `None` = fully offline
-    /// (local snapshots only; the registry still drives everything device-side).
+    /// Where account-scoped HTTP calls (Cloud, the vault) go; the registry never uses it.
     pub edge: Option<EdgeConfig>,
-    /// The profile can never attach an edge (`WorkspaceScope::Local`), so
-    /// registry writes fold straight into the local rows instead of queueing
-    /// for acks that will never come. Only then: a replica that may attach
-    /// later must keep its writes as ops — re-seeding folded rows as full
-    /// upserts would revive rows another device deleted meanwhile.
+    /// The profile never syncs (`WorkspaceScope::Local`): the registry is not replicated.
     pub local_only: bool,
 }
 
@@ -194,33 +88,19 @@ struct WorkspaceHostInner {
     sessions_tx: watch::Sender<Vec<Session>>,
     spaces_tx: watch::Sender<Vec<Space>>,
     sidebar_preferences_tx: watch::Sender<SidebarPreferencesState>,
-    room: Mutex<Option<Arc<RegistryClient>>>,
-    /// Bumped on every registry change (local mutation or applied server
-    /// frame) — drives republish + the snapshot debounce in `workspace_task`.
+    /// Bumped on every registry change (local write or merged rows): drives republish, the
+    /// snapshot debounce in `workspace_task`, and every `registry` session's live push.
     changed_tx: watch::Sender<u64>,
-    /// Freshest presence heartbeat (ms) we have EVER observed per device. The
-    /// room's presence map forgets entries after its 30s TTL and starts empty
-    /// on a (re)join, so without this cache a receive-side hiccup snaps a
-    /// device's overlay back to its boot-time row `lastSeenAt` — an instant
-    /// (and false) "offline" badge for a host that beat 20s ago.
-    presence_seen: Mutex<std::collections::HashMap<String, i64>>,
+    /// When this engine last held a live link to each device (ms): the presence overlay.
+    presence_seen: Mutex<HashMap<String, i64>>,
     /// Chats whose row this host claimed for a command that outran their
     /// `createChat` ([`WorkspaceHost::claim_chat`]).
-    claimed: Mutex<std::collections::HashSet<String>>,
-    /// Called with a device id whenever its presence heartbeat proves it alive —
-    /// wired to `LinkCache::reset_cooldown` so a peer that comes back is dialed
-    /// immediately instead of waiting out the failure backoff.
-    peer_alive: Mutex<Option<PeerAliveHook>>,
-    /// Deaf-socket tripwire state — see `check_presence_deafness`.
-    presence_watch: Mutex<PresenceWatch>,
-    /// Epoch ms of the registry room's most recent (re)join — the dial gate's
-    /// warm-up clock (`peer_liveness`): a just-joined room hasn't heard
-    /// anyone's heartbeat yet, and that silence must not read as "offline".
-    room_joined_at: std::sync::atomic::AtomicI64,
+    claimed: Mutex<HashSet<String>>,
+    /// The engine's peer links, once the tailnet is up.
+    links: OnceLock<Arc<PeerLinks>>,
+    /// Peers whose whole registry this replica merged this process.
+    caught_up: Mutex<HashSet<String>>,
 }
-
-/// "This peer is alive" callback (device id) — see `WorkspaceHost::set_peer_alive_hook`.
-pub type PeerAliveHook = Arc<dyn Fn(&str) + Send + Sync>;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -243,66 +123,62 @@ pub struct WorkspaceHost {
     inner: Arc<WorkspaceHostInner>,
 }
 
+/// A [`WorkspaceHost`] that does not keep it alive: the stream handler holds this, since the
+/// peer links that call it live as long as the engine.
+#[derive(Clone)]
+pub(crate) struct WeakWorkspaceHost(Weak<WorkspaceHostInner>);
+
+impl WeakWorkspaceHost {
+    pub(crate) fn upgrade(&self) -> Option<WorkspaceHost> {
+        self.0.upgrade().map(|inner| WorkspaceHost { inner })
+    }
+}
+
+/// The registry as one side of a `registry` session with one peer.
+pub(crate) struct PeerReplica {
+    inner: Arc<WorkspaceHostInner>,
+    peer: String,
+}
+
+impl onicode_sync::registry::Replica for PeerReplica {
+    fn read<T>(&self, f: impl FnOnce(&RegistryDoc) -> T) -> T {
+        f(&lock(&self.inner.reg))
+    }
+
+    fn merge(&self, rows: &[RegistryRow], vv: Option<&Vv>) {
+        let changed = {
+            let mut doc = lock(&self.inner.reg);
+            let before = doc.vv().clone();
+            doc.merge_remote(rows, vv) || *doc.vv() != before
+        };
+        // A raised vv alone must still reach the snapshot and the other sessions.
+        if changed {
+            self.inner.bump_changed();
+        }
+    }
+
+    fn changes(&self) -> watch::Receiver<u64> {
+        self.inner.changed_tx.subscribe()
+    }
+
+    fn caught_up(&self) {
+        lock(&self.inner.caught_up).insert(self.peer.clone());
+        self.inner.publish();
+    }
+}
+
 impl WorkspaceHost {
-    /// Load (or migrate, or init) the registry, upsert this device's row, start
-    /// the change-driven task, and join the edge registry room when configured.
+    /// Loads (or inits) the registry, upserts this device's row and starts the change-driven
+    /// task. Replication starts with [`Self::set_links`].
     pub fn open(store: Arc<DocsStore>, config: WorkspaceHostConfig) -> Result<Self, EngineError> {
-        let stored = store.load_snapshot(REGISTRY_DOC_ID)?;
-        let mut doc = match stored {
+        let mut doc = match store.load_snapshot(REGISTRY_DOC_ID)? {
             Some(bytes) => RegistryDoc::from_bytes(&bytes, &config.device_id)
                 .map_err(|e| EngineError::Other(format!("registry snapshot load failed: {e}")))?,
-            None => {
-                // MIGRATION (instant, one-time): seed from the legacy Loro
-                // workspace snapshot when one exists. Seeds are pending upserts
-                // with historical HLCs — the overlay serves the full sidebar
-                // immediately, the room converges on first join, and any live
-                // write beats a migrated value. The legacy snapshot stays on
-                // disk for rollback.
-                let mut doc = RegistryDoc::new(&config.device_id);
-                match store.load_snapshot(WORKSPACE_DOC_ID) {
-                    Ok(Some(bytes)) => {
-                        let raw = loro::LoroDoc::new();
-                        match raw.import(&bytes) {
-                            Ok(_) => {
-                                let legacy = WorkspaceDoc::from_doc(raw);
-                                match legacy.read_all() {
-                                    Ok(state) => match doc.seed_from_workspace(&state) {
-                                        Ok(rows) => {
-                                            tracing::info!(
-                                                rows,
-                                                "migrated legacy workspace doc into the registry"
-                                            );
-                                        }
-                                        Err(err) => {
-                                            tracing::warn!(error = %err, "workspace migration seed failed");
-                                        }
-                                    },
-                                    Err(err) => {
-                                        tracing::warn!(error = %err, "legacy workspace read failed; starting empty");
-                                    }
-                                }
-                            }
-                            Err(err) => {
-                                tracing::warn!(error = %err, "legacy workspace import failed; starting empty");
-                            }
-                        }
-                    }
-                    Ok(None) => {}
-                    Err(err) => {
-                        tracing::warn!(error = %err, "legacy workspace snapshot load failed; starting empty");
-                    }
-                }
-                doc
-            }
+            None => RegistryDoc::new(&config.device_id),
         };
-        // A Local profile never has an edge to ack a pending batch: fold the
-        // queue (a pre-fix snapshot's 178k never-acked batches, or this
-        // boot's migration seeds) into the local rows and keep folding every
-        // write. Otherwise this re-seeds once if local-only writes exist that
-        // no server has seen. The boot save below persists the result.
-        doc.set_local_only(config.local_only);
-        // Destructive-break hygiene: the pre-spaces row stays unreachable.
-        store.delete_snapshot(LEGACY_WORKSPACE_DOC_ID).ok();
+        for legacy in LEGACY_SNAPSHOTS {
+            store.delete_snapshot(legacy).ok();
+        }
 
         // Boot: upsert our own device row. A user-set name (RenameDevice is LWW from
         // any device) survives restarts. The old fallback sentinel is repaired with
@@ -360,18 +236,15 @@ impl WorkspaceHost {
                 sessions_tx,
                 spaces_tx,
                 sidebar_preferences_tx,
-                room: Mutex::new(None),
                 changed_tx,
-                presence_seen: Mutex::new(std::collections::HashMap::new()),
+                presence_seen: Mutex::default(),
                 claimed: Mutex::default(),
-                peer_alive: Mutex::new(None),
-                presence_watch: Mutex::new(PresenceWatch::default()),
-                room_joined_at: std::sync::atomic::AtomicI64::new(0),
+                links: OnceLock::new(),
+                caught_up: Mutex::default(),
             }),
         };
-        // Persist immediately: after this boot the migration source is never
-        // read again, so the registry snapshot must exist even if the process
-        // dies before the first debounced save.
+        // Persist at once: an edge-era snapshot was just folded into this replica's own rows,
+        // and must not fold again on a crash before the first debounced save.
         if let Err(error) = host.inner.persist_snapshot() {
             tracing::warn!(%error, "registry snapshot save failed");
         }
@@ -380,257 +253,59 @@ impl WorkspaceHost {
         // the VACUUM on its own thresholds, so ordinary boots only checkpoint.
         let store = host.inner.store.clone();
         tokio::task::spawn_blocking(move || store.reclaim_free_space());
-        host.join_room();
         tokio::spawn(workspace_task(Arc::downgrade(&host.inner), changed_rx));
-        if host.inner.config.edge.is_some() {
-            tokio::spawn(relay_probe_task(Arc::downgrade(&host.inner)));
-        }
         Ok(host)
     }
 
-    /// Edge room join — offline-tolerant: a failed join logs and stays local-first.
-    fn join_room(&self) {
-        let Some(edge) = &self.inner.config.edge else {
+    /// Replicates the registry with the engines `links` reach, and derives presence from the
+    /// live links. Call once, when the tailnet is up; a local-only profile keeps its registry to
+    /// itself.
+    pub fn set_links(&self, links: Arc<PeerLinks>) {
+        if self.inner.links.set(links.clone()).is_err() {
             return;
-        };
-        let org_id = self.inner.config.org_id.clone();
-        // Per-dial URL provider: the bearer is re-read on every (re)connect.
-        let url = edge.room_url(format!("/registry/{org_id}/ws"));
-        self.spawn_join(url, edge.token_changes(), Some(edge.token.clone()));
-    }
-
-    /// Test seam: join a registry room at a fixed WebSocket URL without an
-    /// `EdgeConfig` — integration tests wire hosts to an in-process mock
-    /// server through this. Production always goes through [`Self::join_room`].
-    #[doc(hidden)]
-    pub fn connect_registry_url(&self, url: &str) {
-        self.spawn_join(
-            Arc::new(onicode_sync::StaticUrl(url.to_string())),
-            None,
-            None,
-        );
-    }
-
-    fn spawn_join(
-        &self,
-        url: Arc<dyn onicode_sync::UrlProvider>,
-        mut token_changes: Option<tokio::sync::watch::Receiver<u64>>,
-        token: Option<Arc<dyn onicode_rpc::TokenSource>>,
-    ) {
-        // A room will ack from here on (the test seam joins edge-less
-        // hosts): queue writes again, re-seeding any folded local-only ones.
-        self.mutate(|doc| doc.set_local_only(false));
-        let org_id = self.inner.config.org_id.clone();
-        let reg = self.inner.reg.clone();
-        let device_id = self.inner.config.device_id.clone();
+        }
+        if !self.inner.config.local_only {
+            tokio::spawn(crate::registry_server::keep(self.downgrade()));
+        }
         let weak = Arc::downgrade(&self.inner);
+        let mut changes = links.subscribe_changes();
         tokio::spawn(async move {
-            let mut wake = onicode_sync::wake::subscribe();
-            let mut online = onicode_sync::wake::subscribe_online();
-            // `RegistryClient` only self-reconnects AFTER a first successful
-            // join; an INITIAL failure (a 500 from an overloaded DO, a token
-            // racing a refresh, an edge deploy) must not end this task and
-            // leave the device offline until an app restart. Retry the first
-            // join on a capped, jittered backoff so a transient blip self-heals.
-            let mut backoff = JOIN_RETRY_BASE;
-            loop {
-                if weak.upgrade().is_none() {
-                    return; // host dropped
-                }
-                let tuning = RegistryTuning {
-                    probe_quiet: REGISTRY_PROBE_QUIET,
-                };
-                // Production path (token present): dual transport — the WS
-                // dials as before, and a plain-HTTPS pull/push seam derived
-                // from the same URL provider bootstraps the doc in ~1 RTT
-                // and keeps syncing at backoff cadence when the socket can't
-                // connect (airplane-wifi networks strip WS upgrades).
-                let result = if token.is_some() {
-                    RegistryClient::connect_via_transport(
-                        url.clone(),
-                        reg.clone(),
-                        &device_id,
-                        tuning,
-                        Arc::new(WsDerivedRegistryTransport::new(url.clone())),
-                    )
-                    .await
-                } else {
-                    RegistryClient::connect_via_tuned(url.clone(), reg.clone(), &device_id, tuning)
-                        .await
-                };
-                match result {
-                    Ok(client) => {
-                        let client = Arc::new(client);
-                        client.set_presence(now_ms());
-                        let mut events = client.events();
-                        if token_revoked(&token).await {
-                            return;
-                        }
-                        let Some(inner) = weak.upgrade() else { return };
-                        *lock(&inner.room) = Some(client.clone());
-                        inner
-                            .room_joined_at
-                            .store(now_ms(), std::sync::atomic::Ordering::Relaxed);
-                        inner.bump_changed();
-                        tracing::info!(org = %org_id, "registry room joined");
-                        drop(inner);
-                        // The slot is the sole owner. This lets engine-level
-                        // revocation close the socket synchronously by taking it.
-                        drop(client);
-                        // The event pump lives for the client's whole life
-                        // (across its self-reconnects); it ends only when the
-                        // client is dropped at host teardown.
-                        loop {
-                            tokio::select! {
-                                event = events.recv() => match event {
-                                    Ok(onicode_sync::RegistryEvent::Connected) => {
-                                        let Some(inner) = weak.upgrade() else { return };
-                                        // Re-join: restart the dial gate's
-                                        // warm-up clock (presence map is empty
-                                        // again; silence isn't evidence yet).
-                                        inner
-                                            .room_joined_at
-                                            .store(now_ms(), std::sync::atomic::Ordering::Relaxed);
-                                        inner.bump_changed();
-                                    }
-                                    Ok(onicode_sync::RegistryEvent::Applied) => {
-                                        let Some(inner) = weak.upgrade() else { return };
-                                        inner.bump_changed();
-                                    }
-                                    Ok(onicode_sync::RegistryEvent::Presence) => {
-                                        let Some(inner) = weak.upgrade() else { return };
-                                        inner.publish();
-                                    }
-                                    Ok(onicode_sync::RegistryEvent::Disconnected) => {}
-                                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-                                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                                },
-                                _ = token_changed(&mut token_changes) => {
-                                    if token_revoked(&token).await {
-                                        tracing::info!(org = %org_id,
-                                            "registry credentials removed; leaving room");
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        if let Some(inner) = weak.upgrade() {
-                            *lock(&inner.room) = None;
-                        }
-                        return;
-                    }
-                    Err(err) => {
-                        tracing::warn!(org = %org_id, error = %err, backoff_ms = backoff.as_millis() as u64,
-                            "registry room join failed; retrying");
-                    }
-                }
-                // Drain stale online events so only successes DURING this
-                // wait cut it short (our own failed dial doesn't count).
-                while online.try_recv().is_ok() {}
-                tokio::select! {
-                    _ = tokio::time::sleep(backoff + join_retry_jitter()) => {
-                        backoff = (backoff * 2).min(JOIN_RETRY_CAP);
-                    }
-                    _ = wake.recv() => {
-                        backoff = JOIN_RETRY_BASE;
-                    }
-                    _ = online.recv() => {
-                        backoff = JOIN_RETRY_BASE;
-                    }
-                    _ = token_changed(&mut token_changes) => {
-                        if token_revoked(&token).await {
-                            return;
-                        }
-                        backoff = JOIN_RETRY_BASE;
-                    }
-                }
+            while changes.changed().await.is_ok() {
+                let Some(inner) = weak.upgrade() else { return };
+                inner.publish_lists(true);
             }
         });
     }
 
-    /// Close the current registry membership before account-scoped state is
-    /// drained. The auth signal prevents an in-flight join from replacing it.
-    pub fn disconnect_edge(&self) {
-        lock(&self.inner.room).take();
+    /// Serves the `registry` streams peers open.
+    pub fn registry_server(&self) -> Arc<dyn StreamHandler> {
+        Arc::new(crate::registry_server::RegistryServer(self.downgrade()))
     }
 
-    /// Wire the "peer is alive" signal (fresh presence heartbeat) to a callback —
-    /// the engine points this at `LinkCache::reset_cooldown`.
-    pub fn set_peer_alive_hook(&self, hook: PeerAliveHook) {
-        *lock(&self.inner.peer_alive) = Some(hook);
+    pub(crate) fn downgrade(&self) -> WeakWorkspaceHost {
+        WeakWorkspaceHost(Arc::downgrade(&self.inner))
     }
 
-    /// Test seam: write a foreign device row (the dial gate reads these;
-    /// production rows arrive via registry sync).
+    pub(crate) fn links(&self) -> Option<Arc<PeerLinks>> {
+        self.inner.links.get().cloned()
+    }
+
+    /// This registry as one side of a `registry` session with `peer`.
+    pub(crate) fn replica_for(&self, peer: &str) -> PeerReplica {
+        PeerReplica {
+            inner: self.inner.clone(),
+            peer: peer.to_owned(),
+        }
+    }
+
+    /// Test seam: a foreign device row as if it arrived by replication, so written as that
+    /// device (a device row is its own device's to write).
     #[doc(hidden)]
     pub fn upsert_device_row(&self, device: &Device) {
-        if let Err(err) = self.mutate(|doc| doc.upsert_device(device)) {
+        if let Err(err) =
+            self.mutate(|doc| doc.write_as(&device.id, |doc| doc.upsert_device(device)))
+        {
             tracing::warn!(error = %err, "device row upsert failed");
-        }
-    }
-
-    /// Dial-gate verdict for `LinkCache` (park dials to registry-dark peers).
-    /// `Dark` requires positive evidence; every ambiguous state — registry
-    /// room down or still in its warm-up window, unknown device, heartbeat in
-    /// the gray zone — stays `Unknown`, because a dead registry room (rows
-    /// down, relay fine: the 2026-08-18 03:45 incident shape) must never
-    /// park the relay. Un-park is presence-driven: heartbeats resume → the
-    /// verdict flips and the peer-alive hook clears any dial cooldown.
-    /// A deleted device row is positive evidence too: nothing answers there
-    /// (a deleted Cloud session's machine was still dialed every few seconds
-    /// by everything that targets its chat).
-    pub fn peer_liveness(&self, device_id: &str) -> onicode_rpc::PeerLiveness {
-        use onicode_rpc::PeerLiveness::{Dark, Live, Unknown};
-        if device_id == self.inner.config.device_id {
-            return Live;
-        }
-        if self.read(|doc| doc.device_deleted(device_id)) {
-            return Dark;
-        }
-        let now = now_ms();
-        let (connected, live_beat) = {
-            let room = lock(&self.inner.room);
-            match room.as_ref() {
-                Some(room) => (
-                    room.stats().connected,
-                    room.presence().get(device_id).copied(),
-                ),
-                None => (false, None),
-            }
-        };
-        if !connected {
-            return Unknown;
-        }
-        let cached = lock(&self.inner.presence_seen).get(device_id).copied();
-        match live_beat.into_iter().chain(cached).max() {
-            Some(ms) if now.saturating_sub(ms) < PRESENCE_FRESH_MS => Live,
-            Some(ms) if now.saturating_sub(ms) >= DIAL_GATE_DARK_MS => Dark,
-            Some(_) => Unknown,
-            None => {
-                // Never heard this device beat. Silence is only evidence once
-                // OUR room has been joined long enough to have heard it.
-                let joined_at = self
-                    .inner
-                    .room_joined_at
-                    .load(std::sync::atomic::Ordering::Relaxed);
-                if joined_at == 0 || now.saturating_sub(joined_at) < DIAL_GATE_WARMUP_MS {
-                    return Unknown;
-                }
-                // Fall back to the durable row: a device whose last stamped
-                // sighting is ancient AND which isn't beating now is dark.
-                let row_seen = self
-                    .read(|doc| doc.read_devices())
-                    .ok()
-                    .into_iter()
-                    .flatten()
-                    .find(|d| d.id == device_id)
-                    .and_then(|d| d.last_seen_at)
-                    .map(|at| at.timestamp_millis());
-                match row_seen {
-                    Some(ms) if now.saturating_sub(ms) >= DIAL_GATE_DARK_MS => Dark,
-                    _ => Unknown,
-                }
-            }
         }
     }
 
@@ -638,65 +313,32 @@ impl WorkspaceHost {
         &self.inner.config.device_id
     }
 
-    pub fn connected(&self) -> bool {
-        lock(&self.inner.room)
-            .as_ref()
-            .is_some_and(|room| room.stats().connected)
-    }
-
-    /// True once this replica has applied a server state this process (WS
-    /// hello answer or HTTPS pull) — or when no edge is configured at all
-    /// (local-only: the local table IS the whole truth). Destructive repair
-    /// (the orphan sweep) gates on this: a replica that has not heard from
-    /// the server this boot may be arbitrarily behind (gapped cursor,
-    /// pre-heal, offline at boot), and "row absent locally" on such a view
-    /// is not evidence of deletion.
+    /// Whether this replica's rows can be taken as the whole truth: it merged some peer's whole
+    /// registry this process, or no other device ever wrote to it, or it never syncs.
+    /// Destructive repair (the orphan sweep) gates on this: a replica that has heard from no
+    /// peer may be arbitrarily behind, and a row absent from it is no evidence of a deletion.
     pub fn registry_synced(&self) -> bool {
-        if self.inner.config.edge.is_none() {
-            return true;
-        }
-        lock(&self.inner.room)
-            .as_ref()
-            .is_some_and(|room| room.stats().synced)
+        self.inner.registry_synced()
     }
 
-    /// Probe the registry room's liveness NOW (window-focus sweep). Probes are
-    /// deadline-checked in the client: an unanswered probe tears the session
-    /// down for a fresh socket, so a deaf-receiving room (2026-08-04 incident)
-    /// heals within seconds of the user looking at the app.
-    pub fn probe(&self) {
-        if let Some(room) = lock(&self.inner.room).as_ref() {
-            room.probe();
-        }
+    /// The profile never syncs (`WorkspaceScope::Local`): connectivity is `Disabled`.
+    pub fn local_only(&self) -> bool {
+        self.inner.config.local_only
     }
 
-    /// Registry room introspection for SyncStatus / `onicode sync`.
-    /// `None` = no room yet (edge-less, or the initial join is still retrying).
-    pub fn sync_status(&self) -> Option<onicode_sync::RoomStatsSnapshot> {
-        lock(&self.inner.room).as_ref().map(|room| room.stats())
+    /// The peers whose whole registry this replica merged this process, sorted.
+    pub fn registry_peers(&self) -> Vec<String> {
+        let mut peers: Vec<String> = lock(&self.inner.caught_up).iter().cloned().collect();
+        peers.sort();
+        peers
     }
 
-    /// The registry room's reconnect posture (next-dial deadline + sticky
-    /// last failure) for the connectivity stream. `None` = no room yet.
-    pub fn reconnect_state(&self) -> Option<onicode_sync::ReconnectState> {
-        lock(&self.inner.room)
-            .as_ref()
-            .map(|room| room.reconnect_state())
-    }
-
-    /// Whether this engine was configured with edge transports at all
-    /// (`false` = local profile: connectivity is `Disabled`, hide the pill).
-    pub fn edge_expected(&self) -> bool {
-        self.inner.config.edge.is_some()
-    }
-
-    /// The edge this workspace syncs through (`None` = local/offline profile)
-    /// — also where account-scoped HTTP calls (Cloud, vault) go.
+    /// Where account-scoped HTTP calls (Cloud, the vault) go; `None` on a local profile.
     pub fn edge(&self) -> Option<&EdgeConfig> {
         self.inner.config.edge.as_ref()
     }
 
-    /// The workspace org (`ws3/{orgId}/…` rooms, `/cloud/{orgId}` routes).
+    /// The workspace org (`/cloud/{orgId}` routes).
     pub fn org_id(&self) -> &str {
         &self.inner.config.org_id
     }
@@ -704,13 +346,10 @@ impl WorkspaceHost {
     // ── registry access helpers ─────────────────────────────────────────────
 
     /// Run a mutation under the registry lock, then wake the publish/persist
-    /// task and push the write to the room.
+    /// task and every `registry` session, which pushes the write to its peer.
     fn mutate<R>(&self, f: impl FnOnce(&mut RegistryDoc) -> R) -> R {
         let result = f(&mut lock(&self.inner.reg));
         self.inner.bump_changed();
-        if let Some(room) = lock(&self.inner.room).as_ref() {
-            room.nudge();
-        }
         result
     }
 
@@ -757,9 +396,9 @@ impl WorkspaceHost {
         &self,
         change: &onicode_proto::SidebarPinChange,
     ) -> Result<(), EngineError> {
-        let synced = self.sync_status().is_some_and(|status| status.synced);
+        let synced = self.registry_synced();
         self.mutate(|doc| {
-            if self.edge_expected() && !synced && doc.sidebar_preferences().is_none() {
+            if !synced && doc.sidebar_preferences().is_none() {
                 return Err(EngineError::Other("Pins are still syncing".into()));
             }
             Ok(doc.change_sidebar_pin(change)?)
@@ -801,7 +440,7 @@ impl WorkspaceHost {
 
     /// Mutation acknowledgements and watches share the same ordered revision.
     pub fn sidebar_preferences_snapshot(&self) -> SidebarPreferencesState {
-        let synced = self.sync_status().is_some_and(|status| status.synced);
+        let synced = self.registry_synced();
         let doc = lock(&self.inner.reg);
         self.inner.publish_sidebar_preferences(&doc, synced);
         self.inner.sidebar_preferences_tx.borrow().clone()
@@ -1006,6 +645,19 @@ impl WorkspaceHost {
         }
     }
 
+    /// Test seam: `session` as its owner wrote it after the chat moved there, as if it arrived
+    /// by replication (a session row is its owner's to write, and its owner never changes).
+    #[doc(hidden)]
+    pub fn record_foreign_session(&self, session: &Session) {
+        let result = self.mutate(|doc| {
+            doc.delete_session(&session.chat_id);
+            doc.write_as(&session.device_id, |doc| doc.upsert_session(session))
+        });
+        if let Err(err) = result {
+            tracing::warn!(chat = %session.chat_id, error = %err, "registry session write failed");
+        }
+    }
+
     // ── Mutate surface (LWW writes accepted from any device) ────────────────
 
     /// Create a chat, usually *in a project*: the project fixes the host device
@@ -1114,9 +766,6 @@ impl WorkspaceHost {
                 last_message_at: None,
                 created_at: Utc::now(),
                 harness_session_id: None,
-                // Born on chat2: a brand-new chat has an empty doc — nothing
-                // to seed, no migration race to lose. Only pre-existing chats
-                // go through the seed+flip path (the host migration sweep).
                 room_gen: Some(2),
                 harness_session_cwd: None,
                 harness_session_harness: None,
@@ -1380,17 +1029,12 @@ impl WorkspaceHost {
     /// migration flow will drive this). Returns false when the chat doesn't
     /// exist.
     pub fn set_chat_host(&self, chat_id: &str, device_id: &str) -> Result<bool, EngineError> {
-        let Some(mut chat) = self.read(|doc| doc.chat(chat_id))? else {
-            return Ok(false);
-        };
-        chat.device_id = device_id.to_string();
-        self.mutate(|doc| doc.upsert_chat(&chat))?;
-        Ok(true)
+        Ok(self.mutate(|doc| doc.rehome_chat(chat_id, device_id))?)
     }
 
     /// Upsert a chat row copied verbatim from another profile (local→synced
     /// import). Same write path as every live mutation, so the row persists
-    /// and pushes like any other; the caller fixes `room_gen` beforehand.
+    /// and replicates like any other.
     pub fn import_chat_row(&self, chat: &Chat) -> Result<(), EngineError> {
         Ok(self.mutate(|doc| doc.upsert_chat(chat))?)
     }
@@ -1399,12 +1043,6 @@ impl WorkspaceHost {
     /// import).
     pub fn import_space_row(&self, space: &Space) -> Result<(), EngineError> {
         Ok(self.mutate(|doc| doc.upsert_space(space))?)
-    }
-
-    /// Flip the chat's sync room generation (docs/chat2-sync.md M2) — the
-    /// host calls this in the same breath as seeding the chat2 checkpoint.
-    pub fn set_chat_room_gen(&self, chat_id: &str, room_gen: u32) -> Result<bool, EngineError> {
-        Ok(self.mutate(|doc| doc.set_chat_room_gen(chat_id, room_gen))?)
     }
 
     pub fn set_chat_archived(&self, chat_id: &str, archived: bool) -> Result<bool, EngineError> {
@@ -1483,22 +1121,17 @@ impl WorkspaceHostInner {
     }
 
     fn publish_lists(&self, clock_tick: bool) {
-        let registry_synced = lock(&self.room)
-            .as_ref()
-            .is_some_and(|room| room.stats().synced);
+        let registry_synced = self.registry_synced();
         // Sidebar pins are viewport state. A Cloud device has no viewport, and
-        // the edge refuses its writes to rows it doesn't own: reconciling here
-        // would rewrite the missing preferences row after every refused push.
+        // peers refuse its writes to rows it doesn't own: reconciling here
+        // would rewrite the missing preferences row after every refused merge.
         let owns_sidebar = self.config.platform != onicode_proto::CLOUD_PLATFORM;
         let snapshot = {
             let mut doc = lock(&self.reg);
             match doc.reconcile_sidebar_pins(registry_synced && owns_sidebar) {
                 Ok(true) => {
-                    // Persist and transmit cleanup just like a user mutation.
+                    // Persist and replicate the cleanup like a user write.
                     self.bump_changed();
-                    if let Some(room) = lock(&self.room).as_ref() {
-                        room.nudge();
-                    }
                 }
                 Ok(false) => {}
                 Err(error) => tracing::warn!(%error, "sidebar pin cleanup failed"),
@@ -1508,7 +1141,7 @@ impl WorkspaceHostInner {
         };
         match snapshot {
             Ok(mut state) => {
-                self.overlay_presence(&mut state.devices);
+                self.overlay_presence(&mut state.devices, clock_tick);
                 // Retain the latest value even with no subscribers, but don't
                 // wake every list for unrelated registry/presence changes.
                 publish_if_changed(&self.chats_tx, state.chats);
@@ -1561,107 +1194,38 @@ impl WorkspaceHostInner {
         });
     }
 
-    /// Fold the 15s presence heartbeats into the device rows' `lastSeenAt`
-    /// before publishing. The row is written on boot/shutdown ONLY (server-
-    /// state hygiene), so without this overlay every device looks offline
-    /// ~70s after its boot — and a genuinely dead host is indistinguishable
-    /// from slow sync. Fresh remote heartbeats also fire the peer-alive hook
-    /// (dial-cooldown reset).
-    fn overlay_presence(&self, devices: &mut [Device]) {
-        let mut alive_peers: Vec<String> = Vec::new();
-        {
-            // No live room handle is NOT "everyone is offline": the cache (fed
-            // by past heartbeats and the relay-status probe) still overlays —
-            // a dead registry room must never fake an offline badge for
-            // devices whose relay connection is fine.
-            let room = lock(&self.room);
-            let live_map = room
-                .as_ref()
-                .map(|room| room.presence())
-                .unwrap_or_default();
-            let mut seen = lock(&self.presence_seen);
+    /// Stamps each device's `lastSeenAt` with the last time this engine held a live link to it.
+    /// The row is written on boot and shutdown only, so without this every peer would look
+    /// offline soon after its boot. `refresh` re-reads the links (the presence tick, a link
+    /// change); other publishes reuse what was seen, so unrelated writes leave the list quiet.
+    fn overlay_presence(&self, devices: &mut [Device], refresh: bool) {
+        let mut seen = lock(&self.presence_seen);
+        if refresh && let Some(links) = self.links.get() {
             let now = now_ms();
-            let mut live_fresh_peers = 0usize;
-            for device in devices.iter_mut() {
-                // Freshest of the live presence entry and the cache: the room
-                // map's 30s TTL (and its empty state right after a rejoin)
-                // must not erase freshness this engine already witnessed — the
-                // device is offline only once heartbeats genuinely stop
-                // arriving for the UI's whole online window.
-                let live = live_map.get(&device.id).copied();
-                if device.id != self.config.device_id
-                    && live.is_some_and(|ms| now.saturating_sub(ms) < PRESENCE_FRESH_MS)
-                {
-                    live_fresh_peers += 1;
-                }
-                let cached = seen.get(&device.id).copied();
-                let Some(ms) = live.into_iter().chain(cached).max() else {
-                    continue;
-                };
-                seen.insert(device.id.clone(), ms);
-                if let Some(at) = chrono::DateTime::<Utc>::from_timestamp_millis(ms)
-                    && device.last_seen_at.is_none_or(|prev| prev < at)
-                {
-                    device.last_seen_at = Some(at);
-                }
-                if device.id != self.config.device_id && now.saturating_sub(ms) < PRESENCE_FRESH_MS
-                {
-                    alive_peers.push(device.id.clone());
-                }
-            }
-            if let Some(room) = room.as_ref() {
-                self.check_presence_deafness(room, live_fresh_peers, now);
+            for link in links.links() {
+                seen.insert(link.device, now);
             }
         }
-        if alive_peers.is_empty() {
-            return;
-        }
-        let hook = lock(&self.peer_alive).clone();
-        if let Some(hook) = hook {
-            for id in &alive_peers {
-                hook(id);
+        for device in devices.iter_mut() {
+            let Some(at) = seen
+                .get(&device.id)
+                .and_then(|&ms| chrono::DateTime::<Utc>::from_timestamp_millis(ms))
+            else {
+                continue;
+            };
+            if device.last_seen_at.is_none_or(|prev| prev < at) {
+                device.last_seen_at = Some(at);
             }
         }
     }
 
-    /// The deaf-socket tripwire (see [`PresenceWatch`]). LIVE presence
-    /// freshness only — never the seen-cache or relay probe. Escalation
-    /// ladder: first all-dark observation → deadline-checked probe (free on a
-    /// healthy room); still dark [`PRESENCE_DEAF_REDIAL_MS`] later → fresh-
-    /// socket redial (the only cure when the server→client path drops even
-    /// probe answers). Disarms after the redial and re-arms when a peer is
-    /// next seen live, so a genuinely-offline fleet costs one probe + one
-    /// redial, ever.
-    fn check_presence_deafness(&self, room: &RegistryClient, live_fresh_peers: usize, now: i64) {
-        let mut watch = lock(&self.presence_watch);
-        if live_fresh_peers > 0 {
-            watch.armed = true;
-            watch.dark_since_ms = 0;
-            watch.probed = false;
-            return;
+    fn registry_synced(&self) -> bool {
+        if self.config.local_only || !lock(&self.caught_up).is_empty() {
+            return true;
         }
-        if !watch.armed {
-            return;
-        }
-        if watch.dark_since_ms == 0 {
-            watch.dark_since_ms = now;
-        }
-        if !watch.probed {
-            tracing::info!(
-                "all live peer presence went dark; probing registry room (deaf-socket tripwire)"
-            );
-            room.probe();
-            watch.probed = true;
-        } else if now.saturating_sub(watch.dark_since_ms) > PRESENCE_DEAF_REDIAL_MS {
-            tracing::warn!(
-                dark_ms = now.saturating_sub(watch.dark_since_ms),
-                "peer presence still dark after probe; requesting registry room redial"
-            );
-            room.redial();
-            watch.armed = false;
-            watch.dark_since_ms = 0;
-            watch.probed = false;
-        }
+        lock(&self.reg)
+            .read_devices()
+            .is_ok_and(|devices| devices.iter().all(|d| d.id == self.config.device_id))
     }
 
     fn save_snapshot(&self) {
@@ -1682,13 +1246,6 @@ impl WorkspaceHostInner {
                 EngineError::Other(format!("registry snapshot save failed: {error}"))
             })?;
         Ok(bytes.len())
-    }
-
-    /// Presence heartbeat — a memory-only frame on the room, never a row write.
-    fn presence_tick(&self) {
-        if let Some(room) = lock(&self.room).as_ref() {
-            room.set_presence(now_ms());
-        }
     }
 }
 
@@ -1737,88 +1294,8 @@ fn merge_sessions(device_id: &str, rows: &[Session], local: &[Session]) -> Vec<S
     list
 }
 
-/// Background task: relay-verified presence. Every [`RELAY_PROBE_INTERVAL_MS`],
-/// for each known device whose merged heartbeat freshness has gone stale, ask
-/// its DeviceRoom whether the host socket is live (`/device/{id}/status`); a
-/// positive answer refreshes the presence cache so the overlay keeps the badge
-/// online. The DeviceRoom shares no machinery with the registry room, so a
-/// false "offline" now requires BOTH independent paths to be down — at which
-/// point the device is, for every purpose the app has, genuinely offline.
-/// Steady state (healthy room, fresh heartbeats) probes nothing.
-async fn relay_probe_task(weak: Weak<WorkspaceHostInner>) {
-    let mut tick = tokio::time::interval(std::time::Duration::from_millis(RELAY_PROBE_INTERVAL_MS));
-    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    tick.tick().await; // consume the immediate first tick
-    let client = reqwest::Client::new();
-    loop {
-        tick.tick().await;
-        let Some(inner) = weak.upgrade() else { return };
-        let Some(edge) = inner.config.edge.clone() else {
-            return;
-        };
-        let self_id = inner.config.device_id.clone();
-        let now = now_ms();
-        let stale: Vec<String> = {
-            let Ok(devices) = lock(&inner.reg).read_devices() else {
-                continue;
-            };
-            let seen = lock(&inner.presence_seen);
-            devices
-                .into_iter()
-                .filter(|d| d.id != self_id)
-                .filter(|d| {
-                    seen.get(&d.id)
-                        .is_none_or(|ms| now.saturating_sub(*ms) >= PRESENCE_FRESH_MS)
-                })
-                .map(|d| d.id)
-                .collect()
-        };
-        drop(inner);
-        if stale.is_empty() {
-            continue;
-        }
-        let Ok(bearer) = edge.bearer().await else {
-            continue; // no usable token yet
-        };
-        let mut refreshed = false;
-        for device_id in stale {
-            let url = format!(
-                "{}/device/{}/status",
-                edge.url.trim_end_matches('/'),
-                device_id
-            );
-            let response = client
-                .get(&url)
-                .bearer_auth(&bearer)
-                .timeout(RELAY_PROBE_TIMEOUT)
-                .send()
-                .await;
-            let Ok(response) = response else { continue };
-            if !response.status().is_success() {
-                continue;
-            }
-            let Ok(body) = response.json::<serde_json::Value>().await else {
-                continue;
-            };
-            if body
-                .get("hostConnected")
-                .and_then(serde_json::Value::as_bool)
-                == Some(true)
-            {
-                let Some(inner) = weak.upgrade() else { return };
-                lock(&inner.presence_seen).insert(device_id.clone(), now_ms());
-                tracing::debug!(device = %device_id, "presence: relay-verified alive");
-                refreshed = true;
-            }
-        }
-        if refreshed && let Some(inner) = weak.upgrade() {
-            inner.publish();
-        }
-    }
-}
-
-/// Background task: reacts to registry changes (local mutations and applied
-/// server frames) by re-publishing the watch channels and debouncing snapshots,
+/// Background task: reacts to registry changes (local writes and merged
+/// rows) by re-publishing the watch channels and debouncing snapshots,
 /// and refreshes presence every [`PRESENCE_INTERVAL_MS`]. Holds only a weak
 /// handle so a dropped host tears the task down.
 async fn workspace_task(weak: Weak<WorkspaceHostInner>, mut changed_rx: watch::Receiver<u64>) {
@@ -1852,10 +1329,8 @@ async fn workspace_task(weak: Weak<WorkspaceHostInner>, mut changed_rx: watch::R
             }
             _ = presence.tick() => {
                 let Some(inner) = weak.upgrade() else { break };
-                inner.presence_tick();
-                // Re-publish on the same cadence: remote heartbeats decay when a
-                // device goes silent, and watchers (the UI online dot, "host
-                // offline" hints) need a tick to observe that staleness.
+                // Live peers' `lastSeenAt` moves on, and a gone peer's goes stale for the
+                // watchers (the UI online dot, "host offline" hints).
                 inner.publish_lists(true);
             }
         }
@@ -1883,152 +1358,9 @@ fn device_name_on_boot(existing_name: Option<&str>, detected_name: &str) -> Stri
         .to_string()
 }
 
-/// Plain-HTTPS registry pull/push derived from the SAME WebSocket URL
-/// provider the dial uses (`wss://…/registry/{org}/ws?token=…&device=…`):
-/// swap the scheme, swap the `/ws` leaf for `/rows` or `/push`, keep the
-/// fresh token+device the provider already mints per attempt. No second
-/// auth path to maintain, and the `?beat=1` keeps presence alive for a
-/// device that can only reach the edge over HTTPS.
-struct WsDerivedRegistryTransport {
-    url: Arc<dyn onicode_sync::UrlProvider>,
-    client: reqwest::Client,
-}
-
-impl WsDerivedRegistryTransport {
-    fn new(url: Arc<dyn onicode_sync::UrlProvider>) -> Self {
-        Self {
-            url,
-            client: reqwest::Client::new(),
-        }
-    }
-
-    async fn leaf_url(
-        provider: &Arc<dyn onicode_sync::UrlProvider>,
-        leaf: &str,
-    ) -> Result<(reqwest::Url, Option<String>), onicode_sync::SyncError> {
-        let ws = provider.url().await?;
-        let mut u = reqwest::Url::parse(&ws)
-            .map_err(|e| onicode_sync::SyncError::Protocol(format!("bad ws url: {e}")))?;
-        let scheme = if u.scheme() == "wss" { "https" } else { "http" };
-        let _ = u.set_scheme(scheme);
-        let path = u.path().to_string();
-        let Some(base) = path.strip_suffix("/ws") else {
-            return Err(onicode_sync::SyncError::Protocol(
-                "ws url without /ws leaf".into(),
-            ));
-        };
-        let new_path = format!("{base}/{leaf}");
-        u.set_path(&new_path);
-        // Move the WS URL's ?token= into a bearer header (HTTP supports
-        // headers; query strings can reach request logs). Other params
-        // (device) stay.
-        let token = u
-            .query_pairs()
-            .find(|(k, _)| k == "token")
-            .map(|(_, v)| v.into_owned());
-        let kept: Vec<(String, String)> = u
-            .query_pairs()
-            .filter(|(k, _)| k != "token")
-            .map(|(k, v)| (k.into_owned(), v.into_owned()))
-            .collect();
-        u.query_pairs_mut().clear();
-        for (k, v) in kept {
-            u.query_pairs_mut().append_pair(&k, &v);
-        }
-        Ok((u, token))
-    }
-}
-
-impl onicode_sync::RegistryTransport for WsDerivedRegistryTransport {
-    fn fetch(
-        &self,
-        since: u64,
-    ) -> futures::future::BoxFuture<'static, Result<String, onicode_sync::SyncError>> {
-        let provider = self.url.clone();
-        let client = self.client.clone();
-        Box::pin(async move {
-            let (mut u, token) = Self::leaf_url(&provider, "rows").await?;
-            u.query_pairs_mut()
-                .append_pair("since", &since.to_string())
-                .append_pair("beat", "1");
-            let mut req = client.get(u);
-            if let Some(token) = token {
-                req = req.bearer_auth(token);
-            }
-            let resp = req
-                .send()
-                .await
-                .map_err(|e| onicode_sync::SyncError::WebSocket(describe_http_error(e)))?;
-            if !resp.status().is_success() {
-                return Err(onicode_sync::SyncError::Protocol(format!(
-                    "registry pull http {}",
-                    resp.status()
-                )));
-            }
-            resp.text()
-                .await
-                .map_err(|e| onicode_sync::SyncError::WebSocket(describe_http_error(e)))
-        })
-    }
-
-    fn push(
-        &self,
-        body: String,
-    ) -> futures::future::BoxFuture<'static, Result<String, onicode_sync::SyncError>> {
-        let provider = self.url.clone();
-        let client = self.client.clone();
-        Box::pin(async move {
-            let (u, token) = Self::leaf_url(&provider, "push").await?;
-            let mut req = client
-                .post(u)
-                .header("content-type", "application/json")
-                .body(body);
-            if let Some(token) = token {
-                req = req.bearer_auth(token);
-            }
-            let resp = req
-                .send()
-                .await
-                .map_err(|e| onicode_sync::SyncError::WebSocket(describe_http_error(e)))?;
-            if !resp.status().is_success() {
-                return Err(onicode_sync::SyncError::Protocol(format!(
-                    "registry push http {}",
-                    resp.status()
-                )));
-            }
-            resp.text()
-                .await
-                .map_err(|e| onicode_sync::SyncError::WebSocket(describe_http_error(e)))
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{device_name_on_boot, linked_worktree_root};
-
-    #[tokio::test]
-    async fn registry_http_sync_retains_dns_cause() {
-        use onicode_sync::RegistryTransport;
-
-        use super::*;
-        use crate::http_error::test_support::FailingDns;
-
-        let dns = Arc::new(FailingDns::default());
-        let transport = WsDerivedRegistryTransport {
-            url: Arc::new(onicode_sync::StaticUrl(
-                "wss://edge.invalid/registry/org/ws?token=token-secret".into(),
-            )),
-            client: dns.client(),
-        };
-        let pull = transport.fetch(0).await.unwrap_err();
-        let push = transport.push("{}".into()).await.unwrap_err();
-        for error in [pull, push] {
-            let message = error.to_string();
-            assert!(message.contains("injected DNS lookup failure"), "{message}");
-            assert!(!message.contains("token-secret"), "{message}");
-        }
-    }
 
     #[tokio::test]
     async fn presence_publish_keeps_unchanged_lists_quiet_and_late_subscribers_current() {
@@ -2084,53 +1416,6 @@ mod tests {
         assert_eq!(
             host.watch_spaces().borrow()[0].name.as_deref(),
             Some("Renamed")
-        );
-    }
-
-    #[tokio::test]
-    async fn a_deleted_device_is_never_dialed() {
-        use super::*;
-
-        let dir = tempfile::tempdir().unwrap();
-        let host = WorkspaceHost::open(
-            Arc::new(DocsStore::open(dir.path()).unwrap()),
-            WorkspaceHostConfig {
-                device_id: "laptop".into(),
-                device_name: "Laptop".into(),
-                platform: "macos".into(),
-                org_id: "test-org".into(),
-                user_id: "test-user".into(),
-                edge: None,
-                local_only: false,
-            },
-        )
-        .unwrap();
-        // Unknown and room-less: ambiguous, never parked.
-        assert_eq!(
-            host.peer_liveness("cloud-1"),
-            onicode_rpc::PeerLiveness::Unknown
-        );
-        // The edge tombstones a deleted Cloud session's device: positive
-        // evidence that nothing answers, whatever the room's state.
-        let _ = lock(&host.inner.reg).apply_rows(
-            1,
-            vec![onicode_doc::RegistryRow {
-                kind: onicode_doc::KIND_DEVICES.into(),
-                id: "cloud-1".into(),
-                seq: 1,
-                deleted: true,
-                del_hlc: Some("0000000005000-000000-cloud-edge".into()),
-                fields: Default::default(),
-                clocks: Default::default(),
-            }],
-        );
-        assert_eq!(
-            host.peer_liveness("cloud-1"),
-            onicode_rpc::PeerLiveness::Dark
-        );
-        assert_eq!(
-            host.peer_liveness("laptop"),
-            onicode_rpc::PeerLiveness::Live
         );
     }
 
@@ -2196,7 +1481,7 @@ mod tests {
         assert!(preferences.has_changed().unwrap());
         let state = preferences.borrow_and_update();
         assert!(state.initialized);
-        assert!(!state.synced);
+        assert!(state.synced, "no other device wrote to this registry");
         assert!(state.pinned_session_ids.is_empty());
         let first_revision = state.revision;
         drop(state);
@@ -2241,117 +1526,6 @@ mod tests {
         assert_eq!(*preferences.borrow(), collapsed);
     }
 
-    /// A pre-fix `registry1` snapshot: one never-acked batch per session-row
-    /// touch. Marking each batch in flight as it is written stops the doc
-    /// coalescing; `in_flight` is not persisted, so it reloads all-unsent.
-    fn save_bloated_registry(store: &onicode_sync::DocsStore, touches: usize) -> usize {
-        use super::*;
-
-        let mut doc = RegistryDoc::new("test-device");
-        for i in 0..touches {
-            doc.upsert_session(&running_session(
-                Utc::now() + chrono::Duration::milliseconds(i as i64),
-            ))
-            .unwrap();
-            doc.take_pushable();
-        }
-        assert_eq!(doc.pending_len(), touches);
-        let bytes = doc.to_bytes().unwrap();
-        store.save_snapshot(REGISTRY_DOC_ID, &bytes).unwrap();
-        bytes.len()
-    }
-
-    fn running_session(at: chrono::DateTime<chrono::Utc>) -> onicode_proto::Session {
-        onicode_proto::Session {
-            chat_id: "chat-1".into(),
-            device_id: "test-device".into(),
-            status: onicode_proto::SessionStatus::Working,
-            last_completed_turn: None,
-            started_at: None,
-            updated_at: at,
-            last_turn_outcome: None,
-            terminal_activity: None,
-            running_subagents: 0,
-            background_tasks: Vec::new(),
-        }
-    }
-
-    #[tokio::test]
-    async fn local_profile_compacts_a_bloated_registry_and_never_queues() {
-        use super::*;
-
-        let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(DocsStore::open(dir.path()).unwrap());
-        let bloated = save_bloated_registry(&store, 5_000);
-        let host = WorkspaceHost::open(
-            store.clone(),
-            WorkspaceHostConfig {
-                device_id: "test-device".into(),
-                device_name: "Test device".into(),
-                platform: "macos".into(),
-                org_id: "test-org".into(),
-                user_id: "test-user".into(),
-                edge: None,
-                local_only: true,
-            },
-        )
-        .unwrap();
-        assert_eq!(host.read(|doc| doc.pending_len()), 0);
-        assert_eq!(host.read_sessions().unwrap().len(), 1);
-        // The boot save already persisted the compacted snapshot.
-        let saved = store.load_snapshot(REGISTRY_DOC_ID).unwrap().unwrap();
-        assert!(saved.len() * 100 < bloated, "{} vs {bloated}", saved.len());
-        assert_eq!(
-            RegistryDoc::from_bytes(&saved, "test-device")
-                .unwrap()
-                .pending_len(),
-            0
-        );
-
-        // The 10 s running-chat heartbeat no longer accumulates anything.
-        for i in 0..100 {
-            host.record_session(&running_session(Utc::now() + chrono::Duration::seconds(i)));
-        }
-        assert_eq!(host.read(|doc| doc.pending_len()), 0);
-    }
-
-    #[tokio::test]
-    async fn synced_profile_coalesces_a_bloated_registry() {
-        use super::*;
-
-        let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(DocsStore::open(dir.path()).unwrap());
-        save_bloated_registry(&store, 5_000);
-        let host = WorkspaceHost::open(
-            store.clone(),
-            WorkspaceHostConfig {
-                device_id: "test-device".into(),
-                device_name: "Test device".into(),
-                platform: "macos".into(),
-                org_id: "test-org".into(),
-                user_id: "test-user".into(),
-                // Unreachable edge: writes queue (and retry) without acks.
-                edge: Some(EdgeConfig::with_static_token("http://127.0.0.1:1", "test")),
-                local_only: false,
-            },
-        )
-        .unwrap();
-        // The session row and this boot's device row: in flight at most once
-        // plus one coalesced unsent op each.
-        assert!(host.read(|doc| doc.pending_ops_len()) <= 4);
-        for i in 0..100 {
-            host.record_session(&running_session(Utc::now() + chrono::Duration::seconds(i)));
-        }
-        assert!(host.read(|doc| doc.pending_ops_len()) <= 4);
-        let saved = store.load_snapshot(REGISTRY_DOC_ID).unwrap().unwrap();
-        assert!(
-            RegistryDoc::from_bytes(&saved, "test-device")
-                .unwrap()
-                .pending_ops_len()
-                <= 4
-        );
-    }
-
     #[tokio::test(flavor = "multi_thread")]
     async fn boot_compaction_reclaims_the_freed_store_pages() {
         use super::*;
@@ -2366,9 +1540,10 @@ mod tests {
         // The store opens (and runs its own maintenance) BEFORE the registry
         // shrinks, exactly as at boot.
         let store = Arc::new(DocsStore::open(dir.path()).unwrap());
-        // ~40 MiB of never-acked writes, built as raw snapshot JSON.
+        // An edge-era snapshot with ~40 MiB of never-acked writes, built as raw JSON.
         let mut snapshot: serde_json::Value =
             serde_json::from_slice(&RegistryDoc::new("test-device").to_bytes().unwrap()).unwrap();
+        snapshot["v"] = 1.into();
         let preview = "x".repeat(8 * 1024);
         snapshot["pending"] = (0..5_000)
             .map(|i| {

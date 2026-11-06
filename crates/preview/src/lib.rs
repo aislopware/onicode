@@ -1,15 +1,11 @@
-//! Project-scoped HTTP discovery, stable local routing, and authenticated peers.
-//! Application bytes use bounded multiplexed streams; edge signaling never
-//! transports preview requests or response bodies.
+//! Previews: project-scoped HTTP discovery, stable local routing through one loopback proxy, and
+//! the services of the user's other devices reached over the peer links, one tunnel stream per
+//! connection ([`tunnel`]).
 pub mod catalog;
 pub mod discovery;
 pub mod login;
-pub mod mux;
-pub mod peer;
 pub mod proxy;
-mod runtime;
-pub mod signaling;
-pub mod viewer;
+pub mod tunnel;
 
 pub mod service;
 pub use service::{PreviewService, Scope};

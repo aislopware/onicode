@@ -1,0 +1,69 @@
+# The desktop media fuzz targets (`cargo +nightly fuzz run <target>` from this directory). A
+# workspace of its own, outside the main one: libFuzzer's instrumented build is nightly-only.
+# What each target does lives in the library, and the crate's `tests/fuzz_corpus.rs` replays
+# every committed input under `corpus/` and `regressions/` through it in the gate.
+[package]
+name = "onicode-desktop-media-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Fuzz targets for the desktop media wire, reassembler and feedback"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = ["."]
+
+[dependencies]
+arbitrary = { version = "1.5.0", features = ["derive"] }
+bytes = "1.12.1"
+libfuzzer-sys = { version = "0.4.13", optional = true }
+onicode-desktop-media = { path = ".." }
+
+[features]
+libfuzzer = ["dep:libfuzzer-sys"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_qualifications = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+indexing_slicing = "warn"
+allow_attributes = "warn"
+
+[profile.release]
+debug = "line-tables-only"
+overflow-checks = true
+
+[[bin]]
+name = "media_header"
+path = "fuzz_targets/media_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cursor"
+path = "fuzz_targets/cursor.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "reassemble"
+path = "fuzz_targets/reassemble.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "feedback"
+path = "fuzz_targets/feedback.rs"
+test = false
+doc = false
+bench = false

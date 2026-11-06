@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 5457758609e99a3006e70504a67fc2cf8c73a5cdb48a1b5b2e769dd18abea0be # shrinks to acts = [Recreate(0), Delete(2), LastMessage(1, 24), Forge(1, 152), Rename(0, 182), Rename(2, 67), Delete(0), Recreate(1), Rename(0, 64), Delete(0), Sync(2, 0), Delete(2), LastMessage(1, 207), LastMessage(2, 147), LastMessage(0, 140), Sync(1, 0), LastMessage(1, 128), Rename(1, 19), Recreate(0), Forge(2, 240), Rename(2, 47), Forge(0, 57), Recreate(1), Delete(1), Forge(0, 63), Recreate(1), LastMessage(2, 155), Recreate(1), Recreate(0), LastMessage(1, 208)]
+cc 84a82add00d3c84bf6df07580b23cc24ff6b7db541678752db0ef26742292cba # shrinks to acts = [Recreate(1)]

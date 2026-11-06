@@ -13,7 +13,7 @@ const LOCATIONS: &str = "sidebarLocations";
 impl RegistryDoc {
     pub(super) fn observe_sidebar_row(&mut self, kind: &str, id: &str) {
         if let Some(clock) = self
-            .overlay_row(kind, id)
+            .live_row(kind, id)
             .and_then(|r| r.max_clock().map(str::to_owned))
         {
             let mut parts = clock.splitn(3, '-');
@@ -29,7 +29,7 @@ impl RegistryDoc {
     }
 
     fn sidebar_location(&self, id: &str, pin: Option<&RegistryRow>) -> String {
-        let location = self.overlay_row(LOCATIONS, id);
+        let location = self.live_row(LOCATIONS, id);
         // Older apps write only pinned. Honor a later legacy toggle while
         // keeping all new section/pin moves in one shared placement register.
         let location_clock = location.as_ref().and_then(|r| r.clocks.get("location"));
@@ -76,7 +76,7 @@ impl RegistryDoc {
     /// creation, where an append would have put them.
     fn ordered_sidebar_sections(&self) -> Vec<(RegistryRow, Option<String>)> {
         let mut rows: Vec<_> = self
-            .overlay_rows(SECTIONS)
+            .live_rows(SECTIONS)
             .into_iter()
             .filter(|row| row.fields.get("deleted").and_then(Value::as_bool) != Some(true))
             .map(|row| {
@@ -129,10 +129,10 @@ impl RegistryDoc {
     /// follow the ordered ones by id, where an append would have put them.
     fn sidebar_section_members(&self, section: &str) -> Vec<(String, Option<String>)> {
         let mut members: Vec<_> = self
-            .overlay_rows(LOCATIONS)
+            .live_rows(LOCATIONS)
             .into_iter()
             .filter(|r| {
-                self.sidebar_location(&r.id, self.overlay_row(KIND_SIDEBAR_PINS, &r.id).as_ref())
+                self.sidebar_location(&r.id, self.live_row(KIND_SIDEBAR_PINS, &r.id).as_ref())
                     == section
             })
             .map(|r| {
@@ -200,7 +200,7 @@ impl RegistryDoc {
                 let hlc = self.next_hlc();
                 let next = pin_order_key_between(lower.as_deref(), None, &hlc)
                     .map_err(|e| DocError::Schema(e.into()))?;
-                self.enqueue_ops(vec![RowOp {
+                self.apply_local(vec![RowOp {
                     kind: kind.into(),
                     id: id.clone(),
                     op: OpKind::Upsert,
@@ -237,7 +237,7 @@ impl RegistryDoc {
         self.observe_sidebar_row(LOCATIONS, session);
         self.observe_sidebar_row(KIND_SIDEBAR_PINS, session);
         let (key, hlc) = self.place_in_sidebar_section(section, session, after, before)?;
-        self.enqueue_ops(vec![RowOp {
+        self.apply_local(vec![RowOp {
             kind: LOCATIONS.into(),
             id: session.into(),
             op: OpKind::Upsert,
@@ -252,7 +252,7 @@ impl RegistryDoc {
     }
 
     fn live_sidebar_section(&self, id: &str) -> bool {
-        self.overlay_row(SECTIONS, id)
+        self.live_row(SECTIONS, id)
             .is_some_and(|r| r.fields.get("deleted").and_then(Value::as_bool) != Some(true))
     }
 
@@ -317,7 +317,7 @@ impl RegistryDoc {
         match change {
             Create { id, name } => {
                 // Existing IDs, including deleted sections, are never resurrected.
-                if self.overlay_row(SECTIONS, id).is_none() {
+                if self.live_row(SECTIONS, id).is_none() {
                     let created = self.next_hlc();
                     self.write(
                         SECTIONS,
@@ -375,7 +375,7 @@ impl RegistryDoc {
                 {
                     return Err(DocError::Schema("Section no longer exists".into()));
                 }
-                if self.overlay_row(KIND_CHATS, session_id).is_none() {
+                if self.live_row(KIND_CHATS, session_id).is_none() {
                     return Err(DocError::Schema("Session no longer exists".into()));
                 }
                 // Keep legacy clients from displaying section members as pins.
@@ -401,7 +401,7 @@ impl RegistryDoc {
                 for section in sections {
                     // Replay and migration from another device must not undo a
                     // rename, deletion, collapse, or explicit session move.
-                    if self.overlay_row(SECTIONS, &section.id).is_some() {
+                    if self.live_row(SECTIONS, &section.id).is_some() {
                         continue;
                     }
                     self.change_sidebar_section(&Create {
@@ -409,9 +409,9 @@ impl RegistryDoc {
                         name: section.name.clone(),
                     })?;
                     for id in &section.session_ids {
-                        if self.overlay_row(LOCATIONS, id).is_none()
+                        if self.live_row(LOCATIONS, id).is_none()
                             && !self.ordered_sidebar_pins().iter().any(|(pin, _)| pin == id)
-                            && self.overlay_row(KIND_CHATS, id).is_some()
+                            && self.live_row(KIND_CHATS, id).is_some()
                         {
                             // Appending one by one keeps the imported order.
                             self.write_sidebar_placement(id, &section.id, &None, &None)?;
@@ -433,7 +433,7 @@ impl RegistryDoc {
                         .map(|(row, key)| (row.id, key))
                         .collect();
                     let (key, hlc) = self.place_among(SECTIONS, sections, id, after, before)?;
-                    self.enqueue_ops(vec![RowOp {
+                    self.apply_local(vec![RowOp {
                         kind: SECTIONS.into(),
                         id: id.clone(),
                         op: OpKind::Upsert,

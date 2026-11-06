@@ -55,7 +55,7 @@ use tokio::sync::{Notify, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::EngineError;
-use crate::doc_host::EdgeConfig;
+use crate::edge::EdgeConfig;
 use crate::fs_watch::{FsWatch, FsWatchHub};
 use crate::repos::{CheckoutIdentity, Repos};
 use crate::workspace_host::WorkspaceHost;

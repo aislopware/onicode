@@ -157,15 +157,6 @@ struct QueueCommandParams {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RelayCommandParams {
-    chat_id: String,
-    /// The full command entry, client-minted id included — the exactly-once
-    /// key the host claims in its processed ledger before executing.
-    entry: onicode_doc::SessionCommandEntry,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct TakeProjectActionSetupParams {
     chat_id: String,
     command_id: String,
@@ -477,12 +468,6 @@ struct WriteTerminalParams {
     terminal_id: String,
     /// Base64 input bytes (plain UTF-8 accepted leniently).
     data: String,
-    /// Remote viewers number their input so a replay after a path change
-    /// is applied once ([`Terminals::write_sequenced`]).
-    #[serde(default)]
-    client_id: Option<String>,
-    #[serde(default)]
-    input_seq: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1775,9 +1760,9 @@ impl EngineRpc {
         }
     }
 
-    /// Terminal I/O for a terminal on `target`: a direct link when the two
-    /// devices can reach each other, the relay otherwise
-    /// ([`crate::remote_terminals`]). Writes never wait on the network.
+    /// Terminal I/O for a terminal on `target`, over a `terminal/{id}` stream
+    /// on the link to it ([`crate::remote_terminals`]). Writes never wait on
+    /// the network.
     async fn remote_terminal(
         &self,
         target: &str,
@@ -1785,26 +1770,18 @@ impl EngineRpc {
         params: serde_json::Value,
     ) -> Result<RpcReply, RpcError> {
         use crate::remote_terminals::Write;
-        let relay: std::sync::Arc<dyn crate::remote_terminals::Relay> =
-            std::sync::Arc::new(self.clone());
+        let Some(links) = self.links.clone() else {
+            return Err(RpcError::Failed(format!(
+                "cannot reach device {target}: remote routing unavailable (offline)"
+            )));
+        };
         let ok = || RpcReply::value(&serde_json::json!({ "ok": true }));
         match method {
             methods::SUBSCRIBE_TERMINAL => {
                 let p: SubscribeTerminalParams = parse_params(params)?;
-                let direct = self.previews.clone().map(|previews| {
-                    std::sync::Arc::new(previews)
-                        as std::sync::Arc<dyn crate::remote_terminals::Direct>
-                });
                 let stream = self
                     .remote_terminals
-                    .subscribe(
-                        relay,
-                        direct,
-                        target,
-                        &p.terminal_id,
-                        p.after_seq.unwrap_or(0),
-                        p.host_replies,
-                    )
+                    .subscribe(links, target, &p.terminal_id, p.after_seq.unwrap_or(0))
                     .await?;
                 Ok(RpcReply::Stream(stream))
             }
@@ -1814,13 +1791,13 @@ impl EngineRpc {
                     .decode(&p.data)
                     .unwrap_or_else(|_| p.data.into_bytes());
                 self.remote_terminals
-                    .send(&relay, target, &p.terminal_id, Write::Input(bytes))?;
+                    .send(&links, target, &p.terminal_id, Write::Input(bytes))?;
                 ok()
             }
             methods::RESIZE_TERMINAL => {
                 let p: ResizeTerminalParams = parse_params(params)?;
                 self.remote_terminals.send(
-                    &relay,
+                    &links,
                     target,
                     &p.terminal_id,
                     Write::Resize {
@@ -2734,33 +2711,6 @@ impl RpcService for AuthRpc {
 }
 
 #[async_trait]
-impl crate::remote_terminals::Relay for EngineRpc {
-    async fn call(
-        &self,
-        target: &str,
-        method: &str,
-        params: serde_json::Value,
-    ) -> Result<serde_json::Value, RpcError> {
-        match self.forward(target, method, params).await? {
-            RpcReply::Value(value) => Ok(value),
-            RpcReply::Stream(_) => Err(RpcError::Failed(format!("{method} replied with a stream"))),
-        }
-    }
-
-    async fn subscribe(
-        &self,
-        target: &str,
-        method: &str,
-        params: serde_json::Value,
-    ) -> Result<BoxStream<'static, serde_json::Value>, RpcError> {
-        match self.forward(target, method, params).await? {
-            RpcReply::Stream(stream) => Ok(stream),
-            RpcReply::Value(_) => Err(RpcError::Failed(format!("{method} replied with a value"))),
-        }
-    }
-}
-
-#[async_trait]
 impl RpcService for EngineRpc {
     async fn handle(&self, method: &str, params: serde_json::Value) -> Result<RpcReply, RpcError> {
         // An agent's chats: capped at its own access, runs as the chat is
@@ -2799,13 +2749,6 @@ impl RpcService for EngineRpc {
                     | methods::CANCEL_AGENT_LOGIN
             ) {
                 return self.forward_agent_login(&target, method, params).await;
-            }
-            // Pair while the open crosses the relay, so the terminal's
-            // stream usually starts on the direct link.
-            if method == methods::OPEN_TERMINAL
-                && let Some(previews) = &self.previews
-            {
-                previews.warm_peer(&target);
             }
             if matches!(
                 method,
@@ -3014,15 +2957,6 @@ impl RpcService for EngineRpc {
                     .retry_delivery(&p.chat_id)
                     .map_err(|e| RpcError::Failed(e.to_string()))?;
                 RpcReply::value(&serde_json::json!({}))
-            }
-            methods::RELAY_COMMAND => {
-                let p: RelayCommandParams = parse_params(params)?;
-                let outcome = self
-                    .doc_host
-                    .ingest_relayed_command(&p.chat_id, p.entry)
-                    .await
-                    .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&serde_json::json!({ "outcome": outcome }))
             }
             methods::FORK_SIDE_CHAT => {
                 #[derive(Deserialize)]
@@ -3370,63 +3304,22 @@ impl RpcService for EngineRpc {
                 {
                     auth.retry_refresh();
                 }
-                self.workspace.probe();
-                self.doc_host.probe_open_chats();
-                self.doc_host.probe_edge_reachability();
+                // Cut every backoff short: links redial, and followers retry on the change.
+                if let Some(links) = &self.links {
+                    links.reset();
+                }
                 RpcReply::value(&serde_json::json!({}))
             }
-            methods::SYNC_STATUS => {
-                fn room_json(s: &onicode_sync::RoomStatsSnapshot) -> serde_json::Value {
-                    serde_json::json!({
-                        "connected": s.connected,
-                        "synced": s.synced,
-                        "lastPushedMs": s.last_pushed_ms,
-                        "lastAckMs": s.last_ack_ms,
-                        "rejoins": s.rejoins,
-                        "probes": s.probes,
-                        "fullResyncs": s.full_resyncs,
-                        "disconnects": s.disconnects,
-                        "rejected": s.rejected,
-                    })
-                }
-                fn chat2_json(s: &onicode_sync::ChatStatsSnapshot) -> serde_json::Value {
-                    serde_json::json!({
-                        "connected": s.connected,
-                        "cursor": s.cursor,
-                        "headSeq": s.head_seq,
-                        "seqFloor": s.seq_floor,
-                        "checkpointSeq": s.checkpoint_seq,
-                        "checkpointSize": s.checkpoint_size,
-                        "rowCount": s.row_count,
-                        "rowBytes": s.row_bytes,
-                        "pendingPushes": s.pending_pushes,
-                        "rejoins": s.rejoins,
-                        "disconnects": s.disconnects,
-                        "rejected": s.rejected,
-                        "serverResets": s.server_resets,
-                    })
-                }
-                let workspace = self.workspace.sync_status();
-                let chats: Vec<serde_json::Value> = self
-                    .doc_host
-                    .sync_statuses()
-                    .iter()
-                    .map(|(chat_id, room)| {
-                        serde_json::json!({
-                            "chatId": chat_id,
-                            "room": room.as_ref().map(chat2_json),
-                            "state": self.doc_host.chat_sync_state(chat_id),
-                        })
-                    })
-                    .collect();
-                RpcReply::value(&serde_json::json!({
-                    "deviceId": self.doc_host.device_id(),
-                    "nowMs": crate::now_ms(),
-                    "workspace": workspace.as_ref().map(room_json),
-                    "chats": chats,
-                    "resources": self.doc_host.sync_resources(),
-                }))
-            }
+            methods::SYNC_STATUS => RpcReply::value(&serde_json::json!({
+                "deviceId": self.doc_host.device_id(),
+                "nowMs": crate::now_ms(),
+                "workspace": {
+                    "synced": self.workspace.registry_synced(),
+                    "caughtUpWith": self.workspace.registry_peers(),
+                },
+                "chats": self.doc_host.sync_statuses(),
+                "resources": self.doc_host.sync_resources(),
+            })),
             methods::WATCH_CONNECTIVITY => Ok(RpcReply::Stream(watch_stream(
                 self.doc_host.watch_connectivity(),
             ))),
@@ -4850,18 +4743,9 @@ impl RpcService for EngineRpc {
             }
             methods::WRITE_TERMINAL => {
                 let p: WriteTerminalParams = parse_params(params)?;
-                match (p.client_id, p.input_seq) {
-                    (Some(client), Some(seq)) => {
-                        let bytes = base64::engine::general_purpose::STANDARD
-                            .decode(&p.data)
-                            .unwrap_or_else(|_| p.data.into_bytes());
-                        self.terminals
-                            .write_sequenced(&p.terminal_id, &client, seq, &bytes)
-                            .map(|_| ())
-                    }
-                    _ => self.terminals.write(&p.terminal_id, &p.data),
-                }
-                .map_err(|e| RpcError::Failed(e.to_string()))?;
+                self.terminals
+                    .write(&p.terminal_id, &p.data)
+                    .map_err(|e| RpcError::Failed(e.to_string()))?;
                 RpcReply::value(&serde_json::json!({ "ok": true }))
             }
             methods::RESIZE_TERMINAL => {
@@ -6033,13 +5917,13 @@ mod context_usage_tests {
 
     #[tokio::test]
     async fn replay_cutoff_travels_with_coalesced_backfill_and_live_content() {
-        use onicode_sync::chat_client::ChatDocSink;
+        use onicode_sync::peer_doc::Replica;
 
         use crate::doc_host::{DocHost, DocHostConfig};
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(onicode_sync::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
-            store.clone(),
+            store,
             DocHostConfig {
                 device_id: "viewer".into(),
                 default_harness: onicode_proto::HarnessId::Mock,
@@ -6047,8 +5931,7 @@ mod context_usage_tests {
             },
         );
         let handle = host.open("replay-chat").unwrap();
-        let sink = crate::chat2_host::EngineChatSink::new(&handle.doc_arc(), store, "replay-chat")
-            .with_handle(Arc::downgrade(&handle));
+        let sink = crate::peer_doc_sink::ChatReplica::new(host.downgrade(), &handle, "writer");
         let mut stream = doc_messages_stream(handle.watch_messages(), handle.doc_arc());
         let first: onicode_doc::TranscriptUpdate =
             serde_json::from_value(stream.next().await.unwrap()).unwrap();
@@ -6073,7 +5956,7 @@ mod context_usage_tests {
                 .unwrap()
         };
         append("cached");
-        sink.apply_checkpoint(&source.export_snapshot().unwrap(), 0)
+        sink.import(&source.export_snapshot().unwrap(), true)
             .unwrap();
         let checkpoint: onicode_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
@@ -6092,22 +5975,24 @@ mod context_usage_tests {
 
         let version = source.doc().oplog_vv();
         append("away");
-        sink.apply_replay_row(
+        sink.import(
             &source
                 .doc()
                 .export(loro::ExportMode::updates(&version))
                 .unwrap(),
-            1,
-        );
+            true,
+        )
+        .unwrap();
         let version = source.doc().oplog_vv();
         append("live");
-        sink.apply_row(
+        sink.import(
             &source
                 .doc()
                 .export(loro::ExportMode::updates(&version))
                 .unwrap(),
-            2,
-        );
+            false,
+        )
+        .unwrap();
         // Neither the doc worker nor the RPC consumer ran between these
         // imports. They must not flatten their different presentation origins.
         let update: onicode_doc::TranscriptUpdate = serde_json::from_value(
@@ -6127,13 +6012,14 @@ mod context_usage_tests {
 
         let version = source.doc().oplog_vv();
         append("next-live");
-        sink.apply_row(
+        sink.import(
             &source
                 .doc()
                 .export(loro::ExportMode::updates(&version))
                 .unwrap(),
-            3,
-        );
+            false,
+        )
+        .unwrap();
         let update: onicode_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
                 .await
@@ -6158,13 +6044,13 @@ mod context_usage_tests {
 
     #[tokio::test]
     async fn replay_metadata_and_backfill_leave_interleaved_local_content_live() {
-        use onicode_sync::chat_client::ChatDocSink;
+        use onicode_sync::peer_doc::Replica;
 
         use crate::doc_host::{DocHost, DocHostConfig};
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(onicode_sync::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
-            store.clone(),
+            store,
             DocHostConfig {
                 device_id: "host".into(),
                 default_harness: onicode_proto::HarnessId::Mock,
@@ -6172,12 +6058,11 @@ mod context_usage_tests {
             },
         );
         let handle = host.open("interleaved").unwrap();
-        let sink = crate::chat2_host::EngineChatSink::new(&handle.doc_arc(), store, "interleaved")
-            .with_handle(Arc::downgrade(&handle));
+        let sink = crate::peer_doc_sink::ChatReplica::new(host.downgrade(), &handle, "writer");
         let mut stream = doc_messages_stream(handle.watch_messages(), handle.doc_arc());
         stream.next().await.unwrap();
         let source = onicode_doc::SessionDoc::init("interleaved").unwrap();
-        sink.apply_checkpoint(&source.export_snapshot().unwrap(), 0)
+        sink.import(&source.export_snapshot().unwrap(), true)
             .unwrap();
         let entry = |id: &str| onicode_doc::SessionMessageEntry {
             id: id.into(),
@@ -6194,7 +6079,8 @@ mod context_usage_tests {
         };
         handle.doc().push_message(&entry("local-before")).unwrap();
         source.update_context_usage(Some(10), Some(100)).unwrap();
-        sink.apply_replay_row(&source.export_snapshot().unwrap(), 1);
+        sink.import(&source.export_snapshot().unwrap(), true)
+            .unwrap();
         let update: onicode_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
                 .await
@@ -6212,13 +6098,14 @@ mod context_usage_tests {
         let version = source.doc().oplog_vv();
         source.push_message(&entry("historical")).unwrap();
         handle.doc().push_message(&entry("local-between")).unwrap();
-        sink.apply_replay_row(
+        sink.import(
             &source
                 .doc()
                 .export(loro::ExportMode::updates(&version))
                 .unwrap(),
-            2,
-        );
+            true,
+        )
+        .unwrap();
         handle.doc().push_message(&entry("local-after")).unwrap();
         let update: onicode_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
@@ -6237,13 +6124,13 @@ mod context_usage_tests {
 
     #[tokio::test]
     async fn replay_preserves_each_watchers_opening_cutoff_without_consuming_live_text() {
-        use onicode_sync::chat_client::ChatDocSink;
+        use onicode_sync::peer_doc::Replica;
 
         use crate::doc_host::{DocHost, DocHostConfig};
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(onicode_sync::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
-            store.clone(),
+            store,
             DocHostConfig {
                 device_id: "viewer".into(),
                 default_harness: onicode_proto::HarnessId::Mock,
@@ -6251,9 +6138,7 @@ mod context_usage_tests {
             },
         );
         let handle = host.open("cached-replay").unwrap();
-        let sink =
-            crate::chat2_host::EngineChatSink::new(&handle.doc_arc(), store, "cached-replay")
-                .with_handle(Arc::downgrade(&handle));
+        let sink = crate::peer_doc_sink::ChatReplica::new(host.downgrade(), &handle, "writer");
         let source = onicode_doc::SessionDoc::init("cached-replay").unwrap();
         let mut writer = onicode_doc::SegmentWriter::begin(&source, "reply", "host", 0).unwrap();
         let text = |id: &str, value: &str| onicode_doc::MessagePart::Text {
@@ -6262,7 +6147,7 @@ mod context_usage_tests {
         };
         let cached = text("body", "café histórico");
         writer.sync(std::slice::from_ref(&cached)).unwrap();
-        sink.apply_checkpoint(&source.export_snapshot().unwrap(), 0)
+        sink.import(&source.export_snapshot().unwrap(), true)
             .unwrap();
         // Cached content exists before the first watcher and never enters
         // the changed-parts tracker. It may not have been painted yet.
@@ -6276,7 +6161,8 @@ mod context_usage_tests {
 
         let live = text("body", "café histórico y nuevo");
         writer.sync(std::slice::from_ref(&live)).unwrap();
-        sink.apply_row(&source.export_snapshot().unwrap(), 1);
+        sink.import(&source.export_snapshot().unwrap(), false)
+            .unwrap();
         let update: onicode_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), first.next())
                 .await
@@ -6300,7 +6186,8 @@ mod context_usage_tests {
             let id = format!("recovered-{ix}");
             parts.push(text(&id, "otro bloque histórico"));
             writer.sync(&parts).unwrap();
-            sink.apply_replay_row(&source.export_snapshot().unwrap(), 2 + ix);
+            sink.import(&source.export_snapshot().unwrap(), true)
+                .unwrap();
             for (stream, expected) in [
                 (&mut first, "café histórico".len()),
                 (&mut second, "café histórico y nuevo".len()),
@@ -6330,13 +6217,13 @@ mod context_usage_tests {
 
     #[tokio::test]
     async fn reopening_rearms_history_for_previously_live_text() {
-        use onicode_sync::chat_client::ChatDocSink;
+        use onicode_sync::peer_doc::Replica;
 
         use crate::doc_host::{DocHost, DocHostConfig};
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(onicode_sync::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
-            store.clone(),
+            store,
             DocHostConfig {
                 device_id: "viewer".into(),
                 default_harness: onicode_proto::HarnessId::Mock,
@@ -6344,8 +6231,7 @@ mod context_usage_tests {
             },
         );
         let handle = host.open("reopen").unwrap();
-        let sink = crate::chat2_host::EngineChatSink::new(&handle.doc_arc(), store, "reopen")
-            .with_handle(Arc::downgrade(&handle));
+        let sink = crate::peer_doc_sink::ChatReplica::new(host.downgrade(), &handle, "writer");
         let source = onicode_doc::SessionDoc::init("reopen").unwrap();
         let mut writer = onicode_doc::SegmentWriter::begin(&source, "reply", "host", 0).unwrap();
         let part = |text: &str| onicode_doc::MessagePart::Text {
@@ -6355,7 +6241,8 @@ mod context_usage_tests {
         let mut stream = doc_messages_stream(handle.watch_messages(), handle.doc_arc());
         stream.next().await.unwrap();
         writer.sync(&[part("live")]).unwrap();
-        sink.apply_row(&source.export_snapshot().unwrap(), 1);
+        sink.import(&source.export_snapshot().unwrap(), false)
+            .unwrap();
         let _: serde_json::Value =
             tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
                 .await
@@ -6366,7 +6253,8 @@ mod context_usage_tests {
         let mut stream = doc_messages_stream(handle.watch_messages(), handle.doc_arc());
         stream.next().await.unwrap();
         writer.sync(&[part("live plus recovered")]).unwrap();
-        sink.apply_replay_row(&source.export_snapshot().unwrap(), 2);
+        sink.import(&source.export_snapshot().unwrap(), true)
+            .unwrap();
         let update: onicode_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
                 .await

@@ -841,36 +841,6 @@
   },
   {
     "violation": {
-      "reason": "Function should have complexity 10 or less; currently complexity is 12",
-      "ruleName": "Cyclomatic Complexity",
-      "severity": "error",
-      "location": {
-        "file": "apps/ios/Onicode/Debug/TerminalProbe.swift",
-        "line": 45,
-        "character": 13
-      },
-      "ruleDescription": "Complexity of function bodies should be limited.",
-      "ruleIdentifier": "cyclomatic_complexity"
-    },
-    "text": "    private static func run(app: AppModel, router: AppRouter?) async {"
-  },
-  {
-    "violation": {
-      "ruleName": "Function Body Length",
-      "location": {
-        "character": 20,
-        "line": 45,
-        "file": "apps/ios/Onicode/Debug/TerminalProbe.swift"
-      },
-      "ruleIdentifier": "function_body_length",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "severity": "error",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 92 lines"
-    },
-    "text": "    private static func run(app: AppModel, router: AppRouter?) async {"
-  },
-  {
-    "violation": {
       "ruleName": "Function Body Length",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
