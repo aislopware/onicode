@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The heavy test gates. scripts/ci/mac.sh runs them on an office Mac: mutants-diff on pull requests, the rest
+# The heavy test gates. scripts/ci/mac.sh runs them on the hosted Mac: mutants-diff on pull requests, the rest
 # nightly. Each one compiles; tools are installed at their pinned versions (scripts/dev/tools.env).
 #
 #   gates.sh coverage        cargo-llvm-cov over `cargo t`'s tests, with the ratchet in scripts/ci/coverage.py
@@ -12,7 +12,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . scripts/dev/tools.env
 
-# A pinned cargo subcommand, built once into CARGO_HOME (warm on the Mac's CICache).
+# A pinned cargo subcommand, built once into CARGO_HOME (rust-cache keeps ~/.cargo/bin).
 tool() { # crate version
   local have
   have=$("$1" --version 2>/dev/null || cargo "${1#cargo-}" --version 2>/dev/null || true)

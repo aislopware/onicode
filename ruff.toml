@@ -1,7 +1,7 @@
 # ruff (scripts/dev/check.sh static, the static CI job, pre-commit): every rule, minus the ones that fight
 # `ruff format` and one side of each docstring-style pair. Anything else is a per-file ignore with its reason.
 line-length = 120
-# The oldest python3 these meet: macOS's /usr/bin/python3 (3.9) on the office Macs; CI has 3.12.
+# The oldest python3 these meet: macOS's /usr/bin/python3 (3.9); CI has 3.12.
 target-version = "py39"
 
 # Dev tools that need a newer Python: tomllib (3.11), ExceptionGroup and add_note (3.11), hashlib.file_digest

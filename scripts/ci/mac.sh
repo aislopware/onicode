@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The main test lane, on a GitLab office Mac (scripts/ci/office_mac.py) in the onicode/macos-27-ci guest,
-# with a warm target on /Volumes/CICache (scripts/ci/office-mac.gitlab-ci.yml). macOS and iOS are the
-# platforms tested thoroughly; Linux gets only the static and clippy jobs.
+# The main test lane, on GitHub's hosted xcode-27 runner (the mac job in .github/workflows/ci.yml, set up by
+# .github/actions/mac-ci). macOS and iOS are the platforms tested thoroughly; Linux gets only the static and
+# clippy jobs.
 #
 #   mac.sh pr           clippy for macOS, the app binaries, every test under the ci nextest profile, and
 #                       cargo-mutants on the lines the branch changed
@@ -9,12 +9,11 @@
 #                       counts), Miri, a mutants shard, cargo-hack and the fuzz targets (scripts/ci/gates.sh)
 #   mac.sh ios-pr       scripts/ci/ios.sh pr: the iOS lane, from the same pipeline
 #   mac.sh ios-nightly  scripts/ci/ios.sh nightly
-#   mac.sh warm         the guest's versions, and the toolchain and registry onto the cache; builds nothing
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 suite="${1:-pr}"
 case "$suite" in
-  pr | nightly | warm) ;;
+  pr | nightly) ;;
   ios-pr | ios-nightly) exec scripts/ci/ios.sh "${suite#ios-}" ;;
   *)
     echo "mac.sh: unknown suite $suite" >&2
@@ -23,20 +22,10 @@ case "$suite" in
 esac
 
 # gpui-fast compiles its Metal shaders at build time, with Xcode's Metal toolchain, a separate
-# component that the CI image bakes in. Fail here rather than deep in a build script.
+# component that .github/actions/mac-ci installs. Fail here rather than deep in a build script.
 if ! xcrun metal --version >/dev/null 2>&1; then
-  echo "mac.sh: no Metal toolchain (xcodebuild -downloadComponent MetalToolchain; the CI image has it)" >&2
+  echo "mac.sh: no Metal toolchain (xcodebuild -downloadComponent MetalToolchain)" >&2
   exit 1
-fi
-
-if [[ "$suite" = warm ]]; then
-  sw_vers
-  xcodebuild -version
-  xcrun metal --version
-  zig version
-  df -h .
-  cargo fetch --locked
-  exit 0
 fi
 
 . scripts/dev/tools.env

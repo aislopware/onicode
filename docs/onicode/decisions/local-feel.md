@@ -19,5 +19,5 @@ overrides. It trusts the first key at a shell-marked prompt and holds prediction
 Each target is stated in round trips plus a constant, or as zero network events before the echo. Seeded
 virtual-time scenarios in `onicode-latency` over `onicode-net-sim` profiles (LAN to DERP, loss, roam, sleep)
 check them, against a committed baseline that only ratchets down. Wall-clock budgets (frame time, SQLite open,
-cold start) run as benches on the office Macs. The research and the ranked plan with file:line maps stay in
+cold start) run as benches on a Mac. The research and the ranked plan with file:line maps stay in
 `.research/local-feel.md` (not committed).

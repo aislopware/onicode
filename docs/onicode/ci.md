@@ -1,15 +1,15 @@
 # CI
 
 `.github/workflows/ci.yml` runs on pull requests, main and nightly at 02:23 ICT. `CI result` is the one required check;
-it needs `static`, `lint`, `mac` and `ios`. macOS and iOS are tested thoroughly on the office Macs. Linux gets only the
-static and clippy gates, and nothing else is a target.
+it needs `static`, `lint`, `mac` and `ios`. macOS and iOS are tested thoroughly on GitHub's hosted Macs. Linux gets only
+the static and clippy gates, and nothing else is a target.
 
 | Job | Where | What |
 |---|---|---|
 | `static` | ubuntu-24.04 | `scripts/dev/check.sh static`, `fmt` and `deps`: every checker that builds nothing |
 | `lint` | ubuntu-24.04 | `cargo lint` for Linux, so cfg(linux) code still compiles; rustdoc, warnings denied |
-| `mac` | GitLab office Mac | `scripts/ci/mac.sh`: clippy for macOS, the app build, every test, diff-scoped mutants |
-| `ios` | GitLab office Mac | `scripts/ci/ios.sh`: the mobile core for the simulator, binding drift, `OnicodeTests` |
+| `mac` | xcode-27 | `scripts/ci/mac.sh`: clippy for macOS, the app build, every test, diff-scoped mutants |
+| `ios` | xcode-27 | `scripts/ci/ios.sh`: the mobile core for the simulator, binding drift, `OnicodeTests` |
 
 Pull requests and main use the nextest `ci` profile (`scripts/ci/nextest.toml`), which leaves out the slow and soak
 tests. Nightly runs the default profile, then `scripts/ci/gates.sh` on the Mac, and one UI smoke test on the simulator.
@@ -52,43 +52,16 @@ checkers and rustfmt on the staged files only, in parallel; pre-push runs `check
 - Fuzz: each cargo-fuzz target under `crates/*/fuzz` runs a minute from its committed corpus `fuzz/corpus/<target>`.
   There are none yet.
 
-## Office Macs
+## Hosted Macs
 
-The two office Mac runners on gitlab.jmango360.com (`office-mac-runner-02`, then `office-mac-runner`) run tart guests
-with a persistent `/Volumes/CICache`. The GitLab project `cong.tran/onicode-ci` holds only
-`scripts/ci/office-mac.gitlab-ci.yml`, as its `.gitlab-ci.yml`.
-
-GitLab refuses authenticated API calls from outside the office network, so GitHub's hosted runners cannot start
-these jobs (both tokens answer 404/401 from GitHub and work from the office). The lanes are driven from inside
-instead: `scripts/ci/office_mac.py serve`, a launch agent on an office-network Mac (`office_mac.py install`), polls
-GitHub every 15 s. For main's head and each open pull request from aislopware/onicode itself, it claims each lane
-with a pending `office-mac/<lane>` commit status, triggers the pipeline with SUITE `pr` (lane `mac`) or `ios-pr`
-(lane `ios`), and posts the result with the GitLab job as the status link. A lane whose paths the change does not
-touch passes at once, by the split ci.yml's `changes` job used. Once a day after 02:00 it runs `nightly` and
-`ios-nightly` for main's head. If the first Mac does not start a job within 2 minutes it moves to the second, then
-waits on the first. Fork pull requests are never run, so untrusted code never reaches CICache, and nothing from
-GitHub runs on the polling Mac. Its credentials are `gh auth token` and two keychain items,
-`onicode-ci-gitlab-trigger` (the trigger token) and `onicode-ci-gitlab-read` (the `office-mac-poller` project
-access token, `api`); its log is `~/Library/Logs/onicode-ci.log`. `office_mac.py run SHA LANE` runs one lane by
-hand. Require `CI result`, `office-mac/mac` and `office-mac/ios` on main.
-
-The guests run `zot.jmango360.dev/onicode/macos-27-ci`, pinned by digest, from Zot on office-1 (the office LAN's
-registry; the runners read it as `onicode-runners`, from the masked project variables `ONICODE_ZOT_USER` and
-`ONICODE_ZOT_SECRET`). `scripts/ci/image/build.sh` makes it from `ghcr.io/cirruslabs/macos-golden-gate-xcode:27.2`
-and pushes it: macOS 27.2 and Xcode 27.2 with the Metal toolchain, the iOS 27.2 simulator runtime and a settled,
-shut-down `iPhone CI` device, zig, cargo-nextest, cargo-sweep, rustup without a toolchain, Spotlight and software
-updates off. It drops the base's other simulator runtimes, Flutter and the Android SDK, 49 GB compressed against the
-base's 77. Rebuild it when one of those pins changes, then pin the printed digest and copy the pipeline file to the
-project. A Mac's first pull is about an hour; a job triggered without a SHA only pulls it and prints its versions.
-
-The source, toolchain (with the iOS targets), registry and target sit at the same path on CICache every run, and
-`mac.sh` builds everything with `cargo t`'s workspace and feature set, so builds stay incremental and the suites
-share one set of artifacts. CICache is shared with other projects, so onicode's target is held under 60 GB without
-wiping it: `cargo sweep` drops what an older toolchain built, then the least recently used units down to 45 GB.
-Fork pull requests get no secrets, so untrusted code never reaches CICache.
-
+`mac` and `ios` run on GitHub's `xcode-27` image: macOS 27 on 3 M1 cores, 7 GB of RAM and 14 GB of disk. Standard
+runners are free and unlimited for a public repository, but an organization on the Free plan runs at most 5 macOS jobs
+at once, across all its repositories (libghostty-rs's prebuilts included); the rest queue. `.github/actions/mac-ci`
+selects Xcode 27.2 (the image defaults to 27.1), deletes the other Xcodes for disk room, installs the Metal toolchain
+and the Rust toolchain, and restores the cache. Fork pull requests run with no secrets.
 
 ## Caches
 
-`Swatinem/rust-cache` for `lint`; the office Macs keep theirs on CICache. Only main saves, so pull requests never evict
-main's cache under the 10 GB limit.
+`Swatinem/rust-cache` for `lint`, `mac` and `ios`. The Mac caches are keyed by the image version, because build
+scripts record absolute paths into Xcode (ort-sys links its clang_rt), and carry onnxruntime's download cache. Only
+main saves, so pull requests never evict main's cache under the 10 GB limit.

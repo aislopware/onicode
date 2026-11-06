@@ -35,7 +35,7 @@ Throughput:
 - A file over 64 MiB that is alone is split into 16 MiB ranges across up to 4 streams.
 - Files under 256 KiB are packed back to back on one stream.
 - Stream and connection windows are sized to the bandwidth-delay product of a fast tailnet (16 MiB per stream,
-  64 MiB per connection) instead of quinn's 100 Mbit/s × 100 ms defaults. They are measured on the office Macs.
+  64 MiB per connection) instead of quinn's 100 Mbit/s × 100 ms defaults. They are measured between two Macs on the tailnet.
 - zstd level 1 runs on a file only when a sample of its first 256 KiB shrinks below 90% and the link is
   slower than the compressor. Known compressed types skip the sample. The source judges while it walks:
   the first file of each extension decides for the rest, so a tree costs one sample per kind, and the

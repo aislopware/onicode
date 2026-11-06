@@ -6,8 +6,8 @@ tests for each. Raising the floor is only worth what the new systems offer, so t
 what makes onicode better is adopted (`.research/sdk27/ADOPTION.md`), and every pre-27.2 fallback is deleted.
 
 `LSMinimumSystemVersion`, the iOS deployment target and `MACOSX_DEPLOYMENT_TARGET`/`IPHONEOS_DEPLOYMENT_TARGET`
-for every Rust build are 27.2. GitHub's hosted macOS runners cannot run onicode, so the macOS CI lane runs only on
-the office Macs, in a macOS 27.2 guest image kept on Zot on office-1.
+for every Rust build are 27.2. CI runs the macOS and iOS lanes on GitHub's hosted `xcode-27` image (macOS 27, Xcode 27.2
+with the 27.2 SDKs and simulator). The libghostty-vt prebuilts from aislopware/ghostty target 27.2 as well.
 
 Windows is not supported, and its code, dependencies, packaging and docs are deleted. The owner works on macOS and
 iOS, the remote desktop streams only from a Mac host, and every platform kept costs code and testing. Linux keeps
