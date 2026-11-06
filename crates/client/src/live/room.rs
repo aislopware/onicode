@@ -198,6 +198,8 @@ pub(crate) struct ViewerSink {
     pub(crate) persister: Arc<Persister>,
     /// Coalesced "the doc changed remotely" wake (republish).
     pub(crate) on_applied: Arc<dyn Fn() + Send + Sync>,
+    /// [`super::LiveBackend::outbox_acked`].
+    pub(crate) outbox_acked: Arc<Notify>,
 }
 
 impl ViewerSink {
@@ -261,7 +263,9 @@ impl ChatDocSink for ViewerSink {
     fn acknowledge_update(&self, batch_id: &str) -> Result<(), String> {
         self.store
             .acknowledge_chat_update(&self.chat_id, batch_id)
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        self.outbox_acked.notify_waiters();
+        Ok(())
     }
 
     fn reject_update(&self, batch_id: &str) -> Result<(), String> {
@@ -510,6 +514,8 @@ pub(crate) struct RoomDeps {
     pub on_applied: Arc<dyn Fn() + Send + Sync>,
     /// Connection posture changed (connectivity recompute).
     pub on_status: Arc<dyn Fn() + Send + Sync>,
+    /// [`super::LiveBackend::outbox_acked`].
+    pub outbox_acked: Arc<Notify>,
     /// The client's lifetime: sign-out stops the room even while a view
     /// still holds its session.
     pub cancel: CancellationToken,
@@ -570,6 +576,7 @@ impl Room {
             chat_id: self.chat_id.clone(),
             persister: self.persister.clone(),
             on_applied: deps.on_applied.clone(),
+            outbox_acked: deps.outbox_acked.clone(),
         });
         let url: Arc<dyn UrlProvider> = Arc::new(ChatUrl {
             bearer: deps.bearer.clone(),

@@ -27,6 +27,11 @@
 //! thread ([`BATCH_QUIET`] of quiet, at most [`BATCH_MAX`]) and applied in one
 //! pass, so a boot or a burst of entries is one reconcile, not one per path.
 //!
+//! **Seams.** The OS watchers come from an [`Opener`] and the batch worker
+//! waits through a [`Pace`]; tests swap in a scripted OS and a hand-stepped
+//! pace, so routing, batching and restart-gap handling are proven without
+//! depending on when FSEvents or the scheduler gets round to anything.
+//!
 //! **Restart gaps.** notify 7's FSEvents backend stops the stream, joins its
 //! thread and starts a new stream (from "now" — the event id is not settable)
 //! on *every* `watch`/`unwatch`, so each change drops events for every other
@@ -53,13 +58,12 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
-use std::time::{Duration, Instant};
-
-use notify::Watcher as _;
+use std::time::Duration;
 
 /// A batch applies once registrations have been quiet this long…
 const BATCH_QUIET: Duration = Duration::from_millis(100);
-/// …or this long after its first change, whichever comes first.
+/// …or once its worker has waited out this much of quiet intervals since its
+/// first change, whichever comes first.
 const BATCH_MAX: Duration = Duration::from_secs(1);
 /// Whether a watch change restarts the stream for every path (FSEvents).
 const STREAM_RESTARTS_ON_CHANGE: bool = cfg!(target_os = "macos");
@@ -72,6 +76,50 @@ const STREAM_RESTARTS_ON_CHANGE: bool = cfg!(target_os = "macos");
 const SHARED_WATCHER: bool = cfg!(target_os = "macos");
 
 type Handler = Arc<dyn Fn(&notify::Event) + Send + Sync>;
+/// Where an OS watcher delivers what it observes.
+type Sink = Arc<dyn Fn(notify::Result<notify::Event>) + Send + Sync>;
+/// Opens an OS watcher delivering to a [`Sink`]: [`recommended_watcher`] in
+/// production, a scripted OS in tests.
+type Opener = Arc<dyn Fn(Sink) -> notify::Result<Box<dyn OsWatcher>> + Send + Sync>;
+
+/// The part of a `notify` watcher the hub drives.
+trait OsWatcher: Send {
+    fn watch(&mut self, path: &Path, mode: notify::RecursiveMode) -> notify::Result<()>;
+    fn unwatch(&mut self, path: &Path) -> notify::Result<()>;
+}
+
+impl OsWatcher for notify::RecommendedWatcher {
+    fn watch(&mut self, path: &Path, mode: notify::RecursiveMode) -> notify::Result<()> {
+        notify::Watcher::watch(self, path, mode)
+    }
+
+    fn unwatch(&mut self, path: &Path) -> notify::Result<()> {
+        notify::Watcher::unwatch(self, path)
+    }
+}
+
+/// The platform's watcher (FSEvents, inotify, …).
+fn recommended_watcher(sink: Sink) -> notify::Result<Box<dyn OsWatcher>> {
+    let watcher =
+        notify::recommended_watcher(move |event: notify::Result<notify::Event>| sink(event))?;
+    Ok(Box::new(watcher))
+}
+
+/// How the batch worker waits out a quiet interval.
+trait Pace: Send + Sync {
+    fn quiet(&self, interval: Duration);
+    /// The worker has cleared [`Batch::worker`] and is exiting.
+    fn idle(&self) {}
+}
+
+/// Production [`Pace`]: sleep the interval.
+struct Sleep;
+
+impl Pace for Sleep {
+    fn quiet(&self, interval: Duration) {
+        std::thread::sleep(interval);
+    }
+}
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -109,11 +157,11 @@ struct OsState {
     /// The shared watcher ([`SHARED_WATCHER`] backends). Created lazily on the
     /// first install. On macOS an FSEvents watcher with no paths has no
     /// run-loop thread at all.
-    watcher: Option<notify::RecommendedWatcher>,
+    watcher: Option<Box<dyn OsWatcher>>,
     /// One watcher per installed root on the other backends. Dropping one
     /// closes its instance, releasing every OS watch it added — including
     /// those a failed recursive `watch` left behind.
-    roots: HashMap<PathBuf, notify::RecommendedWatcher>,
+    roots: HashMap<PathBuf, Box<dyn OsWatcher>>,
     /// Canonical path → recursive, as installed.
     installed: HashMap<PathBuf, bool>,
     /// Wanted paths whose watch failed. Not retried while still wanted (every
@@ -145,7 +193,12 @@ pub(crate) struct FsWatchHub {
     routes: Arc<Mutex<Routes>>,
     /// Serializes OS watch changes.
     os: Mutex<OsState>,
+    open: Opener,
     batch: Mutex<Batch>,
+    /// Paces the batch worker. `None` (tests only): no worker; registration
+    /// changes wait for an explicit [`FsWatchHub::apply`].
+    pace: Option<Arc<dyn Pace>>,
+    /// [`STREAM_RESTARTS_ON_CHANGE`]; a field so tests can drive both modes.
     restarts_on_change: bool,
     /// [`SHARED_WATCHER`]; a field so tests can drive both modes.
     shared_watcher: bool,
@@ -191,12 +244,29 @@ impl Drop for WorkerGuard<'_> {
 
 impl FsWatchHub {
     pub(crate) fn new() -> Arc<Self> {
+        let pace: Arc<dyn Pace> = Arc::new(Sleep);
+        Self::with(
+            Arc::new(recommended_watcher),
+            Some(pace),
+            SHARED_WATCHER,
+            STREAM_RESTARTS_ON_CHANGE,
+        )
+    }
+
+    fn with(
+        open: Opener,
+        pace: Option<Arc<dyn Pace>>,
+        shared_watcher: bool,
+        restarts_on_change: bool,
+    ) -> Arc<Self> {
         Arc::new(Self {
             routes: Arc::new(Mutex::new(Routes::default())),
             os: Mutex::new(OsState::default()),
+            open,
             batch: Mutex::new(Batch::default()),
-            restarts_on_change: STREAM_RESTARTS_ON_CHANGE,
-            shared_watcher: SHARED_WATCHER,
+            pace,
+            restarts_on_change,
+            shared_watcher,
             bridge_enabled: AtomicBool::new(true),
             stats: Stats::default(),
         })
@@ -248,18 +318,22 @@ impl FsWatchHub {
     /// a task queued on a runtime that shuts down before running it would
     /// leave `worker` set and wedge the hub for the rest of the process.
     fn schedule(self: &Arc<Self>) {
-        {
+        let pace = {
             let mut batch = lock(&self.batch);
             batch.generation += 1;
+            let Some(pace) = self.pace.clone() else {
+                return;
+            };
             if batch.worker {
                 return;
             }
             batch.worker = true;
-        }
+            pace
+        };
         let hub = self.clone();
         let spawned = std::thread::Builder::new()
             .name("fs-watch batch".into())
-            .spawn(move || hub.run_batches());
+            .spawn(move || hub.run_batches(&*pace));
         if let Err(err) = spawned {
             tracing::debug!(error = %err, "fs-watch: batch worker spawn failed; applying inline");
             lock(&self.batch).worker = false;
@@ -267,17 +341,18 @@ impl FsWatchHub {
         }
     }
 
-    fn run_batches(&self) {
+    fn run_batches(&self, pace: &dyn Pace) {
         let _guard = WorkerGuard(self);
         loop {
-            let started = Instant::now();
+            let mut waited = Duration::ZERO;
             let mut seen = lock(&self.batch).generation;
             loop {
-                std::thread::sleep(BATCH_QUIET);
+                pace.quiet(BATCH_QUIET);
+                waited += BATCH_QUIET;
                 let now = lock(&self.batch).generation;
                 let quiet = now == seen;
                 seen = now;
-                if quiet || started.elapsed() >= BATCH_MAX {
+                if quiet || waited >= BATCH_MAX {
                     break;
                 }
             }
@@ -288,6 +363,8 @@ impl FsWatchHub {
             let mut batch = lock(&self.batch);
             if batch.generation == seen {
                 batch.worker = false;
+                drop(batch);
+                pace.idle();
                 return;
             }
         }
@@ -314,7 +391,7 @@ impl FsWatchHub {
         }
         os.failed.retain(|path| wanted.contains_key(path));
         let before = os.installed.clone();
-        let mut bridge: Option<notify::RecommendedWatcher> = None;
+        let mut bridge: Option<Box<dyn OsWatcher>> = None;
         let mut bridge_tried = false;
         let mut touched = false;
         // A failed install may uncover paths it would have covered — iterate
@@ -352,14 +429,7 @@ impl FsWatchHub {
                 if os.installed.get(&path) == Some(&recursive) {
                     continue;
                 }
-                match install(
-                    os,
-                    &self.routes,
-                    self.shared_watcher,
-                    &path,
-                    recursive,
-                    &mut touched,
-                ) {
+                match self.install(os, &path, recursive, &mut touched) {
                     Ok(()) => {
                         os.installed.insert(path, recursive);
                     }
@@ -413,7 +483,7 @@ impl FsWatchHub {
         &self,
         installed: &HashMap<PathBuf, bool>,
         desired: &HashMap<PathBuf, bool>,
-    ) -> Option<notify::RecommendedWatcher> {
+    ) -> Option<Box<dyn OsWatcher>> {
         if !self.bridge_enabled.load(Ordering::Relaxed) {
             return None;
         }
@@ -424,12 +494,12 @@ impl FsWatchHub {
             .collect();
         let ancestor = common_ancestor(&survivors)?;
         let routes = self.routes.clone();
-        let opened = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        let sink: Sink = Arc::new(move |event: notify::Result<notify::Event>| {
             if let Ok(event) = event {
                 dispatch(&routes, &event);
             }
-        })
-        .and_then(|mut watcher| {
+        });
+        let opened = (self.open)(sink).and_then(|mut watcher| {
             watcher
                 .watch(&ancestor, notify::RecursiveMode::Recursive)
                 .map(|()| watcher)
@@ -447,53 +517,53 @@ impl FsWatchHub {
         }
     }
 
+    fn install(
+        &self,
+        os: &mut OsState,
+        path: &Path,
+        recursive: bool,
+        touched: &mut bool,
+    ) -> Result<(), notify::Error> {
+        // FSEvents restarts the stream for every path even when `watch` fails —
+        // skip the obvious failure without touching the watcher.
+        if !path.exists() {
+            return Err(notify::Error::path_not_found().add_path(path.to_path_buf()));
+        }
+        let new_watcher = || {
+            let routes = self.routes.clone();
+            let sink: Sink = Arc::new(move |event: notify::Result<notify::Event>| match event {
+                Ok(event) => dispatch(&routes, &event),
+                Err(err) => tracing::debug!(error = %err, "fs-watch: watcher error"),
+            });
+            (self.open)(sink)
+        };
+        let mode = if recursive {
+            notify::RecursiveMode::Recursive
+        } else {
+            notify::RecursiveMode::NonRecursive
+        };
+        if !self.shared_watcher {
+            // On failure the watcher drops here, with any partial watches.
+            let mut watcher = new_watcher()?;
+            *touched = true;
+            watcher.watch(path, mode)?;
+            os.roots.insert(path.to_path_buf(), watcher);
+            return Ok(());
+        }
+        if os.watcher.is_none() {
+            os.watcher = Some(new_watcher()?);
+        }
+        *touched = true;
+        os.watcher
+            .as_mut()
+            .expect("watcher just created")
+            .watch(path, mode)
+    }
+
     #[cfg(test)]
     fn installed(&self) -> HashMap<PathBuf, bool> {
         lock(&self.os).installed.clone()
     }
-}
-
-fn install(
-    os: &mut OsState,
-    routes: &Arc<Mutex<Routes>>,
-    shared: bool,
-    path: &Path,
-    recursive: bool,
-    touched: &mut bool,
-) -> Result<(), notify::Error> {
-    // FSEvents restarts the stream for every path even when `watch` fails —
-    // skip the obvious failure without touching the watcher.
-    if !path.exists() {
-        return Err(notify::Error::path_not_found().add_path(path.to_path_buf()));
-    }
-    let new_watcher = || {
-        let routes = routes.clone();
-        notify::recommended_watcher(move |event: notify::Result<notify::Event>| match event {
-            Ok(event) => dispatch(&routes, &event),
-            Err(err) => tracing::debug!(error = %err, "fs-watch: watcher error"),
-        })
-    };
-    let mode = if recursive {
-        notify::RecursiveMode::Recursive
-    } else {
-        notify::RecursiveMode::NonRecursive
-    };
-    if !shared {
-        // On failure the watcher drops here, with any partial watches.
-        let mut watcher = new_watcher()?;
-        *touched = true;
-        watcher.watch(path, mode)?;
-        os.roots.insert(path.to_path_buf(), watcher);
-        return Ok(());
-    }
-    if os.watcher.is_none() {
-        os.watcher = Some(new_watcher()?);
-    }
-    *touched = true;
-    os.watcher
-        .as_mut()
-        .expect("watcher just created")
-        .watch(path, mode)
 }
 
 fn root_covers(root: &Path, recursive: bool, path: &Path) -> bool {
@@ -566,7 +636,11 @@ fn dispatch(routes: &Mutex<Routes>, event: &notify::Event) {
 
 #[cfg(test)]
 mod tests {
-    use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+    use std::sync::Condvar;
+    use std::sync::mpsc::{Receiver, channel};
+    use std::time::Instant;
+
+    use notify::RecursiveMode::{NonRecursive, Recursive};
 
     use super::*;
 
@@ -588,9 +662,9 @@ mod tests {
 
     fn recorder() -> (
         impl Fn(&notify::Event) + Send + Sync + 'static,
-        UnboundedReceiver<Seen>,
+        Receiver<Seen>,
     ) {
-        let (tx, rx): (UnboundedSender<Seen>, _) = unbounded_channel();
+        let (tx, rx) = channel();
         let handler = move |event: &notify::Event| {
             let _ = tx.send(if event.need_rescan() {
                 Seen::Rescan
@@ -601,41 +675,266 @@ mod tests {
         (handler, rx)
     }
 
-    fn drain(rx: &mut UnboundedReceiver<Seen>) -> Vec<Seen> {
-        let mut seen = Vec::new();
-        while let Ok(signal) = rx.try_recv() {
-            seen.push(signal);
-        }
-        seen
-    }
-
-    async fn expect(rx: &mut UnboundedReceiver<Seen>, want: Seen) {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            let got = tokio::time::timeout_at(deadline, rx.recv())
-                .await
-                .unwrap_or_else(|_| panic!("{want:?} delivered before timeout"))
-                .expect("channel open");
-            if got == want {
-                return;
-            }
-        }
-    }
-
-    /// Wait for the batch worker, then FSEvents' first deliveries, to settle.
-    async fn settle(hub: &FsWatchHub) {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while lock(&hub.batch).worker {
-            assert!(Instant::now() < deadline, "batch worker idles");
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        tokio::time::sleep(Duration::from_millis(300)).await;
+    fn drain(rx: &Receiver<Seen>) -> Vec<Seen> {
+        rx.try_iter().collect()
     }
 
     fn tree() -> (tempfile::TempDir, PathBuf) {
         let tmp = tempfile::tempdir().unwrap();
         let root = std::fs::canonicalize(tmp.path()).unwrap();
         (tmp, root)
+    }
+
+    fn change(path: &Path) -> notify::Event {
+        notify::Event::new(notify::EventKind::Any).add_path(path.to_path_buf())
+    }
+
+    /// What a [`FakeOs`] watcher was asked to do, by watcher id.
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    enum Op {
+        Open(u64),
+        Watch(u64, PathBuf, bool),
+        Unwatch(u64, PathBuf),
+        Close(u64),
+    }
+
+    /// A scripted OS behind the hub's [`Opener`]. Its watchers log every
+    /// call, deliver [`FakeOs::emit`]ted events synchronously to the sinks
+    /// whose watches cover them (notify's rule: a non-recursive watch sees
+    /// its folder and direct children), and model FSEvents' restart gap: an
+    /// event queued with [`FakeOs::on_restart`] happens while that watcher
+    /// restarts its stream on its next `watch`/`unwatch`, so it misses it and
+    /// only the other open watchers (a bridge) can deliver it.
+    #[derive(Default)]
+    struct FakeOs {
+        state: Mutex<FakeState>,
+    }
+
+    #[derive(Default)]
+    struct FakeState {
+        next_id: u64,
+        open: HashMap<u64, FakeStream>,
+        log: Vec<Op>,
+        in_gap: Vec<(u64, notify::Event)>,
+    }
+
+    struct FakeStream {
+        sink: Sink,
+        paths: HashMap<PathBuf, bool>,
+    }
+
+    struct FakeWatcher {
+        os: Arc<FakeOs>,
+        id: u64,
+    }
+
+    impl OsWatcher for FakeWatcher {
+        fn watch(&mut self, path: &Path, mode: notify::RecursiveMode) -> notify::Result<()> {
+            let recursive = matches!(mode, Recursive);
+            {
+                let mut state = lock(&self.os.state);
+                state
+                    .log
+                    .push(Op::Watch(self.id, path.to_path_buf(), recursive));
+                let stream = state.open.get_mut(&self.id).expect("watcher open");
+                stream.paths.insert(path.to_path_buf(), recursive);
+            }
+            self.os.restart(self.id);
+            Ok(())
+        }
+
+        fn unwatch(&mut self, path: &Path) -> notify::Result<()> {
+            {
+                let mut state = lock(&self.os.state);
+                state.log.push(Op::Unwatch(self.id, path.to_path_buf()));
+                let stream = state.open.get_mut(&self.id).expect("watcher open");
+                stream.paths.remove(path);
+            }
+            self.os.restart(self.id);
+            Ok(())
+        }
+    }
+
+    impl Drop for FakeWatcher {
+        fn drop(&mut self) {
+            let mut state = lock(&self.os.state);
+            state.open.remove(&self.id);
+            state.log.push(Op::Close(self.id));
+        }
+    }
+
+    impl FakeOs {
+        fn opener(self: &Arc<Self>) -> Opener {
+            let os = self.clone();
+            Arc::new(move |sink: Sink| -> notify::Result<Box<dyn OsWatcher>> {
+                let mut state = lock(&os.state);
+                state.next_id += 1;
+                let id = state.next_id;
+                state.open.insert(
+                    id,
+                    FakeStream {
+                        sink,
+                        paths: HashMap::new(),
+                    },
+                );
+                state.log.push(Op::Open(id));
+                let watcher: Box<dyn OsWatcher> = Box::new(FakeWatcher { os: os.clone(), id });
+                Ok(watcher)
+            })
+        }
+
+        /// Deliver `event` through every open watcher (but `skip`) whose
+        /// watches cover it, on this thread, outside the fake's lock.
+        fn deliver(&self, event: &notify::Event, skip: Option<u64>) {
+            let sinks: Vec<Sink> = lock(&self.state)
+                .open
+                .iter()
+                .filter(|(id, _)| Some(**id) != skip)
+                .filter(|(_, stream)| {
+                    event.paths.is_empty()
+                        || event.paths.iter().any(|path| {
+                            stream.paths.iter().any(|(root, recursive)| {
+                                path.starts_with(root)
+                                    && (*recursive
+                                        || path == root
+                                        || path.parent() == Some(root.as_path()))
+                            })
+                        })
+                })
+                .map(|(_, stream)| stream.sink.clone())
+                .collect();
+            for sink in sinks {
+                sink(Ok(event.clone()));
+            }
+        }
+
+        fn emit(&self, path: &Path) {
+            self.deliver(&change(path), None);
+        }
+
+        /// A change to `path` while watcher `id` next restarts its stream.
+        fn on_restart(&self, id: u64, path: &Path) {
+            lock(&self.state).in_gap.push((id, change(path)));
+        }
+
+        fn restart(&self, id: u64) {
+            let gap: Vec<notify::Event> = {
+                let mut state = lock(&self.state);
+                let (now, later): (Vec<_>, Vec<_>) = std::mem::take(&mut state.in_gap)
+                    .into_iter()
+                    .partition(|(watcher, _)| *watcher == id);
+                state.in_gap = later;
+                now.into_iter().map(|(_, event)| event).collect()
+            };
+            for event in &gap {
+                self.deliver(event, Some(id));
+            }
+        }
+
+        fn take_log(&self) -> Vec<Op> {
+            std::mem::take(&mut lock(&self.state).log)
+        }
+    }
+
+    /// A [`Pace`] the test steps by hand: the batch worker parks at every
+    /// quiet interval until [`Stepper::step`] releases it, so what lands
+    /// "during" an interval is decided by the test, not the scheduler.
+    #[derive(Default)]
+    struct Stepper {
+        state: Mutex<StepState>,
+        changed: Condvar,
+    }
+
+    #[derive(Default)]
+    struct StepState {
+        parked: bool,
+        released: u64,
+        consumed: u64,
+        idles: u64,
+    }
+
+    impl Pace for Stepper {
+        fn quiet(&self, _interval: Duration) {
+            let mut state = lock(&self.state);
+            state.parked = true;
+            self.changed.notify_all();
+            while state.released == state.consumed {
+                state = self
+                    .changed
+                    .wait(state)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+            state.consumed += 1;
+            state.parked = false;
+            self.changed.notify_all();
+        }
+
+        fn idle(&self) {
+            lock(&self.state).idles += 1;
+            self.changed.notify_all();
+        }
+    }
+
+    impl Stepper {
+        fn wait_until(&self, done: impl Fn(&StepState) -> bool) {
+            let mut state = lock(&self.state);
+            while !done(&state) {
+                state = self
+                    .changed
+                    .wait(state)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+        }
+
+        /// Wait for the batch worker to park in a quiet interval.
+        fn wait_parked(&self) {
+            self.wait_until(|state| state.parked);
+        }
+
+        /// End the parked worker's quiet interval and wait until it parks in
+        /// the next or exits. Returns whether it exited (went idle).
+        fn step(&self) -> bool {
+            self.wait_parked();
+            let idles = {
+                let mut state = lock(&self.state);
+                state.released += 1;
+                self.changed.notify_all();
+                state.idles
+            };
+            self.wait_until(|state| {
+                state.consumed == state.released && (state.parked || state.idles > idles)
+            });
+            lock(&self.state).idles > idles
+        }
+
+        /// Step the pending batch worker until it has applied and exited.
+        fn run_until_idle(&self) {
+            while !self.step() {}
+        }
+    }
+
+    /// A hub on a [`FakeOs`] with no batch worker (changes wait for
+    /// `apply`): FSEvents-like (`shared`: one watcher whose stream restarts
+    /// on every change) or inotify-like (a watcher per root, no restarts).
+    fn fake_hub(shared: bool) -> (Arc<FsWatchHub>, Arc<FakeOs>) {
+        let os = Arc::new(FakeOs::default());
+        (FsWatchHub::with(os.opener(), None, shared, shared), os)
+    }
+
+    /// An FSEvents-like hub on a [`FakeOs`] whose batch worker the test steps.
+    fn stepped_hub() -> (Arc<FsWatchHub>, Arc<FakeOs>, Arc<Stepper>) {
+        let os = Arc::new(FakeOs::default());
+        let stepper = Arc::new(Stepper::default());
+        let pace: Arc<dyn Pace> = stepper.clone();
+        (
+            FsWatchHub::with(os.opener(), Some(pace), true, true),
+            os,
+            stepper,
+        )
+    }
+
+    fn passes(hub: &FsWatchHub) -> usize {
+        hub.stats.passes.load(Ordering::Relaxed)
     }
 
     #[test]
@@ -726,143 +1025,213 @@ mod tests {
         assert_eq!(lock(&hits).len(), 3, "a rescan reaches every registration");
     }
 
-    /// End to end through one real watcher: two folders, each event reaches
-    /// only its own registration, each gets one rescan when it goes live, and
-    /// a dropped handle unwatches.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn shared_watcher_routes_events_and_unwatches_on_drop() {
+    /// Through the batch worker and one shared watcher: two folders, each
+    /// event reaches only its own registration, each gets exactly one rescan
+    /// when it goes live, a dropped handle stops delivery at once, and its
+    /// OS watch goes in the next batch, under a bridge for the survivor.
+    #[test]
+    fn shared_watcher_routes_events_and_unwatches_on_drop() {
         let (_tmp, root) = tree();
         let (a, b) = (root.join("a"), root.join("b"));
         std::fs::create_dir_all(a.join("deep")).unwrap();
         std::fs::create_dir_all(&b).unwrap();
+        let (hub, os, pace) = stepped_hub();
 
-        let hub = FsWatchHub::new();
-        let (on_a, mut a_rx) = recorder();
-        let (on_b, mut b_rx) = recorder();
-        let watch_a = hub.watch(&a, notify::RecursiveMode::Recursive, on_a);
-        let watch_b = hub.watch(&b, notify::RecursiveMode::NonRecursive, on_b);
-        expect(&mut a_rx, Seen::Rescan).await;
-        expect(&mut b_rx, Seen::Rescan).await;
+        let (on_a, a_rx) = recorder();
+        let (on_b, b_rx) = recorder();
+        let watch_a = hub.watch(&a, Recursive, on_a);
+        let watch_b = hub.watch(&b, NonRecursive, on_b);
+        assert!(!watch_a.is_live(), "live only once the batch applies");
+        assert!(!watch_b.is_live(), "live only once the batch applies");
+        pace.run_until_idle();
+        assert_eq!(drain(&a_rx), [Seen::Rescan]);
+        assert_eq!(drain(&b_rx), [Seen::Rescan]);
         assert!(watch_a.is_live() && watch_b.is_live());
-        assert_eq!(hub.installed().len(), 2);
-        settle(&hub).await;
-        drain(&mut a_rx);
-        drain(&mut b_rx);
+        assert_eq!(
+            hub.installed(),
+            HashMap::from([(a.clone(), true), (b.clone(), false)])
+        );
+        let log = os.take_log();
+        assert_eq!(
+            log.first(),
+            Some(&Op::Open(1)),
+            "one shared watcher: {log:?}"
+        );
+        assert_eq!(
+            log[1..].iter().cloned().collect::<HashSet<_>>(),
+            HashSet::from([
+                Op::Watch(1, a.clone(), true),
+                Op::Watch(1, b.clone(), false)
+            ]),
+            "{log:?}"
+        );
 
-        std::fs::write(a.join("deep/x.txt"), "x").unwrap();
-        expect(&mut a_rx, Seen::Event).await;
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        assert!(drain(&mut b_rx).is_empty(), "a's event must not reach b");
-
-        std::fs::write(b.join("y.txt"), "y").unwrap();
-        expect(&mut b_rx, Seen::Event).await;
-        settle(&hub).await;
-        drain(&mut a_rx);
+        os.emit(&a.join("deep/x.txt"));
+        assert_eq!(drain(&a_rx), [Seen::Event]);
+        assert!(drain(&b_rx).is_empty(), "a's event must not reach b");
+        os.emit(&b.join("y.txt"));
+        assert_eq!(drain(&b_rx), [Seen::Event]);
+        assert!(drain(&a_rx).is_empty(), "b's event must not reach a");
 
         drop(watch_a);
-        settle(&hub).await;
-        assert_eq!(hub.installed().len(), 1, "dropped path unwatched");
-        std::fs::write(a.join("deep/x.txt"), "xx").unwrap();
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        assert!(
-            drain(&mut a_rx).is_empty(),
-            "a dropped handle receives nothing"
+        // The OS still watches `a` until the batch applies; the hub must not
+        // route to the dropped handle meanwhile.
+        os.emit(&a.join("deep/x.txt"));
+        assert!(drain(&a_rx).is_empty(), "a dropped handle receives nothing");
+        pace.run_until_idle();
+        assert_eq!(hub.installed(), HashMap::from([(b.clone(), false)]));
+        assert_eq!(
+            os.take_log(),
+            [
+                Op::Open(2),
+                Op::Watch(2, b.clone(), true),
+                Op::Unwatch(1, a.clone()),
+                Op::Close(2),
+            ],
+            "dropped path unwatched, the survivor bridged across the restart"
         );
+        assert!(drain(&b_rx).is_empty(), "a bridged restart needs no rescan");
+
         drop(watch_b);
+        pace.run_until_idle();
+        assert!(hub.installed().is_empty());
     }
 
     /// A burst of registrations is one pass over the OS watcher (one stream
-    /// restart on FSEvents), not one per path.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn registration_burst_applies_in_one_pass() {
+    /// restart on FSEvents), not one per path; so is a burst of drops.
+    #[test]
+    fn registration_burst_applies_in_one_pass() {
         let (_tmp, root) = tree();
-        let hub = FsWatchHub::new();
-        let mut watches = Vec::new();
-        for i in 0..8 {
-            let dir = root.join(format!("d{i}"));
-            std::fs::create_dir(&dir).unwrap();
-            watches.push(hub.watch(&dir, notify::RecursiveMode::Recursive, |_| {}));
-        }
-        settle(&hub).await;
+        let (hub, os, pace) = stepped_hub();
+        let watches: Vec<FsWatch> = (0..8)
+            .map(|i| {
+                let dir = root.join(format!("d{i}"));
+                std::fs::create_dir(&dir).unwrap();
+                hub.watch(&dir, Recursive, |_| {})
+            })
+            .collect();
+        pace.run_until_idle();
         assert!(watches.iter().all(FsWatch::is_live));
         assert_eq!(hub.installed().len(), 8);
-        assert_eq!(hub.stats.passes.load(Ordering::Relaxed), 1);
-        watches.clear();
-        settle(&hub).await;
-        assert!(hub.installed().is_empty());
+        assert_eq!(passes(&hub), 1);
+        let log = os.take_log();
+        assert_eq!(log.iter().filter(|op| matches!(op, Op::Open(_))).count(), 1);
         assert_eq!(
-            hub.stats.passes.load(Ordering::Relaxed),
-            2,
-            "one pass for the drops"
+            log.iter().filter(|op| matches!(op, Op::Watch(..))).count(),
+            8
         );
+
+        drop(watches);
+        pace.run_until_idle();
+        assert!(hub.installed().is_empty());
+        assert_eq!(passes(&hub), 2, "one pass for the drops");
     }
 
-    /// Changing the watch set restarts the FSEvents stream. With the bridge,
-    /// surviving registrations stay covered and get no rescan; without it
-    /// (bridge unavailable) each gets exactly one rescan per pass.
-    #[cfg(target_os = "macos")]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn restart_gap_is_bridged_or_compensated() {
+    /// Changes that never go quiet still apply once the worker has waited
+    /// out [`BATCH_MAX`] — and not one interval sooner.
+    #[test]
+    fn a_steady_trickle_applies_at_batch_max() {
+        let (_tmp, root) = tree();
+        let (hub, _os, pace) = stepped_hub();
+        let register = |i: u128| {
+            let dir = root.join(format!("d{i}"));
+            std::fs::create_dir(&dir).unwrap();
+            hub.watch(&dir, Recursive, |_| {})
+        };
+        let mut watches = vec![register(0)];
+        pace.wait_parked();
+        let intervals = BATCH_MAX.as_millis() / BATCH_QUIET.as_millis();
+        for i in 1..=intervals {
+            watches.push(register(i));
+            let applied = pace.step();
+            assert_eq!(applied, i == intervals, "interval {i} of {intervals}");
+            let installed = if applied { watches.len() } else { 0 };
+            assert_eq!(hub.installed().len(), installed, "interval {i}");
+        }
+        assert_eq!(passes(&hub), 1);
+        drop(watches);
+        pace.run_until_idle();
+    }
+
+    /// FSEvents restarts the shared stream on every watch change and misses
+    /// what happens meanwhile. With the bridge, a change in that gap still
+    /// reaches a surviving registration, which gets no rescan; without it
+    /// (bridge unavailable), the change is lost and each surviving
+    /// registration gets exactly one rescan per pass, however many restarts.
+    #[test]
+    fn restart_gap_is_bridged_or_compensated() {
         let (_tmp, root) = tree();
         let (a, b, c) = (root.join("a"), root.join("b"), root.join("c"));
         for dir in [&a, &b, &c] {
             std::fs::create_dir(dir).unwrap();
         }
-        let hub = FsWatchHub::new();
-        let (on_a, mut a_rx) = recorder();
-        let _watch_a = hub.watch(&a, notify::RecursiveMode::Recursive, on_a);
-        expect(&mut a_rx, Seen::Rescan).await;
-        settle(&hub).await;
-        drain(&mut a_rx);
+        let (hub, os) = fake_hub(true);
+        let (on_a, a_rx) = recorder();
+        let _watch_a = hub.watch(&a, Recursive, on_a);
+        hub.apply();
+        assert_eq!(drain(&a_rx), [Seen::Rescan]);
+        assert_eq!(os.take_log(), [Op::Open(1), Op::Watch(1, a.clone(), true)]);
 
-        let watch_b = hub.watch(&b, notify::RecursiveMode::Recursive, |_| {});
-        settle(&hub).await;
+        let watch_b = hub.watch(&b, Recursive, |_| {});
+        os.on_restart(1, &a.join("x"));
+        hub.apply();
         assert!(watch_b.is_live());
         assert_eq!(
             hub.stats.bridges.load(Ordering::Relaxed),
             1,
             "bridge opened"
         );
-        assert!(
-            !drain(&mut a_rx).contains(&Seen::Rescan),
-            "a bridged restart needs no rescan"
+        assert_eq!(
+            os.take_log(),
+            [
+                Op::Open(2),
+                Op::Watch(2, a.clone(), true),
+                Op::Watch(1, b.clone(), true),
+                Op::Close(2),
+            ],
+            "the bridge spans the main stream's restart"
         );
-        std::fs::write(a.join("x"), "x").unwrap();
-        expect(&mut a_rx, Seen::Event).await;
-        settle(&hub).await;
-        drain(&mut a_rx);
+        assert_eq!(
+            drain(&a_rx),
+            [Seen::Event],
+            "the bridge delivered the gap's change; no rescan needed"
+        );
 
         hub.bridge_enabled.store(false, Ordering::Relaxed);
-        let _watch_c = hub.watch(&c, notify::RecursiveMode::Recursive, |_| {});
+        let _watch_c = hub.watch(&c, Recursive, |_| {});
         drop(watch_b);
-        settle(&hub).await;
-        let seen = drain(&mut a_rx);
+        os.on_restart(1, &a.join("y"));
+        hub.apply();
         assert_eq!(
-            seen.iter().filter(|s| **s == Seen::Rescan).count(),
-            1,
-            "one compensating rescan per pass: {seen:?}"
+            os.take_log(),
+            [Op::Unwatch(1, b.clone()), Op::Watch(1, c.clone(), true)],
+            "two restarts in one pass"
         );
+        assert_eq!(
+            drain(&a_rx),
+            [Seen::Rescan],
+            "the gap's change is lost; one compensating rescan per pass"
+        );
+        assert_eq!(hub.stats.bridges.load(Ordering::Relaxed), 1);
     }
 
     #[test]
     fn missing_path_is_not_live_and_does_not_block_others() {
         let (_tmp, root) = tree();
-        let hub = FsWatchHub::new();
-        let (on_gone, mut gone_rx) = recorder();
-        let gone = hub.watch(
-            &root.join("gone"),
-            notify::RecursiveMode::Recursive,
-            on_gone,
-        );
-        let here = hub.watch(&root, notify::RecursiveMode::NonRecursive, |_| {});
+        let (hub, os) = fake_hub(true);
+        let (on_gone, gone_rx) = recorder();
+        let gone = hub.watch(&root.join("gone"), Recursive, on_gone);
+        let here = hub.watch(&root, NonRecursive, |_| {});
         hub.apply();
         assert!(!gone.is_live());
-        assert!(
-            drain(&mut gone_rx).is_empty(),
-            "a failed watch never attaches"
-        );
+        assert!(drain(&gone_rx).is_empty(), "a failed watch never attaches");
         assert!(here.is_live());
         assert_eq!(hub.installed().keys().collect::<Vec<_>>(), vec![&root]);
+        assert_eq!(
+            os.take_log(),
+            [Op::Open(1), Op::Watch(1, root.clone(), false)],
+            "a missing path never touches the watcher (each call restarts FSEvents)"
+        );
         drop(here);
         drop(gone);
         hub.apply();
@@ -873,14 +1242,10 @@ mod tests {
     fn overlapping_registrations_share_one_install_until_the_last_drops() {
         let (_tmp, root) = tree();
         std::fs::create_dir_all(root.join("nested")).unwrap();
-        let hub = FsWatchHub::new();
-        let flat = hub.watch(&root, notify::RecursiveMode::NonRecursive, |_| {});
-        let nested = hub.watch(
-            &root.join("nested"),
-            notify::RecursiveMode::Recursive,
-            |_| {},
-        );
-        let deep = hub.watch(&root, notify::RecursiveMode::Recursive, |_| {});
+        let (hub, _os) = fake_hub(true);
+        let flat = hub.watch(&root, NonRecursive, |_| {});
+        let nested = hub.watch(&root.join("nested"), Recursive, |_| {});
+        let deep = hub.watch(&root, Recursive, |_| {});
         hub.apply();
         // Same path merges to recursive; the nested path rides along inside it.
         assert_eq!(hub.installed(), HashMap::from([(root.clone(), true)]));
@@ -897,30 +1262,17 @@ mod tests {
         assert!(hub.installed().is_empty());
     }
 
-    /// A hub configured like inotify's: a watcher per root, no restarts.
-    fn per_root_hub() -> Arc<FsWatchHub> {
-        let hub = Arc::into_inner(FsWatchHub::new()).expect("fresh hub");
-        Arc::new(FsWatchHub {
-            shared_watcher: false,
-            restarts_on_change: false,
-            ..hub
-        })
-    }
-
     #[test]
     fn replaced_cover_rescans_the_registration() {
         let (_tmp, root) = tree();
         std::fs::create_dir_all(root.join("nested")).unwrap();
-        for hub in [FsWatchHub::new(), per_root_hub()] {
-            let (on_nested, mut nested_rx) = recorder();
-            let _nested = hub.watch(
-                &root.join("nested"),
-                notify::RecursiveMode::Recursive,
-                on_nested,
-            );
-            let deep = hub.watch(&root, notify::RecursiveMode::Recursive, |_| {});
+        for shared in [true, false] {
+            let (hub, _os) = fake_hub(shared);
+            let (on_nested, nested_rx) = recorder();
+            let _nested = hub.watch(&root.join("nested"), Recursive, on_nested);
+            let deep = hub.watch(&root, Recursive, |_| {});
             hub.apply();
-            drain(&mut nested_rx);
+            drain(&nested_rx);
             // `nested` rode inside `root`'s watch; it now gets its own, and
             // nothing observed the swap.
             drop(deep);
@@ -929,37 +1281,83 @@ mod tests {
                 hub.installed(),
                 HashMap::from([(root.join("nested"), true)])
             );
-            assert!(drain(&mut nested_rx).contains(&Seen::Rescan));
+            assert!(
+                drain(&nested_rx).contains(&Seen::Rescan),
+                "shared: {shared}"
+            );
             // A pass that leaves its cover alone sends nothing.
-            let _other = hub.watch(&root, notify::RecursiveMode::NonRecursive, |_| {});
+            let _other = hub.watch(&root, NonRecursive, |_| {});
             hub.apply();
-            assert!(!drain(&mut nested_rx).contains(&Seen::Rescan));
+            assert!(
+                !drain(&nested_rx).contains(&Seen::Rescan),
+                "shared: {shared}"
+            );
         }
     }
 
-    #[tokio::test]
-    async fn per_root_watchers_route_events_and_close_on_drop() {
+    #[test]
+    fn per_root_watchers_route_events_and_close_on_drop() {
         let (_tmp, root) = tree();
         let (a, b) = (root.join("a"), root.join("b"));
         for dir in [&a, &b] {
             std::fs::create_dir(dir).unwrap();
         }
-        let hub = per_root_hub();
-        let (on_a, mut a_rx) = recorder();
-        let watch_a = hub.watch(&a, notify::RecursiveMode::Recursive, on_a);
-        let (on_b, mut b_rx) = recorder();
-        let _watch_b = hub.watch(&b, notify::RecursiveMode::Recursive, on_b);
+        let (hub, os) = fake_hub(false);
+        let (on_a, a_rx) = recorder();
+        let watch_a = hub.watch(&a, Recursive, on_a);
+        let (on_b, b_rx) = recorder();
+        let _watch_b = hub.watch(&b, Recursive, on_b);
         hub.apply();
         assert_eq!(lock(&hub.os).roots.len(), 2);
         assert!(lock(&hub.os).watcher.is_none());
-        settle(&hub).await;
-        drain(&mut a_rx);
-        drain(&mut b_rx);
-        std::fs::write(b.join("x"), "x").unwrap();
-        expect(&mut b_rx, Seen::Event).await;
-        assert!(!drain(&mut a_rx).contains(&Seen::Event));
+        assert_eq!(drain(&a_rx), [Seen::Rescan]);
+        assert_eq!(drain(&b_rx), [Seen::Rescan]);
+        let a_watcher = os
+            .take_log()
+            .iter()
+            .find_map(|op| match op {
+                Op::Watch(id, path, true) if *path == a => Some(*id),
+                _ => None,
+            })
+            .expect("a has its own watcher");
+
+        os.emit(&b.join("x"));
+        assert_eq!(drain(&b_rx), [Seen::Event]);
+        assert!(drain(&a_rx).is_empty());
         drop(watch_a);
         hub.apply();
         assert_eq!(lock(&hub.os).roots.keys().collect::<Vec<_>>(), [&b]);
+        assert_eq!(
+            os.take_log(),
+            [Op::Close(a_watcher)],
+            "dropping a root closes its watcher; no unwatch, no other watcher touched"
+        );
+    }
+
+    /// Smoke: the platform watcher really delivers through the hub, with the
+    /// real batch worker. The hub's logic is proven on the fake OS above;
+    /// this only checks the wiring, so its bound is generous and it keeps
+    /// writing until a change arrives (a fresh FSEvents stream may start a
+    /// moment after `watch` returns, and a loaded host delays delivery).
+    #[test]
+    fn platform_watcher_delivers_changes() {
+        let (_tmp, root) = tree();
+        let hub = FsWatchHub::new();
+        let (on_root, rx) = recorder();
+        let watch = hub.watch(&root, Recursive, on_root);
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(60)),
+            Ok(Seen::Rescan),
+            "the watch goes live"
+        );
+        assert!(watch.is_live());
+        let deadline = Instant::now() + Duration::from_secs(60);
+        for n in 0_u64.. {
+            assert!(Instant::now() < deadline, "no change delivered within 60 s");
+            std::fs::write(root.join("x.txt"), n.to_string()).unwrap();
+            if matches!(rx.recv_timeout(Duration::from_secs(1)), Ok(Seen::Event)) {
+                break;
+            }
+        }
     }
 }

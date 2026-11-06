@@ -336,28 +336,50 @@ fn index_of(queue: &loro::LoroMovableList, id: &str) -> Option<usize> {
     })
 }
 
-fn write_queued_map(map: &loro::LoroMap, item: &QueuedMessage) -> Result<(), DocError> {
-    map.insert("id", item.id.as_str())?;
-    map.insert("text", item.text.as_str())?;
-    map.insert("issuedBy", item.issued_by.as_str())?;
-    map.insert("issuedAt", item.issued_at)?;
+/// One queue row's fields in the order a write lays them down, `id` last.
+///
+/// A row is written field by field into a map that is already attached to the
+/// queue, and Loro applies each insert to the shared state at once: another
+/// thread reading the doc mid-write sees the fields written so far (`commit`
+/// only closes the transaction and fires events). Every reader keys a row by
+/// its `id` ([`SessionDoc::read_queue`] skips a map without one; the takes
+/// look rows up by it), so writing `id` last publishes the row whole: a reader
+/// sees all of it or none of it. With `id` first, a drain racing the write
+/// read a row whose `attachments` had not landed yet, judged it ready, and
+/// sent it without its images (or took it out from under the write).
+pub fn queued_row_fields(
+    item: &QueuedMessage,
+) -> Result<Vec<(&'static str, loro::LoroValue)>, DocError> {
+    let mut fields: Vec<(&'static str, loro::LoroValue)> = vec![
+        ("text", item.text.as_str().into()),
+        ("issuedBy", item.issued_by.as_str().into()),
+        ("issuedAt", item.issued_at.into()),
+    ];
     if !item.attachments.is_empty() {
-        map.insert(
+        fields.push((
             "attachments",
             crate::schema::loro_value_from_json(&serde_json::to_value(&item.attachments)?),
-        )?;
+        ));
     }
     if item.hold_for_turn_end {
-        map.insert("holdForTurnEnd", true)?;
+        fields.push(("holdForTurnEnd", true.into()));
     }
     if let Some(edited_at) = item.edited_at {
-        map.insert("editedAt", edited_at)?;
+        fields.push(("editedAt", edited_at.into()));
     }
     if let Some(gate) = &item.delivery_gate {
-        map.insert(
+        fields.push((
             "deliveryGate",
             crate::schema::loro_value_from_json(&serde_json::to_value(gate)?),
-        )?;
+        ));
+    }
+    fields.push(("id", item.id.as_str().into()));
+    Ok(fields)
+}
+
+fn write_queued_map(map: &loro::LoroMap, item: &QueuedMessage) -> Result<(), DocError> {
+    for (key, value) in queued_row_fields(item)? {
+        map.insert(key, value)?;
     }
     Ok(())
 }
@@ -564,6 +586,55 @@ mod tests {
         assert!(doc.set_queued_delivery_gate("q1", Some(&review)).unwrap());
         assert!(doc.finish_queued_edit("q1", Some("  "), 4_000).unwrap());
         assert!(doc.read_queue().unwrap().is_empty());
+    }
+
+    /// A drain reading the doc while a row is being written must see the row
+    /// whole or not at all: a row read before its `attachments` landed looked
+    /// ready to send and went out without its images. Replays every prefix of
+    /// the real write against a reader and a taker, for rows of every shape.
+    #[test]
+    fn a_partly_written_row_is_invisible_and_untakeable() {
+        let mut with_attachments = item("q2", "what is this");
+        with_attachments.attachments = vec!["pending://att-q1/queued shot.png".into()];
+        let mut every_field = with_attachments.clone();
+        every_field.hold_for_turn_end = true;
+        every_field.edited_at = Some(2_000);
+        every_field.delivery_gate = Some(QueueDeliveryGate::ReviewRequired {
+            previous_lease_id: "lease-1".into(),
+            owner_device_id: "phone".into(),
+            since_ms: 2_000,
+            base_text_hash: "hash".into(),
+        });
+        for row in [item("q2", "plain"), with_attachments, every_field] {
+            let fields = queued_row_fields(&row).unwrap();
+            assert_eq!(fields.last().map(|(key, _)| *key), Some("id"));
+            for written in 0..=fields.len() {
+                let doc = doc();
+                let ahead = item("q1", "ahead");
+                doc.push_queued(&ahead).unwrap();
+                let queue = doc.doc().get_movable_list("queue");
+                let map = queue.push_container(loro::LoroMap::new()).unwrap();
+                for (key, value) in &fields[..written] {
+                    map.insert(key, value.clone()).unwrap();
+                }
+                let complete = written == fields.len();
+                let expected = if complete {
+                    vec![ahead.clone(), row.clone()]
+                } else {
+                    vec![ahead.clone()]
+                };
+                assert_eq!(
+                    doc.read_queue().unwrap(),
+                    expected,
+                    "{written} of {} fields written",
+                    fields.len()
+                );
+                if !complete {
+                    assert_eq!(doc.take_queued(&row.id).unwrap(), None);
+                    assert_eq!(queue.len(), 2, "a take must not delete a row mid-write");
+                }
+            }
+        }
     }
 
     #[test]

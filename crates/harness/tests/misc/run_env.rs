@@ -12,12 +12,17 @@ use tokio::sync::{mpsc, oneshot};
 
 /// A stand-in agent CLI: records the env it was started with into its cwd
 /// (atomically, so the reader never sees a partial file) and exits.
+///
+/// `--version` answers nothing and records nothing: the Claude driver probes
+/// the binary's version (`executable::probe_version`) in the test process's
+/// own cwd, the crate's source dir, without the run's env.
 fn env_dumper(dir: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let path = dir.join("agent.sh");
     std::fs::write(
         &path,
-        "#!/bin/sh\nprintf 'CODEX_HOME=%s\\nGH_TOKEN=%s\\nANTHROPIC_API_KEY=%s\\n' \
+        "#!/bin/sh\n[ \"$1\" = --version ] && exit 0\n\
+         printf 'CODEX_HOME=%s\\nGH_TOKEN=%s\\nANTHROPIC_API_KEY=%s\\n' \
          \"$CODEX_HOME\" \"$GH_TOKEN\" \"$ANTHROPIC_API_KEY\" > env.tmp\n\
          mv env.tmp env.txt\nexit 0\n",
     )

@@ -5197,15 +5197,23 @@ mod tests {
         };
 
         assert!(!format!("{error:#}").is_empty());
-        // Bind, never connect: connecting to a free ephemeral port on loopback
-        // can self-connect (the kernel picks that same port as the source),
-        // which reads as a listener that isn't there. Tokio binds with
-        // SO_REUSEADDR, so only a live listener, not a closed connection in
-        // TIME_WAIT, refuses it.
-        let rebound = tokio::net::TcpListener::bind(("127.0.0.1", port)).await;
+        // Probe the port the way the next bootstrap does (`attach_to_daemon`
+        // connects): a live listener completes the handshake from its backlog
+        // whether or not anyone accepts, so a refusal means nothing listens.
+        // The port is below the ephemeral range, so the connect can never be
+        // its own source port and self-connect.
+        //
+        // Not a rebind: on macOS a just-closed listener's PCB can stay in the
+        // local-port table until the kernel disposes of it, and `bind` counts
+        // it as in use (AddrInUse, no holder in lsof) while connection lookup
+        // already treats it as gone. That timing is the kernel's, not this
+        // code's, and it failed most runs.
+        let probe = tokio::net::TcpStream::connect(("127.0.0.1", port)).await;
         assert!(
-            rebound.is_ok(),
-            "failed bootstrap must release the IPC listener: {rebound:?}"
+            probe
+                .as_ref()
+                .is_err_and(|err| err.kind() == std::io::ErrorKind::ConnectionRefused),
+            "failed bootstrap must release the IPC listener: {probe:?}"
         );
     }
 

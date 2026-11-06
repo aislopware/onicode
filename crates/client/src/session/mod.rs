@@ -349,6 +349,7 @@ impl SessionCore {
                 store: live.store.clone(),
                 on_applied,
                 on_status,
+                outbox_acked: live.outbox_acked.clone(),
                 cancel: client.cancel.clone(),
             },
         );

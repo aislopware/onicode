@@ -204,6 +204,10 @@ pub(crate) struct LiveBackend {
     pub(crate) direct: std::sync::OnceLock<Option<onicode_preview::viewer::ViewerPeers>>,
     pub(crate) escorts: escort::Escorts,
     pub(crate) delivery_wake: Arc<Notify>,
+    /// An outgoing chat row was ACKed (`notify_waiters`): host wakes that
+    /// were accepted while their rows were still in flight resend and settle
+    /// their receipt now instead of on the next backoff tick.
+    pub(crate) outbox_acked: Arc<Notify>,
     cancel: CancellationToken,
 }
 
@@ -234,6 +238,7 @@ impl LiveBackend {
             direct: std::sync::OnceLock::new(),
             escorts: escort::Escorts::new(&inner.config.data_dir),
             delivery_wake: Arc::new(Notify::new()),
+            outbox_acked: Arc::new(Notify::new()),
             edge,
             store,
             registry: Mutex::new(None),

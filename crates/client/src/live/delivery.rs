@@ -87,6 +87,11 @@ async fn deliver(weak: std::sync::Weak<ClientInner>, chat: &str) {
         let Some(row) = inner.workspace.chat(chat) else {
             return;
         };
+        // Armed before the outbox check below, so an ACK landing anywhere
+        // after it cuts the wait short (`notify_waiters` reaches a created,
+        // unpolled `Notified`).
+        let acked_notify = live.outbox_acked.clone();
+        let acked = acked_notify.notified();
         let version = match live.store.sync_job_version(chat, JOB) {
             Ok(version) => version,
             Err(err) => {
@@ -124,6 +129,9 @@ async fn deliver(weak: std::sync::Weak<ClientInner>, chat: &str) {
             Ok(())
         }
         .await;
+        // The edge took the wake but rows are still outgoing: the next
+        // attempt is due when they ACK, not after a timed backoff.
+        let mut awaiting_rows = result.is_ok() && !rows_flushed;
         if result.is_ok() && rows_flushed {
             match live.store.has_pending_chat_updates(chat) {
                 Ok(false) => {
@@ -139,7 +147,7 @@ async fn deliver(weak: std::sync::Weak<ClientInner>, chat: &str) {
                         return;
                     }
                 }
-                Ok(true) => {}
+                Ok(true) => awaiting_rows = true,
                 Err(err) => tracing::warn!(%err, %chat, "delivery outbox check failed"),
             }
         } else if let Err(err) = result {
@@ -147,7 +155,17 @@ async fn deliver(weak: std::sync::Weak<ClientInner>, chat: &str) {
         }
         let cancel = inner.cancel.clone();
         drop(inner);
-        if !super::wait_backoff(&cancel, backoff).await {
+        // Waiting on rows, their ACK resumes at once; the backoff stays the
+        // fallback (a row the room rejected never ACKs).
+        let resume = if awaiting_rows {
+            tokio::select! {
+                () = acked => true,
+                more = super::wait_backoff(&cancel, backoff) => more,
+            }
+        } else {
+            super::wait_backoff(&cancel, backoff).await
+        };
+        if !resume {
             return;
         }
         backoff = (backoff * 2).min(super::JOIN_RETRY_CAP);

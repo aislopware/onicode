@@ -4313,6 +4313,20 @@ impl DocHost {
             let Ok(Some(item)) = handle.doc.take_queued(&head.id) else {
                 return;
             };
+            // The taken row, not `head`, is what gets sent, and the row can
+            // change between the two reads. Judge the row in hand: if its
+            // bytes are still in transit it goes back to the front and waits
+            // like any held row. Not a failed send — pausing here would strand
+            // it once its bytes land, since only a user action thaws a pause.
+            if !self.missing_row_attachments(&item).is_empty() {
+                if let Err(err) = handle.doc.insert_queued(0, &item) {
+                    tracing::warn!(chat = %handle.chat_id, row = %item.id, error = %err,
+                        "queued row could not be put back");
+                }
+                handle.publish_queue();
+                self.arm_attachment_wait(handle);
+                return;
+            }
             lock(&handle.steered_rows).retain(|row| row != &item.id);
             handle.publish_queue();
             if let Err(err) = self.dispatch_queued(handle, &item, send).await {
