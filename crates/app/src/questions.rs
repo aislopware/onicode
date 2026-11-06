@@ -682,7 +682,7 @@ impl Render for QuestionCard {
                     move |bounds, _, window, _| {
                         #[cfg(any(target_os = "macos", target_os = "windows"))]
                         if blur > 0. {
-                            window.paint_backdrop_blur(
+                            window.paint_backdrop_blur_whole(
                                 bounds,
                                 gpui::Corners::all(px(RADIUS - 1.)),
                                 px(blur),

@@ -478,7 +478,7 @@ fn empty_state() -> AnyElement {
                                                 target_os = "macos",
                                                 target_os = "windows"
                                             ))]
-                                            window.paint_backdrop_blur(
+                                            window.paint_backdrop_blur_whole(
                                                 bounds,
                                                 gpui::Corners::all(px(16.)),
                                                 px(4.),

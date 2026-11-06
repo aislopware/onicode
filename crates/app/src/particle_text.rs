@@ -453,9 +453,11 @@ fn paint_text(
             };
             match mask {
                 // Two opposed CSS gradients, whole at `start` and gone at `end`.
-                Some((start, end)) => {
-                    window.with_edge_fade(bounds, gpui::EdgeFade::ramp_x(px(start), px(end)), paint)
-                }
+                Some((start, end)) => window.with_group_fade(
+                    bounds,
+                    gpui::EdgeFade::ramp_x(px(start), px(end)),
+                    paint,
+                ),
                 None => paint(window),
             }
         }

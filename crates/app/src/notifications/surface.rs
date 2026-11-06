@@ -13,7 +13,7 @@ pub(crate) fn backdrop(radius: f32) -> impl IntoElement {
             let quad = if light {
                 gpui::fill(bounds, opaque)
             } else {
-                window.paint_backdrop_blur(bounds, gpui::Corners::all(px(radius)), px(24.));
+                window.paint_backdrop_blur_whole(bounds, gpui::Corners::all(px(radius)), px(24.));
                 gpui::fill(bounds, content(0.02))
             };
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]

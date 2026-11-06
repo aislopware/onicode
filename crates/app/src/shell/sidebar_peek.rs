@@ -278,9 +278,9 @@ impl Shell {
         // Glass blurs the dimmed workspace under a faint wash; otherwise the
         // panel takes the window's own surface.
         let glass = self.window_glass == Some(true) && !is_light();
-        // The blur itself eases with the panel, drawn whole rather than faded
-        // by the panel's opacity: at full strength to the last frame it would
-        // vanish all at once as the peek closes.
+        // The blur is drawn whole, not faded by the panel's opacity, so it
+        // eases with the panel itself; at full strength to the last frame it
+        // would vanish all at once as the peek closes.
         let blur = 24. * progress;
         let sidebar = if self.sidebar_uncached() {
             self.sidebar_frame.clone().into_any_element()
@@ -313,39 +313,19 @@ impl Shell {
             ])
             .when(!glass, |d| d.bg(shell_fill()))
             .when(glass, |d| {
-                // GPUI draws a backdrop blur as opaque as the element opacity
-                // it is painted in; this one is drawn whole, its radius eased,
-                // so its own layer takes back the panel's opacity.
-                #[cfg(any(target_os = "macos", target_os = "windows"))]
-                let d = d.when(progress > 0., |d| {
-                    d.child(
-                        div()
-                            .absolute()
-                            .top_0()
-                            .left_0()
-                            .size_full()
-                            .opacity(1. / progress)
-                            .child(
-                                canvas(
-                                    |_, _, _| {},
-                                    move |bounds, _, window, _| {
-                                        window.paint_backdrop_blur(
-                                            bounds,
-                                            gpui::Corners::all(px(10.)),
-                                            px(blur),
-                                        );
-                                    },
-                                )
-                                .size_full(),
-                            ),
-                    )
-                });
                 d.child(
                     canvas(
                         |_, _, _| {},
                         move |bounds, _, window, _| {
                             #[cfg(any(target_os = "macos", target_os = "windows"))]
-                            let quad = gpui::fill(bounds, content(0.05));
+                            let quad = {
+                                window.paint_backdrop_blur_whole(
+                                    bounds,
+                                    gpui::Corners::all(px(10.)),
+                                    px(blur),
+                                );
+                                gpui::fill(bounds, content(0.05))
+                            };
                             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
                             let quad = {
                                 let _ = blur;

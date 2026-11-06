@@ -74,9 +74,9 @@ fn mount_remount_same_title_zero_width_and_reduced_motion_do_not_replay(cx: &mut
         cx.refresh().unwrap();
         window
             .update(cx, |_, window, _| {
-                crate::mask::probe::sprite_fades(window)
+                crate::mask::probe::group_fades(window)
                     .iter()
-                    .filter(|fade| fade.rate[0] != 0. || fade.rate[2] != 0.)
+                    .filter(|(_, fade)| fade.ramp_x.is_some())
                     .count()
             })
             .unwrap()

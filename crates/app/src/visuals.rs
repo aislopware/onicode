@@ -990,7 +990,7 @@ impl VisualView {
                             cx.stop_propagation();
                         }),
                     )
-                    .on_scroll_wheel(cx.listener(move |this, event: &gpui::ScrollEvent, _, cx| {
+                    .on_scroll(cx.listener(move |this, event: &gpui::ScrollEvent, _, cx| {
                         // Modifier zoom leaves ordinary transcript scrolling available.
                         if event.modifiers.control || event.modifiers.platform {
                             let orbit = this.orbits.entry(wheel_key.clone()).or_default();

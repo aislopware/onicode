@@ -1109,7 +1109,11 @@ fn pairing_backdrop(classic: bool) -> impl IntoElement {
                 fill
             };
             #[cfg(any(target_os = "macos", target_os = "windows"))]
-            window.paint_backdrop_blur(bounds, gpui::Corners::all(px(DIALOG_RADIUS)), px(24.));
+            window.paint_backdrop_blur_whole(
+                bounds,
+                gpui::Corners::all(px(DIALOG_RADIUS)),
+                px(24.),
+            );
             window.paint_quad(gpui::fill(bounds, fill).corner_radii(px(DIALOG_RADIUS)));
         },
     )
@@ -1132,7 +1136,7 @@ fn expired_qr_blur() -> impl IntoElement {
         |bounds, _, window, _| {
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
-                window.paint_backdrop_blur(bounds, gpui::Corners::default(), px(2.));
+                window.paint_backdrop_blur_whole(bounds, gpui::Corners::default(), px(2.));
             });
             // Other renderers keep the dimmed expired image and the usable
             // New code control; they have no backdrop-blur primitive.

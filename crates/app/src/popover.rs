@@ -570,7 +570,7 @@ pub(crate) fn paint_glass(
     let quad = if light {
         gpui::fill(bounds, opaque)
     } else {
-        window.paint_backdrop_blur(bounds, corners, px(BLUR));
+        window.paint_backdrop_blur_whole(bounds, corners, px(BLUR));
         gpui::fill(bounds, tint)
     };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]

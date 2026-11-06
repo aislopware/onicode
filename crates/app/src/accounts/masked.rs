@@ -73,7 +73,7 @@ impl Element for Masked {
         window.paint_layer(bounds, |window| {
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
-                window.paint_backdrop_blur(bounds, gpui::Corners::default(), gpui::px(5.));
+                window.paint_backdrop_blur_whole(bounds, gpui::Corners::default(), gpui::px(5.));
                 window.paint_quad(gpui::fill(bounds, content(0.02)));
             }
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]

@@ -348,7 +348,7 @@ impl Render for ImageLightbox {
                     cx.notify();
                 }),
             )
-            .on_scroll_wheel(cx.listener(|this, event: &gpui::ScrollEvent, _, cx| {
+            .on_scroll(cx.listener(|this, event: &gpui::ScrollEvent, _, cx| {
                 let delta = event.delta.pixel_delta(px(16.));
                 if event.modifiers.control || event.modifiers.platform {
                     // GPUI's wheel deltas have the opposite sign to DOM wheel deltas.
@@ -378,7 +378,7 @@ impl Render for ImageLightbox {
                     |_, _, _| {},
                     |bounds, _, window, _| {
                         #[cfg(any(target_os = "macos", target_os = "windows"))]
-                        window.paint_backdrop_blur(bounds, gpui::Corners::default(), px(4.));
+                        window.paint_backdrop_blur_whole(bounds, gpui::Corners::default(), px(4.));
                         window.paint_quad(gpui::fill(bounds, black(0.85)));
                     },
                 )
@@ -451,7 +451,7 @@ impl Render for ImageLightbox {
                             |_, _, _| {},
                             |bounds, _, window, _| {
                                 #[cfg(any(target_os = "macos", target_os = "windows"))]
-                                window.paint_backdrop_blur(
+                                window.paint_backdrop_blur_whole(
                                     bounds,
                                     gpui::Corners::all(px(18.)),
                                     px(12.),
@@ -627,6 +627,7 @@ mod tests {
                 ..Default::default()
             },
             touch_phase: TouchPhase::Moved,
+            ..Default::default()
         });
         window
             .update(visual, |view, _, _| {

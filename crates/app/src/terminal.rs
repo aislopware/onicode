@@ -772,7 +772,7 @@ impl Render for Terminal {
                 }),
             )
             .on_mouse_down(MouseButton::Right, cx.listener(Self::open_context_menu))
-            .on_scroll_wheel(cx.listener(|this, event, _, cx| this.scroll(event, cx)))
+            .on_scroll(cx.listener(|this, event, _, cx| this.scroll(event, cx)))
             .child(Grid {
                 terminal: cx.entity(),
                 focused,

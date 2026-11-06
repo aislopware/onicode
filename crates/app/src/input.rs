@@ -1929,7 +1929,7 @@ impl Render for Input {
             .on_action(cx.listener(Self::redo))
             .on_action(cx.listener(Self::indent))
             .on_action(cx.listener(Self::outdent))
-            .on_scroll_wheel(cx.listener(Self::scroll))
+            .on_scroll(cx.listener(Self::scroll))
             .on_action(cx.listener(Self::backspace))
             .on_action(cx.listener(Self::delete))
             .on_action(cx.listener(Self::left))

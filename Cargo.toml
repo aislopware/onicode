@@ -255,12 +255,13 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # GPUI is aislopware/gpui-fast (retained mode, list and scroll layers), pinned by rev on its main: the rev
 # that carries monocode's renderer parity (backdrop blur, linear edge fades and text reveal, rounded clip, the
 # project background's layer mask, drop shadows outside, 3:2 dashes, role cursor, wheel glide, content zoom,
-# atlas clear; its FORK.md "Onicode"), so the app draws as monocode's patched GPUI snapshot did
-# (docs/onicode/golden.md).
-gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "f0e9052d0e228532cb387c3e917e26e3ac7cdbe4", default-features = false }
-gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "f0e9052d0e228532cb387c3e917e26e3ac7cdbe4", default-features = false }
+# atlas clear, group fades, whole blurs ordered as monocode's marker, first runs shaped at next_up; its FORK.md
+# "Onicode"), so the app draws as monocode's patched GPUI snapshot did (docs/onicode/golden.md). The rev is
+# onicode-parity-3's head until that branch is merged and pushed.
+gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "a8efec8f3aeb4d973dc0737129b39902efad1e58", default-features = false }
+gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "a8efec8f3aeb4d973dc0737129b39902efad1e58", default-features = false }
 # The headless Metal renderer, the CoreText text system and the GPU memory snapshot.
-gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "f0e9052d0e228532cb387c3e917e26e3ac7cdbe4" }
+gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "a8efec8f3aeb4d973dc0737129b39902efad1e58" }
 
 # storage
 rusqlite = { version = "0.40.2", features = ["bundled", "hooks"], default-features = false }

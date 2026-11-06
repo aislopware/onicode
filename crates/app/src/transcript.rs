@@ -4404,22 +4404,27 @@ impl Render for TranscriptView {
             )
             // A color overlay cannot mask text without tinting the pane and creating a seam above
             // the composer: the rows fade out at the top and above the composer.
-            .child(gpui::edge_fade(
-                list(
-                    self.list.clone(),
-                    cx.processor(|this, ix: usize, window, cx| {
-                        if ix == this.footer_ix() {
-                            this.footer(window, cx)
-                        } else {
-                            let row = this.row(ix, window, cx);
-                            this.reflow.wrap(this.rows[ix].key, row, this.follow.offset)
-                        }
-                    }),
+            .child(
+                gpui::edge_fade(
+                    list(
+                        self.list.clone(),
+                        cx.processor(|this, ix: usize, window, cx| {
+                            if ix == this.footer_ix() {
+                                this.footer(window, cx)
+                            } else {
+                                let row = this.row(ix, window, cx);
+                                this.reflow.wrap(this.rows[ix].key, row, this.follow.offset)
+                            }
+                        }),
+                    )
+                    .pt(px(TOP_INSET))
+                    .size_full(),
+                    crate::mask::mask_fade_y(px(TOP_FADE), px(BOTTOM_INSET)),
                 )
-                .pt(px(TOP_INSET))
-                .size_full(),
-                crate::mask::mask_fade_y(px(TOP_FADE), px(BOTTOM_INSET)),
-            ))
+                // Faded as one group, as monocode's markers fade it: a glyph over
+                // its avatar's fill shows none of the fill through it.
+                .group(),
+            )
             .child(
                 canvas(
                     move |_, _, cx| {
@@ -4503,7 +4508,7 @@ pub(crate) fn floating_surface() -> impl IntoElement {
             let radius = bounds.size.height / 2.;
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
-                window.paint_backdrop_blur(bounds, gpui::Corners::all(radius), px(12.));
+                window.paint_backdrop_blur_whole(bounds, gpui::Corners::all(radius), px(12.));
                 window.paint_quad(gpui::fill(bounds, content(0.04)).corner_radii(radius));
             }
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -5478,17 +5483,17 @@ mod scroll_tests {
             .update(cx, |view, w, cx| {
                 #[cfg(target_os = "macos")]
                 {
-                    use crate::mask::probe::{fade_widths, held_fades};
+                    use crate::mask::probe::{group_fade_widths, group_fades};
                     let scale = w.scale_factor();
                     let (top, bottom) = (
                         view.viewport.top().as_f32() * scale,
                         view.viewport.bottom().as_f32() * scale,
                     );
                     assert!(
-                        held_fades(w).iter().any(|fade| {
-                            fade_widths(fade, scale) == [0., TOP_FADE, 0., BOTTOM_INSET]
-                                && (fade.edge[1] - top).abs() <= 1.
-                                && (fade.edge[3] - bottom).abs() <= 1.
+                        group_fades(w).iter().any(|(region, fade)| {
+                            group_fade_widths(fade, scale) == [0., TOP_FADE, 0., BOTTOM_INSET]
+                                && (region.top().0 - top).abs() <= 1.
+                                && (region.bottom().0 - bottom).abs() <= 1.
                         }),
                         "the rows fade out at the top and above the composer, over the viewport"
                     );

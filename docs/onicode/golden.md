@@ -10,8 +10,20 @@ mid-scroll with both edges faded, a session menu, a modal, a toast, a bare popov
 sidebar peek halfway open, interface scale 125%, the title reveal at 300 and 700 ms, SF labels in three weights, and the
 project background empty or filled, plain or with Haze. They are deterministic: a fixed window at the test window's 2x
 scale, system fonts, an in-memory store without timestamps, reduced motion so every entrance rests on its last frame,
-and held clocks for the two mid-motion scenes. `check` fails on any channel that moved, except by 1 level on an
+and held clocks for the two mid-motion scenes. Two more things keep them fixed: the window clears opaque whatever its
+background, as monocode's test window always did, and the harness claims the agent-update check before any scene draws,
+so no toast shows the machine's installed CLI versions. `check` fails on any channel that moved, except by 1 level on an
 antialiased edge (a pixel with a neighbour at least 16 levels away in the recorded image), the ring §1.1 expects to
 differ; `ONICODE_GOLDEN_TOLERANCE=N` widens that to N everywhere while a port is in progress. Diffs (amber within the
 allowance, red over it), the drawn images and per-scene stats (max channel delta, pixels over 1 level) go to
 `$CARGO_TARGET_DIR/golden`. Re-record only for an intended UI change, in the same commit.
+
+The ten dark images were recorded again on the monocode stack (7152d2bd) with those two fixes, since the first
+recording held the update toast; the light ones came out byte-identical. On gpui-fast (FORK.md "Onicode",
+`onicode-parity-3`) the plain scenes match exactly: labels, the title reveal and all eight project backgrounds. The
+others differ by at most 1 level, mostly the corner ring, plus 1-level text edges over the light composer's shadow
+(about 31 pixels a light scene), except `ui-scale-125`: an activity tile's pencil sits one device pixel lower. Its
+transcript row lies 0.2 pt lower than on monocode's taffy 0.13, so at the scale factor of 2.5 the icon's top rounds
+from 698.5 to 699 rather than to 698. The project background spans the view's width at the image's aspect from the
+top, which is what monocode's taffy 0.13 made of `img().size_full()` (taffy 0.15 resolves the height to the view's and
+centres the cover), so the app now lays that out explicitly.

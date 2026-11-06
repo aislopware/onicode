@@ -17,7 +17,8 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
-    AnyWindowHandle, HeadlessAppContext, ListOffset, PlatformTextSystem, WindowHandle, point, size,
+    AnyWindowHandle, HeadlessAppContext, ListOffset, PlatformTextSystem,
+    WindowBackgroundAppearance, WindowHandle, point, size,
 };
 use image::{Rgba, RgbaImage};
 use onicode_core::project_appearance::{Background, Effect};
@@ -141,6 +142,12 @@ fn run(scene: &str, draw: impl Fn(&mut HeadlessAppContext, Look) -> AnyWindowHan
         let mut cx = headless();
         crate::theme::configure(&look.preferences(), false);
         let window = draw(&mut cx, look);
+        // The recording stack's test window cleared opaque whatever the window's background, so
+        // the dark window's glass is drawn over opaque black as it was recorded.
+        cx.update_window(window, |_, window, _| {
+            window.set_background_appearance(WindowBackgroundAppearance::Opaque);
+        })
+        .expect("window is open");
         settle(&mut cx, window);
         let image = cx
             .capture_screenshot(window)
@@ -160,6 +167,9 @@ fn run(scene: &str, draw: impl Fn(&mut HeadlessAppContext, Look) -> AnyWindowHan
 /// The app as `main` sets it up for drawing, on the test platform with real CoreText shaping and a
 /// headless Metal renderer.
 fn headless() -> HeadlessAppContext {
+    // The launch's harness update check reads the machine's installed agent CLIs; claiming it
+    // keeps their versions out of the scenes.
+    onicode_core::harness_updates::claim_launch_check();
     let text: Arc<dyn PlatformTextSystem> = Arc::new(gpui_apple::AppleTextSystem::new());
     let mut cx = HeadlessAppContext::with_platform(
         text.clone(),

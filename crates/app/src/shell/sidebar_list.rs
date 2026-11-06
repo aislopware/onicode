@@ -154,10 +154,11 @@ fn sidebar_fade_heights(
 
 /// The rows, faded out over [`sidebar_fade_heights`].
 fn sidebar_faded(rows: impl IntoElement, state: ListState, top_fade: bool) -> impl IntoElement {
-    crate::mask::fade_by(rows, move |bounds, _, _| {
+    gpui::edge_fade_by(rows, move |bounds, _, _| {
         let (top, bottom) = sidebar_fade_heights(&state, top_fade, bounds);
         crate::mask::mask_fade_y(top, bottom)
     })
+    .group()
 }
 
 /// Without Metal's fade, the background painted over the rows' edges.
@@ -445,7 +446,7 @@ impl Shell {
             .flex_1()
             .min_h_0()
             .overflow_hidden()
-            .on_scroll_wheel(cx.listener(|this, _, _, cx| this.sidebar_scrolled(cx)))
+            .on_scroll(cx.listener(|this, _, _, cx| this.sidebar_scrolled(cx)))
             .child(sidebar_faded(
                 list(
                     self.sidebar_list.state.clone(),

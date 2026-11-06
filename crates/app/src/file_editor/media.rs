@@ -384,7 +384,7 @@ impl gpui::Render for MediaPreview {
                 .min_w_0()
                 .overflow_scroll()
                 .track_scroll(&self.scroll)
-                .on_scroll_wheel(cx.listener(Self::wheel))
+                .on_scroll(cx.listener(Self::wheel))
                 .on_pinch(cx.listener(|this, e: &gpui::PinchEvent, _, cx| {
                     this.zoom_at(Some(this.scale() * (1. + e.delta)), Some(e.position), cx);
                     cx.stop_propagation();

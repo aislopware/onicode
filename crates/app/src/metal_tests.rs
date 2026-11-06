@@ -155,6 +155,7 @@ fn background_artwork_mask_rounds_fades_and_blurs_without_touching_the_backdrop(
             corner_radii: Corners::all(ScaledPixels(12.)),
             mask: gpui::LayerMask::project_background(empty, haze, false, 0.65),
             scale: 1.,
+            quads_before: 0,
         };
         scene.insert_layer_mask(cut(true));
         for x in 8..120 {
@@ -491,6 +492,7 @@ fn backdrop_blur_blurs_only_inside_its_bounds() {
         corner_radii: Corners::default(),
         blur_radius: ScaledPixels(6.),
         opacity: 1.,
+        quads_before: 0,
     });
     scene.finish();
     let pixels = renderer

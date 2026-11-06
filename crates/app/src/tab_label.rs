@@ -63,7 +63,7 @@ pub(crate) fn tab_label(text: impl Into<SharedString>) -> impl IntoElement {
                         right: px(40.),
                         ..Default::default()
                     });
-                    window.with_edge_fade(bounds, fade, paint);
+                    window.with_group_fade(bounds, fade, paint);
                     return;
                 }
                 #[cfg(not(target_os = "macos"))]
@@ -80,7 +80,7 @@ mod tests {
     use gpui::{App, Context, Render, TestAppContext, Window, div};
 
     use super::*;
-    use crate::mask::probe::{fade_widths, sprite_fades};
+    use crate::mask::probe::{group_fade_widths, group_fades};
 
     struct Label {
         width: f32,
@@ -117,9 +117,9 @@ mod tests {
             window
                 .update(cx, |_, window, _| {
                     let scale = window.scale_factor();
-                    sprite_fades(window)
+                    group_fades(window)
                         .iter()
-                        .filter(|ramps| fade_widths(ramps, scale) == [0., 0., 40., 0.])
+                        .filter(|(_, fade)| group_fade_widths(fade, scale) == [0., 0., 40., 0.])
                         .count()
                 })
                 .unwrap()

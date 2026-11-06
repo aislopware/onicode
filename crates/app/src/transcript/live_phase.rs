@@ -112,7 +112,7 @@ pub(super) fn live_phase(
                 .id("live-phase-content")
                 .w_full()
                 .min_w_0()
-                .on_scroll_wheel(move |event, window, cx| {
+                .on_scroll(move |event, window, cx| {
                     if enabled
                         && wheel(
                             &handle,
@@ -131,7 +131,7 @@ pub(super) fn live_phase(
         .w_full()
         .min_w_0()
         .max_h(max_height)
-        .child(crate::mask::fade_by(scroller, edge_fade(scroll, enabled)));
+        .child(gpui::edge_fade_by(scroller, edge_fade(scroll, enabled)).group());
     #[cfg(not(target_os = "macos"))]
     let phase = phase.child(edge_wash(scroll));
     phase.into_any_element()

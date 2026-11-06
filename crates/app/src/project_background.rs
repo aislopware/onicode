@@ -332,19 +332,32 @@ impl Render for ProjectBackground {
             .size_full()
             .overflow_hidden()
             .when_some(self.image.clone(), |d, image| {
+                // Monocode's image spans the view's width at its own aspect from the top, and
+                // the view clips what runs past its bottom: the image's full height resolved
+                // from its aspect on that GPUI's taffy (docs/onicode/golden.md).
+                let size = image.size(0);
+                let aspect = size.width.0.max(1) as f32 / size.height.0.max(1) as f32;
                 d.child(self.mask(true, &settings, opacity))
-                    .child(img(image).size_full().object_fit(ObjectFit::Cover).when(
-                        cfg!(not(target_os = "macos")),
-                        |image| {
-                            image.opacity(opacity).rounded(px(if self.preview {
-                                11.
-                            } else if self.clip.is_some() {
-                                9.
-                            } else {
-                                0.
-                            }))
-                        },
-                    ))
+                    .child(
+                        div()
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .w_full()
+                            .aspect_ratio(aspect)
+                            .child(img(image).size_full().object_fit(ObjectFit::Cover).when(
+                                cfg!(not(target_os = "macos")),
+                                |image| {
+                                    image.opacity(opacity).rounded(px(if self.preview {
+                                        11.
+                                    } else if self.clip.is_some() {
+                                        9.
+                                    } else {
+                                        0.
+                                    }))
+                                },
+                            )),
+                    )
                     .child(self.mask(false, &settings, opacity))
             })
             .into_any_element()
