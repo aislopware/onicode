@@ -43,10 +43,15 @@ runs:
     - name: Build settings
       shell: bash
       run: echo "CARGO_PROFILE_DEV_DEBUG=0" >> "$GITHUB_ENV"
+    # Build scripts record absolute paths outside target/: ort-sys links clang_rt from the Xcode it found
+    # and onnxruntime from its download cache. So the key carries the image version, and that download
+    # cache travels with target/.
     - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
-        prefix-key: ci-mac-v1
+        prefix-key: ci-mac-v2
         shared-key: ${{ inputs.rust-cache }}
+        key: ${{ env.ImageVersion }}
+        cache-directories: ~/Library/Caches/ort.pyke.io
         add-job-id-key: false
         save-if: ${{ github.ref == 'refs/heads/main' }}
         cache-on-failure: true
