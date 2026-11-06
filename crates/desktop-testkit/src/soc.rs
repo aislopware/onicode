@@ -407,10 +407,18 @@ mod tests {
     /// encode block and the GPU are shares of it, and the elapsed time is the one waited.
     #[test]
     fn a_span_reads_back() {
-        let soc = Soc::open().expect("IOReport subscribes");
-        let before = soc.read().expect("a reading");
-        std::thread::sleep(Duration::from_millis(200));
-        let after = soc.read().expect("a reading");
+        // A virtual Mac (the office CI runners) has no SoC counters to subscribe to.
+        let Some(soc) = Soc::open() else {
+            crate::live::skip("IOReport has no SoC counters on this Mac (a virtual machine)");
+            return;
+        };
+        let (Some(before), Some(after)) = (soc.read(), {
+            std::thread::sleep(Duration::from_millis(200));
+            soc.read()
+        }) else {
+            crate::live::skip("IOReport subscribed but reads nothing on this Mac");
+            return;
+        };
         let span = after.since(&before).expect("a delta");
         assert!(span.elapsed >= Duration::from_millis(200), "{span:?}");
         assert!((0.0..=1.0).contains(&span.gpu_active), "{span:?}");

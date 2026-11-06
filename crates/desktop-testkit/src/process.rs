@@ -212,12 +212,17 @@ mod tests {
         }
         let after = own().unwrap();
         assert!(
-            after.instructions.saturating_sub(before.instructions) > 1_000_000,
-            "a million additions retire at least a million instructions: {before:?} {after:?}"
-        );
-        assert!(
             after.footprint > 0 && after.peak_footprint >= after.footprint,
             "{after:?}"
+        );
+        if after.instructions == 0 {
+            // A virtual Mac (the office CI runners) counts no retired instructions.
+            crate::live::skip("this Mac counts no instructions (a virtual machine)");
+            return;
+        }
+        assert!(
+            after.instructions.saturating_sub(before.instructions) > 1_000_000,
+            "a million additions retire at least a million instructions: {before:?} {after:?}"
         );
         assert!(after.cycles > before.cycles, "and cycles: {after:?}");
         // The kernel bills energy in steps, not per instruction: a million additions on a busy

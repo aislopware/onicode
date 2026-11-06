@@ -276,8 +276,7 @@ mod tests {
             ("testkit.self.spin", 20, 1_000)
         );
         #[cfg(target_os = "macos")]
-        {
-            let i = r.instructions.unwrap();
+        if let Some(i) = r.instructions.filter(|i| i.max > 0) {
             assert!(
                 (1..100).contains(&i.p50),
                 "a few instructions per addition: {i:?}"
