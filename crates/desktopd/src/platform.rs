@@ -3,7 +3,7 @@
 //! The seams are capture (which also reads the cursor and the pointer), the video and audio
 //! encoders, input, and the display list. Each but the last is a trait of its desktop crate, and
 //! a [`Platform`] names one implementation of each, so every call on the frame path is a direct
-//! one. [`Native`] is macOS's ([`mac`]) on a Mac and [`headless::Headless`] elsewhere, which
+//! one. [`Native`] is macOS's (`mac`) on a Mac and [`headless::Headless`] elsewhere, which
 //! streams nothing; the tests' is [`crate::synthetic::Drawn`].
 
 use onicode_desktop_capture::CaptureSource;

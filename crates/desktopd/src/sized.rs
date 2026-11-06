@@ -88,7 +88,7 @@ pub trait Factory: 'static {
 pub type Job<S> = Box<dyn FnOnce(&mut S) + Send>;
 
 /// The main thread, where the displays live: the main dispatch queue on a desktopd
-/// ([`MainQueue`]), a task in tests.
+/// (`MainQueue`), a task in tests.
 pub trait Main<S>: Send + Sync + 'static {
     /// Run `job` on the main thread, soon.
     fn run(&self, job: Job<S>);
