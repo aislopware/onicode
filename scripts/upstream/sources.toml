@@ -46,8 +46,17 @@ base = "4a6121bb0f10c6e8037b741b7dc0a4cd639ae289"
 base_date = "2026-11-06"
 every_minutes = 240
 pulls = false
-paths = ["crates/gpui/", "crates/gpui_macos/", "crates/gpui_apple/", "crates/gpui_ios/", "crates/gpui_macros/",
-         "crates/gpui_platform/", "crates/gpui_tokio/", "crates/sum_tree/", "crates/refineable/"]
+paths = [
+    "crates/gpui/",
+    "crates/gpui_macos/",
+    "crates/gpui_apple/",
+    "crates/gpui_ios/",
+    "crates/gpui_macros/",
+    "crates/gpui_platform/",
+    "crates/gpui_tokio/",
+    "crates/sum_tree/",
+    "crates/refineable/",
+]
 
 # The terminal: libghostty-vt only, so only what it builds from counts.
 [ghostty]
@@ -58,9 +67,22 @@ checkout = "forks/ghostty"
 base = "66af4c7458db7e19ae7adb44aa7054879be58b6b"
 base_date = "2026-11-05"
 every_minutes = 0
-paths = ["src/terminal/", "src/lib_vt.zig", "include/ghostty/", "src/simd/", "src/unicode/", "src/input/",
-         "src/build/GhosttyLibVt.zig", "build.zig", "build.zig.zon", "src/datastruct/", "src/lib/",
-         "src/fastmem.zig", "src/quirks.zig", "src/os/string_encoding.zig"]
+paths = [
+    "src/terminal/",
+    "src/lib_vt.zig",
+    "include/ghostty/",
+    "src/simd/",
+    "src/unicode/",
+    "src/input/",
+    "src/build/GhosttyLibVt.zig",
+    "build.zig",
+    "build.zig.zon",
+    "src/datastruct/",
+    "src/lib/",
+    "src/fastmem.zig",
+    "src/quirks.zig",
+    "src/os/string_encoding.zig",
+]
 
 [libghostty-rs]
 upstream = "Uzaaft/libghostty-rs"
@@ -130,11 +152,21 @@ releases = true
 page = "https://docs.claude.com/en/release-notes/claude-apps"
 every_minutes = 0
 
+# rune: Anomaly's GPU-rendered native UI framework, headless and agent-drivable; studied for gpui-fast.
+[rune]
+upstream = "anomalyco/rune"
+branch = "dev"
+base = "47cb857795c3b1dd5097c15d6161719ae738ddda"
+base_date = "2026-11-06"
+every_minutes = 0
+pulls = true
+releases = false
+
 # t3code: many clients and many servers driving Claude Code and Codex through their SDKs.
 [t3code]
 upstream = "pingdotgg/t3code"
 branch = "main"
-base = "bfb388415e8d3d39e5a7b3844fa7bc299c64f725"
+base = "4a087861d0764654c0e9f450f40015aea03d50a7"
 base_date = "2026-11-06"
 every_minutes = 0
 pulls = false
@@ -158,7 +190,8 @@ releases = true
 [opencode]
 upstream = "sst/opencode"
 branch = "dev"
-base = "2658ec02c848ce7e5bd618ee2e18256c5c0992db"
+paths = ["packages/"]
+base = "82229fb7d4598455a525fbf3a3908e300c5220f6"
 base_date = "2026-11-06"
 every_minutes = 60
 pulls = false
@@ -168,7 +201,7 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "7b54fd245de62a2d6c74257ee387abfb55731477"
+base = "aece559654ccfb814703d3bb377156fa7d4a09a3"
 base_date = "2026-11-06"
 every_minutes = 60
 pulls = false
