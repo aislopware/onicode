@@ -187,6 +187,8 @@ impl MediaPreview {
                     .await;
                 if this
                     .update(cx, |this, cx| {
+                        #[cfg(not(target_os = "macos"))]
+                        let _ = (this, cx);
                         #[cfg(target_os = "macos")]
                         if this.visible
                             && let Some(video) = &this.video
