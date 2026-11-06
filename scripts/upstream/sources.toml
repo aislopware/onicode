@@ -32,7 +32,7 @@ upstream = "longbridge/gpui-kit"
 branch = "main"
 fork = "aislopware/gpui-kit"
 checkout = "forks/gpui-kit"
-base = "1458fe285beba30c8035e46f19f76f1631b29f4f"
+base = "b92bb66d148fca10e15d1e3fb77d565ac4d306ec"
 base_date = "2026-11-06"
 every_minutes = 0
 
@@ -192,7 +192,7 @@ releases = true
 upstream = "sst/opencode"
 branch = "dev"
 paths = ["packages/"]
-base = "885df74024b6b540b63bfd487014252227713ea7"
+base = "c62357a58eb6fa72df567fab32110a5ac9437ad2"
 base_date = "2026-11-06"
 every_minutes = 60
 pulls = false
@@ -202,7 +202,7 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "2c502d8b3d382dd609179164f31396d95deee55c"
+base = "814347ecd21b49d25479f5499f168b9f7b7e1803"
 base_date = "2026-11-06"
 every_minutes = 60
 pulls = false
