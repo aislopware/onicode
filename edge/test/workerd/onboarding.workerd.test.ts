@@ -58,7 +58,7 @@ describe("/onboarding", () => {
       { done: [3] },
       { done: ["Welcome"] },
       { done: ["-welcome"] },
-      { done: ["wel come"] },
+      { done: ["wel come"] }, // spellchecker:disable-line
       { done: ["a".repeat(65)] },
       { done: ["ok", "bad_id"] },
       { done: pages(51, "p") }

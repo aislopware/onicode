@@ -79,10 +79,10 @@ pub(super) struct PackageUpdate {
     pub owner: String,
 }
 
-/// `/`-separated and ASCII-lowercased: byte offsets stay valid against the
-/// original, so a match can slice the original-case path.
+/// The path as text: ASCII-lowercasing it keeps byte offsets valid against
+/// the original, so a match can slice the original-case path.
 fn slash(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    path.to_string_lossy().into_owned()
 }
 
 fn real(path: &Path) -> PathBuf {
@@ -105,7 +105,7 @@ pub(super) fn mise_managed(resolved: &Path) -> bool {
     if real
         .file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| name.trim_end_matches(".exe") == "mise")
+        .is_some_and(|name| name == "mise")
     {
         return true;
     }
@@ -149,7 +149,6 @@ pub(super) fn package_owner(resolved: &Path, package: &str) -> Option<PackageOwn
         "/.local/share/pnpm/",
         "/library/pnpm/",
         "/local/share/pnpm/",
-        "/appdata/local/pnpm/",
         "/pnpm/global/",
     ]
     .iter()
@@ -176,7 +175,7 @@ pub(super) fn package_owner(resolved: &Path, package: &str) -> Option<PackageOwn
 /// package at run time; the package's image directory proves Volta installed
 /// this one.
 fn volta_home(resolved: &Path, real: &Path, package: &str) -> Option<PathBuf> {
-    let shim = real.file_name()?.to_str()?.trim_end_matches(".exe");
+    let shim = real.file_name()?.to_str()?;
     if shim != "volta-shim" {
         return None;
     }
@@ -189,17 +188,12 @@ fn volta_home(resolved: &Path, real: &Path, package: &str) -> Option<PathBuf> {
 }
 
 /// The global prefix `package` was installed into, read off its real path:
-/// `<prefix>/lib/node_modules/<package>/…` (Unix) or
-/// `<prefix>/node_modules/<package>/…` (Windows). A prefix that is itself
+/// `<prefix>/lib/node_modules/<package>/…`. A prefix that is itself
 /// inside `node_modules` is a nested (project) install, not a global one; so
 /// is a mise tool that isn't Node (mise's npm backend mimics the layout).
 fn npm_prefix(real: &str, package: &str) -> Option<PathBuf> {
     let lower = real.to_ascii_lowercase();
-    let segment = if cfg!(windows) {
-        format!("/node_modules/{package}/")
-    } else {
-        format!("/lib/node_modules/{package}/")
-    };
+    let segment = format!("/lib/node_modules/{package}/");
     let at = lower.rfind(&segment)?;
     let before = &lower[..at];
     if before.contains("/node_modules/") {
@@ -235,11 +229,7 @@ pub(super) fn package_update(
         PackageOwner::Npm { prefix } => {
             // The prefix's own npm first: another Node's npm would install
             // with its own engine and defaults.
-            let near = if cfg!(windows) {
-                vec![prefix.clone()]
-            } else {
-                vec![prefix.join("bin")]
-            };
+            let near = vec![prefix.join("bin")];
             PackageUpdate {
                 program: found("npm", &near)?,
                 args: vec![
@@ -303,15 +293,6 @@ fn version_at_least(version: &str, minimum: &[u64]) -> bool {
 /// `name` in `near` first, then on the engine's PATH, then on the login
 /// shell's PATH (an app launched from the Dock has a minimal PATH).
 fn find_program(name: &str, near: &[PathBuf]) -> Option<PathBuf> {
-    let names: Vec<String> = if cfg!(windows) {
-        ["cmd", "exe", "ps1"]
-            .iter()
-            .map(|ext| format!("{name}.{ext}"))
-            .chain(std::iter::once(name.to_string()))
-            .collect()
-    } else {
-        vec![name.to_string()]
-    };
     let mut dirs: Vec<PathBuf> = near.to_vec();
     for path in [
         std::env::var_os("PATH"),
@@ -323,7 +304,7 @@ fn find_program(name: &str, near: &[PathBuf]) -> Option<PathBuf> {
         dirs.extend(std::env::split_paths(&path));
     }
     dirs.iter()
-        .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
+        .map(|dir| dir.join(name))
         .find(|candidate| candidate.is_file())
 }
 

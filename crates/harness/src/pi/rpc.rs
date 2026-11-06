@@ -38,10 +38,6 @@ pub(super) struct Transport {
     pub incoming: mpsc::Receiver<Result<Value, HarnessError>>,
     reader: JoinHandle<()>,
     writer: JoinHandle<()>,
-    /// Ends the writer (and Pi's stdin) once the frames queued are written.
-    /// Only Windows' teardown needs it.
-    #[cfg_attr(not(windows), allow(dead_code))]
-    close_input: Arc<tokio::sync::Notify>,
 }
 impl Drop for Transport {
     fn drop(&mut self) {
@@ -65,18 +61,13 @@ impl Transport {
         let (writer_tx, mut writer_rx) = mpsc::unbounded_channel::<Value>();
         let (tx, incoming) = mpsc::channel(256);
         let errors = tx.clone();
-        let close_input = Arc::new(tokio::sync::Notify::new());
-        let close = close_input.clone();
         let writer = tokio::spawn(async move {
             let mut input = input;
-            loop {
-                let frame = tokio::select! {
-                    biased;
-                    frame = writer_rx.recv() => frame,
-                    () = close.notified() => None,
-                };
-                let Some(frame) = frame else { break };
-                let mut bytes = serde_json::to_vec(&frame).expect("JSON value");
+            while let Some(frame) = writer_rx.recv().await {
+                let line = frame.to_string();
+                let mut bytes = crate::lossy_lines::ndjson_safe(&line)
+                    .into_owned()
+                    .into_bytes();
                 bytes.push(b'\n');
                 let result = async {
                     input.write_all(&bytes).await?;
@@ -163,17 +154,7 @@ impl Transport {
             incoming,
             reader,
             writer,
-            close_input,
         }
-    }
-
-    /// Before Pi's teardown: Windows' gives it its grace to exit on stdin
-    /// EOF, which the writer holds off while any [`Client`] clone (an open
-    /// dialog's) is alive. Unix teardown signals instead; its order is
-    /// unchanged.
-    pub fn close_input_for_teardown(&self) {
-        #[cfg(windows)]
-        self.close_input.notify_one();
     }
 }
 

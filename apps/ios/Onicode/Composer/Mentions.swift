@@ -34,7 +34,7 @@ struct MentionIndex {
         var i = cursor - 1
         while i >= 0 {
             let c = ns.character(at: i)
-            if c == 64 /* @ */ {
+            if c == 64 { // "@"
                 let before = i > 0 ? ns.character(at: i - 1) : 32
                 guard before == 32 || before == 10 else { return nil }
                 let range = NSRange(location: i, length: cursor - i)
@@ -73,16 +73,19 @@ final class MentionSuggestions: UIView {
         ])
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func show(_ files: [FileMatch]) {
         self.files = Array(files.prefix(5))
-        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in stack.arrangedSubviews { view.removeFromSuperview() }
         for (i, file) in self.files.enumerated() {
             var c = UIButton.Configuration.plain()
             let name = file.path.split(separator: "/").last.map(String.init) ?? file.path
             let dir = file.path.components(separatedBy: "/").dropLast().joined(separator: "/")
-            c.image = UIImage(systemName: file.isDir ? "folder" : "doc.text", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium))
+            c.image = UIImage(
+                systemName: file.isDir ? "folder" : "doc.text",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium))
             c.imagePadding = 10
             c.baseForegroundColor = Palette.text
             var title = AttributedString(name)

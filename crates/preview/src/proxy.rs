@@ -36,9 +36,9 @@ impl Router {
             self.peers.open(device, service, websocket).await
         }
     }
-    /// WebKit on older macOS releases delegates `.localhost` DNS to the OS.
-    /// Its per-domain CONNECT proxy reaches this same loopback HTTP listener
-    /// without a hosts-file entry. Targets are catalog names at our port only.
+    /// The macOS browser's per-domain CONNECT proxy for preview hostnames
+    /// reaches this same loopback HTTP listener, so `*.localhost` names need no
+    /// hosts-file entry. Targets are catalog names at our port only.
     async fn connect_loopback(
         &self,
         mut request: Request<Incoming>,

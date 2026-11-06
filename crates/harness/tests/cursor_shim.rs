@@ -193,7 +193,7 @@ impl Frames {
     }
 }
 /// The next frame, within 5 s. A shim's first frame also waits for `node`
-/// to start, which alone has taken over 5 s on Windows CI runners.
+/// to start, which alone can take over 5 s on a cold CI runner.
 async fn frame(lines: &mut Frames) -> serde_json::Value {
     let bound = if lines.started { 5 } else { 30 };
     lines.started = true;
@@ -582,37 +582,6 @@ async fn mcp_injection_reaches_sdk_on_create_and_resume_with_fresh_identity() {
             serde_json::json!(["user", "team", "mdm", "plugins"])
         );
     }
-}
-
-#[tokio::test]
-async fn plugin_mcp_servers_reach_the_sdk_beside_onicode() {
-    let fixture = SessionFixture::new();
-    let run = serde_json::json!({
-        "op": "run", "prompt": "normal", "cwd": fixture.dir.path(), "resume": null,
-        "mcp": { "name": "onicode", "command": "/opt/onicode", "args": ["mcp"], "env": {} },
-        "extraMcp": [{
-            "name": "plugin-focus", "command": "/data/plugins/.loaded/focus/0123/bin/server",
-            "args": ["--stdio"], "env": { "FOCUS": "1" },
-        }],
-    });
-    let (mut child, stdin, mut lines) = fixture.spawn_frame(run, false).await;
-    assert_eq!(frame(&mut lines).await["ev"], "ready");
-    assert_eq!(frame(&mut lines).await["ev"], "text");
-    assert_eq!(frame(&mut lines).await["status"], "finished");
-    finish(&mut child, stdin).await;
-    let options: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(fixture.dir.path().join("mcp-options.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(options["mcpServers"]["onicode"]["command"], "/opt/onicode");
-    let plugin = &options["mcpServers"]["plugin-focus"];
-    assert_eq!(plugin["type"], "stdio");
-    assert_eq!(
-        plugin["command"],
-        "/data/plugins/.loaded/focus/0123/bin/server"
-    );
-    assert_eq!(plugin["args"], serde_json::json!(["--stdio"]));
-    assert_eq!(plugin["env"]["FOCUS"], "1");
 }
 
 #[tokio::test]

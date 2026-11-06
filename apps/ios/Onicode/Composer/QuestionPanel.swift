@@ -70,7 +70,8 @@ final class QuestionPanel: UIView, UITextFieldDelegate, UITextViewDelegate {
         nextButton.addAction(UIAction { [weak self] _ in self?.advance() }, for: .touchUpInside)
         // The model picker's close: a 36pt glass capsule, 13pt semibold xmark.
         var closeConfig = UIButton.Configuration.glass()
-        closeConfig.image = UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+        closeConfig.image = UIImage(
+            systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
         closeConfig.baseForegroundColor = Palette.secondary
         closeConfig.cornerStyle = .capsule
         close.configuration = closeConfig
@@ -121,7 +122,8 @@ final class QuestionPanel: UIView, UITextFieldDelegate, UITextViewDelegate {
         ])
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     /// Glass materializes in/out with the panel.
     func setGlassVisible(_ visible: Bool, animated: Bool) {
@@ -135,7 +137,7 @@ final class QuestionPanel: UIView, UITextFieldDelegate, UITextViewDelegate {
         submitted = false
         picks = [:]
         // Question ids arrive from agents and synced docs: never trap on a duplicate.
-        custom = Dictionary(questions.map { ($0.id, $0.prefill ?? "") }, uniquingKeysWith: { first, _ in first })
+        custom = Dictionary(questions.map { ($0.id, $0.prefill ?? "") }) { first, _ in first }
         render()
     }
 
@@ -143,14 +145,19 @@ final class QuestionPanel: UIView, UITextFieldDelegate, UITextViewDelegate {
 
     private func render() {
         guard let q = current else { return }
-        header.text = items.count > 1 ? "\(q.header.isEmpty ? "Question" : q.header) · \(page + 1) of \(items.count)" : (q.header.isEmpty ? "Question" : q.header)
+        header.text =
+            items.count > 1
+            ? "\(q.header.isEmpty ? "Question" : q.header) · \(page + 1) of \(items.count)"
+            : (q.header.isEmpty ? "Question" : q.header)
         question.text = q.text
-        options.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in options.arrangedSubviews { view.removeFromSuperview() }
         let chosen = picks[q.id] ?? []
         for (i, option) in q.options.enumerated() {
             var c = UIButton.Configuration.plain()
             c.title = option
-            c.image = UIImage(systemName: chosen.contains(option) ? (q.multiSelect ? "checkmark.square.fill" : "checkmark.circle.fill") : "\(i + 1).circle")
+            c.image = UIImage(
+                systemName: chosen.contains(option)
+                    ? (q.multiSelect ? "checkmark.square.fill" : "checkmark.circle.fill") : "\(i + 1).circle")
             c.imagePadding = 10
             c.baseForegroundColor = chosen.contains(option) ? Palette.accent : Palette.text
             c.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 12, bottom: 11, trailing: 12)
@@ -160,7 +167,9 @@ final class QuestionPanel: UIView, UITextFieldDelegate, UITextViewDelegate {
                 return a
             }
             c.titleAlignment = .leading
-            c.background.backgroundColor = chosen.contains(option) ? Palette.accent.withAlphaComponent(0.12) : Palette.chip.withAlphaComponent(0.55)
+            c.background.backgroundColor =
+                chosen.contains(option)
+                ? Palette.accent.withAlphaComponent(0.12) : Palette.chip.withAlphaComponent(0.55)
             c.background.cornerRadius = 14
             let b = UIButton(configuration: c)
             b.contentHorizontalAlignment = .leading
@@ -181,7 +190,8 @@ final class QuestionPanel: UIView, UITextFieldDelegate, UITextViewDelegate {
     }
 
     private func answered(_ q: SessionChrome.Question) -> Bool {
-        q.multiline || !(picks[q.id] ?? []).isEmpty || !(custom[q.id] ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+        q.multiline || !(picks[q.id] ?? []).isEmpty
+            || !(custom[q.id] ?? "").trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private func pick(_ option: String) {
@@ -212,14 +222,16 @@ final class QuestionPanel: UIView, UITextFieldDelegate, UITextViewDelegate {
         nextButton.isEnabled = answered(q)
     }
 
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+    func textFieldShouldReturn(_: UITextField) -> Bool {
         advance()
         return true
     }
 
     private func go(_ delta: Int) {
         page = max(0, min(items.count - 1, page + delta))
-        UIView.transition(with: card, duration: 0.2, options: [.transitionCrossDissolve, .allowUserInteraction]) { self.render() }
+        UIView.transition(with: card, duration: 0.2, options: [.transitionCrossDissolve, .allowUserInteraction]) {
+            self.render()
+        }
     }
 
     /// Answers go once per question set (a quick double tap on the last
@@ -282,7 +294,8 @@ final class QueuePanel: UIView {
         ])
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func setGlassVisible(_ visible: Bool, animated: Bool) {
         Glass.setVisible(card, visible, animated: animated)
@@ -291,7 +304,7 @@ final class QueuePanel: UIView {
     func configure(_ items: [SessionChrome.QueuedItem]) {
         guard items != self.items else { return }
         self.items = items
-        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in stack.arrangedSubviews { view.removeFromSuperview() }
         for (i, item) in items.prefix(3).enumerated() {
             stack.addArrangedSubview(row(item, index: i, count: items.count))
         }
@@ -309,7 +322,9 @@ final class QueuePanel: UIView {
     private func row(_ item: SessionChrome.QueuedItem, index: Int, count: Int) -> UIView {
         let v = UIView()
         v.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        let icon = UIImageView(image: UIImage(systemName: "clock", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .medium)))
+        let icon = UIImageView(
+            image: UIImage(
+                systemName: "clock", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .medium)))
         icon.tintColor = Palette.tertiary
         let thumb = UIImageView(image: item.thumbnail)
         thumb.contentMode = .scaleAspectFill
@@ -321,21 +336,33 @@ final class QueuePanel: UIView {
         label.font = Fonts.ui(.sans, 15)
         label.textColor = Palette.text
         var sendConfig = UIButton.Configuration.plain()
-        sendConfig.image = UIImage(systemName: "arrow.up.circle.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .regular))
+        sendConfig.image = UIImage(
+            systemName: "arrow.up.circle.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .regular))
         sendConfig.baseForegroundColor = Palette.text
-        let send = UIButton(configuration: sendConfig, primaryAction: UIAction { [weak self] _ in self?.onAction?(item.id, .sendNow) })
+        let send = UIButton(
+            configuration: sendConfig, primaryAction: UIAction { [weak self] _ in self?.onAction?(item.id, .sendNow) })
         send.accessibilityLabel = "Send"
         var moreConfig = UIButton.Configuration.plain()
-        moreConfig.image = UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold))
+        moreConfig.image = UIImage(
+            systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold))
         moreConfig.baseForegroundColor = Palette.secondary
         let more = UIButton(configuration: moreConfig)
         more.accessibilityLabel = "More queue actions"
         more.showsMenuAsPrimaryAction = true
         more.menu = UIMenu(children: [
-            UIAction(title: "Edit", image: UIImage(systemName: "pencil")) { [weak self] _ in self?.onAction?(item.id, .edit) },
-            UIAction(title: "Move Up", image: UIImage(systemName: "arrow.up"), attributes: index == 0 ? .disabled : []) { [weak self] _ in self?.onAction?(item.id, .moveUp) },
-            UIAction(title: "Move Down", image: UIImage(systemName: "arrow.down"), attributes: index == count - 1 ? .disabled : []) { [weak self] _ in self?.onAction?(item.id, .moveDown) },
-            UIAction(title: "Remove", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in self?.onAction?(item.id, .remove) },
+            UIAction(title: "Edit", image: UIImage(systemName: "pencil")) { [weak self] _ in
+                self?.onAction?(item.id, .edit)
+            },
+            UIAction(title: "Move Up", image: UIImage(systemName: "arrow.up"), attributes: index == 0 ? .disabled : [])
+            { [weak self] _ in self?.onAction?(item.id, .moveUp) },
+            UIAction(
+                title: "Move Down", image: UIImage(systemName: "arrow.down"),
+                attributes: index == count - 1 ? .disabled : []
+            ) { [weak self] _ in self?.onAction?(item.id, .moveDown) },
+            UIAction(title: "Remove", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                self?.onAction?(item.id, .remove)
+            },
         ])
         for s in [icon, thumb, label, send, more] {
             s.translatesAutoresizingMaskIntoConstraints = false

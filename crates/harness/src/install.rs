@@ -15,13 +15,10 @@ const DEADLINE: Duration = Duration::from_secs(15 * 60);
 enum Platform {
     Unix,
     Mac,
-    Windows,
 }
 impl Platform {
     fn current() -> Self {
-        if cfg!(windows) {
-            Self::Windows
-        } else if cfg!(target_os = "macos") {
+        if cfg!(target_os = "macos") {
             Self::Mac
         } else {
             Self::Unix
@@ -34,7 +31,6 @@ enum Method {
     Archive,
     Shell(&'static str, &'static str),
     Npm(&'static str, bool),
-    PowerShell(&'static str),
     Brew,
 }
 
@@ -50,60 +46,40 @@ enum Method {
 fn methods(id: HarnessId, platform: Platform) -> Vec<Method> {
     use HarnessId::*;
     use Method::*;
-    let windows = platform == Platform::Windows;
     match id {
         // A registry agent installs from its registry entry
         // (`crate::acp_registry`), never through a vendor script.
         Mock | Registry(_) => vec![],
-        Fx if windows => vec![],
         Fx => vec![Shell("curl -fsSL https://fx.sh/setup.sh | bash", "bash")],
         Antigravity => vec![Archive],
-        Muse if windows => vec![PowerShell("irm https://dev.meta.ai/install.ps1 | iex")],
         Muse => vec![Shell(
             "curl -fsSL https://dev.meta.ai/install.sh | sh",
             "sh",
         )],
-        ClaudeCode if windows => vec![PowerShell("irm https://claude.ai/install.ps1 | iex")],
         ClaudeCode => vec![Shell(
             "curl -fsSL https://claude.ai/install.sh | bash",
             "bash",
         )],
-        Codex if windows => vec![
-            PowerShell("irm https://chatgpt.com/codex/install.ps1 | iex"),
-            Npm("@openai/codex", false),
-        ],
         Codex => vec![
             Shell("curl -fsSL https://chatgpt.com/codex/install.sh | sh", "sh"),
             Npm("@openai/codex", false),
         ],
-        Cursor if windows => vec![PowerShell(
-            "irm 'https://cursor.com/install?win32=true' | iex",
-        )],
         Cursor => vec![Shell("curl https://cursor.com/install -fsS | bash", "bash")],
-        Opencode if windows => vec![Npm("@opencode/cli", false)],
         Opencode => vec![
             Shell("curl -fsSL https://opencode.ai/install | bash", "bash"),
             Npm("@opencode/cli", false),
         ],
-        Pi if windows => vec![Npm("@earendil-works/pi-coding-agent", true)],
         Pi => vec![
             Shell("curl -fsSL https://pi.dev/install.sh | sh", "sh"),
             Npm("@earendil-works/pi-coding-agent", true),
         ],
-        Grok if windows => vec![Npm("@xai-official/grok", false)],
         Grok => vec![
             Shell("curl -fsSL https://x.ai/cli/install.sh | bash", "bash"),
             Npm("@xai-official/grok", false),
         ],
-        Hermes if windows => vec![PowerShell(
-            "irm https://hermes-agent.nousresearch.com/install.ps1 | iex",
-        )],
         Hermes => vec![Shell(
             "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
             "bash",
-        )],
-        Devin if windows => vec![PowerShell(
-            "irm https://static.devin.ai/cli/setup.ps1 | iex",
         )],
         Devin if platform == Platform::Mac => vec![
             Brew,
@@ -124,17 +100,11 @@ fn resolve(name: &str) -> Option<PathBuf> {
     }
 }
 
-fn available(
-    method: Method,
-    platform: Platform,
-    has: &impl Fn(&str) -> bool,
-    archive: bool,
-) -> bool {
+fn available(method: Method, has: &impl Fn(&str) -> bool, archive: bool) -> bool {
     match method {
         Method::Archive => archive,
         Method::Shell(_, shell) => has("sh") && has("curl") && has(shell),
-        Method::Npm(..) => has("npm") && (platform == Platform::Windows || has("sh")),
-        Method::PowerShell(_) => has("powershell"),
+        Method::Npm(..) => has("npm") && has("sh"),
         Method::Brew => has("brew") && has("sh"),
     }
 }
@@ -144,7 +114,6 @@ fn selected(id: HarnessId) -> Option<Method> {
     methods(id, platform).into_iter().find(|method| {
         available(
             *method,
-            platform,
             &|name| resolve(name).is_some(),
             crate::acp::can_install(id),
         )
@@ -264,29 +233,7 @@ fn configure(command: &mut Command) {
 }
 
 fn command(method: Method) -> Result<Command, HarnessError> {
-    let missing = || HarnessError::Install("installer prerequisite is no longer available".into());
     let mut command = match method {
-        Method::PowerShell(script) => {
-            let mut cmd = Command::new(resolve("powershell").ok_or_else(missing)?);
-            cmd.args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                script,
-            ]);
-            cmd
-        }
-        Method::Npm(package, ignore_scripts) if cfg!(windows) => {
-            let mut cmd = Command::new(resolve("npm").ok_or_else(missing)?);
-            cmd.args(["install", "-g"]);
-            if ignore_scripts {
-                cmd.arg("--ignore-scripts");
-            }
-            cmd.arg(package);
-            cmd
-        }
         Method::Shell(script, _) => shell_command(script)?,
         Method::Npm(package, ignore_scripts) => shell_command(&format!(
             "npm install -g {}{package}",
@@ -424,24 +371,19 @@ mod tests {
 
     #[test]
     fn platform_and_prerequisite_matrix() {
-        for platform in [Platform::Unix, Platform::Mac, Platform::Windows] {
+        for platform in [Platform::Unix, Platform::Mac] {
             for id in IDS {
                 let list = methods(id, platform);
-                assert_eq!(
-                    list.is_empty(),
-                    id == HarnessId::Mock || (id == HarnessId::Fx && platform == Platform::Windows)
-                );
+                assert_eq!(list.is_empty(), id == HarnessId::Mock);
                 for method in list {
-                    assert!(available(method, platform, &|_| true, true));
-                    assert!(!available(method, platform, &|_| false, false));
+                    assert!(available(method, &|_| true, true));
+                    assert!(!available(method, &|_| false, false));
                     match method {
                         Method::Shell(_, shell) => {
-                            assert_ne!(platform, Platform::Windows);
                             for missing in ["sh", "curl", shell] {
-                                assert!(!available(method, platform, &|p| p != missing, true));
+                                assert!(!available(method, &|p| p != missing, true));
                             }
                         }
-                        Method::PowerShell(_) => assert_eq!(platform, Platform::Windows),
                         Method::Brew => assert_eq!(platform, Platform::Mac),
                         _ => {}
                     }
@@ -454,7 +396,7 @@ mod tests {
             Method::Shell(_, "sh")
         ));
         assert!(matches!(
-            methods(HarnessId::Pi, Platform::Windows)[0],
+            methods(HarnessId::Pi, Platform::Unix)[1],
             Method::Npm(_, true)
         ));
     }

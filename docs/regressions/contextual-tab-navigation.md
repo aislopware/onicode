@@ -1,7 +1,6 @@
 # Contextual tab navigation
 
-Ctrl+Tab and Ctrl+Shift+Tab navigate the focused pane on macOS, Linux, and
-Windows. macOS Command+Tab remains the system application switcher. Existing
+Ctrl+Tab and Ctrl+Shift+Tab navigate the focused pane on macOS and Linux. macOS Command+Tab remains the system application switcher. Existing
 custom `nextSession` / `prevSession` bindings retain their stored keys.
 
 - Main conversation, main composer, explorer, and bottom terminal: cycle the
@@ -33,7 +32,7 @@ Existing shortcut, recording, focus-recovery and tab-mouse tests remain applicab
 ## Native desktop checks
 
 These are manual checks; headless GPUI tests do not validate native OS event delivery.
-Run on macOS, Linux (X11 and Wayland), and Windows with a real session:
+Run on macOS and Linux (X11 and Wayland) with a real session:
 
 1. Open a side chat, a diff, a file editor, a terminal, and (where supported) a
    browser in the right pane. Repeatedly cycle forward and backward from each.

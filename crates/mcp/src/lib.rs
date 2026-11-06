@@ -23,7 +23,7 @@ mod transcript;
 
 pub use jsonrpc::serve_stdio;
 pub use onicode::{Onicode, Origin};
-pub use tools::{ListedTool, ToolDef, Tools};
+pub use tools::{ToolDef, Tools};
 pub use transcript::{RenderOptions, RenderedMessage, render_entries};
 
 /// How `onicode mcp` finds the engine and who it speaks for.

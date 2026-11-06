@@ -12,7 +12,7 @@
 
 emit() { printf '%s\n' "$1"; }
 rid() { printf '%s' "$1" | sed 's/.*"id":\([0-9]*\).*/\1/'; }
-has() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
+has() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac }
 
 OPTIONS='[{"id":"model","name":"Model","category":"model","type":"select","currentValue":"gemini-3.7-flash-high","options":[{"value":"gemini-3.7-flash-high","name":"Gemini 3.7 Flash (High)","description":"Gemini 3.7 Flash model with high thinking level"},{"value":"gemini-3.7-flash-medium","name":"Gemini 3.7 Flash (Medium)"},{"value":"gemini-3.7-flash-low","name":"Gemini 3.7 Flash (Low)"},{"value":"gemini-pro-agent","name":"Gemini 3.1 Pro (High)"},{"value":"gemini-3.1-pro-low","name":"Gemini 3.1 Pro (Low)"}]},{"id":"mode","name":"Session Mode","category":"mode","type":"select","currentValue":"default","options":[{"value":"default","name":"Default"},{"value":"auto_edit","name":"Auto Edit"},{"value":"yolo","name":"YOLO"}]}]'
 
@@ -47,8 +47,8 @@ while read -r line; do
     emit "{\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{\"loadSession\":true},\"authMethods\":[{\"id\":\"oauth-personal\",\"name\":\"Log in with Google\"}]}}"
   elif has "$line" '"method":"session/new"'; then
     if [ -n "${FAKE_AGY_STALE_LOGIN:-}" ]; then
-      case "$BROWSER" in '/usr/bin/true %s'|'/bin/true %s') ;; *) exit 12 ;; esac
-      printf 'x' >> "$FAKE_AGY_STALE_LOGIN"
+      case "${BROWSER:-}" in '/usr/bin/true %s' | '/bin/true %s') ;; *) exit 12 ;; esac
+      printf 'x' >>"$FAKE_AGY_STALE_LOGIN"
       if [ "${FAKE_AGY_STALE_LOGIN_STREAM:-}" = 'stdout' ]; then
         emit 'Open the following link to authenticate the ACP server: https://accounts.google.com/o/oauth2/auth?client_id=fake'
       else

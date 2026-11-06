@@ -497,7 +497,6 @@ async fn projectless_home_is_required_for_files_catalogs_and_terminal() {
             ])
             .env(CHILD, "1")
             .env_remove("HOME")
-            .env_remove("USERPROFILE")
             .output()
             .await
             .expect("isolated missing-home fixture");

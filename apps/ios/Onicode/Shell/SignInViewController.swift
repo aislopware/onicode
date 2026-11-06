@@ -31,6 +31,7 @@ enum Endpoints {
     #endif
 
     static func authorizeURL(state: String) -> URL {
+        // swiftlint:disable:next force_unwrapping - a literal URL
         var c = URLComponents(string: "https://api.workos.com/user_management/authorize")!
         c.queryItems = [
             URLQueryItem(name: "response_type", value: "code"),
@@ -39,6 +40,7 @@ enum Endpoints {
             URLQueryItem(name: "provider", value: "authkit"),
             URLQueryItem(name: "state", value: state),
         ]
+        // swiftlint:disable:next force_unwrapping - built from a literal URL and plain query items
         return c.url!
     }
 }
@@ -53,7 +55,8 @@ final class SignInViewController: UIViewController {
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -126,7 +129,9 @@ final class WorkOSSignIn: NSObject, ASWebAuthenticationPresentationContextProvid
         self.host = host
         let state = UUID().uuidString
         let url: URL? = await withCheckedContinuation { cont in
-            let s = ASWebAuthenticationSession(url: Endpoints.authorizeURL(state: state), callback: .customScheme(Endpoints.callbackScheme)) { url, error in
+            let s = ASWebAuthenticationSession(
+                url: Endpoints.authorizeURL(state: state), callback: .customScheme(Endpoints.callbackScheme)
+            ) { url, error in
                 if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
                     return cont.resume(returning: nil)
                 }
@@ -140,8 +145,8 @@ final class WorkOSSignIn: NSObject, ASWebAuthenticationPresentationContextProvid
         session = nil
         guard let url else { return nil }
         guard let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
-              let code = items.first(where: { $0.name == "code" })?.value,
-              items.first(where: { $0.name == "state" })?.value == state
+            let code = items.first(where: { $0.name == "code" })?.value,
+            items.first(where: { $0.name == "state" })?.value == state
         else { return "Sign-in didn't complete. Try again." }
         do {
             try await app.signIn(code: code) { [weak self] orgs in await self?.pickOrg(orgs) }
@@ -165,7 +170,7 @@ final class WorkOSSignIn: NSObject, ASWebAuthenticationPresentationContextProvid
         }
     }
 
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+    func presentationAnchor(for _: ASWebAuthenticationSession) -> ASPresentationAnchor {
         host?.view.window ?? ASPresentationAnchor()
     }
 }

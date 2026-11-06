@@ -439,9 +439,9 @@ impl WorkspaceFiles {
         result.map(|mut page| {
             page.checkout_id = Some(workspace.checkout_id);
             page.mutation_capabilities = Some(onicode_proto::WorkspaceMutationCapabilities {
-                move_entry: cfg!(any(target_os = "linux", target_os = "macos", windows)),
+                move_entry: cfg!(any(target_os = "linux", target_os = "macos")),
                 delete_entry: true,
-                create_entry: cfg!(any(target_os = "linux", target_os = "macos", windows)),
+                create_entry: cfg!(any(target_os = "linux", target_os = "macos")),
             });
             page
         })
@@ -1954,10 +1954,6 @@ fn same_file_revision(before: &std::fs::Metadata, after: &std::fs::Metadata) -> 
         use std::os::unix::fs::MetadataExt;
         before.dev() == after.dev() && before.ino() == after.ino()
     }
-    #[cfg(not(unix))]
-    {
-        true
-    }
 }
 
 fn encode_write_text(request: &WriteWorkspaceFileRequest) -> Result<Vec<u8>, WorkspaceFilesError> {
@@ -2207,38 +2203,6 @@ impl Drop for TempFileGuard {
 }
 
 #[cfg(unix)]
-fn atomic_replace(source: &Path, target: &Path) -> std::io::Result<()> {
-    std::fs::rename(source, target)
-}
-
-#[cfg(windows)]
-fn atomic_replace(source: &Path, target: &Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-
-    #[link(name = "Kernel32")]
-    unsafe extern "system" {
-        fn MoveFileExW(existing: *const u16, replacement: *const u16, flags: u32) -> i32;
-    }
-    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
-    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
-    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
-    let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
-    // SAFETY: both pointers reference NUL-terminated buffers for the duration of the call.
-    let result = unsafe {
-        MoveFileExW(
-            source.as_ptr(),
-            target.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if result == 0 {
-        Err(std::io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg(not(any(unix, windows)))]
 fn atomic_replace(source: &Path, target: &Path) -> std::io::Result<()> {
     std::fs::rename(source, target)
 }
@@ -2644,15 +2608,9 @@ mod tests {
             search_workspace_blocking(&root, "aa/bb/cc/dd", true, 20, &no_cancel()).unwrap();
         let paths: Vec<_> = forward.iter().map(|m| m.path.as_str()).collect();
         assert_eq!(paths, ["aa/bb/cc/dd", "aa/bb/cc/dd/file.rs"]);
-        #[cfg(windows)]
-        for query in [r"aa\bb\cc\dd", r"aa\bb/cc\dd"] {
-            let found = search_workspace_blocking(&root, query, true, 20, &no_cancel()).unwrap();
-            assert_eq!(found, forward);
-        }
     }
 
     #[test]
-    #[cfg(not(windows))]
     fn search_including_ignored_preserves_literal_posix_backslashes() {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(root.path().join(r"aa\bb/cc\dd")).unwrap();

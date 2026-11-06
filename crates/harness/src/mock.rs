@@ -139,6 +139,7 @@ fn question_script() -> Vec<UserInputQuestion> {
             ],
             prefill: None,
             multiline: false,
+            approval: None,
             multi_select: false,
         },
         UserInputQuestion {
@@ -152,6 +153,7 @@ fn question_script() -> Vec<UserInputQuestion> {
             ],
             prefill: None,
             multiline: false,
+            approval: None,
             multi_select: true,
         },
     ]

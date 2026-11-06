@@ -263,9 +263,8 @@ copies an unhandled URI.
 
 1. Define a pure session-action/link model with exact clipboard payload tests.
 2. Add a workspace-scoped Zeron URI builder/parser and inbound route intent.
-3. Register and handle `zeron://` in macOS packaging first; add Linux desktop
-   entry and Windows registration with their packaging work rather than
-   claiming unsupported platforms.
+3. Register and handle `zeron://` in macOS packaging first; add the Linux desktop
+   entry with its packaging work rather than claiming unsupported platforms.
 4. Add harness conversation-link capability, beginning with verified Codex.
 5. Render `Copy` as a submenu in the existing session context menu and provide
    brief copied feedback without closing over the currently selected chat.

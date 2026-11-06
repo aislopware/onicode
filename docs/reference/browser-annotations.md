@@ -2,7 +2,7 @@
 
 The browser toolbar's annotate button (Solar `cursor-square`, left of **Open in
 default browser**) picks elements on the embedded page into the composer. It
-works wherever pages embed: macOS, Linux and Windows.
+works wherever pages embed: macOS and Linux.
 
 ## Picking
 

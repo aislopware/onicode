@@ -8,7 +8,7 @@
 
 emit() { printf '%s\n' "$1"; }
 rid() { printf '%s' "$1" | sed 's/.*"id":\([0-9]*\).*/\1/'; }
-has() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
+has() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac }
 
 while read -r line; do
   has "$line" '"id":' || continue
@@ -21,7 +21,7 @@ while read -r line; do
     printf 'Opening https://app.devin.ai/auth/cli/continue?redirect_uri=http%%3A%%2F%%2F127.0.0.1%%3A45678%%2Fcallback&state=s\n' >&2
     sleep 0.2
     mkdir -p "$XDG_DATA_HOME/devin"
-    printf 'windsurf_api_key = "fake"\n' > "$XDG_DATA_HOME/devin/credentials.toml"
+    printf 'windsurf_api_key = "fake"\n' >"$XDG_DATA_HOME/devin/credentials.toml"
     emit "{\"id\":$id,\"result\":{}}"
   else
     emit "{\"id\":$id,\"result\":{}}"

@@ -25,12 +25,20 @@ final class NativeVoiceMedia: VoiceMediaListener {
     }
 
     private func perform(_ request: VoiceMediaRequest) {
-        if case .close = request.operation { close(); return }
-        guard !closed else {
-            call?.completeMedia(requestId: request.requestId, failure: .unavailable, sdp: nil, microphone: 0, speaker: 0)
+        if case .close = request.operation {
+            close()
             return
         }
-        guard operations.count < 4 else { close(); call?.stop(); return }
+        guard !closed else {
+            call?.completeMedia(
+                requestId: request.requestId, failure: .unavailable, sdp: nil, microphone: 0, speaker: 0)
+            return
+        }
+        guard operations.count < 4 else {
+            close()
+            call?.stop()
+            return
+        }
         operations[request.requestId] = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.operations[request.requestId] = nil }
@@ -51,11 +59,14 @@ final class NativeVoiceMedia: VoiceMediaListener {
                 case .close: self.close()
                 }
                 guard !self.closed, !Task.isCancelled else { return }
-                self.call?.completeMedia(requestId: request.requestId, failure: nil, sdp: sdp, microphone: microphone, speaker: speaker)
+                self.call?.completeMedia(
+                    requestId: request.requestId, failure: nil, sdp: sdp, microphone: microphone, speaker: speaker)
             } catch {
                 guard !self.closed else { return }
-                let failure: VoiceMediaFailure = (error as? CodexVoicePeer.Failure) == .permissionDenied ? .permissionDenied : .unavailable
-                self.call?.completeMedia(requestId: request.requestId, failure: failure, sdp: nil, microphone: 0, speaker: 0)
+                let failure: VoiceMediaFailure =
+                    (error as? CodexVoicePeer.Failure) == .permissionDenied ? .permissionDenied : .unavailable
+                self.call?.completeMedia(
+                    requestId: request.requestId, failure: failure, sdp: nil, microphone: 0, speaker: 0)
             }
         }
     }

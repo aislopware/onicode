@@ -1,19 +1,15 @@
 # Browser profiles and login persistence
 
-The embedded browser keeps persistent website data on Linux and macOS 14 or
-later. Closing tabs or restarting Zeron does not deliberately clear persistent
+The embedded browser keeps persistent website data on Linux and macOS. Closing tabs or restarting Zeron does not deliberately clear persistent
 cookies, localStorage, or IndexedDB. A website can still expire/revoke a login,
 and session-only cookies are not converted into persistent cookies.
 
-| Action | Linux and macOS 14+ | macOS 12/13 |
-| --- | --- | --- |
-| Switch tabs or hide the panel | Keeps website data | Keeps website data |
-| Close all browser tabs, then reopen | Reuses the profile | Reuses its in-memory store while the profile context lives |
-| Restart Zeron | Reopens persistent data | Loses temporary data |
-| Switch Zeron profile | Opens a separate store; returning recovers saved data | Opens a separate temporary store |
-
-Windows opens links in the default external browser. Its profile and cookie
-settings control persistence; Zeron does not embed WebView2.
+| Action | Linux and macOS |
+| --- | --- |
+| Switch tabs or hide the panel | Keeps website data |
+| Close all browser tabs, then reopen | Reuses the profile |
+| Restart Zeron | Reopens persistent data |
+| Switch Zeron profile | Opens a separate store; returning recovers saved data |
 
 ## Identity and storage
 
@@ -54,17 +50,12 @@ address changes during startup, the latest address is loaded; closing the tab
 cancels delivery of its pending result. Startup/storage failures are shown on
 the browser page; they do not silently select temporary storage.
 
-On macOS 14+, WebKit manages storage in the app's website-data location. Zeron
+On macOS, WebKit manages storage in the app's website-data location. Zeron
 uses a named `WKWebsiteDataStore` with a stable UUID derived from the canonical
 Zeron data directory and profile identity. The app bundle identifier and data
 directory must stay stable to reuse the same store. Separate installations and
 test data directories select separate stores. Copying/removing Zeron's data
 directory does not copy/remove the WebKit-managed stores.
-
-macOS 12/13 only exposes one default persistent WebKit store. Zeron keeps its
-isolated temporary stores on these versions and displays a notice explaining
-that keeping logins requires macOS 14+ or the default external browser. It does
-not put unrelated accounts in the single default store.
 
 References: [WebKit profile APIs](https://webkit.org/blog/14423/building-profiles-with-new-webkit-api/),
 [WebKitGTK cookie persistence](https://webkitgtk.org/reference/webkit2gtk/stable/method.CookieManager.set_persistent_storage.html).
@@ -94,7 +85,7 @@ Build the existing native shell fixture:
 cargo build --locked -p zeron-ui --example browser-fixture --features browser-fixture
 ```
 
-Then, in a logged-in macOS 14+ desktop session:
+Then, in a logged-in macOS desktop session:
 
 ```sh
 python3 scripts/test-browser-storage.py --fixture target/debug/examples/browser-fixture

@@ -33,15 +33,20 @@ final class OrbView: UIView {
         isAccessibilityElement = false
         // Resume on didBecomeActive: at willEnterForeground the app still
         // reports .background, so the display link would stay stopped.
-        for name in [UIApplication.didEnterBackgroundNotification, UIApplication.didBecomeActiveNotification, UIAccessibility.reduceMotionStatusDidChangeNotification] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                self?.syncLink()
-            })
+        for name in [
+            UIApplication.didEnterBackgroundNotification, UIApplication.didBecomeActiveNotification,
+            UIAccessibility.reduceMotionStatusDidChangeNotification,
+        ] {
+            observers.append(
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    self?.syncLink()
+                })
         }
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: OrbView, _) in self.setNeedsDisplay() }
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _) in self.setNeedsDisplay() }
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     deinit {
         link?.invalidate()
@@ -88,12 +93,13 @@ final class OrbView: UIView {
         setNeedsDisplay()
     }
 
-    override func draw(_ rect: CGRect) {
+    override func draw(_: CGRect) {
         guard let frame = frameData, frame.size > 0, let ctx = UIGraphicsGetCurrentContext() else { return }
         let dark = traitCollection.userInterfaceStyle == .dark
         // The preset's artwork, scaled uniformly to fit and centered.
         let scale = min(bounds.width, bounds.height) / CGFloat(frame.size)
-        ctx.translateBy(x: (bounds.width - CGFloat(frame.size) * scale) / 2, y: (bounds.height - CGFloat(frame.size) * scale) / 2)
+        ctx.translateBy(
+            x: (bounds.width - CGFloat(frame.size) * scale) / 2, y: (bounds.height - CGFloat(frame.size) * scale) / 2)
         ctx.scaleBy(x: scale, y: scale)
         ctx.setLineCap(.butt)
         let lines = frame.lines
@@ -111,7 +117,8 @@ final class OrbView: UIView {
         while i + 4 < dots.count {
             let r = CGFloat(dots[i + 2])
             ctx.setFillColor(gray: ink(dots[i + 3], dark), alpha: CGFloat(min(1, max(0, dots[i + 4]))))
-            ctx.fillEllipse(in: CGRect(x: CGFloat(dots[i]) - r, y: CGFloat(dots[i + 1]) - r, width: r * 2, height: r * 2))
+            ctx.fillEllipse(
+                in: CGRect(x: CGFloat(dots[i]) - r, y: CGFloat(dots[i + 1]) - r, width: r * 2, height: r * 2))
             i += 5
         }
     }

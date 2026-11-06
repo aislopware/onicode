@@ -119,7 +119,7 @@ impl Element for LinkRanges {
             state.focused = focused;
             state.bounds = bounds;
             state.tooltip_bounds.set(None);
-            #[cfg(all(test, any(target_os = "linux", windows)))]
+            #[cfg(all(test, target_os = "linux"))]
             rendered_tests::TOOLTIP_BOUNDS.with(|bounds| {
                 *bounds.borrow_mut() = Some(state.tooltip_bounds.clone());
             });
@@ -658,13 +658,10 @@ mod tests {
     }
 }
 
-#[cfg(all(test, any(target_os = "linux", windows)))]
+#[cfg(all(test, target_os = "linux"))]
 mod rendered_tests {
     use super::*;
     use gpui::{Context, Render};
-    #[cfg(windows)]
-    use gpui_platform::application as test_application;
-    #[cfg(target_os = "linux")]
     use gpui_platform::headless as test_application;
     thread_local! {
         pub(super) static TOOLTIP_BOUNDS: RefCell<Option<Rc<Cell<Option<Bounds<Pixels>>>>>> = RefCell::default();
@@ -731,10 +728,6 @@ mod rendered_tests {
         }
     }
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "requires a native desktop; run with --ignored --test-threads=1"
-    )]
     fn escape_dismisses_focused_destination() {
         test_application().run(|cx| {
             cx.set_global(Theme::dark());
@@ -788,10 +781,6 @@ mod rendered_tests {
         }
     }
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "requires a native desktop; run with --ignored --test-threads=1"
-    )]
     fn focused_destination_does_not_block_other_controls() {
         test_application().run(|cx| {
             cx.set_global(Theme::dark());
@@ -889,10 +878,6 @@ mod rendered_tests {
         });
     }
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "requires a native desktop; run with --ignored --test-threads=1"
-    )]
     fn context_menu_cancels_visible_and_pending_hover_tooltips() {
         let dir = tempfile::tempdir().unwrap();
         test_application().run(move |cx| {
@@ -1008,10 +993,6 @@ mod rendered_tests {
         });
     }
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "requires a native desktop; run with --ignored --test-threads=1"
-    )]
     fn keyboard_visits_each_range_and_opens_the_link_menu() {
         test_application().run(|cx| {
             cx.set_global(Theme::dark());
@@ -1088,10 +1069,6 @@ mod rendered_tests {
         });
     }
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "requires a native desktop; run with --ignored --test-threads=1"
-    )]
     fn rendered_truncation_resizes_and_selects_the_original_url() {
         test_application().run(|cx| {
             cx.set_global(Theme::dark());
@@ -1194,7 +1171,6 @@ mod rendered_tests {
     /// rows — the system-level ones only when the owning root is on this
     /// device — which act on the resolved absolute path, and "Open in
     /// Onicode" routes the file to the viewer.
-    #[cfg(unix)]
     #[gpui::test]
     fn file_link_menu_offers_local_rows_and_acts_on_the_absolute_path(
         cx: &mut gpui::TestAppContext,
@@ -1283,7 +1259,6 @@ mod rendered_tests {
     /// An absolute destination no root owns is still a file: its menu keeps
     /// "Open in Onicode" and, when the linking chat is on this device, the
     /// system-level rows that act on the absolute path.
-    #[cfg(unix)]
     #[gpui::test]
     fn outside_file_link_menu_keeps_open_in_onicode_and_local_rows(cx: &mut gpui::TestAppContext) {
         let dir = tempfile::tempdir().unwrap();

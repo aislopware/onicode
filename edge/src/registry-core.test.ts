@@ -101,11 +101,11 @@ describe("applyOp", () => {
     const base = applied(undefined, upsert());
     const fromA: Op = { kind: "chats", id: "chat-1", op: "update", set: { title: "A" }, hlc: hlc(5000, "dev-a") };
     const fromB: Op = { kind: "chats", id: "chat-1", op: "update", set: { title: "B" }, hlc: hlc(5000, "dev-b") };
-    const ab = applyOp(applyOp(base, fromA).row, fromB);
-    const ba = applyOp(applyOp(base, fromB).row, fromA);
+    const aThenB = applyOp(applyOp(base, fromA).row, fromB);
+    const bThenA = applyOp(applyOp(base, fromB).row, fromA);
     // Same winner regardless of arrival order (dev-b > dev-a).
-    expect((ab.row as Row).fields.title).toBe("B");
-    expect((ba.row as Row).fields.title).toBe("B");
+    expect((aThenB.row as Row).fields.title).toBe("B");
+    expect((bThenA.row as Row).fields.title).toBe("B");
   });
 
   it("null field values delete the field (still clocked)", () => {

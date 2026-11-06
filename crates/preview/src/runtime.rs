@@ -83,7 +83,6 @@ impl Runtime for Fragmenting {
 
 /// Clear what quinn-udp set to forbid fragmentation. Best effort: an option
 /// a socket's family doesn't have just fails.
-#[cfg(unix)]
 fn allow_fragmentation(socket: &std::net::UdpSocket) {
     use std::os::fd::AsRawFd;
     let fd = socket.as_raw_fd();
@@ -107,7 +106,6 @@ fn allow_fragmentation(socket: &std::net::UdpSocket) {
     set_option(fd, libc::IPPROTO_IPV6, libc::IPV6_DONTFRAG, 0);
 }
 
-#[cfg(unix)]
 fn set_option(fd: std::os::fd::RawFd, level: libc::c_int, name: libc::c_int, value: libc::c_int) {
     // SAFETY: `fd` is an open socket for the call, and `value` outlives it.
     unsafe {
@@ -121,35 +119,11 @@ fn set_option(fd: std::os::fd::RawFd, level: libc::c_int, name: libc::c_int, val
     }
 }
 
-#[cfg(windows)]
-fn allow_fragmentation(socket: &std::net::UdpSocket) {
-    use std::os::windows::io::AsRawSocket;
-    use windows_sys::Win32::Networking::WinSock;
-    let socket = socket.as_raw_socket() as WinSock::SOCKET;
-    for (level, name) in [
-        (WinSock::IPPROTO_IP, WinSock::IP_DONTFRAGMENT),
-        (WinSock::IPPROTO_IPV6, WinSock::IPV6_DONTFRAG),
-    ] {
-        let off: u32 = 0;
-        // SAFETY: `socket` is open for the call, and `off` outlives it.
-        unsafe {
-            WinSock::setsockopt(
-                socket,
-                level,
-                name,
-                &off as *const u32 as _,
-                std::mem::size_of_val(&off) as i32,
-            );
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Whether the kernel would refuse to fragment this socket's datagrams.
-    #[cfg(unix)]
     fn forbids_fragmentation(socket: &std::net::UdpSocket) -> bool {
         use std::os::fd::AsRawFd;
         #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -172,7 +146,6 @@ mod tests {
         value == forbidding
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn direct_link_sockets_may_fragment() {
         let wrap = |runtime: &dyn Runtime| {

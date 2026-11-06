@@ -10,7 +10,7 @@ struct SessionRowVM: Hashable {
         case errored
     }
 
-    enum PR: Hashable {
+    enum PullRequestState: Hashable {
         case open, draft, merged, closed
     }
 
@@ -22,7 +22,7 @@ struct SessionRowVM: Hashable {
     var colorIndex: Int
     var harness: String?
     var branch: String?
-    var pr: PR?
+    var pr: PullRequestState?
     var prNumber: UInt64?
     var status: Status
     var timeLabel: String
@@ -69,23 +69,27 @@ final class SessionCell: UICollectionViewListCell {
         bg.backgroundColor = .clear
         backgroundConfiguration = bg
         // The project tile is a rasterized attachment: redraw it in the new tone.
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (cell: SessionCell, _) in
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (cell: Self, _) in
             if let vm = cell.vm { cell.configure(vm) }
         }
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func updateConfiguration(using state: UICellConfigurationState) {
         var bg = UIBackgroundConfiguration.listCell().updated(for: state)
-        bg.backgroundColor = state.isHighlighted || state.isSelected ? Palette.controlFill : isCurrent ? Palette.rowActive : .clear
+        bg.backgroundColor =
+            state.isHighlighted || state.isSelected ? Palette.controlFill : isCurrent ? Palette.rowActive : .clear
         bg.cornerRadius = 16
         bg.backgroundInsets = NSDirectionalEdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8)
         backgroundConfiguration = bg
     }
 
     /// Fixed height: skip Auto Layout self-sizing entirely.
-    override func preferredLayoutAttributesFitting(_ attrs: UICollectionViewLayoutAttributes) -> UICollectionViewLayoutAttributes {
+    override func preferredLayoutAttributesFitting(_ attrs: UICollectionViewLayoutAttributes)
+        -> UICollectionViewLayoutAttributes
+    {
         attrs.size.height = Self.height
         return attrs
     }
@@ -114,11 +118,17 @@ final class SessionCell: UICollectionViewListCell {
         // the title's leading edge (a separately framed tile drifted high).
         let metaFont = Fonts.ui(.sans, TypeScale.size(13.5))
         let tileSide = (14 * TypeScale.factor).rounded()
-        let tile = NSTextAttachment(image: ProjectTile.image(name: vm.hasProject ? vm.projectName : "Home", colorIndex: vm.colorIndex, side: tileSide))
+        let tile = NSTextAttachment(
+            image: ProjectTile.image(
+                name: vm.hasProject ? vm.projectName : "Home", colorIndex: vm.colorIndex, side: tileSide))
         tile.bounds = CGRect(x: 0, y: (metaFont.xHeight - tileSide) / 2, width: tileSide, height: tileSide)
         let metaText = NSMutableAttributedString(attachment: tile)
-        metaText.append(NSAttributedString(string: "  " + vm.projectName, attributes: [.font: metaFont, .foregroundColor: Palette.secondary]))
-        if let b = vm.branch, !b.isEmpty, let icon = BranchIcon.image?.withTintColor(Palette.subline, renderingMode: .alwaysOriginal) {
+        metaText.append(
+            NSAttributedString(
+                string: "  " + vm.projectName, attributes: [.font: metaFont, .foregroundColor: Palette.secondary]))
+        if let b = vm.branch, !b.isEmpty,
+            let icon = BranchIcon.image?.withTintColor(Palette.subline, renderingMode: .alwaysOriginal)
+        {
             // Desktop line 3: git-branch icon + branch in the subline tone.
             let font = Fonts.ui(.sans, TypeScale.size(12.5))
             let side = (12 * TypeScale.factor).rounded()
@@ -126,7 +136,8 @@ final class SessionCell: UICollectionViewListCell {
             attach.bounds = CGRect(x: 0, y: (font.capHeight - side) / 2, width: side, height: side)
             if metaText.length > 0 { metaText.append(NSAttributedString(string: "   ")) }
             metaText.append(NSAttributedString(attachment: attach))
-            metaText.append(NSAttributedString(string: " " + b, attributes: [.font: font, .foregroundColor: Palette.subline]))
+            metaText.append(
+                NSAttributedString(string: " " + b, attributes: [.font: font, .foregroundColor: Palette.subline]))
         }
         meta.attributedText = metaText
         if let pr = vm.pr, let n = vm.prNumber {
@@ -146,10 +157,12 @@ final class SessionCell: UICollectionViewListCell {
             time.text = vm.timeLabel
             time.textColor = StatusTone.time
             time.font = Fonts.ui(.sansMedium, TypeScale.size(13))
-            status.kind = .none
+            status.kind = .hidden
             status.isHidden = true
         }
-        accessibilityLabel = [vm.title, vm.projectName, corner?.word, prBadge.isHidden ? nil : prBadge.accessibilityLabel].compactMap { $0 }.joined(separator: ", ")
+        accessibilityLabel = [
+            vm.title, vm.projectName, corner?.word, prBadge.isHidden ? nil : prBadge.accessibilityLabel,
+        ].compactMap(\.self).joined(separator: ", ")
         accessibilityIdentifier = "session-\(vm.id)"
         setNeedsLayout()
     }
@@ -170,7 +183,8 @@ final class SessionCell: UICollectionViewListCell {
         let mark = Self.markSide
         let titleFont = title.font ?? Fonts.ui(.sansMedium, TypeScale.size(16.5))
         let baseline = titleY + (titleH - titleFont.lineHeight) / 2 + titleFont.ascender
-        harness.frame = CGRect(x: left, y: (baseline - titleFont.xHeight / 2 - mark / 2).rounded(), width: mark, height: mark)
+        harness.frame = CGRect(
+            x: left, y: (baseline - titleFont.xHeight / 2 - mark / 2).rounded(), width: mark, height: mark)
         let textX = left + mark + 14
         let tw = ceil(time.sizeThatFits(CGSize(width: 140, height: 40)).width)
         time.frame = CGRect(x: b.width - right - tw, y: titleY, width: tw, height: titleH)
@@ -184,7 +198,9 @@ final class SessionCell: UICollectionViewListCell {
         var metaRight = b.width - right
         if !prBadge.isHidden {
             let size = prBadge.intrinsicContentSize
-            prBadge.frame = CGRect(x: b.width - right - size.width, y: metaY + (metaH - size.height) / 2, width: size.width, height: size.height)
+            prBadge.frame = CGRect(
+                x: b.width - right - size.width, y: metaY + (metaH - size.height) / 2, width: size.width,
+                height: size.height)
             metaRight = prBadge.frame.minX - 10
         }
         meta.frame = CGRect(x: x, y: metaY, width: max(0, metaRight - x), height: metaH)
@@ -198,18 +214,26 @@ final class SessionCell: UICollectionViewListCell {
 final class FolderCell: UICollectionViewListCell {
     static var height: CGFloat { (46 * TypeScale.factor).rounded() }
 
-    override func preferredLayoutAttributesFitting(_ attrs: UICollectionViewLayoutAttributes) -> UICollectionViewLayoutAttributes {
+    override func preferredLayoutAttributesFitting(_ attrs: UICollectionViewLayoutAttributes)
+        -> UICollectionViewLayoutAttributes
+    {
         attrs.size.height = Self.height
         return attrs
     }
 
     func configure(_ vm: FolderRowVM) {
         var c = UIListContentConfiguration.cell()
-        c.image = UIImage(systemName: vm.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .regular))
+        c.image = UIImage(
+            systemName: vm.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .regular))
         c.imageProperties.tintColor = Palette.secondary
         c.imageToTextPadding = 18
-        let text = NSMutableAttributedString(string: vm.name, attributes: [.font: Fonts.ui(.sansMedium, TypeScale.size(17)), .foregroundColor: Palette.secondary])
-        text.append(NSAttributedString(string: "  \(vm.count)", attributes: [.font: Fonts.ui(.sans, TypeScale.size(17)), .foregroundColor: Palette.tertiary]))
+        let text = NSMutableAttributedString(
+            string: vm.name,
+            attributes: [.font: Fonts.ui(.sansMedium, TypeScale.size(17)), .foregroundColor: Palette.secondary])
+        text.append(
+            NSAttributedString(
+                string: "  \(vm.count)",
+                attributes: [.font: Fonts.ui(.sans, TypeScale.size(17)), .foregroundColor: Palette.tertiary]))
         c.attributedText = text
         c.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20)
         contentConfiguration = c
@@ -243,7 +267,10 @@ final class SectionHeaderCell: UICollectionViewListCell {
     static var height: CGFloat { (40 * TypeScale.factor).rounded() }
     private let title = FadingLabel()
     private let count = UILabel()
-    private let chevron = UIImageView(image: UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)))
+    private let chevron = UIImageView(
+        image: UIImage(
+            systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        ))
     private let live = StatusGlyph()
     private var shownCollapsed: Bool?
 
@@ -257,9 +284,12 @@ final class SectionHeaderCell: UICollectionViewListCell {
         accessibilityTraits = .button
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    override func preferredLayoutAttributesFitting(_ attrs: UICollectionViewLayoutAttributes) -> UICollectionViewLayoutAttributes {
+    override func preferredLayoutAttributesFitting(_ attrs: UICollectionViewLayoutAttributes)
+        -> UICollectionViewLayoutAttributes
+    {
         attrs.size.height = Self.height
         return attrs
     }
@@ -281,7 +311,8 @@ final class SectionHeaderCell: UICollectionViewListCell {
         if let kind = s.live { live.kind = kind }
         let rotate = { self.chevron.transform = s.collapsed ? CGAffineTransform(rotationAngle: -.pi / 2) : .identity }
         if shownCollapsed != nil, shownCollapsed != s.collapsed, window != nil {
-            UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, animations: rotate)
+            UIView.animate(
+                withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, animations: rotate)
         } else {
             rotate()
         }

@@ -102,7 +102,7 @@ export const parseCodexRefresh = (
   now: number
 ): RefreshOutcome<CodexSecret> => {
   if (status >= 200 && status < 300) {
-    if (!body) return { kind: "transient", reason: "unparseable refresh response" };
+    if (!body) return { kind: "transient", reason: "unparsable refresh response" };
     const idToken = nonEmptyString(body.id_token) ? body.id_token : undefined;
     const accessToken = nonEmptyString(body.access_token) ? body.access_token : undefined;
     const refreshToken = nonEmptyString(body.refresh_token) ? body.refresh_token : undefined;

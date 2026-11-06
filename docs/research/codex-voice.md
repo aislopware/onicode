@@ -134,7 +134,7 @@ only that preference is persisted. Devices use the operating system defaults.
 Codex's current helper protocol does not expose device selection.
 
 The native helper/runtime is supplied by the standalone Codex installation,
-not redistributed by Zeron, on macOS, Linux and Windows; the desktop client of
+not redistributed by Zeron, on macOS and Linux; the desktop client of
 a remote call uses its own installation the same way. npm/CLI-only
 installations without those resources report `nativeRuntimeUnavailable`. macOS production/dev bundles declare microphone
 usage and audio-input entitlements. The viewport verifies microphone authorization
@@ -170,7 +170,7 @@ dictation stays on device.
 Notices: `THIRD_PARTY_NOTICES.md` covers the Apache-2.0 Codex protocol
 adaptation (with its upstream NOTICE and an OpenAI trademark/non-affiliation
 statement), the MIT orb chain (Bezel, gpui-thinking-orbs, thinking-orbs) and
-WebRTC for iOS. macOS, Windows and Linux packages ship `LICENSE` and
+WebRTC for iOS. macOS and Linux packages ship `LICENSE` and
 `THIRD_PARTY_NOTICES.md`; the iOS app ships `Voice/WebRTC-LICENSE.txt` and
 `Voice/ThinkingOrbs-LICENSE.txt`. No Codex binaries are redistributed.
 
@@ -223,7 +223,7 @@ packaged helper initialization, real V3 WebRTC negotiation, transport readiness
 and native stop passed. No API fallback was used. The optional device trial
 failed at opening audio devices: this environment exposes a network output
 monitor, without a usable default microphone. No real speech or acoustic echo
-trial is claimed. macOS/Windows signed package and physical-device trials also
+trial is claimed. macOS signed package and physical-device trials also
 remain unverified; protocol/fixture success does not establish those results.
 
 Implementation review and local test results are recorded in the ignored

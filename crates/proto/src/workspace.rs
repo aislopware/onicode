@@ -35,12 +35,6 @@ pub mod capabilities {
     /// rows and answers `StopBackgroundTask` / `ReadBackgroundTaskOutput`
     /// (forwarding them, for a chat another device hosts).
     pub const BACKGROUND_TASKS_V1: &str = "background-tasks-v1";
-    /// The host serves the zgx interface (Onicode.app's beta): `AccessToken`,
-    /// plugins and templates, the ACP registry, `setSpaceIcon`,
-    /// `PostNotification`, `TerminalStatus` and change-request threads. The
-    /// interface asks for it on connect and offers Stable on an engine
-    /// without it.
-    pub const ZGX_INTERFACE_V1: &str = "zgx-interface-v1";
     /// The host's `UpdateStatus` says how it's installed and whether another
     /// device can update it (`install`, `canApplyRemotely`, and why not).
     /// Older hosts don't say: a client can't tell without trying.
@@ -58,7 +52,6 @@ pub mod capabilities {
         SIDEBAR_SECTION_ORDER_V1,
         PROVIDER_SWITCH_V1,
         BACKGROUND_TASKS_V1,
-        ZGX_INTERFACE_V1,
         UPDATE_ABILITY_V1,
         crate::voice::remote::CAPABILITY,
     ];
@@ -152,7 +145,6 @@ mod tests {
                     "sidebar-section-order-v1",
                     "provider-switch-v1",
                     "background-tasks-v1",
-                    "zgx-interface-v1",
                     "update-ability-v1",
                     "voice-client-media-v1"
                 ],

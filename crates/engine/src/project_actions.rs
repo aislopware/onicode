@@ -560,8 +560,6 @@ fn read_project_file(project_root: &Path) -> (Vec<ProjectActionDraft>, Option<St
 fn open_project_file(path: &Path) -> std::io::Result<std::fs::File> {
     // Reject known special files before opening them. The handle check below
     // is still required: the repository can replace this path after metadata.
-    // Windows metadata itself opens the target, so use the controlled open there.
-    #[cfg(not(windows))]
     if !std::fs::metadata(path)?.is_file() {
         return Err(std::io::Error::other("expected a regular file"));
     }
@@ -578,25 +576,7 @@ fn open_regular_project_file(path: &Path) -> std::io::Result<std::fs::File> {
         // A concurrent replacement with a FIFO must not wait for a writer.
         options.custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY);
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
-        // An untrusted path may resolve to a pipe; do not allow its server to
-        // impersonate this process even though we reject the resulting handle.
-        options.security_qos_flags(SECURITY_IDENTIFICATION);
-    }
     let file = options.open(path)?;
-    #[cfg(windows)]
-    {
-        use std::os::windows::io::AsRawHandle;
-        use windows_sys::Win32::Storage::FileSystem::{FILE_TYPE_DISK, GetFileType};
-        // Windows metadata attributes alone do not distinguish all devices.
-        // SAFETY: the handle belongs to the live File and is only queried.
-        if unsafe { GetFileType(file.as_raw_handle()) } != FILE_TYPE_DISK {
-            return Err(invalid());
-        }
-    }
     if !file.metadata()?.is_file() {
         return Err(invalid());
     }
@@ -887,17 +867,6 @@ mod tests {
                 .contains("exceeds")
         );
         assert_eq!(u64::MAX - stream.limit(), MAX_PROJECT_FILE_BYTES + 1);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn project_file_rejects_windows_devices() {
-        assert!(
-            open_regular_project_file(Path::new(r"\\.\NUL"))
-                .unwrap_err()
-                .to_string()
-                .contains("regular file")
-        );
     }
 
     #[tokio::test(flavor = "current_thread")]

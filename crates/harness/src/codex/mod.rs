@@ -63,7 +63,7 @@
 //!   unresponsive; the stream always ends with `Done { status: Interrupted }`.
 
 pub(crate) mod catalog;
-mod elicitation;
+pub(crate) mod elicitation;
 mod normalize;
 pub mod npm_repair;
 pub mod realtime;
@@ -115,21 +115,6 @@ pub fn resolve_codex_executable() -> Option<PathBuf> {
     crate::executable::find_on_paths("codex", extra)
 }
 
-/// `canonicalize` yields `\\?\`-prefixed verbatim paths on Windows, which
-/// cmd.exe cannot launch batch shims through; keep the plain drive/UNC form.
-fn plain_executable(path: PathBuf) -> PathBuf {
-    #[cfg(windows)]
-    {
-        if let Some(rest) = path.to_str().and_then(|p| p.strip_prefix(r"\\?\")) {
-            return match rest.strip_prefix(r"UNC\") {
-                Some(share) => PathBuf::from(format!(r"\\{share}")),
-                None => PathBuf::from(rest),
-            };
-        }
-    }
-    path
-}
-
 /// `thread/start` / `thread/resume` config keys that, set to false, take the
 /// agent tools away (title runs, side-chats-only runs). The app-server merges
 /// that `config` into its `-c` overrides (openai/codex rust-v0.153.4,
@@ -163,28 +148,10 @@ fn codex_mcp_overrides(mcp: &onicode_proto::McpServer) -> Vec<(String, Value)> {
     ]
 }
 
-/// Dotted `thread/start` config overrides for the plugins' native MCP
-/// servers ([`RunRequest::extra_mcp`]). Unlike Onicode's own server they get no
-/// `default_tools_approval_mode`: their tools are a plugin's, so Codex asks
-/// (or refuses) under the chat's access mode like any user-configured server.
-fn codex_extra_mcp_overrides(extras: &[onicode_proto::McpServer]) -> Vec<(String, Value)> {
-    extras
-        .iter()
-        .flat_map(|mcp| {
-            let key = |field: &str| format!("mcp_servers.{}.{field}", mcp.name);
-            [
-                (key("command"), mcp.command.clone().into()),
-                (key("args"), json!(mcp.args)),
-                (key("env"), json!(mcp.env)),
-            ]
-        })
-        .collect()
-}
-
 /// A ready-to-spawn `codex login` command for the engine's account flow.
 ///
 /// Shares the harness's full resolution (`CODEX_EXECUTABLE`, PATH, login-shell
-/// snapshot, install locations — including the Windows npm payload layout) and
+/// snapshot, install locations) and
 /// its child-PATH composition, so "Add account" launches exactly the binary
 /// the harness itself would run. `CODEX_HOME` isolates the login from the live
 /// `~/.codex` session; the caller owns stdio wiring and cancellation.
@@ -249,8 +216,7 @@ impl CodexHarness {
             HarnessError::NotInstalled(
                 "codex (searched PATH, the login shell's PATH, ~/.local/bin, \
                  ~/.codex/bin, ~/.npm-global/bin, /opt/homebrew/bin, /usr/local/bin, \
-                 and fnm/nvm/volta/pnpm/bun install dirs; Windows also checks USERPROFILE \
-                 and explicit NVM_SYMLINK/VOLTA_HOME/PNPM_HOME; set CODEX_EXECUTABLE \
+                 and fnm/nvm/volta/pnpm/bun install dirs; set CODEX_EXECUTABLE \
                  to override)"
                     .into(),
             )
@@ -306,7 +272,6 @@ impl CodexHarness {
             Ok::<Value, HarnessError>(skills)
         };
         let result = tokio::time::timeout(Duration::from_secs(10), discovery).await;
-        client.close_stdin_for_teardown();
         shutdown_child(&mut child, self.kill_grace).await;
         match result {
             Ok(inner) => inner,
@@ -400,7 +365,6 @@ impl CodexHarness {
             Ok::<Vec<Model>, HarnessError>(models)
         };
         let result = tokio::time::timeout(Duration::from_secs(10), discovery).await;
-        client.close_stdin_for_teardown();
         shutdown_child(&mut child, self.kill_grace).await;
         match result {
             Ok(inner) => inner,
@@ -835,7 +799,6 @@ impl Harness for CodexHarness {
         request.worktree = None;
         request.attachments.clear();
         request.mcp = None;
-        request.extra_mcp.clear();
         request.model_options.clear();
         // Its policy never asks; anything that still would is the person's.
         request.auto_approve = false;
@@ -870,11 +833,10 @@ impl CodexHarness {
         }
         // Pin the physical release for this process and its voice helper: an
         // installer may move the current symlink while this runtime stays warm.
-        let exe = plain_executable(
-            self.resolve_executable()?
-                .canonicalize()
-                .map_err(HarnessError::Io)?,
-        );
+        let exe = self
+            .resolve_executable()?
+            .canonicalize()
+            .map_err(HarnessError::Io)?;
         // Cached per binary; a fixed test executable is never version-probed.
         if self.executable.is_none() {
             let probe = exe.clone();
@@ -1422,13 +1384,6 @@ async fn run_session(session: Session) {
                 overrides.extend(agent_tools_off());
             }
         }
-        if !title_only && !request.extra_mcp.is_empty() {
-            p.entry("config")
-                .or_insert_with(|| json!({}))
-                .as_object_mut()
-                .expect("thread/start config overrides are an object")
-                .extend(codex_extra_mcp_overrides(&request.extra_mcp));
-        }
         p.insert("approvalPolicy".into(), approval_policy.into());
         p.insert("sandbox".into(), sandbox_mode(sandbox).into());
         if asks_person(&request) {
@@ -1462,7 +1417,6 @@ async fn run_session(session: Session) {
                         session_id: None,
                     }))
                     .await;
-                client.close_stdin_for_teardown();
                 shutdown_child(&mut child, kill_grace).await;
                 return;
             }
@@ -1488,7 +1442,6 @@ async fn run_session(session: Session) {
                 error = %crate::crash_message("codex app-server", status, &stderr_tail),
                 "app-server died before initialize; relaunching"
             );
-            client.close_stdin_for_teardown();
             shutdown_child(&mut child, kill_grace).await;
             tokio::select! {
                 _ = tokio::time::sleep(STARTUP_RETRY_DELAYS[attempt]) => {}
@@ -1548,7 +1501,6 @@ async fn run_session(session: Session) {
                 session_id: None,
             }))
             .await;
-        client.close_stdin_for_teardown();
         shutdown_child(&mut child, kill_grace).await;
         return;
     }
@@ -1653,7 +1605,6 @@ async fn run_session(session: Session) {
                         session_id: None,
                     }))
                     .await;
-                client.close_stdin_for_teardown();
                 shutdown_child(&mut child, kill_grace).await;
                 return;
             }
@@ -1667,7 +1618,6 @@ async fn run_session(session: Session) {
                     session_id: None,
                 }))
                 .await;
-            client.close_stdin_for_teardown();
             shutdown_child(&mut child, kill_grace).await;
             return;
         }
@@ -1739,14 +1689,12 @@ async fn run_session(session: Session) {
     )
     .await
     {
-        client.close_stdin_for_teardown();
         shutdown_child(&mut child, kill_grace).await;
         return;
     }
     if let Some(message) = restore_notice
         && !send(&event_tx, AgentEvent::Error { message }).await
     {
-        client.close_stdin_for_teardown();
         shutdown_child(&mut child, kill_grace).await;
         return;
     }
@@ -1774,7 +1722,6 @@ async fn run_session(session: Session) {
                         session_id: Some(thread_id.clone()),
                     }))
                     .await;
-                client.close_stdin_for_teardown();
                 shutdown_child(&mut child, kill_grace).await;
                 return;
             }
@@ -1844,7 +1791,6 @@ async fn run_session(session: Session) {
     let mut escalation: Option<tokio::task::JoinHandle<()>> = None;
     // The runtime's process tree when its teardown began (see
     // [`crate::shutdown_agent`]).
-    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut torn_down: Vec<crate::process::Tracked> = Vec::new();
 
     'main: loop {
@@ -2555,7 +2501,6 @@ async fn run_session(session: Session) {
         }
     }
 
-    client.close_stdin_for_teardown();
     crate::shutdown_agent(&mut child, torn_down, kill_grace).await;
     if let Some(handle) = escalation {
         handle.abort();
@@ -2682,42 +2627,9 @@ async fn background_terminals(client: &RpcClient, thread: &str) -> Option<HashSe
 /// Fallback for an app-server that can't list its terminals: whether the
 /// command's reported process id names a running OS process.
 fn process_alive(pid: &str) -> bool {
-    #[cfg(unix)]
-    {
-        // SAFETY: signal 0 only probes for existence; nothing is delivered.
-        pid.parse::<i32>()
-            .is_ok_and(|pid| pid > 0 && unsafe { libc::kill(pid, 0) } == 0)
-    }
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
-        use windows_sys::Win32::System::Threading::{
-            GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-        };
-        let Ok(pid) = pid.parse::<u32>() else {
-            return false;
-        };
-        if pid == 0 {
-            return false;
-        }
-        // SAFETY: a query-only handle, closed before returning; a vanished
-        // pid yields a null handle.
-        unsafe {
-            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-            if handle.is_null() {
-                return false;
-            }
-            let mut code = 0u32;
-            let alive = GetExitCodeProcess(handle, &mut code) != 0 && code == STILL_ACTIVE as u32;
-            CloseHandle(handle);
-            alive
-        }
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = pid;
-        false
-    }
+    // SAFETY: signal 0 only probes for existence; nothing is delivered.
+    pid.parse::<i32>()
+        .is_ok_and(|pid| pid > 0 && unsafe { libc::kill(pid, 0) } == 0)
 }
 
 /// Ask the app-server to end `turn` (fire-and-forget: its end arrives as the
@@ -2977,6 +2889,7 @@ fn user_input_questions(params: &Value) -> Vec<(String, UserInputQuestion)> {
                     .collect(),
                 prefill: None,
                 multiline: false,
+                approval: None,
                 multi_select: ["multiSelect", "multi_select"]
                     .iter()
                     .find_map(|k| q.get(*k).and_then(Value::as_bool))
@@ -3115,7 +3028,6 @@ mod tests {
             worktree: None,
             resume: None,
             env: Default::default(),
-            extra_mcp: Vec::new(),
         }
     }
 
@@ -3429,36 +3341,6 @@ mod mcp_injection_tests {
             overrides["mcp_servers.onicode.default_tools_approval_mode"],
             "approve"
         );
-    }
-    #[test]
-    fn codex_extra_mcp_overrides_leave_approval_to_the_access_mode() {
-        let extra = onicode_proto::McpServer {
-            name: "plugin-focus".into(),
-            command: "/data/plugins/.loaded/focus/0123/bin/server".into(),
-            args: vec!["--stdio".into()],
-            env: [("FOCUS".to_owned(), "1".to_owned())].into_iter().collect(),
-        };
-        let overrides: serde_json::Map<String, Value> =
-            codex_extra_mcp_overrides(&[extra]).into_iter().collect();
-        assert_eq!(
-            overrides["mcp_servers.plugin-focus.command"],
-            "/data/plugins/.loaded/focus/0123/bin/server"
-        );
-        assert_eq!(
-            overrides["mcp_servers.plugin-focus.args"],
-            json!(["--stdio"])
-        );
-        assert_eq!(
-            overrides["mcp_servers.plugin-focus.env"],
-            json!({ "FOCUS": "1" })
-        );
-        assert!(
-            !overrides
-                .keys()
-                .any(|k| k.ends_with("default_tools_approval_mode")),
-            "a plugin's tools are never pre-approved"
-        );
-        assert_eq!(overrides.len(), 3);
     }
 }
 

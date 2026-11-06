@@ -34,8 +34,7 @@ for one whose host doesn't know its parent yet.
 The IPC port is loopback-only, but loopback is not an identity: any local
 process could otherwise drive the engine (start agents, broker Cloud vault
 grants). Every engine start that binds the port mints a fresh 32-byte token
-and writes it to `{data_dir}/ipc-token` (owner-only `0600`, atomic replace;
-on Windows the file inherits `%LOCALAPPDATA%\Zeron`'s per-user ACL). The
+and writes it to `{data_dir}/ipc-token` (owner-only `0600`, atomic replace). The
 WebSocket handshake must carry `Authorization: Bearer <token>` (compared in
 constant time) and is refused with `401` otherwise; the browser `Origin`
 rejection (`403`) still applies on top. In-process (in-memory) transports are
@@ -269,8 +268,8 @@ button idioms, canvases as GPUI paths and shaped text in theme colors, and
 scenes and shaders as images. Shaders run offscreen on the GPU through wgpu
 (`crates/visual-gpu`, one shared device, pipelines cached by source) and are
 read back like a scene's image. Nothing foreign is hosted, so a visual scrolls, clips, blurs under
-the glass composer, and takes input like any other row, identically on Linux,
-macOS, and Windows, and it follows theme, appearance, and text-size changes
+the glass composer, and takes input like any other row, identically on Linux
+and macOS, and it follows theme, appearance, and text-size changes
 without rerunning the script.
 
 ### Image replies

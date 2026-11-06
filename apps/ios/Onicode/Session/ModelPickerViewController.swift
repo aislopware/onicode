@@ -6,7 +6,7 @@ struct ModelPickerTab {
     let harness: String
     let label: String
     /// Over the list: what picking here does to the chat.
-    var footer: String? = nil
+    var footer: String?
     let load: () async -> [ModelPickerRow]
 }
 
@@ -35,8 +35,12 @@ final class ModelPickerViewController: UIViewController, UIScrollViewDelegate {
     private var picked = false
 
     /// The picker in its sheet, ready to present.
-    static func sheet(tabs: [ModelPickerTab], harness: String, model: String?, host: (name: String, symbol: String), note: String? = nil, onPick: @escaping (String, ModelPickerRow) -> Void) -> UIViewController {
-        let picker = ModelPickerViewController(tabs: tabs, harness: harness, model: model, host: host, note: note, onPick: onPick)
+    static func sheet(
+        tabs: [ModelPickerTab], harness: String, model: String?, host: (name: String, symbol: String),
+        note: String? = nil, onPick: @escaping (String, ModelPickerRow) -> Void
+    ) -> UIViewController {
+        let picker = ModelPickerViewController(
+            tabs: tabs, harness: harness, model: model, host: host, note: note, onPick: onPick)
         picker.modalPresentationStyle = .pageSheet
         if let sheet = picker.sheetPresentationController {
             sheet.detents = [
@@ -53,7 +57,10 @@ final class ModelPickerViewController: UIViewController, UIScrollViewDelegate {
         return picker
     }
 
-    private init(tabs: [ModelPickerTab], harness: String, model: String?, host: (name: String, symbol: String), note: String?, onPick: @escaping (String, ModelPickerRow) -> Void) {
+    private init(
+        tabs: [ModelPickerTab], harness: String, model: String?, host: (name: String, symbol: String), note: String?,
+        onPick: @escaping (String, ModelPickerRow) -> Void
+    ) {
         self.tabs = tabs
         self.host = host
         self.onPick = onPick
@@ -64,7 +71,8 @@ final class ModelPickerViewController: UIViewController, UIScrollViewDelegate {
         }
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -149,7 +157,8 @@ final class ModelPickerViewController: UIViewController, UIScrollViewDelegate {
             icon.image = BrandMarks.image(for: only.harness, side: 13)
         } else {
             sub.text = host.name
-            icon.image = UIImage(systemName: host.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .medium))
+            icon.image = UIImage(
+                systemName: host.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .medium))
         }
         let line = UIStackView(arrangedSubviews: [icon, sub])
         line.spacing = 5
@@ -161,10 +170,12 @@ final class ModelPickerViewController: UIViewController, UIScrollViewDelegate {
         text.accessibilityIdentifier = "model-picker-title"
 
         var c = UIButton.Configuration.glass()
-        c.image = UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+        c.image = UIImage(
+            systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
         c.baseForegroundColor = Palette.secondary
         c.cornerStyle = .capsule
-        let close = UIButton(configuration: c, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
+        let close = UIButton(
+            configuration: c, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
         close.accessibilityLabel = "Close"
         close.accessibilityIdentifier = "model-picker-close"
 
@@ -199,8 +210,13 @@ final class ModelPickerViewController: UIViewController, UIScrollViewDelegate {
             self.pager.contentOffset.x = x
             self.switcher?.setPosition(CGFloat(ix))
         }
-        guard animated, !UIAccessibility.isReduceMotionEnabled else { return move() }
-        UIView.animate(withDuration: 0.45, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState], animations: move)
+        guard animated, !UIAccessibility.isReduceMotionEnabled else {
+            move()
+            return
+        }
+        UIView.animate(
+            withDuration: 0.45, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0,
+            options: [.allowUserInteraction, .beginFromCurrentState], animations: move)
     }
 
     private func settle(on ix: Int) {
@@ -286,13 +302,15 @@ private final class Page: UIView, UICollectionViewDelegate, UISearchTextFieldDel
         self.notice = notice
         let layout = UICollectionViewCompositionalLayout { _, _ in
             let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(62))
-            let group = NSCollectionLayoutGroup.vertical(layoutSize: size, subitems: [NSCollectionLayoutItem(layoutSize: size)])
+            let group = NSCollectionLayoutGroup.vertical(
+                layoutSize: size, subitems: [NSCollectionLayoutItem(layoutSize: size)])
             let section = NSCollectionLayoutSection(group: group)
             section.interGroupSpacing = 2
             section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 12, bottom: 20, trailing: 12)
             if notice != nil {
                 let header = NSCollectionLayoutBoundarySupplementaryItem(
-                    layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(48)),
+                    layoutSize: NSCollectionLayoutSize(
+                        widthDimension: .fractionalWidth(1), heightDimension: .estimated(48)),
                     elementKind: UICollectionView.elementKindSectionHeader, alignment: .top)
                 section.boundarySupplementaryItems = [header]
             }
@@ -317,7 +335,8 @@ private final class Page: UIView, UICollectionViewDelegate, UISearchTextFieldDel
         apply(animated: false)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private func configureData() {
         let modelCell = UICollectionView.CellRegistration<ModelCell, String> { [weak self] cell, _, id in
@@ -330,10 +349,13 @@ private final class Page: UIView, UICollectionViewDelegate, UISearchTextFieldDel
         data = UICollectionViewDiffableDataSource(collectionView: list) { list, indexPath, item in
             switch item {
             case .model(let id): list.dequeueConfiguredReusableCell(using: modelCell, for: indexPath, item: id)
-            case .placeholder(let ix): list.dequeueConfiguredReusableCell(using: placeholderCell, for: indexPath, item: ix)
+            case .placeholder(let ix):
+                list.dequeueConfiguredReusableCell(using: placeholderCell, for: indexPath, item: ix)
             }
         }
-        let noticeView = UICollectionView.SupplementaryRegistration<NoticeView>(elementKind: UICollectionView.elementKindSectionHeader) { [weak self] view, _, _ in
+        let noticeView = UICollectionView.SupplementaryRegistration<NoticeView>(
+            elementKind: UICollectionView.elementKindSectionHeader
+        ) { [weak self] view, _, _ in
             view.text = self?.notice
         }
         data.supplementaryViewProvider = { list, _, indexPath in
@@ -360,7 +382,8 @@ private final class Page: UIView, UICollectionViewDelegate, UISearchTextFieldDel
         self.current = current
         for cell in list.visibleCells {
             guard let cell = cell as? ModelCell, let ip = list.indexPath(for: cell),
-                  case .model(let id) = data.itemIdentifier(for: ip), let row = byId[id] else { continue }
+                case .model(let id) = data.itemIdentifier(for: ip), let row = byId[id]
+            else { continue }
             UIView.animate(withDuration: 0.2) {
                 cell.configure(row, current: self.tab.harness == current.harness && id == current.model)
             }
@@ -415,10 +438,11 @@ private final class Page: UIView, UICollectionViewDelegate, UISearchTextFieldDel
         field.returnKeyType = .done
         field.delegate = self
         field.accessibilityIdentifier = "model-picker-search"
-        field.addAction(UIAction { [weak self, weak field] _ in
-            self?.query = field?.text ?? ""
-            self?.apply(animated: false)
-        }, for: .editingChanged)
+        field.addAction(
+            UIAction { [weak self, weak field] _ in
+                self?.query = field?.text ?? ""
+                self?.apply(animated: false)
+            }, for: .editingChanged)
         field.translatesAutoresizingMaskIntoConstraints = false
         addSubview(field)
         NSLayoutConstraint.activate([
@@ -440,7 +464,7 @@ private final class Page: UIView, UICollectionViewDelegate, UISearchTextFieldDel
         onPick?(tab.harness, row)
     }
 
-    func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
+    func collectionView(_: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
         if case .model = data.itemIdentifier(for: indexPath) { return true }
         return false
     }
@@ -452,7 +476,9 @@ private final class ModelCell: UICollectionViewCell {
     private let plate = UIView()
     private let name = UILabel()
     private let detail = UILabel()
-    private let check = UIImageView(image: UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)))
+    private let check = UIImageView(
+        image: UIImage(
+            systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)))
     private var isCurrent = false
 
     override init(frame: CGRect) {
@@ -492,7 +518,8 @@ private final class ModelCell: UICollectionViewCell {
         isAccessibilityElement = true
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func configure(_ row: ModelPickerRow, current: Bool) {
         name.text = row.label
@@ -501,7 +528,7 @@ private final class ModelCell: UICollectionViewCell {
         isCurrent = current
         check.alpha = current ? 1 : 0
         updatePlate()
-        accessibilityLabel = [row.label, row.detail].compactMap { $0 }.joined(separator: ", ")
+        accessibilityLabel = [row.label, row.detail].compactMap(\.self).joined(separator: ", ")
         accessibilityValue = current ? "Current" : nil
         accessibilityIdentifier = "model-picker-row-\(row.id)"
     }
@@ -512,7 +539,12 @@ private final class ModelCell: UICollectionViewCell {
     }
 
     override var isHighlighted: Bool {
-        didSet { UIView.animate(withDuration: isHighlighted ? 0.06 : 0.3, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) { self.updatePlate() } }
+        didSet {
+            UIView.animate(
+                withDuration: isHighlighted ? 0.06 : 0.3, delay: 0,
+                options: [.beginFromCurrentState, .allowUserInteraction]
+            ) { self.updatePlate() }
+        }
     }
 
     private func updatePlate() {
@@ -537,7 +569,10 @@ private final class NoticeView: UICollectionReusableView {
         plate.backgroundColor = Palette.controlFill
         plate.layer.cornerRadius = 14
         plate.layer.cornerCurve = .continuous
-        let icon = UIImageView(image: UIImage(systemName: "info.circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)))
+        let icon = UIImageView(
+            image: UIImage(
+                systemName: "info.circle",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)))
         icon.tintColor = Palette.secondary
         icon.setContentHuggingPriority(.required, for: .horizontal)
         label.font = Fonts.ui(.sans, 13)
@@ -562,7 +597,8 @@ private final class NoticeView: UICollectionReusableView {
         ])
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
 /// A loading row: two soft bars that breathe until the models arrive.
@@ -592,7 +628,8 @@ private final class SkeletonCell: UICollectionViewCell {
         isUserInteractionEnabled = false
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func configure(seed: Int) {
         NSLayoutConstraint.deactivate(widths)
@@ -670,10 +707,11 @@ private final class ProviderSwitcher: UIView, UIScrollViewDelegate {
             scroller.addSubview(segment)
         }
         updateShadow()
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: ProviderSwitcher, _) in self.updateShadow() }
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _) in self.updateShadow() }
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private func updateShadow() {
         thumb.layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0 : 0.1
@@ -694,7 +732,8 @@ private final class ProviderSwitcher: UIView, UIScrollViewDelegate {
         let lower = max(0, min(segments.count - 1, Int(position.rounded(.down))))
         let upper = min(segments.count - 1, lower + 1)
         let t = min(max(position - CGFloat(lower), 0), 1)
-        let a = frames(selected: lower), b = frames(selected: upper)
+        let a = frames(selected: lower)
+        let b = frames(selected: upper)
         let compact = isCompact
         for (k, segment) in segments.enumerated() {
             // Bounds + center, not frame: a pressed segment is scaled.
@@ -718,7 +757,7 @@ private final class ProviderSwitcher: UIView, UIScrollViewDelegate {
         updateEdges()
     }
 
-    func scrollViewDidScroll(_ scrollView: UIScrollView) { updateEdges() }
+    func scrollViewDidScroll(_: UIScrollView) { updateEdges() }
 
     /// Fade the side(s) that have more providers past them.
     private func updateEdges() {
@@ -769,7 +808,9 @@ private final class ProviderSwitcher: UIView, UIScrollViewDelegate {
     private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
 
     private func lerp(_ a: CGRect, _ b: CGRect, _ t: CGFloat) -> CGRect {
-        CGRect(x: lerp(a.minX, b.minX, t), y: lerp(a.minY, b.minY, t), width: lerp(a.width, b.width, t), height: lerp(a.height, b.height, t))
+        CGRect(
+            x: lerp(a.minX, b.minX, t), y: lerp(a.minY, b.minY, t), width: lerp(a.width, b.width, t),
+            height: lerp(a.height, b.height, t))
     }
 }
 
@@ -809,7 +850,8 @@ private final class Segment: UIControl {
         accessibilityIdentifier = "model-picker-tab-\(harness)"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     var naturalWidth: CGFloat { 14 + Self.logo + Self.gap + nameWidth + 16 }
 
@@ -838,7 +880,8 @@ private final class Segment: UIControl {
         icon.frame = CGRect(x: x0, y: ((size.height - Self.logo) / 2).rounded(), width: Self.logo, height: Self.logo)
         icon.alpha = isHighlighted ? 0.45 : iconAlpha
         let h = ceil(full.font.lineHeight)
-        let name = CGRect(x: x0 + Self.logo + Self.gap, y: ((size.height - h) / 2).rounded(), width: nameWidth, height: h)
+        let name = CGRect(
+            x: x0 + Self.logo + Self.gap, y: ((size.height - h) / 2).rounded(), width: nameWidth, height: h)
         muted.frame = name
         full.frame = name
         muted.alpha = nameVisibility * (1 - emphasis)

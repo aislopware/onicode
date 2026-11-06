@@ -125,8 +125,6 @@ const RELAY_BACKOFF_BASE: std::time::Duration = std::time::Duration::from_secs(5
 const RELAY_BACKOFF_CAP: std::time::Duration = std::time::Duration::from_secs(30);
 const RELAY_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const RELAY_GIVE_UP: std::time::Duration = std::time::Duration::from_secs(15 * 60);
-/// Hosts below this stamped engine version don't serve `RelayCommand`.
-const RELAY_MIN_VERSION: (u64, u64, u64) = (0, 2, 12);
 
 /// Edge connection config. The bearer is a **provider**, never a snapshot:
 /// every room (re)connect and HTTP request re-reads it, so WorkOS access-token
@@ -3558,8 +3556,6 @@ impl DocHost {
             let mut limit: libc::rlimit = std::mem::zeroed();
             (libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) == 0).then_some(limit.rlim_cur as u64)
         };
-        #[cfg(not(unix))]
-        let fd_limit: Option<u64> = None;
         serde_json::json!({
             "budget": onicode_sync::budget::shared().stats(),
             "activeClientLimit": ACTIVE_SYNC_CAP,
@@ -4703,28 +4699,16 @@ impl DocHost {
             .is_some_and(|s| s.connected && s.pending_pushes == 0)
     }
 
-    /// One relay attempt: version-gate the host, then forward the entry over
-    /// the peer link. Timeouts mark the link suspect (drop + redial next
-    /// attempt); a host-side refusal is permanent for THIS attempt but the
-    /// escort keeps retrying until the give-up cap (the refusal may be
-    /// "attachments not landed yet").
+    /// One relay attempt: forward the entry over the peer link. Timeouts mark
+    /// the link suspect (drop + redial next attempt); a host-side refusal is
+    /// permanent for THIS attempt but the escort keeps retrying until the
+    /// give-up cap (the refusal may be "attachments not landed yet").
     async fn relay_command(
         &self,
         target: &str,
         chat_id: &str,
         entry: &SessionCommandEntry,
     ) -> Result<&'static str, String> {
-        let supported = self
-            .workspace()
-            .and_then(|ws| ws.read_devices().ok())
-            .into_iter()
-            .flatten()
-            .find(|d| d.id == target)
-            .and_then(|d| d.version.as_deref().and_then(onicode_proto::version_triple))
-            .is_some_and(|v| v >= RELAY_MIN_VERSION);
-        if !supported {
-            return Err("host does not support relay delivery (version gate)".into());
-        }
         let links = self
             .inner
             .links
@@ -5348,11 +5332,24 @@ impl DocHost {
                 continue;
             }
             // Mark BEFORE executing: a crash mid-execution must never double-run a
-            // command whose side effect may already have happened.
-            if let Err(err) = self.inner.store.mark_processed(&entry.id) {
-                tracing::error!(chat = %handle.chat_id, error = %err, "processed-ledger write failed; halting drain");
-                lock(&self.inner.executing).remove(&entry.id);
-                return;
+            // command whose side effect may already have happened. The ledger
+            // write is the claim: `false` means another path (a racing drain
+            // of controls, which bypass the prompt lock, or a relayed copy)
+            // claimed the id and finished since this pass read it as
+            // unprocessed. Running it again would, say, interrupt the turn
+            // that started after the first interrupt.
+            match self.inner.store.mark_processed(&entry.id) {
+                Ok(true) => {}
+                Ok(false) => {
+                    lock(&self.inner.executing).remove(&entry.id);
+                    skipped.insert(entry.id.clone());
+                    continue;
+                }
+                Err(err) => {
+                    tracing::error!(chat = %handle.chat_id, error = %err, "processed-ledger write failed; halting drain");
+                    lock(&self.inner.executing).remove(&entry.id);
+                    return;
+                }
             }
             match disposition {
                 CommandDisposition::Skip => {
@@ -6163,7 +6160,6 @@ impl DocHost {
             resume: None,
             worktree: None,
             env: Default::default(),
-            extra_mcp: Vec::new(),
         })
     }
 

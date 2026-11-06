@@ -28,14 +28,16 @@ final class TerminalViewController: UIViewController {
         hidesBottomBarWhenPushed = true
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Self.background
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.title = "Terminal"
-        let add = UIBarButtonItem(image: UIImage(systemName: "plus"), primaryAction: UIAction { [weak self] _ in self?.openAnother() })
+        let add = UIBarButtonItem(
+            image: UIImage(systemName: "plus"), primaryAction: UIAction { [weak self] _ in self?.openAnother() })
         add.accessibilityLabel = "New terminal"
         add.accessibilityIdentifier = "terminal-new"
         let more = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: menu())
@@ -53,7 +55,8 @@ final class TerminalViewController: UIViewController {
         status.onAction = { [weak self] in self?.statusAction() }
         view.addSubview(status)
 
-        keyboardButton.addAction(UIAction { [weak self] _ in _ = self?.terminal?.becomeFirstResponder() }, for: .touchUpInside)
+        keyboardButton.addAction(
+            UIAction { [weak self] _ in _ = self?.terminal?.becomeFirstResponder() }, for: .touchUpInside)
         keyboardButton.accessibilityLabel = "Show keyboard"
         keyboardButton.accessibilityIdentifier = "terminal-keyboard"
         view.addSubview(keyboardButton)
@@ -102,8 +105,8 @@ final class TerminalViewController: UIViewController {
         guard !opening else { return }
         opening = true
         loader.alpha = 1
-        let cols = terminal?.grid.cols ?? TerminalViewController.guessGrid(view.bounds.size).cols
-        let rows = terminal?.grid.rows ?? TerminalViewController.guessGrid(view.bounds.size).rows
+        let cols = terminal?.grid.cols ?? Self.guessGrid(view.bounds.size).cols
+        let rows = terminal?.grid.rows ?? Self.guessGrid(view.bounds.size).rows
         Task { @MainActor in
             defer { opening = false }
             do {
@@ -128,11 +131,12 @@ final class TerminalViewController: UIViewController {
             for line in lines {
                 try? await Task.sleep(for: .milliseconds(900))
                 for ch in line {
-                    tab.session.typeText(text: String(ch), modifiers: KeyModifiers(ctrl: false, alt: false, shift: false))
+                    tab.session.typeText(
+                        text: String(ch), modifiers: KeyModifiers(ctrl: false, alt: false, shift: false))
                     try? await Task.sleep(for: .milliseconds(45))
                 }
                 tab.session.press(key: .enter, modifiers: KeyModifiers(ctrl: false, alt: false, shift: false))
-                try? await Task.sleep(for: .milliseconds(2400))
+                try? await Task.sleep(for: .milliseconds(2_400))
             }
         }
     }
@@ -181,11 +185,16 @@ final class TerminalViewController: UIViewController {
     private func tabsMenu() -> UIMenu {
         let tabs = app.terminals.tabs(for: chatId)
         let items: [UIMenuElement] = tabs.map { t in
-            UIAction(title: t.name, subtitle: t.folder + (t.isLive ? "" : " · ended"), image: UIImage(systemName: "apple.terminal"), state: t === current ? .on : .off) { [weak self] _ in
+            UIAction(
+                title: t.name, subtitle: t.folder + (t.isLive ? "" : " · ended"),
+                image: UIImage(systemName: "apple.terminal"), state: t === current ? .on : .off
+            ) { [weak self] _ in
                 self?.show(t)
             }
         }
-        let new = UIAction(title: "New Terminal", image: UIImage(systemName: "plus")) { [weak self] _ in self?.openAnother() }
+        let new = UIAction(title: "New Terminal", image: UIImage(systemName: "plus")) { [weak self] _ in
+            self?.openAnother()
+        }
         return UIMenu(children: [UIMenu(options: .displayInline, children: items), new])
     }
 
@@ -220,7 +229,9 @@ final class TerminalViewController: UIViewController {
             case let .exited(code, signal):
                 self.loader.alpha = 0
                 self.status.isHidden = false
-                self.status.show(.exited(signal.map { "Ended by \($0)" } ?? (code == 0 ? "Process exited" : "Exited with code \(code)")))
+                self.status.show(
+                    .exited(
+                        signal.map { "Ended by \($0)" } ?? (code == 0 ? "Process exited" : "Exited with code \(code)")))
                 if self.terminal?.isFirstResponder == true { _ = self.terminal?.resignFirstResponder() }
             case .gone:
                 self.loader.alpha = 0
@@ -231,7 +242,10 @@ final class TerminalViewController: UIViewController {
     }
 
     private func statusAction() {
-        guard let tab = current else { return openAnother() }
+        guard let tab = current else {
+            openAnother()
+            return
+        }
         switch tab.phase {
         case .exited, .gone:
             app.terminals.forget(tab)
@@ -244,7 +258,10 @@ final class TerminalViewController: UIViewController {
     private func setKeyboardButtonVisible(_ visible: Bool) {
         let ended = current.map { !$0.isLive } ?? false
         let show = visible && !ended
-        UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+        UIView.animate(
+            withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
             self.keyboardButton.alpha = show ? 1 : 0
             self.keyboardButton.transform = show ? .identity : CGAffineTransform(scaleX: 0.6, y: 0.6)
         }
@@ -264,7 +281,8 @@ final class TerminalViewController: UIViewController {
 
     override var keyCommands: [UIKeyCommand]? {
         [
-            UIKeyCommand(title: "New Terminal", action: #selector(newTerminalCommand), input: "t", modifierFlags: .command),
+            UIKeyCommand(
+                title: "New Terminal", action: #selector(newTerminalCommand), input: "t", modifierFlags: .command),
             UIKeyCommand(title: "Clear", action: #selector(clearCommand), input: "k", modifierFlags: .command),
             UIKeyCommand(title: "Bigger", action: #selector(biggerCommand), input: "+", modifierFlags: .command),
             UIKeyCommand(title: "Smaller", action: #selector(smallerCommand), input: "-", modifierFlags: .command),
@@ -272,36 +290,56 @@ final class TerminalViewController: UIViewController {
     }
 
     @objc private func newTerminalCommand() { openAnother() }
-    @objc private func clearCommand() { current?.session.typeText(text: "l", modifiers: KeyModifiers(ctrl: true, alt: false, shift: false)) }
+    @objc private func clearCommand() {
+        current?.session.typeText(text: "l", modifiers: KeyModifiers(ctrl: true, alt: false, shift: false))
+    }
     @objc private func biggerCommand() { terminal.map { $0.setFontSize(min(22, $0.fontSize + 1)) } }
     @objc private func smallerCommand() { terminal.map { $0.setFontSize(max(8, $0.fontSize - 1)) } }
 
     // MARK: Menu
 
     private func menu() -> UIMenu {
-        UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] done in
-            guard let self, let tab = self.current else { return done([]) }
-            let size = UIMenu(title: "Text Size", options: .displayInline, preferredElementSize: .small, children: [
-                UIAction(title: "Smaller", image: UIImage(systemName: "textformat.size.smaller")) { [weak self] _ in self?.smallerCommand() },
-                UIAction(title: "Reset", image: UIImage(systemName: "textformat.size")) { [weak self] _ in self?.terminal?.setFontSize(TerminalView.defaultFontSize) },
-                UIAction(title: "Bigger", image: UIImage(systemName: "textformat.size.larger")) { [weak self] _ in self?.biggerCommand() },
-            ])
-            done([
-                size,
-                UIAction(title: "Add Output to Message", image: UIImage(systemName: "text.bubble")) { [weak self] _ in
-                    guard let self else { return }
-                    self.addToMessage(tab.session.text(all: false))
-                },
-                UIAction(title: "Copy All Output", image: UIImage(systemName: "doc.on.doc")) { _ in
-                    UIPasteboard.general.string = tab.session.text(all: true)
-                    Toast.show("Copied", in: self.view.window)
-                },
-                UIAction(title: "Clear Screen", image: UIImage(systemName: "clear")) { [weak self] _ in self?.clearCommand() },
-                UIMenu(options: .displayInline, children: [
-                    UIAction(title: "Close Terminal", image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { [weak self] _ in self?.closeCurrent() },
-                ]),
-            ])
-        }])
+        UIMenu(children: [
+            UIDeferredMenuElement.uncached { [weak self] done in
+                guard let self, let tab = self.current else { return done([]) }
+                let size = UIMenu(
+                    title: "Text Size", options: .displayInline, preferredElementSize: .small,
+                    children: [
+                        UIAction(title: "Smaller", image: UIImage(systemName: "textformat.size.smaller")) {
+                            [weak self] _ in self?.smallerCommand()
+                        },
+                        UIAction(title: "Reset", image: UIImage(systemName: "textformat.size")) { [weak self] _ in
+                            self?.terminal?.setFontSize(TerminalView.defaultFontSize)
+                        },
+                        UIAction(title: "Bigger", image: UIImage(systemName: "textformat.size.larger")) {
+                            [weak self] _ in self?.biggerCommand()
+                        },
+                    ])
+                done([
+                    size,
+                    UIAction(title: "Add Output to Message", image: UIImage(systemName: "text.bubble")) {
+                        [weak self] _ in
+                        guard let self else { return }
+                        self.addToMessage(tab.session.text(all: false))
+                    },
+                    UIAction(title: "Copy All Output", image: UIImage(systemName: "doc.on.doc")) { _ in
+                        UIPasteboard.general.string = tab.session.text(all: true)
+                        Toast.show("Copied", in: self.view.window)
+                    },
+                    UIAction(title: "Clear Screen", image: UIImage(systemName: "clear")) { [weak self] _ in
+                        self?.clearCommand()
+                    },
+                    UIMenu(
+                        options: .displayInline,
+                        children: [
+                            UIAction(
+                                title: "Close Terminal", image: UIImage(systemName: "xmark.circle"),
+                                attributes: .destructive
+                            ) { [weak self] _ in self?.closeCurrent() }
+                        ]),
+                ])
+            }
+        ])
     }
 
     private func closeCurrent() {
@@ -382,7 +420,8 @@ final class TerminalStatusPill: UIControl {
         accessibilityIdentifier = "terminal-status"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func show(_ state: State) {
         switch state {
@@ -401,6 +440,7 @@ final class TerminalStatusPill: UIControl {
             action.text = "Try Again"
             action.isHidden = false
         }
-        accessibilityLabel = [label.text, action.isHidden ? nil : action.text].compactMap { $0 }.joined(separator: ", ")
+        accessibilityLabel = [label.text, action.isHidden ? nil : action.text].compactMap(\.self).joined(
+            separator: ", ")
     }
 }

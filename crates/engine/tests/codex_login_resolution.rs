@@ -1,7 +1,6 @@
 //! The codex "Add account" flow must launch the same executable the harness
-//! runs — `CODEX_EXECUTABLE`, PATH discovery, and the npm `.cmd` shim layout
-//! included — instead of a bare `Command::new("codex")` that only finds a
-//! top-level `codex.exe`.
+//! runs — `CODEX_EXECUTABLE` and PATH discovery included — instead of a bare
+//! `Command::new("codex")`.
 //!
 //! Child-process probes: resolution reads process env (PATH, the override),
 //! so each case re-runs this test binary with a controlled environment.
@@ -32,31 +31,15 @@ const FAKE_URL: &str = "https://auth.openai.com/authorize?probe=fake";
 /// The fake CLI prints the authorize URL and then parks so the login flow
 /// stays alive until the probe cancels it.
 fn fake_codex(dir: &Path) -> PathBuf {
-    let path = dir.join(if cfg!(windows) {
-        "fake-codex.cmd"
-    } else {
-        "fake-codex"
-    });
-    if cfg!(windows) {
-        std::fs::write(
-            &path,
-            format!(
-                "@echo off\r\necho open {FAKE_URL} in your browser\r\nping -n 30 127.0.0.1 >nul\r\n"
-            ),
-        )
-        .expect("fake codex shim");
-    } else {
-        std::fs::write(
-            &path,
-            format!("#!/bin/sh\necho \"open {FAKE_URL} in your browser\"\nsleep 30\n"),
-        )
-        .expect("fake codex");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-    }
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = dir.join("fake-codex");
+    std::fs::write(
+        &path,
+        format!("#!/bin/sh\necho \"open {FAKE_URL} in your browser\"\nsleep 30\n"),
+    )
+    .expect("fake codex");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     path
 }
 
@@ -91,14 +74,11 @@ fn probe(path: &Path, override_path: Option<&Path>, expected: bool) {
     command.args(["--exact", "login_child", "--nocapture"]);
     for key in [
         "HOME",
-        "USERPROFILE",
         "FNM_DIR",
         "FNM_MULTISHELL_PATH",
-        "LOCALAPPDATA",
         "NVM_SYMLINK",
         "VOLTA_HOME",
         "PNPM_HOME",
-        "APPDATA",
         "CODEX_EXECUTABLE",
     ] {
         command.env_remove(key);
@@ -127,20 +107,6 @@ fn codex_login_honors_override_only_installation() {
     let fake = fake_codex(dir.path());
     // No codex anywhere on PATH: only the override can start the login.
     probe(dir.path(), Some(&fake), true);
-}
-
-/// The npm layout — a `codex.cmd` shim on PATH with the payload buried in
-/// `node_modules` — must log in through the same resolution the harness uses.
-/// `.cmd` discovery is a PATHEXT rule, so this only holds on Windows.
-#[cfg(windows)]
-#[test]
-fn codex_login_runs_the_npm_cmd_shim() {
-    let dir = tempfile::tempdir().unwrap();
-    let bin = dir.path().join("bin");
-    std::fs::create_dir_all(&bin).unwrap();
-    // The shim plays both roles itself.
-    std::fs::copy(fake_codex(&bin), bin.join("codex.cmd")).unwrap();
-    probe(&bin, None, true);
 }
 
 #[test]

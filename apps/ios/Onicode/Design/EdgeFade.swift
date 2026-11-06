@@ -32,7 +32,8 @@ final class FadingLabel: UILabel {
         numberOfLines = 1
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var text: String? { didSet { setNeedsLayout() } }
     override var attributedText: NSAttributedString? { didSet { setNeedsLayout() } }
@@ -40,7 +41,10 @@ final class FadingLabel: UILabel {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let overflows = bounds.width > 0 && super.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: bounds.height)).width > bounds.width + 0.5
+        let overflows =
+            bounds.width > 0
+            && super.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: bounds.height)).width > bounds
+                .width + 0.5
         let alignment: NSTextAlignment = overflows ? .natural : fitsAlignment
         if textAlignment != alignment { textAlignment = alignment }
         CATransaction.begin()
@@ -90,7 +94,8 @@ class FadingScrollView: UIScrollView {
 /// band. Pass-through for touches; a plain gradient layer, so it composites
 /// for free while content scrolls underneath.
 final class EdgeFadeOverlay: UIView {
-    override class var layerClass: AnyClass { CAGradientLayer.self }
+    override static var layerClass: AnyClass { CAGradientLayer.self }
+    // swiftlint:disable:next force_cast - layerClass makes the layer a CAGradientLayer
     private var gradient: CAGradientLayer { layer as! CAGradientLayer }
 
     override init(frame: CGRect) {
@@ -99,10 +104,11 @@ final class EdgeFadeOverlay: UIView {
         gradient.startPoint = CGPoint(x: 0.5, y: 0)
         gradient.endPoint = CGPoint(x: 0.5, y: 1)
         restyle()
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: EdgeFadeOverlay, _) in self.restyle() }
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _) in self.restyle() }
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -112,7 +118,9 @@ final class EdgeFadeOverlay: UIView {
     private func restyle() {
         let bg = Palette.background.resolvedColor(with: traitCollection)
         // Smoothstep-ish ramp over the first ~45%, then solid.
-        let stops: [(CGFloat, CGFloat)] = [(0, 0), (0.12, 0.18), (0.24, 0.5), (0.36, 0.82), (0.46, 0.96), (0.55, 1), (1, 1)]
+        let stops: [(CGFloat, CGFloat)] = [
+            (0, 0), (0.12, 0.18), (0.24, 0.5), (0.36, 0.82), (0.46, 0.96), (0.55, 1), (1, 1),
+        ]
         gradient.colors = stops.map { bg.withAlphaComponent($0.1).cgColor }
         gradient.locations = stops.map { NSNumber(value: Double($0.0)) }
     }

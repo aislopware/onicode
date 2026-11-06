@@ -11,7 +11,8 @@ import XCTest
 ///     -only-testing:OnicodeUITests/LiveStackTests …
 final class LiveStackTests: XCTestCase {
     func testSendRoundTripsThroughRealEngine() throws {
-        let edge = try XCTUnwrap(ProcessInfo.processInfo.environment["ONICODE_LIVE_EDGE"], "set TEST_RUNNER_ONICODE_LIVE_EDGE")
+        let edge = try XCTUnwrap(
+            ProcessInfo.processInfo.environment["ONICODE_LIVE_EDGE"], "set TEST_RUNNER_ONICODE_LIVE_EDGE")
         let app = XCUIApplication()
         // The draft's harness wins over the engine's ONICODE_HARNESS default:
         // pin the mock so the test never starts a real agent.
@@ -28,7 +29,8 @@ final class LiveStackTests: XCTestCase {
 
         // The engine adopts the command (echo keeps its id) and the mock
         // harness replies through the chat2 room.
-        let echo = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'You: hello from the phone'")).firstMatch
+        let echo = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'You: hello from the phone'"))
+            .firstMatch
         XCTAssertTrue(echo.waitForExistence(timeout: 10))
         let reply = app.staticTexts.matching(identifier: "row-markdown").firstMatch
         XCTAssertTrue(reply.waitForExistence(timeout: 60), "mock harness reply streamed back")

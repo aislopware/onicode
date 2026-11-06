@@ -41,16 +41,14 @@ enum VoiceActivityOrb: String, Codable, Hashable {
 enum VoiceActivityAction {
     case toggleMute, end
 
-    @MainActor static var handler: ((VoiceActivityAction) -> Void)?
+    @MainActor static var handler: ((Self) -> Void)?
 }
 
 struct ToggleVoiceMuteIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Mute or Unmute Voice"
     static var isDiscoverable: Bool { false }
 
-    init() {}
-
-    func perform() async throws -> some IntentResult {
+    func perform() async -> some IntentResult {
         await MainActor.run { VoiceActivityAction.handler?(.toggleMute) }
         return .result()
     }
@@ -60,9 +58,7 @@ struct EndVoiceCallIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "End Voice Call"
     static var isDiscoverable: Bool { false }
 
-    init() {}
-
-    func perform() async throws -> some IntentResult {
+    func perform() async -> some IntentResult {
         await MainActor.run { VoiceActivityAction.handler?(.end) }
         return .result()
     }

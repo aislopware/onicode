@@ -139,7 +139,7 @@ trait EngineBackend: Send + Sync {
 struct InProcessEngine {
     service: Arc<dyn RpcService>,
     runtime: Arc<tokio::sync::Mutex<Option<EngineRuntime>>>,
-    boot_task: tokio::task::JoinHandle<()>,
+    boot_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     refresh_task: tokio::task::JoinHandle<()>,
     /// Serves this engine to other viewports over the IPC port. `None` when the
     /// port was already taken — the window still works over its own transport.
@@ -159,7 +159,13 @@ impl EngineBackend for InProcessEngine {
         EngineMode::InProcess
     }
     async fn shutdown(&self) {
-        self.boot_task.abort();
+        // Cancel the boot and observe it finish: an aborted task is only
+        // dropped at its next poll, so what it opened (stores, the instance
+        // lock) would otherwise outlive a failed bootstrap's error.
+        if let Some(boot) = self.boot_task.lock().await.take() {
+            boot.abort();
+            let _ = boot.await;
+        }
         // Stop accepting first: a viewport must not connect midway through the
         // drain and queue work against stores that are closing.
         let ipc_task = self.ipc_task.lock().await.take();
@@ -367,7 +373,7 @@ impl EngineHandle {
             inner: Arc::new(InProcessEngine {
                 service,
                 runtime: deferred.runtime.clone(),
-                boot_task,
+                boot_task: tokio::sync::Mutex::new(Some(boot_task)),
                 refresh_task: deferred.refresh_task,
                 ipc_task: tokio::sync::Mutex::new(ipc_task),
                 client,
@@ -1820,19 +1826,6 @@ impl AppState {
         // delivery gating and later renders still need the newest timestamp.
         self.devices = devices;
         changed
-    }
-
-    /// True when `device_id`'s engine (per its registry device row) is at
-    /// least `min`. Unknown devices and unstamped versions are conservatively
-    /// false — feature gates fall back to the legacy path rather than speak a
-    /// protocol the peer may not understand.
-    pub fn device_version_at_least(&self, device_id: &str, min: (u64, u64, u64)) -> bool {
-        self.devices
-            .iter()
-            .find(|d| d.id == device_id)
-            .and_then(|d| d.version.as_deref())
-            .and_then(version_triple)
-            .is_some_and(|v| v >= min)
     }
 
     /// Capability checks use the live EngineInfo for this device (including a
@@ -5016,6 +5009,22 @@ mod tests {
         listener.local_addr().unwrap().port()
     }
 
+    /// A free port below the ephemeral range (49152+ on macOS and Linux's
+    /// default 32768+ both start above it). A port `free_port` just released
+    /// is often handed out again as the source port of the next outgoing
+    /// connection, so a probe that connects to it can connect to itself and
+    /// hold the port. A port outside that range is never a source port.
+    async fn free_port_outside_ephemeral_range() -> u16 {
+        let start = 20_000 + (std::process::id() % 10_000) as u16;
+        for offset in 0..2_000u16 {
+            let port = start + offset;
+            if tokio::net::TcpListener::bind(("127.0.0.1", port)).await.is_ok() {
+                return port;
+            }
+        }
+        panic!("no free port in 20000..32000");
+    }
+
     struct LegacyIdentityRpc;
 
     #[async_trait]
@@ -5156,7 +5165,7 @@ mod tests {
         onicode_engine::EngineProfile::local(dir.path()).unwrap();
         std::fs::create_dir(dir.path().join("profiles")).unwrap();
         std::fs::write(dir.path().join("profiles/local"), b"not a directory").unwrap();
-        let port = free_port().await;
+        let port = free_port_outside_ephemeral_range().await;
 
         let error = match EngineHandle::bootstrap(EngineBootConfig {
             data_dir: dir.path().to_path_buf(),
@@ -5177,11 +5186,15 @@ mod tests {
         };
 
         assert!(!format!("{error:#}").is_empty());
+        // Bind, never connect: connecting to a free ephemeral port on loopback
+        // can self-connect (the kernel picks that same port as the source),
+        // which reads as a listener that isn't there. Tokio binds with
+        // SO_REUSEADDR, so only a live listener, not a closed connection in
+        // TIME_WAIT, refuses it.
+        let rebound = tokio::net::TcpListener::bind(("127.0.0.1", port)).await;
         assert!(
-            tokio::net::TcpStream::connect(("127.0.0.1", port))
-                .await
-                .is_err(),
-            "failed bootstrap must release the IPC listener"
+            rebound.is_ok(),
+            "failed bootstrap must release the IPC listener: {rebound:?}"
         );
     }
 
@@ -5544,8 +5557,7 @@ mod tests {
             "cloud data waits for organization onboarding"
         );
         // What this app asks during onboarding waits, never errors: its
-        // watch streams and data calls. Only plugin and template calls (which
-        // this app never makes) answer `setup_incomplete` at once.
+        // watch streams and data calls.
         for method in [
             methods::WATCH_CHATS,
             methods::WATCH_DEVICES,
@@ -5571,14 +5583,6 @@ mod tests {
         .await
         .expect("AuthStatus answers during onboarding");
         assert!(auth.is_ok(), "{:?}", auth.err());
-        let plugins = handle
-            .client()
-            .call(methods::LIST_PLUGINS, serde_json::json!({}))
-            .await;
-        assert!(
-            matches!(&plugins, Err(RpcError::Capability(code)) if code == "setup_incomplete"),
-            "{plugins:?}"
-        );
         assert!(!dir.path().join("orgs").exists());
         handle.shutdown().await;
     }
@@ -8263,35 +8267,12 @@ mod tests {
     }
 
     #[test]
-    fn version_triple_parses_and_gates_device_features() {
+    fn version_triple_parses() {
         assert_eq!(version_triple("0.2.12"), Some((0, 2, 12)));
         assert_eq!(version_triple("0.2.12-beta.1"), Some((0, 2, 12)));
         assert_eq!(version_triple("1.0.0+build7"), Some((1, 0, 0)));
         assert_eq!(version_triple("0.2"), None);
         assert_eq!(version_triple("garbage"), None);
-
-        let mut s = AppState::default();
-        assert!(
-            !s.device_version_at_least("d1", (0, 2, 12)),
-            "unknown device conservatively fails the gate"
-        );
-        s.devices = vec![Device {
-            id: "d1".into(),
-            name: "laptop".into(),
-            platform: "macos".into(),
-            last_seen_at: None,
-            created_at: None,
-            version: Some("0.2.12".into()),
-            cursor_sdk_version: None,
-            capabilities: Vec::new(),
-        }];
-        assert!(s.device_version_at_least("d1", (0, 2, 12)));
-        assert!(!s.device_version_at_least("d1", (0, 2, 13)));
-        s.devices[0].version = None;
-        assert!(
-            !s.device_version_at_least("d1", (0, 2, 12)),
-            "unstamped version conservatively fails the gate"
-        );
     }
 
     #[test]

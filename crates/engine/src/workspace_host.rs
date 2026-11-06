@@ -560,8 +560,8 @@ impl WorkspaceHost {
         *lock(&self.inner.peer_alive) = Some(hook);
     }
 
-    /// Test seam: write a foreign device row (the relay version gate and the
-    /// dial gate read these; production rows arrive via registry sync).
+    /// Test seam: write a foreign device row (the dial gate reads these;
+    /// production rows arrive via registry sync).
     #[doc(hidden)]
     pub fn upsert_device_row(&self, device: &Device) {
         if let Err(err) = self.mutate(|doc| doc.upsert_device(device)) {
@@ -721,6 +721,11 @@ impl WorkspaceHost {
     /// The chat row as currently known (overlay view).
     pub fn chat(&self, chat_id: &str) -> Result<Option<Chat>, EngineError> {
         Ok(self.read(|doc| doc.chat(chat_id))?)
+    }
+
+    /// Whether `chat_id`'s row was deleted (a tombstone, not an unknown id).
+    pub fn chat_deleted(&self, chat_id: &str) -> bool {
+        self.read(|doc| doc.chat_deleted(chat_id))
     }
 
     /// Whether `chat_id`'s parent is unknown here yet: this host claimed its

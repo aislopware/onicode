@@ -110,7 +110,6 @@ impl ComposerDefaults {
             file.write_all(&json)?;
             file.sync_all()?;
             std::fs::rename(&tmp, &path)?;
-            #[cfg(unix)]
             std::fs::File::open(data_dir)?.sync_all()?;
             Ok(())
         })();

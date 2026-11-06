@@ -43,8 +43,8 @@ gpui UI ─ in-proc/localhost RPC ─ engine A ══ DeviceRoom DO relay ══
 Binaries `zeron` (app + CLI) and `zeron-engine` (the app's background engine, no UI linked):
 - `zeron` — headed. If an engine is already listening on the IPC port, connect to it. Otherwise
   start the **background engine** (`crates/engine/src/managed.rs`) — `zeron-engine` beside the app
-  ("Zeron Engine" inside the macOS bundle), or `zeron engine` where no separate executable ships
-  (Windows, which updates as a single `zeron.exe`) — and attach to it. It is spawned detached from
+  ("Zeron Engine" inside the macOS bundle), or `zeron engine` where no separate executable ships —
+  and attach to it. It is spawned detached from
   the app (own session/process group, no inherited pipes), not through a service manager, so on
   macOS privacy permissions stay attributed to the app and no background-item approval is needed.
   Closing or quitting the app leaves it running with every session; it shows up as its own process.
@@ -60,7 +60,7 @@ Binaries `zeron` (app + CLI) and `zeron-engine` (the app's background engine, no
   (like every long-running mode's) moves to `.old` past 64 MB rather than growing for weeks.
 - **Updates from another device are transactions** (`crates/update/src/transaction.rs`, `crates/engine/src/update_trial.rs`).
   The installed version changes in one step, only once a new version has proved it's ready: `app/current` on Linux, an atomic
-  bundle swap on macOS, a rename on Windows. Until then every start runs the old version, which is how a new binary that exits,
+  bundle swap on macOS. Until then every start runs the old version, which is how a new binary that exits,
   hangs or loses power gets undone. The old version copies the SQLite stores, leaves a watchdog and hands over; the new one holds
   back what it can't take back (resuming chats, queued messages) until it has committed. A failed trial restores the stores, and
   `UpdateStatus.update` says which happened under the id `ApplyUpdate` answered with. Only the SQLite stores roll back. Provider

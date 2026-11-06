@@ -807,42 +807,73 @@ fn looks_like_device_code(token: &str) -> bool {
         && token.chars().any(|c| c.is_ascii_digit())
 }
 
-/// Terminal escape sequences (colours, cursor moves, OSC hyperlinks) removed.
+/// Terminal escape sequences (colours, cursor moves, OSC hyperlinks, charset
+/// designations, DCS/APC strings) removed, the text around them kept whole.
 pub fn strip_ansi(text: &str) -> String {
+    let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c != '\u{1b}' {
-            out.push(c);
-            continue;
+    let mut kept = 0;
+    while let Some(offset) = bytes[kept..].iter().position(|&b| b == 0x1b) {
+        let start = kept + offset;
+        out.push_str(&text[kept..start]);
+        kept = escape_end(bytes, start);
+    }
+    out.push_str(&text[kept..]);
+    out
+}
+
+/// Where the escape sequence at `bytes[start]` (an ESC) ends: the index just
+/// past it. As in xterm, a byte that cannot continue a sequence (a control,
+/// another ESC, text) ends it without being part of it, so it is read on its
+/// own: an unterminated OSC never swallows the sequence after it, and an
+/// interrupted one never prints its final byte. Every index returned follows
+/// an ASCII byte or the end, so it is a char boundary.
+fn escape_end(bytes: &[u8], start: usize) -> usize {
+    let mut at = start + 1;
+    match bytes.get(at) {
+        None => at,
+        // CSI: parameters and intermediates (0x20-0x3F), then a final byte.
+        Some(b'[') => {
+            at += 1;
+            while let Some(&b) = bytes.get(at) {
+                match b {
+                    0x20..=0x3f => at += 1,
+                    0x40..=0x7e => return at + 1,
+                    // CAN and SUB cancel the sequence.
+                    0x18 | 0x1a => return at + 1,
+                    _ => return at,
+                }
+            }
+            at
         }
-        match chars.peek() {
-            Some('[') => {
-                chars.next();
-                for c in chars.by_ref() {
-                    if ('@'..='~').contains(&c) {
-                        break;
-                    }
+        // OSC, DCS, SOS, PM, APC: a string up to ST (`ESC \`), or BEL for an
+        // OSC. Any other ESC ends the string and starts the next sequence.
+        Some(&kind @ (b']' | b'P' | b'X' | b'^' | b'_')) => {
+            at += 1;
+            while let Some(&b) = bytes.get(at) {
+                match b {
+                    0x07 if kind == b']' => return at + 1,
+                    0x1b if bytes.get(at + 1) == Some(&b'\\') => return at + 2,
+                    0x1b => return at,
+                    0x18 | 0x1a => return at + 1,
+                    _ => at += 1,
                 }
             }
-            Some(']') => {
-                chars.next();
-                while let Some(c) = chars.next() {
-                    if c == '\u{7}' {
-                        break;
-                    }
-                    if c == '\u{1b}' {
-                        chars.next();
-                        break;
-                    }
-                }
+            at
+        }
+        // ECMA-35: intermediates (0x20-0x2F: charset designations, DECALN…),
+        // then one final byte. Without a final byte, the ESC and its
+        // intermediates go and what follows is read on its own.
+        Some(_) => {
+            while let Some(0x20..=0x2f) = bytes.get(at) {
+                at += 1;
             }
-            _ => {
-                chars.next();
+            match bytes.get(at) {
+                Some(0x30..=0x7e) => at + 1,
+                _ => at,
             }
         }
     }
-    out
 }
 
 #[cfg(test)]
@@ -1081,8 +1112,8 @@ mod tests {
             assert_eq!(redact_output(url), kept);
         }
         assert_eq!(
-            redact_output("https://github.com/zeronsh/onicode"),
-            "https://github.com/zeronsh/onicode"
+            redact_output("https://github.com/aislopware/onicode"),
+            "https://github.com/aislopware/onicode"
         );
     }
 
@@ -1220,5 +1251,111 @@ mod tests {
             strip_ansi("\u{1b}]8;;https://a\u{7}link\u{1b}]8;;\u{7} \u{1b}[1mbold\u{1b}[0m"),
             "link bold"
         );
+    }
+
+    /// Shapes that used to leak: an unterminated OSC swallowed the next
+    /// sequence's ESC and printed the rest of it, and a sequence with an
+    /// intermediate byte (`tput sgr0`'s `ESC ( B`, DECALN) printed its final
+    /// byte. DCS and APC payloads printed whole.
+    #[test]
+    fn escapes_keep_the_text_around_them_whole() {
+        for (input, want) in [
+            ("ok\u{1b}]0;title\u{1b}\u{1b}[31mred", "okred"),
+            ("ok\u{1b}]0;title\u{1b}[31mred", "okred"),
+            ("\u{1b}(B\u{1b}[mplain", "plain"),
+            ("a\u{1b}#8b", "ab"),
+            ("a\u{1b}%Gb", "ab"),
+            ("a\u{1b} Fb", "ab"),
+            ("a\u{1b}(%5b", "ab"),
+            ("a\u{1b}#\u{1b}[31mb", "ab"),
+            ("a\u{1b}#\n8b", "a\n8b"),
+            ("a\u{1b}[3\nb", "a\nb"),
+            ("a\u{1b}Ptmux;payload\u{1b}\\b", "ab"),
+            ("a\u{1b}_Gf=100;AAAA\u{1b}\\b", "ab"),
+            ("a\u{1b}7\u{1b}8b", "ab"),
+            ("a\u{1b}é", "aé"),
+            ("trailing\u{1b}", "trailing"),
+            ("trailing\u{1b}[1;3", "trailing"),
+            ("trailing\u{1b}]8;;https://x", "trailing"),
+        ] {
+            assert_eq!(strip_ansi(input), want, "{input:?}");
+        }
+    }
+
+    /// Seeded property: text interleaved with complete escape sequences of
+    /// every family strips to exactly the text, multi-byte chars included.
+    #[test]
+    fn stripping_complete_sequences_leaves_exactly_the_text() {
+        struct Rng(u64);
+        impl Rng {
+            fn next(&mut self) -> u64 {
+                self.0 ^= self.0 >> 12;
+                self.0 ^= self.0 << 25;
+                self.0 ^= self.0 >> 27;
+                self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
+            }
+            fn below(&mut self, n: usize) -> usize {
+                (self.next() % n as u64) as usize
+            }
+            fn byte_in(&mut self, lo: u8, hi: u8) -> char {
+                char::from(lo + self.below(usize::from(hi - lo) + 1) as u8)
+            }
+        }
+        const TEXT: &[&str] = &[
+            "ok", " ", "\n", "B", "8", "é", "日本", "👍🏽", "[31m", "\\", "#", "(", "\t", "~",
+        ];
+        let sequence = |rng: &mut Rng| -> String {
+            let mut s = String::from('\u{1b}');
+            match rng.below(5) {
+                0 => {
+                    s.push('[');
+                    for _ in 0..rng.below(6) {
+                        s.push(rng.byte_in(0x20, 0x3f));
+                    }
+                    s.push(rng.byte_in(0x40, 0x7e));
+                }
+                1 => {
+                    s.push(['P', 'X', '^', '_', ']'][rng.below(5)]);
+                    for _ in 0..rng.below(8) {
+                        s.push(rng.byte_in(0x20, 0x7e));
+                    }
+                    s.push_str(if s.as_bytes()[1] == b']' && rng.below(2) == 0 {
+                        "\u{7}"
+                    } else {
+                        "\u{1b}\\"
+                    });
+                }
+                2 => {
+                    for _ in 0..1 + rng.below(3) {
+                        s.push(rng.byte_in(0x20, 0x2f));
+                    }
+                    s.push(rng.byte_in(0x30, 0x7e));
+                }
+                _ => {
+                    // A two-byte escape: anything but the introducers above.
+                    let mut c = rng.byte_in(0x30, 0x7e);
+                    while matches!(c, '[' | ']' | 'P' | 'X' | '^' | '_') {
+                        c = rng.byte_in(0x30, 0x7e);
+                    }
+                    s.push(c);
+                }
+            }
+            s
+        };
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        for case in 0..4_000 {
+            let mut input = String::new();
+            let mut want = String::new();
+            for _ in 0..rng.below(10) {
+                if rng.below(2) == 0 {
+                    input.push_str(&sequence(&mut rng));
+                } else {
+                    let text = TEXT[rng.below(TEXT.len())];
+                    input.push_str(text);
+                    want.push_str(text);
+                }
+            }
+            assert_eq!(strip_ansi(&input), want, "case {case}: {input:?}");
+        }
     }
 }

@@ -11,7 +11,8 @@ enum WallpaperStore {
     static let didChange = Notification.Name("OnicodeWallpaperChanged")
 
     private static var directory: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("wallpaper", isDirectory: true)
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("wallpaper", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -72,11 +73,15 @@ enum WallpaperStore {
 
     /// Store a picked image (long side ≤ 1600 px) and notify.
     static func set(_ image: UIImage, name: String) {
-        let scale = min(1, 1600 / max(image.size.width * image.scale, image.size.height * image.scale))
-        let size = CGSize(width: (image.size.width * image.scale * scale).rounded(), height: (image.size.height * image.scale * scale).rounded())
+        let scale = min(1, 1_600 / max(image.size.width * image.scale, image.size.height * image.scale))
+        let size = CGSize(
+            width: (image.size.width * image.scale * scale).rounded(),
+            height: (image.size.height * image.scale * scale).rounded())
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        let resized = UIGraphicsImageRenderer(size: size, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+        let resized = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
         try? resized.jpegData(compressionQuality: 0.9)?.write(to: imageURL, options: .atomic)
         UserDefaults.standard.set(name, forKey: "wallpaperName")
         changed()
@@ -88,12 +93,14 @@ enum WallpaperStore {
     static func set(fileURL: URL, name: String) {
         let options = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, options),
-              let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                  kCGImageSourceCreateThumbnailFromImageAlways: true,
-                  kCGImageSourceCreateThumbnailWithTransform: true,
-                  kCGImageSourceThumbnailMaxPixelSize: 1600,
-              ] as CFDictionary),
-              let data = UIImage(cgImage: thumb).jpegData(compressionQuality: 0.9)
+            let thumb = CGImageSourceCreateThumbnailAtIndex(
+                source, 0,
+                [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 1_600,
+                ] as CFDictionary),
+            let data = UIImage(cgImage: thumb).jpegData(compressionQuality: 0.9)
         else { return }
         try? data.write(to: imageURL, options: .atomic)
         DispatchQueue.main.async {
@@ -137,7 +144,9 @@ enum WallpaperStore {
         let size = CGSize(width: width, height: (width * image.size.height / max(1, image.size.width)).rounded())
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        let small = UIGraphicsImageRenderer(size: size, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+        let small = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
         guard let input = CIImage(image: small) else { return nil }
         let output = input.clampedToExtent()
             .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 14])
@@ -155,14 +164,20 @@ enum WallpaperStore {
     /// Render for an appearance; `completion` runs on the main thread (nil
     /// when no wallpaper is set). Cached until the image or effect changes.
     static func render(dark: Bool, completion: @escaping (Render?) -> Void) {
-        guard isSet else { return completion(nil) }
+        guard isSet else {
+            completion(nil)
+            return
+        }
         let effect = self.effect
         let key = "\(Self.key(effect))-\(dark)"
         lock.lock()
         let hit = cache[key]
         let gen = generation
         lock.unlock()
-        if let hit { return completion(hit) }
+        if let hit {
+            completion(hit)
+            return
+        }
         let traits = UITraitCollection(userInterfaceStyle: dark ? .dark : .light)
         let text = rgb(Palette.text.resolvedColor(with: traits))
         let secondary = rgb(Palette.secondary.resolvedColor(with: traits))
@@ -170,14 +185,20 @@ enum WallpaperStore {
         let url = imageURL
         queue.async {
             guard let source = UIImage(contentsOfFile: url.path)?.cgImage,
-                  let (pixels, w, h) = rgba(source, maxSide: 1200)
+                let (pixels, w, h) = rgba(source, maxSide: 1_200)
             else { return DispatchQueue.main.async { completion(nil) } }
             let out = wallpaperRender(rgba: pixels, width: UInt32(w), height: UInt32(h), effect: effect, light: !dark)
             // Text sits over the top of the artwork: primary text keeps 4.5:1,
             // secondary 3:1 against the artwork's worst pixels there.
             let region: Float = 0.6
-            let primary = wallpaperSafeOpacity(rgba: out, width: UInt32(w), height: UInt32(h), goal: WallpaperContrast(textRgb: text, backgroundRgb: background, region: region, minContrast: 4.5, maxOpacity: 1))
-            let muted = wallpaperSafeOpacity(rgba: out, width: UInt32(w), height: UInt32(h), goal: WallpaperContrast(textRgb: secondary, backgroundRgb: background, region: region, minContrast: 3, maxOpacity: 1))
+            let primary = wallpaperSafeOpacity(
+                rgba: out, width: UInt32(w), height: UInt32(h),
+                goal: WallpaperContrast(
+                    textRgb: text, backgroundRgb: background, region: region, minContrast: 4.5, maxOpacity: 1))
+            let muted = wallpaperSafeOpacity(
+                rgba: out, width: UInt32(w), height: UInt32(h),
+                goal: WallpaperContrast(
+                    textRgb: secondary, backgroundRgb: background, region: region, minContrast: 3, maxOpacity: 1))
             guard let image = cgImage(out, w, h) else { return DispatchQueue.main.async { completion(nil) } }
             let render = Render(image: UIImage(cgImage: image), opacity: CGFloat(min(primary, muted)))
             lock.lock()
@@ -188,17 +209,25 @@ enum WallpaperStore {
     }
 
     private static func rgb(_ c: UIColor) -> UInt32 {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
         c.getRed(&r, green: &g, blue: &b, alpha: &a)
         return UInt32(r * 255) << 16 | UInt32(g * 255) << 8 | UInt32(b * 255)
     }
 
     private static func rgba(_ image: CGImage, maxSide: CGFloat) -> (Data, Int, Int)? {
         let scale = min(1, maxSide / CGFloat(max(image.width, image.height)))
-        let w = max(1, Int(CGFloat(image.width) * scale)), h = max(1, Int(CGFloat(image.height) * scale))
+        let w = max(1, Int(CGFloat(image.width) * scale))
+        let h = max(1, Int(CGFloat(image.height) * scale))
         var data = Data(count: w * h * 4)
         let ok = data.withUnsafeMutableBytes { buf -> Bool in
-            guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            guard
+                let ctx = CGContext(
+                    data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
             ctx.interpolationQuality = .high
             ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
             return true
@@ -208,7 +237,11 @@ enum WallpaperStore {
 
     private static func cgImage(_ data: Data, _ w: Int, _ h: Int) -> CGImage? {
         guard let provider = CGDataProvider(data: data as CFData) else { return nil }
-        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        return CGImage(
+            width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider,
+            decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
 }
 
@@ -237,12 +270,14 @@ final class WallpaperView: UIView {
         addSubview(imageView)
         layer.mask = maskLayer
         alpha = 0
-        observer = NotificationCenter.default.addObserver(forName: WallpaperStore.didChange, object: nil, queue: .main) { [weak self] _ in self?.reload() }
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: WallpaperView, _) in self.reload() }
+        observer = NotificationCenter.default.addObserver(forName: WallpaperStore.didChange, object: nil, queue: .main)
+        { [weak self] _ in self?.reload() }
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _) in self.reload() }
         accessibilityIdentifier = "wallpaper"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     deinit { observer.map(NotificationCenter.default.removeObserver) }
 
@@ -310,7 +345,9 @@ final class WallpaperView: UIView {
                 colors.append(UIColor(white: 0, alpha: a).cgColor)
                 locations.append(t)
             }
-            if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: locations) {
+            if let g = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: locations)
+            {
                 c.drawLinearGradient(g, start: .zero, end: CGPoint(x: 0, y: size.height), options: [])
             }
             if let cut = cutout, cut.intersects(CGRect(origin: .zero, size: size)) {
@@ -341,7 +378,9 @@ final class WallpaperPicker: NSObject, PHPickerViewControllerDelegate {
 
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true)
-        guard let provider = results.first?.itemProvider, provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) else {
+        guard let provider = results.first?.itemProvider,
+            provider.hasItemConformingToTypeIdentifier(UTType.image.identifier)
+        else {
             retainSelf = nil
             return
         }

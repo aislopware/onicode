@@ -13,10 +13,14 @@ Environment: MUSE_FAKE_SCENARIO (session runs) and MUSE_FAKE_LOG (a directory
 receiving launch.ndjson and inbound.ndjson). A read-only discovery host answers
 model/list from models.json beside this script.
 """
+
+from __future__ import annotations
+
 import json
 import os
 import sys
 import time
+from pathlib import Path
 
 args = sys.argv[1:]
 if args[:1] == ["--version"]:
@@ -26,24 +30,30 @@ if args[:1] == ["--version"]:
 log = os.environ.get("MUSE_FAKE_LOG")
 
 
-def record(name, value):
+def record(name: str, value: object) -> None:
+    """Append a JSON line to MUSE_FAKE_LOG/<name>, when the test asked for a log."""
     if log:
-        with open(os.path.join(log, name), "a") as f:
+        with (Path(log) / name).open("a") as f:
             f.write(json.dumps(value) + "\n")
 
 
-record("launch.ndjson", {
-    "args": args,
-    "env": {k: os.environ.get(k) for k in ("META_API_KEY", "MUSE_NO_AUTO_UPDATE")},
-})
+record(
+    "launch.ndjson",
+    {
+        "args": args,
+        "env": {k: os.environ.get(k) for k in ("META_API_KEY", "MUSE_NO_AUTO_UPDATE")},
+    },
+)
 
 
-def write(frame):
+def write(frame: object) -> None:
+    """Write one MSP frame to stdout."""
     sys.stdout.write(json.dumps(frame) + "\n")
     sys.stdout.flush()
 
 
-def read_frame():
+def read_frame() -> dict | None:
+    """Read and log one client frame; None at end of input."""
     line = sys.stdin.readline()
     if not line:
         return None
@@ -52,40 +62,45 @@ def read_frame():
     params = frame.get("params") or {}
     # The real host refuses a sticky workspace-root change on a steer (it may
     # launch no turn to bind it to): fail loudly, as a real run would.
-    if frame.get("method") == "turn/start" and params.get("ifBusy") == "steer" \
-            and "workspaceRoots" in params:
-        sys.stderr.write("Invalid params: workspaceRoots cannot ride ifBusy \"steer\"\n")
+    if frame.get("method") == "turn/start" and params.get("ifBusy") == "steer" and "workspaceRoots" in params:
+        sys.stderr.write('Invalid params: workspaceRoots cannot ride ifBusy "steer"\n')
         sys.exit(97)
     return frame
 
 
 if "--disable-write" in args and not os.environ.get("MUSE_FAKE_SCENARIO"):
     # A read-only discovery host (a title run brings its own scenario).
-    beside = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models.json")
-    models = json.load(open(beside)) if os.path.exists(beside) else {"providerId": "meta", "models": []}
+    beside = Path(__file__).absolute().parent / "models.json"
+    models = json.loads(beside.read_text()) if beside.exists() else {"providerId": "meta", "models": []}
     while True:
         frame = read_frame()
         if frame is None:
             sys.exit(0)
         if frame.get("method") == "initialize":
-            write({"jsonrpc": "2.0", "id": frame["id"], "result": {
-                "schema": {"version": 1, "fingerprint": "sha256:fake"},
-                "grantedCapabilities": []}})
+            write(
+                {
+                    "jsonrpc": "2.0",
+                    "id": frame["id"],
+                    "result": {"schema": {"version": 1, "fingerprint": "sha256:fake"}, "grantedCapabilities": []},
+                }
+            )
         elif frame.get("method") == "model/list":
             write({"jsonrpc": "2.0", "id": frame["id"], "result": models})
 
-steps = [json.loads(line) for line in open(os.environ["MUSE_FAKE_SCENARIO"]) if line.strip()]
+steps = [json.loads(line) for line in Path(os.environ["MUSE_FAKE_SCENARIO"]).read_text().splitlines() if line.strip()]
 values = {}
 buffered = []
 
 
-def matches(frame, method):
+def matches(frame: dict, method: str) -> bool:
+    """Whether `frame` is what an `expect` step waits for (`@reply`: any response)."""
     if method == "@reply":
         return "method" not in frame
     return frame.get("method") == method
 
 
-def take(method):
+def take(method: str) -> dict:
+    """Wait for the expected frame, keeping the ones that arrive before it for later steps."""
     for index, frame in enumerate(buffered):
         if matches(frame, method):
             return buffered.pop(index)
@@ -98,7 +113,8 @@ def take(method):
         buffered.append(frame)
 
 
-def substitute(value):
+def substitute(value: object) -> object:
+    """Replace bound `$NAME` strings anywhere in `value`."""
     if isinstance(value, dict):
         return {k: substitute(v) for k, v in value.items()}
     if isinstance(value, list):

@@ -156,6 +156,7 @@ private struct CallClock: View {
         } else {
             Image(systemName: "ellipsis")
                 .font(.system(size: 13, weight: .semibold))
+                .accessibilityLabel("Connecting")
         }
     }
 }
@@ -167,11 +168,13 @@ private struct MuteControl: View {
 
     var body: some View {
         Button(intent: ToggleVoiceMuteIntent()) {
-            ControlFace(symbol: muted ? "mic.slash.fill" : "mic.fill", label: labeled ? (muted ? "Unmute" : "Mute") : nil)
-                // Plain colors: hierarchical styles turn vibrant on the Lock
-                // Screen material, and the muted disc would lose its ink.
-                .foregroundStyle(muted ? Color(uiColor: .systemBackground) : Color.primary)
-                .background(muted ? Color.primary : Color.primary.opacity(0.14), in: Capsule())
+            ControlFace(
+                symbol: muted ? "mic.slash.fill" : "mic.fill", label: labeled ? (muted ? "Unmute" : "Mute") : nil
+            )
+            // Plain colors: hierarchical styles turn vibrant on the Lock
+            // Screen material, and the muted disc would lose its ink.
+            .foregroundStyle(muted ? Color(uiColor: .systemBackground) : Color.primary)
+            .background(muted ? Color.primary : Color.primary.opacity(0.14), in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(muted ? "Unmute" : "Mute")
@@ -207,6 +210,8 @@ private struct ControlFace: View {
         } else {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .bold))
+                // The button around it carries the label.
+                .accessibilityHidden(true)
                 .frame(width: 44, height: 44)
         }
     }
@@ -222,12 +227,14 @@ private enum Face {
 
 /// Onicode Dark/Light accents (`Palette`), as the app paints them.
 private enum Tone {
-    static let accent = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x8B7CF6) : UIColor(hex: 0x5B43E8) })
-    static let warning = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0xFACC15) : UIColor(hex: 0xA16207) })
+    static let accent = Color(
+        UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x8B7CF6) : UIColor(hex: 0x5B43E8) })
+    static let warning = Color(
+        UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0xFACC15) : UIColor(hex: 0xA16207) })
 }
 
-private extension UIColor {
-    convenience init(hex: UInt32) {
+extension UIColor {
+    fileprivate convenience init(hex: UInt32) {
         self.init(
             red: CGFloat(hex >> 16 & 0xFF) / 255,
             green: CGFloat(hex >> 8 & 0xFF) / 255,

@@ -50,8 +50,8 @@ checkout therefore changes the list without copying paths or entering ports.
 
 ## HTTP and stream transport
 
-On macOS 14 and later, WebKit receives a per-domain HTTP CONNECT configuration
-for preview hostnames, avoiding older macOS DNS behavior without system changes.
+On macOS, WebKit receives a per-domain HTTP CONNECT configuration for preview
+hostnames, so `*.localhost` names reach the proxy without system DNS changes.
 The CONNECT endpoint admits only known preview names at the proxy port, and its
 tunnels share bounded limits and account cancellation. Other website traffic
 retains normal routing.

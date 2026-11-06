@@ -22,7 +22,8 @@ final class VoiceAccessoryView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         var config = UIButton.Configuration.filled()
-        config.image = UIImage(systemName: "waveform", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+        config.image = UIImage(
+            systemName: "waveform", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
         config.baseForegroundColor = Palette.accent
         config.baseBackgroundColor = Palette.accentSoft
         config.cornerStyle = .capsule
@@ -30,10 +31,11 @@ final class VoiceAccessoryView: UIView {
         startButton.accessibilityLabel = "Talk to Codex"
         startButton.accessibilityHint = "Starts a voice call. Touch and hold to choose the device and voice."
         startButton.accessibilityIdentifier = "voice-start"
-        startButton.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            self.onStart?(self.startButton)
-        }, for: .primaryActionTriggered)
+        startButton.addAction(
+            UIAction { [weak self] _ in
+                guard let self else { return }
+                self.onStart?(self.startButton)
+            }, for: .primaryActionTriggered)
 
         orb.isUserInteractionEnabled = false
         title.font = Fonts.ui(.sansMedium, 15)
@@ -49,7 +51,8 @@ final class VoiceAccessoryView: UIView {
             (end, "phone.down.fill", UIColor.white, UIColor.systemRed),
         ] {
             var config = UIButton.Configuration.filled()
-            config.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold))
+            config.image = UIImage(
+                systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold))
             config.baseForegroundColor = tint
             config.baseBackgroundColor = fill
             config.cornerStyle = .capsule
@@ -68,10 +71,11 @@ final class VoiceAccessoryView: UIView {
         strip.isAccessibilityElement = true
         strip.accessibilityTraits = .button
         // A plain UIControl never sends .primaryActionTriggered (only buttons do).
-        strip.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            self.onOpen?(self.orb)
-        }, for: .touchUpInside)
+        strip.addAction(
+            UIAction { [weak self] _ in
+                guard let self else { return }
+                self.onOpen?(self.orb)
+            }, for: .touchUpInside)
 
         for v in [orb, labels, mute, end] as [UIView] {
             v.translatesAutoresizingMaskIntoConstraints = false
@@ -107,7 +111,8 @@ final class VoiceAccessoryView: UIView {
         strip.isHidden = true
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     /// Minimized tab bar: the orb, the clock and hang-up only.
     func setInline(_ inline: Bool) {
@@ -127,9 +132,14 @@ final class VoiceAccessoryView: UIView {
         orb.setLevels(microphone: state?.microphone ?? 0, speaker: state?.speaker ?? 0)
         title.text = state?.work == .awaitingInput ? "Codex needs you" : "Codex"
         title.textColor = state?.work == .awaitingInput ? Palette.warning : Palette.text
-        detail.text = voice.active ? [voice.elapsedText, voice.muted ? "Muted" : nil].compactMap { $0 }.joined(separator: " · ") : "Connecting…"
+        detail.text =
+            voice.active
+            ? [voice.elapsedText, voice.muted ? "Muted" : nil].compactMap(\.self).joined(separator: " · ")
+            : "Connecting…"
         var config = mute.configuration
-        config?.image = UIImage(systemName: voice.muted ? "mic.slash.fill" : "mic.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold))
+        config?.image = UIImage(
+            systemName: voice.muted ? "mic.slash.fill" : "mic.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold))
         config?.baseBackgroundColor = voice.muted ? Palette.text : Palette.controlFill
         config?.baseForegroundColor = voice.muted ? Palette.background : Palette.text
         mute.configuration = config
@@ -172,14 +182,18 @@ final class VoiceBarItem {
             orb.widthAnchor.constraint(equalToConstant: 32),
             orb.heightAnchor.constraint(equalToConstant: 32),
         ])
-        button.setImage(UIImage(systemName: "waveform", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)), for: .normal)
+        button.setImage(
+            UIImage(
+                systemName: "waveform", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+            ), for: .normal)
         button.tintColor = Palette.text
         button.accessibilityIdentifier = "voice-bar"
         item = UIBarButtonItem(customView: button)
-        button.addAction(UIAction { [weak self] _ in
-            guard let self, let host = self.host else { return }
-            host.openVoice(app: app, source: self.button)
-        }, for: .primaryActionTriggered)
+        button.addAction(
+            UIAction { [weak self] _ in
+                guard let self, let host = self.host else { return }
+                host.openVoice(app: app, source: self.button)
+            }, for: .primaryActionTriggered)
         token = app.voice.observe { [weak self] in self?.refresh() }
         refresh()
     }
@@ -198,7 +212,12 @@ final class VoiceBarItem {
         guard shownLive != voice.live else { return }
         shownLive = voice.live
         orb.isHidden = !voice.live
-        button.setImage(voice.live ? nil : UIImage(systemName: "waveform", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)), for: .normal)
+        button.setImage(
+            voice.live
+                ? nil
+                : UIImage(
+                    systemName: "waveform",
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)), for: .normal)
         // Holding the live orb must not offer to change the call's host.
         button.menu = voice.live ? nil : host?.voiceMenu(app: app)
     }

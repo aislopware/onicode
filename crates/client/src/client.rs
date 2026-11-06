@@ -21,7 +21,7 @@ use crate::demo::DemoHost;
 use crate::error::{ClientError, Result};
 use crate::events::{ClientEvent, ClientListener, EventPump};
 use crate::live::LiveBackend;
-use crate::rpc::{FolderListing, ProgressFn, QUEUED_ATTACHMENTS_MIN, RepoRef, capability};
+use crate::rpc::{FolderListing, ProgressFn, RepoRef, capability};
 use crate::session::{HostCapabilities, OutgoingAttachment, RoomState, SessionCore, SessionHandle};
 use crate::workspace::{SearchHit, WorkspaceSnapshot, WorkspaceStore};
 use crate::{lock, now_ms, read, write};
@@ -395,11 +395,6 @@ impl ClientInner {
             queue_attachments: has(capability::MESSAGE_QUEUE_ATTACHMENTS_V1),
             clean_attachment_text: has(capability::MESSAGE_QUEUE_CLEAN_ATTACHMENT_TEXT_V1),
             queue_edit_lease: has(capability::MESSAGE_QUEUE_EDIT_LEASE_V1),
-            queued_attachments: device
-                .version
-                .as_deref()
-                .and_then(onicode_proto::version_triple)
-                .is_some_and(|v| v >= QUEUED_ATTACHMENTS_MIN),
             mid_turn_steering,
             provider_switch: has(capability::PROVIDER_SWITCH_V1),
         }

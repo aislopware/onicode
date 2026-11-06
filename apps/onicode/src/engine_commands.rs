@@ -5,7 +5,7 @@
 
 use onicode_cli::EngineCommand;
 
-use crate::{auth_cli, engine_config_from_env, ipc_cli, plugin_cli};
+use crate::{auth_cli, engine_config_from_env, ipc_cli};
 
 pub fn run_engine_command(command: EngineCommand) -> anyhow::Result<()> {
     match command {
@@ -39,20 +39,6 @@ pub fn run_engine_command(command: EngineCommand) -> anyhow::Result<()> {
             runtime.block_on(ipc_cli::quiesce_cli(config.ipc_port, &config.data_dir))
         }
         EngineCommand::Mcp => crate::run_mcp(),
-        EngineCommand::Plugin(command) => {
-            let runtime = tokio::runtime::Runtime::new()?;
-            let config = engine_config_from_env();
-            runtime.block_on(plugin_cli::run(command, config.ipc_port, &config.data_dir))
-        }
-        EngineCommand::Template(command) => {
-            let runtime = tokio::runtime::Runtime::new()?;
-            let config = engine_config_from_env();
-            runtime.block_on(plugin_cli::run_template(
-                command,
-                config.ipc_port,
-                &config.data_dir,
-            ))
-        }
         EngineCommand::Engine => crate::background::run(),
     }
 }

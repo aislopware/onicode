@@ -117,22 +117,11 @@ pub async fn update(edge_url: &str, check_only: bool) -> anyhow::Result<()> {
             println!("updated {} — relaunch Onicode to finish.", bundle.display());
             Ok(())
         }
-        #[cfg(windows)]
-        InstallKind::WindowsPortable { directory } => {
-            let staged = onicode_update::windows::stage(edge_url, &manifest, &directory).await?;
-            onicode_update::windows::apply(&staged, &directory, false)?;
-            println!(
-                "updated to {} — relaunch Onicode to finish.",
-                manifest.version
-            );
-            Ok(())
-        }
         InstallKind::Unmanaged => {
             bail!(
                 "this binary is not update-managed (source build or hand-copied).\n\
                  Linux: curl -fsSL https://zeron.sh/install.sh | sh, or run install.sh from the release tarball\n\
-                 macOS: download the new Onicode.app dmg, or rebuild from source.\n\
-                 Windows: install with the Onicode setup .exe from {}, or rebuild from source.",
+                 macOS: download the new Onicode.app dmg from {}, or rebuild from source.",
                 onicode_update::LATEST_RELEASE_PAGE
             )
         }

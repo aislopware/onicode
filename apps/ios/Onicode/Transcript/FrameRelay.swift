@@ -11,7 +11,7 @@ final class FrameRelay: LayoutListener, @unchecked Sendable {
         self.apply = apply
     }
 
-    func frameReady(revision: UInt64) {
+    func frameReady(revision _: UInt64) {
         lock.lock()
         let schedule = !scheduled
         scheduled = true

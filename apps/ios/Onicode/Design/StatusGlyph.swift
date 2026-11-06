@@ -21,7 +21,7 @@ enum StatusTone {
 /// main-thread work per frame.
 final class StatusGlyph: UIView {
     enum Kind: Equatable {
-        case none
+        case hidden
         case spinner
         case trailer
         case dot(UIColor)
@@ -32,7 +32,7 @@ final class StatusGlyph: UIView {
     private var cells: [CALayer] = []
     private let checkLayer = CAShapeLayer()
 
-    init(_ kind: Kind = .none) {
+    init(_ kind: Kind = .hidden) {
         self.kind = kind
         super.init(frame: .zero)
         isUserInteractionEnabled = false
@@ -44,7 +44,8 @@ final class StatusGlyph: UIView {
         rebuild()
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var intrinsicContentSize: CGSize { CGSize(width: 12, height: 12) }
 
@@ -67,11 +68,11 @@ final class StatusGlyph: UIView {
     }
 
     private func rebuild() {
-        cells.forEach { $0.removeFromSuperlayer() }
+        for cell in cells { cell.removeFromSuperlayer() }
         cells.removeAll()
         checkLayer.isHidden = true
         switch kind {
-        case .none:
+        case .hidden:
             break
         case .spinner:
             for _ in 0..<6 { cells.append(CALayer()) }
@@ -82,7 +83,7 @@ final class StatusGlyph: UIView {
         case .check:
             checkLayer.isHidden = false
         }
-        cells.forEach { layer.addSublayer($0) }
+        for cell in cells { layer.addSublayer(cell) }
         restyle()
         setNeedsLayout()
     }
@@ -92,17 +93,23 @@ final class StatusGlyph: UIView {
         let c = CGPoint(x: bounds.midX, y: bounds.midY)
         switch kind {
         case .spinner:
-            let d: CGFloat = 3.5, gap: CGFloat = 1.5
-            let ox = c.x - (d * 2 + gap) / 2, oy = c.y - (d * 3 + gap * 2) / 2
+            let d: CGFloat = 3.5
+            let gap: CGFloat = 1.5
+            let ox = c.x - (d * 2 + gap) / 2
+            let oy = c.y - (d * 3 + gap * 2) / 2
             for (i, cell) in cells.enumerated() {
-                cell.frame = CGRect(x: ox + CGFloat(i % 2) * (d + gap), y: oy + CGFloat(i / 2) * (d + gap), width: d, height: d)
+                cell.frame = CGRect(
+                    x: ox + CGFloat(i % 2) * (d + gap), y: oy + CGFloat(i / 2) * (d + gap), width: d, height: d)
                 cell.cornerRadius = d / 2
             }
         case .trailer:
-            let d: CGFloat = 3.5, gap: CGFloat = 1.75
+            let d: CGFloat = 3.5
+            let gap: CGFloat = 1.75
             let side = d * 3 + gap * 2
             for (i, cell) in cells.enumerated() {
-                cell.frame = CGRect(x: c.x - side / 2 + CGFloat(i % 3) * (d + gap), y: c.y - side / 2 + CGFloat(i / 3) * (d + gap), width: d, height: d)
+                cell.frame = CGRect(
+                    x: c.x - side / 2 + CGFloat(i % 3) * (d + gap), y: c.y - side / 2 + CGFloat(i / 3) * (d + gap),
+                    width: d, height: d)
                 cell.cornerRadius = d / 2
             }
         case .dot:
@@ -118,7 +125,7 @@ final class StatusGlyph: UIView {
             p.addLine(to: CGPoint(x: o.x + 12.5 * s, y: o.y + 4.5 * s))
             checkLayer.frame = bounds
             checkLayer.path = p.cgPath
-        case .none:
+        case .hidden:
             break
         }
     }
@@ -136,7 +143,7 @@ final class StatusGlyph: UIView {
     private func restyle() {
         let reduce = UIAccessibility.isReduceMotionEnabled
         switch kind {
-        case .none:
+        case .hidden:
             break
         case let .dot(color):
             cells.first?.backgroundColor = color.resolvedColor(with: traitCollection).cgColor
@@ -182,9 +189,10 @@ final class PRBadgeView: UIView {
         isUserInteractionEnabled = false
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    static func tone(_ state: SessionRowVM.PR) -> UIColor {
+    static func tone(_ state: SessionRowVM.PullRequestState) -> UIColor {
         switch state {
         case .open: Palette.success
         case .merged: Palette.accent
@@ -193,7 +201,7 @@ final class PRBadgeView: UIView {
         }
     }
 
-    func configure(number: UInt64, state: SessionRowVM.PR, size: CGFloat = 11) {
+    func configure(number: UInt64, state: SessionRowVM.PullRequestState, size: CGFloat = 11) {
         fontSize = size
         let tone = Self.tone(state)
         backgroundColor = tone.withAlphaComponent(0.08)
@@ -202,7 +210,13 @@ final class PRBadgeView: UIView {
         label.font = Fonts.ui(.monoMedium, size)
         label.textColor = tone.withAlphaComponent(0.85)
         label.text = "\(number)"
-        let word = switch state { case .open: "open"; case .merged: "merged"; case .closed: "closed"; case .draft: "draft" }
+        let word =
+            switch state {
+            case .open: "open"
+            case .merged: "merged"
+            case .closed: "closed"
+            case .draft: "draft"
+            }
         accessibilityLabel = "Pull request \(number), \(word)"
         invalidateIntrinsicContentSize()
         setNeedsLayout()
@@ -219,7 +233,8 @@ final class PRBadgeView: UIView {
         let pad = (fontSize * 0.45).rounded()
         layer.cornerRadius = (fontSize * 0.45).rounded()
         icon.frame = CGRect(x: pad, y: 0, width: fontSize, height: bounds.height)
-        label.frame = CGRect(x: icon.frame.maxX + 3, y: 0, width: bounds.width - icon.frame.maxX - 3 - pad + 1, height: bounds.height)
+        label.frame = CGRect(
+            x: icon.frame.maxX + 3, y: 0, width: bounds.width - icon.frame.maxX - 3 - pad + 1, height: bounds.height)
     }
 }
 
@@ -233,13 +248,18 @@ enum PRIcon {
         let img = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { ctx in
             let p = UIBezierPath()
             for c in [CGPoint(x: 6, y: 5), CGPoint(x: 6, y: 19), CGPoint(x: 18, y: 19)] {
-                p.append(UIBezierPath(arcCenter: CGPoint(x: c.x * s, y: c.y * s), radius: 2.25 * s, startAngle: 0, endAngle: .pi * 2, clockwise: true))
+                p.append(
+                    UIBezierPath(
+                        arcCenter: CGPoint(x: c.x * s, y: c.y * s), radius: 2.25 * s, startAngle: 0, endAngle: .pi * 2,
+                        clockwise: true))
             }
             p.move(to: CGPoint(x: 6 * s, y: 7.25 * s))
             p.addLine(to: CGPoint(x: 6 * s, y: 16.75 * s))
             p.move(to: CGPoint(x: 15 * s, y: 5 * s))
             p.addLine(to: CGPoint(x: 15.75 * s, y: 5 * s))
-            p.addArc(withCenter: CGPoint(x: 15.75 * s, y: 7.25 * s), radius: 2.25 * s, startAngle: -.pi / 2, endAngle: 0, clockwise: true)
+            p.addArc(
+                withCenter: CGPoint(x: 15.75 * s, y: 7.25 * s), radius: 2.25 * s, startAngle: -.pi / 2, endAngle: 0,
+                clockwise: true)
             p.addLine(to: CGPoint(x: 18 * s, y: 16.75 * s))
             p.move(to: CGPoint(x: 12.75 * s, y: 7.75 * s))
             p.addLine(to: CGPoint(x: 15.25 * s, y: 5 * s))

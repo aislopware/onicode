@@ -18,8 +18,6 @@
 //!   `osascript`, attributed to Script Editor (cosmetics only).
 //! - Linux: `notify-send` (libnotify's CLI, present on every mainstream
 //!   desktop).
-//! - Windows: no-op for now — toasts require a registered AppUserModelID
-//!   (an installer concern); the app's chime still covers it.
 //! - `ONICODE_DISABLE_NOTIFICATIONS` env kill-switch (callers also check the
 //!   `notificationsEnabled` setting);
 //! - failures are logged and swallowed — a missing notifier must never

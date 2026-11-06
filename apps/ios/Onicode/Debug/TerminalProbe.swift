@@ -17,7 +17,7 @@ enum TerminalProbe {
     }
 
     private static func note(_ event: String, since start: Date) {
-        let ms = Int(Date().timeIntervalSince(start) * 1000)
+        let ms = Int(Date().timeIntervalSince(start) * 1_000)
         events.append("\(ms)ms \(event)")
         NSLog("E2E-TERMINAL %@", "\(ms)ms \(event)")
         save()
@@ -51,13 +51,17 @@ enum TerminalProbe {
             if host != nil { break }
             try? await Task.sleep(for: .milliseconds(250))
         }
-        guard let host else { return note("no online host", since: start) }
+        guard let host else {
+            note("no online host", since: start)
+            return
+        }
         note("host online: \(host.id)", since: start)
         var draft = NewSessionDraft()
         draft.hostId = host.id
         draft.harness = "mock"
         guard let chatId = app.createSession(draft: draft, text: "e2e terminal", images: []) else {
-            return note("couldn't create a chat", since: start)
+            note("couldn't create a chat", since: start)
+            return
         }
         note("chat \(chatId)", since: start)
         let opened = Date()
@@ -65,9 +69,10 @@ enum TerminalProbe {
         do {
             tab = try await app.terminals.open(chatId: chatId, cols: 80, rows: 24)
         } catch {
-            return note("open failed: \(error)", since: start)
+            note("open failed: \(error)", since: start)
+            return
         }
-        note("terminal open (\(Int(Date().timeIntervalSince(opened) * 1000))ms)", since: start)
+        note("terminal open (\(Int(Date().timeIntervalSince(opened) * 1_000))ms)", since: start)
         router?.openSession(chatId)
         // Put the terminal itself on screen, as a person would open it.
         Task {
@@ -81,7 +86,7 @@ enum TerminalProbe {
             let text = tab.session.text(all: false)
             if !firstOutput, !text.isEmpty {
                 firstOutput = true
-                note("first output (\(Int(Date().timeIntervalSince(opened) * 1000))ms after open)", since: start)
+                note("first output (\(Int(Date().timeIntervalSince(opened) * 1_000))ms after open)", since: start)
             }
             if tab.direct != direct {
                 direct = tab.direct
@@ -99,11 +104,11 @@ enum TerminalProbe {
                 let path = tab.direct ? "direct" : "relay"
                 let sent = CACurrentMediaTime()
                 tab.session.typeText(text: "Q", modifiers: KeyModifiers(ctrl: false, alt: false, shift: false))
-                for _ in 0..<3000 {
+                for _ in 0..<3_000 {
                     // The predictor paints ahead in the frame, not the text:
                     // this counts the host's own echo.
                     if tab.session.text(all: false).filter({ $0 == "Q" }).count > before {
-                        samples.append((path, (CACurrentMediaTime() - sent) * 1000))
+                        samples.append((path, (CACurrentMediaTime() - sent) * 1_000))
                         break
                     }
                     try? await Task.sleep(for: .milliseconds(1))
@@ -131,7 +136,8 @@ enum TerminalProbe {
             ]
         }
         note("samples done", since: start)
-        tab.session.typeText(text: "echo e2e-$((6*7))\n", modifiers: KeyModifiers(ctrl: false, alt: false, shift: false))
+        tab.session.typeText(
+            text: "echo e2e-$((6*7))\n", modifiers: KeyModifiers(ctrl: false, alt: false, shift: false))
         try? await Task.sleep(for: .seconds(1))
         log["ran_command"] = tab.session.text(all: false).contains("e2e-42")
         note("done", since: start)

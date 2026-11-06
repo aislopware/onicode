@@ -11,7 +11,6 @@ onicode-launch.workspace = true
 alacritty_terminal.workspace = true
 onicode-preview.workspace = true
 onicode-proto.workspace = true
-onicode-theme.workspace = true
 onicode-doc.workspace = true
 onicode-sync.workspace = true
 onicode-harness.workspace = true
@@ -20,9 +19,6 @@ onicode-rpc.workspace = true
 onicode-update.workspace = true
 onicode-notify.workspace = true
 onicode-visual.workspace = true
-# Plugin services (plugins/service): a headless Luau VM per plugin, the
-# same mlua and Luau onicode-visual already links (no new crate).
-mlua = { version = "0.12", features = ["luau"] }
 loro.workspace = true
 tokio.workspace = true
 futures.workspace = true
@@ -47,8 +43,6 @@ gethostname.workspace = true
 tokio-util = { workspace = true, features = ["rt"] }
 sha2.workspace = true
 reqwest.workspace = true
-# The rules plugins are held to (paths, programs, network), shared with apps/zgx.
-onicode-plugin-guard.workspace = true
 ignore.workspace = true
 fff-search.workspace = true
 
@@ -57,10 +51,6 @@ tempfile.workspace = true
 # `show_image` reads a shown image's size from its header (already in the
 # tree with these decoders via onicode-ui).
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
-
-[target.'cfg(windows)'.dependencies]
-dunce = "1"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Pipes", "Win32_System_Threading"] }
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

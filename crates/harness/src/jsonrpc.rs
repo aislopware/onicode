@@ -77,11 +77,6 @@ pub(crate) struct RpcClient {
     writer: mpsc::UnboundedSender<String>,
     closed: Arc<AtomicBool>,
     voice_router: Arc<Mutex<Option<VoiceRouter>>>,
-    /// Ends the writer task (and with it the child's stdin) once the lines
-    /// already queued are written, whichever clones are still alive.
-    /// Only Windows' teardown needs it.
-    #[cfg_attr(not(any(windows, test)), allow(dead_code))]
-    close_stdin: Arc<tokio::sync::Notify>,
 }
 
 impl RpcClient {
@@ -100,13 +95,11 @@ impl RpcClient {
         let pending: Pending = Arc::default();
         let (incoming_tx, incoming_rx) = mpsc::channel(256);
         let closed = Arc::new(AtomicBool::new(false));
-        let close_stdin = Arc::new(tokio::sync::Notify::new());
         tokio::spawn(write_loop(
             stdin,
             writer_rx,
             Arc::clone(&pending),
             closed.clone(),
-            close_stdin.clone(),
         ));
         let voice_router = Arc::default();
         tokio::spawn(read_loop(
@@ -124,7 +117,6 @@ impl RpcClient {
                 writer: writer_tx,
                 closed,
                 voice_router,
-                close_stdin,
             },
             incoming_rx,
         )
@@ -161,21 +153,6 @@ impl RpcClient {
 
     pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::Acquire)
-    }
-
-    /// Call before [`crate::shutdown_child`] / [`crate::shutdown_agent`]:
-    /// Windows' teardown gives the child its grace to exit on stdin EOF, and
-    /// the writer task keeps stdin open while any clone of this client is
-    /// alive. Unix teardown signals the child instead; its order is unchanged.
-    pub fn close_stdin_for_teardown(&self) {
-        #[cfg(windows)]
-        self.close_stdin();
-    }
-
-    /// Close the child's stdin once the lines already queued are written.
-    #[cfg(any(windows, test))]
-    fn close_stdin(&self) {
-        self.close_stdin.notify_one();
     }
 
     /// Send a request and await its response (resolved by the reader task).
@@ -257,16 +234,9 @@ async fn write_loop(
     mut rx: mpsc::UnboundedReceiver<String>,
     pending: Pending,
     closed: Arc<AtomicBool>,
-    close: Arc<tokio::sync::Notify>,
 ) {
-    loop {
-        // Queued lines first: a close only lands once they are written.
-        let line = tokio::select! {
-            biased;
-            line = rx.recv() => line,
-            () = close.notified() => None,
-        };
-        let Some(line) = line else { return };
+    while let Some(line) = rx.recv().await {
+        let line = crate::lossy_lines::ndjson_safe(&line);
         let write = async {
             stdin.write_all(line.as_bytes()).await?;
             stdin.write_all(b"\n").await?;
@@ -465,7 +435,6 @@ mod tests {
             writer,
             closed: Arc::new(AtomicBool::new(false)),
             voice_router: Arc::default(),
-            close_stdin: Arc::default(),
         };
         client.notify("session/cancel", Some(json!({"sessionId": "parent"})));
         let frame: Value = serde_json::from_str(&receiver.try_recv().unwrap()).unwrap();
@@ -485,7 +454,6 @@ mod tests {
             writer: mpsc::unbounded_channel().0,
             closed: Arc::new(AtomicBool::new(false)),
             voice_router: Arc::default(),
-            close_stdin: Arc::default(),
         };
         let (_old_rx, old) = client.subscribe_voice(|| {});
         let (_new_rx, new) = client.subscribe_voice(|| {});
@@ -504,7 +472,6 @@ mod tests {
             writer,
             closed: Arc::new(AtomicBool::new(true)),
             voice_router: Arc::default(),
-            close_stdin: Arc::default(),
         };
         let result = tokio::time::timeout(
             std::time::Duration::from_millis(100),
@@ -538,7 +505,7 @@ mod tests {
     #[tokio::test]
     async fn void_response_resolves_its_caller_with_null() {
         let (_child, client, _incoming) =
-            scripted_child(r#"read line; echo '{"jsonrpc":"2.0","id":1}'; sleep 5"#);
+            scripted_child(r#"read line; echo '{"jsonrpc":"2.0","id":1}'; exec sleep 5"#);
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(3),
             client.request("session/set_mode", json!({})),
@@ -553,7 +520,7 @@ mod tests {
     async fn failed_write_fails_pending_requests_while_stdout_stays_open() {
         // The child closes stdin but keeps stdout open, like a crashed adapter
         // whose descendant still holds the pipe.
-        let (_child, client, _incoming) = scripted_child("exec 0<&-; sleep 5");
+        let (_child, client, _incoming) = scripted_child("exec 0<&-; exec sleep 5");
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(3),
@@ -591,29 +558,6 @@ mod tests {
         ] {
             assert!(!transport_lost(&refused), "{refused}");
         }
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn closing_stdin_writes_what_was_queued_then_sends_eof() {
-        // Echoes stdin back and exits on EOF, even with a clone still alive.
-        let (mut child, client, mut incoming) = scripted_child("cat");
-        let clone = client.clone();
-        client.notify("one", None);
-        client.notify("two", None);
-        client.close_stdin();
-        let status = tokio::time::timeout(std::time::Duration::from_secs(3), child.wait())
-            .await
-            .expect("stdin EOF ends the child")
-            .unwrap();
-        assert!(status.success());
-        for method in ["one", "two"] {
-            match incoming.recv().await {
-                Some(Incoming::Notification { method: got, .. }) => assert_eq!(got, method),
-                other => panic!("expected {method}, got {other:?}"),
-            }
-        }
-        drop(clone);
     }
 
     #[test]

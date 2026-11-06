@@ -131,7 +131,6 @@ impl Suite {
             attachments: vec![],
             worktree: None,
             resume: None,
-            extra_mcp: Vec::new(),
         }
     }
 
@@ -1203,7 +1202,6 @@ fn restart_request(name: &str, cwd: &str, prompt: &str) -> RunRequest {
         attachments: vec![],
         worktree: None,
         resume: None,
-        extra_mcp: Vec::new(),
     }
 }
 

@@ -36,7 +36,7 @@
 //! stay covered throughout and nothing needs re-capturing. If the bridge cannot
 //! be opened, the pass ends by sending a rescan to every registration that was
 //! live across it (one per registration per pass; callers debounce). inotify
-//! and Windows watches are per path and never restart, so neither applies.
+//! watches are per path and never restart, so this does not apply there.
 //!
 //! OS watches are the minimal cover of the registrations: identical paths are
 //! installed once (recursive if any registration wants recursion) and a path
@@ -69,7 +69,7 @@ const STREAM_RESTARTS_ON_CHANGE: bool = cfg!(target_os = "macos");
 /// alias that checkout's watch descriptors: its events would be relabelled
 /// and unwatching either root would strip the other. Those backends get one
 /// watcher per installed root instead, exactly as before the hub.
-const SHARED_WATCHER: bool = cfg!(any(target_os = "macos", windows));
+const SHARED_WATCHER: bool = cfg!(target_os = "macos");
 
 type Handler = Arc<dyn Fn(&notify::Event) + Send + Sync>;
 

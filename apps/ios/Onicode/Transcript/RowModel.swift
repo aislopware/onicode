@@ -32,11 +32,13 @@ final class RowModel: @unchecked Sendable {
         for (i, run) in display.runs.enumerated() {
             let range = NSRange(location: Int(run.start), length: Int(run.len))
             if range.location + range.length <= text.length, let font = fonts.font(run.style) {
-                let s = NSAttributedString(string: text.substring(with: range), attributes: [
-                    .font: font.font,
-                    .ligature: font.ligatures ? 1 : 0,
-                    NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
-                ])
+                let s = NSAttributedString(
+                    string: text.substring(with: range),
+                    attributes: [
+                        .font: font.font,
+                        .ligature: font.ligatures ? 1 : 0,
+                        NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
+                    ])
                 lines.append(CTLineCreateWithAttributedString(s))
             } else {
                 lines.append(nil)
@@ -76,9 +78,13 @@ final class RowModel: @unchecked Sendable {
         self.fadedRun = faded
     }
 
+    // swiftlint:disable force_unwrapping - two-stop gray gradients from constants always build
     /// Alpha ramp used to erase text across a fade (clear → opaque).
-    private static let ramp = CGGradient(colorSpace: CGColorSpaceCreateDeviceGray(), colorComponents: [0, 0, 0, 1], locations: [0, 1], count: 2)!
-    private static let rampBottom = CGGradient(colorSpace: CGColorSpaceCreateDeviceGray(), colorComponents: [0, 0, 0, 0.92], locations: [0, 1], count: 2)!
+    private static let ramp = CGGradient(
+        colorSpace: CGColorSpaceCreateDeviceGray(), colorComponents: [0, 0, 0, 1], locations: [0, 1], count: 2)!
+    private static let rampBottom = CGGradient(
+        colorSpace: CGColorSpaceCreateDeviceGray(), colorComponents: [0, 0, 0, 0.92], locations: [0, 1], count: 2)!
+    // swiftlint:enable force_unwrapping
 
     private func drawRun(_ i: Int, _ line: CTLine, in ctx: CGContext, hairline: CGFloat) {
         let run = display.runs[i]
@@ -149,7 +155,8 @@ final class RowModel: @unchecked Sendable {
             let rect = CGRect(x: CGFloat(f.x), y: CGFloat(f.y), width: CGFloat(f.w), height: CGFloat(f.h))
             ctx.saveGState()
             if f.edge == .trailing {
-                ctx.clip(to: CGRect(x: -100_000, y: rect.minY - 40, width: 100_000 + rect.maxX, height: rect.height + 80))
+                ctx.clip(
+                    to: CGRect(x: -100_000, y: rect.minY - 40, width: 100_000 + rect.maxX, height: rect.height + 80))
             }
             ctx.beginTransparencyLayer(auxiliaryInfo: nil)
             for i in runs {
@@ -160,12 +167,15 @@ final class RowModel: @unchecked Sendable {
             case .trailing:
                 ctx.saveGState()
                 ctx.clip(to: CGRect(x: rect.minX, y: rect.minY - 40, width: rect.width, height: rect.height + 80))
-                ctx.drawLinearGradient(Self.ramp, start: CGPoint(x: rect.minX, y: 0), end: CGPoint(x: rect.maxX, y: 0), options: [])
+                ctx.drawLinearGradient(
+                    Self.ramp, start: CGPoint(x: rect.minX, y: 0), end: CGPoint(x: rect.maxX, y: 0), options: [])
                 ctx.restoreGState()
             case .bottom:
                 ctx.saveGState()
                 ctx.clip(to: CGRect(x: rect.minX - 40, y: rect.minY, width: rect.width + 80, height: rect.height + 40))
-                ctx.drawLinearGradient(Self.rampBottom, start: CGPoint(x: 0, y: rect.minY), end: CGPoint(x: 0, y: rect.maxY), options: [.drawsAfterEndLocation])
+                ctx.drawLinearGradient(
+                    Self.rampBottom, start: CGPoint(x: 0, y: rect.minY), end: CGPoint(x: 0, y: rect.maxY),
+                    options: [.drawsAfterEndLocation])
                 ctx.restoreGState()
             }
             ctx.endTransparencyLayer()
@@ -197,7 +207,9 @@ final class RowModel: @unchecked Sendable {
                 let color = Palette.color(b.color).cgColor
                 switch b.style {
                 case .fill:
-                    let path = CGPath(roundedRect: rect, cornerWidth: CGFloat(b.radius), cornerHeight: CGFloat(b.radius), transform: nil)
+                    let path = CGPath(
+                        roundedRect: rect, cornerWidth: CGFloat(b.radius), cornerHeight: CGFloat(b.radius),
+                        transform: nil)
                     ctx.setFillColor(color)
                     ctx.addPath(path)
                     ctx.fillPath()

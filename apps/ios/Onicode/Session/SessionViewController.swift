@@ -38,7 +38,7 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
         hidesBottomBarWhenPushed = true
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder _: NSCoder) { fatalError() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -64,9 +64,7 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
         self.voiceBar = voiceBar
         // A custom view reads as horizontal-only; on iPhone Duo it joins ⋯ in
         // the vertical bar.
-        #if compiler(>=6.4)
-        if #available(iOS 27.1, *) { voiceBar.item.axisBehavior = .verticalPreferred }
-        #endif
+        voiceBar.item.axisBehavior = .verticalPreferred
         let menu = navigationItem.rightBarButtonItem!
         let companions = companionsItem!
         let syncVoice = { [weak self, weak voiceBar] in
@@ -336,7 +334,8 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
 
     func openSideChat(_ id: String) {
         guard let vc = SessionViewController(app: app, chatId: id) else {
-            return Toast.show("Couldn't open the side chat", in: view.window)
+            Toast.show("Couldn't open the side chat", in: view.window)
+            return
         }
         // Beside or above its parent, never the split's current session.
         vc.isCompanion = true
@@ -448,7 +447,8 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
             self.list.alpha = 1
             self.loader.alpha = 0
         }
-        if UIAccessibility.isReduceMotionEnabled { return reveal() }
+        if UIAccessibility.isReduceMotionEnabled { reveal()
+return }
         UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut, .allowUserInteraction], animations: reveal)
     }
 
@@ -588,7 +588,7 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
     }
 
     /// Controls in the transcript (tool rows, copy, disclosure) keep their taps.
-    func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    func gestureRecognizer(_: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         var v = touch.view
         while let view = v, view !== list {
             if view is UIControl { return false }
@@ -600,7 +600,7 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
     /// Putting the composer away rides along with the transcript's own taps
     /// (links, images). Tap recognizers are exclusive by default: this one
     /// won and every link tap was dropped.
-    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+    func gestureRecognizer(_: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
         other.view.map { $0 === list || $0.isDescendant(of: list) } ?? false
     }
 
@@ -703,8 +703,8 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
             reportedOpen = true
             showTranscriptIfReady()
             // Open latency: push → first measured frame on screen.
-            let ms = (CACurrentMediaTime() - openedAt) * 1000
-            let json = String(format: "{\"openMs\":%.1f,\"rows\":%d,\"layoutPassMs\":%.2f}", ms, frame.rowCount(), Double(frame.buildMicros()) / 1000)
+            let ms = (CACurrentMediaTime() - openedAt) * 1_000
+            let json = String(format: "{\"openMs\":%.1f,\"rows\":%d,\"layoutPassMs\":%.2f}", ms, frame.rowCount(), Double(frame.buildMicros()) / 1_000)
             NSLog("OPEN %@", json)
             if ProcessInfo.processInfo.arguments.contains("-measureopen") {
                 let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -965,7 +965,7 @@ final class CloudCreditsNotice: UIView {
         accessibilityIdentifier = "cloud-credits-notice"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder _: NSCoder) { fatalError() }
 
     /// A send was refused: a short shake and a warning tap point at it.
     func nudge() {
@@ -1015,7 +1015,7 @@ final class StatusPill: UIControl {
         addAction(UIAction { [weak self] _ in self?.onTap?() }, for: .touchUpInside)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder _: NSCoder) { fatalError() }
 
     private func update() {
         timer?.invalidate()
@@ -1053,7 +1053,7 @@ final class StatusPill: UIControl {
     }
 
     static func elapsed(_ s: Int) -> String {
-        s < 60 ? "\(s)s" : s < 3600 ? "\(s / 60)m \(s % 60)s" : "\(s / 3600)h \(s / 60 % 60)m"
+        s < 60 ? "\(s)s" : s < 3_600 ? "\(s / 60)m \(s % 60)s" : "\(s / 3_600)h \(s / 60 % 60)m"
     }
 
     override func willMove(toWindow newWindow: UIWindow?) {

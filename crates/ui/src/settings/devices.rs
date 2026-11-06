@@ -269,7 +269,6 @@ pub fn platform_label(platform: &str) -> &str {
     match platform {
         "macos" | "darwin" => "macOS",
         "linux" => "Linux",
-        "windows" => "Windows",
         "web" => "Web",
         "ios" => "iOS",
         "android" => "Android",

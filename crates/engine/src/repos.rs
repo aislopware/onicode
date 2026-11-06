@@ -76,18 +76,9 @@ pub struct CheckoutIdentity {
 
 /// Best-effort home directory (the `ListFolders` default and worktree root base).
 pub(crate) fn home_dir() -> PathBuf {
-    let variables = if cfg!(windows) {
-        ["USERPROFILE", "HOME"]
-    } else {
-        ["HOME", "USERPROFILE"]
-    };
-    variables
-        .into_iter()
-        .find_map(|name| {
-            std::env::var_os(name)
-                .filter(|value| !value.is_empty())
-                .map(PathBuf::from)
-        })
+    std::env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"))
 }
 
@@ -131,14 +122,7 @@ pub(crate) fn session_home_dir() -> Result<PathBuf, &'static str> {
 fn session_home_dir_with(
     mut env: impl FnMut(&str) -> Option<std::ffi::OsString>,
 ) -> Result<PathBuf, &'static str> {
-    #[cfg(windows)]
-    let names = ["USERPROFILE", "HOME"];
-    #[cfg(not(windows))]
-    let names = ["HOME", "USERPROFILE"];
-    for name in names {
-        let Some(value) = env(name).filter(|value| !value.is_empty()) else {
-            continue;
-        };
+    if let Some(value) = env("HOME").filter(|value| !value.is_empty()) {
         let path = PathBuf::from(value);
         if path.is_absolute() && path.is_dir() && path.to_str().is_some() {
             return Ok(path);
@@ -275,13 +259,6 @@ impl Repos {
     /// Run `git <args>` (optionally under `cwd`), returning trimmed stdout.
     async fn git(&self, args: &[&str], cwd: Option<&Path>) -> Result<String, EngineError> {
         let mut cmd = tokio::process::Command::new("git");
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.as_std_mut().creation_flags(0x08000000);
-            // Let Git handle long native paths without persisting user config.
-            cmd.args(["-c", "core.longpaths=true"]);
-        }
         if let Some(cwd) = cwd {
             cmd.current_dir(cwd);
         }
@@ -315,11 +292,6 @@ impl Repos {
         cwd: Option<&Path>,
     ) -> Result<Option<String>, EngineError> {
         let mut cmd = tokio::process::Command::new("git");
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.as_std_mut().creation_flags(0x08000000);
-        }
         cmd.args(args);
         if let Some(cwd) = cwd {
             cmd.current_dir(cwd);
@@ -1455,14 +1427,8 @@ impl Repos {
         let name =
             name.ok_or_else(|| EngineError::Other("Could not allocate a worktree name".into()))?;
         let path = base.join(&name);
-        #[cfg(windows)]
-        validate_windows_worktree_path(&path.to_string_lossy())?;
         std::fs::create_dir_all(&base)?;
         let branch_name = format!("onicode/{name}");
-        #[cfg(windows)]
-        self.add_worktree_in_two_steps(repo_path, &path, &branch_name, branch)
-            .await?;
-        #[cfg(not(windows))]
         self.git(
             &[
                 "worktree",
@@ -1483,101 +1449,6 @@ impl Repos {
             name,
             checkout_id: Some(checkout.id),
         })
-    }
-
-    /// Git's built-in checkout passes `<destination>/.git` in GIT_DIR, whose
-    /// separate PATH_MAX - 40 check rejects some launchable Windows paths even
-    /// with core.longpaths enabled. Register first, then reset from the new
-    /// checkout using a short, relative GIT_DIR. Keep native add's hook and
-    /// failure semantics: incomplete checkouts are removed, hook failures
-    /// retain the populated worktree (the hook may have written user data).
-    #[cfg(any(windows, test))]
-    async fn add_worktree_in_two_steps(
-        &self,
-        repo_path: &Path,
-        path: &Path,
-        branch_name: &str,
-        base: &str,
-    ) -> Result<(), EngineError> {
-        #[cfg(windows)]
-        let git_path = windows_git_worktree_path(&path.to_string_lossy());
-        #[cfg(not(windows))]
-        let git_path = path.to_string_lossy();
-        self.git(
-            &[
-                "worktree",
-                "add",
-                "--no-checkout",
-                "-b",
-                branch_name,
-                &git_path,
-                base,
-            ],
-            Some(repo_path),
-        )
-        .await?;
-
-        let checkout = async {
-            let head = self
-                .git(
-                    &["--git-dir=.git", "rev-parse", "--verify", "HEAD"],
-                    Some(path),
-                )
-                .await?;
-            self.git(
-                &[
-                    "--git-dir=.git",
-                    "reset",
-                    "--hard",
-                    "--no-recurse-submodules",
-                ],
-                Some(path),
-            )
-            .await?;
-            Ok::<_, EngineError>(head)
-        }
-        .await;
-        let head = match checkout {
-            Ok(head) => head,
-            Err(error) => {
-                // Force is limited to the checkout this call just registered;
-                // a failed reset may have left partially written files. Like
-                // native worktree add, keep the new branch on failure.
-                if let Err(cleanup) = self
-                    .git(
-                        &["worktree", "remove", "--force", &git_path],
-                        Some(repo_path),
-                    )
-                    .await
-                {
-                    return Err(EngineError::Other(format!(
-                        "{error}; could not remove incomplete worktree {}: {cleanup}",
-                        path.display()
-                    )));
-                }
-                return Err(error);
-            }
-        };
-
-        // Match worktree add's null old OID, initial commit, and branch flag.
-        // Let Git find the configured hook and run it from the checkout, with
-        // no explicit GIT_DIR/GIT_WORK_TREE override in the hook environment.
-        let null_oid = "0".repeat(head.len());
-        self.git(
-            &[
-                "hook",
-                "run",
-                "--ignore-missing",
-                "post-checkout",
-                "--",
-                &null_oid,
-                &head,
-                "1",
-            ],
-            Some(path),
-        )
-        .await?;
-        Ok(())
     }
 
     async fn branch_exists(&self, path: &Path, branch: &str) -> bool {
@@ -1861,9 +1732,7 @@ fn list_drives_blocking() -> Vec<DriveEntry> {
     let drives = macos_drives();
     #[cfg(target_os = "linux")]
     let drives = linux_drives(&std::fs::read_to_string("/proc/mounts").unwrap_or_default());
-    #[cfg(windows)]
-    let drives = windows_drives();
-    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     let drives = Vec::new();
     finish_drives(drives)
 }
@@ -1971,21 +1840,6 @@ fn linux_drives(mounts: &str) -> Vec<DriveEntry> {
         path: "/".into(),
     });
     drives
-}
-
-/// Probe the drive letters. `exists` on a wedged network letter can hang —
-/// covered by the caller's disposable-worker timeout.
-#[cfg(windows)]
-fn windows_drives() -> Vec<DriveEntry> {
-    ('A'..='Z')
-        .filter_map(|letter| {
-            let path = format!("{letter}:\\");
-            std::path::Path::new(&path).exists().then(|| DriveEntry {
-                name: format!("{letter}:"),
-                path,
-            })
-        })
-        .collect()
 }
 
 /// Dedupe by mount point (first mention wins — the named row beats a
@@ -2185,13 +2039,12 @@ fn compact_history_commits(
 /// scp-style spellings, a `.git` suffix, a trailing slash, embedded
 /// credentials, and host/owner/name case are all ignored.
 /// The folder a clone of `url` lands in: its last path segment minus
-/// `.git`. Local paths split on `\\` too (a Windows path must not become an
-/// absolute "name" that replaces the destination), and a segment that would
-/// step out of the destination (`.`, `..`) falls back to `repo`.
+/// `.git`. A segment that would step out of the destination (`.`, `..`)
+/// falls back to `repo`.
 fn clone_folder_name(url: &str) -> String {
-    url.trim_end_matches(['/', '\\'])
+    url.trim_end_matches('/')
         .trim_end_matches(".git")
-        .rsplit(['/', '\\', ':'])
+        .rsplit(['/', ':'])
         .next()
         .filter(|s| !s.is_empty() && *s != "." && *s != "..")
         .unwrap_or("repo")
@@ -2252,7 +2105,7 @@ fn search_files_blocking(
             let Ok(relative) = canonical.strip_prefix(&root) else {
                 continue;
             };
-            let relative = relative.to_string_lossy().replace('\\', "/");
+            let relative = relative.to_string_lossy().into_owned();
             if relative.is_empty()
                 || is_git_metadata(&relative)
                 || matches.iter().any(|found| found.path == relative)
@@ -2361,12 +2214,8 @@ fn search_folders_under(
     })
 }
 
-/// Keep canonical index keys internal. Ordinary Windows paths are easier for
-/// browser clients to compare with Home and existing spaces; retain extended
-/// paths when their length or names require them, and for UNC shares.
+/// The path a folder browser shows for an indexed folder.
 fn folder_browser_path(path: &Path) -> String {
-    #[cfg(windows)]
-    let path = dunce::simplified(path);
     path.to_string_lossy().into_owned()
 }
 
@@ -2618,75 +2467,9 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
     out
 }
 
-/// Win32 process working directories remain limited to MAX_PATH even when
-/// file I/O supports extended paths. A usable worktree must be able to launch
-/// Git, hooks, and agents, not merely be created on disk. Count UTF-16 units,
-/// excluding the verbatim prefix and reserving the terminating NUL.
-#[cfg(any(windows, test))]
-pub(crate) fn validate_windows_worktree_path(path: &str) -> Result<(), EngineError> {
-    if windows_git_worktree_path(path).encode_utf16().count() >= 260 {
-        return Err(EngineError::Other(
-            "This worktree path is too long to start tools on Windows. Choose a shorter location, such as C:\\worktrees.".into(),
-        ));
-    }
-    Ok(())
-}
-
-/// Git's worktree command normalizes backslashes to slashes, which breaks
-/// Win32 verbatim prefixes (`\\?\` becomes `//?/`). Keep native paths for
-/// filesystem access, but pass drive/UNC paths without that prefix to Git.
-#[cfg(any(windows, test))]
-fn windows_git_worktree_path(path: &str) -> String {
-    let path = path.replace('\\', "/");
-    if let Some(unc) = path.strip_prefix("//?/UNC/") {
-        return format!("//{unc}");
-    }
-    if let Some(drive) = path.strip_prefix("//?/") {
-        let bytes = drive.as_bytes();
-        if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1..3] == *b":/" {
-            return drive.to_owned();
-        }
-    }
-    path
-}
-
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn git_worktree_paths_strip_only_drive_and_unc_verbatim_prefixes() {
-        for (native, expected) in [
-            (
-                r"\\?\C:\other disk\日本語\repo",
-                "C:/other disk/日本語/repo",
-            ),
-            (r"\\?\UNC\server\share\repo", "//server/share/repo"),
-            (r"C:\worktrees\repo", "C:/worktrees/repo"),
-            (r"\\server\share\repo", "//server/share/repo"),
-            ("//?/C:/worktrees/repo", "C:/worktrees/repo"),
-            ("//?/UNC/server/share/repo", "//server/share/repo"),
-        ] {
-            assert_eq!(super::windows_git_worktree_path(native), expected);
-        }
-        let suffix = "folder/".repeat(50);
-        assert_eq!(
-            super::windows_git_worktree_path(&format!("//?/C:/{suffix}")),
-            format!("C:/{suffix}")
-        );
-    }
-
     use super::*;
-
-    #[test]
-    fn windows_worktree_limit_counts_utf16_without_verbatim_prefix() {
-        for prefix in ["C:/", "//?/C:/", "//server/share/", "//?/UNC/server/share/"] {
-            let prefix_len = windows_git_worktree_path(prefix).encode_utf16().count();
-            let path = format!("{prefix}{}", "a".repeat(259 - prefix_len));
-            assert!(validate_windows_worktree_path(&path).is_ok());
-            assert!(validate_windows_worktree_path(&format!("{path}a")).is_err());
-        }
-        assert!(validate_windows_worktree_path(&format!("C:/{}", "日本語".repeat(80))).is_ok());
-        assert!(validate_windows_worktree_path(&format!("C:/{}", "😀".repeat(129))).is_err());
-    }
 
     #[tokio::test]
     async fn worktree_location_containing_the_repository_is_refused() {
@@ -2735,145 +2518,6 @@ mod tests {
             Repos::with_worktrees_root(&tmp.path().join("data2"), "test", code.join("wt"));
         let worktree = sibling.create_worktree(&repo, "main").await.unwrap();
         assert!(Path::new(&worktree.path).starts_with(code.join("wt").join("comet")));
-    }
-
-    async fn two_step_fixture(hook_exit: u8) -> (tempfile::TempDir, Repos, PathBuf) {
-        let tmp = tempfile::tempdir().unwrap();
-        let repo = tmp.path().join("repo");
-        std::fs::create_dir(&repo).unwrap();
-        let repos = Repos::with_worktrees_root(
-            &tmp.path().join("data"),
-            "test",
-            tmp.path().join("worktrees"),
-        );
-        repos
-            .git(&["init", "-b", "main"], Some(&repo))
-            .await
-            .unwrap();
-        repos
-            .git(&["config", "user.name", "Test"], Some(&repo))
-            .await
-            .unwrap();
-        repos
-            .git(&["config", "core.autocrlf", "false"], Some(&repo))
-            .await
-            .unwrap();
-        repos
-            .git(&["config", "user.email", "test@example.com"], Some(&repo))
-            .await
-            .unwrap();
-        std::fs::write(repo.join("README.txt"), "original checkout\n").unwrap();
-        std::fs::write(repo.join(".gitattributes"), "*.txt filter=fixture\n").unwrap();
-        std::fs::create_dir(repo.join(".githooks")).unwrap();
-        let hook = repo.join(".githooks/post-checkout");
-        std::fs::write(&hook, format!(
-            "#!/bin/sh\ntest -f README.txt || exit 42\nprintf '%s\\n' \"$1\" \"$2\" \"$3\" >> hook-arguments\nprintf ran >> hook-count\nexit {hook_exit}\n"
-        )).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        repos.git(&["add", "."], Some(&repo)).await.unwrap();
-        repos
-            .git(&["commit", "-m", "fixture"], Some(&repo))
-            .await
-            .unwrap();
-        repos
-            .git(&["config", "core.hooksPath", ".githooks"], Some(&repo))
-            .await
-            .unwrap();
-        (tmp, repos, repo)
-    }
-
-    #[tokio::test]
-    async fn two_step_worktree_runs_configured_hook_once_after_checkout() {
-        let (tmp, repos, repo) = two_step_fixture(0).await;
-        let path = tmp.path().join("new checkout");
-        repos
-            .add_worktree_in_two_steps(&repo, &path, "onicode/test", "main")
-            .await
-            .unwrap();
-        let head = repos
-            .git(&["rev-parse", "HEAD"], Some(&repo))
-            .await
-            .unwrap();
-        let arguments = std::fs::read_to_string(path.join("hook-arguments")).unwrap();
-        assert_eq!(
-            arguments.lines().collect::<Vec<_>>(),
-            ["0".repeat(head.len()), head, "1".into()]
-        );
-        assert_eq!(
-            std::fs::read_to_string(path.join("hook-count")).unwrap(),
-            "ran"
-        );
-        assert_eq!(
-            std::fs::read_to_string(path.join("README.txt")).unwrap(),
-            "original checkout\n"
-        );
-        assert!(!repo.join("hook-count").exists());
-        assert_eq!(repos.current_branch(&repo).await.unwrap(), "main");
-        assert!(repos.refs(&repo).await.unwrap().iter().any(|entry| {
-            entry
-                .worktree_path
-                .as_ref()
-                .is_some_and(|listed| same_file::is_same_file(listed, &path).unwrap_or(false))
-        }));
-    }
-
-    #[tokio::test]
-    async fn two_step_worktree_removes_partial_checkout_when_reset_fails() {
-        let (tmp, repos, repo) = two_step_fixture(0).await;
-        repos
-            .git(&["config", "filter.fixture.smudge", "exit 1"], Some(&repo))
-            .await
-            .unwrap();
-        repos
-            .git(&["config", "filter.fixture.required", "true"], Some(&repo))
-            .await
-            .unwrap();
-        let path = tmp.path().join("failed checkout");
-        let error = repos
-            .add_worktree_in_two_steps(&repo, &path, "onicode/failed", "main")
-            .await
-            .unwrap_err();
-        assert!(error.to_string().contains("smudge"), "{error}");
-        assert!(!path.exists());
-        assert!(repos.refs(&repo).await.unwrap().iter().all(|entry| {
-            entry
-                .worktree_path
-                .as_ref()
-                .is_none_or(|listed| same_file::is_same_file(listed, &repo).unwrap_or(false))
-        }));
-        assert_eq!(
-            std::fs::read_to_string(repo.join("README.txt")).unwrap(),
-            "original checkout\n"
-        );
-        assert_eq!(repos.current_branch(&repo).await.unwrap(), "main");
-    }
-
-    #[tokio::test]
-    async fn two_step_worktree_keeps_completed_checkout_when_hook_fails() {
-        let (tmp, repos, repo) = two_step_fixture(1).await;
-        let path = tmp.path().join("hook failure");
-        assert!(
-            repos
-                .add_worktree_in_two_steps(&repo, &path, "onicode/hook-failure", "main")
-                .await
-                .is_err()
-        );
-        assert_eq!(
-            std::fs::read_to_string(path.join("hook-count")).unwrap(),
-            "ran"
-        );
-        assert!(path.join("README.txt").is_file());
-        assert!(repos.refs(&repo).await.unwrap().iter().any(|entry| {
-            entry
-                .worktree_path
-                .as_ref()
-                .is_some_and(|listed| same_file::is_same_file(listed, &path).unwrap_or(false))
-        }));
-        assert_eq!(repos.current_branch(&repo).await.unwrap(), "main");
     }
 
     #[test]
@@ -2996,11 +2640,8 @@ mod tests {
             ("git@github.com:acme/app.git", "app"),
             ("git@github.com:app.git", "app"),
             ("/srv/git/app.git", "app"),
-            (r"C:\Users\me\code\app.git", "app"),
-            (r"C:\Users\me\code\app\", "app"),
             ("https://example.com/acme/..", "repo"),
             ("https://example.com/acme/.", "repo"),
-            (r"C:\..", "repo"),
             ("", "repo"),
         ] {
             assert_eq!(clone_folder_name(url), name, "{url}");
@@ -3319,33 +2960,6 @@ tmpfs /run tmpfs rw 0 0
     }
 
     #[test]
-    #[cfg(windows)]
-    fn home_folder_search_accepts_both_windows_separators() {
-        let home = tempfile::tempdir().unwrap();
-        for dir in ["aa/bb/cc/dd/src", "aa/bb/cc/dd-other", "elsewhere/dd"] {
-            std::fs::create_dir_all(home.path().join(dir)).unwrap();
-        }
-        let home = std::fs::canonicalize(home.path()).unwrap();
-        let search = WorkspaceSearch::new();
-        search.warm(&home).unwrap();
-        assert!(search.wait_until_indexed(&home, Duration::from_secs(20)));
-
-        let forward = search_folders_under(&search, &home, "aa/bb/cc/dd", 20).unwrap();
-        assert_eq!(forward.matches[0].relative, "aa/bb/cc/dd");
-        assert!(
-            forward
-                .matches
-                .iter()
-                .any(|m| m.relative == "aa/bb/cc/dd-other")
-        );
-        for query in [r"aa\bb\cc\dd", r"aa\bb/cc\dd", r"aa\bb\cc\dd\"] {
-            let found = search_folders_under(&search, &home, query, 20).unwrap();
-            assert_eq!(found.matches, forward.matches);
-        }
-    }
-
-    #[test]
-    #[cfg(not(windows))]
     fn home_folder_search_preserves_literal_posix_backslashes() {
         let home = tempfile::tempdir().unwrap();
         let literal = r"aa\bb\cc\dd";
@@ -3366,7 +2980,6 @@ tmpfs /run tmpfs rw 0 0
     }
 
     #[test]
-    #[cfg(not(windows))]
     fn browser_paths_preserve_native_posix_spelling() {
         for path in [
             "/home/ana/code",
@@ -3375,24 +2988,6 @@ tmpfs /run tmpfs rw 0 0
         ] {
             assert_eq!(folder_browser_path(Path::new(path)), path);
         }
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn browser_paths_simplify_only_safe_windows_drive_paths() {
-        assert_eq!(
-            folder_browser_path(Path::new(r"\\?\C:\Users\Ana\repo")),
-            r"C:\Users\Ana\repo"
-        );
-        for path in [
-            r"\\?\C:\repo.",
-            r"\\?\C:\NUL.txt",
-            r"\\?\UNC\server\share\repo",
-        ] {
-            assert_eq!(folder_browser_path(Path::new(path)), path);
-        }
-        let long = format!(r"\\?\C:\{}\{}", "a".repeat(150), "b".repeat(150));
-        assert_eq!(folder_browser_path(Path::new(&long)), long);
     }
 
     fn ranked(query: &str, candidates: &[(&str, bool)]) -> Vec<String> {

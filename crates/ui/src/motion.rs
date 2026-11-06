@@ -224,32 +224,8 @@ fn schedule_pulse_every(view: EntityId, stride: u64, cx: &mut App) {
     if !clock.running {
         clock.running = true;
         cx.spawn(async move |cx| {
-            #[cfg(windows)]
-            let mut precise_clock = if cx
-                .background_executor()
-                .scheduler_executor()
-                .scheduler()
-                .as_test()
-                .is_none()
-            {
-                windows_pulse::Clock::new(PULSE_TICK)
-            } else {
-                // A deterministic scheduler must own its timers and wakeups;
-                // an OS thread cannot schedule its thread-local tasks safely.
-                None
-            };
             loop {
-                #[cfg(windows)]
-                let precise_tick = if let Some(clock) = precise_clock.as_mut() {
-                    clock.tick().await
-                } else {
-                    false
-                };
-                #[cfg(not(windows))]
-                let precise_tick = false;
-                if !precise_tick {
-                    cx.background_executor().timer(PULSE_TICK).await;
-                }
+                cx.background_executor().timer(PULSE_TICK).await;
                 let parked = cx.update(|cx| {
                     let clock = cx.default_global::<PulseClock>();
                     let now = Instant::now();
@@ -1330,10 +1306,6 @@ fn refresh_system(cx: &mut App) {
     set_system(reduce, cx);
 }
 
-#[cfg(windows)]
-#[path = "motion/windows_pulse.rs"]
-mod windows_pulse;
-
 /// A bounded activation sheen for Fast service tier; GPUI handles reduced motion.
 pub fn fast_tier(
     id: impl Into<ElementId>,
@@ -1342,19 +1314,6 @@ pub fn fast_tier(
     element.with_animation(id, Animation::new(Duration::from_millis(700)), |el, t| {
         el.opacity(1.0 - 0.35 * (1.0 - t) * (std::f32::consts::PI * t).sin())
     })
-}
-
-/// "Show animations in Windows" (Settings → Accessibility → Visual effects).
-#[cfg(windows)]
-fn refresh_system(cx: &mut App) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        SPI_GETCLIENTAREAANIMATION, SystemParametersInfoW,
-    };
-    let mut enabled: windows_sys::core::BOOL = 1;
-    let read = unsafe {
-        SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, (&raw mut enabled).cast(), 0)
-    };
-    set_system(read != 0 && enabled == 0, cx);
 }
 
 /// The desktop portal's `reduced-motion` key, which GNOME and KDE map from
@@ -1376,7 +1335,7 @@ fn refresh_system(cx: &mut App) {
     .detach();
 }
 
-#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn refresh_system(_cx: &mut App) {}
 
 #[cfg(test)]

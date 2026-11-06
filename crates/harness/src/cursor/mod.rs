@@ -78,23 +78,9 @@ const DEFAULT_SILENCE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 fn cursor_cli_paths() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    // USERPROFILE-aware home (see `crate::executable::home_dir`), plus the
-    // Windows native installer location when LOCALAPPDATA is reachable.
     if let Some(home) = crate::executable::home_dir() {
         dirs.push(home.join(".local").join("bin").join("cursor-agent"));
         dirs.push(home.join(".cursor").join("bin").join("cursor-agent"));
-    }
-    if cfg!(windows)
-        && let Some(local) = std::env::var_os("LOCALAPPDATA")
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("USERPROFILE")
-                    .filter(|value| !value.is_empty())
-                    .map(|home| PathBuf::from(home).join("AppData").join("Local"))
-            })
-    {
-        dirs.push(local.join("cursor-agent").join("cursor-agent"));
     }
     dirs.push(PathBuf::from("/opt/homebrew/bin/cursor-agent"));
     dirs.push(PathBuf::from("/usr/local/bin/cursor-agent"));
@@ -305,7 +291,7 @@ impl Harness for CursorHarness {
     /// cursor-agent CLI, or credentials the SDK itself runs on —
     /// `CURSOR_API_KEY`, or its saved login (which Onicode's own Cursor sign-in
     /// writes). The SDK never uses the CLI, so requiring it hid Cursor from
-    /// users who signed in without installing it (common on Windows). The SDK
+    /// users who signed in without installing it. The SDK
     /// itself is a managed install onicode performs on demand.
     fn installed(&self) -> bool {
         self.executable.is_some()
@@ -447,8 +433,6 @@ impl Harness for CursorHarness {
             "modelOptions": request.model_options,
             "resume": request.resume,
             "mcp": request.mcp,
-            // The plugins' native servers, beside Onicode's own.
-            "extraMcp": request.extra_mcp,
             "storeDir": lease.as_ref().and_then(|lease| lease.store_dir.as_ref()),
             "images": images,
             // One send can batch several messages' images; the shim keeps
@@ -619,6 +603,7 @@ async fn load_images(attachments: &[String]) -> Value {
 
 async fn stdin_writer(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<String>) {
     while let Some(line) = rx.recv().await {
+        let line = crate::lossy_lines::ndjson_safe(&line);
         let write = async {
             stdin.write_all(line.as_bytes()).await?;
             stdin.write_all(b"\n").await?;

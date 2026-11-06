@@ -26,7 +26,8 @@ final class TranscriptLabViewController: UIViewController {
         composer.translatesAutoresizingMaskIntoConstraints = false
         composer.placeholder = "Message Claude"
         composer.chips = [
-            ComposerChip(id: "model", title: "Opus 4.5", symbol: nil, icon: BrandMarks.image(for: "claude-code", side: 13)),
+            ComposerChip(
+                id: "model", title: "Opus 4.5", symbol: nil, icon: BrandMarks.image(for: "claude-code", side: 13)),
             ComposerChip(id: "effort", title: "High", symbol: "gauge.with.dots.needle.67percent"),
             ComposerChip(id: "branch", title: "ios-rewrite", symbol: nil, icon: BranchIcon.sized()),
         ]
@@ -56,12 +57,15 @@ final class TranscriptLabViewController: UIViewController {
         let args = ProcessInfo.processInfo.arguments
         let turns = args.firstIndex(of: "-turns").flatMap { Int(args[$0 + 1]) } ?? 6
         for i in 0..<turns {
-            entries.append(DebugEntry(id: "u\(i)", user: true, text: Self.prompts[i % Self.prompts.count], streaming: false))
+            entries.append(
+                DebugEntry(id: "u\(i)", user: true, text: Self.prompts[i % Self.prompts.count], streaming: false))
             entries.append(DebugEntry(id: "a\(i)", user: false, text: fixture, streaming: false))
         }
         engine.setDebugEntries(entries: entries, working: false)
         if args.contains("-autostream") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.send("Stream the plan again, slowly.") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.send("Stream the plan again, slowly.")
+            }
         }
         if args.contains("-top") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
@@ -169,7 +173,8 @@ final class TranscriptLabViewController: UIViewController {
             let streaming = ScrollBench(list: self.list)
             self.bench = streaming
             streaming.run(passes: 2) { streamResult in
-                let json = "{\"idle\":\(idleResult.json),\"streaming\":\(streamResult.json),\"idlePerf\":\(idlePerf),\"streamingPerf\":\(TranscriptPerf.json)}"
+                let json =
+                    "{\"idle\":\(idleResult.json),\"streaming\":\(streamResult.json),\"idlePerf\":\(idlePerf),\"streamingPerf\":\(TranscriptPerf.json)}"
                 NSLog("BENCH %@", json)
                 let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 try? json.write(to: docs.appendingPathComponent("bench.json"), atomically: true, encoding: .utf8)
@@ -209,15 +214,16 @@ final class HitchMeter: UILabel {
         self.link = link
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     @objc private func tick(_ link: CADisplayLink) {
         let budget = link.targetTimestamp - link.timestamp
         if last > 0, link.timestamp - last > budget * 1.5 { hitches += 1 }
         last = link.timestamp
         frames += 1
-        if frames % 30 == 0 {
-            text = String(format: " %d hitches · layout %.1fms ", hitches, Double(layoutMicros) / 1000)
+        if frames.isMultiple(of: 30) {
+            text = String(format: " %d hitches · layout %.1fms ", hitches, Double(layoutMicros) / 1_000)
         }
     }
 }
@@ -232,7 +238,10 @@ final class ScrollBench {
         var seconds = 0.0
         var worstMs = 0.0
         var json: String {
-            String(format: "{\"frames\":%d,\"hitches\":%d,\"hitchRatioMsPerS\":%.2f,\"worstFrameMs\":%.1f,\"seconds\":%.2f}", frames, hitches, seconds > 0 ? hitchMs / seconds : 0, worstMs, seconds)
+            String(
+                format:
+                    "{\"frames\":%d,\"hitches\":%d,\"hitchRatioMsPerS\":%.2f,\"worstFrameMs\":%.1f,\"seconds\":%.2f}",
+                frames, hitches, seconds > 0 ? hitchMs / seconds : 0, worstMs, seconds)
         }
     }
 
@@ -259,12 +268,15 @@ final class ScrollBench {
     }
 
     private func startFling() {
-        velocity = 5200 // pt/s, a hard flick
+        velocity = 5_200 // pt/s, a hard flick
         direction = -direction
     }
 
     @objc private func tick(_ link: CADisplayLink) {
-        guard let list else { return link.invalidate() }
+        guard let list else {
+            link.invalidate()
+            return
+        }
         if last > 0 {
             let dt = link.timestamp - last
             let budget = link.targetTimestamp - link.timestamp
@@ -273,11 +285,11 @@ final class ScrollBench {
             let late = dt - budget
             if late > budget * 0.5 {
                 result.hitches += 1
-                result.hitchMs += late * 1000
+                result.hitchMs += late * 1_000
             }
-            result.worstMs = max(result.worstMs, dt * 1000)
+            result.worstMs = max(result.worstMs, dt * 1_000)
             // UIScrollView-like deceleration.
-            velocity *= CGFloat(pow(0.998, dt * 1000))
+            velocity *= CGFloat(pow(0.998, dt * 1_000))
             let top = -list.adjustedContentInset.top
             var y = list.contentOffset.y + direction * velocity * CGFloat(dt)
             y = min(max(y, top), list.maxOffsetY)

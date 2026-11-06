@@ -32,18 +32,21 @@ final class VisualView: UIView {
         accessibilityIdentifier = "transcript-visual"
         let center = NotificationCenter.default
         observers = [
-            center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) {
+                [weak self] _ in
                 self?.foreground = false
                 self?.updateAttachment()
             },
-            center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) {
+                [weak self] _ in
                 self?.foreground = true
                 self?.updateAttachment()
             },
         ]
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
@@ -68,7 +71,9 @@ final class VisualView: UIView {
         guard wanted != attached else { return }
         attached = wanted
         if wanted {
-            session.attach(listener: sink, dark: traitCollection.userInterfaceStyle == .dark, reduceMotion: UIAccessibility.isReduceMotionEnabled)
+            session.attach(
+                listener: sink, dark: traitCollection.userInterfaceStyle == .dark,
+                reduceMotion: UIAccessibility.isReduceMotionEnabled)
         } else {
             session.detach()
         }
@@ -93,12 +98,14 @@ final class VisualView: UIView {
         var liveSurfaces = Set<UInt64>()
         for s in d.surfaces {
             liveSurfaces.insert(s.id)
-            let view = surfaces[s.id] ?? {
-                let v = VisualSurfaceView(id: s.id, session: session)
-                insertSubview(v, at: 0)
-                surfaces[s.id] = v
-                return v
-            }()
+            let view =
+                surfaces[s.id]
+                ?? {
+                    let v = VisualSurfaceView(id: s.id, session: session)
+                    insertSubview(v, at: 0)
+                    surfaces[s.id] = v
+                    return v
+                }()
             view.frame = CGRect(x: CGFloat(s.x), y: CGFloat(s.y), width: CGFloat(s.w), height: CGFloat(s.h))
             view.gesture = s.gesture
         }
@@ -110,14 +117,16 @@ final class VisualView: UIView {
         var liveControls = Set<UInt64>()
         for c in d.controls {
             liveControls.insert(c.id)
-            let view = controls[c.id] ?? {
-                let v = VisualControlView(id: c.id, session: session)
-                addSubview(v)
-                controls[c.id] = v
-                return v
-            }()
+            let view =
+                controls[c.id]
+                ?? {
+                    let v = VisualControlView(id: c.id, session: session)
+                    addSubview(v)
+                    controls[c.id] = v
+                    return v
+                }()
             view.frame = CGRect(x: CGFloat(c.x), y: CGFloat(c.y), width: CGFloat(c.w), height: CGFloat(c.h))
-            view.configure(c, openURL: { [weak self] url in self?.openURL?(url) })
+            view.configure(c) { [weak self] url in self?.openURL?(url) }
         }
         for (id, view) in controls where !liveControls.contains(id) {
             view.removeFromSuperview()
@@ -165,7 +174,8 @@ private final class VisualSink: VisualListener, @unchecked Sendable {
         let size = CGSize(width: CGFloat(display.width), height: CGFloat(display.height))
         let image = VisualPainter.render(display.paint, size: size, scale: scale, fonts: fonts)
         lock.lock()
-        sizes = Dictionary(uniqueKeysWithValues: display.surfaces.map { ($0.id, CGSize(width: CGFloat($0.w), height: CGFloat($0.h))) })
+        sizes = Dictionary(
+            uniqueKeysWithValues: display.surfaces.map { ($0.id, CGSize(width: CGFloat($0.w), height: CGFloat($0.h))) })
         pendingDisplay = (display, image)
         schedule()
         lock.unlock()
@@ -178,7 +188,8 @@ private final class VisualSink: VisualListener, @unchecked Sendable {
         lock.unlock()
         guard let size else { return }
         let image = frame.image.flatMap(VisualPainter.image)
-        let paint = frame.paint.shapes.isEmpty && frame.paint.runs.isEmpty
+        let paint =
+            frame.paint.shapes.isEmpty && frame.paint.runs.isEmpty
             ? nil
             : VisualPainter.render(frame.paint, size: size, scale: scale, fonts: fonts)
         lock.lock()
@@ -213,13 +224,14 @@ enum VisualPainter {
         CGColor(srgbRed: CGFloat(c.r), green: CGFloat(c.g), blue: CGFloat(c.b), alpha: CGFloat(c.a))
     }
 
+    // swiftlint:disable:next force_unwrapping - sRGB always exists
     private static let space = CGColorSpace(name: CGColorSpace.sRGB)!
     private static let bitmap = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
 
     /// A worker frame (premultiplied BGRA) as an image, without copying.
     static func image(_ frame: FrameImage) -> CGImage? {
         guard frame.width > 0, frame.height > 0,
-              let provider = CGDataProvider(data: frame.bgra as CFData)
+            let provider = CGDataProvider(data: frame.bgra as CFData)
         else { return nil }
         return CGImage(
             width: Int(frame.width), height: Int(frame.height), bitsPerComponent: 8, bitsPerPixel: 32,
@@ -232,7 +244,9 @@ enum VisualPainter {
         let width = Int((size.width * scale).rounded(.up))
         let height = Int((size.height * scale).rounded(.up))
         guard width > 0, height > 0,
-              let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space, bitmapInfo: bitmap)
+            let ctx = CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                bitmapInfo: bitmap)
         else { return nil }
         // Top-left origin in points, like the display list.
         ctx.translateBy(x: 0, y: CGFloat(height))
@@ -285,11 +299,13 @@ enum VisualPainter {
         for run in paint.runs {
             let range = NSRange(location: Int(run.start), length: Int(run.len))
             guard range.location + range.length <= text.length, let font = fonts.font(run.style) else { continue }
-            let s = NSAttributedString(string: text.substring(with: range), attributes: [
-                .font: font.font,
-                .ligature: font.ligatures ? 1 : 0,
-                .foregroundColor: color(run.color),
-            ])
+            let s = NSAttributedString(
+                string: text.substring(with: range),
+                attributes: [
+                    .font: font.font,
+                    .ligature: font.ligatures ? 1 : 0,
+                    .foregroundColor: color(run.color),
+                ])
             let line = CTLineCreateWithAttributedString(s)
             ctx.saveGState()
             ctx.textMatrix = .identity
@@ -326,7 +342,8 @@ private final class VisualSurfaceView: UIView, UIGestureRecognizerDelegate {
         installGestures()
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -387,7 +404,10 @@ private final class VisualSurfaceView: UIView, UIGestureRecognizerDelegate {
     @objc private func tapped(_ g: UITapGestureRecognizer) {
         let p = g.location(in: self)
         send(.down, p)
-        guard gesture == .horizontalDrag else { return send(.up, p) }
+        guard gesture == .horizontalDrag else {
+            send(.up, p)
+            return
+        }
         // A tap on a chart shows its readout for a moment.
         readoutTimer?.invalidate()
         readoutTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
@@ -428,7 +448,8 @@ private final class VisualControlView: UIControl {
         addAction(UIAction { [weak self] _ in self?.activated() }, for: .touchUpInside)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func configure(_ c: VisualControl, openURL: @escaping (URL) -> Void) {
         kind = c.kind
@@ -449,11 +470,12 @@ private final class VisualControlView: UIControl {
         case .link:
             accessibilityTraits = .link
         }
-        let radius: CGFloat = switch c.kind {
-        case .tap: 6
-        case .button, .tab: 8
-        default: 0
-        }
+        let radius: CGFloat =
+            switch c.kind {
+            case .tap: 6
+            case .button, .tab: 8
+            default: 0
+            }
         wash.cornerRadius = radius
         setNeedsLayout()
     }
@@ -478,7 +500,7 @@ private final class VisualControlView: UIControl {
     }
 
     /// A finger-sized target around small art.
-    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    override func point(inside point: CGPoint, with _: UIEvent?) -> Bool {
         let dy = max(0, (44 - bounds.height) / 2)
         return bounds.insetBy(dx: -4, dy: -dy).contains(point)
     }
@@ -498,18 +520,20 @@ private final class VisualControlView: UIControl {
     }
 
     // Sliders track the finger along their track (in the visual's points).
-    override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+    override func beginTracking(_ touch: UITouch, with _: UIEvent?) -> Bool {
         if case .slider = kind { slide(to: touch) }
         return true
     }
 
-    override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+    override func continueTracking(_ touch: UITouch, with _: UIEvent?) -> Bool {
         if case .slider = kind { slide(to: touch) }
         return true
     }
 
     private func slide(to touch: UITouch) {
-        guard case let .slider(_, _, _, _, _, trackX, trackW, _) = kind, let parent = superview, trackW > 0 else { return }
+        guard case let .slider(_, _, _, _, _, trackX, trackW, _) = kind, let parent = superview, trackW > 0 else {
+            return
+        }
         let x = Float(touch.location(in: parent).x)
         session?.slide(control: id, fraction: max(0, min(1, (x - trackX) / trackW)))
     }

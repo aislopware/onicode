@@ -328,6 +328,7 @@ mod tests {
             multi_select: false,
             prefill: None,
             multiline: false,
+            approval: None,
         };
         let input =
             |id: &str, answers: Option<Vec<onicode_proto::UserInputAnswer>>| MessagePart::Input {

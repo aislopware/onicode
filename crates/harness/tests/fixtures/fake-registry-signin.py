@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""A fake agent from the ACP registry, signing in the ways real ones do
-(`FAKE_SIGNIN`), from their wire shapes on Nov 2 2026:
+"""A fake agent from the ACP registry, signing in the ways real ones do.
+
+The ways (`FAKE_SIGNIN`), from their wire shapes on Nov 2 2026:
 
   droid   a session answers auth_required with a device code ("Your code:
           …"); `authenticate` then opens the pairing page with the system's
@@ -26,20 +27,24 @@
           $BROWSER) and waits for its loopback callback; a request that
           isn't the callback ends the sign-in.
 
-Driven by tests/acp_registry_sign_in.rs."""
+Driven by tests/acp_registry_sign_in.rs.
+"""
+
 import json
 import os
 import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 mode = os.environ.get("FAKE_SIGNIN", "droid")
 code = None
 state = os.environ.get("FAKE_STATE", "")
-signed_out_file = os.path.join(state, "signed-out") if state else None
+signed_out_file = Path(state) / "signed-out" if state else None
 signed_in = mode == "signed-in-email" or (
-    mode == "droid-signed-in" and not (signed_out_file and os.path.exists(signed_out_file)))
+    mode == "droid-signed-in" and not (signed_out_file and signed_out_file.exists())
+)
 stale = mode == "droid-stale"
 if len(sys.argv) > 1 and sys.argv[1] == "login":
     print("Please visit the following URL to finish authorization.", flush=True)
@@ -51,7 +56,8 @@ if "--acp" not in sys.argv:
     sys.exit(3)
 
 
-def send(message):
+def send(message: dict[str, object]) -> None:
+    """Write one JSON-RPC frame to stdout."""
     sys.stdout.write(json.dumps(message) + "\n")
     sys.stdout.flush()
 
@@ -69,27 +75,64 @@ for line in sys.stdin:
             caps["_meta"] = {"terminal-auth": True}
         if mode in ("droid", "droid-stale", "droid-signed-in"):
             caps["auth"] = {"logout": {}}
-            methods = [{"id": "device-pairing", "name": "Login"}, {"id": "api-key", "name": "API key",
-                        "description": "Authenticate using a Factory API key set in the FACTORY_API_KEY environment variable."}]
+            methods = [
+                {"id": "device-pairing", "name": "Login"},
+                {
+                    "id": "api-key",
+                    "name": "API key",
+                    "description": (
+                        "Authenticate using a Factory API key set in the FACTORY_API_KEY environment variable."
+                    ),
+                },
+            ]
         elif mode == "kimi":
-            methods = [{"id": "login", "name": "Login with Kimi account", "_meta": {"terminal-auth": {
-                "command": os.path.abspath(sys.argv[0]), "args": ["login"], "label": "Login", "env": {}, "type": "terminal"}}}]
+            methods = [
+                {
+                    "id": "login",
+                    "name": "Login with Kimi account",
+                    "_meta": {
+                        "terminal-auth": {
+                            "command": str(Path(sys.argv[0]).absolute()),
+                            "args": ["login"],
+                            "label": "Login",
+                            "env": {},
+                            "type": "terminal",
+                        }
+                    },
+                }
+            ]
         else:
             methods = [{"id": "oauth-personal", "name": "Log in with Google"}]
-        send({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": 1, "agentCapabilities": caps, "authMethods": methods}})
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": mid,
+                "result": {"protocolVersion": 1, "agentCapabilities": caps, "authMethods": methods},
+            }
+        )
     elif method == "authenticate":
         if mode in ("droid", "droid-stale") and code:
             subprocess.run(["open", f"https://auth.example.com/device?user_code={code}"], check=False)
-            paired = os.path.join(os.environ.get("HOME", "/"), "paired")
-            while not os.path.exists(paired):
+            paired = Path(os.environ.get("HOME", "/")) / "paired"
+            while not paired.exists():
                 time.sleep(0.05)
             signed_in = True
             send({"jsonrpc": "2.0", "id": mid, "result": {}})
         elif mode == "elicit":
             if can_elicit:
-                send({"jsonrpc": "2.0", "id": "e-1", "method": "elicitation/create", "params": {
-                    "mode": "url", "elicitationId": "el-1", "message": "Approve this device",
-                    "url": "https://auth.example.com/approve?device=fake"}})
+                send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": "e-1",
+                        "method": "elicitation/create",
+                        "params": {
+                            "mode": "url",
+                            "elicitationId": "el-1",
+                            "message": "Approve this device",
+                            "url": "https://auth.example.com/approve?device=fake",
+                        },
+                    }
+                )
                 answer = json.loads(sys.stdin.readline())
                 signed_in = answer.get("id") == "e-1" and (answer.get("result") or {}).get("action") == "accept"
             send({"jsonrpc": "2.0", "id": mid, "result": {}})
@@ -98,7 +141,13 @@ for line in sys.stdin:
             server.bind(("127.0.0.1", 0))
             server.listen(1)
             port = server.getsockname()[1]
-            subprocess.run(["open", f"https://accounts.example.com/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A{port}%2Foauth2callback"], check=False)
+            subprocess.run(
+                [
+                    "open",
+                    f"https://accounts.example.com/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A{port}%2Foauth2callback",
+                ],
+                check=False,
+            )
             conn, _ = server.accept()
             request = conn.recv(4096).decode("latin-1")
             conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
@@ -107,28 +156,70 @@ for line in sys.stdin:
                 signed_in = True
                 send({"jsonrpc": "2.0", "id": mid, "result": {}})
             else:
-                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32000, "message": "OAuth callback not received. Unexpected request: /"}})
+                send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": mid,
+                        "error": {"code": -32000, "message": "OAuth callback not received. Unexpected request: /"},
+                    }
+                )
         else:
             send({"jsonrpc": "2.0", "id": mid, "result": {}})
     elif method == "session/new":
         if mode == "droid-stale" and stale:
-            send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32000, "message": "Authentication required: Authentication failed. Please log in using /login or set a valid FACTORY_API_KEY environment variable."}})
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": mid,
+                    "error": {
+                        "code": -32000,
+                        "message": (
+                            "Authentication required: Authentication failed. Please log in using /login"
+                            " or set a valid FACTORY_API_KEY environment variable."
+                        ),
+                    },
+                }
+            )
         elif mode in ("droid", "droid-stale", "droid-signed-in") and not signed_in:
             code = "WXYZ-9876"
-            send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32000, "message": f"Authentication required: \n\nYour code: {code}\n\nClick the \"Login\" button to authenticate."}})
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": mid,
+                    "error": {
+                        "code": -32000,
+                        "message": (
+                            f"Authentication required: \n\nYour code: {code}\n\n"
+                            'Click the "Login" button to authenticate.'
+                        ),
+                    },
+                }
+            )
         elif mode == "droid-cli":
-            send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32000, "message": "Authentication required: Please log in using /login"}})
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": mid,
+                    "error": {"code": -32000, "message": "Authentication required: Please log in using /login"},
+                }
+            )
         elif mode in ("gemini", "elicit") and not signed_in:
             send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32000, "message": "Authentication required"}})
         elif mode == "signed-in-email":
-            send({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "s-1", "_meta": {"account": {"email": "ada@example.com"}}}})
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": mid,
+                    "result": {"sessionId": "s-1", "_meta": {"account": {"email": "ada@example.com"}}},
+                }
+            )
         else:
             send({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "s-1"}})
     elif method == "logout":
         stale = False
         signed_in = False
         if signed_out_file and mode == "droid-signed-in":
-            open(signed_out_file, "w").close()
+            signed_out_file.touch()
         send({"jsonrpc": "2.0", "id": mid, "result": {}})
     elif mid is not None:
         send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": "unsupported"}})

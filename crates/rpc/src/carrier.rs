@@ -8,8 +8,8 @@
 //! [`serve_connection`] does for every transport), and a subscription keeps it open while it
 //! lives: dropping a [`CarriedSubscription`] ends the duplex, which ends the call at the server.
 //!
-//! The serving side applies the peer rules the device-room relay applies ([`crate::peer_refused`])
-//! and runs each call as [`Caller::Peer`].
+//! The serving side refuses the local-only methods as the device-room relay does
+//! ([`crate::local_only`]) and runs each call as [`Caller::Peer`].
 
 use std::sync::Arc;
 
@@ -119,12 +119,10 @@ struct PeerGuard {
 #[async_trait]
 impl RpcService for PeerGuard {
     async fn handle(&self, method: &str, params: serde_json::Value) -> Result<RpcReply, RpcError> {
-        if crate::peer_refused(method, &params) {
-            return Err(RpcError::Failed(if crate::local_only(method) {
-                format!("{method} is only answered over this device's local IPC")
-            } else {
-                format!("{method}: only this device's own window can do that")
-            }));
+        if crate::local_only(method) {
+            return Err(RpcError::Failed(format!(
+                "{method} is only answered over this device's local IPC"
+            )));
         }
         let caller = Caller::Peer {
             device: self.device.clone(),

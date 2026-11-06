@@ -10,9 +10,8 @@
 
 use super::*;
 use crate::pickers::{
-    breadcrumbs, browser_rows, completion_prefix_len, escape_typed_path, folder_path_key,
-    is_windows_path, parent_path, resolve_typed_path, same_folder_path, split_typed_leaf,
-    unescape_typed_path,
+    breadcrumbs, browser_rows, completion_prefix_len, escape_typed_path, parent_path,
+    resolve_typed_path, split_typed_leaf, unescape_typed_path,
 };
 use gpui::{FocusHandle, Window};
 use onicode_proto::{
@@ -2532,7 +2531,7 @@ struct PathEdit {
     /// Why the typed path didn't open; the next edit clears it.
     error: Option<SharedString>,
     /// ⇥'s source: the folders of the typed path's parent, keyed by that
-    /// parent's `folder_path_key`.
+    /// parent's path.
     siblings: Option<(String, Loadable<Vec<onicode_proto::FolderEntry>>)>,
     focus_pending: bool,
     open_task: Option<Task<()>>,
@@ -2564,14 +2563,12 @@ async fn list_folders_on(
 }
 
 /// A typed path that didn't list, in the path field's words: a missing
-/// folder (POSIX 2, Windows 2/3) or a path through a file (POSIX 20,
-/// Windows 267 — the file may be the path or any folder on it) as the
-/// device's io error reports it; anything else as the device said it.
+/// folder (error 2) or a path through a file (error 20) as the device's io
+/// error reports it; anything else as the device said it.
 fn path_open_error(path: &str, error: &str) -> String {
-    let reported = |codes: &[&str]| codes.iter().any(|code| error.contains(code));
-    if reported(&["(os error 2)", "(os error 3)"]) {
+    if error.contains("(os error 2)") {
         format!("No folder at {path}")
-    } else if reported(&["(os error 20)", "(os error 267)"]) {
+    } else if error.contains("(os error 20)") {
         format!("{path} isn't a folder")
     } else {
         error.to_owned()
@@ -2592,7 +2589,7 @@ fn typed_path_location(
     if let Some(drive) = drives
         .iter()
         .filter(|drive| path_under(path, &drive.path))
-        .max_by_key(|drive| folder_path_key(&drive.path).len())
+        .max_by_key(|drive| drive.path.len())
     {
         return (drive.name.clone(), Some(drive.path.clone()));
     }
@@ -3014,27 +3011,21 @@ fn device_glyph(platform: &str) -> &'static str {
 }
 
 /// Segment-aware "is `path` at or under `base`" (`/media/a` is not under
-/// `/media/ab`); a root base covers everything. Either separator counts, so
-/// Windows drive paths (`D:\` under `D:\`) work too.
+/// `/media/ab`); a root base covers everything.
 fn path_under(path: &str, base: &str) -> bool {
-    folder_path_key(base)
-        .trim_end_matches(['/', '\\'])
-        .is_empty()
-        || path_rest(path, base).is_some()
+    base.trim_end_matches('/').is_empty() || path_rest(path, base).is_some()
 }
 
-/// What follows `base` in `path` when [`path_under`] holds, in `path`'s
-/// lexical key: `""` at `base`, `/code` (`\code`) below it.
+/// What follows `base` in `path` when [`path_under`] holds: `""` at `base`,
+/// `/code` below it.
 fn path_rest(path: &str, base: &str) -> Option<String> {
-    let path = folder_path_key(path);
-    let base = folder_path_key(base);
-    let rest = path.strip_prefix(base.trim_end_matches(['/', '\\']))?;
-    (rest.is_empty() || rest.starts_with(['/', '\\'])).then(|| rest.to_owned())
+    let rest = path.strip_prefix(base.trim_end_matches('/'))?;
+    (rest.is_empty() || rest.starts_with('/')).then(|| rest.to_owned())
 }
 
 /// `path` as the path field spells it: from `~` when it is in `home`
-/// (`~/code`, `~\code` on Windows), as it is anywhere else. A home at a
-/// filesystem root stays spelled out.
+/// (`~/code`), as it is anywhere else. A home at a filesystem root stays
+/// spelled out.
 fn tilde_path(path: &str, home: Option<&str>) -> String {
     home.filter(|home| parent_path(home).is_some())
         .and_then(|home| path_rest(path, home))
@@ -6920,7 +6911,6 @@ impl Shell {
                     .iter()
                     .map(|entry| crate::pickers::child_path(open, &entry.name))
                     .chain(std::iter::once(open.to_owned()))
-                    .map(|path| folder_path_key(&path))
                     .collect()
             })
             .unwrap_or_default();
@@ -6972,7 +6962,7 @@ impl Shell {
             .map(FolderRow::Local)
             .chain(
                 home.iter()
-                    .filter(|found| !listed.contains(&folder_path_key(&found.path)))
+                    .filter(|found| !listed.contains(&found.path))
                     .cloned()
                     .map(FolderRow::Home),
             )
@@ -7071,7 +7061,7 @@ impl Shell {
                 return false;
             };
             let text = flow.search.read(cx).text().to_string();
-            if crate::pickers::is_typed_path(&text) && text.ends_with(['/', '\\']) {
+            if crate::pickers::is_typed_path(&text) && text.ends_with('/') {
                 let target = crate::pickers::typed_path_target(&text, flow.home.as_deref());
                 let Some(target) = target else {
                     // Path-shaped but unresolvable (`~/…` before home is
@@ -7262,7 +7252,7 @@ impl Shell {
             .iter()
             .find(|s| {
                 s.device_id == device.id
-                    && (same_folder_path(&s.path, &path)
+                    && (s.path == path
                         || github_repo.as_deref().is_some_and(|repo| {
                             s.github_repo
                                 .as_deref()
@@ -7420,7 +7410,7 @@ impl Shell {
                     .and_then(|(_, path)| path.as_deref())
                     .or(flow.home.as_deref());
                 let parent = listing
-                    .filter(|l| !root.is_some_and(|root| same_folder_path(&l.path, root)))
+                    .filter(|l| root != Some(l.path.as_str()))
                     .and_then(|l| parent_path(&l.path));
                 if let Some(parent) = parent {
                     self.add_space_descend(parent, false, cx);
@@ -7432,21 +7422,6 @@ impl Shell {
     }
 
     // ---- typed path: the crumb row as an address bar ----
-
-    /// Whether the device's paths are Windows-shaped (`\` separates them):
-    /// what it listed says so; before that, its platform.
-    fn add_space_windows_paths(&self) -> bool {
-        self.add_space.as_ref().is_some_and(|flow| {
-            flow.open_folder().map_or_else(
-                || {
-                    flow.device
-                        .as_ref()
-                        .is_some_and(|device| device.platform == "windows")
-                },
-                |path| is_windows_path(&path),
-            )
-        })
-    }
 
     /// ⌘L, the pen, or a click beside the crumbs: the trail becomes the open
     /// folder's path, selected — a paste replaces it, → edits its end. On
@@ -7466,7 +7441,6 @@ impl Shell {
             }
             self.add_space_pick_device(device, cx);
         }
-        let windows = self.add_space_windows_paths();
         let engine = self.state.read(cx).engine().cloned();
         let local = self.state.read(cx).local_device_id.clone();
         let Some(flow) = self.add_space.as_mut() else {
@@ -7485,23 +7459,16 @@ impl Shell {
         // separator so a name typed after it (→ first) goes inside.
         let mut text = flow.open_folder().map_or_else(
             || "~".to_string(),
-            |path| escape_typed_path(&tilde_path(&path, flow.home.as_deref()), windows),
+            |path| escape_typed_path(&tilde_path(&path, flow.home.as_deref())),
         );
-        if !text.ends_with(['/', '\\']) {
-            text.push(if windows { '\\' } else { '/' });
+        if !text.ends_with('/') {
+            text.push('/');
         }
         let input = cx.new(|cx| {
-            ComposerInput::new(
-                if windows {
-                    r"Folder path, like C:\code"
-                } else {
-                    "Folder path, like ~/code"
-                },
-                cx,
-            )
-            .with_text_metrics(12.0, 16.0)
-            .with_single_line()
-            .with_accessibility_role(gpui::Role::TextInput)
+            ComposerInput::new("Folder path, like ~/code", cx)
+                .with_text_metrics(12.0, 16.0)
+                .with_single_line()
+                .with_accessibility_role(gpui::Role::TextInput)
         });
         input.update(cx, |input, cx| {
             input.set_text(text, cx);
@@ -7510,13 +7477,12 @@ impl Shell {
         let events = cx.subscribe(&input, |this: &mut Shell, input, event, cx| match event {
             ComposerInputEvent::Edited => this.add_space_path_edited(cx),
             ComposerInputEvent::Submitted => this.add_space_open_typed_path(false, cx),
-            // A folder copied in Finder or Explorer pastes as files, not text.
+            // A folder copied in Finder pastes as files, not text.
             ComposerInputEvent::PastedPaths(paths) => {
                 if let Some(path) = paths.first() {
-                    let windows = this.add_space_windows_paths();
                     let home = this.add_space.as_ref().and_then(|flow| flow.home.clone());
                     let path = tilde_path(&path.to_string_lossy(), home.as_deref());
-                    let text = escape_typed_path(&path, windows);
+                    let text = escape_typed_path(&path);
                     input.update(cx, |input, cx| input.set_text(text, cx));
                 }
             }
@@ -7534,7 +7500,7 @@ impl Shell {
                         };
                         // Home's folders are ⇥'s source for `~/…`, unless it
                         // already lists another folder.
-                        let key = folder_path_key(&listing.path);
+                        let key = listing.path.clone();
                         if let Some(edit) = flow.path_edit.as_mut()
                             && edit
                                 .siblings
@@ -7606,7 +7572,6 @@ impl Shell {
     /// Keep ⇥'s source on the typed path's parent folder: the open listing
     /// answers for itself; any other folder is listed once per parent.
     fn add_space_refresh_path_completion(&mut self, cx: &mut Context<Self>) {
-        let windows = self.add_space_windows_paths();
         let engine = self.state.read(cx).engine().cloned();
         let local = self.state.read(cx).local_device_id.clone();
         let Some(flow) = self.add_space.as_mut() else {
@@ -7619,18 +7584,18 @@ impl Shell {
             return;
         };
         let text = edit.input.read(cx).text().to_owned();
-        let (folder, _) = split_typed_leaf(&text, windows);
+        let (folder, _) = split_typed_leaf(&text);
         let parent = if folder.is_empty() {
             base
         } else {
-            resolve_typed_path(folder, base.as_deref(), flow.home.as_deref(), windows)
+            resolve_typed_path(folder, base.as_deref(), flow.home.as_deref())
         };
         let Some(parent) = parent else {
             edit.siblings = None;
             edit.siblings_task = None;
             return;
         };
-        let key = folder_path_key(&parent);
+        let key = parent.clone();
         if edit
             .siblings
             .as_ref()
@@ -7638,7 +7603,7 @@ impl Shell {
         {
             return;
         }
-        if let Some(listing) = open.filter(|listing| same_folder_path(&listing.path, &parent)) {
+        if let Some(listing) = open.filter(|listing| listing.path == parent) {
             let folders = browser_rows(listing).into_iter().cloned().collect();
             edit.siblings = Some((key, Loadable::Ready(folders)));
             edit.siblings_task = None;
@@ -7677,14 +7642,13 @@ impl Shell {
     /// (case-insensitively), separator appended — `(text after ⇥, the faint
     /// suffix previewing it)`.
     fn add_space_path_completion(&self, cx: &App) -> Option<(String, Option<SharedString>)> {
-        let windows = self.add_space_windows_paths();
         let edit = self.add_space.as_ref()?.path_edit.as_ref()?;
         let Some((_, Loadable::Ready(folders))) = &edit.siblings else {
             return None;
         };
         let text = edit.input.read(cx).text();
-        let (folder, name) = split_typed_leaf(text, windows);
-        let name = unescape_typed_path(name, windows);
+        let (folder, name) = split_typed_leaf(text);
+        let name = unescape_typed_path(name);
         if matches!(name.as_str(), "" | "." | "..") {
             return None;
         }
@@ -7698,15 +7662,10 @@ impl Shell {
                     .iter()
                     .find_map(|entry| Some((entry, completion_prefix_len(&entry.name, &name)?)))
             })?;
-        let separator = match folder.chars().last() {
-            Some(separator @ ('/' | '\\')) => separator,
-            _ if windows => '\\',
-            _ => '/',
-        };
         let ghost =
             (typed < entry.name.len()).then(|| SharedString::from(entry.name[typed..].to_string()));
-        let entry_name = escape_typed_path(&entry.name, windows);
-        Some((format!("{folder}{entry_name}{separator}"), ghost))
+        let entry_name = escape_typed_path(&entry.name);
+        Some((format!("{folder}{entry_name}/"), ghost))
     }
 
     fn add_space_accept_path_completion(&mut self, cx: &mut Context<Self>) {
@@ -7727,7 +7686,6 @@ impl Shell {
     /// device; once it answers it is the open folder — and with ⌘↵ the new
     /// project. A path that doesn't list keeps the field and says why.
     fn add_space_open_typed_path(&mut self, add: bool, cx: &mut Context<Self>) {
-        let windows = self.add_space_windows_paths();
         let engine = self.state.read(cx).engine().cloned();
         let local = self.state.read(cx).local_device_id.clone();
         let Some(flow) = self.add_space.as_mut() else {
@@ -7769,7 +7727,7 @@ impl Shell {
             let result: Result<FolderListing, String> = async {
                 let resolve = |home: &Option<String>| {
                     let base = base.as_deref().or(home.as_deref());
-                    resolve_typed_path(&text, base, home.as_deref(), windows)
+                    resolve_typed_path(&text, base, home.as_deref())
                 };
                 let unresolved = || format!("Can't open {}", text.trim());
                 let target = match resolve(&home) {
@@ -7850,7 +7808,7 @@ impl Shell {
         flow.browser_repo &= flow
             .browser
             .ready()
-            .is_some_and(|open| same_folder_path(&open.path, &listing.path));
+            .is_some_and(|open| open.path == listing.path);
         flow.path_edit = None;
         flow.focus_pending = true;
         flow.step = ProjectStep::Folders;
@@ -8428,7 +8386,7 @@ impl Shell {
                 || open_path
                     .as_deref()
                     .zip(root.as_deref())
-                    .is_some_and(|(open, root)| same_folder_path(open, root));
+                    .is_some_and(|(open, root)| open == root);
             crumb_key.push_str(&name);
             specs.push(Crumb {
                 name: name.clone().into(),
@@ -8459,7 +8417,7 @@ impl Shell {
                     specs.push(Crumb {
                         name: name.into(),
                         glyph: None,
-                        current: same_folder_path(&full, &open_path),
+                        current: full == open_path,
                         target: CrumbTarget::Folder(full),
                     });
                 }
@@ -9338,22 +9296,11 @@ mod project_flow_tests {
     }
 
     #[test]
-    fn path_under_handles_posix_and_windows_drive_paths() {
+    fn path_under_is_segment_aware() {
         assert!(path_under("/media/a", "/"));
         assert!(path_under("/media/a", "/media"));
+        assert!(path_under("/media/a", "/media/a/"));
         assert!(!path_under("/media/ab", "/media/a"));
-        // A drive-root crumb hides itself, not a sibling drive.
-        assert!(path_under(r"D:\", r"D:\"));
-        assert!(path_under(r"D:\Random", r"D:\"));
-        assert!(!path_under(r"D:\Random2", r"D:\Random"));
-        assert!(!path_under(r"C:\Random", r"D:\"));
-        assert!(path_under(r"c:\Random\repo", r"C:\Random"));
-        assert!(!path_under(r"C:\random\repo", r"C:\Random"));
-        assert!(path_under(r"\\?\D:\Random", r"D:\"));
-        assert!(path_under(r"D:\Random", r"\\?\D:\"));
-        assert!(path_under(r"\\?\UNC\server\share\repo", r"\\server\share\"));
-        assert!(!path_under(r"\\server\share2\repo", r"\\server\share\"));
-        assert!(!path_under(r"\\other\share\repo", r"\\server\share\"));
     }
 
     #[gpui::test]
@@ -9995,99 +9942,6 @@ mod home_folder_search_tests {
     }
 
     #[gpui::test]
-    fn remote_windows_home_matches_navigate_and_reuse_existing_spaces(cx: &mut TestAppContext) {
-        for (home, extended_home) in [
-            (r"C:\Users\Ana", r"\\?\C:\Users\Ana"),
-            (r"\\server\share\Ana", r"\\?\UNC\server\share\Ana"),
-        ] {
-            let (window, _dir, mut engine) = picker(cx, "remote");
-            cx.update(|cx| {
-                crate::history::init(
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                    cx,
-                );
-            });
-            engine.listing["path"] = home.into();
-            go_home(window, cx);
-            let warm = engine.take(methods::SEARCH_HOME_FOLDERS, cx);
-            engine.reply(
-                &warm[0],
-                serde_json::json!({ "matches": [], "indexing": false }),
-            );
-            type_query(window, "co", cx);
-            let search = engine.take(methods::SEARCH_HOME_FOLDERS, cx);
-            let code = format!("{extended_home}\\code");
-            let comet = format!("{code}\\comet");
-            engine.reply(
-                &search[0],
-                serde_json::json!({
-                    "matches": [found(&code, "code", false), found(&comet, "code/comet", true)],
-                    "indexing": false,
-                }),
-            );
-            cx.run_until_parked();
-            // Plain ListFolders and extended SearchHomeFolders paths refer
-            // to the same local row; only the nested match is added.
-            let listed = rows(window, cx);
-            assert_eq!(listed.len(), 2);
-            assert!(matches!(&listed[0], FolderRow::Local(entry) if entry.name == "code"));
-            window
-                .update(cx, |shell, _, cx| {
-                    shell.add_space.as_mut().unwrap().active = 1;
-                    shell.add_space_open_active(cx);
-                })
-                .unwrap();
-            let browse = engine.take(methods::LIST_FOLDERS, cx);
-            assert_eq!(browse[0]["params"]["path"], comet);
-            assert_eq!(browse[0]["params"]["targetDeviceId"], "remote");
-            engine.reply(
-                &browse[0],
-                serde_json::json!({
-                    "path": comet,
-                    "entries": [{ "name": "src", "isDir": true, "isRepo": false }],
-                }),
-            );
-            cx.run_until_parked();
-            window
-                .update(cx, |shell, _, cx| shell.add_space_open_active(cx))
-                .unwrap();
-            let child = engine.take(methods::LIST_FOLDERS, cx);
-            assert_eq!(child[0]["params"]["path"], format!("{comet}\\src"));
-            engine.reply(
-                &child[0],
-                serde_json::json!({ "path": format!("{comet}\\src"), "entries": [] }),
-            );
-            cx.run_until_parked();
-            window
-                .update(cx, |shell, _, cx| shell.add_space_go_up(cx))
-                .unwrap();
-            let parent = engine.take(methods::LIST_FOLDERS, cx);
-            assert_eq!(parent[0]["params"]["path"], comet);
-            engine.reply(
-                &parent[0],
-                serde_json::json!({ "path": comet, "entries": [] }),
-            );
-            cx.run_until_parked();
-            window.update(cx, |shell, _, cx| {
-                shell.state.update(cx, |state, _| {
-                    state.spaces.push(serde_json::from_value(serde_json::json!({
-                        "id": "existing", "deviceId": "remote", "path": format!("{home}\\code\\comet"),
-                        "gitDetected": true, "createdAt": "2026-09-20T00:00:00Z",
-                    })).unwrap());
-                });
-                shell.submit_add_space(cx);
-                assert!(shell.add_space.is_none());
-                assert_eq!(shell.state.read(cx).selected_space.as_deref(), Some("existing"));
-                assert_eq!(shell.state.read(cx).spaces.len(), 1);
-            }).unwrap();
-            assert!(engine.take(methods::MUTATE, cx).is_empty());
-        }
-    }
-
-    #[gpui::test]
     fn opening_a_home_match_browses_it(cx: &mut TestAppContext) {
         let (window, _dir, mut engine) = picker(cx, "local");
         go_home(window, cx);
@@ -10664,8 +10518,8 @@ mod home_folder_search_tests {
             ("Macintosh HD".into(), Some("/".into()))
         );
         assert_eq!(
-            typed_path_location(r"D:\Random\onicode", None, &[]),
-            (r"D:\".into(), Some(r"D:\".into()))
+            typed_path_location("/opt/tools", None, &[]),
+            ("/".into(), Some("/".into()))
         );
     }
 
@@ -10679,14 +10533,10 @@ mod home_folder_search_tests {
         assert_eq!(tilde_path("/Users/ana/code", None), "/Users/ana/code");
         // A home at the root would put every path under `~`.
         assert_eq!(tilde_path("/srv", Some("/")), "/srv");
-        let home = Some(r"C:\Users\ana");
-        assert_eq!(tilde_path(r"c:\Users\ana\code", home), r"~\code");
-        assert_eq!(tilde_path(r"D:\code", home), r"D:\code");
         // Spelled from `~`, a path still resolves to itself.
         assert_eq!(
-            resolve_typed_path(&tilde_path(r"C:\Users\ana\code", home), None, home, false)
-                .as_deref(),
-            Some(r"C:\Users\ana\code")
+            resolve_typed_path(&tilde_path("/Users/ana/code", home), None, home).as_deref(),
+            Some("/Users/ana/code")
         );
     }
 
@@ -10706,13 +10556,6 @@ mod home_folder_search_tests {
             ),
             // `/x` itself, or a folder on its way, is a file.
             "/x isn't a folder"
-        );
-        assert_eq!(
-            path_open_error(
-                r"D:\x",
-                "could not read that folder: The system cannot find the path specified. (os error 3)"
-            ),
-            r"No folder at D:\x"
         );
         let denied = "Onicode doesn't have access to this folder on the device.";
         assert_eq!(path_open_error("/x", denied), denied);

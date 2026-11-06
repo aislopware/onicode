@@ -1,7 +1,7 @@
 //! Frame → [`AgentEvent`] normalization (init dedupe, subagent tagging, tool
 //! decoding, error-code mapping).
 
-use onicode_proto::{AgentEvent, DoneStatus, HarnessId, TodoItem, TodoStatus, ToolCall};
+use onicode_proto::{AgentEvent, DoneStatus, HarnessId, TodoItem, TodoStatus, ToolCall, ToolDiff};
 use serde_json::Value;
 
 use super::wire::{ContentBlock, Frame, MessageFrame, ResultFrame};
@@ -142,6 +142,42 @@ fn api_failure(f: &ResultFrame) -> Option<String> {
         (None, Some(detail)) => detail,
         (None, None) => "Claude's API request failed.".to_owned(),
     })
+}
+
+/// What a known `startup_failure_reason` means, and what to do about it
+/// when that is not already in the CLI's own message.
+fn startup_failure_text(reason: &str) -> (&'static str, Option<&'static str>) {
+    match reason {
+        "cli_version_too_old" => (
+            "This Claude Code is too old for its organization's settings.",
+            Some("Update Claude Code, then try again."),
+        ),
+        "cwd_unavailable" => ("Claude Code could not open the working directory.", None),
+        "gateway_signin_required" => (
+            "Claude Code needs to sign in to its gateway.",
+            Some("Sign in with `claude` in a terminal, then try again."),
+        ),
+        "gateway_access_denied" => ("Claude Code's gateway refused this account.", None),
+        "session_held_by_background" => (
+            "This Claude session is held by its own background work in another process.",
+            None,
+        ),
+        "worktree_resume_refused" | "worktree_unverified" => (
+            "Claude Code would not resume this session in its worktree.",
+            None,
+        ),
+        "bypass_root" => (
+            "Claude Code refuses full access when it runs as root outside a sandbox.",
+            None,
+        ),
+        "shell_tool_missing" => ("Claude Code could not find a shell to run commands.", None),
+        "temp_dir_unusable" => ("Claude Code could not use its temporary directory.", None),
+        "config_file_invalid" | "managed_settings_invalid" => {
+            ("Claude Code could not read its settings.", None)
+        }
+        "initialize_not_first" => ("Claude Code refused how it was started.", None),
+        _ => ("Claude Code could not start.", None),
+    }
 }
 
 fn str_field(input: &Value, key: &str) -> String {
@@ -306,10 +342,41 @@ fn subagent_results(
     f: &MessageFrame,
     commands: &mut std::collections::HashMap<String, bool>,
 ) -> Vec<AgentEvent> {
-    f.message
+    frame_results(f, commands)
+        .into_iter()
+        .map(|(_, event)| tag(parent, event))
+        .collect()
+}
+
+/// A user frame's `tool_result` blocks as events, each with its tool_use
+/// id. The frame's `tool_use_result` describes its one result: an edit's
+/// diff rides that result (never a failed one, nor a frame with several).
+fn frame_results(
+    f: &MessageFrame,
+    commands: &mut std::collections::HashMap<String, bool>,
+) -> Vec<(String, AgentEvent)> {
+    let blocks: Vec<ContentBlock> = f
+        .message
         .blocks()
         .filter(|b: &ContentBlock| b.kind == "tool_result")
-        .map(|b| tag(parent, tool_result(&b, commands)))
+        .collect();
+    let mut diff = (blocks.len() == 1)
+        .then(|| f.tool_use_result.as_ref().and_then(tool_diff))
+        .flatten();
+    blocks
+        .into_iter()
+        .map(|b| {
+            let mut event = tool_result(&b, commands);
+            if let AgentEvent::ToolResult {
+                is_error: false,
+                diff: slot,
+                ..
+            } = &mut event
+            {
+                *slot = diff.take();
+            }
+            (b.tool_use_id, event)
+        })
         .collect()
 }
 
@@ -362,6 +429,138 @@ fn tool_result(
         diff: None,
         exit_code,
     }
+}
+
+/// Largest file whose whole before/after text a diff carries; past it the
+/// diff holds the changed hunks alone. The run journal keeps every diff.
+const WHOLE_FILE_DIFF_MAX: usize = 512 * 1024;
+
+/// The diff an Edit or Write made, from the user frame's `tool_use_result`
+/// (`FileEditOutput` / `FileWriteOutput`): the whole file before and after
+/// when `originalFile` is there and the hunks apply to it, else the hunks'
+/// own old and new lines. A created file has no old text. `None` for any
+/// other tool's output, or a write that changed nothing.
+pub(crate) fn tool_diff(result: &Value) -> Option<ToolDiff> {
+    let path = result
+        .get("filePath")
+        .and_then(Value::as_str)
+        .filter(|p| !p.is_empty())?;
+    let hunks = result.get("structuredPatch").and_then(Value::as_array);
+    let original = result.get("originalFile").and_then(Value::as_str);
+    let content = result.get("content").and_then(Value::as_str);
+    // A Write reports what it wrote. An update whose old content was too
+    // large to diff has no `originalFile`: it is never shown as a creation.
+    if let Some(content) = content {
+        if result.get("type").and_then(Value::as_str) == Some("create") {
+            return (content.len() <= WHOLE_FILE_DIFF_MAX).then(|| ToolDiff {
+                path: path.to_owned(),
+                old_text: None,
+                new_text: content.to_owned(),
+            });
+        }
+        if let Some(original) = original
+            && original.len() <= WHOLE_FILE_DIFF_MAX
+            && content.len() <= WHOLE_FILE_DIFF_MAX
+        {
+            return (original != content).then(|| ToolDiff {
+                path: path.to_owned(),
+                old_text: Some(original.to_owned()),
+                new_text: content.to_owned(),
+            });
+        }
+    }
+    let hunks = hunks.filter(|h| !h.is_empty())?;
+    if let Some(original) = original.filter(|o| o.len() <= WHOLE_FILE_DIFF_MAX)
+        && let Some(patched) = apply_hunks(original, hunks)
+    {
+        return Some(ToolDiff {
+            path: path.to_owned(),
+            old_text: Some(original.to_owned()),
+            new_text: patched,
+        });
+    }
+    let (mut old, mut new) = (String::new(), String::new());
+    for line in hunks
+        .iter()
+        .filter_map(|h| h.get("lines").and_then(Value::as_array))
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        let (mark, text) = line.split_at(line.chars().next().map_or(0, char::len_utf8));
+        match mark {
+            "-" => push_line(&mut old, text),
+            "+" => push_line(&mut new, text),
+            " " => {
+                push_line(&mut old, text);
+                push_line(&mut new, text);
+            }
+            _ => {}
+        }
+    }
+    Some(ToolDiff {
+        path: path.to_owned(),
+        old_text: Some(old),
+        new_text: new,
+    })
+}
+
+fn push_line(out: &mut String, line: &str) {
+    out.push_str(line);
+    out.push('\n');
+}
+
+/// `original` with unified-diff `hunks` (`oldStart` 1-based, `lines` marked
+/// ` `, `-`, `+`) applied; `None` when a hunk does not match it.
+fn apply_hunks(original: &str, hunks: &[Value]) -> Option<String> {
+    let lines: Vec<&str> = original.split_inclusive('\n').collect();
+    let mut out = String::with_capacity(original.len());
+    let mut at = 0usize;
+    for hunk in hunks {
+        let old_start = hunk.get("oldStart").and_then(Value::as_u64)? as usize;
+        // A hunk that removes nothing names the line it inserts after (0:
+        // the top); any other names its own first line, 1-based.
+        let old_lines = hunk.get("oldLines").and_then(Value::as_u64).unwrap_or(1);
+        let start = if old_lines == 0 {
+            old_start
+        } else {
+            old_start.saturating_sub(1)
+        };
+        if start < at || start > lines.len() {
+            return None;
+        }
+        out.extend(lines[at..start].iter().copied());
+        at = start;
+        let mut last = "";
+        for line in hunk.get("lines")?.as_array()? {
+            let line = line.as_str()?;
+            let (mark, text) = line.split_at(line.chars().next().map_or(0, char::len_utf8));
+            match mark {
+                " " | "-" => {
+                    let have = lines.get(at)?;
+                    let bare = have.strip_suffix('\n').unwrap_or(have);
+                    if bare != text && bare.trim_end_matches('\r') != text {
+                        return None;
+                    }
+                    if mark == " " {
+                        out.push_str(have);
+                    }
+                    at += 1;
+                }
+                "+" => push_line(&mut out, text),
+                // `\ No newline at end of file`, after the line it is about:
+                // only an added line's newline is ours to take back.
+                "\\" => {
+                    if last == "+" && out.ends_with('\n') {
+                        out.pop();
+                    }
+                }
+                _ => return None,
+            }
+            last = mark;
+        }
+    }
+    out.extend(lines[at..].iter().copied());
+    Some(out)
 }
 
 /// A `tool_result`'s text: its string, or its text blocks joined.
@@ -444,6 +643,22 @@ struct TypedFork {
     replayed: Option<bool>,
 }
 
+/// Every `"uuid":"…"` value on a transcript line, without parsing it: a
+/// superset of the record's own uuid (a nested one only costs a fresh uuid
+/// where the engine's id would have done).
+fn collect_uuids(line: &str, into: &mut std::collections::HashSet<String>) {
+    const KEY: &str = "\"uuid\":\"";
+    let mut rest = line;
+    while let Some(at) = rest.find(KEY) {
+        rest = &rest[at + KEY.len()..];
+        let Some(end) = rest.find('"') else { break };
+        if end <= 64 {
+            into.insert(rest[..end].to_owned());
+        }
+        rest = &rest[end..];
+    }
+}
+
 /// Per-run normalization state.
 ///
 /// `saw_init` dedupes `system:init` — the CLI re-emits it every time the model
@@ -498,6 +713,16 @@ pub(crate) struct Normalizer {
     turn_error_shown: bool,
     /// This turn already said it is retrying the API.
     retry_noticed: bool,
+    /// Parent-feed text / thinking streamed as deltas since the last
+    /// assistant frame. An assistant frame whose text never streamed (the
+    /// CLI's non-streaming fallback after a stalled stream) shows its text
+    /// from the frame itself.
+    streamed_text: bool,
+    streamed_thinking: bool,
+    /// User-record uuids the resumed session's transcript already holds. A
+    /// prompt written again under one of them would collide with its own
+    /// history, so it is written under a fresh uuid instead.
+    pub(crate) known_user_ids: std::collections::HashSet<String>,
 }
 
 impl Normalizer {
@@ -516,7 +741,27 @@ impl Normalizer {
             session_id: None,
             turn_error_shown: false,
             retry_noticed: false,
+            streamed_text: false,
+            streamed_thinking: false,
+            known_user_ids: std::collections::HashSet::new(),
         }
+    }
+
+    /// The session onicode launched the CLI into (`--session-id`): known
+    /// before its `init`, so a run that dies first still names it.
+    pub fn with_session(mut self, session_id: &str) -> Self {
+        self.session_id = Some(session_id.to_owned());
+        self
+    }
+
+    /// A message already streamed was superseded (`tombstone`): what streams
+    /// next is a new message, not more of it. The superseded text stays in
+    /// the transcript (the doc has no retraction); its replacement is shown
+    /// whole from its own frame.
+    pub fn superseded(&mut self) -> String {
+        self.streamed_text = false;
+        self.streamed_thinking = false;
+        self.rotate_for_steer().0
     }
 
     /// The CLI reported its session (`system:init`).
@@ -595,6 +840,9 @@ impl Normalizer {
                     }
                     Err(_) => doubtful = true,
                 }
+            }
+            if text.contains("\"type\":\"user\"") {
+                collect_uuids(text, &mut norm.known_user_ids);
             }
             if !(text.contains("\"Agent\"")
                 || text.contains("\"Task\"")
@@ -1033,12 +1281,18 @@ impl Normalizer {
                     };
                 }
                 match f.event.delta.kind.as_str() {
-                    "text_delta" => vec![AgentEvent::TextDelta {
-                        text: f.event.delta.text,
-                    }],
-                    "thinking_delta" => vec![AgentEvent::ReasoningDelta {
-                        text: f.event.delta.thinking,
-                    }],
+                    "text_delta" => {
+                        self.streamed_text |= !f.event.delta.text.is_empty();
+                        vec![AgentEvent::TextDelta {
+                            text: f.event.delta.text,
+                        }]
+                    }
+                    "thinking_delta" => {
+                        self.streamed_thinking |= !f.event.delta.thinking.is_empty();
+                        vec![AgentEvent::ReasoningDelta {
+                            text: f.event.delta.thinking,
+                        }]
+                    }
                     // A big tool input (a 90-line Write) streams as a long run
                     // of input_json_delta frames with nothing else — minutes of
                     // apparent silence that reads as a stalled run. Surface
@@ -1078,59 +1332,94 @@ impl Normalizer {
                         _ => {}
                     }
                 }
+                // Text the stream never carried (a non-streaming fallback)
+                // is shown from the frame; synthetic and error frames carry
+                // the CLI's own wording, shown elsewhere or not at all.
+                let streamed = (
+                    std::mem::take(&mut self.streamed_text),
+                    std::mem::take(&mut self.streamed_thinking),
+                );
+                let shows_own_text =
+                    f.error.is_none() && f.message.model.as_deref() != Some("<synthetic>");
                 let mut out: Vec<AgentEvent> = f
                     .message
                     .blocks()
-                    .filter(|b: &ContentBlock| b.kind == "tool_use")
-                    .flat_map(|b| {
-                        let call = AgentEvent::ToolCall {
-                            id: b.id.clone(),
-                            call: decode_tool_use(&b.name, &b.input),
-                        };
-                        // A spawn's `prompt` is the subagent's opening user
-                        // message — the wire never echoes it on the child
-                        // feed (child user frames carry tool results and
-                        // steers only), so seed it here and the subagent
-                        // transcript starts the way every chat does.
-                        let opening = matches!(b.name.as_str(), "Agent" | "Task")
-                            .then(|| b.input.get("prompt"))
-                            .flatten()
-                            .and_then(Value::as_str)
-                            .filter(|p| !p.trim().is_empty())
-                            .map(|prompt| {
-                                tag(
-                                    &b.id,
-                                    AgentEvent::UserMessage {
-                                        text: prompt.to_owned(),
-                                    },
-                                )
-                            });
-                        // A SendMessage steer never echoes on the child feed
-                        // (live-verified) — surface it from the parent's own
-                        // call, re-keyed onto the spawn it addresses.
-                        let steer = (b.name == "SendMessage")
-                            .then(|| {
-                                let to = ["to", "recipient"]
-                                    .iter()
-                                    .find_map(|k| b.input.get(*k))
-                                    .and_then(Value::as_str)?;
-                                let spawn = self.agent_tasks.get(to)?;
-                                let text = ["message", "content"]
-                                    .iter()
-                                    .find_map(|k| b.input.get(*k))
-                                    .and_then(Value::as_str)
-                                    .filter(|m| !m.trim().is_empty())?;
-                                Some(tag(
-                                    spawn,
-                                    AgentEvent::UserMessage {
-                                        text: text.to_owned(),
-                                    },
-                                ))
-                            })
-                            .flatten();
-                        std::iter::once(call).chain(opening).chain(steer)
+                    .filter_map(|b: ContentBlock| match b.kind.as_str() {
+                        "text" if shows_own_text && !streamed.0 && !b.text.is_empty() => {
+                            Some(AgentEvent::TextDelta { text: b.text })
+                        }
+                        "thinking" if shows_own_text && !streamed.1 && !b.thinking.is_empty() => {
+                            Some(AgentEvent::ReasoningDelta { text: b.thinking })
+                        }
+                        _ => None,
                     })
                     .collect();
+                out.extend(
+                    f.message
+                        .blocks()
+                        .filter(|b: &ContentBlock| b.kind == "tool_use")
+                        .flat_map(|b| {
+                            // The plan Claude asks to implement is the tool's
+                            // input alone: shown as the reply's text, above the
+                            // approval it asks for.
+                            let plan = (b.name == "ExitPlanMode")
+                                .then(|| b.input.get("plan").and_then(Value::as_str))
+                                .flatten()
+                                .filter(|p| !p.trim().is_empty())
+                                .map(|plan| AgentEvent::TextDelta {
+                                    text: format!("\n\n{}\n\n", plan.trim()),
+                                });
+                            let call = AgentEvent::ToolCall {
+                                id: b.id.clone(),
+                                call: decode_tool_use(&b.name, &b.input),
+                            };
+                            // A spawn's `prompt` is the subagent's opening user
+                            // message — the wire never echoes it on the child
+                            // feed (child user frames carry tool results and
+                            // steers only), so seed it here and the subagent
+                            // transcript starts the way every chat does.
+                            let opening = matches!(b.name.as_str(), "Agent" | "Task")
+                                .then(|| b.input.get("prompt"))
+                                .flatten()
+                                .and_then(Value::as_str)
+                                .filter(|p| !p.trim().is_empty())
+                                .map(|prompt| {
+                                    tag(
+                                        &b.id,
+                                        AgentEvent::UserMessage {
+                                            text: prompt.to_owned(),
+                                        },
+                                    )
+                                });
+                            // A SendMessage steer never echoes on the child feed
+                            // (live-verified) — surface it from the parent's own
+                            // call, re-keyed onto the spawn it addresses.
+                            let steer = (b.name == "SendMessage")
+                                .then(|| {
+                                    let to = ["to", "recipient"]
+                                        .iter()
+                                        .find_map(|k| b.input.get(*k))
+                                        .and_then(Value::as_str)?;
+                                    let spawn = self.agent_tasks.get(to)?;
+                                    let text = ["message", "content"]
+                                        .iter()
+                                        .find_map(|k| b.input.get(*k))
+                                        .and_then(Value::as_str)
+                                        .filter(|m| !m.trim().is_empty())?;
+                                    Some(tag(
+                                        spawn,
+                                        AgentEvent::UserMessage {
+                                            text: text.to_owned(),
+                                        },
+                                    ))
+                                })
+                                .flatten();
+                            plan.into_iter()
+                                .chain(std::iter::once(call))
+                                .chain(opening)
+                                .chain(steer)
+                        }),
+                );
                 self.last_model = f.message.model.clone().or(self.last_model.take());
                 if let Some(usage) = &f.message.usage {
                     let fields = [
@@ -1209,14 +1498,13 @@ impl Normalizer {
                     );
                     return out;
                 }
-                f.message
-                    .blocks()
-                    .filter(|b: &ContentBlock| b.kind == "tool_result")
-                    .map(|b| {
+                frame_results(&f, &mut self.command_calls)
+                    .into_iter()
+                    .map(|(tool_use_id, event)| {
                         // A skill whose result came back without a task
                         // start ran inline: it never forks now.
-                        self.skill_calls.remove(&b.tool_use_id);
-                        tool_result(&b, &mut self.command_calls)
+                        self.skill_calls.remove(&tool_use_id);
+                        event
                     })
                     .collect()
             }
@@ -1329,9 +1617,26 @@ impl Normalizer {
                             "internal CLI diagnostic (not surfaced): {diagnostic}"
                         );
                     }
+                    let startup = f
+                        .startup_failure_reason
+                        .as_deref()
+                        .map(startup_failure_text);
+                    if let Some(reason) = &f.startup_failure_reason {
+                        tracing::info!(target: "onicode_harness::claude", %reason, "Claude startup failure");
+                    }
                     let error = if !errors.is_empty() {
-                        // Real user-relevant errors — surface verbatim.
-                        Some(errors.join("; "))
+                        // Real user-relevant errors — surface verbatim, with
+                        // what to do about a known startup failure.
+                        let mut error = errors.join("; ");
+                        if let Some(Some(hint)) = startup.map(|s| s.1) {
+                            error = format!("{error} {hint}");
+                        }
+                        Some(error)
+                    } else if let Some((text, hint)) = startup {
+                        Some(match hint {
+                            Some(hint) => format!("{text} {hint}"),
+                            None => text.to_owned(),
+                        })
                     } else {
                         match f.subtype.as_str() {
                             // Known run-failure subtypes stay visible with
@@ -1380,10 +1685,37 @@ impl Normalizer {
                 out
             }
 
+            // A long tool of the turn's own is still running: keep the turn
+            // visibly alive. A subagent's has no consumer (eager done).
+            Frame::ToolProgress(f) => {
+                if f.parent_tool_use_id
+                    .as_deref()
+                    .is_some_and(|p| !p.is_empty())
+                {
+                    return Vec::new();
+                }
+                vec![AgentEvent::ReasoningDelta {
+                    text: String::new(),
+                }]
+            }
+
+            // The superseded message's text stays (see [`Self::superseded`]);
+            // what follows is a new message.
+            Frame::Tombstone(f) => {
+                if f.parent_tool_use_id().is_some() {
+                    return Vec::new();
+                }
+                let prev = self.superseded();
+                vec![AgentEvent::AssistantMessageCompleted {
+                    assistant_message_id: prev,
+                }]
+            }
+
             // Control frames are handled by the run loop, not normalized.
             Frame::ControlRequest(_)
             | Frame::ControlResponse(_)
             | Frame::CommandLifecycle(_)
+            | Frame::ControlCancel(_)
             | Frame::Other => Vec::new(),
         }
     }
@@ -2930,11 +3262,7 @@ mod tests {
             other => panic!("unexpected event: {other:?}"),
         }
     }
-}
 
-#[cfg(test)]
-mod context_tests {
-    use super::*;
     #[test]
     fn context_counts_cached_prompt_and_matches_primary_model() {
         let mut normalizer = Normalizer::new();
@@ -2961,5 +3289,325 @@ mod context_tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn edit_and_write_results_carry_their_diff() {
+        // A created file has no old text.
+        let created = tool_diff(&json!({"type": "create", "filePath": "/w/new.rs",
+            "content": "fn main() {}\n", "structuredPatch": []}))
+        .unwrap();
+        assert_eq!(created.old_text, None);
+        assert_eq!(created.new_text, "fn main() {}\n");
+        // An overwrite with its original shows both whole.
+        let overwrite = tool_diff(&json!({"type": "update", "filePath": "/w/a.rs",
+            "content": "b\n", "originalFile": "a\n", "structuredPatch": []}))
+        .unwrap();
+        assert_eq!(overwrite.old_text.as_deref(), Some("a\n"));
+        assert_eq!(overwrite.new_text, "b\n");
+        // An update that changed nothing shows nothing.
+        assert_eq!(
+            tool_diff(&json!({"type": "update", "filePath": "/w/a.rs",
+                "content": "a\n", "originalFile": "a\n"})),
+            None
+        );
+        // An edit: its hunks applied to the original.
+        let edit = tool_diff(
+            &json!({"filePath": "/w/b.rs", "originalFile": "one\ntwo\nthree\n",
+            "structuredPatch": [{"oldStart": 2, "oldLines": 1, "newStart": 2, "newLines": 1,
+                "lines": ["-two", "+2"]}]}),
+        )
+        .unwrap();
+        assert_eq!(edit.old_text.as_deref(), Some("one\ntwo\nthree\n"));
+        assert_eq!(edit.new_text, "one\n2\nthree\n");
+        // Without the original (too large to send), only the hunks show, and
+        // an update is never mistaken for a creation.
+        let bare = tool_diff(&json!({"type": "update", "filePath": "/w/big.rs",
+            "content": "x\n", "structuredPatch": [{"oldStart": 9, "oldLines": 2,
+                "lines": [" keep", "-old", "+new"]}]}))
+        .unwrap();
+        assert_eq!(bare.old_text.as_deref(), Some("keep\nold\n"));
+        assert_eq!(bare.new_text, "keep\nnew\n");
+        // Hunks that do not match the original fall back the same way.
+        let stale = tool_diff(&json!({"filePath": "/w/c.rs", "originalFile": "a\n",
+            "structuredPatch": [{"oldStart": 1, "oldLines": 1, "lines": ["-zzz", "+y"]}]}))
+        .unwrap();
+        assert_eq!(stale.old_text.as_deref(), Some("zzz\n"));
+        // Any other tool's output has no diff.
+        assert_eq!(tool_diff(&json!({"stdout": "ok"})), None);
+    }
+
+    #[test]
+    fn hunks_insert_at_the_top_and_respect_a_missing_final_newline() {
+        let top = apply_hunks(
+            "b\n",
+            &[json!({"oldStart": 0, "oldLines": 0, "lines": ["+a"]})],
+        );
+        assert_eq!(top.as_deref(), Some("a\nb\n"));
+        let after = apply_hunks(
+            "a\nc\n",
+            &[json!({"oldStart": 1, "oldLines": 0, "lines": ["+b"]})],
+        );
+        assert_eq!(after.as_deref(), Some("a\nb\nc\n"));
+        let no_newline = apply_hunks(
+            "a\nb\n",
+            &[json!({"oldStart": 2, "oldLines": 1,
+                "lines": ["-b", "+c", "\\ No newline at end of file"]})],
+        );
+        assert_eq!(no_newline.as_deref(), Some("a\nc"));
+        // CRLF files match their hunks' bare lines.
+        let crlf = apply_hunks(
+            "a\r\nb\r\n",
+            &[json!({"oldStart": 1, "oldLines": 1, "lines": ["-a", "+z"]})],
+        );
+        assert_eq!(crlf.as_deref(), Some("z\nb\r\n"));
+    }
+
+    /// Seeded property: random edits to a random file, written as unified
+    /// hunks with up to two lines of context, apply back to exactly the
+    /// edited file.
+    #[test]
+    fn random_hunks_apply_to_the_edited_file() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n.max(1) as u64) as usize
+        };
+        for _ in 0..400 {
+            let len = next(30);
+            let original: Vec<String> = (0..len).map(|i| format!("l{i}-{}", next(5))).collect();
+            let context = next(3);
+            // Non-overlapping edits, far enough apart that hunks stay apart.
+            let mut edits = Vec::new();
+            let mut at = 0;
+            while at <= len && edits.len() < 4 {
+                at += next(6);
+                if at > len {
+                    break;
+                }
+                let removed = next(3).min(len - at);
+                let added: Vec<String> = (0..next(3))
+                    .map(|k| format!("new{k}-{}", next(9)))
+                    .collect();
+                if removed == 0 && added.is_empty() {
+                    at += 1;
+                    continue;
+                }
+                edits.push((at, removed, added));
+                at += removed + 2 * context + 1;
+            }
+            let mut edited = Vec::new();
+            let mut hunks = Vec::new();
+            let mut copied = 0;
+            for (start, removed, added) in &edits {
+                edited.extend(original[copied..*start].iter().cloned());
+                let before = start.saturating_sub(context);
+                let after = (start + removed + context).min(len);
+                let mut lines: Vec<String> = original[before..*start]
+                    .iter()
+                    .map(|l| format!(" {l}"))
+                    .collect();
+                lines.extend(
+                    original[*start..start + removed]
+                        .iter()
+                        .map(|l| format!("-{l}")),
+                );
+                lines.extend(added.iter().map(|l| format!("+{l}")));
+                lines.extend(
+                    original[start + removed..after]
+                        .iter()
+                        .map(|l| format!(" {l}")),
+                );
+                let old_lines = after - before;
+                hunks.push(json!({
+                    "oldStart": if old_lines == 0 { before } else { before + 1 },
+                    "oldLines": old_lines,
+                    "lines": lines,
+                }));
+                edited.extend(added.iter().cloned());
+                copied = start + removed;
+            }
+            edited.extend(original[copied..].iter().cloned());
+            let text =
+                |lines: &[String]| lines.iter().map(|l| format!("{l}\n")).collect::<String>();
+            assert_eq!(
+                apply_hunks(&text(&original), &hunks),
+                Some(text(&edited)),
+                "{edits:?} context {context}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_users_tool_result_carries_the_edit_diff() {
+        let events = normalize_one(
+            r#"{"type":"user","parent_tool_use_id":null,"message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":false,"content":"ok"}]},"tool_use_result":{"filePath":"/w/a.rs","originalFile":"a\n","structuredPatch":[{"oldStart":1,"oldLines":1,"lines":["-a","+b"]}]}}"#,
+        );
+        let diff = events.iter().find_map(|e| match e {
+            AgentEvent::ToolResult { id, diff, .. } if id == "t1" => diff.clone(),
+            _ => None,
+        });
+        assert_eq!(
+            diff,
+            Some(ToolDiff {
+                path: "/w/a.rs".into(),
+                old_text: Some("a\n".into()),
+                new_text: "b\n".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn text_that_never_streamed_is_shown_from_its_frame() {
+        let mut norm = Normalizer::new();
+        let frame = r#"{"type":"assistant","parent_tool_use_id":null,"message":{"model":"claude-x","content":[{"type":"thinking","thinking":"why"},{"type":"text","text":"answer"}]}}"#;
+        let shown: Vec<AgentEvent> = feed_one(&mut norm, frame)
+            .into_iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    AgentEvent::TextDelta { .. } | AgentEvent::ReasoningDelta { .. }
+                )
+            })
+            .collect();
+        assert_eq!(
+            shown,
+            vec![
+                AgentEvent::ReasoningDelta { text: "why".into() },
+                AgentEvent::TextDelta {
+                    text: "answer".into()
+                },
+            ]
+        );
+        // Streamed first: the frame adds nothing.
+        feed_one(
+            &mut norm,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"answer"}}}"#,
+        );
+        let again = r#"{"type":"assistant","parent_tool_use_id":null,"message":{"model":"claude-x","content":[{"type":"text","text":"answer"}]}}"#;
+        assert!(
+            !feed_one(&mut norm, again)
+                .iter()
+                .any(|e| matches!(e, AgentEvent::TextDelta { .. }))
+        );
+        // The CLI's own synthetic and error wording is not the reply.
+        let synthetic = r#"{"type":"assistant","parent_tool_use_id":null,"message":{"model":"<synthetic>","content":[{"type":"text","text":"No response requested."}]}}"#;
+        assert!(
+            !feed_one(&mut norm, synthetic)
+                .iter()
+                .any(|e| matches!(e, AgentEvent::TextDelta { .. }))
+        );
+    }
+
+    #[test]
+    fn a_plan_shows_as_the_reply_above_its_approval() {
+        let events = normalize_one(
+            r#"{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"tool_use","id":"p1","name":"ExitPlanMode","input":{"plan":"  1. Do it.  "}}]}}"#,
+        );
+        let plan = events.iter().position(
+            |e| matches!(e, AgentEvent::TextDelta { text } if text == "\n\n1. Do it.\n\n"),
+        );
+        let call = events
+            .iter()
+            .position(|e| matches!(e, AgentEvent::ToolCall { id, .. } if id == "p1"));
+        assert!(plan.is_some() && plan < call, "{events:?}");
+    }
+
+    #[test]
+    fn a_tombstone_ends_the_superseded_message_and_progress_keeps_the_turn_alive() {
+        let mut norm = Normalizer::new();
+        let before = norm.assistant_message_id.clone();
+        let events = feed_one(
+            &mut norm,
+            r#"{"type":"tombstone","message":{"parent_tool_use_id":null,"message":{"content":[]}}}"#,
+        );
+        assert_eq!(
+            events,
+            vec![AgentEvent::AssistantMessageCompleted {
+                assistant_message_id: before.clone()
+            }]
+        );
+        assert_ne!(norm.assistant_message_id, before);
+        // A subagent's tombstone or progress has no consumer here.
+        assert!(
+            feed_one(
+                &mut norm,
+                r#"{"type":"tombstone","message":{"parent_tool_use_id":"agent-1"}}"#
+            )
+            .is_empty()
+        );
+        assert!(
+            feed_one(
+                &mut norm,
+                r#"{"type":"tool_progress","tool_use_id":"t","parent_tool_use_id":"agent-1"}"#
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            feed_one(
+                &mut norm,
+                r#"{"type":"tool_progress","tool_use_id":"t","parent_tool_use_id":null}"#
+            ),
+            vec![AgentEvent::ReasoningDelta {
+                text: String::new()
+            }]
+        );
+    }
+
+    #[test]
+    fn startup_failures_say_what_happened_and_what_to_do() {
+        let (status, error) = done_of(&normalize_one(
+            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"errors":[],"startup_failure_reason":"gateway_signin_required","usage":{"input_tokens":0,"output_tokens":0}}"#,
+        ));
+        assert_eq!(status, DoneStatus::Errored);
+        assert_eq!(
+            error.as_deref(),
+            Some(
+                "Claude Code needs to sign in to its gateway. Sign in with `claude` in a terminal, then try again."
+            )
+        );
+        // The CLI's own words win, with the hint after them.
+        let (_, error) = done_of(&normalize_one(
+            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["Your org requires 2.1.400"],"startup_failure_reason":"cli_version_too_old","usage":{"input_tokens":0,"output_tokens":0}}"#,
+        ));
+        assert_eq!(
+            error.as_deref(),
+            Some("Your org requires 2.1.400 Update Claude Code, then try again.")
+        );
+        // An unknown reason still reads as a failed start.
+        let (_, error) = done_of(&normalize_one(
+            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"errors":[],"startup_failure_reason":"something_new","usage":{"input_tokens":0,"output_tokens":0}}"#,
+        ));
+        assert_eq!(error.as_deref(), Some("Claude Code could not start."));
+    }
+
+    #[test]
+    fn a_resumed_transcript_names_the_prompts_it_holds() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("projects/-w");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("sess-k.jsonl"),
+            concat!(
+                r#"{"type":"user","uuid":"aaaaaaaa-0000-4000-8000-000000000001","parentUuid":null,"message":{"role":"user","content":"hi"}}"#,
+                "\n",
+                r#"{"type":"assistant","uuid":"bbbbbbbb-0000-4000-8000-000000000002","message":{"content":[{"type":"text","text":"yo"}]}}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        let (norm, transcript) = Normalizer::restore_spawns(root.path(), "sess-k");
+        assert_eq!(transcript, Transcript::Conversation);
+        assert!(
+            norm.known_user_ids
+                .contains("aaaaaaaa-0000-4000-8000-000000000001")
+        );
+        assert!(
+            !norm
+                .known_user_ids
+                .contains("bbbbbbbb-0000-4000-8000-000000000002")
+        );
     }
 }

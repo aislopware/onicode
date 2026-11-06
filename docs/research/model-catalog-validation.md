@@ -88,8 +88,6 @@ models: 6
 
 ## Limits
 
-- Native Windows execution was not available on this Linux host. Portable path tests
-  run here; the Windows launcher/version-probe test requires Windows CI.
 - Existing unrelated clippy warnings remain outside this change.
 - Cold discovery can incur a two-second version probe for each uncached candidate;
   later descriptor checks reuse the metadata-keyed probe result.

@@ -877,9 +877,8 @@ async function start(msg) {
     local.store = fresh.store;
     runDir = fresh.dir;
   }
-  // Onicode's own server plus the plugins' native ones (`extraMcp`); Onicode's
-  // wins a name clash.
-  const servers = [...(msg.extraMcp ?? []), ...(msg.mcp ? [msg.mcp] : [])];
+  // Onicode's own server, when the host injected one.
+  const servers = msg.mcp ? [msg.mcp] : [];
   const options = {
     model,
     ...(servers.length ? { mcpServers: Object.fromEntries(servers.map(server => [server.name, {

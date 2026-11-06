@@ -342,7 +342,7 @@ fn sync_ns_appearance(_mode: AppearanceMode) {}
 pub fn reapply_window_background(cx: &mut App) {
     // The window handling a settings click is temporarily taken out of App,
     // so updating it synchronously fails — silently, leaving its native
-    // backdrop (macOS blur view, Windows Acrylic) on the old surface until a
+    // backdrop (macOS blur view) on the old surface until a
     // restart. Defer until every window is back, on every platform.
     cx.defer(apply_window_background);
 }

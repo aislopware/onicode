@@ -584,6 +584,7 @@ fn picker(host: &str, now: i64) -> Vec<SessionMessageEntry> {
                             ],
                             prefill: None,
                             multiline: false,
+                            approval: None,
                             multi_select: false,
                         },
                         UserInputQuestion {
@@ -598,6 +599,7 @@ fn picker(host: &str, now: i64) -> Vec<SessionMessageEntry> {
                             ],
                             prefill: None,
                             multiline: false,
+                            approval: None,
                             multi_select: true,
                         },
                     ],
@@ -1170,6 +1172,7 @@ pub(crate) fn asking() -> Vec<Step> {
             options: vec!["Yes, both platforms".into(), "iOS only".into()],
             prefill: None,
             multiline: false,
+            approval: None,
             multi_select: false,
         }]),
     ]

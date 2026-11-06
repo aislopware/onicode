@@ -174,7 +174,6 @@ fn run_request(harness: HarnessId, prompt: &str) -> RunRequest {
         attachments: vec![],
         worktree: None,
         env: Default::default(),
-        extra_mcp: Vec::new(),
     }
 }
 

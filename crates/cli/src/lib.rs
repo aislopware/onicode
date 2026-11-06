@@ -9,7 +9,7 @@
 //!   - no subcommand: open the window ([`Launch::Window`]);
 //!   - a subcommand that runs the engine's code here ([`EngineCommand`]:
 //!     `headless`, `engine`, `login`, `logout`, `status`, `sync`, `quiesce`,
-//!     `mcp`, `plugin`, `template`). A binary that links the engine runs it
+//!     `mcp`). A binary that links the engine runs it
 //!     itself ([`Engines::InProcess`], `onicode_app::run_engine_command`); an
 //!     interface that doesn't hands the whole command line to the engine
 //!     helper beside it ([`Engines::Helper`]: `Contents/MacOS/Onicode Engine`
@@ -41,9 +41,6 @@ struct Cli {
     /// Open a Onicode conversation URL.
     #[arg(value_name = "URL")]
     open_url: Option<String>,
-    #[cfg(windows)]
-    #[arg(long, hide = true)]
-    wait_for_exit: Option<u32>,
 }
 
 #[derive(Subcommand)]
@@ -76,18 +73,6 @@ enum Command {
     /// proxying to the running engine's IPC. Agents use it to create, read,
     /// and message chats. Logs go to stderr; stdout is the protocol.
     Mcp,
-    /// Make, sign, check and list plugins (through the running Onicode).
-    Plugin {
-        #[command(subcommand)]
-        command: PluginCommand,
-    },
-    /// List, make, use and delete templates: whole replacements of Onicode's
-    /// interface (through the running Onicode). `onicode template use onicode`
-    /// puts Onicode's own back.
-    Template {
-        #[command(subcommand)]
-        command: TemplateCommand,
-    },
     /// Manage `onicode headless` as a background service (launchd / systemd --user).
     Daemon {
         #[command(subcommand)]
@@ -121,51 +106,6 @@ enum DaemonCommand {
     Status,
 }
 
-#[derive(Subcommand)]
-pub enum PluginCommand {
-    /// Make a new plugin in Onicode's plugins folder, signed as you.
-    New {
-        /// Its id: lowercase letters, digits and dashes.
-        id: String,
-        /// Its name (defaults to the id).
-        #[arg(long)]
-        name: Option<String>,
-        /// A permission it asks for (repeat for more).
-        #[arg(long = "permission", value_name = "P")]
-        permissions: Vec<String>,
-    },
-    /// Sign a plugin as you: an id in the plugins folder, or a folder's path.
-    Sign { target: String },
-    /// Check a plugin folder's signature and who made it.
-    Verify { path: String },
-    /// List the plugins Onicode knows.
-    List,
-}
-
-#[derive(Subcommand)]
-pub enum TemplateCommand {
-    /// List the templates on this device, Onicode's own first.
-    List,
-    /// Run Onicode's window with a template. `onicode template use onicode` puts
-    /// Onicode's own back, even with Onicode closed.
-    Use { id: String },
-    /// Make a new template: a full copy of Onicode's interface to rewrite.
-    Create {
-        /// Its id: lowercase letters, digits and dashes.
-        id: String,
-        /// Its name (defaults to the id).
-        #[arg(long)]
-        name: Option<String>,
-        /// A template to start from (defaults to Onicode's own).
-        #[arg(long)]
-        from: Option<String>,
-    },
-    /// Show a template's errors, out-of-date files and what it inherits.
-    Status { id: String },
-    /// Delete a template (it's set aside in the templates folder's .removed).
-    Delete { id: String },
-}
-
 /// A subcommand that runs the engine's own code in this process: what the
 /// engine helper (or a binary linking the engine) does with it.
 pub enum EngineCommand {
@@ -177,8 +117,6 @@ pub enum EngineCommand {
     Sync,
     Quiesce,
     Mcp,
-    Plugin(PluginCommand),
-    Template(TemplateCommand),
 }
 
 /// Where this binary runs [`EngineCommand`]s.
@@ -217,32 +155,19 @@ pub fn run(version: &'static str, engines: Engines) -> Launch {
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--noop-browser")) {
         return Launch::Done(Ok(()));
     }
-    #[cfg(windows)]
-    attach_parent_console();
     let cli = match Cli::from_arg_matches(&command(version).get_matches()) {
         Ok(cli) => cli,
         Err(error) => error.exit(),
     };
     if engines == Engines::Helper && cli.command.as_ref().is_some_and(Command::runs_engine) {
         // The helper parses the same arguments and does all of the below
-        // itself (logging, Windows' image cleanup, the command).
+        // itself (logging, the command).
         let exe = match std::env::current_exe() {
             Ok(exe) => exe,
             Err(error) => return Launch::Done(Err(error.into())),
         };
         let error = onicode_launch::exec_helper(&exe, std::env::args_os().skip(1));
         return Launch::Done(Err(anyhow::anyhow!("couldn't start the engine: {error}")));
-    }
-    #[cfg(windows)]
-    if let Some(pid) = cli.wait_for_exit {
-        if let Err(error) = onicode_update::windows::wait_for_exit(pid) {
-            return Launch::Done(Err(error));
-        }
-    } else if matches!(
-        &cli.command,
-        None | Some(Command::Headless) | Some(Command::Engine)
-    ) {
-        onicode_update::windows::cleanup_previous_image();
     }
     let long_running = matches!(&cli.command, None | Some(Command::Headless));
     let mode = if cli.command.is_some() {
@@ -257,10 +182,7 @@ pub fn run(version: &'static str, engines: Engines) -> Launch {
         init_logging(
             long_running,
             mode,
-            matches!(
-                &cli.command,
-                Some(Command::Mcp | Command::Plugin { .. } | Command::Template { .. })
-            ),
+            matches!(&cli.command, Some(Command::Mcp)),
         );
     }
     if long_running {
@@ -281,8 +203,6 @@ pub fn run(version: &'static str, engines: Engines) -> Launch {
         Some(Command::Sync) => engine(EngineCommand::Sync),
         Some(Command::Quiesce) => engine(EngineCommand::Quiesce),
         Some(Command::Mcp) => engine(EngineCommand::Mcp),
-        Some(Command::Plugin { command }) => engine(EngineCommand::Plugin(command)),
-        Some(Command::Template { command }) => engine(EngineCommand::Template(command)),
         #[cfg(target_os = "linux")]
         Some(Command::Appshot) => Launch::Appshot,
         Some(Command::Update { check }) => Launch::Done(
@@ -318,9 +238,7 @@ impl Command {
             | Self::Status
             | Self::Sync
             | Self::Quiesce
-            | Self::Mcp
-            | Self::Plugin { .. }
-            | Self::Template { .. } => true,
+            | Self::Mcp => true,
             #[cfg(target_os = "linux")]
             Self::Appshot => false,
             Self::Update { .. } | Self::UpdateWatchdog | Self::Daemon { .. } => false,
@@ -328,33 +246,8 @@ impl Command {
     }
 }
 
-#[cfg(windows)]
-fn attach_parent_console() {
-    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
-    use windows_sys::Win32::System::Console::{
-        ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE,
-        STD_OUTPUT_HANDLE, SetStdHandle,
-    };
-
-    // The GUI subsystem prevents Explorer from creating a console at startup.
-    // Reuse an existing parent's console for CLI output and cargo run, without
-    // allocating one. Attach before Clap so help and argument errors work too.
-    // Preserve redirected pipes/files: attaching may replace standard handles.
-    unsafe {
-        let saved = [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE]
-            .map(|id| (id, GetStdHandle(id)));
-        if AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
-            for (id, handle) in saved {
-                if !handle.is_null() && handle != INVALID_HANDLE_VALUE {
-                    SetStdHandle(id, handle);
-                }
-            }
-        }
-    }
-}
-
-/// Every subcommand path of the command line (`[]`, `["plugin"]`,
-/// `["plugin", "new"]`, …), hidden ones included: what the parity checks of
+/// Every subcommand path of the command line (`[]`, `["daemon"]`,
+/// `["daemon", "install"]`, …), hidden ones included: what the parity checks of
 /// each binary that runs it walk (`apps/onicode/tests/cli.rs`,
 /// `apps/zgx/tests/cli.rs`).
 pub fn subcommand_paths(version: &'static str) -> Vec<Vec<String>> {
@@ -412,8 +305,6 @@ mod tests {
             &["sync"],
             &["quiesce"],
             &["mcp"],
-            &["plugin", "new"],
-            &["template", "use"],
             &["daemon", "install"],
             &["update"],
         ] {
@@ -443,8 +334,6 @@ mod tests {
             &["sync"],
             &["quiesce"],
             &["mcp"],
-            &["plugin", "list"],
-            &["template", "list"],
         ] {
             assert!(parse(args).unwrap().runs_engine(), "{args:?}");
         }

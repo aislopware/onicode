@@ -34,7 +34,6 @@ async fn live_run(cancel: bool) {
         access: Default::default(), plan: false,
         attachments: Vec::new(), worktree: None, resume: None,
         env: Default::default(),
-        extra_mcp: Vec::new(),
     };
     let mut stream = onicode_harness::PiHarness::new()
         .run(request, controls)

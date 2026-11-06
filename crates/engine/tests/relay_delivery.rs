@@ -215,15 +215,14 @@ async fn rows_dark_command_delivers_over_the_peer_relay_exactly_once() {
     link_config.probe_timeout = Duration::from_secs(5);
     core_a.set_links(LinkCache::new(link_config));
 
-    // A knows the chat is hosted on B (local registry writes), and knows B's
-    // stamped version passes the relay gate.
+    // A knows the chat is hosted on B (local registry writes).
     core_a.workspace.upsert_device_row(&Device {
         id: "device-b".into(),
         name: "b".into(),
         platform: "linux".into(),
         last_seen_at: Some(chrono::Utc::now()),
         created_at: None,
-        version: Some("0.2.12".into()),
+        version: Some(env!("CARGO_PKG_VERSION").into()),
         cursor_sdk_version: None,
         capabilities: onicode_proto::capabilities::current(),
     });
@@ -259,7 +258,6 @@ async fn rows_dark_command_delivers_over_the_peer_relay_exactly_once() {
             worktree: None,
             resume: None,
             env: Default::default(),
-            extra_mcp: Vec::new(),
         }),
         message_id: "msg-relay-1".into(),
     })

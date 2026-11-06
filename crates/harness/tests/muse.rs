@@ -62,7 +62,6 @@ fn request(dir: &Path, scenario: &str, prompt: &str) -> RunRequest {
         ]
         .into_iter()
         .collect(),
-        extra_mcp: Vec::new(),
     }
 }
 

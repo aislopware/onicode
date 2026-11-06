@@ -20,23 +20,12 @@ fn this_version() -> String {
     let exe = std::env::current_exe().unwrap();
     let exe = std::fs::canonicalize(exe).unwrap();
     let dir = exe.parent().unwrap();
-    // On Windows: a trial is told where it's installed; once there, a file says.
-    #[cfg(windows)]
-    {
-        if std::env::var_os(onicode_update::INSTALLED_AT_ENV).is_some() {
-            return "2.0.0".into();
-        }
-        std::fs::read_to_string(dir.join("onicode-version")).unwrap_or_else(|_| "1.0.0".into())
-    }
     // A macOS bundle says in its Info.plist; a versioned folder is its name.
-    #[cfg(unix)]
-    {
-        if dir.ends_with("Contents/MacOS") {
-            return onicode_update::bundle_app_version(dir.parent().unwrap().parent().unwrap())
-                .unwrap();
-        }
-        dir.file_name().unwrap().to_str().unwrap().to_owned()
+    if dir.ends_with("Contents/MacOS") {
+        return onicode_update::bundle_app_version(dir.parent().unwrap().parent().unwrap())
+            .unwrap();
     }
+    dir.file_name().unwrap().to_str().unwrap().to_owned()
 }
 
 fn docs(data: &Path) -> PathBuf {
@@ -75,8 +64,7 @@ fn fake_engine() {
         std::process::exit(4);
     }
     if transaction::in_trial() {
-        // Beside the exe, or for Windows beside the exe's folder (the commit moves
-        // the exe away from it).
+        // Beside the exe.
         let behavior = std::fs::read_to_string(exe.with_file_name("behavior")).unwrap();
         match behavior.trim() {
             "ok" => {
@@ -129,8 +117,6 @@ struct Rig {
     app: PathBuf,
     /// A macOS app install instead of a versioned one.
     mac: Option<MacRig>,
-    /// A Windows install: its folder and the new exe's.
-    windows: Option<(PathBuf, PathBuf)>,
 }
 
 struct MacRig {
@@ -162,7 +148,6 @@ impl Rig {
             data,
             app,
             mac: None,
-            windows: None,
         };
         std::fs::create_dir_all(docs(&rig.data).parent().unwrap()).unwrap();
         std::fs::write(docs(&rig.data), ORIGINAL).unwrap();
@@ -171,31 +156,9 @@ impl Rig {
             "the wal",
         )
         .unwrap();
-        #[cfg(unix)]
-        {
-            rig.install("1.0.0", "ok");
-            rig.install("2.0.0", behavior);
-            rig.point_current_at("1.0.0");
-        }
-        #[cfg(windows)]
-        let _ = behavior;
-        rig
-    }
-
-    /// The same, as a Windows install: `onicode.exe`, and the new one in a folder of
-    /// its own inside the installation's.
-    #[cfg(windows)]
-    fn new_windows(behavior: &str) -> Self {
-        let mut rig = Self::new(behavior);
-        let directory = rig.data.parent().unwrap().join("Onicode");
-        let incoming = directory.join(".onicode-update-test");
-        std::fs::create_dir_all(&incoming).unwrap();
-        let exe = std::env::current_exe().unwrap();
-        std::fs::copy(&exe, directory.join("onicode.exe")).unwrap();
-        std::fs::copy(&exe, incoming.join("onicode.exe")).unwrap();
-        std::fs::write(directory.join("behavior"), "ok").unwrap();
-        std::fs::write(incoming.join("behavior"), behavior).unwrap();
-        rig.windows = Some((directory, incoming.join("onicode.exe")));
+        rig.install("1.0.0", "ok");
+        rig.install("2.0.0", behavior);
+        rig.point_current_at("1.0.0");
         rig
     }
 
@@ -214,12 +177,6 @@ impl Rig {
     }
 
     fn layout(&self) -> Layout {
-        if let Some((directory, incoming)) = &self.windows {
-            return Layout::WindowsFolder {
-                directory: directory.clone(),
-                incoming: incoming.clone(),
-            };
-        }
         match &self.mac {
             Some(mac) => Layout::MacBundle {
                 bundle: mac.bundle.clone(),
@@ -231,7 +188,6 @@ impl Rig {
         }
     }
 
-    #[cfg(unix)]
     fn install(&self, version: &str, behavior: &str) {
         let dir = self.app.join(version);
         std::fs::create_dir_all(&dir).unwrap();
@@ -242,7 +198,6 @@ impl Rig {
         std::fs::write(dir.join("behavior"), behavior).unwrap();
     }
 
-    #[cfg(unix)]
     fn point_current_at(&self, version: &str) {
         let _ = std::fs::remove_file(self.app.join("current"));
         std::os::unix::fs::symlink(self.app.join(version), self.app.join("current")).unwrap();
@@ -271,10 +226,9 @@ impl Rig {
     /// One start of the service, as a service manager makes it: whatever
     /// `current` is at that moment.
     fn start(&self, crash_at: Option<&str>) -> std::process::ExitStatus {
-        let installed = match (&self.mac, &self.windows) {
-            (Some(mac), _) => mac.bundle.join("Contents/MacOS/onicode"),
-            (_, Some((directory, _))) => directory.join("onicode.exe"),
-            _ => self.app.join("current/onicode"),
+        let installed = match &self.mac {
+            Some(mac) => mac.bundle.join("Contents/MacOS/onicode"),
+            None => self.app.join("current/onicode"),
         };
         let mut command = Command::new(installed);
         command
@@ -314,10 +268,6 @@ impl Rig {
     }
 
     fn current(&self) -> String {
-        if let Some((directory, _)) = &self.windows {
-            return std::fs::read_to_string(directory.join("onicode-version"))
-                .unwrap_or_else(|_| "1.0.0".into());
-        }
         if let Some(mac) = &self.mac {
             return onicode_update::bundle_app_version(&mac.bundle).unwrap();
         }
@@ -405,7 +355,6 @@ impl Finished for transaction::Transaction {
     }
 }
 
-#[cfg(unix)]
 mod versioned {
     use super::*;
 
@@ -667,65 +616,6 @@ mod versioned {
             MIGRATED,
             "it must not restore over another version's data"
         );
-    }
-}
-
-/// Windows: no replacing a process, so the old one starts the new exe and stays on
-/// as the watchdog (the test plays the app, which starts the engine again). A
-/// running exe can be renamed, and that's the commit.
-#[cfg(windows)]
-mod windows {
-    use super::*;
-
-    #[test]
-    fn a_good_release_moves_into_place_and_keeps_its_migration() {
-        let rig = Rig::new_windows("ok");
-        let id = rig.request(RestartMode::Relaunch, 60);
-        rig.run_until_settled();
-        wait_for_ran(&rig, "2.0.0");
-        rig.assert_updated(&id);
-    }
-
-    #[test]
-    fn a_bad_release_goes_back() {
-        for behavior in ["exit-1", "exit-0", "migrate-then-exit"] {
-            let rig = Rig::new_windows(behavior);
-            let id = rig.request(RestartMode::Relaunch, 60);
-            rig.start(None);
-            wait_for_ran(&rig, "1.0.0");
-            rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-            assert!(
-                !rig.windows.as_ref().unwrap().1.exists(),
-                "{behavior}: new exe left behind"
-            );
-        }
-    }
-
-    #[test]
-    fn a_hung_release_is_stopped_and_the_old_version_comes_back() {
-        let rig = Rig::new_windows("hang");
-        let id = rig.request(RestartMode::Relaunch, 2);
-        rig.start(None);
-        wait_for_ran(&rig, "1.0.0");
-        rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-        assert!(
-            rig.record()
-                .reason
-                .unwrap()
-                .contains("didn't finish starting")
-        );
-    }
-
-    fn wait_for_ran(rig: &Rig, version: &str) {
-        let waited = Instant::now();
-        while rig.last_ran().as_deref() != Some(version) {
-            assert!(
-                waited.elapsed() < Duration::from_secs(60),
-                "{version} never came back: {:?}",
-                rig.record()
-            );
-            std::thread::sleep(Duration::from_millis(100));
-        }
     }
 }
 

@@ -334,7 +334,6 @@ c.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK'
 /// marker survives reparenting, and a scrubbed server is attributed through
 /// the marked process that launched it. A server started outside the
 /// checkout is listed under the chat that started it.
-#[cfg(unix)]
 #[tokio::test]
 async fn backgrounded_scrubbed_terminal_and_out_of_tree_servers_stay_attributed() {
     let _serial = SERIAL.lock().await;
@@ -388,15 +387,28 @@ async fn backgrounded_scrubbed_terminal_and_out_of_tree_servers_stay_attributed(
     }
     let _daemon = Kill(daemon);
     // A marked shell that stays alive around a server with no environment.
-    let _scrubbed = Child(
-        std::process::Command::new("sh")
+    // The shell leads its own process group, and the whole group goes with
+    // it: killing the shell alone would orphan the server. It is bash, as an
+    // agent's shell is: macOS 27's `/bin/sh` shows no environment to
+    // `KERN_PROCARGS2`, so a marker on it can't be read.
+    struct Group(std::process::Child);
+    impl Drop for Group {
+        fn drop(&mut self) {
+            unsafe { libc::killpg(self.0.id() as i32, libc::SIGKILL) };
+            let _ = self.0.wait();
+        }
+    }
+    let _scrubbed = Group({
+        use std::os::unix::process::CommandExt;
+        std::process::Command::new("bash")
             .args(["-c", &format!("env -i {python} -c \"{HTTP_SERVER}\"; true")])
             .env(ORIGIN_ENV, chat_origin(&chat))
             .current_dir(&app)
             .stdout(std::process::Stdio::null())
+            .process_group(0)
             .spawn()
-            .unwrap(),
-    );
+            .unwrap()
+    });
     let outside = launch(&elsewhere, true, Some(chat.as_str()));
     // From a terminal (or the project action running in one), which may
     // have closed since: its chat is remembered.

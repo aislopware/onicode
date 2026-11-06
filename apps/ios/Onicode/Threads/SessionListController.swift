@@ -26,8 +26,9 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
         didSet {
             guard oldValue != currentChatId, dataSource != nil else { return }
             var s = dataSource.snapshot()
-            let ids = Set([oldValue, currentChatId].compactMap { $0 })
-            s.reconfigureItems(s.itemIdentifiers.filter { if case let .session(id) = $0 { return ids.contains(id) } else { return false } })
+            let ids = Set([oldValue, currentChatId].compactMap(\.self))
+            s.reconfigureItems(
+                s.itemIdentifiers.filter { if case let .session(id) = $0 { ids.contains(id) } else { false } })
             dataSource.apply(s, animatingDifferences: false)
         }
     }
@@ -44,7 +45,8 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -67,7 +69,7 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
         }
         view.addSubview(collectionView)
 
-        let sessionReg = UICollectionView.CellRegistration<SessionCell, String> { [weak self] cell, path, id in
+        let sessionReg = UICollectionView.CellRegistration<SessionCell, String> { [weak self] cell, _, id in
             guard let self, let vm = self.sessions[id] else { return }
             cell.configure(vm)
             cell.isCurrent = id == self.currentChatId
@@ -96,14 +98,15 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
             switch item {
             case let .session(id): cv.dequeueConfiguredReusableCell(using: sessionReg, for: path, item: id)
             case let .folder(id): cv.dequeueConfiguredReusableCell(using: folderReg, for: path, item: id)
-            case let .header(id) where self?.collapsible == true: cv.dequeueConfiguredReusableCell(using: sectionReg, for: path, item: id)
+            case let .header(id) where self?.collapsible == true:
+                cv.dequeueConfiguredReusableCell(using: sectionReg, for: path, item: id)
             case let .header(id): cv.dequeueConfiguredReusableCell(using: headerReg, for: path, item: id)
             }
         }
         token = app.observe { [weak self] in self?.reload(animated: true) }
         reload(animated: false)
         // Text size changes: fixed row heights change with the category.
-        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (self: SessionListController, _) in
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (self: Self, _) in
             var s = self.dataSource.snapshot()
             s.reconfigureItems(s.itemIdentifiers)
             self.dataSource.apply(s, animatingDifferences: false)
@@ -113,10 +116,11 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
         // (The control is captured directly: a primary action's `sender` is
         // nil, so ending via `action.sender` left the spinner running forever.)
         let refresh = UIRefreshControl()
-        refresh.addAction(UIAction { [weak self, weak refresh] _ in
-            guard let self else { return refresh?.endRefreshing() ?? () }
-            self.app.refresh { refresh?.endRefreshing() }
-        }, for: .valueChanged)
+        refresh.addAction(
+            UIAction { [weak self, weak refresh] _ in
+                guard let self else { return refresh?.endRefreshing() ?? () }
+                self.app.refresh { refresh?.endRefreshing() }
+            }, for: .valueChanged)
         refresh.accessibilityIdentifier = "pull-to-refresh"
         collectionView.refreshControl = refresh
     }
@@ -142,7 +146,8 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
                         title: header,
                         count: s.sessions.count,
                         collapsed: collapsed.contains(s.id),
-                        live: s.sessions.contains { $0.status == .working } ? .spinner : s.sessions.contains { $0.status == .awaiting } ? .dot(StatusTone.input) : nil
+                        live: s.sessions.contains { $0.status == .working }
+                            ? .spinner : s.sessions.contains { $0.status == .awaiting } ? .dot(StatusTone.input) : nil
                     )
                     if let old = headerStates[s.id], old != state { changed.append(.header(s.id)) }
                     headerStates[s.id] = state
@@ -172,7 +177,7 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
     }
 
     /// Subclasses follow the scroll (the front page fades its wallpaper).
-    func listDidScroll(_ scrollView: UIScrollView) {}
+    func listDidScroll(_: UIScrollView) {}
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         listDidScroll(scrollView)
@@ -194,7 +199,7 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
         }
     }
 
-    func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
+    func collectionView(_: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
         if case .header = dataSource.itemIdentifier(for: indexPath) { return collapsible }
         return true
     }
@@ -207,11 +212,11 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
     }
 
     /// Long-press actions for a collapsible section header.
-    func headerMenu(_ id: String) -> UIMenu? { nil }
+    func headerMenu(_: String) -> UIMenu? { nil }
 
     /// What dropping a dragged session into list section `id` means; nil
     /// where sessions can't be dropped.
-    func dropTarget(_ id: String) -> SessionDropTarget? { nil }
+    func dropTarget(_: String) -> SessionDropTarget? { nil }
 
     func openSession(_ id: String) {
         // iPad: sessions open beside the sidebar.
@@ -275,8 +280,12 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
         return UISwipeActionsConfiguration(actions: [archive, move])
     }
 
-    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemsAt indexPaths: [IndexPath], point: CGPoint) -> UIContextMenuConfiguration? {
-        if let path = indexPaths.first, case let .header(id) = dataSource.itemIdentifier(for: path), let menu = headerMenu(id) {
+    func collectionView(
+        _: UICollectionView, contextMenuConfigurationForItemsAt indexPaths: [IndexPath], point _: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        if let path = indexPaths.first, case let .header(id) = dataSource.itemIdentifier(for: path),
+            let menu = headerMenu(id)
+        {
             return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in menu }
         }
         guard let path = indexPaths.first, let id = sessionId(path), let vm = sessions[id] else { return nil }
@@ -284,13 +293,17 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
             guard let self else { return nil }
             if self.archivedRows {
                 return UIMenu(children: [
-                    UIAction(title: "Unarchive", image: UIImage(systemName: "tray.and.arrow.up")) { _ in self.app.unarchive(id) },
+                    UIAction(title: "Unarchive", image: UIImage(systemName: "tray.and.arrow.up")) { _ in
+                        self.app.unarchive(id)
+                    },
                     UIAction(title: "Rename…", image: UIImage(systemName: "pencil")) { _ in self.rename(id) },
                     self.deleteAction(id),
                 ])
             }
             return UIMenu(children: [
-                UIAction(title: vm.pinned ? "Unpin" : "Pin", image: UIImage(systemName: vm.pinned ? "pin.slash" : "pin")) { _ in self.app.setPinned(id, !vm.pinned) },
+                UIAction(
+                    title: vm.pinned ? "Unpin" : "Pin", image: UIImage(systemName: vm.pinned ? "pin.slash" : "pin")
+                ) { _ in self.app.setPinned(id, !vm.pinned) },
                 self.moveMenu(id),
                 UIAction(title: "Rename…", image: UIImage(systemName: "pencil")) { _ in self.rename(id) },
                 UIAction(title: "Archive", image: UIImage(systemName: "archivebox")) { _ in self.app.archive(id) },
@@ -307,21 +320,29 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
 
     func moveMenu(_ id: String) -> UIMenu {
         var items: [UIMenuElement] = app.frontPage.folders.filter { $0.id != "pinned" }.map { f in
-            UIAction(title: f.name, image: UIImage(systemName: "folder")) { [weak self] _ in self?.app.move(id, toSection: f.id) }
+            UIAction(title: f.name, image: UIImage(systemName: "folder")) { [weak self] _ in
+                self?.app.move(id, toSection: f.id)
+            }
         }
-        items.append(UIAction(title: "No Section", image: UIImage(systemName: "tray")) { [weak self] _ in self?.app.move(id, toSection: nil) })
-        items.append(UIAction(title: "New Section…", image: UIImage(systemName: "folder.badge.plus")) { [weak self] _ in
-            self?.promptForSection { name in self?.app.createSection(name) }
-        })
+        items.append(
+            UIAction(title: "No Section", image: UIImage(systemName: "tray")) { [weak self] _ in
+                self?.app.move(id, toSection: nil)
+            })
+        items.append(
+            UIAction(title: "New Section…", image: UIImage(systemName: "folder.badge.plus")) { [weak self] _ in
+                self?.promptForSection { name in self?.app.createSection(name) }
+            })
         return UIMenu(title: "Move to Section", image: UIImage(systemName: "folder"), children: items)
     }
 
     private func presentMoveMenu(_ id: String, from view: UIView) {
         let sheet = UIAlertController(title: "Move to Section", message: nil, preferredStyle: .actionSheet)
         for f in app.frontPage.folders where f.id != "pinned" {
-            sheet.addAction(UIAlertAction(title: f.name, style: .default) { [weak self] _ in self?.app.move(id, toSection: f.id) })
+            sheet.addAction(
+                UIAlertAction(title: f.name, style: .default) { [weak self] _ in self?.app.move(id, toSection: f.id) })
         }
-        sheet.addAction(UIAlertAction(title: "No Section", style: .default) { [weak self] _ in self?.app.move(id, toSection: nil) })
+        sheet.addAction(
+            UIAlertAction(title: "No Section", style: .default) { [weak self] _ in self?.app.move(id, toSection: nil) })
         sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         sheet.popoverPresentationController?.sourceView = view
         present(sheet, animated: true)
@@ -329,12 +350,16 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
 
     func promptForSection(_ done: @escaping (String) -> Void) {
         let alert = UIAlertController(title: "New Section", message: nil, preferredStyle: .alert)
-        alert.addTextField { $0.placeholder = "Name"; $0.autocapitalizationType = .words }
+        alert.addTextField {
+            $0.placeholder = "Name"
+            $0.autocapitalizationType = .words
+        }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Create", style: .default) { _ in
-            let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces) ?? ""
-            if !name.isEmpty { done(name) }
-        })
+        alert.addAction(
+            UIAlertAction(title: "Create", style: .default) { _ in
+                let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces) ?? ""
+                if !name.isEmpty { done(name) }
+            })
         present(alert, animated: true)
     }
 
@@ -342,10 +367,11 @@ class SessionListController: UIViewController, UICollectionViewDelegate {
         let alert = UIAlertController(title: "Rename Session", message: nil, preferredStyle: .alert)
         alert.addTextField { [weak self] in $0.text = self?.sessions[id]?.title }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Rename", style: .default) { [weak self] _ in
-            let title = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces) ?? ""
-            if !title.isEmpty { self?.app.rename(id, title) }
-        })
+        alert.addAction(
+            UIAlertAction(title: "Rename", style: .default) { [weak self] _ in
+                let title = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces) ?? ""
+                if !title.isEmpty { self?.app.rename(id, title) }
+            })
         present(alert, animated: true)
     }
 }
@@ -361,21 +387,26 @@ enum SessionDropTarget: Equatable {
 // MARK: Drag between sections
 
 extension SessionListController: UICollectionViewDragDelegate, UICollectionViewDropDelegate {
-    func collectionView(_ collectionView: UICollectionView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
+    func collectionView(_: UICollectionView, itemsForBeginning _: UIDragSession, at indexPath: IndexPath)
+        -> [UIDragItem]
+    {
         guard let id = sessionId(indexPath), dropTarget(listSection(of: indexPath)) != nil else { return [] }
         let item = UIDragItem(itemProvider: NSItemProvider())
         item.localObject = id
         return [item]
     }
 
-    func collectionView(_ collectionView: UICollectionView, canHandle session: UIDropSession) -> Bool {
+    func collectionView(_: UICollectionView, canHandle session: UIDropSession) -> Bool {
         session.localDragSession?.items.first?.localObject is String
     }
 
-    func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession, withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
+    func collectionView(
+        _: UICollectionView, dropSessionDidUpdate session: UIDropSession,
+        withDestinationIndexPath destinationIndexPath: IndexPath?
+    ) -> UICollectionViewDropProposal {
         guard let id = session.localDragSession?.items.first?.localObject as? String,
-              let path = destinationIndexPath,
-              let slot = dropSlot(for: id, at: path)
+            let path = destinationIndexPath,
+            let slot = dropSlot(for: id, at: path)
         else { return UICollectionViewDropProposal(operation: .cancel) }
         // Recent sorts by activity: a drag within it has nothing to place.
         if slot.target == .recent, currentTarget(of: id) == .recent {
@@ -384,11 +415,11 @@ extension SessionListController: UICollectionViewDragDelegate, UICollectionViewD
         return UICollectionViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
     }
 
-    func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
+    func collectionView(_: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
         guard let item = coordinator.items.first,
-              let id = item.dragItem.localObject as? String,
-              let path = coordinator.destinationIndexPath,
-              let slot = dropSlot(for: id, at: path)
+            let id = item.dragItem.localObject as? String,
+            let path = coordinator.destinationIndexPath,
+            let slot = dropSlot(for: id, at: path)
         else { return }
         let source = currentTarget(of: id)
         if slot.target == .recent, source == .recent { return }
@@ -441,7 +472,9 @@ extension SessionListController: UICollectionViewDragDelegate, UICollectionViewD
     /// Where a drop at `path` places `id`: the destination, the section's items
     /// without the dragged row, the row's index among them, and its session
     /// neighbours. A drop above a section's header has no slot.
-    private func dropSlot(for id: String, at path: IndexPath) -> (target: SessionDropTarget, items: [Item], index: Int, after: String?, before: String?)? {
+    private func dropSlot(for id: String, at path: IndexPath) -> (
+        target: SessionDropTarget, items: [Item], index: Int, after: String?, before: String?
+    )? {
         let snapshot = dataSource.snapshot()
         guard path.section < snapshot.numberOfSections else { return nil }
         let section = snapshot.sectionIdentifiers[path.section]
@@ -548,17 +581,25 @@ class SessionsViewController: SessionListController {
     override func headerMenu(_ id: String) -> UIMenu? {
         if id == "recent" { return nil }
         guard let folder = app.frontPage.folders.first(where: { $0.id == id }) else { return nil }
-        let open = UIAction(title: "Open", image: UIImage(systemName: "arrow.up.right")) { [weak self] _ in self?.openFolder(id) }
+        let open = UIAction(title: "Open", image: UIImage(systemName: "arrow.up.right")) { [weak self] _ in
+            self?.openFolder(id)
+        }
         if id == "pinned" {
             return UIMenu(children: [
                 open,
-                UIAction(title: "Reorder…", image: UIImage(systemName: "arrow.up.arrow.down")) { [weak self] _ in self?.openFolder(id) },
+                UIAction(title: "Reorder…", image: UIImage(systemName: "arrow.up.arrow.down")) { [weak self] _ in
+                    self?.openFolder(id)
+                },
             ])
         }
         return UIMenu(children: [
             open,
-            UIAction(title: "Rename Section…", image: UIImage(systemName: "pencil")) { [weak self] _ in self?.renameSection(folder) },
-            UIAction(title: "Delete Section", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in self?.app.deleteSection(id) },
+            UIAction(title: "Rename Section…", image: UIImage(systemName: "pencil")) { [weak self] _ in
+                self?.renameSection(folder)
+            },
+            UIAction(title: "Delete Section", image: UIImage(systemName: "trash"), attributes: .destructive) {
+                [weak self] _ in self?.app.deleteSection(id)
+            },
         ])
     }
 
@@ -566,10 +607,12 @@ class SessionsViewController: SessionListController {
         let alert = UIAlertController(title: "Rename Section", message: nil, preferredStyle: .alert)
         alert.addTextField { $0.text = folder.name }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Rename", style: .default) { [weak self] _ in
-            guard let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return }
-            self?.app.renameSection(folder.id, name)
-        })
+        alert.addAction(
+            UIAlertAction(title: "Rename", style: .default) { [weak self] _ in
+                guard let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces), !name.isEmpty
+                else { return }
+                self?.app.renameSection(folder.id, name)
+            })
         present(alert, animated: true)
     }
 
@@ -578,7 +621,8 @@ class SessionsViewController: SessionListController {
             UIAction(title: "New Section…", image: UIImage(systemName: "folder.badge.plus")) { [weak self] _ in
                 self?.promptForSection { name in self?.app.createSection(name) }
             },
-            UIAction(title: "Collapse All", image: UIImage(systemName: "rectangle.compress.vertical")) { [weak self] _ in
+            UIAction(title: "Collapse All", image: UIImage(systemName: "rectangle.compress.vertical")) {
+                [weak self] _ in
                 guard let self else { return }
                 var ids = self.app.frontPage.folders.map(\.id)
                 if self.app.groupByProject { ids += self.app.frontPage.projectGroups.map(\.id) }
@@ -587,13 +631,22 @@ class SessionsViewController: SessionListController {
             // Rebuilt on each open: Settings flips it too.
             UIDeferredMenuElement.uncached { [weak self] done in
                 guard let app = self?.app else { return done([]) }
-                done([UIAction(title: "Group by Project", image: UIImage(systemName: "square.stack.3d.up"), state: app.groupByProject ? .on : .off) { _ in
-                    app.groupByProject.toggle()
-                }])
+                done([
+                    UIAction(
+                        title: "Group by Project", image: UIImage(systemName: "square.stack.3d.up"),
+                        state: app.groupByProject ? .on : .off
+                    ) { _ in
+                        app.groupByProject.toggle()
+                    }
+                ])
             },
             UIAction(title: "Archived", image: UIImage(systemName: "archivebox")) { [weak self] _ in
                 guard let self else { return }
-                self.navigationController?.pushViewController(FolderViewController(app: self.app, folder: FolderRowVM(id: "archived", name: "Archived", count: 0, symbol: "archivebox")), animated: true)
+                self.navigationController?.pushViewController(
+                    FolderViewController(
+                        app: self.app,
+                        folder: FolderRowVM(id: "archived", name: "Archived", count: 0, symbol: "archivebox")),
+                    animated: true)
             },
         ])
     }
@@ -610,7 +663,8 @@ final class FolderViewController: SessionListController {
         hidesBottomBarWhenPushed = true
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         archivedRows = folder.id == "archived"
@@ -625,10 +679,16 @@ final class FolderViewController: SessionListController {
             dataSource.reorderingHandlers.canReorderItem = { _ in true }
             dataSource.reorderingHandlers.didReorder = { [weak self] tx in self?.pinsReordered(tx) }
         } else if folder.id != "archived" {
-            navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: UIMenu(children: [
-                UIAction(title: "Rename Section…", image: UIImage(systemName: "pencil")) { [weak self] _ in self?.renameSection() },
-                UIAction(title: "Delete Section", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in self?.deleteSection() },
-            ]))
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "ellipsis"),
+                menu: UIMenu(children: [
+                    UIAction(title: "Rename Section…", image: UIImage(systemName: "pencil")) { [weak self] _ in
+                        self?.renameSection()
+                    },
+                    UIAction(title: "Delete Section", image: UIImage(systemName: "trash"), attributes: .destructive) {
+                        [weak self] _ in self?.deleteSection()
+                    },
+                ]))
         }
     }
 
@@ -658,21 +718,27 @@ final class FolderViewController: SessionListController {
         let alert = UIAlertController(title: "Rename Section", message: nil, preferredStyle: .alert)
         alert.addTextField { [folder] in $0.text = folder.name }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Rename", style: .default) { [weak self] _ in
-            guard let self, let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return }
-            self.app.renameSection(self.folder.id, name)
-            self.title = name
-        })
+        alert.addAction(
+            UIAlertAction(title: "Rename", style: .default) { [weak self] _ in
+                guard let self, let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces),
+                    !name.isEmpty
+                else { return }
+                self.app.renameSection(self.folder.id, name)
+                self.title = name
+            })
         present(alert, animated: true)
     }
 
     private func deleteSection() {
-        let alert = UIAlertController(title: "Delete “\(folder.name)”?", message: "Its sessions move back to the main list.", preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "Delete Section", style: .destructive) { [weak self] _ in
-            guard let self else { return }
-            self.app.deleteSection(self.folder.id)
-            self.navigationController?.popViewController(animated: true)
-        })
+        let alert = UIAlertController(
+            title: "Delete “\(folder.name)”?", message: "Its sessions move back to the main list.",
+            preferredStyle: .actionSheet)
+        alert.addAction(
+            UIAlertAction(title: "Delete Section", style: .destructive) { [weak self] _ in
+                guard let self else { return }
+                self.app.deleteSection(self.folder.id)
+                self.navigationController?.popViewController(animated: true)
+            })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         // iPad presents action sheets as popovers: anchor it to the ⋯ button.
         alert.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem

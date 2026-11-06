@@ -1,44 +1,53 @@
 #!/usr/bin/env python3
 """Stateful ACP peer: reject overlapping prompts and expose real error.data."""
+
+from __future__ import annotations
+
 import json
+import os
 import select
 import sys
 import time
 
 
-def emit(value):
+def emit(value: dict[str, object]) -> None:
+    """Write one JSON-RPC 2.0 frame to stdout."""
     print(json.dumps({"jsonrpc": "2.0", **value}), flush=True)
 
 
-def update(value):
+def update(value: dict[str, object]) -> None:
+    """Send a session update."""
     emit({"method": "session/update", "params": {"sessionId": "s-1", "update": value}})
 
 
-def reply(request, result):
+def reply(request: dict[str, object], result: dict[str, object]) -> None:
+    """Answer a request with a result."""
     emit({"id": request["id"], "result": result})
 
 
-def error(request, data):
+def error(request: dict[str, object], data: dict[str, object]) -> None:
+    """Reject a request, carrying `data` as error.data."""
     emit({"id": request["id"], "error": {"code": -32600, "message": "Invalid request", "data": data}})
 
 
 # Unbuffered reads keep select honest, including multiple queued frames.
-buffer = b""
+buffer = bytearray()
 
 
-def read(timeout=None):
-    global buffer
+def read(timeout: float | None = None) -> dict | None:
+    """Read one frame; None when `timeout` passes first, and exit at end of input."""
     deadline = None if timeout is None else time.monotonic() + timeout
     while b"\n" not in buffer:
         left = None if deadline is None else max(0, deadline - time.monotonic())
         if not select.select([sys.stdin], [], [], left)[0]:
             return None
-        import os
         data = os.read(sys.stdin.fileno(), 65536)
         if not data:
             sys.exit(0)
-        buffer += data
-    line, buffer = buffer.split(b"\n", 1)
+        buffer.extend(data)
+    end = buffer.index(b"\n")
+    line = bytes(buffer[:end])
+    del buffer[: end + 1]
     return json.loads(line)
 
 
@@ -67,11 +76,34 @@ while True:
             update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "working"}})
         if scenario in ("tools", "open-tool", "cancel", "wedge", "eof"):
             for i in range(4):
-                update({"sessionUpdate": "tool_call", "toolCallId": str(i), "kind": "read", "title": "read source", "status": "pending", "rawInput": {"path": "/tmp/source.rs"}})
+                update(
+                    {
+                        "sessionUpdate": "tool_call",
+                        "toolCallId": str(i),
+                        "kind": "read",
+                        "title": "read source",
+                        "status": "pending",
+                        "rawInput": {"path": "/tmp/source.rs"},  # noqa: S108 (a path in a fake tool call; nothing opens it)
+                    }
+                )
                 if scenario != "open-tool":
-                    update({"sessionUpdate": "tool_call_update", "toolCallId": str(i), "status": "completed", "content": []})
+                    update(
+                        {
+                            "sessionUpdate": "tool_call_update",
+                            "toolCallId": str(i),
+                            "status": "completed",
+                            "content": [],
+                        }
+                    )
         if scenario == "usage":
-            update({"sessionUpdate": "usage_update", "used": 100, "size": 10000, "cost": {"amount": 0.01, "currency": "USD"}})
+            update(
+                {
+                    "sessionUpdate": "usage_update",
+                    "used": 100,
+                    "size": 10000,
+                    "cost": {"amount": 0.01, "currency": "USD"},
+                }
+            )
         if scenario == "reasoning":
             update({"sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": "thinking"}})
         # Three retired quiet windows. Any ordinary prompt during this gap

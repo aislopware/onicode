@@ -48,7 +48,7 @@ the frosted surface and `ZERON_FIXTURE_SIZE=<w>x<h>` the window size.
 |---|---|
 | `idle.png` | The field under Back, with its ⌘F hint |
 | `theme.png` | `theme`: three titles, then the Appearance page |
-| `typo.png` | `notifcations`: the misspelled page and its rows |
+| `typo.png` | `notifcations`: the misspelled page and its rows <!-- spellchecker:disable-line --> |
 | `shortcuts.png` | `sidebar`: shortcut hits with their bindings |
 | `no-results.png` | `teleport`: nothing matches |
 | `landed.png` | `math size`, Enter: Appearance glided to its last row, washed |

@@ -31,7 +31,8 @@ final class VisualFlowTests: XCTestCase {
         waitForExpectations(timeout: 5)
         snapshot(app, "dashboard-table")
 
-        let slider = app.otherElements["Smoothing window"].firstMatch.exists
+        let slider =
+            app.otherElements["Smoothing window"].firstMatch.exists
             ? app.otherElements["Smoothing window"].firstMatch
             : app.descendants(matching: .any)["Smoothing window"].firstMatch
         XCTAssertTrue(slider.exists)

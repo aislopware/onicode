@@ -23,73 +23,101 @@ Which server:
 Run it as any ACP slot, e.g. GROK_EXECUTABLE=/abs/path/fake-acp-tool.py.
 Diagnostics go to stderr; stdout carries only ACP frames.
 """
+
+from __future__ import annotations
+
+import contextlib
 import json
 import os
 import queue
 import subprocess
 import sys
 import threading
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 SESSION = {"id": "fake-acp-tool-session"}
 TIMEOUT = float(os.environ.get("FAKE_ACP_TOOL_TIMEOUT", "60"))
 
 
-def emit(frame):
+def emit(frame: object) -> None:
+    """Write one ACP frame to stdout."""
     sys.stdout.write(json.dumps(frame) + "\n")
     sys.stdout.flush()
 
 
-def log(text):
+def log(text: str) -> None:
+    """Write a diagnostic line to stderr."""
     sys.stderr.write(f"fake-acp-tool: {text}\n")
     sys.stderr.flush()
 
 
-def reply_text(text):
-    emit({"method": "session/update", "params": {"sessionId": SESSION["id"], "update": {
-        "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": text}}}})
+def reply_text(text: str) -> None:
+    """Send `text` as an agent message chunk."""
+    emit(
+        {
+            "method": "session/update",
+            "params": {
+                "sessionId": SESSION["id"],
+                "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": text}},
+            },
+        }
+    )
 
 
 class McpServer:
     """One stdio MCP server child, newline-delimited JSON-RPC."""
 
-    def __init__(self, spec, cwd):
+    def __init__(self, spec: dict, cwd: str | None) -> None:
+        """Start the server `spec` describes (an ACP `mcpServers` entry)."""
         env = dict(os.environ)
         for pair in spec.get("env") or []:
             env[pair["name"]] = pair["value"]
         self.name = spec.get("name", "")
         self.proc = subprocess.Popen(
             [spec["command"], *(spec.get("args") or [])],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=sys.stderr,
-            env=env, cwd=cwd or None, text=True, bufsize=1)
-        self.lines = queue.Queue()
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=sys.stderr,
+            env=env,
+            cwd=cwd or None,
+            text=True,
+            bufsize=1,
+        )
+        self.lines: queue.Queue[str | None] = queue.Queue()
         threading.Thread(target=self._read, daemon=True).start()
         self.next_id = 0
 
-    def _read(self):
+    def _read(self) -> None:
         for line in self.proc.stdout:
             self.lines.put(line)
         self.lines.put(None)
 
-    def notify(self, method, params=None):
+    def notify(self, method: str, params: dict | None = None) -> None:
+        """Send a JSON-RPC notification."""
         frame = {"jsonrpc": "2.0", "method": method}
         if params is not None:
             frame["params"] = params
         self.proc.stdin.write(json.dumps(frame) + "\n")
         self.proc.stdin.flush()
 
-    def request(self, method, params):
+    def request(self, method: str, params: dict) -> dict | None:
+        """Send a request and wait up to TIMEOUT for its result."""
         self.next_id += 1
         ident = self.next_id
-        self.proc.stdin.write(json.dumps(
-            {"jsonrpc": "2.0", "id": ident, "method": method, "params": params}) + "\n")
+        self.proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": ident, "method": method, "params": params}) + "\n")
         self.proc.stdin.flush()
         while True:
             try:
                 line = self.lines.get(timeout=TIMEOUT)
             except queue.Empty:
-                raise RuntimeError(f"{self.name}: no answer to {method} within {TIMEOUT:g}s")
+                msg = f"{self.name}: no answer to {method} within {TIMEOUT:g}s"
+                raise RuntimeError(msg) from None
             if line is None:
-                raise RuntimeError(f"{self.name}: server exited during {method}")
+                msg = f"{self.name}: server exited during {method}"
+                raise RuntimeError(msg)
             try:
                 message = json.loads(line)
             except ValueError:
@@ -99,28 +127,35 @@ class McpServer:
             if message.get("id") != ident or "method" in message:
                 continue
             if "error" in message:
-                raise RuntimeError(f"{self.name}: {method}: {message['error'].get('message')}")
+                msg = f"{self.name}: {method}: {message['error'].get('message')}"
+                raise RuntimeError(msg)
             return message.get("result")
 
-    def start(self):
-        self.request("initialize", {
-            "protocolVersion": "2025-06-18", "capabilities": {},
-            "clientInfo": {"name": "fake-acp-tool", "version": "1"}})
+    def start(self) -> McpServer:
+        """Do the MCP handshake."""
+        self.request(
+            "initialize",
+            {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "fake-acp-tool", "version": "1"},
+            },
+        )
         self.notify("notifications/initialized")
         return self
 
-    def close(self):
-        try:
+    def close(self) -> None:
+        """Close stdin and reap the child, killing it after five seconds."""
+        with contextlib.suppress(OSError):
             self.proc.stdin.close()
-        except OSError:
-            pass
         try:
             self.proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             self.proc.kill()
 
 
-def call_tool(servers, cwd, tool, args):
+def call_tool(servers: list[dict], cwd: str | None, tool: str, args: object) -> str:
+    """Call `tool` on the first server that has it; the reply text for the turn."""
     pinned = os.environ.get("FAKE_ACP_MCP_SERVER")
     candidates = [s for s in servers if not pinned or s.get("name") == pinned]
     if not candidates:
@@ -137,7 +172,7 @@ def call_tool(servers, cwd, tool, args):
                     continue
             result = server.request("tools/call", {"name": tool, "arguments": args})
             return json.dumps(result, separators=(",", ":"))
-        except Exception as error:  # report it as the reply, keep serving
+        except (RuntimeError, OSError, ValueError, KeyError) as error:  # report it as the reply, keep serving
             log(str(error))
             if pinned:
                 return f"fake-acp-tool: {error}"
@@ -146,16 +181,20 @@ def call_tool(servers, cwd, tool, args):
     return f"fake-acp-tool: no MCP server lists {tool}"
 
 
-def prompt_text(params):
+def prompt_text(params: dict) -> str:
+    """Join a prompt's text blocks."""
     return "".join(
-        block.get("text", "") for block in params.get("prompt", [])
-        if isinstance(block, dict) and block.get("type") == "text")
+        block.get("text", "")
+        for block in params.get("prompt", [])
+        if isinstance(block, dict) and block.get("type") == "text"
+    )
 
 
-def pick_tool(text):
+def pick_tool(text: str) -> tuple[str | None, object]:
+    """Pick the tool and arguments for this turn: from the prompt, else from the environment."""
     text = text.strip()
     if text.startswith("call-tool "):
-        rest = text[len("call-tool "):].strip()
+        rest = text[len("call-tool ") :].strip()
         name, _, raw = rest.partition(" ")
         return name, json.loads(raw) if raw.strip() else {}
     tool = os.environ.get("FAKE_ACP_CALL_TOOL")
@@ -163,23 +202,42 @@ def pick_tool(text):
     return tool, json.loads(raw)
 
 
-def main():
-    servers, cwd = [], None
+def frames() -> Iterator[dict]:
+    """Yield each JSON frame on stdin, skipping blank and malformed lines."""
     for line in sys.stdin:
-        line = line.strip()
-        if not line:
+        text = line.strip()
+        if not text:
             continue
         try:
-            frame = json.loads(line)
+            yield json.loads(text)
         except ValueError:
             continue
+
+
+def prompt(ident: object, params: dict, servers: list[dict], cwd: str | None) -> None:
+    """Run one turn: call the tool and answer with its result."""
+    try:
+        tool, args = pick_tool(prompt_text(params))
+    except ValueError as error:
+        tool, args = None, None
+        reply_text(f"fake-acp-tool: bad tool arguments: {error}")
+    if tool:
+        reply_text(call_tool(servers, cwd, tool, args))
+    elif args is not None:
+        reply_text("fake-acp-tool: set FAKE_ACP_CALL_TOOL or prompt `call-tool <name> [json]`")
+    emit({"id": ident, "result": {"stopReason": "end_turn"}})
+
+
+def main() -> None:
+    """Serve ACP on stdio until stdin closes."""
+    servers, cwd = [], None
+    for frame in frames():
         method, ident = frame.get("method"), frame.get("id")
         params = frame.get("params") or {}
         if method is None:
             continue  # a response to something we never asked
         if method == "initialize":
-            emit({"id": ident, "result": {"protocolVersion": 1,
-                                          "agentCapabilities": {"loadSession": True}}})
+            emit({"id": ident, "result": {"protocolVersion": 1, "agentCapabilities": {"loadSession": True}}})
         elif method in ("session/new", "session/load"):
             # Discovery opens sessions with no servers; keep the last real set.
             if params.get("mcpServers"):
@@ -191,16 +249,7 @@ def main():
             else:
                 emit({"id": ident, "result": {"sessionId": SESSION["id"]}})
         elif method == "session/prompt":
-            try:
-                tool, args = pick_tool(prompt_text(params))
-            except ValueError as error:
-                tool, args = None, None
-                reply_text(f"fake-acp-tool: bad tool arguments: {error}")
-            if tool:
-                reply_text(call_tool(servers, cwd, tool, args))
-            elif args is not None:
-                reply_text("fake-acp-tool: set FAKE_ACP_CALL_TOOL or prompt `call-tool <name> [json]`")
-            emit({"id": ident, "result": {"stopReason": "end_turn"}})
+            prompt(ident, params, servers, cwd)
         elif ident is not None:
             # session/set_model, session/set_config_option, session/set_mode, …
             emit({"id": ident, "result": {}})

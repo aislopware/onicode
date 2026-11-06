@@ -77,8 +77,8 @@ pub struct AppUpdate {
     /// Version whose advisory strip the user dismissed (a newer release shows
     /// it again).
     dismissed: Option<String>,
-    /// Why "Get beta updates" couldn't turn on (an older macOS; not an app
-    /// install), shown under it.
+    /// Why "Get beta updates" couldn't turn on (not an app install; the choice
+    /// couldn't be saved), shown under it.
     channel_note: Option<SharedString>,
     _status_watch: Task<()>,
     download: Option<Task<()>>,
@@ -383,9 +383,9 @@ impl AppUpdate {
     }
 
     /// "Get beta updates": follow the beta channel (or stable again), then
-    /// check at once. A beta needs macOS 13 (`BETA_MINIMUM_MACOS`); an older Mac is told so and
-    /// stays on stable. Leaving beta offers stable's release even when it's
-    /// older ([`onicode_update::Offer::Switch`]).
+    /// check at once. Only the macOS app can follow beta; anywhere else is told
+    /// so and stays on stable. Leaving beta offers stable's release even when
+    /// it's older ([`onicode_update::Offer::Switch`]).
     pub fn set_beta(&mut self, on: bool, cx: &mut Context<Self>) {
         self.channel_note = None;
         if let Err(why) = onicode_update::desktop::choose_channel(&self.data_dir, on) {
@@ -569,20 +569,5 @@ mod tests {
                 SharedString::from("Update available — v0.2.86 · run `onicode update`")
             );
         }
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn windows_installs_drive_the_desktop_flow() {
-        let installed = InstallKind::WindowsPortable {
-            directory: PathBuf::from(r"C:\Users\u\AppData\Local\Programs\Onicode"),
-        };
-        assert_eq!(
-            strip_for(&installed, false, &Flow::Idle, "0.2.86"),
-            (
-                SharedString::from("Update available — v0.2.86"),
-                StripAction::Download
-            )
-        );
     }
 }

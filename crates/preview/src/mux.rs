@@ -430,10 +430,7 @@ impl AsyncWrite for Stream {
 
 pub fn local(connector: Arc<dyn Connector>, stop: CancellationToken) -> Mux {
     // An actual local socket keeps the framing/flow-control path identical to P2P.
-    #[cfg(unix)]
     let (a, b) = tokio::net::UnixStream::pair().expect("local preview socket pair");
-    #[cfg(not(unix))]
-    let (a, b) = tokio::io::duplex(WINDOW);
     let (ar, aw) = tokio::io::split(a);
     let (br, bw) = tokio::io::split(b);
     let client = Mux::start(

@@ -94,11 +94,8 @@ fn main() -> anyhow::Result<()> {
     chart(&folder.join("chart.png"));
     // Never shown: red, so a leak would be obvious.
     screenshot(&elsewhere.join("secret.png"), 640, 360, [255, 60, 60], 2);
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(folder.join("shots/before.png"), folder.join("alias.png"))?;
-        std::os::unix::fs::symlink(elsewhere.join("secret.png"), folder.join("out.png"))?;
-    }
+    std::os::unix::fs::symlink(folder.join("shots/before.png"), folder.join("alias.png"))?;
+    std::os::unix::fs::symlink(elsewhere.join("secret.png"), folder.join("out.png"))?;
     std::fs::write(folder.join("fake.png"), b"not an image")?;
     std::fs::File::create(folder.join("big.png"))?.set_len(11 * 1024 * 1024)?;
 

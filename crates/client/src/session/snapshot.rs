@@ -238,8 +238,6 @@ pub struct HostCapabilities {
     pub queue_attachments: bool,
     pub clean_attachment_text: bool,
     pub queue_edit_lease: bool,
-    /// Host ≥ 0.2.12: attachments ride `pending://` refs + escorted bytes.
-    pub queued_attachments: bool,
     /// The chat's harness steers mid-turn (unknown until a live catalog).
     pub mid_turn_steering: Option<bool>,
     /// The host moves the chat to another provider between turns; older

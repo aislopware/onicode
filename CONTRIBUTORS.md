@@ -28,8 +28,7 @@ sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
   libasound2-dev libvulkan-dev pkg-config cmake libwebkit2gtk-4.1-dev libjson-glib-dev
 ```
 
-**macOS** needs Xcode. **Windows** is covered in
-[docs/reference/windows-development.md](docs/reference/windows-development.md).
+**macOS** needs Xcode.
 
 Build and run the app with `cargo run -p zeron`.
 

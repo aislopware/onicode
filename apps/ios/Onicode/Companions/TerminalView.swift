@@ -8,7 +8,9 @@ import UIKit
 /// It is a scroll view so scrollback feels native — momentum, rubber band,
 /// the indicator — while the painted grid stays put: the content height is
 /// the scrollback, and the offset picks how far back the grid shows.
-final class TerminalView: UIScrollView, UIKeyInput, UITextInputTraits, UIScrollViewDelegate, UIEditMenuInteractionDelegate {
+final class TerminalView: UIScrollView, UIKeyInput, UITextInputTraits, UIScrollViewDelegate,
+    UIEditMenuInteractionDelegate
+{
     let tab: TerminalTab
     private var session: TerminalSession { tab.session }
     private let canvas = TerminalCanvas()
@@ -67,14 +69,15 @@ final class TerminalView: UIScrollView, UIKeyInput, UITextInputTraits, UIScrollV
         accessibilityIdentifier = "terminal-view"
 
         token = tab.observe { [weak self] in self?.refresh() }
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: TerminalView, _) in
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: Self, _) in
             view.session.setDark(dark: view.traitCollection.userInterfaceStyle == .dark)
             view.canvas.setNeedsDisplay()
         }
         refresh()
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -120,7 +123,7 @@ final class TerminalView: UIScrollView, UIKeyInput, UITextInputTraits, UIScrollV
 
     private var applying = false
 
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    func scrollViewDidScroll(_: UIScrollView) {
         // The grid stays in the viewport; only what it shows changes.
         canvas.frame = CGRect(origin: CGPoint(x: 0, y: contentOffset.y), size: bounds.size)
         guard !applying, let frame = frameModel, !frame.altScreen else { return }
@@ -240,7 +243,12 @@ final class TerminalView: UIScrollView, UIKeyInput, UITextInputTraits, UIScrollV
     }
 
     private var typedRecently = false {
-        didSet { if typedRecently { lastKey = Date(); scheduleBlinkRest() } }
+        didSet {
+            if typedRecently {
+                lastKey = Date()
+                scheduleBlinkRest()
+            }
+        }
     }
     private var lastKey = Date()
     private var blinkRest: DispatchWorkItem?
@@ -307,24 +315,28 @@ final class TerminalView: UIScrollView, UIKeyInput, UITextInputTraits, UIScrollV
         editMenu.presentEditMenu(with: config)
     }
 
-    func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration, suggestedActions: [UIMenuElement]) -> UIMenu? {
+    func editMenuInteraction(
+        _: UIEditMenuInteraction, menuFor _: UIEditMenuConfiguration, suggestedActions _: [UIMenuElement]
+    ) -> UIMenu? {
         guard let text = session.selection()?.text else { return nil }
         var actions: [UIMenuElement] = [
             UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in
                 UIPasteboard.general.string = text
                 self?.flashSelection()
-            },
+            }
         ]
         if onAddToMessage != nil {
-            actions.append(UIAction(title: "Add to Message", image: UIImage(systemName: "text.bubble")) { [weak self] _ in
-                self?.onAddToMessage?(text)
-                self?.session.clearSelection()
-            })
+            actions.append(
+                UIAction(title: "Add to Message", image: UIImage(systemName: "text.bubble")) { [weak self] _ in
+                    self?.onAddToMessage?(text)
+                    self?.session.clearSelection()
+                })
         }
-        actions.append(UIAction(title: "Paste", image: UIImage(systemName: "doc.on.clipboard")) { [weak self] _ in
-            self?.session.clearSelection()
-            self?.pasteFromClipboard()
-        })
+        actions.append(
+            UIAction(title: "Paste", image: UIImage(systemName: "doc.on.clipboard")) { [weak self] _ in
+                self?.session.clearSelection()
+                self?.pasteFromClipboard()
+            })
         return UIMenu(children: actions)
     }
 
@@ -348,7 +360,11 @@ final class TerminalView: UIScrollView, UIKeyInput, UITextInputTraits, UIScrollV
         case .changed:
             let size = min(22, max(8, (pinchBase * g.scale * 2).rounded() / 2))
             if size != fontSize {
-                if size == 8 || size == 22 { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() } else { UISelectionFeedbackGenerator().selectionChanged() }
+                if size == 8 || size == 22 {
+                    UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+                } else {
+                    UISelectionFeedbackGenerator().selectionChanged()
+                }
                 setFontSize(size)
             }
         default:
@@ -419,7 +435,7 @@ final class TerminalView: UIScrollView, UIKeyInput, UITextInputTraits, UIScrollV
         session.paste(text: text)
     }
 
-    override func paste(_ sender: Any?) { pasteFromClipboard() }
+    override func paste(_: Any?) { pasteFromClipboard() }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         if action == #selector(paste(_:)) { return UIPasteboard.general.hasStrings }
@@ -427,7 +443,7 @@ final class TerminalView: UIScrollView, UIKeyInput, UITextInputTraits, UIScrollV
         return super.canPerformAction(action, withSender: sender)
     }
 
-    override func copy(_ sender: Any?) {
+    override func copy(_: Any?) {
         UIPasteboard.general.string = session.selection()?.text
     }
 
@@ -461,21 +477,23 @@ final class TerminalView: UIScrollView, UIKeyInput, UITextInputTraits, UIScrollV
     private func handle(_ key: UIKey) -> Bool {
         let flags = key.modifierFlags
         if flags.contains(.command) { return false }
-        let mods = KeyModifiers(ctrl: flags.contains(.control), alt: flags.contains(.alternate), shift: flags.contains(.shift))
-        let named: TerminalKey? = switch key.keyCode {
-        case .keyboardUpArrow: .up
-        case .keyboardDownArrow: .down
-        case .keyboardLeftArrow: .left
-        case .keyboardRightArrow: .right
-        case .keyboardEscape: .escape
-        case .keyboardHome: .home
-        case .keyboardEnd: .end
-        case .keyboardPageUp: .pageUp
-        case .keyboardPageDown: .pageDown
-        case .keyboardDeleteForward: .delete
-        case .keyboardTab: .tab
-        default: nil
-        }
+        let mods = KeyModifiers(
+            ctrl: flags.contains(.control), alt: flags.contains(.alternate), shift: flags.contains(.shift))
+        let named: TerminalKey? =
+            switch key.keyCode {
+            case .keyboardUpArrow: .up
+            case .keyboardDownArrow: .down
+            case .keyboardLeftArrow: .left
+            case .keyboardRightArrow: .right
+            case .keyboardEscape: .escape
+            case .keyboardHome: .home
+            case .keyboardEnd: .end
+            case .keyboardPageUp: .pageUp
+            case .keyboardPageDown: .pageDown
+            case .keyboardDeleteForward: .delete
+            case .keyboardTab: .tab
+            default: nil
+            }
         typedRecently = true
         if let named {
             session.press(key: named, modifiers: mods)
@@ -535,7 +553,8 @@ final class TerminalCanvas: UIView {
         contentMode = .topLeft
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private static func color(_ rgba: UInt32) -> UIColor {
         UIColor(
@@ -548,7 +567,9 @@ final class TerminalCanvas: UIView {
 
     /// The scalar `TerminalGlyphs` paints for `ch`, if it does.
     private static func drawn(_ ch: Character) -> Unicode.Scalar? {
-        guard ch.unicodeScalars.count == 1, let scalar = ch.unicodeScalars.first, TerminalGlyphs.draws(scalar) else { return nil }
+        guard ch.unicodeScalars.count == 1, let scalar = ch.unicodeScalars.first, TerminalGlyphs.draws(scalar) else {
+            return nil
+        }
         return scalar
     }
 
@@ -557,10 +578,12 @@ final class TerminalCanvas: UIView {
         let m = metrics
         let inset = TerminalView.inset
         let fg = Palette.text.resolvedColor(with: traitCollection)
-        let selection = Palette.accent.resolvedColor(with: traitCollection).withAlphaComponent(0.28 + 0.3 * selectionBoost)
+        let selection = Palette.accent.resolvedColor(with: traitCollection).withAlphaComponent(
+            0.28 + 0.3 * selectionBoost)
         // A partial scroll: rows sit `dy` lower, the revealed row above them.
         let dy = CGFloat(frame.scrollFrac) * m.lineHeight
-        let rows: [(Int, TerminalLine)] = (frame.above.map { [(-1, $0)] } ?? []) + frame.lines.enumerated().map { ($0.offset, $0.element) }
+        let rows: [(Int, TerminalLine)] =
+            (frame.above.map { [(-1, $0)] } ?? []) + frame.lines.enumerated().map { ($0.offset, $0.element) }
         for (r, line) in rows {
             let y = inset.top + CGFloat(r) * m.lineHeight + dy
             guard y < rect.maxY, y + m.lineHeight > rect.minY else { continue }
@@ -590,7 +613,9 @@ final class TerminalCanvas: UIView {
                 for ch in run.text {
                     if let scalar = Self.drawn(ch) {
                         let cell = CGRect(x: x, y: y, width: span, height: m.lineHeight)
-                        TerminalGlyphs.draw(scalar, in: cell, baseline: y + m.ascent, xHeight: xHeight, color: color, ctx: ctx, scale: scale)
+                        TerminalGlyphs.draw(
+                            scalar, in: cell, baseline: y + m.ascent, xHeight: xHeight, color: color, ctx: ctx,
+                            scale: scale)
                     }
                     x += span
                 }
@@ -631,9 +656,11 @@ final class TerminalCanvas: UIView {
                         }
                         // A one-cell symbol that also has an emoji form (`⏵`,
                         // `☐`): ask for the text glyph, not the color emoji.
-                        let emojiCapable = ch.unicodeScalars.count == 1 && ch.unicodeScalars.first!.properties.isEmoji
+                        let emojiCapable =
+                            ch.unicodeScalars.count == 1 && ch.unicodeScalars.first?.properties.isEmoji == true
                         let glyph = !run.wide && emojiCapable ? "\(ch)\u{FE0E}" : String(ch)
-                        let line = CTLineCreateWithAttributedString(NSAttributedString(string: glyph, attributes: attrs))
+                        let line = CTLineCreateWithAttributedString(
+                            NSAttributedString(string: glyph, attributes: attrs))
                         let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
                         ctx.textPosition = CGPoint(x: col + max(0, (span - width) / 2), y: baseline)
                         CTLineDraw(line, ctx)

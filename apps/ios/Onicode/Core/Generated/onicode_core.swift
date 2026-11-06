@@ -9762,10 +9762,6 @@ public struct HostCapabilities: Equatable, Hashable {
     public var cleanAttachmentText: Bool
     public var queueEditLease: Bool
     /**
-     * Host ≥ 0.2.12: attachments ride `pending://` refs.
-     */
-    public var queuedAttachments: Bool
-    /**
      * The chat's harness steers mid-turn (unknown until a live catalog).
      */
     public var midTurnSteering: Bool?
@@ -9778,9 +9774,6 @@ public struct HostCapabilities: Equatable, Hashable {
     // declare one manually.
     public init(messageQueue: Bool, queueActions: Bool, queueAttachments: Bool, cleanAttachmentText: Bool, queueEditLease: Bool, 
         /**
-         * Host ≥ 0.2.12: attachments ride `pending://` refs.
-         */queuedAttachments: Bool, 
-        /**
          * The chat's harness steers mid-turn (unknown until a live catalog).
          */midTurnSteering: Bool?, 
         /**
@@ -9791,7 +9784,6 @@ public struct HostCapabilities: Equatable, Hashable {
         self.queueAttachments = queueAttachments
         self.cleanAttachmentText = cleanAttachmentText
         self.queueEditLease = queueEditLease
-        self.queuedAttachments = queuedAttachments
         self.midTurnSteering = midTurnSteering
         self.providerSwitch = providerSwitch
     }
@@ -9817,7 +9809,6 @@ public struct FfiConverterTypeHostCapabilities: FfiConverterRustBuffer {
                 queueAttachments: FfiConverterBool.read(from: &buf), 
                 cleanAttachmentText: FfiConverterBool.read(from: &buf), 
                 queueEditLease: FfiConverterBool.read(from: &buf), 
-                queuedAttachments: FfiConverterBool.read(from: &buf), 
                 midTurnSteering: FfiConverterOptionBool.read(from: &buf), 
                 providerSwitch: FfiConverterBool.read(from: &buf)
         )
@@ -9829,7 +9820,6 @@ public struct FfiConverterTypeHostCapabilities: FfiConverterRustBuffer {
         FfiConverterBool.write(value.queueAttachments, into: &buf)
         FfiConverterBool.write(value.cleanAttachmentText, into: &buf)
         FfiConverterBool.write(value.queueEditLease, into: &buf)
-        FfiConverterBool.write(value.queuedAttachments, into: &buf)
         FfiConverterOptionBool.write(value.midTurnSteering, into: &buf)
         FfiConverterBool.write(value.providerSwitch, into: &buf)
     }

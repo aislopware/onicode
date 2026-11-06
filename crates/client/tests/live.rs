@@ -750,11 +750,6 @@ async fn host_rpcs_ride_the_device_relay() {
     // A send with an image: `pending://` ref in the command, bytes escorted
     // to the host under the same upload id + name.
     let session = client.open_session(CHAT).unwrap();
-    let start = Instant::now();
-    while !session.composer().host.capabilities.queued_attachments {
-        assert!(start.elapsed() < Duration::from_secs(5));
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
     session
         .send(SendRequest {
             text: "look at this".into(),
@@ -957,7 +952,6 @@ async fn await_chat(client: &Client, chat: &str) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn immediate_exit_after_first_send_recovers_new_chat_on_each_host_platform() {
     for (platform, harness) in [
-        ("windows", HarnessId::Codex),
         ("macos", HarnessId::Cursor),
         ("linux", HarnessId::ClaudeCode),
     ] {

@@ -3,14 +3,9 @@
 //! assembles — immediately for local, development and already-resolved
 //! synced profiles, after the viewport finishes organization onboarding for a
 //! captured synced session that doesn't have one yet. Existing subscriptions
-//! attach to the assembled service without reconnecting.
-//!
-//! While the account still has setup to finish (signed in, no organization
-//! chosen: [`DeferredState::Onboarding`]), plugin and template calls answer
-//! at once with `setup_incomplete` (`RpcError::Capability`), the app's cue
-//! to say "Finish setting up your account", instead of hanging until setup
-//! ends. Every other call waits exactly as before (the GPUI app's onboarding
-//! relies on it).
+//! attach to the assembled service without reconnecting. While the account
+//! still has setup to finish ([`DeferredState::Onboarding`]) calls wait too
+//! (the GPUI app's onboarding relies on it).
 //!
 //! Both owners of a desktop engine use it: the app's background engine
 //! ([`crate::Engine::run_managed`]) and the app's in-process fallback.
@@ -68,9 +63,6 @@ impl RpcService for DeferredEngineRpc {
         loop {
             let current = { state.borrow().clone() };
             match current {
-                DeferredState::Onboarding if crate::plugins::handles(method) => {
-                    return Err(RpcError::Capability(SETUP_INCOMPLETE.into()));
-                }
                 DeferredState::Onboarding | DeferredState::Waiting => {}
                 DeferredState::Ready => {
                     let service = self.service.get().ok_or_else(|| {
@@ -84,10 +76,6 @@ impl RpcService for DeferredEngineRpc {
         }
     }
 }
-
-/// What a call that needs the workspace answers while the account's setup
-/// isn't finished: the app says "Finish setting up your account".
-pub const SETUP_INCOMPLETE: &str = "setup_incomplete";
 
 /// Wait for assembly's outcome.
 pub async fn wait(state: &mut watch::Receiver<DeferredState>) -> Result<(), String> {
@@ -274,35 +262,12 @@ mod tests {
         (dir, rpc)
     }
 
-    /// The staging pass: signed in with no organization chosen, plugin and
-    /// template calls answer at once with `setup_incomplete` instead of
-    /// hanging until setup finishes; every other call waits as it always did.
+    /// Signed in with no organization chosen: identity answers at once and
+    /// every other call waits until the workspace assembles.
     #[tokio::test]
-    async fn calls_answer_setup_incomplete_while_the_account_is_being_set_up() {
+    async fn calls_wait_while_the_account_is_being_set_up() {
         let (state_tx, state) = watch::channel(DeferredState::Onboarding);
         let (_dir, rpc) = engine(state);
-        for method in [
-            methods::LIST_PLUGINS,
-            methods::WATCH_PLUGINS,
-            methods::INSTALL_PLUGIN,
-            methods::LIST_TEMPLATES,
-            methods::USE_TEMPLATE,
-            methods::DESCRIBE_APP,
-            methods::CHECK_PLUGIN_UPDATES,
-        ] {
-            let answered = tokio::time::timeout(
-                Duration::from_secs(1),
-                rpc.handle(method, serde_json::json!({})),
-            )
-            .await
-            .unwrap_or_else(|_| panic!("{method} hung during setup"));
-            assert!(
-                matches!(&answered, Err(RpcError::Capability(code)) if code == SETUP_INCOMPLETE),
-                "{method}: {:?}",
-                answered.err()
-            );
-        }
-        // Identity still answers; everything else waits, unanswered, as before.
         assert!(
             rpc.handle(methods::ENGINE_INFO, serde_json::json!({}))
                 .await
@@ -326,14 +291,14 @@ mod tests {
         state_tx.send_replace(DeferredState::Waiting);
         let waiting = tokio::time::timeout(
             Duration::from_millis(100),
-            rpc.handle(methods::LIST_PLUGINS, serde_json::json!({})),
+            rpc.handle(methods::LIST_HARNESSES, serde_json::json!({})),
         )
         .await;
         assert!(waiting.is_err(), "assembling: waits rather than refusing");
         // And a failed assembly still answers its reason.
         state_tx.send_replace(DeferredState::Failed("boom".into()));
         let failed = rpc
-            .handle(methods::LIST_PLUGINS, serde_json::json!({}))
+            .handle(methods::LIST_HARNESSES, serde_json::json!({}))
             .await;
         assert!(matches!(failed, Err(RpcError::Failed(m)) if m == "boom"));
     }

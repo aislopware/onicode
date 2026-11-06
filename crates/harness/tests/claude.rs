@@ -53,7 +53,6 @@ fn request(prompt: &str) -> RunRequest {
         worktree: None,
         resume: None,
         env: Default::default(),
-        extra_mcp: Vec::new(),
     }
 }
 
@@ -101,7 +100,7 @@ async fn run_to_end(
 
 #[tokio::test]
 async fn happy_path_normalizes_events_and_tags_subagents() {
-    let (controls, _steer, _token) = controls("A");
+    let (controls, _steer, _token) = self::controls("A");
     let events = run_to_end(&harness(), request("scenario:happy"), controls).await;
 
     // One SessionStarted despite the re-emitted init frame.
@@ -248,7 +247,7 @@ async fn a_side_chats_only_run_launches_without_subagent_tools() {
         }
         let mut req = request("scenario:native-subagents");
         req.mcp = Some(server.clone());
-        let (controls, _steer, _token) = controls("A");
+        let (controls, _steer, _token) = self::controls("A");
         let events = run_to_end(&harness(), req, controls).await;
         tools.push(
             events
@@ -268,7 +267,7 @@ async fn eager_done_forwards_wake_turn_as_second_done() {
     // The background-subagent shape (live-verified 2.1.228): result #1 is
     // eager — the run must NOT hold the turn for the subagent — and the wake
     // turn's frames flow through the SAME stream, settling with result #2.
-    let (controls, _steer, _token) = controls("A");
+    let (controls, _steer, _token) = self::controls("A");
     let events = run_to_end(&harness(), request("scenario:wake"), controls).await;
 
     let done_positions: Vec<usize> = events
@@ -439,7 +438,7 @@ async fn ultrathink_preserves_selected_commands_on_initial_and_steered_sends() {
                 HarnessId::ClaudeCode,
             );
             let expected = format!("{prefix}/review scenario:command-echo");
-            let (initial_controls, _steer, _token) = controls("A");
+            let (initial_controls, _steer, _token) = self::controls("A");
             let mut initial = request(&prompt);
             initial.reasoning = Some(ReasoningLevel::Ultrathink);
             let events = run_to_end(&harness(), initial, initial_controls).await;
@@ -450,7 +449,7 @@ async fn ultrathink_preserves_selected_commands_on_initial_and_steered_sends() {
                 "{events:?}"
             );
 
-            let (steer_controls, steer, _token) = controls("A");
+            let (steer_controls, steer, _token) = self::controls("A");
             steer
                 .send(SteerMessage {
                     prompt,
@@ -475,7 +474,7 @@ async fn ultrathink_preserves_selected_commands_on_initial_and_steered_sends() {
 
 #[tokio::test]
 async fn steering_lines_are_written_to_stdin_mid_run() {
-    let (controls, steer, _token) = controls("A");
+    let (controls, steer, _token) = self::controls("A");
     steer
         .send(SteerMessage {
             prompt: "redirect please".into(),
@@ -533,7 +532,7 @@ async fn interrupt_escalates_to_sigterm_and_ends_with_interrupted_done() {
     let harness = ClaudeHarness::new()
         .with_executable(fixture_path())
         .with_graces(Duration::from_millis(100), Duration::from_millis(500));
-    let (controls, _steer, token) = controls("A");
+    let (controls, _steer, token) = self::controls("A");
     let mut stream = harness
         .run(request("scenario:interrupt"), controls)
         .await
@@ -566,7 +565,7 @@ async fn interrupt_escalates_to_sigterm_and_ends_with_interrupted_done() {
 
 #[tokio::test]
 async fn error_codes_map_to_readable_messages() {
-    let (controls, _steer, _token) = controls("A");
+    let (controls, _steer, _token) = self::controls("A");
     let events = run_to_end(&harness(), request("scenario:error"), controls).await;
 
     let errors: Vec<&str> = events
@@ -602,7 +601,7 @@ async fn error_codes_map_to_readable_messages() {
 #[tokio::test]
 async fn missing_binary_is_not_installed() {
     let harness = ClaudeHarness::new().with_executable("/nonexistent/claude-nowhere");
-    let (controls, _steer, _token) = controls("A");
+    let (controls, _steer, _token) = self::controls("A");
     let err = harness
         .run(request("scenario:happy"), controls)
         .await
@@ -615,7 +614,7 @@ async fn missing_binary_is_not_installed() {
 async fn missing_working_directory_is_not_a_missing_binary() {
     let tmp = tempfile::tempdir().unwrap();
     let gone = tmp.path().join("deleted-project");
-    let (controls, _steer, _token) = controls("A");
+    let (controls, _steer, _token) = self::controls("A");
     let err = harness()
         .run(
             RunRequest {
@@ -662,7 +661,7 @@ async fn replay_fixture(name: &str) -> Vec<AgentEvent> {
         std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
     let harness = ClaudeHarness::new().with_executable(&cli);
-    let (controls, _steer, _token) = controls("A");
+    let (controls, _steer, _token) = self::controls("A");
     // Its own config root: a typed fork's transcript is looked for there.
     let mut req = request("replay");
     req.env
@@ -986,7 +985,7 @@ async fn live_real_cli_single_turn() {
     req.model = Some("haiku".into());
     req.cwd = std::env::temp_dir().display().to_string();
     req.auto_approve = false; // exercise --permission-prompt-tool stdio
-    let (controls, _steer, _token) = controls("A");
+    let (controls, _steer, _token) = self::controls("A");
     let mut stream = harness.run(req, controls).await.expect("run starts");
     // The session PARKS after the turn (steering mailbox still open, the CLI
     // waits for more stdin) — collect up to the first Done, not stream end.
@@ -1108,7 +1107,7 @@ async fn live_background_shell_is_listed_read_and_stopped() {
     );
     req.model = Some("haiku".into());
     req.cwd = dir.path().display().to_string();
-    let (mut controls, _steer, _token) = controls("A");
+    let (mut controls, _steer, _token) = self::controls("A");
     let turn = TurnControl::default();
     controls.turn = turn.clone();
     let mut processes = turn.watch_background_processes();
@@ -1156,7 +1155,7 @@ async fn live_commands_discovery() {
 
 #[tokio::test]
 async fn title_run_disables_tools_and_denies_unexpected_permissions() {
-    let (controls, _steer, token) = controls("Yes");
+    let (controls, _steer, token) = self::controls("Yes");
     let mut stream = harness()
         .run_title(request("scenario:title"), controls)
         .await
@@ -1287,7 +1286,7 @@ async fn claude_skills_follow_native_availability_and_dollar_selection_keeps_arg
 /// confirm every earlier steer too, and the run must still end.
 #[tokio::test]
 async fn a_replay_confirms_superseded_steers_and_the_turn_ends() {
-    let (controls, steer, _token) = controls("A");
+    let (controls, steer, _token) = self::controls("A");
     for prompt in ["first steer", "second steer"] {
         steer
             .send(SteerMessage {
@@ -1342,7 +1341,7 @@ fn steer_msg(prompt: &str) -> SteerMessage {
 /// steered turn completing (sound, notification, parked mid-turn).
 #[tokio::test]
 async fn a_steered_turn_running_a_long_tool_is_not_marked_done() {
-    let (controls, steer, _token) = controls("A");
+    let (controls, steer, _token) = self::controls("A");
     steer.send(steer_msg("stop and sleep")).await.unwrap();
     let stream = harness()
         .run(request("scenario:lifecycle-now-steer"), controls)
@@ -1395,7 +1394,7 @@ async fn a_steered_turn_running_a_long_tool_is_not_marked_done() {
 /// a boundary; the run's one Done is the queued message's own.
 #[tokio::test]
 async fn a_message_queued_behind_a_finishing_turn_owns_the_turn_end() {
-    let (controls, steer, _token) = controls("A");
+    let (controls, steer, _token) = self::controls("A");
     steer.send(steer_msg("follow up")).await.unwrap();
     let events = run_to_end(
         &harness(),
@@ -1427,7 +1426,7 @@ async fn a_message_queued_behind_a_finishing_turn_owns_the_turn_end() {
 /// as a stale echo of the turn before, and the chip never resolved.
 #[tokio::test]
 async fn a_typed_fork_settles_before_a_message_waiting_on_it_splits_the_turn() {
-    let (controls, steer, _token) = controls("A");
+    let (controls, steer, _token) = self::controls("A");
     let mut stream = harness()
         .run(request("scenario:typed-fork-steer-boundary"), controls)
         .await
@@ -1513,7 +1512,7 @@ async fn a_typed_fork_settles_before_a_message_waiting_on_it_splits_the_turn() {
 #[tokio::test]
 async fn send_now_over_a_held_turn_end_never_settles_the_replacement() {
     use onicode_harness::TurnControl;
-    let (mut controls, steer, _token) = controls("A");
+    let (mut controls, steer, _token) = self::controls("A");
     let turn = TurnControl::default();
     controls.turn = turn.clone();
     let mut stream = harness()
@@ -1587,7 +1586,7 @@ async fn send_now_over_a_held_turn_end_never_settles_the_replacement() {
 #[tokio::test]
 async fn a_quick_unconfirmed_replacement_after_a_stop_still_completes() {
     use onicode_harness::TurnControl;
-    let (mut controls, steer, _token) = controls("A");
+    let (mut controls, steer, _token) = self::controls("A");
     let turn = TurnControl::default();
     controls.turn = turn.clone();
     let mut stream = harness()
@@ -1647,7 +1646,7 @@ async fn a_quick_unconfirmed_replacement_after_a_stop_still_completes() {
 #[tokio::test]
 async fn a_stopped_turns_delayed_duplicate_result_is_dropped() {
     use onicode_harness::TurnControl;
-    let (mut controls, _steer, _token) = controls("A");
+    let (mut controls, _steer, _token) = self::controls("A");
     let turn = TurnControl::default();
     controls.turn = turn.clone();
     let mut stream = harness()
@@ -1699,7 +1698,7 @@ async fn a_stopped_turns_delayed_duplicate_result_is_dropped() {
 #[tokio::test]
 async fn a_stop_the_cli_never_reports_settles_its_typed_fork() {
     use onicode_harness::TurnControl;
-    let (mut controls, steer, _token) = controls("A");
+    let (mut controls, steer, _token) = self::controls("A");
     let turn = TurnControl::default();
     controls.turn = turn.clone();
     let mut stream = harness()
@@ -1757,7 +1756,7 @@ async fn a_stop_the_cli_never_reports_settles_its_typed_fork() {
 /// end at once, from the lifecycle frame — not after a quiet timer.
 #[tokio::test]
 async fn a_cancelled_queued_message_releases_the_turn_end_immediately() {
-    let (controls, steer, _token) = controls("A");
+    let (controls, steer, _token) = self::controls("A");
     steer.send(steer_msg("never started")).await.unwrap();
     let started = std::time::Instant::now();
     let mut stream = harness()
@@ -1796,7 +1795,7 @@ async fn a_changed_model_and_effort_apply_to_the_live_process() {
     cwd_moved.cwd = "/elsewhere".into();
     assert!(!harness().reconfigures_in_place(&request("a"), &cwd_moved));
 
-    let (controls, steer, _token) = controls("A");
+    let (controls, steer, _token) = self::controls("A");
     let mut launch = request("scenario:reconfigure");
     launch.model = Some("claude-sonnet-5-5".into());
     launch.reasoning = Some(ReasoningLevel::Low);
@@ -1842,7 +1841,7 @@ fn approving(
     mpsc::Sender<SteerMessage>,
     Arc<Mutex<Vec<UserInputQuestion>>>,
 ) {
-    let (controls, steer, _token) = controls("No");
+    let (controls, steer, _token) = self::controls("No");
     let asked = Arc::new(Mutex::new(Vec::new()));
     let seen = asked.clone();
     let controls = RunControls {
@@ -1852,10 +1851,22 @@ fn approving(
             let answers = questions
                 .iter()
                 .map(|q| {
+                    // The ask's own allow-once or deny option.
                     let allow = yes.contains(&q.header.as_str());
+                    let pick = if allow {
+                        ["Allow once", "Implement"]
+                    } else {
+                        ["Deny", "Keep planning"]
+                    };
+                    let label = q
+                        .options
+                        .iter()
+                        .find(|o| pick.contains(&o.as_str()))
+                        .cloned()
+                        .unwrap_or_else(|| panic!("no {pick:?} in {:?}", q.options));
                     UserInputAnswer {
                         question_id: q.id.clone(),
-                        labels: vec![if allow { "Yes" } else { "No" }.into()],
+                        labels: vec![label],
                     }
                 })
                 .collect();
@@ -2005,7 +2016,7 @@ async fn plan_and_access_modes_switch_on_the_live_process() {
 /// while the new prompt is still queued. Those are not the prompt's end.
 #[tokio::test]
 async fn results_settling_killed_tasks_on_resume_do_not_end_the_prompt() {
-    let (controls, _steer, _token) = controls("A");
+    let (controls, _steer, _token) = self::controls("A");
     let events = run_to_end(
         &harness(),
         request("Reply PONG scenario:resume-killed-tasks"),
@@ -2037,7 +2048,7 @@ async fn results_settling_killed_tasks_on_resume_do_not_end_the_prompt() {
 /// A steer the CLI never replays must not hold the turn end forever.
 #[tokio::test]
 async fn an_unreplayed_steer_releases_the_turn_end() {
-    let (controls, steer, _token) = controls("A");
+    let (controls, steer, _token) = self::controls("A");
     steer
         .send(SteerMessage {
             prompt: "absorbed steer".into(),
@@ -2080,7 +2091,7 @@ async fn an_unreplayed_steer_releases_the_turn_end() {
 #[tokio::test]
 async fn background_shells_are_listed_read_and_stopped() {
     use onicode_harness::TurnControl;
-    let (mut controls, _steer, _token) = controls("A");
+    let (mut controls, _steer, _token) = self::controls("A");
     let turn = TurnControl::default();
     controls.turn = turn.clone();
     let mut processes = turn.watch_background_processes();
@@ -2124,7 +2135,7 @@ async fn background_shells_are_listed_read_and_stopped() {
 #[tokio::test]
 async fn a_stopped_turn_keeps_the_process_and_its_background_work() {
     use onicode_harness::TurnControl;
-    let (mut controls, steer, _token) = controls("A");
+    let (mut controls, steer, _token) = self::controls("A");
     let turn = TurnControl::default();
     controls.turn = turn.clone();
     assert!(harness().stops_turn_in_place());
@@ -2279,7 +2290,7 @@ async fn an_unrestorable_session_is_relaunched_fresh() {
     // No readable history: only the CLI can tell, and it does.
     let unknown = tempfile::tempdir().unwrap();
     for session in ["stale-1", "stderr-only-1"] {
-        let (controls, _steer, _token) = controls("A");
+        let (controls, _steer, _token) = self::controls("A");
         let events = run_to_end(
             &harness(),
             resume_request(session, &unknown.path().join("missing")),
@@ -2320,13 +2331,13 @@ async fn a_session_without_conversation_is_not_resumed() {
     )
     .unwrap();
 
-    let (first, _steer, _token) = controls("A");
+    let (first, _steer, _token) = self::controls("A");
     let events = run_to_end(&harness(), resume_request("stale-2", config.path()), first).await;
     assert!(session_lost(&events), "{events:?}");
     assert_eq!(done(&events).1.as_deref(), Some("resumed=none"));
 
     // A real conversation resumes as ever, without a notice.
-    let (again, _steer, _token) = controls("A");
+    let (again, _steer, _token) = self::controls("A");
     let events = run_to_end(&harness(), resume_request("live-1", config.path()), again).await;
     assert!(!session_lost(&events), "{events:?}");
     assert_eq!(done(&events).1.as_deref(), Some("resumed=live-1"));
@@ -2334,7 +2345,7 @@ async fn a_session_without_conversation_is_not_resumed() {
     // No transcript here is no verdict: the CLI may keep its history under
     // another config root (a wrapper setting its own), so it is still asked
     // — and context survives the relaunch.
-    let (elsewhere, _steer, _token) = controls("A");
+    let (elsewhere, _steer, _token) = self::controls("A");
     let events = run_to_end(
         &harness(),
         resume_request("kept-1", config.path()),
@@ -2344,7 +2355,7 @@ async fn a_session_without_conversation_is_not_resumed() {
     assert!(!session_lost(&events), "{events:?}");
     assert_eq!(done(&events).1.as_deref(), Some("resumed=kept-1"));
     // Truly gone, the CLI's own answer still starts it fresh.
-    let (gone, _steer, _token) = controls("A");
+    let (gone, _steer, _token) = self::controls("A");
     let events = run_to_end(&harness(), resume_request("stale-3", config.path()), gone).await;
     assert!(session_lost(&events), "{events:?}");
     assert_eq!(done(&events).1.as_deref(), Some("resumed=none"));
@@ -2355,7 +2366,7 @@ async fn a_session_without_conversation_is_not_resumed() {
 /// which land just after stdout closes.
 #[tokio::test]
 async fn a_crash_in_a_later_turn_ends_it_with_the_reason() {
-    let (controls, steer, _token) = controls("A");
+    let (controls, steer, _token) = self::controls("A");
     let mut stream = harness()
         .run(request("scenario:crash-later-turn"), controls)
         .await
@@ -2392,7 +2403,7 @@ async fn a_crash_in_a_later_turn_ends_it_with_the_reason() {
 /// serve gets an error reply rather than silence.
 #[tokio::test]
 async fn unknown_control_requests_are_answered() {
-    let (controls, _steer, _token) = controls("A");
+    let (controls, _steer, _token) = self::controls("A");
     let events = run_to_end(&harness(), request("scenario:unknown-control"), controls).await;
     assert_eq!(done(&events).1.as_deref(), Some("answered"));
 }
@@ -2402,7 +2413,7 @@ async fn unknown_control_requests_are_answered() {
 /// same way, it is not shown a second time.
 #[tokio::test]
 async fn a_refused_model_switch_is_shown_and_retried() {
-    let (controls, steer, _token) = controls("A");
+    let (controls, steer, _token) = self::controls("A");
     let mut launch = request("scenario:set-model-fails");
     launch.model = Some("claude-sonnet-5-5".into());
     let mut next = launch.clone();
@@ -2466,7 +2477,7 @@ async fn processes_the_cli_started_end_with_the_run() {
         "ONICODE_TEST_PIDFILE".into(),
         pidfile.to_string_lossy().into_owned(),
     );
-    let (controls, _steer, _token) = controls("A");
+    let (controls, _steer, _token) = self::controls("A");
     let events = run_to_end(&harness(), req, controls).await;
     assert_eq!(done(&events).0, DoneStatus::Completed);
     let pid: i32 = std::fs::read_to_string(&pidfile)
@@ -2490,7 +2501,7 @@ async fn processes_the_cli_started_end_with_the_run() {
 /// half in a delta is repaired rather than dropped.
 #[tokio::test]
 async fn an_unreadable_result_still_ends_the_turn() {
-    let (controls, _steer, _token) = controls("A");
+    let (controls, _steer, _token) = self::controls("A");
     let mut stream = harness()
         .run(request("scenario:unreadable-result"), controls)
         .await
@@ -2557,7 +2568,7 @@ async fn live_unrestorable_session_relaunches_fresh() {
     );
     req.env
         .insert("ANTHROPIC_API_KEY".into(), "sk-ant-invalid".into());
-    let (controls, steer, _token) = controls("A");
+    let (controls, steer, _token) = self::controls("A");
     drop(steer);
     let stream = ClaudeHarness::new()
         .run(req, controls)
@@ -2577,4 +2588,552 @@ async fn live_unrestorable_session_relaunches_fresh() {
             if session_id != "11111111-2222-3333-4444-555555555555"
     )));
     assert_eq!(done(&events).0, DoneStatus::Errored);
+}
+
+// ---------------------------------------------------------------------------
+// Session state, approvals with rules, elicitation, queries, branches
+// ---------------------------------------------------------------------------
+
+type EventStream = futures::stream::BoxStream<'static, Result<AgentEvent, HarnessError>>;
+
+/// Events up to and including the next Done.
+async fn until_done(stream: &mut EventStream) -> Vec<AgentEvent> {
+    let mut events = Vec::new();
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .expect("event in time")
+            .expect("stream open")
+            .expect("stream event");
+        let done = matches!(event, AgentEvent::Done { .. });
+        events.push(event);
+        if done {
+            return events;
+        }
+    }
+}
+
+/// Whatever the stream sends within `quiet`, which must not end it.
+async fn within(stream: &mut EventStream, quiet: Duration) -> Vec<AgentEvent> {
+    let mut events = Vec::new();
+    let _ = tokio::time::timeout(quiet, async {
+        while let Some(event) = stream.next().await {
+            events.push(event.expect("stream event"));
+        }
+    })
+    .await;
+    events
+}
+
+fn old_harness() -> ClaudeHarness {
+    let path = fixture_path().with_file_name("fake-claude-old.sh");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+    }
+    ClaudeHarness::new().with_executable(path)
+}
+
+/// Controls whose `request_input` answers with `answer(question)`, and
+/// records every question asked.
+fn answering(
+    answer: fn(&UserInputQuestion) -> Option<String>,
+) -> (
+    RunControls,
+    mpsc::Sender<SteerMessage>,
+    Arc<Mutex<Vec<UserInputQuestion>>>,
+) {
+    let (controls, steer, _token) = self::controls("unused");
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let seen = asked.clone();
+    let controls = RunControls {
+        request_input: Box::new(move |questions| {
+            seen.lock().unwrap().extend(questions.iter().cloned());
+            let (tx, rx) = oneshot::channel();
+            let answers = questions
+                .iter()
+                .filter_map(|q| {
+                    Some(UserInputAnswer {
+                        question_id: q.id.clone(),
+                        labels: vec![answer(q)?],
+                    })
+                })
+                .collect();
+            let _ = tx.send(answers);
+            rx
+        }),
+        ..controls
+    };
+    (controls, steer, asked)
+}
+
+fn supervised(prompt: &str) -> RunRequest {
+    let mut req = request(prompt);
+    req.auto_approve = false;
+    req.access = onicode_proto::AccessMode::Supervised;
+    req
+}
+
+/// The opening prompt goes out under the host's message id, a steer under
+/// its own, both saying a person typed them; a fresh run names its session,
+/// reads the CLI's state, gets startup failures as results and file
+/// checkpoints. A continuation onicode composed is not the person's, and an
+/// old CLI gets none of the flags it would exit on.
+#[tokio::test]
+async fn prompts_carry_the_hosts_ids_and_who_wrote_them() {
+    use onicode_harness::OpeningPrompt;
+    let opening = "0b6c7d4e-1f2a-4b3c-8d9e-0f1a2b3c4d5e";
+    let steer_id = "6f0e1d2c-3b4a-4596-8877-665544332211";
+    let (controls, steer, _token) = self::controls("A");
+    controls.turn.set_opening_prompt(OpeningPrompt {
+        message_id: Some(opening.into()),
+        composed: false,
+    });
+    let mut stream = harness()
+        .run(request("scenario:prompt-shape"), controls)
+        .await
+        .expect("run starts");
+    let (_, result, _) = done(&until_done(&mut stream).await);
+    let result = result.unwrap_or_default();
+    let sid = result
+        .strip_prefix("sid=")
+        .and_then(|r| r.split(' ').next())
+        .unwrap_or_default()
+        .to_owned();
+    assert!(uuid::Uuid::parse_str(&sid).is_ok(), "{result}");
+    assert_eq!(
+        result,
+        format!(
+            "sid={sid} uuid={opening} origin=human state=1 startup=1 checkpoints=true hooks=yes \
+             rapid=true"
+        )
+    );
+    steer
+        .send(SteerMessage {
+            message_id: Some(steer_id.into()),
+            ..steer_msg("more")
+        })
+        .await
+        .unwrap();
+    let (_, result, _) = done(&until_done(&mut stream).await);
+    assert_eq!(result, Some(format!("uuid={steer_id} origin=human")));
+
+    // Composed by onicode: no human origin.
+    let (controls, _steer, _token) = self::controls("A");
+    controls.turn.set_opening_prompt(OpeningPrompt {
+        message_id: None,
+        composed: true,
+    });
+    let mut stream = harness()
+        .run(request("scenario:prompt-shape"), controls)
+        .await
+        .expect("run starts");
+    let (_, result, _) = done(&until_done(&mut stream).await);
+    assert!(result.unwrap_or_default().contains("origin=none"));
+
+    // Claude Code 2.1.200: no session id, hook events, checkpoints or
+    // preemption.
+    let (controls, _steer, _token) = self::controls("A");
+    let mut stream = old_harness()
+        .run(request("scenario:prompt-shape"), controls)
+        .await
+        .expect("run starts");
+    let (_, result, _) = done(&until_done(&mut stream).await);
+    let result = result.unwrap_or_default();
+    assert!(result.starts_with("sid=none "), "{result}");
+    assert!(
+        result.ends_with("checkpoints=unset hooks=no rapid=false"),
+        "{result}"
+    );
+}
+
+/// A `control_cancel_request` closes the card: the pending question's
+/// answer channel is dropped and nothing is written back.
+#[tokio::test]
+async fn a_cancelled_ask_closes_without_an_answer() {
+    let (controls, steer, _token) = self::controls("unused");
+    let pending: Arc<Mutex<Vec<oneshot::Sender<Vec<UserInputAnswer>>>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let held = pending.clone();
+    let controls = RunControls {
+        request_input: Box::new(move |_questions| {
+            let (tx, rx) = oneshot::channel();
+            held.lock().unwrap().push(tx);
+            rx
+        }),
+        ..controls
+    };
+    let mut stream = harness()
+        .run(supervised("scenario:cancel-ask"), controls)
+        .await
+        .expect("run starts");
+    let (_, result, _) = done(&until_done(&mut stream).await);
+    assert_eq!(result.as_deref(), Some("asked"));
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    loop {
+        let closed = pending
+            .lock()
+            .unwrap()
+            .first()
+            .is_some_and(oneshot::Sender::is_closed);
+        if closed {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the withdrawn ask stayed open"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    steer.send(steer_msg("next")).await.unwrap();
+    let (_, result, _) = done(&until_done(&mut stream).await);
+    assert_eq!(result.as_deref(), Some("clean"));
+}
+
+/// "Allow for this chat" sends the CLI's own suggestion back for the
+/// session; stop denies and ends the turn; the card says why it asks and
+/// keeps a deliberate approval from being one keystroke away.
+#[tokio::test]
+async fn approvals_offer_the_clis_rules_and_a_stop() {
+    let (controls, _steer, asked) = answering(|q| {
+        Some(
+            if q.question.contains("npm test") {
+                "Allow for this chat"
+            } else {
+                "Stop"
+            }
+            .into(),
+        )
+    });
+    let events = run_to_end(&harness(), supervised("scenario:approval-rules"), controls).await;
+    assert_eq!(
+        done_result(&events).as_deref(),
+        Some("chat=session rm=stopped")
+    );
+    let asked = asked.lock().unwrap();
+    assert_eq!(
+        asked[0].options,
+        [
+            "Allow once",
+            "Allow for this chat",
+            "Always allow",
+            "Deny",
+            "Stop"
+        ]
+    );
+    assert!(
+        asked[0]
+            .question
+            .ends_with("Why it asks: npm is not in your allow list"),
+        "{}",
+        asked[0].question
+    );
+    assert_eq!(asked[1].options, ["Deny", "Allow once", "Stop"]);
+    let rules = asked[1].approval.clone().expect("answering rules");
+    assert!(rules.default_to_no && rules.requires_user_interaction);
+}
+
+/// An MCP server's link and form elicitations are asked and answered; a
+/// dialog this host never declared is left unanswered.
+#[tokio::test]
+async fn elicitations_are_asked_and_undeclared_dialogs_are_not_answered() {
+    let (controls, steer, asked) = answering(|q| {
+        let pick = |label: &str| q.options.iter().find(|o| *o == label).cloned();
+        pick("Done").or_else(|| pick("staging"))
+    });
+    let mut stream = harness()
+        .run(request("scenario:elicitation"), controls)
+        .await
+        .expect("run starts");
+    let (_, result, _) = done(&until_done(&mut stream).await);
+    assert_eq!(result.as_deref(), Some("url=accept form=staging"));
+    assert!(
+        asked.lock().unwrap()[0]
+            .question
+            .contains("https://github.test/login")
+    );
+    steer.send(steer_msg("next")).await.unwrap();
+    let (_, result, _) = done(&until_done(&mut stream).await);
+    assert_eq!(result.as_deref(), Some("dialog=unanswered"));
+}
+
+/// A CLI that reports its state: a result with a turn queued behind it is
+/// a boundary, and the run's one Done is the queued turn's.
+#[tokio::test]
+async fn a_result_with_a_queued_turn_behind_it_is_a_boundary() {
+    let (controls, _steer, _token) = self::controls("A");
+    let mut stream = harness()
+        .run(request("scenario:state-queued-turn"), controls)
+        .await
+        .expect("run starts");
+    let events = until_done(&mut stream).await;
+    assert_eq!(done(&events).1.as_deref(), Some("woken"));
+    for text in ["first", "wake"] {
+        assert!(
+            events.contains(&AgentEvent::TextDelta { text: text.into() }),
+            "{events:?}"
+        );
+    }
+    let after = within(&mut stream, Duration::from_secs(1)).await;
+    assert!(
+        !after.iter().any(|e| matches!(e, AgentEvent::Done { .. })),
+        "{after:?}"
+    );
+}
+
+/// `idle` releases a held result at once: no quiet timer.
+#[tokio::test]
+async fn idle_ends_a_held_turn_at_once() {
+    let (controls, _steer, _token) = self::controls("A");
+    let started = std::time::Instant::now();
+    let mut stream = harness()
+        .run(request("scenario:state-idle-release"), controls)
+        .await
+        .expect("run starts");
+    let events = until_done(&mut stream).await;
+    assert_eq!(
+        done(&events),
+        (DoneStatus::Completed, Some("only".into()), None)
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "released by a timer, not idle"
+    );
+}
+
+/// A stop's receipt cancels the queued message; the stopped turn's result
+/// ends the turn, and its late copy is dropped.
+#[tokio::test]
+async fn a_stop_settles_from_its_receipt_and_drops_the_late_result() {
+    use onicode_harness::TurnControl;
+    let (mut controls, steer, _token) = self::controls("A");
+    let turn = TurnControl::default();
+    controls.turn = turn.clone();
+    let mut stream = harness()
+        .run(request("scenario:state-stop-receipt"), controls)
+        .await
+        .expect("run starts");
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .expect("event in time")
+            .expect("stream open")
+            .expect("stream event");
+        if matches!(event, AgentEvent::TextDelta { text } if text == "working") {
+            break;
+        }
+    }
+    steer.send(steer_msg("queued")).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    turn.stop_turn();
+    let events = until_done(&mut stream).await;
+    assert_eq!(done(&events).0, DoneStatus::Interrupted);
+    let after = within(&mut stream, Duration::from_millis(1500)).await;
+    assert!(
+        !after
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Done { .. } | AgentEvent::Usage { .. })),
+        "the late result was forwarded: {after:?}"
+    );
+}
+
+/// A stop between turns on an idle CLI settles from the receipt, without
+/// the settle window an older CLI needs.
+#[tokio::test]
+async fn a_stop_while_idle_settles_from_the_receipt() {
+    use onicode_harness::TurnControl;
+    let (mut controls, _steer, _token) = self::controls("A");
+    let turn = TurnControl::default();
+    controls.turn = turn.clone();
+    let mut stream = harness()
+        .run(request("scenario:state-idle-stop"), controls)
+        .await
+        .expect("run starts");
+    assert_eq!(
+        done(&until_done(&mut stream).await).1.as_deref(),
+        Some("first")
+    );
+    // Let the idle report land before the stop.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let stopped = std::time::Instant::now();
+    turn.stop_turn();
+    assert_eq!(
+        done(&until_done(&mut stream).await).0,
+        DoneStatus::Interrupted
+    );
+    assert!(
+        stopped.elapsed() < Duration::from_millis(2500),
+        "waited out a settle window: {:?}",
+        stopped.elapsed()
+    );
+}
+
+/// The host's queries reach the live session: a rewind names the opening
+/// prompt by the host's id, and a refusal comes back as an error.
+#[tokio::test]
+async fn queries_reach_the_live_session() {
+    use onicode_harness::{ControlQuery, OpeningPrompt, TurnControl};
+    let opening = "7a7a7a7a-1b1b-4c2c-8d3d-4e4e4e4e4e4e";
+    let (mut controls, _steer, _token) = self::controls("A");
+    let turn = TurnControl::default();
+    turn.set_opening_prompt(OpeningPrompt {
+        message_id: Some(opening.into()),
+        composed: false,
+    });
+    controls.turn = turn.clone();
+    let mut stream = harness()
+        .run(request("scenario:control-query"), controls)
+        .await
+        .expect("run starts");
+    assert_eq!(
+        done(&until_done(&mut stream).await).1.as_deref(),
+        Some("ready")
+    );
+    let answer = tokio::time::timeout(
+        Duration::from_secs(5),
+        turn.query(ControlQuery::RewindFiles {
+            message_id: opening.into(),
+            dry_run: true,
+        }),
+    )
+    .await
+    .expect("answered in time")
+    .expect("runtime alive")
+    .expect("rewind answered");
+    assert_eq!(answer["filesChanged"], serde_json::json!(["a.rs"]));
+    assert_eq!(answer["dryRun"], true);
+    assert_eq!(answer["echo"], format!("{opening}={opening}"));
+    let refused = tokio::time::timeout(
+        Duration::from_secs(5),
+        turn.query(ControlQuery::ContextUsage { full: false }),
+    )
+    .await
+    .expect("answered in time")
+    .expect("runtime alive");
+    assert_eq!(refused, Err("not now".to_owned()));
+}
+
+/// A run branch resumes the session cut where the transcript says: a redo
+/// drops exactly the last turn, a fork keeps through a turn into a copy. A
+/// redo of an earlier turn, or on a CLI too old for it, is refused before
+/// launch.
+#[tokio::test]
+async fn branches_resume_the_session_cut_at_the_right_entry() {
+    use onicode_harness::Branch;
+    let config = tempfile::tempdir().unwrap();
+    let project = config.path().join("projects").join("-w");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        project.join("sess-b.jsonl"),
+        [
+            r#"{"type":"user","uuid":"p1","parentUuid":null,"message":{"role":"user","content":"one"}}"#,
+            r#"{"type":"assistant","uuid":"a1","parentUuid":"p1","message":{"content":[{"type":"text","text":"1"}]}}"#,
+            r#"{"type":"user","uuid":"p2","parentUuid":"a1","message":{"role":"user","content":"two"}}"#,
+            r#"{"type":"assistant","uuid":"a2","parentUuid":"p2","message":{"content":[{"type":"text","text":"2"}]}}"#,
+        ]
+        .join("\n"),
+    )
+    .unwrap();
+    let branch_request = || {
+        let mut req = resume_request("sess-b", config.path());
+        req.prompt = "scenario:branch-args".into();
+        req
+    };
+    let cases = [
+        (
+            Branch::Redo {
+                message_id: "p2".into(),
+            },
+            "at=a1 drops=p2 fork=no resume=sess-b",
+        ),
+        (
+            Branch::Fork {
+                message_id: "p1".into(),
+                keep_turn: true,
+            },
+            "at=a1 drops=none fork=yes resume=sess-b",
+        ),
+    ];
+    for (branch, expected) in cases {
+        let (controls, _steer, _token) = self::controls("A");
+        let stream = harness()
+            .run_branch(branch_request(), controls, branch.clone())
+            .await
+            .unwrap_or_else(|e| panic!("{branch:?}: {e}"));
+        let events = tokio::time::timeout(
+            Duration::from_secs(10),
+            stream.map(|r| r.expect("stream event")).collect::<Vec<_>>(),
+        )
+        .await
+        .expect("run finished in time");
+        assert_eq!(done(&events).1.as_deref(), Some(expected), "{branch:?}");
+    }
+    let refused = |harness: ClaudeHarness, branch: Branch| {
+        let req = branch_request();
+        async move {
+            let (controls, _steer, _token) = self::controls("A");
+            match harness.run_branch(req, controls, branch).await {
+                Ok(_) => panic!("branch launched"),
+                Err(error) => error.to_string(),
+            }
+        }
+    };
+    let earlier = refused(
+        harness(),
+        Branch::Redo {
+            message_id: "p1".into(),
+        },
+    )
+    .await;
+    assert!(earlier.contains("only the last message"), "{earlier}");
+    let old = refused(
+        old_harness(),
+        Branch::Redo {
+            message_id: "p2".into(),
+        },
+    )
+    .await;
+    assert!(
+        old.contains("or newer is needed to edit and resend a message (this is 2.1.200)"),
+        "{old}"
+    );
+}
+
+/// A session a Claude Code terminal still holds is not resumed beside it.
+#[tokio::test]
+async fn a_session_held_by_a_live_terminal_is_not_resumed() {
+    let config = tempfile::tempdir().unwrap();
+    let sessions = config.path().join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    // This test process stands in for the terminal: it is alive.
+    let me = std::process::id();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    std::fs::write(
+        sessions.join(format!("{me}.json")),
+        serde_json::json!({"pid": me, "sessionId": "sess-held", "kind": "interactive",
+            "updatedAt": now})
+        .to_string(),
+    )
+    .unwrap();
+    let (controls, _steer, _token) = self::controls("A");
+    let error = match harness()
+        .run(resume_request("sess-held", config.path()), controls)
+        .await
+    {
+        Ok(_) => panic!("resumed beside a live terminal"),
+        Err(error) => error.to_string(),
+    };
+    assert!(error.contains("Claude Code terminal"), "{error}");
+    // Another session is resumed as usual.
+    let (controls, _steer, _token) = self::controls("A");
+    let events = run_to_end(
+        &harness(),
+        resume_request("sess-free", config.path()),
+        controls,
+    )
+    .await;
+    assert_eq!(done(&events).1.as_deref(), Some("resumed=sess-free"));
 }

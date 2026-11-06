@@ -1,7 +1,7 @@
 #!/bin/sh
 
-[ "$GEMINI_HOME" = "$ONICODE_TEST_EXPECTED_GEMINI_HOME" ] || exit 1
-[ -f "$GEMINI_HOME/antigravity-acp/settings.json" ] || exit 1
+[ "${GEMINI_HOME:-}" = "${ONICODE_TEST_EXPECTED_GEMINI_HOME:-}" ] || exit 1
+[ -f "${GEMINI_HOME:-}/antigravity-acp/settings.json" ] || exit 1
 
 while read -r line; do
   id=$(printf '%s' "$line" | sed 's/.*"id":\([0-9]*\).*/\1/')
@@ -15,5 +15,6 @@ while read -r line; do
         *) printf '{"id":%s,"error":{"code":-32602,"message":"configured business auth was not preserved"}}\n' "$id" ;;
       esac
       ;;
+    *) ;;
   esac
 done

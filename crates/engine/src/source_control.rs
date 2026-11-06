@@ -507,7 +507,7 @@ impl GitHubCli {
             .runner
             .run(ProcessRequest {
                 // The body travels on stdin: a long comment would not fit a
-                // Windows command line.
+                // command line.
                 args: vec![
                     "api".into(),
                     "--method".into(),
@@ -1544,10 +1544,15 @@ impl GitCheckoutInspector {
             )
             .await;
         let branch_remote_key = format!("branch.{local_branch}.remote");
-        let mut remote_name = self
+        let branch_remote = self
             .git_optional(&checkout_root, &["config", "--get", &branch_remote_key])
-            .await
-            .filter(|remote| remote != ".");
+            .await;
+        // Remote `.`: the branch tracks another LOCAL branch (`git switch -c
+        // feature --track develop`). It isn't published, and the branch it
+        // tracks is not its head: `release/2.0` would read as remote
+        // `release`, branch `2.0`, and find that branch's pull request.
+        let upstream_ref = upstream_ref.filter(|_| branch_remote.as_deref() != Some("."));
+        let mut remote_name = branch_remote.filter(|remote| remote != ".");
         if remote_name.is_none() {
             remote_name = upstream_ref.as_deref().and_then(remote_from_upstream);
         }
@@ -2335,11 +2340,6 @@ impl ProcessRunner for SystemProcessRunner {
         if request.program == "gh" {
             onicode_harness::compose_login_shell_path(&mut command);
         }
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.as_std_mut().creation_flags(0x08000000);
-        }
         command.args(&request.args);
         if let Some(cwd) = &request.cwd {
             command.current_dir(cwd);
@@ -2642,26 +2642,7 @@ mod tests {
     impl ProcessRunner for ExecutableGhRunner {
         async fn run(&self, mut request: ProcessRequest) -> Result<ProcessOutput, ProcessRunError> {
             if request.program == "gh" {
-                #[cfg(unix)]
-                {
-                    request.program = self.executable.to_string_lossy().into_owned();
-                }
-                #[cfg(windows)]
-                {
-                    request.args.splice(
-                        ..0,
-                        [
-                            "-NoLogo".into(),
-                            "-NoProfile".into(),
-                            "-NonInteractive".into(),
-                            "-ExecutionPolicy".into(),
-                            "Bypass".into(),
-                            "-File".into(),
-                            self.executable.to_string_lossy().into_owned(),
-                        ],
-                    );
-                    request.program = "powershell.exe".into();
-                }
+                request.program = self.executable.to_string_lossy().into_owned();
             }
             SystemProcessRunner.run(request).await
         }
@@ -4256,8 +4237,6 @@ mod tests {
 
         #[cfg(unix)]
         let fake_gh = temp.path().join("gh");
-        #[cfg(windows)]
-        let fake_gh = temp.path().join("gh.ps1");
         #[cfg(unix)]
         let fake_gh_contents = r##"#!/bin/sh
 if [ "$GH_PROMPT_DISABLED" != "1" ]; then
@@ -4265,13 +4244,6 @@ if [ "$GH_PROMPT_DISABLED" != "1" ]; then
   exit 2
 fi
 printf '%s\n' '[{"number":90,"title":"Host-resolved pull request","url":"https://github.com/acme/onicode/pull/90","state":"OPEN","baseRefName":"main","headRefName":"feature/status","updatedAt":"2026-08-15T12:00:00Z","isCrossRepository":false,"headRepositoryOwner":{"login":"acme"}}]'
-"##;
-        #[cfg(windows)]
-        let fake_gh_contents = r##"if ($env:GH_PROMPT_DISABLED -ne '1') {
-  [Console]::Error.WriteLine('interactive auth was not disabled')
-  exit 2
-}
-[Console]::Out.WriteLine('[{"number":90,"title":"Host-resolved pull request","url":"https://github.com/acme/onicode/pull/90","state":"OPEN","baseRefName":"main","headRefName":"feature/status","updatedAt":"2026-08-15T12:00:00Z","isCrossRepository":false,"headRepositoryOwner":{"login":"acme"}}]')
 "##;
         std::fs::write(&fake_gh, fake_gh_contents).expect("write fake gh");
         #[cfg(unix)]
@@ -4377,8 +4349,8 @@ printf '%s\n' '[{"number":90,"title":"Host-resolved pull request","url":"https:/
         );
         let refs = repos.refs(&checkout).await.unwrap();
         for path in [&worktree.path, &default_worktree.path] {
-            // Git reports slash-separated paths on Windows, while settings
-            // retain canonical Win32 prefixes. Compare the actual directory.
+            // Git may report a different spelling than settings retain.
+            // Compare the actual directory.
             assert!(
                 refs.iter()
                     .any(|entry| entry.worktree_path.as_ref().is_some_and(|listed| {
@@ -4512,11 +4484,6 @@ printf '%s\n' '[{"number":90,"title":"Host-resolved pull request","url":"https:/
         let marker = temp.path().join("transport-ran");
         #[cfg(unix)]
         let transport_command = format!("sh -c 'touch {}; exit 1'", marker.display());
-        #[cfg(windows)]
-        let transport_command = format!(
-            "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"New-Item -ItemType File -Force -LiteralPath '{}'; exit 1\"",
-            marker.to_string_lossy().replace('\'', "''")
-        );
         run_git(
             &checkout,
             &["config", "core.sshCommand", &transport_command],
@@ -4896,6 +4863,39 @@ printf '%s\n' '[{"number":90,"title":"Host-resolved pull request","url":"https:/
         assert_eq!(requests[0].cwd.as_deref(), Some(Path::new("/nested/path")));
         assert_eq!(requests[0].args, ["rev-parse", "--show-toplevel"]);
         assert_eq!(requests[4].args, ["remote", "get-url", "--push", "fork"]);
+    }
+
+    /// `git switch -c feature --track release/2.0` records remote `.`: the
+    /// branch tracks a local branch and is published nowhere. Its upstream
+    /// must not read as remote `release`, branch `2.0` — nor lend the feature
+    /// branch the release branch's pull request.
+    #[tokio::test]
+    async fn git_inspector_ignores_an_upstream_on_a_local_branch() {
+        let runner = FakeProcessRunner::with_responses([
+            command_success("/checkout\n"),
+            command_success("feature\n"),
+            command_success("release/2.0\n"),
+            command_success(".\n"),
+            command_failure(""),
+            command_success("origin\n"),
+            command_success("https://github.com/acme/onicode.git\n"),
+            command_success("origin/main\n"),
+        ]);
+        let inspector = GitCheckoutInspector::new(runner.clone());
+
+        let source = inspector.inspect(Path::new("/checkout")).await.unwrap();
+
+        assert_eq!(source.branch.upstream_ref, None);
+        assert_eq!(source.branch.remote_name.as_deref(), Some("origin"));
+        assert_eq!(source.branch.head_branch, "feature");
+        assert_eq!(source.branch.head_selectors, ["acme:feature", "feature"]);
+        assert_eq!(source.default_branch.as_deref(), Some("main"));
+        let requests = runner.requests();
+        assert_eq!(
+            requests[4].args,
+            ["config", "--get", "remote.pushDefault"],
+            "the remote falls back as for an unpublished branch"
+        );
     }
 
     #[test]

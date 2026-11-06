@@ -52,7 +52,6 @@ fn request(prompt: &str) -> RunRequest {
         worktree: None,
         resume: None,
         env: Default::default(),
-        extra_mcp: Vec::new(),
     }
 }
 
@@ -986,7 +985,6 @@ async fn an_agent_without_a_sign_in_method_refuses_a_default_sign_in() {
 
 /// `cli_command` runs the agent's CLI itself: the same program a launch
 /// resolves, without the ACP server arguments.
-#[cfg(not(windows))]
 #[tokio::test]
 async fn cli_command_runs_the_cli_without_the_server_arguments() {
     let fixture = fixture_path();
@@ -2533,7 +2531,6 @@ fn antigravity_detection_and_missing_server_never_install() {
         "partial",
         "server",
         "par",
-        "exe",
         "override",
         "invalid-override",
     ] {
@@ -2543,7 +2540,6 @@ fn antigravity_detection_and_missing_server_never_install() {
         let name = match scenario {
             "server" => "agy_acp_server",
             "par" => "agy_acp_server.par",
-            "exe" => "agy_acp_server.exe",
             "override" => "custom-server",
             _ => "agy",
         };
@@ -2588,7 +2584,7 @@ async fn antigravity_detection_subprocess() {
         return;
     };
     let harness = AcpHarness::antigravity();
-    let installed = matches!(scenario.as_str(), "server" | "par" | "exe" | "override");
+    let installed = matches!(scenario.as_str(), "server" | "par" | "override");
     assert_eq!(harness.installed(), installed);
     if installed {
         assert!(harness.resolve_program(false).await.is_ok());

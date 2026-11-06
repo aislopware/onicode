@@ -40,7 +40,9 @@ final class IPadLayoutTests: XCTestCase {
         snapshot(app, "ipad-session-portrait")
         // Another session replaces it in the main column.
         app.cells["session-chat-deploy"].tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Wrangler deploy hygiene'")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Wrangler deploy hygiene'")).firstMatch
+                .waitForExistence(timeout: 5))
     }
 
     func testNewSessionFromSidebarAndSearch() {
@@ -52,7 +54,8 @@ final class IPadLayoutTests: XCTestCase {
         XCTAssertTrue(input.waitForExistence(timeout: 5))
         input.typeText("Add a dark mode toggle to settings")
         app.buttons["composer-send"].tap()
-        XCTAssertTrue(app.scrollViews["transcript"].waitForExistence(timeout: 10), "the new session opens in the main column")
+        XCTAssertTrue(
+            app.scrollViews["transcript"].waitForExistence(timeout: 10), "the new session opens in the main column")
         let search = app.descendants(matching: .any)["sidebar-search"].firstMatch
         search.tap()
         search.typeText("wrangler")

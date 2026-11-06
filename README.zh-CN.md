@@ -11,7 +11,6 @@
 从 [GitHub Releases](https://github.com/zeronsh/zeron/releases/latest) 下载对应平台的最新版本：
 
 - **macOS** — `zeron-<version>-macos-arm64.dmg`
-- **Windows** — `zeron-<version>-windows-x86_64-setup.exe`
 - **Linux** — `zeron-<version>-linux-<arch>.tar.gz`，解压后运行里面的 `install.sh`
 
 不用账号，也不用联网，会话就存在这台设备上。应用会自动更新。

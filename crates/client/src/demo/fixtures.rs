@@ -278,7 +278,7 @@ pub(crate) fn spaces(now: i64) -> Vec<Space> {
             created_at: ms(now - ago),
         };
     let onicode = |mut space: Space| {
-        space.repository_id = Some("github.com/zeronsh/onicode".into());
+        space.repository_id = Some("github.com/aislopware/onicode".into());
         // Cloud reaches it in the demo (its fixture repositories).
         space.github_repo = Some("acme/web".into());
         space

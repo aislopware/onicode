@@ -52,7 +52,6 @@ fn run_request(prompt: &str, cwd: &str) -> RunRequest {
         worktree: None,
         resume: None,
         env: Default::default(),
-        extra_mcp: Vec::new(),
     }
 }
 
@@ -969,6 +968,177 @@ async fn a_crash_before_the_reply_reached_disk_still_auto_resumes() {
     core.shutdown().await;
 }
 
+/// How a chat was put away before the engine died mid-turn.
+#[derive(Clone, Copy, Debug)]
+enum PutAway {
+    Nothing,
+    ArchivedItself,
+    ParentArchived,
+    ParentDeleted,
+    GrandparentArchived,
+}
+
+/// A turn cut off by a crash is picked back up only while someone is still
+/// waiting on it. A chat archived since, or a delegate whose parent (or its
+/// parent) was archived or deleted, keeps the plain interruption note and is
+/// not run again on the person's quota; one still in view resumes.
+#[tokio::test]
+async fn a_crash_revives_no_turn_of_a_chat_put_away() {
+    for case in [
+        PutAway::Nothing,
+        PutAway::ArchivedItself,
+        PutAway::ParentArchived,
+        PutAway::ParentDeleted,
+        PutAway::GrandparentArchived,
+    ] {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("data");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("device-id"), "dev-crash").unwrap();
+        let requests: RequestLog = Arc::new(Mutex::new(Vec::new()));
+        let recording = || RecordingHarness {
+            requests: requests.clone(),
+            session_id: "hs-after-crash".into(),
+            fail_starts: Default::default(),
+        };
+
+        // The rows as the person left them: CHAT a delegate of a parent,
+        // itself a delegate of a grandparent.
+        {
+            let core = assemble(&dir, recording());
+            let workspace = &core.workspace;
+            workspace
+                .create_space("space-restart", &core.device_id, "/tmp", None, false)
+                .unwrap();
+            workspace
+                .create_chat("chat-grandparent", Some("space-restart"), None, None, None)
+                .unwrap();
+            workspace
+                .create_chat_with_parent(
+                    "chat-parent",
+                    Some("space-restart"),
+                    None,
+                    None,
+                    None,
+                    Some("chat-grandparent".into()),
+                )
+                .unwrap();
+            workspace
+                .create_chat_with_parent(
+                    CHAT,
+                    Some("space-restart"),
+                    None,
+                    None,
+                    None,
+                    Some("chat-parent".into()),
+                )
+                .unwrap();
+            for id in [CHAT, "chat-parent", "chat-grandparent"] {
+                workspace.rename_chat(id, "Pre-titled").unwrap();
+            }
+            match case {
+                PutAway::Nothing => {}
+                PutAway::ArchivedItself => {
+                    workspace.set_chat_archived(CHAT, true).unwrap();
+                }
+                PutAway::ParentArchived => {
+                    workspace.set_chat_archived("chat-parent", true).unwrap();
+                }
+                PutAway::ParentDeleted => {
+                    workspace.delete_chat("chat-parent").unwrap();
+                }
+                PutAway::GrandparentArchived => {
+                    workspace
+                        .set_chat_archived("chat-grandparent", true)
+                        .unwrap();
+                }
+            }
+            core.shutdown().await;
+        }
+
+        // A kill -9 moments into CHAT's turn, inside the revival window.
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        {
+            let store = DocsStore::open(dir.join("orgs/dev-org/dev-user")).unwrap();
+            let doc = SessionDoc::init(CHAT).unwrap();
+            for (id, role, text, status, ago) in [
+                (
+                    "msg-user-1",
+                    MessageRole::User,
+                    "long task",
+                    MessageStatus::Complete,
+                    60_000,
+                ),
+                (
+                    "msg-assistant-1",
+                    MessageRole::Assistant,
+                    "partial…",
+                    MessageStatus::Streaming,
+                    30_000,
+                ),
+            ] {
+                doc.push_message(&SessionMessageEntry {
+                    id: id.into(),
+                    role,
+                    parts: vec![MessagePart::Text {
+                        id: "t0".into(),
+                        text: text.into(),
+                    }],
+                    created_at: now - ago,
+                    device_id: "dev-crash".into(),
+                    status: Some(status),
+                    continuation_of: None,
+                    duration_ms: None,
+                })
+                .unwrap();
+            }
+            store
+                .save_snapshot(CHAT, &doc.export_snapshot().unwrap())
+                .unwrap();
+            let journal = RunJournal::open(dir.join("orgs/dev-org/dev-user/journals")).unwrap();
+            journal
+                .append(
+                    CHAT,
+                    &AgentEvent::SessionStarted {
+                        harness: HarnessId::Mock,
+                        model: "mock-1".into(),
+                        tools: vec![],
+                        cwd: "/tmp".into(),
+                        session_id: "hs-crash".into(),
+                        assistant_message_id: "msg-assistant-1".into(),
+                    },
+                )
+                .unwrap();
+        }
+
+        // Recovery decides while the engine assembles; the note says what.
+        let core = assemble(&dir, recording());
+        let note = entries_now(&core)
+            .iter()
+            .filter(|e| e.status == Some(MessageStatus::Aborted))
+            .flat_map(|e| e.parts.iter())
+            .find_map(|p| match p {
+                MessagePart::Error { message, .. } => Some(message.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{case:?}: the crashed entry is stamped"));
+        match case {
+            PutAway::Nothing => assert!(note.contains("resuming"), "{case:?}: {note}"),
+            _ => {
+                assert_eq!(note, "Run interrupted by engine restart", "{case:?}");
+                assert!(
+                    requests.lock().unwrap().is_empty(),
+                    "{case:?}: nothing dispatched"
+                );
+            }
+        }
+        core.shutdown().await;
+    }
+}
+
 /// The agent reports where it runs with symlinks resolved; the chat names
 /// its folder through the symlink. A crash mid-turn leaves the resolved
 /// spelling stored (only a turn's Done restores the request's), and the
@@ -1248,7 +1418,6 @@ async fn real_claude_remembers_codeword_across_engine_restart() {
         worktree: None,
         resume: None,
         env: Default::default(),
-        extra_mcp: Vec::new(),
     };
     let assemble_real = || {
         EngineCore::assemble(

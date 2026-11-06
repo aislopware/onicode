@@ -10,9 +10,11 @@ enum CloudRoutes {
     /// Settings → Billing over whatever is showing.
     static func openBilling(app: AppModel, from host: UIViewController) {
         let billing = BillingViewController(app: app)
-        billing.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak billing] _ in
-            billing?.dismiss(animated: true)
-        })
+        billing.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            systemItem: .done,
+            primaryAction: UIAction { [weak billing] _ in
+                billing?.dismiss(animated: true)
+            })
         let nav = UINavigationController(rootViewController: billing)
         nav.modalPresentationStyle = .pageSheet
         (host.presentedViewController ?? host).present(nav, animated: true)

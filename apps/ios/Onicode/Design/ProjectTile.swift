@@ -15,20 +15,28 @@ enum ProjectTile {
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
         for style in [UIUserInterfaceStyle.light, .dark] {
-            let traits = UITraitCollection { $0.userInterfaceStyle = style; $0.displayScale = scale }
+            let traits = UITraitCollection {
+                $0.userInterfaceStyle = style
+                $0.displayScale = scale
+            }
             let t = tone.resolvedColor(with: traits)
             let img = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
                 let k = side / 13
                 t.withAlphaComponent(0.08).setFill()
                 UIBezierPath(roundedRect: CGRect(x: 0, y: 0, width: side, height: side), cornerRadius: 3 * k).fill()
                 let font = Fonts.ui(.monoMedium, 9 * k)
-                let s = NSAttributedString(string: letter(name), attributes: [.font: font, .foregroundColor: t.withAlphaComponent(0.85)])
+                let s = NSAttributedString(
+                    string: letter(name), attributes: [.font: font, .foregroundColor: t.withAlphaComponent(0.85)])
                 let size = s.size()
                 s.draw(at: CGPoint(x: (side - size.width) / 2, y: side / 2 - (font.ascender - font.capHeight / 2)))
             }.withRenderingMode(.alwaysOriginal)
             asset.register(img, with: traits)
         }
-        return asset.image(with: UITraitCollection { $0.userInterfaceStyle = UITraitCollection.current.userInterfaceStyle; $0.displayScale = scale })
+        return asset.image(
+            with: UITraitCollection {
+                $0.userInterfaceStyle = UITraitCollection.current.userInterfaceStyle
+                $0.displayScale = scale
+            })
     }
 }
 

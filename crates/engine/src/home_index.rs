@@ -3,8 +3,8 @@
 //!
 //! Home is never handed to fff: after its scan, fff opens every file up to
 //! 10 MB to tell text from binary, which downloads every cloud-only file
-//! under home (OneDrive on Windows, iCloud Drive and File Provider folders
-//! on macOS). This walk reads directory listings only, and skips cloud
+//! under home (iCloud Drive and File Provider folders on macOS, OneDrive
+//! and Dropbox clients). This walk reads directory listings only, and skips cloud
 //! folders, hidden folders and dependency folders altogether. It holds no
 //! file contents, so home has no content search.
 
@@ -36,7 +36,7 @@ const CLOUD_ROOT_PREFIXES: &[&str] = &[
 /// Folders directly under home that hold machine state, not user files.
 /// macOS's Library also holds iCloud Drive (`Mobile Documents`) and File
 /// Provider clients (`CloudStorage`).
-const MACHINE_ROOTS: &[&str] = &["library", "appdata", "applications"];
+const MACHINE_ROOTS: &[&str] = &["library", "applications"];
 
 /// Dependency and cache folders, at any depth.
 const SKIPPED_DIRS: &[&str] = &["node_modules", "__pycache__", "venv", "site-packages"];
@@ -90,7 +90,7 @@ impl HomeIndex {
                     let Ok(relative) = entry.path().strip_prefix(home) else {
                         return ignore::WalkState::Continue;
                     };
-                    let path = relative.to_string_lossy().replace('\\', "/");
+                    let path = relative.to_string_lossy().into_owned();
                     batch.items.push(HomePath {
                         lower: path.to_lowercase(),
                         path,
@@ -229,20 +229,6 @@ fn skipped(entry: &ignore::DirEntry) -> bool {
 }
 
 /// A folder whose contents a cloud client fetches on first listing.
-#[cfg(windows)]
-fn is_cloud_placeholder(metadata: &std::fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    const FILE_ATTRIBUTE_OFFLINE: u32 = 0x1000;
-    const FILE_ATTRIBUTE_RECALL_ON_OPEN: u32 = 0x4_0000;
-    const FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS: u32 = 0x40_0000;
-    metadata.file_attributes()
-        & (FILE_ATTRIBUTE_OFFLINE
-            | FILE_ATTRIBUTE_RECALL_ON_OPEN
-            | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS)
-        != 0
-}
-
-/// A folder whose contents a cloud client fetches on first listing.
 #[cfg(target_os = "macos")]
 fn is_cloud_placeholder(metadata: &std::fs::Metadata) -> bool {
     use std::os::macos::fs::MetadataExt;
@@ -250,7 +236,7 @@ fn is_cloud_placeholder(metadata: &std::fs::Metadata) -> bool {
     metadata.st_flags() & SF_DATALESS != 0
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(not(target_os = "macos"))]
 fn is_cloud_placeholder(_metadata: &std::fs::Metadata) -> bool {
     false
 }
@@ -291,7 +277,6 @@ mod tests {
             "OneDrive - Contoso/plan.md",
             "Dropbox/plan.md",
             "Library/Mobile Documents/plan.md",
-            "AppData/Local/plan.md",
             ".config/plan.md",
             "boxes/plan.md",
         ]);

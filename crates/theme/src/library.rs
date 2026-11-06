@@ -105,9 +105,7 @@ impl CustomThemeLibrary {
 
     pub fn load(data_dir: &Path) -> Result<Self> {
         let path = Self::path(data_dir);
-        let backup = backup_path(&path);
-        let load_path = if path.exists() { &path } else { &backup };
-        let source = match read_library_file(load_path) {
+        let source = match read_library_file(&path) {
             Ok(source) => source,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Self::default()),
             Err(error) => {
@@ -115,7 +113,7 @@ impl CustomThemeLibrary {
             }
         };
         let library: Self = serde_json::from_str(&source)
-            .with_context(|| format!("could not parse {}", load_path.display()))?;
+            .with_context(|| format!("could not parse {}", path.display()))?;
         library.validate_capacity()?;
         Ok(library)
     }
@@ -129,7 +127,7 @@ impl CustomThemeLibrary {
         if encoded.len() as u64 > MAX_LIBRARY_BYTES {
             bail!("custom theme library exceeds the {MAX_LIBRARY_BYTES}-byte limit");
         }
-        replace_file_recoverably(&path, &encoded)
+        replace_file(&path, &encoded)
     }
 
     pub fn install_runtime(&self) {
@@ -218,45 +216,6 @@ impl CustomThemeLibrary {
             source,
             family,
             reports,
-            selected_variant_ids,
-            status: CustomThemeStatus::Ready,
-        });
-        self.validate_capacity()?;
-        Ok(entry_id)
-    }
-
-    /// A family made here (a theme an agent or the person wrote as palettes,
-    /// `catalog::create`) added as an entry of its own: its id, made unique
-    /// as an import's is, checked as one is.
-    pub fn install_made(&mut self, mut family: ThemeFamily) -> Result<String> {
-        if family.variants.is_empty() {
-            bail!("a theme needs at least one variant");
-        }
-        self.ensure_capacity_for(family.variants.len())?;
-        let entry_id = unique_id(
-            &family.id,
-            self.entries.iter().map(|entry| entry.id.as_str()),
-        );
-        if entry_id != family.id {
-            rekey_family(&mut family, &entry_id);
-        }
-        let errors = validation_errors(&family);
-        if !errors.is_empty() {
-            bail!("theme validation failed: {}", errors.join("; "));
-        }
-        let selected_variant_ids = family
-            .variants
-            .iter()
-            .map(|variant| variant.id.clone())
-            .collect();
-        self.entries.push(CustomThemeEntry {
-            id: entry_id.clone(),
-            name: family.name.clone(),
-            source: CustomThemeSource::ImportedSnapshot {
-                imported_from: None,
-            },
-            family,
-            reports: BTreeMap::new(),
             selected_variant_ids,
             status: CustomThemeStatus::Ready,
         });
@@ -438,7 +397,7 @@ impl CustomThemeLibrary {
         fs::create_dir_all(&editable_dir)
             .with_context(|| format!("could not create {}", editable_dir.display()))?;
         let path = editable_dir.join(format!("{new_id}.onicode-theme.json"));
-        replace_file_recoverably(&path, &serde_json::to_vec_pretty(&family)?)?;
+        replace_file(&path, &serde_json::to_vec_pretty(&family)?)?;
 
         let selected_variant_ids = family
             .variants
@@ -501,10 +460,6 @@ impl CustomThemeLibrary {
     }
 }
 
-fn backup_path(path: &Path) -> PathBuf {
-    path.with_extension("json.bak")
-}
-
 fn read_library_file(path: &Path) -> io::Result<String> {
     let size = fs::metadata(path)?.len();
     if size > MAX_LIBRARY_BYTES {
@@ -516,13 +471,11 @@ fn read_library_file(path: &Path) -> io::Result<String> {
     fs::read_to_string(path)
 }
 
-/// Replace `path` without relying on rename-over-existing semantics (which
-/// Windows does not provide). The backup also lets startup recover if the
-/// process stops between the two renames. Symlinks are not followed here: the
-/// managed data-dir path itself is replaced.
-fn replace_file_recoverably(path: &Path, contents: &[u8]) -> Result<()> {
+/// Replace `path` atomically: write a synced sibling, then rename it over the
+/// target. Symlinks are not followed here: the managed data-dir path itself is
+/// replaced.
+fn replace_file(path: &Path, contents: &[u8]) -> Result<()> {
     let temporary = path.with_extension("json.tmp");
-    let backup = backup_path(path);
     let mut file = fs::File::create(&temporary)
         .with_context(|| format!("could not create {}", temporary.display()))?;
     file.write_all(contents)
@@ -530,33 +483,7 @@ fn replace_file_recoverably(path: &Path, contents: &[u8]) -> Result<()> {
     file.sync_all()
         .with_context(|| format!("could not sync {}", temporary.display()))?;
     drop(file);
-
-    if !path.exists() {
-        fs::rename(&temporary, path)
-            .with_context(|| format!("could not install {}", path.display()))?;
-        return Ok(());
-    }
-    if backup.exists() {
-        fs::remove_file(&backup)
-            .with_context(|| format!("could not remove stale backup {}", backup.display()))?;
-    }
-    fs::rename(path, &backup).with_context(|| format!("could not back up {}", path.display()))?;
-    if let Err(error) = fs::rename(&temporary, path) {
-        let restore = fs::rename(&backup, path);
-        return match restore {
-            Ok(()) => Err(error).with_context(|| format!("could not replace {}", path.display())),
-            Err(restore_error) => Err(anyhow!(
-                "could not replace {}; recovery copy remains at {} ({error}); restore failed: {restore_error}",
-                path.display(),
-                backup.display()
-            )),
-        };
-    }
-    // The committed primary is authoritative. A stale backup is harmless and
-    // will be cleared before the next save; cleanup failure must not make the
-    // caller believe an already-committed replacement failed.
-    let _ = fs::remove_file(&backup);
-    Ok(())
+    fs::rename(&temporary, path).with_context(|| format!("could not replace {}", path.display()))
 }
 
 fn load_editable_family(path: &Path, expected_id: &str) -> Result<ThemeFamily> {
@@ -738,17 +665,6 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         library.save(data.path()).unwrap();
         library.save(data.path()).unwrap();
-        assert_eq!(CustomThemeLibrary::load(data.path()).unwrap(), library);
-    }
-
-    #[test]
-    fn load_recovers_from_backup_left_between_replacement_renames() {
-        let data = tempfile::tempdir().unwrap();
-        let library = CustomThemeLibrary::default();
-        library.save(data.path()).unwrap();
-        let path = CustomThemeLibrary::path(data.path());
-        fs::rename(&path, backup_path(&path)).unwrap();
-
         assert_eq!(CustomThemeLibrary::load(data.path()).unwrap(), library);
     }
 

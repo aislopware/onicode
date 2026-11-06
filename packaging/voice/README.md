@@ -1,7 +1,7 @@
 # Development media runtime
 
-Onicode packages do not contain the Codex voice runtime. On macOS, Linux and
-Windows, local and remote voice run the `codex-voice-host` helper of the user's
+Onicode packages do not contain the Codex voice runtime. On macOS and Linux,
+local and remote voice run the `codex-voice-host` helper of the user's
 own standalone Codex installation (layout 1, version 0.159 or later), resolved
 from the same `codex` executable the harness uses. npm installations do not
 include the runtime and report `nativeRuntimeUnavailable`.
@@ -25,5 +25,4 @@ https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/LI
 
 Point `ONICODE_VOICE_MEDIA_DIR` at the projected directory to override the
 installed helper for remote voice. Do not ship a projected runtime: its
-GStreamer/GLib (LGPL-2.1), Opus, other native libraries and, on Windows, the
-Microsoft Visual C++ runtime carry their own redistribution obligations.
+GStreamer/GLib (LGPL-2.1), Opus and other native libraries carry their own redistribution obligations.

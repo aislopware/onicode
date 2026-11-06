@@ -4,7 +4,9 @@ import UniformTypeIdentifiers
 
 /// Presents the attach menu (Photos / Camera / Files / Paste) and turns picks
 /// into `StagedImage`s: HEIC→JPEG, long side ≤ 2560px, ≤ 24 MB.
-final class AttachmentPicker: NSObject, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate, UIDocumentPickerDelegate {
+final class AttachmentPicker: NSObject, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate,
+    UINavigationControllerDelegate, UIDocumentPickerDelegate
+{
     private weak var host: UIViewController?
     private let completion: ([StagedImage]) -> Void
     private var retainSelf: AttachmentPicker?
@@ -18,21 +20,24 @@ final class AttachmentPicker: NSObject, PHPickerViewControllerDelegate, UIImageP
         var items: [UIMenuElement] = [
             UIAction(title: "Photo Library", image: UIImage(systemName: "photo.on.rectangle")) { _ in
                 AttachmentPicker(host: host, completion: completion).presentPhotos(limit: limit)
-            },
+            }
         ]
         if UIImagePickerController.isSourceTypeAvailable(.camera) {
-            items.append(UIAction(title: "Take Photo", image: UIImage(systemName: "camera")) { _ in
-                AttachmentPicker(host: host, completion: completion).presentCamera()
-            })
+            items.append(
+                UIAction(title: "Take Photo", image: UIImage(systemName: "camera")) { _ in
+                    AttachmentPicker(host: host, completion: completion).presentCamera()
+                })
         }
-        items.append(UIAction(title: "Choose File", image: UIImage(systemName: "folder")) { _ in
-            AttachmentPicker(host: host, completion: completion).presentFiles()
-        })
-        if UIPasteboard.general.hasImages {
-            items.append(UIAction(title: "Paste Image", image: UIImage(systemName: "doc.on.clipboard")) { _ in
-                let staged = UIPasteboard.general.images?.compactMap { AttachmentPicker.stage(image: $0) } ?? []
-                completion(staged)
+        items.append(
+            UIAction(title: "Choose File", image: UIImage(systemName: "folder")) { _ in
+                AttachmentPicker(host: host, completion: completion).presentFiles()
             })
+        if UIPasteboard.general.hasImages {
+            items.append(
+                UIAction(title: "Paste Image", image: UIImage(systemName: "doc.on.clipboard")) { _ in
+                    let staged = UIPasteboard.general.images?.compactMap { Self.stage(image: $0) } ?? []
+                    completion(staged)
+                })
         }
         return UIMenu(children: items)
     }
@@ -73,7 +78,7 @@ final class AttachmentPicker: NSObject, PHPickerViewControllerDelegate, UIImageP
             group.enter()
             result.itemProvider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
                 defer { group.leave() }
-                guard let data, let image = UIImage(data: data), let s = AttachmentPicker.stage(image: image) else { return }
+                guard let data, let image = UIImage(data: data), let s = Self.stage(image: image) else { return }
                 lock.lock()
                 staged.append((i, s))
                 lock.unlock()
@@ -85,9 +90,11 @@ final class AttachmentPicker: NSObject, PHPickerViewControllerDelegate, UIImageP
         }
     }
 
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+    func imagePickerController(
+        _ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+    ) {
         picker.dismiss(animated: true)
-        if let image = info[.originalImage] as? UIImage, let s = AttachmentPicker.stage(image: image) { completion([s]) }
+        if let image = info[.originalImage] as? UIImage, let s = Self.stage(image: image) { completion([s]) }
         retainSelf = nil
     }
 
@@ -96,26 +103,32 @@ final class AttachmentPicker: NSObject, PHPickerViewControllerDelegate, UIImageP
         retainSelf = nil
     }
 
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+    func documentPicker(_: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         let staged = urls.compactMap { url -> StagedImage? in
             guard let data = try? Data(contentsOf: url), let image = UIImage(data: data) else { return nil }
-            return AttachmentPicker.stage(image: image, name: url.deletingPathExtension().lastPathComponent)
+            return Self.stage(image: image, name: url.deletingPathExtension().lastPathComponent)
         }
         completion(staged)
         retainSelf = nil
     }
 
-    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { retainSelf = nil }
+    func documentPickerWasCancelled(_: UIDocumentPickerViewController) { retainSelf = nil }
 
     static func stage(image: UIImage, name: String? = nil) -> StagedImage? {
-        let maxSide: CGFloat = 2560
+        let maxSide: CGFloat = 2_560
         let size = image.size
         let scale = min(1, maxSide / max(size.width, size.height))
         let target = CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        let resized = scale < 1 ? UIGraphicsImageRenderer(size: target, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: target)) } : image
-        guard let data = resized.jpegData(compressionQuality: 0.86), data.count <= 24 * 1024 * 1024 else { return nil }
+        let resized =
+            scale < 1
+            ? UIGraphicsImageRenderer(size: target, format: format).image { _ in
+                image.draw(in: CGRect(origin: .zero, size: target))
+            } : image
+        guard let data = resized.jpegData(compressionQuality: 0.86), data.count <= 24 * 1_024 * 1_024 else {
+            return nil
+        }
         let thumb = resized.preparingThumbnail(of: CGSize(width: 180, height: 180)) ?? resized
         let id = UUID().uuidString.lowercased()
         return StagedImage(id: id, name: "\(name ?? "image-\(id.prefix(8))").jpg", data: data, thumbnail: thumb)

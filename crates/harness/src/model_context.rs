@@ -76,11 +76,6 @@ pub(crate) fn context(
             if cfg!(target_os = "macos") {
                 files.push(home.join("Library/Application Support/devin/credentials.toml"));
             }
-            if cfg!(windows) {
-                files.push(
-                    root("APPDATA", home.join("AppData/Roaming")).join("devin/credentials.toml"),
-                );
-            }
             files
         }
         _ => vec![],

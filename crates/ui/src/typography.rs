@@ -286,9 +286,7 @@ pub(crate) fn native_text_system() -> (std::sync::MutexGuard<'static, ()>, gpui:
     let guard = NATIVE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // Windows headless mode uses NoopTextSystem; DirectWrite needs a full
-    // platform, as CoreText/fontconfig do elsewhere.
-    let platform = gpui_platform::current_platform(!cfg!(windows));
+    let platform = gpui_platform::current_platform(true);
     let text_system = gpui::WindowTextSystem::new(std::sync::Arc::new(gpui::TextSystem::new(
         platform.text_system(),
     )));

@@ -275,31 +275,6 @@ fn create_no_replace(root: &Path, relative: &Path, dir: bool) -> std::io::Result
     }
 }
 
-#[cfg(not(unix))]
-fn create_no_replace(root: &Path, relative: &Path, dir: bool) -> std::io::Result<()> {
-    let target = root.join(relative);
-    if dir {
-        std::fs::create_dir(target)
-    } else {
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&target)
-            .map(|_| ())
-            .map_err(|error| {
-                // Windows refuses to open a folder as a file with "access
-                // denied", not "already exists": the name is taken all the same.
-                if error.kind() == std::io::ErrorKind::PermissionDenied
-                    && std::fs::symlink_metadata(&target).is_ok()
-                {
-                    std::io::Error::new(std::io::ErrorKind::AlreadyExists, error)
-                } else {
-                    error
-                }
-            })
-    }
-}
-
 fn delete_blocking(
     workspace: &ResolvedWorkspace,
     request: &onicode_proto::DeleteWorkspaceEntryRequest,
@@ -397,12 +372,6 @@ pub(super) fn revision(metadata: &std::fs::Metadata) -> String {
 }
 
 pub(super) fn is_link(metadata: &std::fs::Metadata) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        return metadata.file_attributes() & 0x400 != 0; // FILE_ATTRIBUTE_REPARSE_POINT, includes junctions.
-    }
-    #[cfg(not(windows))]
     {
         metadata.file_type().is_symlink()
     }
@@ -647,31 +616,7 @@ fn move_no_replace(root: &Path, source: &Path, destination: &Path) -> std::io::R
     }
 }
 
-#[cfg(windows)]
-fn move_no_replace(root: &Path, source: &Path, destination: &Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_WRITE_THROUGH, MoveFileExW};
-    let from: Vec<u16> = root
-        .join(source)
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect();
-    let to: Vec<u16> = root
-        .join(destination)
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect();
-    // SAFETY: NUL-terminated paths; neither REPLACE_EXISTING nor COPY_ALLOWED is enabled.
-    if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), MOVEFILE_WRITE_THROUGH) } == 0 {
-        Err(std::io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn move_no_replace(_: &Path, _: &Path, _: &Path) -> std::io::Result<()> {
     Err(std::io::ErrorKind::Unsupported.into())
 }

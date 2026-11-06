@@ -45,9 +45,8 @@ pub(crate) fn is_image_path(path: &str) -> bool {
 
 /// UNC (`\\host\share`, `//host/share`), device and verbatim (`\\.\`,
 /// `\\?\`, `\??\`) and drive-relative (`C:x.png`) forms. Agent output names
-/// them freely, and merely opening one can reach another host (on Windows
-/// with the user's NTLM credentials), so they are never previewed. The
-/// engine's jail refuses them as well.
+/// them freely, and merely opening one can reach another host, so they are
+/// never previewed. The engine's jail refuses them as well.
 pub(crate) fn is_remote_or_device_path(path: &str) -> bool {
     let bytes = path.as_bytes();
     let separator = |b: Option<&u8>| matches!(b, Some(b'/' | b'\\'));

@@ -31,14 +31,22 @@ enum Glass {
             view.effect = target
             (content ?? view.contentView).alpha = visible ? 1 : 0
         }
-        guard animated, !UIAccessibility.isReduceMotionEnabled else { return apply() }
-        UIView.animate(withDuration: visible ? 0.35 : 0.25, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: apply)
+        guard animated, !UIAccessibility.isReduceMotionEnabled else {
+            apply()
+            return
+        }
+        UIView.animate(
+            withDuration: visible ? 0.35 : 0.25, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction],
+            animations: apply)
     }
 
     /// A round glass icon button (toolbar "…", search, attach).
-    static func circleButton(symbol: String, size: CGFloat = 44, pointSize: CGFloat = 17, action: UIAction? = nil) -> UIButton {
+    static func circleButton(symbol: String, size: CGFloat = 44, pointSize: CGFloat = 17, action: UIAction? = nil)
+        -> UIButton
+    {
         var config = UIButton.Configuration.glass()
-        config.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: pointSize, weight: .medium))
+        config.image = UIImage(
+            systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: pointSize, weight: .medium))
         config.baseForegroundColor = Palette.text
         config.cornerStyle = .capsule
         let b = UIButton(configuration: config, primaryAction: action)

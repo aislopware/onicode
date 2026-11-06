@@ -1361,6 +1361,13 @@ impl RegistryDoc {
             .map(Chat::from))
     }
 
+    /// Whether `chat_id`'s row was deleted — a tombstone, not merely a chat
+    /// whose row hasn't arrived yet.
+    pub fn chat_deleted(&self, chat_id: &str) -> bool {
+        self.overlay_row_or_tombstone(KIND_CHATS, chat_id)
+            .is_some_and(|r| r.deleted)
+    }
+
     /// Whether `chat_id`'s row has recorded its parent: `createChat` writes
     /// `parentChatId` either way (a null for none), a claimed row
     /// ([`Self::claim_chat`]) doesn't.

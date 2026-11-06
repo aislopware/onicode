@@ -328,10 +328,6 @@ fn private_dir(dir: &Path) -> std::io::Result<()> {
         }
         std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
     }
-    #[cfg(not(unix))]
-    {
-        std::fs::create_dir_all(dir)
-    }
 }
 
 /// Claude Code's Keychain service name (2.1.x `CL()`): `Claude Code-credentials`,
@@ -1893,8 +1889,7 @@ impl AgentAccounts {
         // ~/.codex session is never touched until the user explicitly switches.
         let home = self.login_home(&login_id)?;
         // Resolve through the harness itself (`CODEX_EXECUTABLE`, PATH, the
-        // login-shell snapshot, install dirs — the Windows npm payload
-        // included) and compose the same child PATH a chat run gets, so
+        // login-shell snapshot, install dirs) and compose the same child PATH a chat run gets, so
         // account login never diverges from what the harness can launch.
         let mut command = match onicode_harness::codex::login_command(&home) {
             Ok(command) => command,
@@ -2107,8 +2102,6 @@ impl AgentAccounts {
                 .ok()
                 .and_then(|root| ensure_noop_browser(&root))
         };
-        #[cfg(not(unix))]
-        let browser = None;
         let home = self.inner.config.antigravity_home.clone();
         let keychain = self.inner.config.antigravity_keychain;
         let task_state = state.clone();
@@ -4459,46 +4452,9 @@ fn scan_openai_url(output: &str) -> Option<String> {
     scan_https_url(output, &["auth.openai.com"])
 }
 
-/// Terminal escape sequences (colours, cursor moves) removed — the CLIs
-/// colour their sign-in urls and codes.
-fn strip_ansi(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c != '\u{1b}' {
-            out.push(c);
-            continue;
-        }
-        match chars.peek() {
-            // CSI: parameters/intermediates up to a final byte in @..~.
-            Some('[') => {
-                chars.next();
-                for c in chars.by_ref() {
-                    if ('@'..='~').contains(&c) {
-                        break;
-                    }
-                }
-            }
-            // OSC (hyperlinks): up to BEL or ESC \.
-            Some(']') => {
-                chars.next();
-                while let Some(c) = chars.next() {
-                    if c == '\u{7}' {
-                        break;
-                    }
-                    if c == '\u{1b}' {
-                        chars.next();
-                        break;
-                    }
-                }
-            }
-            _ => {
-                chars.next();
-            }
-        }
-    }
-    out
-}
+// Terminal escape sequences are stripped before scanning: the CLIs colour
+// their sign-in urls and codes.
+use onicode_proto::redact::strip_ansi;
 
 /// The first `https://` url in `output` (escapes stripped) whose host is
 /// one of `hosts` or a subdomain of one (on a label boundary), with no
@@ -5069,8 +5025,6 @@ fn stage_file_atomic(
         tmp.as_file()
             .set_permissions(std::fs::Permissions::from_mode(mode))?;
     }
-    #[cfg(not(unix))]
-    let _ = secret;
     tmp.write_all(bytes)?;
     tmp.as_file().sync_all()?;
     Ok(tmp)

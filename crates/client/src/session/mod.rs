@@ -1114,14 +1114,6 @@ impl SessionHandle {
             .any(|p| p.kind == PendingKind::Run && p.state == SendState::Sending);
         let busy = composer.live.turn_running || starting;
         let caps = &composer.host.capabilities;
-        if !request.attachments.is_empty()
-            && !composer.host.capabilities.queued_attachments
-            && !client.is_demo()
-        {
-            return Err(ClientError::Unsupported(
-                "the host is too old for image attachments — update Onicode on it".into(),
-            ));
-        }
         let refs =
             client.stage_attachments(&self.core.chat_id, &chat.device_id, &request.attachments)?;
         let prompt_text = request.text.trim_end().to_owned();
@@ -1186,7 +1178,6 @@ impl SessionHandle {
                     worktree: request.worktree.clone(),
                     mcp: None,
                     env: Default::default(),
-                    extra_mcp: Vec::new(),
                 };
                 self.core.queue_command(
                     &device_id,

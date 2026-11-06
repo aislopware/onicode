@@ -12,7 +12,8 @@ enum CloudUI {
         c.cornerStyle = .capsule
         c.contentInsets = NSDirectionalEdgeInsets(top: 15, leading: 20, bottom: 15, trailing: 20)
         if let symbol {
-            c.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+            c.image = UIImage(
+                systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
             c.imagePadding = 8
         }
         c.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { a in
@@ -31,7 +32,8 @@ enum CloudUI {
         c.cornerStyle = .capsule
         c.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 20, bottom: 14, trailing: 20)
         if let symbol {
-            c.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium))
+            c.image = UIImage(
+                systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium))
             c.imagePadding = 8
         }
         c.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { a in
@@ -120,13 +122,13 @@ enum CloudUI {
 
     /// "$20" / "$12.50".
     static func price(_ cents: UInt32) -> String {
-        cents % 100 == 0 ? "$\(cents / 100)" : String(format: "$%.2f", Double(cents) / 100)
+        cents.isMultiple(of: 100) ? "$\(cents / 100)" : String(format: "$%.2f", Double(cents) / 100)
     }
 
     static func shortDate(_ ms: Int64) -> String {
         let f = DateFormatter()
         f.setLocalizedDateFormatFromTemplate("MMM d")
-        return f.string(from: Date(timeIntervalSince1970: TimeInterval(ms) / 1000))
+        return f.string(from: Date(timeIntervalSince1970: TimeInterval(ms) / 1_000))
     }
 }
 
@@ -165,11 +167,12 @@ final class CloudRow: UIView {
         ])
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     /// Swap the trailing accessory.
     func setAccessory(_ view: UIView?) {
-        accessoryHost.subviews.forEach { $0.removeFromSuperview() }
+        for view in accessoryHost.subviews { view.removeFromSuperview() }
         guard let view else { return }
         view.translatesAutoresizingMaskIntoConstraints = false
         // Its own size, never the row's spare width (the text takes that).
@@ -234,10 +237,11 @@ final class CloudCard: UIView {
         setRows(rows)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func setRows(_ rows: [UIView]) {
-        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in stack.arrangedSubviews { view.removeFromSuperview() }
         for (i, row) in rows.enumerated() {
             if i > 0 {
                 let line = UIView()
@@ -263,7 +267,12 @@ extension UIFont {
     /// Figures that don't shift as they change.
     func withMonospacedDigits() -> UIFont {
         let descriptor = fontDescriptor.addingAttributes([
-            .featureSettings: [[UIFontDescriptor.FeatureKey.type: kNumberSpacingType, UIFontDescriptor.FeatureKey.selector: kMonospacedNumbersSelector]],
+            .featureSettings: [
+                [
+                    UIFontDescriptor.FeatureKey.type: kNumberSpacingType,
+                    UIFontDescriptor.FeatureKey.selector: kMonospacedNumbersSelector,
+                ]
+            ]
         ])
         return UIFont(descriptor: descriptor, size: pointSize)
     }

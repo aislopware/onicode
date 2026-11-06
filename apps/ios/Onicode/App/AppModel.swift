@@ -28,7 +28,7 @@ final class AppModel {
         set {
             guard newValue != groupByProject else { return }
             UserDefaults.standard.set(newValue, forKey: "groupByProject")
-            observers.values.forEach { $0() }
+            for observer in observers.values { observer() }
         }
     }
 
@@ -67,12 +67,18 @@ final class AppModel {
     /// The new-session page's options (project, host, branch, model,
     /// effort), kept across launches.
     var lastDraft: NewSessionDraft = {
-        var d = !AppModel.persistsNewSession ? NewSessionDraft() : UserDefaults.standard.data(forKey: "newSessionDraft").flatMap { try? JSONDecoder().decode(NewSessionDraft.self, from: $0) } ?? NewSessionDraft()
+        var d =
+            !AppModel.persistsNewSession
+            ? NewSessionDraft()
+            : UserDefaults.standard.data(forKey: "newSessionDraft").flatMap {
+                try? JSONDecoder().decode(NewSessionDraft.self, from: $0)
+            } ?? NewSessionDraft()
         // `-harness mock`: live-stack tests must never start a real agent.
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-harness"), i + 1 < args.count { d.harness = args[i + 1] }
         return d
-    }() {
+    }()
+    {
         didSet {
             guard Self.persistsNewSession else { return }
             UserDefaults.standard.set(try? JSONEncoder().encode(lastDraft), forKey: "newSessionDraft")
@@ -88,7 +94,11 @@ final class AppModel {
     var newSessionText: String {
         get { Self.persistsNewSession ? Drafts.load(Self.newSessionDraftKey) : volatileNewSessionText }
         set {
-            if Self.persistsNewSession { Drafts.save(Self.newSessionDraftKey, newValue) } else { volatileNewSessionText = newValue }
+            if Self.persistsNewSession {
+                Drafts.save(Self.newSessionDraftKey, newValue)
+            } else {
+                volatileNewSessionText = newValue
+            }
         }
     }
 
@@ -107,8 +117,10 @@ final class AppModel {
             // use and their order (Wi-Fi first, or cellular), and whether
             // there's a route at all. Re-delivered paths with the same shape
             // must not tear down a healthy direct link.
-            let shape = p.status == .satisfied
-                ? p.availableInterfaces.map { "\($0.type)/\($0.name)" }.joined(separator: ",") + (p.isExpensive ? "!" : "")
+            let shape =
+                p.status == .satisfied
+                ? p.availableInterfaces.map { "\($0.type)/\($0.name)" }.joined(separator: ",")
+                    + (p.isExpensive ? "!" : "")
                 : ""
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -153,7 +165,8 @@ final class AppModel {
     // MARK: Lifecycle
 
     private static var coreDir: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("core", isDirectory: true)
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent(
+            "core", isDirectory: true)
     }
 
     /// Local docs belong to one identity: another account/org starts from an
@@ -196,7 +209,9 @@ final class AppModel {
             backfillProfile()
             clock?.invalidate()
             // Relative times ("4m") and 45s staleness age without events.
-            clock = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.refreshWorkspace() }
+            clock = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+                self?.refreshWorkspace()
+            }
             return true
         } catch {
             NSLog("core start failed: \(error)")
@@ -221,17 +236,22 @@ final class AppModel {
     }
 
     /// WorkOS code → tokens → org (the first, or the only one) → client.
-    func signIn(code: String, chooseOrg: @escaping ([AuthOrg]) async -> AuthOrg?) async throws {
+    func signIn(code: String, chooseOrg: ([AuthOrg]) async -> AuthOrg?) async throws {
         let edge = Self.edgeURL
         let exchange = try await authExchangeCode(edgeUrl: edge, code: code)
         let orgs = try await authListOrgs(edgeUrl: edge, accessToken: exchange.tokens.accessToken)
         guard !orgs.isEmpty else { throw CoreError.Auth(message: "This account isn't in an organization yet.") }
         guard let org = orgs.count == 1 ? orgs[0] : await chooseOrg(orgs) else { return }
-        let tokens = try await authRefresh(edgeUrl: edge, refreshToken: exchange.tokens.refreshToken, organizationId: org.organizationId)
+        let tokens = try await authRefresh(
+            edgeUrl: edge, refreshToken: exchange.tokens.refreshToken, organizationId: org.organizationId)
         let user = exchange.user
-        let name = [user.firstName, user.lastName].compactMap { $0?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+        let name = [user.firstName, user.lastName].compactMap { $0?.trimmingCharacters(in: .whitespaces) }.filter {
+            !$0.isEmpty
+        }.joined(separator: " ")
         AccountProfile(name: name.nonEmpty, email: user.email, orgName: org.name).save()
-        let started = await MainActor.run { start(.workOs(userId: exchange.user.id, orgId: org.organizationId, tokens: tokens)) }
+        let started = await MainActor.run {
+            start(.workOs(userId: exchange.user.id, orgId: org.organizationId, tokens: tokens))
+        }
         guard started else { throw CoreError.Auth(message: "Couldn't open your workspace. Try signing in again.") }
         await MainActor.run { onSignedIn?() }
     }
@@ -295,8 +315,11 @@ final class AppModel {
         // the edge when the user leaves immediately after tapping Send.
         endDeliveryBackgroundTask()
         if client != nil, !isDemo,
-           Date().timeIntervalSince(lastDeliveryActivity) < 120 || rows.values.contains(where: { $0.sendState == .sending || $0.sendState == .queued }) {
-            deliveryBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Finish message delivery") { [weak self] in
+            Date().timeIntervalSince(lastDeliveryActivity) < 120
+                || rows.values.contains(where: { $0.sendState == .sending || $0.sendState == .queued })
+        {
+            deliveryBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Finish message delivery") {
+                [weak self] in
                 self?.endDeliveryBackgroundTask()
             }
             let deadline = DispatchWorkItem { [weak self] in self?.endDeliveryBackgroundTask() }
@@ -365,10 +388,10 @@ final class AppModel {
         case .workspaceChanged:
             scheduleRefresh()
         case let .sessionChanged(chatId, _), let .composerChanged(chatId, _):
-            sessionObservers[chatId]?.values.forEach { $0() }
+            for observer in (sessionObservers[chatId] ?? [:]).values { observer() }
         case let .connectivityChanged(c):
             connectivity = c
-            observers.values.forEach { $0() }
+            for observer in observers.values { observer() }
         case let .authRefreshed(tokens):
             Credentials.updateTokens(tokens)
         case .authExpired:
@@ -420,7 +443,7 @@ final class AppModel {
         let archivedVMs = ws.archived.map(vm)
         var counts = LiveCounts()
         var seen = Set<String>()
-        for row in page.sessions + page.sectionSessions.values.flatMap({ $0 }) where seen.insert(row.id).inserted {
+        for row in page.sessions + page.sectionSessions.values.flatMap(\.self) where seen.insert(row.id).inserted {
             if row.status == .working { counts.working += 1 }
             if row.status == .awaiting { counts.awaiting += 1 }
         }
@@ -430,20 +453,23 @@ final class AppModel {
         rows = all
         // Devices coming and going (Settings, host pickers) count as changes.
         let hosts = hostOptions
-        let changed = rowsChanged || page != frontPage || archivedVMs != archived || counts != live || hosts != lastHosts
+        let changed =
+            rowsChanged || page != frontPage || archivedVMs != archived || counts != live || hosts != lastHosts
         lastHosts = hosts
         live = counts
         if !freshSideChats.isEmpty { sweepFreshSideChats() }
         frontPage = page
         archived = archivedVMs
-        if changed { observers.values.forEach { $0() } }
+        if changed { for observer in observers.values { observer() } }
     }
 
     /// Like the desktop's project grouping: checkouts of one repository
     /// share a group (named for its representative), project-less sessions
     /// group per device. Groups and rows keep the incoming recency order.
-    private static func projectGroups(_ rows: [SessionRow], _ vms: [SessionRowVM], projects: [ProjectView]) -> [ProjectGroupVM] {
-        let byId = Dictionary(projects.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    private static func projectGroups(_ rows: [SessionRow], _ vms: [SessionRowVM], projects: [ProjectView])
+        -> [ProjectGroupVM]
+    {
+        let byId = Dictionary(projects.map { ($0.id, $0) }) { a, _ in a }
         var groups: [ProjectGroupVM] = []
         var index: [String: Int] = [:]
         for (row, vm) in zip(rows, vms) {
@@ -521,7 +547,6 @@ final class AppModel {
         return client.search(query: q, limit: 60).map { Self.vm($0.session) }
     }
 
-
     // MARK: Writes
 
     private func attempt(_ what: String, _ body: () throws -> Void) {
@@ -540,7 +565,9 @@ final class AppModel {
     func unarchive(_ id: String) { attempt("unarchive") { try client?.unarchiveSession(chatId: id) } }
     /// Permanently: the row on every device (a Cloud chat's machine too).
     func delete(_ id: String) { attempt("delete") { try client?.deleteSession(chatId: id) } }
-    func move(_ id: String, toSection section: String?) { attempt("assign") { try client?.assignSection(chatId: id, sectionId: section) } }
+    func move(_ id: String, toSection section: String?) {
+        attempt("assign") { try client?.assignSection(chatId: id, sectionId: section) }
+    }
     func movePin(_ id: String, after: String?, before: String?) {
         attempt("move pin") { try client?.movePin(chatId: id, after: after, before: before) }
     }
@@ -552,10 +579,14 @@ final class AppModel {
     func place(_ id: String, inSection section: String, after: String?, before: String?) {
         attempt("assign") { try client?.placeSession(chatId: id, sectionId: section, after: after, before: before) }
     }
-    func renameSection(_ id: String, _ name: String) { attempt("rename section") { try client?.renameSection(sectionId: id, name: name) } }
+    func renameSection(_ id: String, _ name: String) {
+        attempt("rename section") { try client?.renameSection(sectionId: id, name: name) }
+    }
     func deleteSection(_ id: String) { attempt("delete section") { try client?.deleteSection(sectionId: id) } }
     func createSection(_ name: String) { attempt("section") { _ = try client?.createSection(name: name) } }
-    func rename(_ id: String, _ title: String) { attempt("rename") { try client?.renameSession(chatId: id, title: title) } }
+    func rename(_ id: String, _ title: String) {
+        attempt("rename") { try client?.renameSession(chatId: id, title: title) }
+    }
     func markSeen(_ id: String) { attempt("seen") { try client?.markSeen(chatId: id) } }
 
     // MARK: Sessions
@@ -599,7 +630,7 @@ final class AppModel {
     /// Fresh side chats nobody has open: empty a minute on, they go; one
     /// that got a message (from any device) is just a side chat now.
     private func sweepFreshSideChats() {
-        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let now = Int64(Date().timeIntervalSince1970 * 1_000)
         for id in freshSideChats {
             guard let row = rows[id] ?? client?.sessionRow(chatId: id) else { continue }
             if row.preview != nil {
@@ -645,29 +676,38 @@ final class AppModel {
     var accountDetail: String {
         if isDemo { return "Offline demo workspace" }
         let p = AccountProfile.load()
-        return [p.name != nil ? p.email : nil, p.orgName].compactMap { $0 }.joined(separator: " · ").nonEmpty ?? "Onicode account"
+        return [p.name != nil ? p.email : nil, p.orgName].compactMap(\.self).joined(separator: " · ").nonEmpty
+            ?? "Onicode account"
     }
 
     /// Logins from before profiles were saved: recover the org name (the
     /// user's name comes back at the next sign-in).
     private func backfillProfile() {
-        guard case let .workOs(_, orgId, tokens)? = Credentials.stored(), AccountProfile.load().orgName == nil else { return }
+        guard case let .workOs(_, orgId, tokens)? = Credentials.stored(), AccountProfile.load().orgName == nil else {
+            return
+        }
         let edge = Self.edgeURL
         Task { @MainActor [weak self] in
             guard let orgs = try? await authListOrgs(edgeUrl: edge, accessToken: tokens.accessToken),
-                  let org = orgs.first(where: { $0.organizationId == orgId })
+                let org = orgs.first(where: { $0.organizationId == orgId })
             else { return }
             var p = AccountProfile.load()
             p.orgName = org.name
             p.save()
-            self?.observers.values.forEach { $0() }
+            for observer in (self?.observers ?? [:]).values { observer() }
         }
     }
 
     @MainActor var projectOptions: [ProjectOption] {
         // A Cloud project runs only on Cloud: hidden when this account isn't
         // offered Cloud (or no longer is).
-        rawProjects.filter { !$0.isCloud || isDemo || cloud.available }.map { ProjectOption(id: $0.id, name: $0.name, path: $0.path, device: $0.deviceId, deviceName: $0.deviceName ?? deviceName($0.deviceId), online: $0.deviceOnline, git: $0.gitDetected, groupKey: $0.groupKey, groupName: $0.groupName, colorIndex: Int($0.colorIndex), isCloud: $0.isCloud, githubRepo: $0.githubRepo) }
+        rawProjects.filter { !$0.isCloud || isDemo || cloud.available }.map {
+            ProjectOption(
+                id: $0.id, name: $0.name, path: $0.path, device: $0.deviceId,
+                deviceName: $0.deviceName ?? deviceName($0.deviceId), online: $0.deviceOnline, git: $0.gitDetected,
+                groupKey: $0.groupKey, groupName: $0.groupName, colorIndex: Int($0.colorIndex), isCloud: $0.isCloud,
+                githubRepo: $0.githubRepo)
+        }
     }
 
     var hostOptions: [HostOption] {
@@ -684,8 +724,13 @@ final class AppModel {
         let harnesses = (try? await client.listHarnesses(deviceId: deviceId)) ?? fallbackHarnesses()
         var out: [ModelChoice] = []
         for h in harnesses where h.offered {
-            let models = (try? await client.listModels(deviceId: deviceId, harness: h.id)) ?? fallbackModels(harness: h.id)
-            out += models.map { ModelChoice(harness: h.id, harnessLabel: h.label, id: $0.id, label: $0.label, efforts: $0.reasoningLevels, detail: $0.description) }
+            let models =
+                (try? await client.listModels(deviceId: deviceId, harness: h.id)) ?? fallbackModels(harness: h.id)
+            out += models.map {
+                ModelChoice(
+                    harness: h.id, harnessLabel: h.label, id: $0.id, label: $0.label, efforts: $0.reasoningLevels,
+                    detail: $0.description)
+            }
         }
         return out
     }
@@ -703,7 +748,11 @@ final class AppModel {
         var out: [ModelChoice] = []
         for h in Self.cloudHarnesses {
             let label = HarnessNames.label(h)
-            out += await client.cloudModels(harness: h).map { ModelChoice(harness: h, harnessLabel: label, id: $0.id, label: $0.label, efforts: $0.reasoningLevels, detail: $0.description) }
+            out += await client.cloudModels(harness: h).map {
+                ModelChoice(
+                    harness: h, harnessLabel: label, id: $0.id, label: $0.label, efforts: $0.reasoningLevels,
+                    detail: $0.description)
+            }
         }
         return out
     }
@@ -743,7 +792,9 @@ final class AppModel {
     @MainActor
     func createCloudSession(draft: NewSessionDraft, text: String, images: [StagedImage]) async throws -> String {
         guard let client, let spaceId = draft.projectId else { throw CoreError.Closed }
-        let config = ChatConfig(harness: draft.harness, model: draft.model, reasoning: draft.effort, modelOptions: [:], sandbox: .workspaceWrite)
+        let config = ChatConfig(
+            harness: draft.harness, model: draft.model, reasoning: draft.effort, modelOptions: [:],
+            sandbox: .workspaceWrite)
         // A retry after a failed first send reuses that chat (and machine)
         // instead of starting a second one.
         let chatId: String
@@ -753,11 +804,13 @@ final class AppModel {
         if let unsent = unsentCloudChat, unsent.key == key, client.sessionRow(chatId: unsent.chatId) != nil {
             chatId = unsent.chatId
         } else {
-            chatId = try await client.createCloudSession(spaceId: spaceId, config: config, branch: draft.branch, title: nil)
+            chatId = try await client.createCloudSession(
+                spaceId: spaceId, config: config, branch: draft.branch, title: nil)
             unsentCloudChat = (key, chatId)
         }
         let handle = try client.openSession(chatId: chatId)
-        _ = try handle.send(request: SendRequest(text: text, attachments: images.map(\.outgoing), worktree: nil, busy: .queue))
+        _ = try handle.send(
+            request: SendRequest(text: text, attachments: images.map(\.outgoing), worktree: nil, busy: .queue))
         unsentCloudChat = nil
         noteDeliveryActivity()
         refreshWorkspace()
@@ -780,13 +833,20 @@ final class AppModel {
         } else {
             return nil
         }
-        let config = ChatConfig(harness: draft.harness, model: draft.model, reasoning: draft.effort, modelOptions: [:], sandbox: .workspaceWrite)
+        let config = ChatConfig(
+            harness: draft.harness, model: draft.model, reasoning: draft.effort, modelOptions: [:],
+            sandbox: .workspaceWrite)
         do {
-            let chatId = try client.createSession(newSession: NewSession(target: target, config: config, branch: draft.worktree ? nil : draft.branch, cwd: nil, title: nil))
+            let chatId = try client.createSession(
+                newSession: NewSession(
+                    target: target, config: config, branch: draft.worktree ? nil : draft.branch, cwd: nil, title: nil))
             let handle = try client.openSession(chatId: chatId)
             let project = rawProjects.first { $0.id == draft.projectId }
-            let worktree = draft.worktree ? project.map { WorktreeSpec(repoPath: $0.path, base: draft.branch ?? "HEAD", spaceId: $0.id) } : nil
-            _ = try handle.send(request: SendRequest(text: text, attachments: images.map(\.outgoing), worktree: worktree, busy: .queue))
+            let worktree =
+                draft.worktree
+                ? project.map { WorktreeSpec(repoPath: $0.path, base: draft.branch ?? "HEAD", spaceId: $0.id) } : nil
+            _ = try handle.send(
+                request: SendRequest(text: text, attachments: images.map(\.outgoing), worktree: worktree, busy: .queue))
             noteDeliveryActivity()
             refreshWorkspace()
             return chatId
@@ -825,11 +885,13 @@ extension Credentials {
 
     static func stored() -> Credentials? {
         guard let data = Keychain.load(service: service, account: account),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String]
+            let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String]
         else { return nil }
         switch dict["kind"] {
         case "workos":
-            guard let u = dict["userId"], let o = dict["orgId"], let a = dict["access"], let r = dict["refresh"] else { return nil }
+            guard let u = dict["userId"], let o = dict["orgId"], let a = dict["access"], let r = dict["refresh"] else {
+                return nil
+            }
             return .workOs(userId: u, orgId: o, tokens: AuthTokens(accessToken: a, refreshToken: r))
         case "dev":
             guard let u = dict["userId"], let o = dict["orgId"] else { return nil }
@@ -843,7 +905,10 @@ extension Credentials {
         var dict: [String: String] = [:]
         switch c {
         case let .workOs(userId, orgId, tokens):
-            dict = ["kind": "workos", "userId": userId, "orgId": orgId, "access": tokens.accessToken, "refresh": tokens.refreshToken]
+            dict = [
+                "kind": "workos", "userId": userId, "orgId": orgId, "access": tokens.accessToken,
+                "refresh": tokens.refreshToken,
+            ]
         case let .dev(userId, orgId):
             dict = ["kind": "dev", "userId": userId, "orgId": orgId]
         case .demo:
@@ -909,12 +974,15 @@ struct AccountProfile: Codable {
     private static let service = "dev.aislopware.onicode.ios"
     private static let account = "profile"
 
-    static func load() -> AccountProfile {
-        Keychain.load(service: service, account: account).flatMap { try? JSONDecoder().decode(AccountProfile.self, from: $0) } ?? AccountProfile()
+    static func load() -> Self {
+        Keychain.load(service: service, account: account).flatMap { try? JSONDecoder().decode(Self.self, from: $0) }
+            ?? Self()
     }
 
     func save() {
-        if let data = try? JSONEncoder().encode(self) { Keychain.save(data, service: Self.service, account: Self.account) }
+        if let data = try? JSONEncoder().encode(self) {
+            Keychain.save(data, service: Self.service, account: Self.account)
+        }
     }
 
     static func clear() {

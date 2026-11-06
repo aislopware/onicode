@@ -17,9 +17,10 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
         var accessory: Accessory = .disclosure
         var destructive = false
 
+        // swiftlint:disable:next nesting - a Row field's type, used nowhere else
         enum Accessory: Hashable {
             case disclosure
-            case none
+            case plain
             case check(Bool)
             case dot(Bool)
             case toggle(Bool)
@@ -32,7 +33,8 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
         title = "Settings"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -41,7 +43,8 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
         var config = UICollectionLayoutListConfiguration(appearance: .insetGrouped)
         config.backgroundColor = .clear
         config.headerMode = .supplementary
-        collectionView = UICollectionView(frame: view.bounds, collectionViewLayout: UICollectionViewCompositionalLayout.list(using: config))
+        collectionView = UICollectionView(
+            frame: view.bounds, collectionViewLayout: UICollectionViewCompositionalLayout.list(using: config))
         collectionView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         collectionView.backgroundColor = .clear
         collectionView.delegate = self
@@ -63,7 +66,7 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
             cell.backgroundConfiguration = bg
             switch row.accessory {
             case .disclosure: cell.accessories = [.disclosureIndicator()]
-            case .none: cell.accessories = []
+            case .plain: cell.accessories = []
             case let .check(on): cell.accessories = on ? [.checkmark(options: .init(tintColor: Palette.accent))] : []
             case let .dot(online):
                 let dot = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: 8))
@@ -75,14 +78,17 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
                 toggle.isOn = on
                 toggle.onTintColor = Palette.accent
                 toggle.accessibilityIdentifier = "toggle-\(row.id)"
-                toggle.addAction(UIAction { [weak self, weak toggle] _ in
-                    self?.toggled(row.id, toggle?.isOn ?? false)
-                }, for: .valueChanged)
+                toggle.addAction(
+                    UIAction { [weak self, weak toggle] _ in
+                        self?.toggled(row.id, toggle?.isOn ?? false)
+                    }, for: .valueChanged)
                 cell.accessories = [.customView(configuration: .init(customView: toggle, placement: .trailing()))]
             }
             cell.accessibilityIdentifier = "settings-\(row.id)"
         }
-        let header = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(elementKind: UICollectionView.elementKindSectionHeader) { [weak self] view, _, path in
+        let header = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
+            elementKind: UICollectionView.elementKindSectionHeader
+        ) { [weak self] view, _, path in
             var c = UIListContentConfiguration.groupedHeader()
             c.text = self?.dataSource.snapshot().sectionIdentifiers[path.section]
             view.contentConfiguration = c
@@ -94,13 +100,17 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
             cv.dequeueConfiguredReusableSupplementary(using: header, for: path)
         }
         reload()
-        wallpaperObserver = NotificationCenter.default.addObserver(forName: WallpaperStore.didChange, object: nil, queue: .main) { [weak self] _ in self?.reload() }
+        wallpaperObserver = NotificationCenter.default.addObserver(
+            forName: WallpaperStore.didChange, object: nil, queue: .main
+        ) { [weak self] _ in self?.reload() }
         // Devices go on/offline and the org name backfills after opening.
         appToken = app.observe { [weak self] in self?.reload() }
         cloudToken = app.cloud.observe { [weak self] in self?.reload() }
         app.cloud.refresh()
         // Back from iOS Settings (notifications may have been allowed there).
-        foregroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
             self?.refreshNotificationStatus()
         }
     }
@@ -128,19 +138,30 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
 
     /// On when this phone wants them and iOS allows them.
     private var notificationsOn: Bool {
-        PushNotifications.shared.enabled && (notificationStatus == .authorized || notificationStatus == .provisional || notificationStatus == .ephemeral)
+        PushNotifications.shared.enabled
+            && (notificationStatus == .authorized || notificationStatus == .provisional
+                || notificationStatus == .ephemeral)
     }
 
     private func notificationRows() -> [Row] {
-        var rows = [Row(id: "notify:enabled", title: "Notifications", subtitle: notificationStatus == .denied ? "Turned off in iOS Settings" : "When a session finishes, needs you or fails", symbol: "bell", accessory: .toggle(notificationsOn))]
+        var rows = [
+            Row(
+                id: "notify:enabled", title: "Notifications",
+                subtitle: notificationStatus == .denied
+                    ? "Turned off in iOS Settings" : "When a session finishes, needs you or fails", symbol: "bell",
+                accessory: .toggle(notificationsOn))
+        ]
         if notificationsOn {
             rows += PushNotifications.Kind.allCases.map { kind in
-                let symbol: String = switch kind {
-                case .done: "checkmark.circle"
-                case .input: "questionmark.bubble"
-                case .failed: "exclamationmark.triangle"
-                }
-                return Row(id: "notify:\(kind.rawValue)", title: kind.title, symbol: symbol, accessory: .toggle(PushNotifications.shared.isOn(kind)))
+                let symbol: String =
+                    switch kind {
+                    case .done: "checkmark.circle"
+                    case .input: "questionmark.bubble"
+                    case .failed: "exclamationmark.triangle"
+                    }
+                return Row(
+                    id: "notify:\(kind.rawValue)", title: kind.title, symbol: symbol,
+                    accessory: .toggle(PushNotifications.shared.isOn(kind)))
             }
         }
         return rows
@@ -153,23 +174,29 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
         }
         if id == "math:render" {
             MathSettings.render = on
-            return reload()
+            reload()
+            return
         }
         let push = PushNotifications.shared
         if id == "notify:enabled" {
             guard on else {
                 push.enabled = false
-                return reload()
+                reload()
+                return
             }
             if notificationStatus == .denied {
                 // Only the Settings app can turn them back on.
-                let alert = UIAlertController(title: "Notifications are off", message: "Allow notifications for Onicode in iOS Settings.", preferredStyle: .alert)
+                let alert = UIAlertController(
+                    title: "Notifications are off", message: "Allow notifications for Onicode in iOS Settings.",
+                    preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: "Not Now", style: .cancel) { [weak self] _ in self?.reload() })
-                alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { [weak self] _ in
-                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                    self?.reload()
-                })
-                return present(alert, animated: true)
+                alert.addAction(
+                    UIAlertAction(title: "Open Settings", style: .default) { [weak self] _ in
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                        self?.reload()
+                    })
+                present(alert, animated: true)
+                return
             }
             push.enabled = true
             Task { @MainActor in
@@ -192,12 +219,18 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
         var s = NSDiffableDataSourceSnapshot<String, Row>()
         s.appendSections(["Account"])
         s.appendItems([
-            Row(id: "account", title: app.accountName, subtitle: app.accountDetail, symbol: "person.crop.circle", accessory: .none),
+            Row(
+                id: "account", title: app.accountName, subtitle: app.accountDetail, symbol: "person.crop.circle",
+                accessory: .plain)
         ])
         // Agents and where they run, as the desktop groups them: Providers,
         // then Cloud and Billing when this account is offered Cloud.
         s.appendSections(["Agents"])
-        var agents = [Row(id: "providers", title: "Providers", subtitle: "Agents and their accounts on each device", symbol: "cpu")]
+        var agents = [
+            Row(
+                id: "providers", title: "Providers", subtitle: "Agents and their accounts on each device", symbol: "cpu"
+            )
+        ]
         let demoCloud = app.isDemo && ProcessInfo.processInfo.arguments.contains("-cloud")
         if (!app.isDemo && app.cloud.available) || demoCloud {
             let cloud = app.cloud
@@ -205,14 +238,28 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
             agents.append(Row(id: "cloud", title: "Cloud", subtitle: cloud.problem?.title ?? github, symbol: "cloud"))
             let credits = cloud.credits.map { "\(CloudUI.credits($0)) credits" }
             let plan = cloud.billing?.plan.map { "\($0.name) plan" }
-            agents.append(Row(id: "billing", title: "Billing", subtitle: [plan, credits].compactMap { $0 }.joined(separator: " · ").nonEmpty ?? "Plans and credits", symbol: "creditcard"))
+            agents.append(
+                Row(
+                    id: "billing", title: "Billing",
+                    subtitle: [plan, credits].compactMap(\.self).joined(separator: " · ").nonEmpty
+                        ?? "Plans and credits", symbol: "creditcard"))
         }
         s.appendItems(agents)
         s.appendSections(["Devices"])
-        s.appendItems(app.hostOptions.map { Row(id: "device:\($0.id)", title: $0.name, subtitle: $0.online ? "Online" : "Offline", symbol: "desktopcomputer", accessory: .dot($0.online)) })
+        s.appendItems(
+            app.hostOptions.map {
+                Row(
+                    id: "device:\($0.id)", title: $0.name, subtitle: $0.online ? "Online" : "Offline",
+                    symbol: "desktopcomputer", accessory: .dot($0.online))
+            })
         if app.voice.available {
             s.appendSections(["Voice"])
-            s.appendItems([Row(id: "voice", title: "Voice", subtitle: app.voice.selectedStyle.map { "Codex voice · \($0.capitalized)" } ?? "Codex voice device and style", symbol: "waveform")])
+            s.appendItems([
+                Row(
+                    id: "voice", title: "Voice",
+                    subtitle: app.voice.selectedStyle.map { "Codex voice · \($0.capitalized)" }
+                        ?? "Codex voice device and style", symbol: "waveform")
+            ])
         }
         s.appendSections(["Notifications"])
         s.appendItems(notificationRows())
@@ -224,28 +271,57 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
             Row(id: "appearance:2", title: "Dark", symbol: "moon", accessory: .check(style == 2)),
         ])
         s.appendSections(["Wallpaper"])
-        var wall = [Row(id: "wallpaper:choose", title: WallpaperStore.isSet ? "Change Wallpaper…" : "Choose Wallpaper…", subtitle: WallpaperStore.isSet ? WallpaperStore.name : "Shown behind new chats and the sessions list", symbol: "photo")]
+        var wall = [
+            Row(
+                id: "wallpaper:choose", title: WallpaperStore.isSet ? "Change Wallpaper…" : "Choose Wallpaper…",
+                subtitle: WallpaperStore.isSet ? WallpaperStore.name : "Shown behind new chats and the sessions list",
+                symbol: "photo")
+        ]
         if WallpaperStore.isSet {
             let effect = WallpaperStore.effect
-            wall.append(Row(id: "wallpaper:effect", title: "Effect", subtitle: "\(WallpaperStore.label(effect)) — \(WallpaperStore.detail(effect))", symbol: "wand.and.stars"))
-            wall.append(Row(id: "wallpaper:remove", title: "Remove Wallpaper", symbol: "trash", accessory: .none, destructive: true))
+            wall.append(
+                Row(
+                    id: "wallpaper:effect", title: "Effect",
+                    subtitle: "\(WallpaperStore.label(effect)) — \(WallpaperStore.detail(effect))",
+                    symbol: "wand.and.stars"))
+            wall.append(
+                Row(
+                    id: "wallpaper:remove", title: "Remove Wallpaper", symbol: "trash", accessory: .plain,
+                    destructive: true))
         }
         s.appendItems(wall)
         s.appendSections(["Math"])
-        var math = [Row(id: "math:render", title: "Render Math", subtitle: "Off shows LaTeX as its source", symbol: "function", accessory: .toggle(MathSettings.render))]
+        var math = [
+            Row(
+                id: "math:render", title: "Render Math", subtitle: "Off shows LaTeX as its source", symbol: "function",
+                accessory: .toggle(MathSettings.render))
+        ]
         if MathSettings.render {
             let face = MathSettings.face
-            math.append(Row(id: "math:font", title: "Math Font", subtitle: "\(MathSettings.label(face)) — \(MathSettings.detail(face))", symbol: "textformat"))
-            math.append(Row(id: "math:size", title: "Math Size", subtitle: "\(MathSettings.size)% of the text around it", symbol: "textformat.size"))
+            math.append(
+                Row(
+                    id: "math:font", title: "Math Font",
+                    subtitle: "\(MathSettings.label(face)) — \(MathSettings.detail(face))", symbol: "textformat"))
+            math.append(
+                Row(
+                    id: "math:size", title: "Math Size", subtitle: "\(MathSettings.size)% of the text around it",
+                    symbol: "textformat.size"))
         }
         s.appendItems(math)
         s.appendSections(["Sessions"])
         s.appendItems([
-            Row(id: "groupByProject", title: "Group by Project", subtitle: "Sessions outside your sections, under their project", symbol: "square.stack.3d.up", accessory: .toggle(app.groupByProject)),
+            Row(
+                id: "groupByProject", title: "Group by Project",
+                subtitle: "Sessions outside your sections, under their project", symbol: "square.stack.3d.up",
+                accessory: .toggle(app.groupByProject)),
             Row(id: "archived", title: "Archived Sessions", symbol: "archivebox"),
         ])
         s.appendSections([" "])
-        s.appendItems([Row(id: "signout", title: "Sign Out", symbol: "rectangle.portrait.and.arrow.right", accessory: .none, destructive: true)])
+        s.appendItems([
+            Row(
+                id: "signout", title: "Sign Out", symbol: "rectangle.portrait.and.arrow.right", accessory: .plain,
+                destructive: true)
+        ])
         dataSource.apply(s, animatingDifferences: false)
     }
 
@@ -270,7 +346,9 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
         case "wallpaper:effect":
             let sheet = UIAlertController(title: "Wallpaper Effect", message: nil, preferredStyle: .actionSheet)
             for e in WallpaperStore.allEffects {
-                let action = UIAlertAction(title: WallpaperStore.label(e), style: .default) { _ in WallpaperStore.effect = e }
+                let action = UIAlertAction(title: WallpaperStore.label(e), style: .default) { _ in
+                    WallpaperStore.effect = e
+                }
                 action.setValue(e == WallpaperStore.effect, forKey: "checked")
                 sheet.addAction(action)
             }
@@ -306,10 +384,15 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
         case "wallpaper:remove":
             WallpaperStore.remove()
         case "archived":
-            navigationController?.pushViewController(FolderViewController(app: app, folder: FolderRowVM(id: "archived", name: "Archived", count: 0, symbol: "archivebox")), animated: true)
+            navigationController?.pushViewController(
+                FolderViewController(
+                    app: app, folder: FolderRowVM(id: "archived", name: "Archived", count: 0, symbol: "archivebox")),
+                animated: true)
         case "signout":
-            let alert = UIAlertController(title: "Sign out?", message: "Local drafts stay on this device.", preferredStyle: .actionSheet)
-            alert.addAction(UIAlertAction(title: "Sign Out", style: .destructive) { [weak self] _ in self?.app.signOut() })
+            let alert = UIAlertController(
+                title: "Sign out?", message: "Local drafts stay on this device.", preferredStyle: .actionSheet)
+            alert.addAction(
+                UIAlertAction(title: "Sign Out", style: .destructive) { [weak self] _ in self?.app.signOut() })
             alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
             alert.popoverPresentationController?.sourceView = collectionView.cellForItem(at: path)
             present(alert, animated: true)

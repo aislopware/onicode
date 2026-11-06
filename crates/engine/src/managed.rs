@@ -89,8 +89,7 @@ async fn acquire_lock(data_dir: &Path) -> anyhow::Result<InstanceLock> {
 
 /// The executable a relaunch runs: this one's name where the installation
 /// now keeps it — not this process's own image, which an update leaves
-/// behind (a Linux install's previous version directory; Windows renames the
-/// running image aside).
+/// behind (a Linux install's previous version directory).
 fn installed_executable(exe: &Path, install: &onicode_update::InstallKind) -> PathBuf {
     let name = exe.file_name().unwrap_or_default();
     match install {
@@ -98,8 +97,6 @@ fn installed_executable(exe: &Path, install: &onicode_update::InstallKind) -> Pa
         onicode_update::InstallKind::MacApp { bundle } => {
             bundle.join("Contents").join("MacOS").join(name)
         }
-        #[cfg(windows)]
-        onicode_update::InstallKind::WindowsPortable { directory } => directory.join("onicode.exe"),
         _ => exe.to_path_buf(),
     }
 }

@@ -6,9 +6,8 @@
 //! before the adapter ever ran — silently, with an errno-encoded exit code
 //! (254 = ENOENT, the zeronsh/comet#95 crash) that surfaced as an opaque
 //! "harness protocol error". Instead, pinned adapter packages are installed
-//! ONCE into a onicode-owned prefix (`~/.onicode/adapters/<pkg>/<version>` on
-//! Unix, the local app-data directory on Windows), with its own npm cache
-//! beside it, so a root-owned or read-only user cache cannot break us. Every
+//! ONCE into a onicode-owned prefix (`~/.onicode/adapters/<pkg>/<version>`),
+//! with its own npm cache beside it, so a root-owned or read-only user cache cannot break us. Every
 //! subsequent launch spawns `node <entry>` directly — no npm anywhere near a
 //! chat turn.
 //!
@@ -18,8 +17,8 @@
 //! installers (two daemons, prewarm racing a run) converge on whichever
 //! rename won.
 
-use std::ffi::{OsStr, OsString};
-use std::io::{Read, Seek, SeekFrom};
+use std::ffi::OsString;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -63,20 +62,12 @@ pub(crate) const OK_MARKER: &str = ".onicode-install-ok";
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// Managed adapter storage. `$ONICODE_ADAPTERS_DIR` wins, followed by
-/// `$ONICODE_DATA_DIR/adapters`. Windows defaults to
-/// `%LOCALAPPDATA%/Onicode/adapters` (or `%USERPROFILE%/AppData/Local/...`);
-/// Unix keeps `~/.onicode/adapters`.
+/// `$ONICODE_DATA_DIR/adapters`, then `~/.onicode/adapters`.
 pub(crate) fn adapters_root() -> Option<PathBuf> {
-    adapters_root_with(
-        &|key| std::env::var_os(key),
-        crate::executable::Platform::current(),
-    )
+    adapters_root_with(&|key| std::env::var_os(key))
 }
 
-fn adapters_root_with(
-    env: &impl Fn(&str) -> Option<OsString>,
-    platform: crate::executable::Platform,
-) -> Option<PathBuf> {
+fn adapters_root_with(env: &impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     let value = |key| {
         env(key)
             .filter(|value| !value.is_empty())
@@ -88,20 +79,7 @@ fn adapters_root_with(
     if let Some(dir) = value("ONICODE_DATA_DIR") {
         return Some(dir.join("adapters"));
     }
-    if platform == crate::executable::Platform::Windows {
-        value("LOCALAPPDATA")
-            .map(|dir| dir.join("Onicode").join("adapters"))
-            .or_else(|| {
-                value("USERPROFILE").map(|home| {
-                    home.join("AppData")
-                        .join("Local")
-                        .join("Onicode")
-                        .join("adapters")
-                })
-            })
-    } else {
-        value("HOME").map(|home| home.join(".onicode").join("adapters"))
-    }
+    value("HOME").map(|home| home.join(".onicode").join("adapters"))
 }
 
 fn install_dir_in(root: &Path, pin: &NpmPin) -> PathBuf {
@@ -145,67 +123,29 @@ fn installed_entry_in(root: &Path, pin: &NpmPin, bin_name: &str) -> Option<PathB
     bin_entry(&dir, pin, bin_name)
 }
 
-fn npm_cli_for_node(node: &Path) -> Option<PathBuf> {
-    let cli = node
-        .parent()?
-        .join("node_modules")
-        .join("npm")
-        .join("bin")
-        .join("npm-cli.js");
-    cli.is_file().then_some(cli)
-}
-
 fn find_npm_with(
     env: &impl Fn(&str) -> Option<OsString>,
     login_shell_path: Option<OsString>,
-    platform: crate::executable::Platform,
 ) -> Option<PathBuf> {
-    if platform == crate::executable::Platform::Windows {
-        let node = crate::executable::find_on_paths_matching_with(
-            "node",
-            Vec::new(),
-            env,
-            login_shell_path,
-            platform,
-            |node| npm_cli_for_node(node).is_some(),
-        )?;
-        npm_cli_for_node(&node)
-    } else {
-        crate::executable::find_on_paths_with("npm", Vec::new(), env, login_shell_path, platform)
-    }
+    crate::executable::find_on_paths_with("npm", Vec::new(), env, login_shell_path)
 }
 
 pub(crate) fn find_npm() -> Option<PathBuf> {
-    find_npm_with(
-        &|key| std::env::var_os(key),
-        crate::shell_env::user_path(),
-        crate::executable::Platform::current(),
-    )
+    find_npm_with(&|key| std::env::var_os(key), crate::shell_env::user_path())
 }
 
-fn node_sibling_for_npm(npm: &Path, platform: crate::executable::Platform) -> Option<PathBuf> {
-    if platform == crate::executable::Platform::Windows {
-        // <node-root>/node_modules/npm/bin/npm-cli.js -> <node-root>/node.exe
-        npm.parent()?
-            .parent()?
-            .parent()?
-            .parent()
-            .map(|root| root.join("node.exe"))
-            .filter(|node| node.is_file())
-    } else {
-        npm.parent()
-            .map(|dir| dir.join("node"))
-            .filter(|node| node.is_file())
-    }
+fn node_sibling_for_npm(npm: &Path) -> Option<PathBuf> {
+    npm.parent()
+        .map(|dir| dir.join("node"))
+        .filter(|node| node.is_file())
 }
 
 fn is_native_executable(entry: &Path) -> Result<bool, HarnessError> {
-    const MAX_PE_HEADER_OFFSET: u64 = 1024 * 1024;
     let mut file = std::fs::File::open(entry)?;
     let mut head = [0_u8; 4];
     let count = file.read(&mut head)?;
     let head = &head[..count];
-    if head.starts_with(b"\x7fELF")
+    Ok(head.starts_with(b"\x7fELF")
         || [
             [0xfe, 0xed, 0xfa, 0xce],
             [0xce, 0xfa, 0xed, 0xfe],
@@ -215,32 +155,11 @@ fn is_native_executable(entry: &Path) -> Result<bool, HarnessError> {
             [0xbe, 0xba, 0xfe, 0xca],
         ]
         .iter()
-        .any(|magic| head.starts_with(magic))
-    {
-        return Ok(true);
-    }
-    if !head.starts_with(b"MZ") {
-        return Ok(false);
-    }
-
-    file.seek(SeekFrom::Start(0x3c))?;
-    let mut offset = [0_u8; 4];
-    if file.read(&mut offset)? != offset.len() {
-        return Ok(false);
-    }
-    let offset = u32::from_le_bytes(offset) as u64;
-    let length = file.metadata()?.len();
-    if offset > MAX_PE_HEADER_OFFSET || offset.saturating_add(4) > length {
-        return Ok(false);
-    }
-    file.seek(SeekFrom::Start(offset))?;
-    let mut signature = [0_u8; 4];
-    Ok(file.read(&mut signature)? == signature.len() && signature == *b"PE\0\0")
+        .any(|magic| head.starts_with(magic)))
 }
 
-/// How to spawn an installed entry: JavaScript runs via `node`; a native ELF,
-/// Mach-O, or PE bin entry runs directly. Managed batch wrappers are rejected:
-/// they require cmd.exe and would destroy exact argument boundaries.
+/// How to spawn an installed entry: JavaScript runs via `node`; a native ELF
+/// or Mach-O bin entry runs directly.
 pub(crate) fn launch_for_entry(entry: &Path) -> Result<(PathBuf, Vec<String>), HarnessError> {
     launch_for_entry_with_node(entry, None)
 }
@@ -249,24 +168,11 @@ fn launch_for_entry_with_node(
     entry: &Path,
     supplied_node: Option<PathBuf>,
 ) -> Result<(PathBuf, Vec<String>), HarnessError> {
-    if entry
-        .extension()
-        .and_then(OsStr::to_str)
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
-        })
-    {
-        return Err(HarnessError::Install(format!(
-            "managed adapter entry {} is a Windows batch wrapper; install a package exposing a JavaScript entry or native .exe instead",
-            entry.display()
-        )));
-    }
     if is_native_executable(entry)? {
         return Ok((entry.to_path_buf(), Vec::new()));
     }
 
-    let platform = crate::executable::Platform::current();
-    let sibling = find_npm().and_then(|npm| node_sibling_for_npm(&npm, platform));
+    let sibling = find_npm().and_then(|npm| node_sibling_for_npm(&npm));
     let node = supplied_node
         .or(sibling)
         .or_else(|| crate::executable::find_on_paths("node", Vec::new()))
@@ -302,48 +208,6 @@ fn describe_npm_exit(status: Option<std::process::ExitStatus>) -> String {
 pub(crate) fn install_lock() -> &'static tokio::sync::Mutex<()> {
     static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
     LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
-}
-
-const RENAME_RETRIES: u32 = 20;
-const RENAME_RETRY_DELAY: Duration = Duration::from_millis(100);
-
-/// Move a finished install into place. On Windows a just-written tree is
-/// briefly held open by the malware scanner or by the verify process that
-/// just exited, and the rename fails with a sharing error that clears on
-/// its own: retry those for ~2s before reporting failure.
-pub(crate) async fn rename_into_place(from: &Path, to: &Path) -> std::io::Result<()> {
-    rename_retrying(from, to, crate::executable::Platform::current()).await
-}
-
-async fn rename_retrying(
-    from: &Path,
-    to: &Path,
-    platform: crate::executable::Platform,
-) -> std::io::Result<()> {
-    let mut retries = 0;
-    loop {
-        match std::fs::rename(from, to) {
-            Ok(()) => return Ok(()),
-            // An existing destination also reads as access denied on
-            // Windows; that is a lost race, not a held handle.
-            Err(error)
-                if platform == crate::executable::Platform::Windows
-                    && retries < RENAME_RETRIES
-                    && windows_handle_busy(&error)
-                    && !to.exists() =>
-            {
-                retries += 1;
-                tokio::time::sleep(RENAME_RETRY_DELAY).await;
-            }
-            Err(error) => return Err(error),
-        }
-    }
-}
-
-/// ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION: what
-/// Windows reports while another process still has the file open.
-pub(crate) fn windows_handle_busy(error: &std::io::Error) -> bool {
-    matches!(error.raw_os_error(), Some(5 | 32 | 33))
 }
 
 /// Ensure the pinned package is installed; returns its bin entry. Failures
@@ -396,12 +260,12 @@ pub(crate) async fn ensure_installed(
     if let Some(parent) = final_dir.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    if rename_into_place(&tmp_dir, &final_dir).await.is_err() {
+    if std::fs::rename(&tmp_dir, &final_dir).is_err() {
         // Lost a cross-process race (or a stale dir): keep whatever is in
         // place if it's complete, else replace it.
         if installed_entry(&pin, bin_name).is_none() {
             let _ = std::fs::remove_dir_all(&final_dir);
-            rename_into_place(&tmp_dir, &final_dir).await?;
+            std::fs::rename(&tmp_dir, &final_dir)?;
         } else {
             let _ = std::fs::remove_dir_all(&tmp_dir);
         }
@@ -442,8 +306,8 @@ fn materialize_shim(dir: &Path, name: &str, contents: &str) -> std::io::Result<P
     std::fs::write(&temporary, contents)?;
     if let Err(error) = std::fs::rename(&temporary, &shim) {
         let _ = std::fs::remove_file(&temporary);
-        // Windows cannot rename over an existing destination. Another writer
-        // publishing these same immutable bytes is a successful race.
+        // Another writer publishing these same immutable bytes is a
+        // successful race.
         if std::fs::read(&shim).ok().as_deref() != Some(contents.as_bytes()) {
             return Err(error);
         }
@@ -497,12 +361,12 @@ pub(crate) async fn ensure_installed_shim(
     if let Some(parent) = final_dir.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    if rename_into_place(&tmp_dir, &final_dir).await.is_err() {
+    if std::fs::rename(&tmp_dir, &final_dir).is_err() {
         // Lost a cross-process race (or a stale dir): keep whatever is in
         // place if it's complete, else replace it.
         if !final_dir.join(OK_MARKER).exists() {
             let _ = std::fs::remove_dir_all(&final_dir);
-            rename_into_place(&tmp_dir, &final_dir).await?;
+            std::fs::rename(&tmp_dir, &final_dir)?;
         } else {
             let _ = std::fs::remove_dir_all(&tmp_dir);
         }
@@ -515,24 +379,8 @@ pub(crate) async fn ensure_installed_shim(
     })
 }
 
-fn npm_install_plan(
-    npm: &Path,
-    pin: &NpmPin,
-    cache_dir: &Path,
-    platform: crate::executable::Platform,
-    ignore_scripts: bool,
-) -> Result<(PathBuf, Vec<OsString>), HarnessError> {
-    let (program, mut args) = if platform == crate::executable::Platform::Windows {
-        let node = node_sibling_for_npm(npm, platform).ok_or_else(|| {
-            HarnessError::NotInstalled(format!(
-                "node.exe beside the discovered npm CLI {}",
-                npm.display()
-            ))
-        })?;
-        (node, vec![npm.as_os_str().to_owned()])
-    } else {
-        (npm.to_path_buf(), Vec::new())
-    };
+fn npm_install_args(pin: &NpmPin, cache_dir: &Path, ignore_scripts: bool) -> Vec<OsString> {
+    let mut args: Vec<OsString> = Vec::new();
     args.extend(
         [
             "install",
@@ -555,7 +403,7 @@ fn npm_install_plan(
         args.push(OsString::from("--ignore-scripts"));
     }
     args.push(OsString::from(pin.spec()));
-    Ok((program, args))
+    args
 }
 
 pub(crate) async fn install_into(
@@ -577,21 +425,14 @@ pub(crate) async fn install_into(
         dir = %tmp_dir.display(),
         "installing ACP adapter"
     );
-    let (program, args) = npm_install_plan(
-        npm,
-        pin,
-        cache_dir,
-        crate::executable::Platform::current(),
-        ignore_scripts,
-    )?;
-    let mut cmd = crate::process::Command::new(&program);
-    cmd.args(args)
+    let mut cmd = crate::process::Command::new(npm);
+    cmd.args(npm_install_args(pin, cache_dir, ignore_scripts))
         .current_dir(tmp_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    crate::compose_child_path(&mut cmd, &program);
+    crate::compose_child_path(&mut cmd, npm);
     let mut child = cmd.spawn()?;
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -659,40 +500,6 @@ mod tests {
 
     use std::collections::HashMap;
 
-    #[test]
-    fn windows_sharing_errors_are_the_retryable_ones() {
-        for code in [5, 32, 33] {
-            assert!(windows_handle_busy(&std::io::Error::from_raw_os_error(
-                code
-            )));
-        }
-        // ERROR_FILE_NOT_FOUND / ERROR_PATH_NOT_FOUND / ERROR_ALREADY_EXISTS.
-        for code in [2, 3, 183] {
-            assert!(!windows_handle_busy(&std::io::Error::from_raw_os_error(
-                code
-            )));
-        }
-        assert!(!windows_handle_busy(&std::io::Error::other("busy")));
-    }
-
-    #[tokio::test]
-    async fn install_rename_moves_into_place_and_fails_fast_when_not_busy() {
-        let dir = tempfile::tempdir().unwrap();
-        let (from, to) = (dir.path().join(".tmp-x"), dir.path().join("x"));
-        std::fs::create_dir(&from).unwrap();
-        rename_retrying(&from, &to, crate::executable::Platform::Windows)
-            .await
-            .unwrap();
-        assert!(to.is_dir() && !from.exists());
-        let started = std::time::Instant::now();
-        assert!(
-            rename_retrying(&from, &to, crate::executable::Platform::Windows)
-                .await
-                .is_err()
-        );
-        assert!(started.elapsed() < RENAME_RETRY_DELAY);
-    }
-
     fn env(values: &[(&str, OsString)]) -> impl Fn(&str) -> Option<OsString> + use<> {
         let values: HashMap<String, OsString> = values
             .iter()
@@ -716,15 +523,9 @@ mod tests {
 
     #[test]
     fn npm_errno_exits_are_decoded() {
-        #[cfg(unix)]
         let status = |code: i32| {
             use std::os::unix::process::ExitStatusExt;
             Some(std::process::ExitStatus::from_raw(code << 8))
-        };
-        #[cfg(windows)]
-        let status = |code: i32| {
-            use std::os::windows::process::ExitStatusExt;
-            Some(std::process::ExitStatus::from_raw(code as u32))
         };
         assert!(describe_npm_exit(status(254)).contains("ENOENT"));
         assert!(describe_npm_exit(status(243)).contains("EACCES"));
@@ -780,151 +581,49 @@ mod tests {
     }
 
     #[test]
-    fn adapters_root_has_injected_windows_precedence_and_fallbacks() {
-        let explicit = PathBuf::from(r"D:\Onicode adapters");
-        let data = PathBuf::from(r"E:\Onicode data");
-        let local = PathBuf::from(r"C:\Users\Ada\AppData\Local");
-        let profile = PathBuf::from(r"C:\Users\Ada");
+    fn adapters_root_precedence_and_home_fallback() {
+        let explicit = PathBuf::from("/opt/onicode adapters");
+        let data = PathBuf::from("/srv/onicode data");
+        let home = PathBuf::from("/Users/ada");
         assert_eq!(
-            adapters_root_with(
-                &env(&[
-                    ("ONICODE_ADAPTERS_DIR", explicit.clone().into_os_string()),
-                    ("ONICODE_DATA_DIR", data.clone().into_os_string()),
-                    ("LOCALAPPDATA", local.clone().into_os_string()),
-                ]),
-                crate::executable::Platform::Windows,
-            ),
+            adapters_root_with(&env(&[
+                ("ONICODE_ADAPTERS_DIR", explicit.clone().into_os_string()),
+                ("ONICODE_DATA_DIR", data.clone().into_os_string()),
+                ("HOME", home.clone().into_os_string()),
+            ])),
             Some(explicit)
         );
         assert_eq!(
-            adapters_root_with(
-                &env(&[("ONICODE_DATA_DIR", data.clone().into_os_string())]),
-                crate::executable::Platform::Windows,
-            ),
+            adapters_root_with(&env(&[
+                ("ONICODE_DATA_DIR", data.clone().into_os_string()),
+                ("HOME", home.clone().into_os_string()),
+            ])),
             Some(data.join("adapters"))
         );
         assert_eq!(
-            adapters_root_with(
-                &env(&[("LOCALAPPDATA", local.clone().into_os_string())]),
-                crate::executable::Platform::Windows,
-            ),
-            Some(local.join("Onicode").join("adapters"))
+            adapters_root_with(&env(&[("HOME", home.clone().into_os_string())])),
+            Some(home.join(".onicode").join("adapters"))
         );
-        assert_eq!(
-            adapters_root_with(
-                &env(&[("USERPROFILE", profile.clone().into_os_string())]),
-                crate::executable::Platform::Windows,
-            ),
-            Some(
-                profile
-                    .join("AppData")
-                    .join("Local")
-                    .join("Onicode")
-                    .join("adapters")
-            )
-        );
+        assert_eq!(adapters_root_with(&env(&[])), None);
     }
 
     #[test]
-    fn windows_npm_discovery_falls_back_to_fnm_default_with_complete_node_layout() {
+    fn managed_entry_launch_recognizes_native_images_and_preserves_javascript_argument_boundaries()
+    {
         let temp = tempfile::tempdir().unwrap();
-        let roaming = temp.path().join("Roaming with spaces");
-        let active = temp.path().join("active");
-        std::fs::create_dir_all(&active).unwrap();
-        std::fs::write(active.join("node.exe"), b"MZ").unwrap();
-        let root = roaming.join("fnm/aliases/default");
-        let npm = root.join("node_modules/npm/bin/npm-cli.js");
-        std::fs::create_dir_all(npm.parent().unwrap()).unwrap();
-        std::fs::write(root.join("node.exe"), b"MZ").unwrap();
-        std::fs::write(&npm, b"// fixture").unwrap();
-        let lookup = env(&[
-            ("APPDATA", roaming.into_os_string()),
-            ("FNM_MULTISHELL_PATH", active.into_os_string()),
-        ]);
-        let platform = crate::executable::Platform::Windows;
-        assert_eq!(find_npm_with(&lookup, None, platform), Some(npm.clone()));
+        let native = temp.path().join("adapter");
+        std::fs::write(&native, [0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0]).unwrap();
         assert_eq!(
-            node_sibling_for_npm(&npm, platform),
-            Some(root.join("node.exe"))
-        );
-        std::fs::remove_file(root.join("node.exe")).unwrap();
-        assert_eq!(find_npm_with(&lookup, None, platform), None);
-    }
-
-    #[test]
-    fn windows_npm_discovery_and_install_plan_use_node_without_a_shell() {
-        let temp = tempfile::tempdir().unwrap();
-        let node_root = temp.path().join("Node's Ω & ^ % !");
-        let node = node_root.join("node.exe");
-        let npm = node_root
-            .join("node_modules")
-            .join("npm")
-            .join("bin")
-            .join("npm-cli.js");
-        std::fs::create_dir_all(npm.parent().unwrap()).unwrap();
-        std::fs::write(&node, b"MZ").unwrap();
-        std::fs::write(&npm, b"console.log('npm')").unwrap();
-        // A batch shim exists but is deliberately never selected.
-        std::fs::write(node_root.join("npm.cmd"), b"@echo off").unwrap();
-        let path = std::env::join_paths([&node_root]).unwrap();
-        let discovered = find_npm_with(
-            &env(&[("PATH", path)]),
-            None,
-            crate::executable::Platform::Windows,
-        );
-        assert_eq!(discovered, Some(npm.clone()));
-
-        let cache = temp.path().join("cache's Ω & $(echo nope); ^ % !");
-        let pin = NpmPin::parse("@scope/tool@1.2.3");
-        let (program, args) = npm_install_plan(
-            &npm,
-            &pin,
-            &cache,
-            crate::executable::Platform::Windows,
-            false,
-        )
-        .unwrap();
-        assert_eq!(program, node);
-        assert_eq!(args.first(), Some(&npm.into_os_string()));
-        assert_eq!(args[1], OsString::from("install"));
-        assert_eq!(args[8], cache.into_os_string());
-        assert_eq!(args[9], OsString::from("@scope/tool@1.2.3"));
-        assert_eq!(args.len(), 10);
-    }
-
-    #[test]
-    fn managed_entry_launch_recognizes_pe_and_preserves_javascript_argument_boundaries() {
-        let temp = tempfile::tempdir().unwrap();
-        let pe = temp.path().join("adapter.exe");
-        let mut bytes = vec![0_u8; 0x84];
-        bytes[..2].copy_from_slice(b"MZ");
-        bytes[0x3c..0x40].copy_from_slice(&(0x80_u32).to_le_bytes());
-        bytes[0x80..0x84].copy_from_slice(b"PE\0\0");
-        std::fs::write(&pe, bytes).unwrap();
-        assert_eq!(
-            launch_for_entry_with_node(&pe, None).unwrap(),
-            (pe, Vec::new())
+            launch_for_entry_with_node(&native, None).unwrap(),
+            (native, Vec::new())
         );
 
         let js = temp.path().join("adapter's Ω & $(nope); ^ % !.js");
-        let node = temp.path().join("node.exe");
+        let node = temp.path().join("node");
         std::fs::write(&js, b"#!/usr/bin/env node\n").unwrap();
         let launch = launch_for_entry_with_node(&js, Some(node.clone())).unwrap();
         assert_eq!(launch.0, node);
         assert_eq!(launch.1, vec![js.display().to_string()]);
-    }
-
-    #[test]
-    fn managed_batch_entries_are_rejected_actionably() {
-        let temp = tempfile::tempdir().unwrap();
-        for name in ["adapter.cmd", "adapter.BAT"] {
-            let entry = temp.path().join(name);
-            std::fs::write(&entry, b"@echo off").unwrap();
-            let error = launch_for_entry_with_node(&entry, None).unwrap_err();
-            let message = error.to_string();
-            assert!(message.contains("Windows batch wrapper"));
-            assert!(message.contains("native .exe"));
-        }
     }
 }
 

@@ -6,12 +6,13 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func scene(
         _ scene: UIScene,
-        willConnectTo session: UISceneSession,
-        options connectionOptions: UIScene.ConnectionOptions
+        willConnectTo _: UISceneSession,
+        options _: UIScene.ConnectionOptions
     ) {
         guard let scene = scene as? UIWindowScene else { return }
         let window = UIWindow(windowScene: scene)
-        window.overrideUserInterfaceStyle = UIUserInterfaceStyle(rawValue: UserDefaults.standard.integer(forKey: "appearance")) ?? .unspecified
+        window.overrideUserInterfaceStyle =
+            UIUserInterfaceStyle(rawValue: UserDefaults.standard.integer(forKey: "appearance")) ?? .unspecified
         window.tintColor = Palette.accent
         self.window = window
         let push = PushNotifications.shared
@@ -44,7 +45,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             }
         }
         if let i = args.firstIndex(of: "-wallpaper-effect"), i + 1 < args.count,
-           let effect = WallpaperStore.allEffects.first(where: { WallpaperStore.key($0) == args[i + 1] }) {
+            let effect = WallpaperStore.allEffects.first(where: { WallpaperStore.key($0) == args[i + 1] })
+        {
             WallpaperStore.effect = effect
         }
         if args.contains("-lab") {
@@ -59,7 +61,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if args.contains("-voice-preview") {
             app.voice.preview()
             if args.contains("-voice-stage") {
-                DispatchQueue.main.async { [app] in window.rootViewController?.presentVoiceStage(app: app, source: nil) }
+                DispatchQueue.main.async { [app] in window.rootViewController?.presentVoiceStage(app: app, source: nil)
+                }
             }
         }
         #endif
@@ -67,7 +70,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         #if DEBUG
         TerminalProbe.runIfAsked(app: app, router: window.rootViewController as? AppRouter)
         #endif
-        if let router = window.rootViewController as? AppRouter, let i = args.firstIndex(of: "-route"), i + 1 < args.count {
+        if let router = window.rootViewController as? AppRouter, let i = args.firstIndex(of: "-route"),
+            i + 1 < args.count
+        {
             let route = args[i + 1]
             DispatchQueue.main.async {
                 if route.hasPrefix("chat:") { router.openSession(String(route.dropFirst(5))) }
@@ -76,7 +81,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 if route == "search" { router.showSearch() }
                 #if DEBUG
                 // Cloud screens straight away (screenshots, tests).
-                if route.hasPrefix("cloud") || route.hasPrefix("providers") || route.hasPrefix("accounts") || route == "billing" || route == "welcome" { self.openCloudRoute(route) }
+                if route.hasPrefix("cloud") || route.hasPrefix("providers") || route.hasPrefix("accounts")
+                    || route == "billing" || route == "welcome"
+                {
+                    self.openCloudRoute(route)
+                }
                 #endif
             }
         }
@@ -110,26 +119,34 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let root = window?.rootViewController else { return }
         let parts = route.split(separator: ":").map(String.init)
         if parts.first == "providers" {
-            return root.present(UINavigationController(rootViewController: ProvidersViewController(app: app, target: parts.dropFirst().first)), animated: false)
+            root.present(
+                UINavigationController(
+                    rootViewController: ProvidersViewController(app: app, target: parts.dropFirst().first)),
+                animated: false)
+            return
         }
         if parts.first == "accounts", let harness = parts.dropFirst().first, let host = app.hostOptions.first {
             // A computer's accounts for one agent (the first computer),
             // reached the way the app does: pushed from Providers.
             let nav = UINavigationController(rootViewController: ProvidersViewController(app: app, target: host.id))
             nav.pushViewController(
-                AgentAccountsViewController(app: app, target: .device(id: host.id, name: host.name, harness: harness, label: harness)),
+                AgentAccountsViewController(
+                    app: app, target: .device(id: host.id, name: host.name, harness: harness, label: harness)),
                 animated: false
             )
-            return root.present(nav, animated: false)
+            root.present(nav, animated: false)
+            return
         }
         if parts.first == "welcome" {
             // The signed-out welcome page, without signing out.
             let welcome = SignInViewController(app: app)
             welcome.modalPresentationStyle = .fullScreen
-            return root.present(welcome, animated: false)
+            root.present(welcome, animated: false)
+            return
         }
         if parts.first == "billing" {
-            return root.present(UINavigationController(rootViewController: BillingViewController(app: app)), animated: false)
+            root.present(UINavigationController(rootViewController: BillingViewController(app: app)), animated: false)
+            return
         }
         let settings = CloudSettingsViewController(app: app)
         let nav = UINavigationController(rootViewController: settings)
@@ -140,7 +157,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 nav.pushViewController(AgentAccountsViewController(app: app, target: .cloud(agent)), animated: false)
             }
         case "repos":
-            root.present(UINavigationController(rootViewController: CloudRepoPickerViewController(app: app)), animated: false)
+            root.present(
+                UINavigationController(rootViewController: CloudRepoPickerViewController(app: app)), animated: false)
             return
         case "github":
             root.present(GitHubConnectViewController.sheet(app: app), animated: false)
@@ -181,18 +199,18 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     /// `onicode://voice` (the call's Live Activity) returns to the stage.
-    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-        guard URLContexts.contains(where: { $0.url.scheme == "onicode" && $0.url.host == "voice" }),
-              app.voice.live, let root = window?.rootViewController
+    func scene(_: UIScene, openURLContexts urlContexts: Set<UIOpenURLContext>) {
+        guard urlContexts.contains(where: { $0.url.scheme == "onicode" && $0.url.host == "voice" }),
+            app.voice.live, let root = window?.rootViewController
         else { return }
         root.presentVoiceStage(app: app, source: nil)
     }
 
-    func sceneDidEnterBackground(_ scene: UIScene) {
+    func sceneDidEnterBackground(_: UIScene) {
         app.didEnterBackground()
     }
 
-    func sceneWillEnterForeground(_ scene: UIScene) {
+    func sceneWillEnterForeground(_: UIScene) {
         app.willEnterForeground()
     }
 }

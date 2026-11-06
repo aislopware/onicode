@@ -128,13 +128,8 @@ impl Budget {
         let mut current = Some(error);
         while let Some(error) = current {
             if let Some(io) = error.downcast_ref::<std::io::Error>() {
-                #[cfg(unix)]
-                let exhausted = matches!(io.raw_os_error(), Some(23 | 24));
-                #[cfg(windows)]
-                let exhausted = matches!(io.raw_os_error(), Some(4 | 10024));
-                #[cfg(not(any(unix, windows)))]
-                let exhausted = false;
-                if exhausted {
+                // ENFILE or EMFILE.
+                if matches!(io.raw_os_error(), Some(23 | 24)) {
                     *self.paused_until.lock().unwrap_or_else(|e| e.into_inner()) =
                         Some(Instant::now() + Duration::from_secs(2));
                     tracing::warn!("sync admission paused: process file descriptors exhausted");
@@ -182,7 +177,6 @@ pub fn shared() -> &'static Arc<Budget> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
     #[tokio::test(start_paused = true)]
     async fn resource_exhaustion_pauses_all_data_admission() {
         let budget = Budget::new(2, 2, 2);

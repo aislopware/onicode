@@ -511,20 +511,6 @@ License v3:
 > dealings in these Data Files or Software without prior written
 > authorization of the copyright holder.
 
-**Git logo.** The Git plugin's icon (`apps/zgx/plugins-builtin/git/icon.svg`)
-is the Git logo by Jason Long, licensed under the Creative Commons Attribution
-3.0 Unported License (https://creativecommons.org/licenses/by/3.0/); see
-https://git-scm.com/downloads/logos.
-
-**Theme templates.** zgx's built-in theme templates
-(`apps/zgx/src/plugins/theme_templates.rs`) are the palette adaptations listed
-under "Bundled theme palette adaptations" above, written out as templates for
-the families that have both a light and a dark variant: Visual Studio Code
-Dark+/Light+, Catppuccin, Tokyo Night, GitHub, Ayu, Gruvbox, Rosé Pine, Night
-Owl and Winter is Coming. Each is MIT licensed; the copyright notices and the
-MIT permission notice above apply to them, and each template's `theme.luau`
-names its upstream project, revision and licence.
-
 **Agent and service logos.** The agent, model-provider, registry and service
 marks in `apps/zgx/ui/assets/icons/` (including `registry/`) and any logos
 fetched from the ACP registry are trademarks of their respective owners. They

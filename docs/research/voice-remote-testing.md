@@ -15,8 +15,8 @@ using the existing registered device and account; do not register another host.
 
 The client (the device with the microphone) needs its own standalone Codex
 installation, version 0.159 or later, from the official installer: audio runs
-through that installation's `codex-voice-host` helper, on macOS, Linux and
-Windows alike. The client's Codex is resolved like the harness's (`CODEX_EXECUTABLE`,
+through that installation's `codex-voice-host` helper, on macOS and Linux
+alike. The client's Codex is resolved like the harness's (`CODEX_EXECUTABLE`,
 PATH, the login shell's PATH, known install locations); its credentials are not
 read. npm installations do not include the helper. Zeron packages contain no
 Codex runtime.
@@ -42,13 +42,11 @@ host. Only an explicit call opens the microphone; advertising the capability
 does not start audio capture. No transcript migration or credential transfer
 is needed.
 
-### Linux and Windows desktop clients
+### Linux desktop clients
 
 They follow the same rule: the installed standalone Codex supplies the helper
-(`codex-voice-host` / `codex-voice-host.exe` with its `.so`/DLL tree). The Linux
-helper requires the host's glibc and ALSA libraries. On Windows, verify live that
-the `codex.exe` installed by `install.ps1` resolves inside its package (next to
-`codex-package.json`); otherwise voice reports `nativeRuntimeUnavailable`.
+(`codex-voice-host` with its `.so` tree). The Linux helper requires the host's
+glibc and ALSA libraries.
 
 Offline checks:
 
@@ -66,7 +64,6 @@ ZERON_VOICE_MEDIA_DIR=/absolute/path/to/codex-resources/voice \
   packaged_native_runtime_initializes_without_audio_devices -- --ignored
 ```
 
-On Windows set `$env:ZERON_VOICE_MEDIA_DIR` before the same Cargo command.
 Real microphone, playback, permissions, interruption and live-provider
 acceptance still need to be performed on each physical platform.
 

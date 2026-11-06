@@ -196,13 +196,10 @@ where
     if let Some(parent) = final_dir.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    if crate::adapter_install::rename_into_place(&tmp_dir, &final_dir)
-        .await
-        .is_err()
-    {
+    if std::fs::rename(&tmp_dir, &final_dir).is_err() {
         if installed().is_none() {
             let _ = std::fs::remove_dir_all(&final_dir);
-            crate::adapter_install::rename_into_place(&tmp_dir, &final_dir).await?;
+            std::fs::rename(&tmp_dir, &final_dir)?;
         } else {
             let _ = std::fs::remove_dir_all(&tmp_dir);
         }
@@ -389,7 +386,6 @@ fn extract_zip_blocking(archive_path: &Path, dest: &Path) -> Result<(), HarnessE
 
 /// archives built off-unix can lose the executable bit, and the entry spawns
 /// sibling helper binaries of its own.
-#[cfg(unix)]
 fn mark_executables(dir: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     for entry in std::fs::read_dir(dir)? {
@@ -400,11 +396,6 @@ fn mark_executables(dir: &Path) -> std::io::Result<()> {
             std::fs::set_permissions(entry.path(), permissions)?;
         }
     }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn mark_executables(_dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 

@@ -254,6 +254,8 @@ fn relative_cmd(cmd: &str) -> Option<PathBuf> {
     (out.components().count() > 0 && !cmd.starts_with('/')).then_some(out)
 }
 
+/// The registry's platform keys. Onicode runs only the macOS and Linux
+/// builds, but entries also name Windows ones and stay valid with them.
 const PLATFORMS: [&str; 6] = [
     "darwin-aarch64",
     "darwin-x86_64",
@@ -299,15 +301,12 @@ pub fn platform() -> Option<&'static str> {
         ("macos", "x86_64") => "darwin-x86_64",
         ("linux", "aarch64") => "linux-aarch64",
         ("linux", "x86_64") => "linux-x86_64",
-        ("windows", "aarch64") => "windows-aarch64",
-        ("windows", "x86_64") => "windows-x86_64",
         _ => return None,
     })
 }
 
-/// What adding an entry would install here: this platform's build first
-/// (Windows on ARM runs the x64 one), then the npm package, then the Python
-/// one.
+/// What adding an entry would install here: this platform's build first,
+/// then the npm package, then the Python one.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Choice<'a> {
     Binary(&'a BinaryTarget),
@@ -331,15 +330,8 @@ pub fn choose(entry: &Entry) -> Option<Choice<'_>> {
 
 fn choose_for<'a>(entry: &'a Entry, platform: Option<&str>) -> Option<Choice<'a>> {
     let d = &entry.distribution;
-    if let Some(platform) = platform {
-        let fallback = (platform == "windows-aarch64").then_some("windows-x86_64");
-        if let Some(t) = d
-            .binary
-            .get(platform)
-            .or_else(|| fallback.and_then(|f| d.binary.get(f)))
-        {
-            return Some(Choice::Binary(t));
-        }
+    if let Some(t) = platform.and_then(|platform| d.binary.get(platform)) {
+        return Some(Choice::Binary(t));
     }
     d.npx
         .as_ref()
@@ -421,8 +413,7 @@ pub fn set_agents_root(dir: PathBuf) {
 
 /// Where added agents live: `$ONICODE_AGENTS_DIR`, else the engine's
 /// ([`set_agents_root`]), else `$ONICODE_DATA_DIR/agents`, else beside the
-/// managed adapters (`~/.onicode/agents`; the local app-data directory on
-/// Windows).
+/// managed adapters (`~/.onicode/agents`).
 pub fn agents_root() -> Option<PathBuf> {
     let value = |key: &str| {
         std::env::var_os(key)
@@ -589,7 +580,6 @@ pub fn set_user_env(
     {
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create(true).truncate(true);
-        #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
@@ -735,8 +725,7 @@ pub fn remove(agent: RegistryAgent) -> Result<(), HarnessError> {
     let Some(dir) = agent_dir(agent) else {
         return Ok(());
     };
-    // The record first: the agent is gone even if a running build keeps
-    // its files busy (Windows) until it exits.
+    // The record first: the agent is gone even if removing its files fails.
     let _ = std::fs::remove_file(dir.join("agent.json"));
     match std::fs::remove_dir_all(&dir) {
         Ok(()) => Ok(()),
@@ -799,7 +788,7 @@ pub async fn install(entry: &Entry, icon_svg: Option<String>) -> Result<Record, 
         if version_dir.exists() {
             let _ = std::fs::remove_dir_all(&version_dir);
         }
-        crate::adapter_install::rename_into_place(&tmp, &version_dir).await?;
+        std::fs::rename(&tmp, &version_dir)?;
     }
     let (args, env) = match &choice {
         Choice::Binary(t) => (t.args.clone(), t.env.clone()),
@@ -972,15 +961,8 @@ async fn stage(
                     err.trim().lines().last().unwrap_or("no reason given")
                 )));
             }
-            let exe = |n: &str| {
-                if cfg!(windows) {
-                    format!("{n}.exe")
-                } else {
-                    n.to_owned()
-                }
-            };
             let bin = tmp.join("bin");
-            let named = bin.join(exe(name));
+            let named = bin.join(name);
             let program = if named.is_file() {
                 named
             } else {
@@ -1168,7 +1150,6 @@ fn extract_tar(reader: impl std::io::Read, dest: &Path) -> Result<(), HarnessErr
         }
         let mut out = std::fs::File::create(&output)?;
         std::io::copy(&mut entry, &mut out)?;
-        #[cfg(unix)]
         if let Ok(mode) = entry.header().mode() {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(
@@ -1220,7 +1201,6 @@ fn extract_zip(archive: &Path, dest: &Path) -> Result<(), HarnessError> {
         }
         let mut out = std::fs::File::create(&output)?;
         std::io::copy(&mut entry, &mut out)?;
-        #[cfg(unix)]
         if let Some(mode) = entry.unix_mode() {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(
@@ -1233,16 +1213,10 @@ fn extract_zip(archive: &Path, dest: &Path) -> Result<(), HarnessError> {
 }
 
 fn make_executable(path: &Path) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = std::fs::metadata(path)?.permissions();
-        permissions.set_mode(permissions.mode() | 0o755);
-        std::fs::set_permissions(path, permissions)?;
-    }
-    #[cfg(not(unix))]
-    let _ = path;
-    Ok(())
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    permissions.set_mode(permissions.mode() | 0o755);
+    std::fs::set_permissions(path, permissions)
 }
 
 /// Fetches the index (`url`, normally [`INDEX_URL`]): its bytes, and the
@@ -1415,10 +1389,6 @@ mod tests {
         let goose = &entries[1];
         assert!(
             matches!(choose_for(goose, Some("darwin-aarch64")), Some(Choice::Binary(t)) if t.sha256.is_some())
-        );
-        // Windows on ARM runs the x64 build.
-        assert!(
-            matches!(choose_for(goose, Some("windows-aarch64")), Some(Choice::Binary(t)) if t.archive.ends_with(".zip"))
         );
         assert_eq!(choose_for(goose, Some("linux-aarch64")), None);
         assert!(matches!(

@@ -21,8 +21,67 @@ pub(crate) enum Frame {
     ControlResponse(ControlResponseFrame),
     /// Where the CLI has taken one of our stdin user messages.
     CommandLifecycle(CommandLifecycleFrame),
-    /// control_cancel_request / anything unknown.
+    /// `control_cancel_request`: the CLI no longer needs the answer to one
+    /// of its own requests (the turn was interrupted, a steer cut the tool
+    /// call off, another client answered it). No reply is written.
+    ControlCancel(ControlCancelFrame),
+    /// `tombstone`: a message already streamed is superseded or removed.
+    Tombstone(TombstoneFrame),
+    /// `tool_progress`: a long tool call is still running.
+    ToolProgress(ToolProgressFrame),
+    /// Anything unknown.
     Other,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct ControlCancelFrame {
+    #[serde(default)]
+    pub request_id: String,
+}
+
+/// `{"type":"tombstone","message":{…}}`: a message already sent is
+/// withdrawn (a stalled stream retried without streaming leaves its partial
+/// message orphaned). The message is read loosely: whose feed it was on,
+/// and any tool calls it opened.
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct TombstoneFrame {
+    #[serde(default)]
+    pub message: Value,
+}
+
+impl TombstoneFrame {
+    /// The `tool_use` ids the superseded message opened.
+    pub fn tool_use_ids(&self) -> Vec<String> {
+        let content = self
+            .message
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .or_else(|| self.message.get("content"));
+        content
+            .and_then(Value::as_array)
+            .map(|a| a.as_slice())
+            .unwrap_or_default()
+            .iter()
+            .filter(|b| b.get("type").and_then(Value::as_str) == Some("tool_use"))
+            .filter_map(|b| b.get("id").and_then(Value::as_str).map(str::to_owned))
+            .collect()
+    }
+
+    /// Whether the superseded message belongs to a subagent's feed.
+    pub fn parent_tool_use_id(&self) -> Option<&str> {
+        self.message
+            .get("parent_tool_use_id")
+            .and_then(Value::as_str)
+            .filter(|p| !p.is_empty())
+    }
+}
+
+/// `{"type":"tool_progress","tool_use_id":…,"elapsed_time_seconds":…}`:
+/// only whose call it is matters (a subagent's has no live consumer).
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct ToolProgressFrame {
+    #[serde(default)]
+    pub parent_tool_use_id: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -41,6 +100,48 @@ pub(crate) struct ControlResponseBody {
     /// Why an `error` response failed (a string on every CLI seen so far).
     #[serde(default)]
     pub error: Option<Value>,
+    /// A success's payload: the initialize response, an interrupt receipt,
+    /// a `rewind_files` or `get_context_usage` answer.
+    #[serde(default)]
+    pub response: Option<Value>,
+}
+
+impl ControlResponseBody {
+    /// `initialize`'s `claude_code_version`. Nothing else of that response
+    /// (its account block above all) is read.
+    pub fn claude_code_version(&self) -> Option<&str> {
+        self.response
+            .as_ref()?
+            .get("claude_code_version")?
+            .as_str()
+            .filter(|v| !v.trim().is_empty())
+    }
+
+    /// An `interrupt` receipt: the uuids of ours it cancelled; empty from a
+    /// CLI that predates receipts.
+    pub fn interrupt_receipt(&self) -> InterruptReceipt {
+        let cancelled = self
+            .response
+            .as_ref()
+            .and_then(|r| r.get("cancelled"))
+            .and_then(Value::as_array)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        InterruptReceipt { cancelled }
+    }
+}
+
+/// What an `interrupt` control request did to the messages we wrote (its
+/// `still_queued` list is not needed: whatever was not cancelled runs).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct InterruptReceipt {
+    /// Never to run; each also gets its terminal `cancelled` lifecycle.
+    /// Empty from a CLI without receipts.
+    pub cancelled: Vec<String>,
 }
 
 impl ControlResponseBody {
@@ -133,6 +234,23 @@ pub(crate) struct SystemFrame {
     /// follows every change, ours or its own (leaving plan mode).
     #[serde(default, rename = "permissionMode")]
     pub permission_mode: Option<String>,
+    /// `session_state_changed`: `idle`, `running` or `requires_action`.
+    /// `idle` comes once the turn's result is out and nothing the CLI holds
+    /// back is left to run: the turn is over. Sent only to a host that sets
+    /// `CLAUDE_CODE_SDK_READS_SESSION_STATE`.
+    #[serde(default)]
+    pub state: Option<String>,
+    /// `turn_preempted`: the follow-up that superseded the turn.
+    #[serde(default)]
+    pub preempted_by_uuid: Option<String>,
+    /// `hook_started` / `hook_response`: which hook, for which event. The
+    /// hook's own output is never read.
+    #[serde(default)]
+    pub hook_id: Option<String>,
+    #[serde(default)]
+    pub hook_name: Option<String>,
+    #[serde(default)]
+    pub hook_event: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -173,6 +291,11 @@ pub(crate) struct MessageFrame {
     /// Terse assistant-level error code (`rate_limit`, `billing_error`, …).
     #[serde(default)]
     pub error: Option<String>,
+    /// A `user` frame's structured tool output (an Edit's or Write's
+    /// `structuredPatch`, `originalFile`, `type`). A `Value`: its shape
+    /// differs per tool.
+    #[serde(default)]
+    pub tool_use_result: Option<Value>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -282,6 +405,21 @@ pub(crate) struct ResultFrame {
     pub terminal_reason: Option<String>,
     #[serde(default)]
     pub api_error_status: Option<u64>,
+    /// Every user message (by the uuid we wrote it with) whose prompt this
+    /// turn consumed, in order. Absent from older CLIs, which may still send
+    /// the last one alone as `user_message_uuid`.
+    #[serde(default)]
+    pub user_message_uuids: Option<Vec<String>>,
+    #[serde(default)]
+    pub user_message_uuid: Option<String>,
+    /// User sends still waiting in the CLI's queue: above 0, another turn
+    /// (and result) follows without further input.
+    #[serde(default)]
+    pub queued_turn_count: Option<u64>,
+    /// Set on the zeroed result a run writes before exiting on a known
+    /// startup failure (`CLAUDE_CODE_STARTUP_FAILURE_RESULTS`).
+    #[serde(default)]
+    pub startup_failure_reason: Option<String>,
     /// Not a CLI field: the line said it was a result but could not be read
     /// (see [`parse_frame`]).
     #[serde(skip)]
@@ -289,6 +427,16 @@ pub(crate) struct ResultFrame {
 }
 
 impl ResultFrame {
+    /// The uuids of ours this result's turn consumed: the list, else the
+    /// lone `user_message_uuid`; `None` when the CLI reports neither.
+    pub fn consumed(&self) -> Option<Vec<String>> {
+        match (&self.user_message_uuids, &self.user_message_uuid) {
+            (Some(list), _) => Some(list.clone()),
+            (None, Some(one)) => Some(vec![one.clone()]),
+            (None, None) => None,
+        }
+    }
+
     /// Stands in for a `result` line that would not parse. Dropping it would
     /// leave the turn open forever: the CLI's result is the only turn end.
     fn unreadable(line: &str) -> Self {
@@ -331,6 +479,41 @@ pub(crate) struct ControlRequestBody {
     pub description: Option<String>,
     #[serde(default)]
     pub input: Value,
+    /// `can_use_tool`: ready-made `PermissionUpdate`s ("always allow"
+    /// rules) the host may echo back as `updatedPermissions`.
+    #[serde(default)]
+    pub permission_suggestions: Vec<Value>,
+    /// `can_use_tool`: why the ask escalated (may carry ANSI escapes), and
+    /// the path that made it ask.
+    #[serde(default)]
+    pub decision_reason: Option<String>,
+    #[serde(default)]
+    pub blocked_path: Option<String>,
+    /// `can_use_tool`: accepting must not write a persistent rule.
+    #[serde(default)]
+    pub suppress_always_allow_rule: bool,
+    /// `can_use_tool`: approve must not be pre-selected or one keystroke away.
+    #[serde(default)]
+    pub default_to_no: bool,
+    /// `can_use_tool`: one-tap approve/deny must not be offered.
+    #[serde(default)]
+    pub requires_user_interaction: bool,
+    #[serde(default)]
+    pub tool_use_id: Option<String>,
+    /// `elicitation`: the MCP server asking, what it says, and how it wants
+    /// the answer (`form` with a JSON schema, or `url` to open).
+    #[serde(default)]
+    pub mcp_server_name: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub requested_schema: Option<Value>,
+    #[serde(default)]
+    pub property_order: Vec<String>,
 }
 
 /// Parse one stdout JSONL line. `Err` = not JSON; unknown types = `Other`.
@@ -421,6 +604,9 @@ fn typed_frame(value: Value) -> Result<Frame, serde_json::Error> {
         "control_request" => Frame::ControlRequest(serde_json::from_value(value)?),
         "control_response" => Frame::ControlResponse(serde_json::from_value(value)?),
         "command_lifecycle" => Frame::CommandLifecycle(serde_json::from_value(value)?),
+        "control_cancel_request" => Frame::ControlCancel(serde_json::from_value(value)?),
+        "tombstone" => Frame::Tombstone(serde_json::from_value(value)?),
+        "tool_progress" => Frame::ToolProgress(serde_json::from_value(value)?),
         _ => Frame::Other,
     };
     Ok(frame)
@@ -449,8 +635,8 @@ fn repair_lone_surrogates(line: &str) -> Option<String> {
         let hex = std::str::from_utf8(bytes.get(at + 2..at + 6)?).ok()?;
         u16::from_str_radix(hex, 16).ok()
     }
-    let high = |u: u16| (0xD800..0xDC00).contains(&u);
-    let low = |u: u16| (0xDC00..0xE000).contains(&u);
+    let high = |u: u16| (0xd800..0xdc00).contains(&u);
+    let low = |u: u16| (0xdc00..0xe000).contains(&u);
     let bytes = line.as_bytes();
     let mut out = String::new();
     let (mut at, mut copied) = (0, 0);
@@ -502,7 +688,25 @@ pub(crate) fn user_message_line(text: &str) -> String {
 /// its result, in the same turn. An interrupted turn still emits a `result`.
 #[cfg(test)]
 pub(crate) fn steer_message_line(text: &str, id: &str, immediate: bool) -> String {
-    steer_message_line_with_images(text, id, immediate, &[])
+    steer_message_line_with_images(text, id, immediate, Origin::Human, &[])
+}
+
+/// Who wrote a stdin user line. The CLI treats a line without an origin as
+/// unattributed, and features that need a person behind the prompt (plugin
+/// local slash commands among them) refuse it: a line the person typed says
+/// so; one onicode composed itself (a revival's continuation) carries none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Origin {
+    Human,
+    Onicode,
+}
+
+impl Origin {
+    fn stamp(self, line: &mut Value) {
+        if self == Origin::Human {
+            line["origin"] = json!({ "kind": "human" });
+        }
+    }
 }
 
 /// [`steer_message_line`] carrying inline images ahead of the text, in the
@@ -511,6 +715,7 @@ pub(crate) fn steer_message_line_with_images(
     text: &str,
     id: &str,
     immediate: bool,
+    origin: Origin,
     images: &[ImageBlock],
 ) -> String {
     let content = if images.is_empty() {
@@ -518,9 +723,10 @@ pub(crate) fn steer_message_line_with_images(
     } else {
         Value::Array(content_blocks(text, images))
     };
-    serde_json::json!({"type":"user", "uuid":id, "priority": if immediate { "now" } else { "next" },
-        "message":{"role":"user","content":content}, "parent_tool_use_id":null})
-    .to_string()
+    let mut line = json!({"type":"user", "uuid":id, "priority": if immediate { "now" } else { "next" },
+        "message":{"role":"user","content":content}, "parent_tool_use_id":null});
+    origin.stamp(&mut line);
+    line.to_string()
 }
 
 /// One inline image for a stdin user turn (Anthropic base64 image source).
@@ -538,19 +744,20 @@ pub(crate) struct ImageBlock {
 /// The run's opening prompt, tagged with `id` so its `command_lifecycle`
 /// frames can be told apart from a steer's. Images precede the text, as in
 /// [`user_message_line_with_images`].
-pub(crate) fn prompt_line(text: &str, id: &str, images: &[ImageBlock]) -> String {
+pub(crate) fn prompt_line(text: &str, id: &str, origin: Origin, images: &[ImageBlock]) -> String {
     let content = if images.is_empty() {
         Value::String(text.to_owned())
     } else {
         Value::Array(content_blocks(text, images))
     };
-    json!({
+    let mut line = json!({
         "type": "user",
         "uuid": id,
         "message": { "role": "user", "content": content },
         "parent_tool_use_id": null,
-    })
-    .to_string()
+    });
+    origin.stamp(&mut line);
+    line.to_string()
 }
 
 #[cfg(test)]
@@ -589,11 +796,60 @@ fn content_blocks(text: &str, images: &[ImageBlock]) -> Vec<Value> {
 /// spares background agents — without it the CLI stops every background
 /// agent on interrupt (verified live against 2.1.285; background shells
 /// survive either way).
-pub(crate) fn initialize_request_line(request_id: &str) -> String {
+///
+/// `supportedDialogKinds` is declared empty: onicode renders no
+/// `request_user_dialog` kind, and the CLI fails such a flow closed (the
+/// request is never sent). `rapidFollowupPreempt` lets the CLI stop a turn
+/// that has shown nothing yet when a follow-up arrives, folding both into
+/// one turn; it reports that as `turn_preempted` before the stopped turn's
+/// result, which [`crate::claude`] treats as a boundary, not the turn's end.
+pub(crate) fn initialize_request_line(request_id: &str, rapid_followup_preempt: bool) -> String {
+    let mut request = json!({
+        "subtype": "initialize",
+        "perTaskStopAffordance": true,
+        "supportedDialogKinds": [],
+    });
+    if rapid_followup_preempt {
+        request["rapidFollowupPreempt"] = Value::Bool(true);
+    }
     json!({
         "type": "control_request",
         "request_id": request_id,
-        "request": { "subtype": "initialize", "perTaskStopAffordance": true },
+        "request": request,
+    })
+    .to_string()
+}
+
+/// Restore the files the session changed since `user_message_id` (the uuid
+/// a prompt was written with), or with `dry_run` only say what would change.
+/// Needs a process launched with file checkpointing on.
+pub(crate) fn rewind_files_request_line(
+    request_id: &str,
+    user_message_id: &str,
+    dry_run: bool,
+) -> String {
+    json!({
+        "type": "control_request",
+        "request_id": request_id,
+        "request": {
+            "subtype": "rewind_files",
+            "user_message_id": user_message_id,
+            "dry_run": dry_run,
+        },
+    })
+    .to_string()
+}
+
+/// Ask where the context window goes, by category. `summary` answers from
+/// the last response's usage without per-category token-count calls.
+pub(crate) fn context_usage_request_line(request_id: &str, full: bool) -> String {
+    json!({
+        "type": "control_request",
+        "request_id": request_id,
+        "request": {
+            "subtype": "get_context_usage",
+            "detail": if full { "full" } else { "summary" },
+        },
     })
     .to_string()
 }
@@ -682,6 +938,51 @@ pub(crate) fn control_error_line(request_id: &str, error: &str) -> String {
 /// `can_use_tool` allow payload with the (possibly updated) tool input.
 pub(crate) fn allow_response(updated_input: Value) -> Value {
     json!({ "behavior": "allow", "updatedInput": updated_input })
+}
+
+/// `can_use_tool` allow that also adds `rules` (the CLI's own
+/// `permission_suggestions`, as given or re-targeted) to its permissions,
+/// so the same ask is not repeated. `permanent` classifies the decision as
+/// a lasting one.
+pub(crate) fn allow_with_rules_response(
+    updated_input: Value,
+    rules: Vec<Value>,
+    tool_use_id: Option<&str>,
+    permanent: bool,
+) -> Value {
+    let mut response = json!({
+        "behavior": "allow",
+        "updatedInput": updated_input,
+        "decisionClassification": if permanent { "user_permanent" } else { "user_temporary" },
+    });
+    if !rules.is_empty() {
+        response["updatedPermissions"] = Value::Array(rules);
+    }
+    if let Some(id) = tool_use_id {
+        response["toolUseID"] = Value::String(id.to_owned());
+    }
+    response
+}
+
+/// `can_use_tool` deny with what the person said, and whether the turn
+/// stops with it (`interrupt`).
+pub(crate) fn deny_with_response(
+    message: &str,
+    interrupt: bool,
+    tool_use_id: Option<&str>,
+) -> Value {
+    let mut response = json!({
+        "behavior": "deny",
+        "message": message,
+        "decisionClassification": "user_reject",
+    });
+    if interrupt {
+        response["interrupt"] = Value::Bool(true);
+    }
+    if let Some(id) = tool_use_id {
+        response["toolUseID"] = Value::String(id.to_owned());
+    }
+    response
 }
 
 /// `can_use_tool` allow for `ExitPlanMode` that leaves plan mode for `mode`.
@@ -859,5 +1160,163 @@ mod tests {
             user_message_line_with_images("hi", &[]),
             user_message_line("hi")
         );
+    }
+
+    #[test]
+    fn cancels_tombstones_and_tool_progress_parse() {
+        match parse_frame(r#"{"type":"control_cancel_request","request_id":"cr-7"}"#).unwrap() {
+            Frame::ControlCancel(f) => assert_eq!(f.request_id, "cr-7"),
+            other => panic!("unexpected frame: {other:?}"),
+        }
+        let tomb = r#"{"type":"tombstone","message":{"type":"assistant","uuid":"m1","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"hal"},{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}}"#;
+        match parse_frame(tomb).unwrap() {
+            Frame::Tombstone(f) => {
+                assert_eq!(f.tool_use_ids(), vec!["t1"]);
+                assert_eq!(f.parent_tool_use_id(), None);
+            }
+            other => panic!("unexpected frame: {other:?}"),
+        }
+        let sub = r#"{"type":"tombstone","message":{"parent_tool_use_id":"agent-1","content":[]}}"#;
+        match parse_frame(sub).unwrap() {
+            Frame::Tombstone(f) => assert_eq!(f.parent_tool_use_id(), Some("agent-1")),
+            other => panic!("unexpected frame: {other:?}"),
+        }
+        let progress = r#"{"type":"tool_progress","tool_use_id":"t1","parent_tool_use_id":null,"elapsed_time_seconds":12.5}"#;
+        match parse_frame(progress).unwrap() {
+            Frame::ToolProgress(f) => assert_eq!(f.parent_tool_use_id, None),
+            other => panic!("unexpected frame: {other:?}"),
+        }
+    }
+
+    fn response_body(raw: &str) -> ControlResponseBody {
+        match parse_frame(raw).unwrap() {
+            Frame::ControlResponse(f) => f.response,
+            other => panic!("unexpected frame: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn receipts_and_versions_are_read_from_responses() {
+        let receipt = response_body(
+            r#"{"type":"control_response","response":{"subtype":"success","request_id":"s1","response":{"still_queued":["b"],"cancelled":["a","c"]}}}"#,
+        );
+        assert_eq!(receipt.interrupt_receipt().cancelled, vec!["a", "c"]);
+        // A CLI without receipts cancels nothing we can name.
+        let bare = response_body(
+            r#"{"type":"control_response","response":{"subtype":"success","request_id":"s1"}}"#,
+        );
+        assert!(bare.interrupt_receipt().cancelled.is_empty());
+        assert_eq!(bare.claude_code_version(), None);
+        let init = response_body(
+            r#"{"type":"control_response","response":{"subtype":"success","request_id":"onicode_initialize","response":{"claude_code_version":"2.1.320","account":{"email":"x@y"}}}}"#,
+        );
+        assert_eq!(init.claude_code_version(), Some("2.1.320"));
+    }
+
+    #[test]
+    fn results_name_the_messages_they_consumed() {
+        let result = |extra: &str| match parse_frame(&format!(
+            r#"{{"type":"result","subtype":"success","result":"ok"{extra}}}"#
+        ))
+        .unwrap()
+        {
+            Frame::Result(f) => f,
+            other => panic!("unexpected frame: {other:?}"),
+        };
+        let listed = result(r#","user_message_uuids":["u1","u2"],"queued_turn_count":1"#);
+        assert_eq!(listed.consumed(), Some(vec!["u1".into(), "u2".into()]));
+        assert_eq!(listed.queued_turn_count, Some(1));
+        let one = result(r#","user_message_uuid":"u3""#);
+        assert_eq!(one.consumed(), Some(vec!["u3".into()]));
+        assert_eq!(result("").consumed(), None);
+    }
+
+    #[test]
+    fn typed_lines_say_a_person_wrote_them() {
+        let prompt: Value =
+            serde_json::from_str(&prompt_line("hi", "u1", Origin::Human, &[])).unwrap();
+        assert_eq!(prompt["origin"]["kind"], "human");
+        assert_eq!(prompt["uuid"], "u1");
+        let composed: Value =
+            serde_json::from_str(&prompt_line("go on", "u2", Origin::Onicode, &[])).unwrap();
+        assert!(composed.get("origin").is_none());
+        let steer: Value = serde_json::from_str(&steer_message_line_with_images(
+            "also",
+            "u3",
+            false,
+            Origin::Human,
+            &[],
+        ))
+        .unwrap();
+        assert_eq!(steer["origin"]["kind"], "human");
+        assert_eq!(steer["priority"], "next");
+    }
+
+    #[test]
+    fn initialize_declares_what_this_host_handles() {
+        let plain: Value =
+            serde_json::from_str(&initialize_request_line("onicode_initialize", false)).unwrap();
+        let request = &plain["request"];
+        assert_eq!(request["subtype"], "initialize");
+        assert_eq!(request["perTaskStopAffordance"], true);
+        assert_eq!(request["supportedDialogKinds"], serde_json::json!([]));
+        assert!(request.get("rapidFollowupPreempt").is_none());
+        let rapid: Value =
+            serde_json::from_str(&initialize_request_line("onicode_initialize", true)).unwrap();
+        assert_eq!(rapid["request"]["rapidFollowupPreempt"], true);
+    }
+
+    #[test]
+    fn queries_and_approval_replies_take_the_wire_shape() {
+        let rewind: Value =
+            serde_json::from_str(&rewind_files_request_line("q1", "u1", true)).unwrap();
+        assert_eq!(rewind["request"]["subtype"], "rewind_files");
+        assert_eq!(rewind["request"]["user_message_id"], "u1");
+        assert_eq!(rewind["request"]["dry_run"], true);
+        let usage: Value = serde_json::from_str(&context_usage_request_line("q2", false)).unwrap();
+        assert_eq!(usage["request"]["subtype"], "get_context_usage");
+        assert_eq!(usage["request"]["detail"], "summary");
+        let rule = serde_json::json!({"type": "addRules", "destination": "session"});
+        let allow =
+            allow_with_rules_response(Value::Null, vec![rule.clone()], Some("toolu_1"), false);
+        assert_eq!(allow["behavior"], "allow");
+        assert_eq!(allow["updatedPermissions"], serde_json::json!([rule]));
+        assert_eq!(allow["toolUseID"], "toolu_1");
+        assert_eq!(allow["decisionClassification"], "user_temporary");
+        let once = allow_with_rules_response(Value::Null, Vec::new(), None, false);
+        assert!(once.get("updatedPermissions").is_none());
+        assert!(once.get("toolUseID").is_none());
+        let stop = deny_with_response("no", true, None);
+        assert_eq!(stop["behavior"], "deny");
+        assert_eq!(stop["interrupt"], true);
+        assert_eq!(stop["decisionClassification"], "user_reject");
+        assert!(
+            deny_with_response("no", false, None)
+                .get("interrupt")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn approval_and_elicitation_requests_read_their_fields() {
+        let raw = r#"{"type":"control_request","request_id":"cr-1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"ls"},"tool_use_id":"toolu_1","permission_suggestions":[{"type":"addRules"}],"decision_reason":"why","blocked_path":"/x","suppress_always_allow_rule":true,"default_to_no":true,"requires_user_interaction":true}}"#;
+        let Frame::ControlRequest(req) = parse_frame(raw).unwrap() else {
+            panic!("not a control request");
+        };
+        let body = req.request;
+        assert_eq!(body.tool_use_id.as_deref(), Some("toolu_1"));
+        assert_eq!(body.permission_suggestions.len(), 1);
+        assert_eq!(body.decision_reason.as_deref(), Some("why"));
+        assert_eq!(body.blocked_path.as_deref(), Some("/x"));
+        assert!(body.suppress_always_allow_rule && body.default_to_no);
+        assert!(body.requires_user_interaction);
+        let raw = r#"{"type":"control_request","request_id":"cr-2","request":{"subtype":"elicitation","mcp_server_name":"gh","message":"Sign in","mode":"url","url":"https://x.test","property_order":["a"]}}"#;
+        let Frame::ControlRequest(req) = parse_frame(raw).unwrap() else {
+            panic!("not a control request");
+        };
+        assert_eq!(req.request.mcp_server_name.as_deref(), Some("gh"));
+        assert_eq!(req.request.mode.as_deref(), Some("url"));
+        assert_eq!(req.request.url.as_deref(), Some("https://x.test"));
+        assert_eq!(req.request.property_order, vec!["a"]);
     }
 }

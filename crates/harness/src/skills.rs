@@ -804,8 +804,6 @@ mod tests {
             );
             let skills = discover_at(harness, &repo, &home).unwrap();
             let skill = skills.iter().find(|skill| skill.name == "review").unwrap();
-            // Directory traversal uses native separators; the fixture path
-            // may contain forward slashes on Windows. Compare path identity.
             assert_eq!(Path::new(&skill.path), native_path.as_path());
             assert_eq!(skill.description, "Native multiline description");
             assert!(skill.enabled, "model invocation is not user invocation");

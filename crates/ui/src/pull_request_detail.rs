@@ -4024,7 +4024,7 @@ mod tests {
                     "pr-verification-Relevant platforms",
                     "pr-verification-label-Relevant platforms",
                 ),
-                ("pr-verification-Windows", "pr-verification-label-Windows"),
+                ("pr-verification-Linux", "pr-verification-label-Linux"),
             ] {
                 let control = cx.debug_bounds(control).unwrap();
                 let label = cx.debug_bounds(label).unwrap();
@@ -4035,7 +4035,7 @@ mod tests {
         }
         cx.update(|window, _| window.set_rem_size(px(16.0)));
         cx.run_until_parked();
-        let platform = cx.debug_bounds("pr-verification-Windows").unwrap();
+        let platform = cx.debug_bounds("pr-verification-Linux").unwrap();
         cx.simulate_mouse_down(
             platform.center(),
             gpui::MouseButton::Left,
@@ -4050,7 +4050,7 @@ mod tests {
         page.read_with(cx, |page, _| {
             assert_eq!(
                 page.verification_platform,
-                handoff::VerificationPlatform::Windows
+                handoff::VerificationPlatform::Linux
             )
         });
         let code = cx.debug_bounds("pr-code").unwrap();

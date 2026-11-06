@@ -10,7 +10,8 @@ final class RemoteVoiceController {
     static let capability = voiceHostCapability()
     /// Development override: offer voice before any host advertises it.
     static var forced: Bool {
-        ProcessInfo.processInfo.arguments.contains("-remote-voice") || ProcessInfo.processInfo.environment["ONICODE_REMOTE_VOICE"] == "1"
+        ProcessInfo.processInfo.arguments.contains("-remote-voice")
+            || ProcessInfo.processInfo.environment["ONICODE_REMOTE_VOICE"] == "1"
     }
 
     private weak var app: AppModel?
@@ -65,11 +66,19 @@ final class RemoteVoiceController {
     }
     var selectedHost: String? {
         get { UserDefaults.standard.string(forKey: preferenceKey + ".host") }
-        set { if !live { UserDefaults.standard.set(newValue, forKey: preferenceKey + ".host"); changed() } }
+        set {
+            if !live {
+                UserDefaults.standard.set(newValue, forKey: preferenceKey + ".host")
+                changed()
+            }
+        }
     }
     var selectedStyle: String? {
         get { UserDefaults.standard.string(forKey: preferenceKey + ".style") }
-        set { UserDefaults.standard.set(newValue, forKey: preferenceKey + ".style"); changed() }
+        set {
+            UserDefaults.standard.set(newValue, forKey: preferenceKey + ".style")
+            changed()
+        }
     }
 
     /// The host a plain tap calls: the chosen one, or the only one online.
@@ -95,7 +104,10 @@ final class RemoteVoiceController {
         guard !live, let client = app?.client, let device = host ?? startHost else { return false }
         if host != nil { selectedHost = device.id }
         generation &+= 1
-        state = nil; endReason = nil; muted = false; activeSince = nil
+        state = nil
+        endReason = nil
+        muted = false
+        activeSince = nil
         hostName = device.name
         let media = NativeVoiceMedia()
         self.media = media
@@ -152,7 +164,10 @@ final class RemoteVoiceController {
         call?.stop()
         // After close: the call's audio session no longer ducks it.
         if sounds { CallSound.end.play() }
-        call = nil; media = nil; state = nil; activeSince = nil
+        call = nil
+        media = nil
+        state = nil
+        activeSince = nil
         endReason = reason
         setProximityMonitoring(false)
         UIApplication.shared.isIdleTimerDisabled = false
@@ -161,7 +176,8 @@ final class RemoteVoiceController {
             // The stage explains a failure itself; elsewhere a toast does.
             if let window = Self.keyWindow, !(Self.top(window.rootViewController) is VoiceStageViewController) {
                 endReason = nil
-                Toast.show(message(for: reason), action: reason == .microphoneDenied ? "Settings" : "Retry", in: window) { [weak self] in
+                Toast.show(message(for: reason), action: reason == .microphoneDenied ? "Settings" : "Retry", in: window)
+                { [weak self] in
                     if reason == .microphoneDenied, let url = URL(string: UIApplication.openSettingsURLString) {
                         UIApplication.shared.open(url)
                     } else if let self, let app = self.app, self.start() {
@@ -206,7 +222,9 @@ final class RemoteVoiceController {
     private func setProximityMonitoring(_ on: Bool) {
         UIDevice.current.isProximityMonitoringEnabled = on
         if on, proximity == nil {
-            proximity = NotificationCenter.default.addObserver(forName: UIDevice.proximityStateDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            proximity = NotificationCenter.default.addObserver(
+                forName: UIDevice.proximityStateDidChangeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
                 MainActor.assumeIsolated { self?.media?.setNearEar(UIDevice.current.proximityState) }
             }
         } else if !on, let proximity {
@@ -221,7 +239,7 @@ final class RemoteVoiceController {
     var elapsedText: String? {
         guard let activeSince else { return nil }
         let seconds = max(0, Int(Date().timeIntervalSince(activeSince)))
-        let (h, m, s) = (seconds / 3600, seconds / 60 % 60, seconds % 60)
+        let (h, m, s) = (seconds / 3_600, seconds / 60 % 60, seconds % 60)
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 
@@ -269,9 +287,18 @@ final class RemoteVoiceController {
         activeSince = Date().addingTimeInterval(-83)
         let script: [(VoiceOrb, VoiceCallWork, String, VoiceSpeaker?)] = [
             (.listening, .idle, "Open a chat on the Mac and ask Claude to fix the failing sync test", .user),
-            (.speaking, .idle, "On it. I'm starting a Claude session in the comet project to look at the sync test.", nil),
-            (.working, .working, "On it. I'm starting a Claude session in the comet project to look at the sync test.", .assistant),
-            (.awaitingInput, .awaitingInput, "Claude wants to know whether to update the fixture or the parser.", .assistant),
+            (
+                .speaking, .idle, "On it. I'm starting a Claude session in the comet project to look at the sync test.",
+                nil
+            ),
+            (
+                .working, .working,
+                "On it. I'm starting a Claude session in the comet project to look at the sync test.", .assistant
+            ),
+            (
+                .awaitingInput, .awaitingInput, "Claude wants to know whether to update the fixture or the parser.",
+                .assistant
+            ),
         ]
         var step = 0
         previewTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
@@ -283,7 +310,11 @@ final class RemoteVoiceController {
                 // Words stream in, about three per second, like a live partial.
                 let words = caption.split(separator: " ")
                 let streamed = words.prefix(1 + (step % 40) / 3).joined(separator: " ")
-                self.state = VoiceCallState(phase: .active, orb: orb, chatId: "voice-orchestrator-preview", work: work, muted: self.muted, speaking: orb == .speaking, caption: streamed, captionSpeaker: speaker, captionItem: "preview-\(turn)", microphone: orb == .listening ? wave : 0, speaker: orb == .speaking ? wave : 0, voices: [])
+                self.state = VoiceCallState(
+                    phase: .active, orb: orb, chatId: "voice-orchestrator-preview", work: work, muted: self.muted,
+                    speaking: orb == .speaking, caption: streamed, captionSpeaker: speaker,
+                    captionItem: "preview-\(turn)", microphone: orb == .listening ? wave : 0,
+                    speaker: orb == .speaking ? wave : 0, voices: [])
                 step += 1
                 self.changed()
             }
@@ -305,7 +336,7 @@ private enum CallSound: String {
     case start = "voice-start"
     case end = "voice-end"
 
-    private static var loaded: [CallSound: SystemSoundID] = [:]
+    private static var loaded: [Self: SystemSoundID] = [:]
 
     func play() {
         if Self.loaded[self] == nil, let url = Bundle.main.url(forResource: rawValue, withExtension: "wav") {
@@ -319,13 +350,18 @@ private enum CallSound: String {
 private final class VoiceListenerBridge: VoiceSessionListener, @unchecked Sendable {
     private weak var controller: RemoteVoiceController?
     private let generation: UInt64
-    init(controller: RemoteVoiceController, generation: UInt64) { self.controller = controller; self.generation = generation }
+    init(controller: RemoteVoiceController, generation: UInt64) {
+        self.controller = controller
+        self.generation = generation
+    }
     func onVoiceState(state: VoiceCallState) {
-        let controller = controller; let generation = generation
+        let controller = controller
+        let generation = generation
         Task { @MainActor [weak controller] in controller?.receive(state, generation: generation) }
     }
     func onVoiceClosed(reason: VoiceEndReason?) {
-        let controller = controller; let generation = generation
+        let controller = controller
+        let generation = generation
         Task { @MainActor [weak controller] in controller?.closed(reason, generation: generation) }
     }
 }

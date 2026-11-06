@@ -50,7 +50,8 @@ final class CoreSessionSource: SessionSource {
     /// Agent visuals load their scripts from the chat's host device.
     private func connectVisuals() {
         guard let engine, !hostDevice.isEmpty else { return }
-        engine.setVisualSource(client: client, deviceId: hostDevice, pixelScale: Float(max(2, UITraitCollection.current.displayScale)))
+        engine.setVisualSource(
+            client: client, deviceId: hostDevice, pixelScale: Float(max(2, UITraitCollection.current.displayScale)))
     }
 
     func detach() {
@@ -103,26 +104,39 @@ final class CoreSessionSource: SessionSource {
         next.placeholder = "Message \(row?.harnessLabel ?? "the agent")"
         var chips: [ComposerChip] = []
         if let model = row?.modelLabel ?? row.flatMap({ defaultModel(for: $0)?.label }) ?? row?.harnessLabel {
-            chips.append(ComposerChip(id: "model", title: model, symbol: nil, icon: BrandMarks.image(for: row?.harness ?? "claude-code", side: 13)))
+            chips.append(
+                ComposerChip(
+                    id: "model", title: model, symbol: nil,
+                    icon: BrandMarks.image(for: row?.harness ?? "claude-code", side: 13)))
         }
         if let r = row?.reasoning, !r.isEmpty {
-            chips.append(ComposerChip(id: "effort", title: reasoningLabel(level: r), symbol: "gauge.with.dots.needle.67percent"))
+            chips.append(
+                ComposerChip(id: "effort", title: reasoningLabel(level: r), symbol: "gauge.with.dots.needle.67percent"))
         }
         if let pr = row?.pullRequest {
-            let state: SessionRowVM.PR = switch pr.state { case .open: .open; case .merged: .merged; case .closed: .closed }
-            chips.append(ComposerChip(id: "pr", title: "\(pr.number)", symbol: nil, tint: PRBadgeView.tone(state), icon: PRIcon.image(side: 12)))
+            let state: SessionRowVM.PullRequestState =
+                switch pr.state {
+                case .open: .open
+                case .merged: .merged
+                case .closed: .closed
+                }
+            chips.append(
+                ComposerChip(
+                    id: "pr", title: "\(pr.number)", symbol: nil, tint: PRBadgeView.tone(state),
+                    icon: PRIcon.image(side: 12)))
         } else if let b = row?.branch, !b.isEmpty {
             chips.append(ComposerChip(id: "branch", title: b, symbol: nil, icon: BranchIcon.sized()))
         }
         if let usage = c.contextUsage, let tokens = usage.tokens, let window = usage.window, window > 0 {
             let fraction = Double(tokens) / Double(window)
             if fraction >= 0.5 {
-                chips.append(ComposerChip(
-                    id: "context",
-                    title: "\(Int((fraction * 100).rounded()))% context",
-                    symbol: fraction >= 0.85 ? "exclamationmark.circle" : "circle.lefthalf.filled",
-                    tint: fraction >= 0.85 ? Palette.warning : nil
-                ))
+                chips.append(
+                    ComposerChip(
+                        id: "context",
+                        title: "\(Int((fraction * 100).rounded()))% context",
+                        symbol: fraction >= 0.85 ? "exclamationmark.circle" : "circle.lefthalf.filled",
+                        tint: fraction >= 0.85 ? Palette.warning : nil
+                    ))
             }
         }
         next.chips = chips
@@ -141,21 +155,27 @@ final class CoreSessionSource: SessionSource {
         } else if app?.connectivity?.state == .offline {
             next.banner = .offline
         } else if !c.room.connected, let retry = c.room.retryAtMs {
-            next.banner = .reconnecting(in: max(1, Int((retry - Int64(Date().timeIntervalSince1970 * 1000)) / 1000)))
+            next.banner = .reconnecting(in: max(1, Int((retry - Int64(Date().timeIntervalSince1970 * 1_000)) / 1_000)))
         }
         next.uploadProgress = c.transferProgress
         // Working state is shown at the transcript tail (layout engine), not here.
         if let input = c.openInput {
-            next.questions = (input.requestId, input.questions.map {
-                SessionChrome.Question(id: $0.id, header: $0.header, text: $0.question, options: $0.options, multiSelect: $0.multiSelect, prefill: $0.prefill, multiline: $0.multiline)
-            })
+            next.questions = (
+                input.requestId,
+                input.questions.map {
+                    SessionChrome.Question(
+                        id: $0.id, header: $0.header, text: $0.question, options: $0.options,
+                        multiSelect: $0.multiSelect, prefill: $0.prefill, multiline: $0.multiline)
+                }
+            )
         }
         next.queue = c.queue.map { q in
-            let gate: String? = switch q.gate {
-            case let .editing(_, _, mine)?: mine ? "Editing" : "Being edited"
-            case .reviewRequired?: "Needs review"
-            case nil: q.actionPending ? "Updating" : nil
-            }
+            let gate: String? =
+                switch q.gate {
+                case let .editing(_, _, mine)?: mine ? "Editing" : "Being edited"
+                case .reviewRequired: "Needs review"
+                case nil: q.actionPending ? "Updating" : nil
+                }
             return SessionChrome.QueuedItem(id: q.id, text: q.visibleText, thumbnail: nil, gate: gate)
         }
         next.error = c.queueError
@@ -170,7 +190,10 @@ final class CoreSessionSource: SessionSource {
     func send(text: String, images: [StagedImage], mode: DeliveryMode) -> Bool {
         do {
             if mode == .interrupt, chrome.running { try handle.interrupt() }
-            _ = try handle.send(request: SendRequest(text: text, attachments: images.map(\.outgoing), worktree: nil, busy: mode == .steer ? .steer : .queue))
+            _ = try handle.send(
+                request: SendRequest(
+                    text: text, attachments: images.map(\.outgoing), worktree: nil,
+                    busy: mode == .steer ? .steer : .queue))
             app?.forgetFreshSideChat(chatId)
             app?.noteDeliveryActivity()
             sendFailure = nil
@@ -190,7 +213,9 @@ final class CoreSessionSource: SessionSource {
     }
 
     func answer(requestId: String, answers: [(questionId: String, labels: [String])]) {
-        try? handle.respondInput(requestId: requestId, answers: answers.map { UserInputAnswer(questionId: $0.questionId, labels: $0.labels) })
+        try? handle.respondInput(
+            requestId: requestId, answers: answers.map { UserInputAnswer(questionId: $0.questionId, labels: $0.labels) }
+        )
     }
 
     func queueAction(_ id: String, _ action: QueueAction) {
@@ -238,7 +263,8 @@ final class CoreSessionSource: SessionSource {
         if let edited = text, let base {
             // Unchanged: release the row as it was (a commit would drop what
             // the composer never showed).
-            body = edited == base.visible ? nil : Self.replacingVisible(in: base.raw, visible: base.visible, with: edited)
+            body =
+                edited == base.visible ? nil : Self.replacingVisible(in: base.raw, visible: base.visible, with: edited)
         }
         _ = await handle.finishQueuedEdit(lease: lease, action: body == nil ? .cancel : .commit, text: body)
     }
@@ -265,24 +291,40 @@ final class CoreSessionSource: SessionSource {
             // The picker sheet takes the tap (see `modelPicker`).
             return nil
         case "effort":
-            return UIMenu(title: "Reasoning effort", children: [UIDeferredMenuElement { [weak self] done in
-                guard let self else { return done([]) }
-                Task { @MainActor in
-                    let models = (try? await self.client.listModels(deviceId: self.hostDevice, harness: harness)) ?? fallbackModels(harness: harness)
-                    let levels = models.first { $0.id == row.model }?.reasoningLevels ?? models.first?.reasoningLevels ?? []
-                    done(levels.map { l in
-                        UIAction(title: reasoningLabel(level: l), state: l == row.reasoning ? .on : .off) { [weak self] _ in
-                            self?.setConfig { $0.reasoning = l }
+            return UIMenu(
+                title: "Reasoning effort",
+                children: [
+                    UIDeferredMenuElement { [weak self] done in
+                        guard let self else { return done([]) }
+                        Task { @MainActor in
+                            let models =
+                                (try? await self.client.listModels(deviceId: self.hostDevice, harness: harness))
+                                ?? fallbackModels(harness: harness)
+                            let levels =
+                                models.first { $0.id == row.model }?.reasoningLevels ?? models.first?.reasoningLevels
+                                ?? []
+                            done(
+                                levels.map { l in
+                                    UIAction(title: reasoningLabel(level: l), state: l == row.reasoning ? .on : .off) {
+                                        [weak self] _ in
+                                        self?.setConfig { $0.reasoning = l }
+                                    }
+                                })
                         }
-                    })
-                }
-            }])
+                    }
+                ])
         case "pr":
             guard let url = row.pullRequest.flatMap({ URL(string: $0.url) }) else { return nil }
-            return UIMenu(title: row.pullRequest?.title ?? "", children: [
-                UIAction(title: "Open Pull Request", image: UIImage(systemName: "safari")) { _ in UIApplication.shared.open(url) },
-                UIAction(title: "Copy Link", image: UIImage(systemName: "link")) { _ in UIPasteboard.general.url = url },
-            ])
+            return UIMenu(
+                title: row.pullRequest?.title ?? "",
+                children: [
+                    UIAction(title: "Open Pull Request", image: UIImage(systemName: "safari")) { _ in
+                        UIApplication.shared.open(url)
+                    },
+                    UIAction(title: "Copy Link", image: UIImage(systemName: "link")) { _ in
+                        UIPasteboard.general.url = url
+                    },
+                ])
         default:
             return nil
         }
@@ -293,31 +335,52 @@ final class CoreSessionSource: SessionSource {
         let harness = row.harness ?? "claude-code"
         let rows: (String) async -> [ModelPickerRow] = { [weak self] id in
             guard let self else { return [] }
-            let models = (try? await self.client.listModels(deviceId: self.hostDevice, harness: id)) ?? fallbackModels(harness: id)
+            let models =
+                (try? await self.client.listModels(deviceId: self.hostDevice, harness: id))
+                ?? fallbackModels(harness: id)
             return models.map { ModelPickerRow(id: $0.id, label: $0.label, detail: $0.description) }
         }
-        var tabs = [ModelPickerTab(harness: harness, label: row.harnessLabel ?? HarnessNames.label(harness)) { await rows(harness) }]
+        var tabs = [
+            ModelPickerTab(harness: harness, label: row.harnessLabel ?? HarnessNames.label(harness)) {
+                await rows(harness)
+            }
+        ]
         if canSwitchProvider {
             tabs += providers(cloud: row.isCloud).filter { $0.id != harness }.map { h in
-                ModelPickerTab(harness: h.id, label: h.label, footer: "Your next message continues this chat with \(h.label).") { await rows(h.id) }
+                ModelPickerTab(
+                    harness: h.id, label: h.label, footer: "Your next message continues this chat with \(h.label)."
+                ) { await rows(h.id) }
             }
         }
         #if DEBUG
         // Screenshots: `-all-providers` offers every agent there is.
         if ProcessInfo.processInfo.arguments.contains("-all-providers") {
-            tabs = [tabs[0]] + ["claude-code", "codex", "opencode", "cursor", "devin", "grok", "hermes", "fx", "pi", "antigravity", "muse"]
+            tabs =
+                [tabs[0]]
+                + [
+                    "claude-code", "codex", "opencode", "cursor", "devin", "grok", "hermes", "fx", "pi", "antigravity",
+                    "muse",
+                ]
                 .filter { $0 != harness }
                 .map { id in ModelPickerTab(harness: id, label: HarnessNames.label(id)) { await rows(id) } }
         }
         #endif
-        let note: String? = canSwitchProvider ? nil
-            : turnRunning ? "You can switch provider when this turn ends."
-            : hostSwitchesProviders ? nil
-            : "This computer needs a newer Onicode to switch provider."
-        let host = row.isCloud ? (name: "Cloud", symbol: "cloud") : (name: app?.deviceName(hostDevice) ?? "This computer", symbol: "desktopcomputer")
+        let note: String? =
+            canSwitchProvider
+            ? nil
+            : turnRunning
+                ? "You can switch provider when this turn ends."
+                : hostSwitchesProviders
+                    ? nil
+                    : "This computer needs a newer Onicode to switch provider."
+        let host =
+            row.isCloud
+            ? (name: "Cloud", symbol: "cloud")
+            : (name: app?.deviceName(hostDevice) ?? "This computer", symbol: "desktopcomputer")
         // No model of its own: it runs the default, so that's the one ticked.
         let current = row.model ?? defaultModel(for: row)?.id
-        return ModelPickerViewController.sheet(tabs: tabs, harness: harness, model: current, host: host, note: note) { [weak self] pickedHarness, model in
+        return ModelPickerViewController.sheet(tabs: tabs, harness: harness, model: current, host: host, note: note) {
+            [weak self] pickedHarness, model in
             guard let self else { return }
             // Re-checked at the pick: a turn may have started since the
             // sheet opened with other providers' tabs.
@@ -343,7 +406,9 @@ final class CoreSessionSource: SessionSource {
             return CloudStore.agents.first { $0.harness == harness }.map { .cloud($0) }
         }
         guard !hostDevice.isEmpty, let app else { return nil }
-        return .device(id: hostDevice, name: app.deviceName(hostDevice), harness: harness, label: row.harnessLabel ?? HarnessNames.label(harness))
+        return .device(
+            id: hostDevice, name: app.deviceName(hostDevice), harness: harness,
+            label: row.harnessLabel ?? HarnessNames.label(harness))
     }
 
     /// The model a chat without one runs: the host's default for its
@@ -358,7 +423,8 @@ final class CoreSessionSource: SessionSource {
         if !hostDevice.isEmpty, defaultModelsLoading.insert(key).inserted {
             let device = hostDevice
             Task { @MainActor [weak self] in
-                guard let self, let first = await self.client.listModels(deviceId: device, harness: harness).first else { return }
+                guard let self, let first = await self.client.listModels(deviceId: device, harness: harness).first
+                else { return }
                 let row = ModelPickerRow(id: first.id, label: first.label, detail: first.description)
                 guard self.defaultModels[key] != row else { return }
                 self.defaultModels[key] = row
@@ -379,7 +445,11 @@ final class CoreSessionSource: SessionSource {
     }
 
     private func setConfig(_ change: (inout ChatConfig) -> Void) {
-        var config = client.sessionConfig(chatId: chatId) ?? ChatConfig(harness: app?.row(chatId)?.harness ?? "claude-code", model: nil, reasoning: nil, modelOptions: [:], sandbox: .workspaceWrite)
+        var config =
+            client.sessionConfig(chatId: chatId)
+            ?? ChatConfig(
+                harness: app?.row(chatId)?.harness ?? "claude-code", model: nil, reasoning: nil, modelOptions: [:],
+                sandbox: .workspaceWrite)
         change(&config)
         try? client.setSessionConfig(chatId: chatId, config: config)
     }
@@ -393,7 +463,7 @@ final class CoreSessionSource: SessionSource {
     func image(_ reference: String) async -> UIImage? {
         if let hit = Self.images.object(forKey: reference as NSString) { return hit }
         guard let data = try? await client.readAttachment(deviceId: hostDevice, path: reference),
-              let image = await UIImage(data: data)?.byPreparingForDisplay()
+            let image = await UIImage(data: data)?.byPreparingForDisplay()
         else { return nil }
         Self.images.setObject(image, forKey: reference as NSString)
         return image
@@ -412,7 +482,7 @@ final class CoreSessionSource: SessionSource {
         view.accessibilityIdentifier = reference
         Task.detached(priority: .userInitiated) {
             guard let data = try? await client.readAttachment(deviceId: device, path: reference),
-                  let image = UIImage(data: data)?.preparingForDisplay()
+                let image = UIImage(data: data)?.preparingForDisplay()
             else { return }
             Self.images.setObject(image, forKey: reference as NSString)
             await MainActor.run {

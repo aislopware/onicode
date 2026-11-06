@@ -1,7 +1,7 @@
 import UIKit
 
 /// Full-screen, zoomable image with drag-to-dismiss. Presented with a
-/// zoom transition from the tapped thumbnail (iOS 18+ `.zoom`), so the image
+/// zoom transition from the tapped thumbnail (`.zoom`), so the image
 /// morphs out of the transcript and back.
 final class ImageViewer: UIViewController, UIScrollViewDelegate {
     private let image: UIImage
@@ -15,7 +15,7 @@ final class ImageViewer: UIViewController, UIScrollViewDelegate {
         modalPresentationStyle = .fullScreen
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder _: NSCoder) { fatalError() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -55,7 +55,7 @@ final class ImageViewer: UIViewController, UIScrollViewDelegate {
         scroll.contentSize = scroll.bounds.size
     }
 
-    func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
+    func viewForZooming(in _: UIScrollView) -> UIView? { imageView }
 
     @objc private func toggleZoom(_ tap: UITapGestureRecognizer) {
         if scroll.zoomScale > 1 {

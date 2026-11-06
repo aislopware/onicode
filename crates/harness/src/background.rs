@@ -186,30 +186,12 @@ fn read_tail(path: &std::path::Path, max: usize) -> std::io::Result<(String, boo
 /// dropped, carriage-return rewrites (progress bars) collapsed to what the
 /// line finally said, and no trailing blank lines.
 pub fn plain_text(raw: &str) -> String {
+    let raw = crate::redact::strip_ansi(raw);
     let mut out = String::with_capacity(raw.len());
     let mut line = String::new();
     let mut chars = raw.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
-            '\u{1b}' => match chars.next() {
-                // CSI: parameters and intermediates up to a final byte.
-                Some('[') => {
-                    for c in chars.by_ref() {
-                        if ('@'..='~').contains(&c) {
-                            break;
-                        }
-                    }
-                }
-                // OSC: up to BEL or ST.
-                Some(']') => {
-                    while let Some(c) = chars.next() {
-                        if c == '\u{7}' || (c == '\u{1b}' && chars.next_if_eq(&'\\').is_some()) {
-                            break;
-                        }
-                    }
-                }
-                _ => {}
-            },
             '\r' if chars.peek() == Some(&'\n') => {}
             '\r' => line.clear(),
             '\n' => {
@@ -248,6 +230,18 @@ mod tests {
             ),
             "ok\nbuild 100%\ndone"
         );
+    }
+
+    /// A charset designation prints nothing, and an ESC inside an OSC ends
+    /// it rather than being read as its text.
+    #[test]
+    fn plain_text_reads_every_escape_as_a_terminal_does() {
+        assert_eq!(plain_text("\u{1b}(Bok\u{1b}(0"), "ok");
+        assert_eq!(
+            plain_text("\u{1b}]8;;http://x\u{1b}[1mbold\u{1b}[0m"),
+            "bold"
+        );
+        assert_eq!(plain_text("\u{1b}]0;t\u{1b}\\done\r\n"), "done");
     }
 
     #[test]

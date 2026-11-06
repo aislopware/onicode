@@ -47,7 +47,7 @@ struct ModelChoice: Equatable {
     let id: String
     let label: String
     let efforts: [String]
-    var detail: String? = nil
+    var detail: String?
 }
 
 /// "Ask anything" → a composer-first canvas. Context is set with native menus
@@ -107,12 +107,15 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
         rememberDraft()
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         // The app can be killed in the background: keep the draft first.
-        backgroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
             self?.rememberDraft()
         }
         // Tapping the canvas puts the keyboard away (the card stays open here).
@@ -123,9 +126,11 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
         view.backgroundColor = Palette.background
         title = "New Session"
         if !embedded {
-            navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in
-                self?.dismiss(animated: true)
-            })
+            navigationItem.leftBarButtonItem = UIBarButtonItem(
+                systemItem: .close,
+                primaryAction: UIAction { [weak self] _ in
+                    self?.dismiss(animated: true)
+                })
         }
 
         mark.image = BrandMarks.image(for: draft.harness, side: 34)
@@ -149,7 +154,9 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
         composer.chipsAlwaysVisible = true
         composer.attachMenu = { [weak self] in
             guard let self else { return UIMenu() }
-            return AttachmentPicker.menu(host: self, limit: 8 - self.composer.images.count) { [weak self] in self?.composer.addImages($0) }
+            return AttachmentPicker.menu(host: self, limit: 8 - self.composer.images.count) { [weak self] in
+                self?.composer.addImages($0)
+            }
         }
         // The model chip opens the picker sheet (tabs per provider).
         composer.onChipTap = { [weak self] id, _ in
@@ -164,7 +171,8 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
             self?.create(text: text, images: images) ?? false ? .sent : .kept
         }
         view.addSubview(composer)
-        heroStack.leadingAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 24).isActive = true
+        heroStack.leadingAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 24)
+            .isActive = true
         // The headline lives in the free space above the composer — from the
         // top of the page to the composer's top edge — centered there, so
         // it's always above the composer (keyboard up or down, one line or
@@ -186,7 +194,8 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
             heroStack.topAnchor.constraint(greaterThanOrEqualTo: free.topAnchor),
             heroStack.bottomAnchor.constraint(lessThanOrEqualTo: free.bottomAnchor),
             composer.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
-            composer.leadingAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            composer.leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
             composer.widthAnchor.constraint(lessThanOrEqualToConstant: 768),
             fill,
         ])
@@ -199,7 +208,8 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
         #if DEBUG
         // `-cloud-draft`: open on Cloud for the first project Cloud can run.
         if ProcessInfo.processInfo.arguments.contains("-cloud-draft"),
-           let p = app.projectOptions.first(where: { $0.isCloud || $0.githubRepo != nil }) {
+            let p = app.projectOptions.first(where: { $0.isCloud || $0.githubRepo != nil })
+        {
             draft.projectId = p.id
             draft.hostId = nil
             draft.cloud = true
@@ -234,12 +244,16 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
     /// then the host's own list.
     private func loadModels() {
         let device = runsOnCloud ? Self.cloudModelsKey : deviceId
-        guard device != modelsDevice else { return refreshChips() }
+        guard device != modelsDevice else {
+            refreshChips()
+            return
+        }
         modelsDevice = device
         let cloud = device == Self.cloudModelsKey
         if cloud {
             // Cloud runs the agents it has accounts for: Claude Code, Codex.
-            models = Self.modelCache[device] ?? Self.catalogModels().filter { AppModel.cloudHarnesses.contains($0.harness) }
+            models =
+                Self.modelCache[device] ?? Self.catalogModels().filter { AppModel.cloudHarnesses.contains($0.harness) }
             if !models.contains(where: { $0.harness == draft.harness }), let first = models.first {
                 draft.harness = first.harness
                 draft.model = nil
@@ -264,7 +278,11 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
 
     private static func catalogModels() -> [ModelChoice] {
         fallbackHarnesses().filter(\.offered).flatMap { h in
-            fallbackModels(harness: h.id).map { ModelChoice(harness: h.id, harnessLabel: h.label, id: $0.id, label: $0.label, efforts: $0.reasoningLevels, detail: $0.description) }
+            fallbackModels(harness: h.id).map {
+                ModelChoice(
+                    harness: h.id, harnessLabel: h.label, id: $0.id, label: $0.label, efforts: $0.reasoningLevels,
+                    detail: $0.description)
+            }
         }
     }
 
@@ -290,7 +308,7 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
         view.endEditing(true)
     }
 
-    func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    func gestureRecognizer(_: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         touch.view.map { !$0.isDescendant(of: composer) } ?? true
     }
 
@@ -309,15 +327,27 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
         var chips: [ComposerChip] = []
         if let p = project, runsOnCloud {
             // On its own Cloud machine, from a branch of the repository.
-            chips.append(ComposerChip(id: "project", title: p.groupName, symbol: nil, icon: ProjectTile.image(name: p.groupName, colorIndex: p.colorIndex)))
+            chips.append(
+                ComposerChip(
+                    id: "project", title: p.groupName, symbol: nil,
+                    icon: ProjectTile.image(name: p.groupName, colorIndex: p.colorIndex)))
             chips.append(ComposerChip(id: "host", title: "Cloud", symbol: "cloud"))
-            chips.append(ComposerChip(id: "branch", title: draft.branch.map { "From \($0)" } ?? "Default branch", symbol: nil, icon: BranchIcon.sized()))
+            chips.append(
+                ComposerChip(
+                    id: "branch", title: draft.branch.map { "From \($0)" } ?? "Default branch", symbol: nil,
+                    icon: BranchIcon.sized()))
         } else if let p = project {
             // The project, then the host it runs on.
-            chips.append(ComposerChip(id: "project", title: p.groupName, symbol: nil, icon: ProjectTile.image(name: p.groupName, colorIndex: p.colorIndex)))
+            chips.append(
+                ComposerChip(
+                    id: "project", title: p.groupName, symbol: nil,
+                    icon: ProjectTile.image(name: p.groupName, colorIndex: p.colorIndex)))
             chips.append(ComposerChip(id: "host", title: p.deviceName, symbol: "desktopcomputer"))
             if p.git {
-                chips.append(ComposerChip(id: "branch", title: draft.worktree ? "New worktree" : (draft.branch ?? "Current branch"), symbol: nil, icon: BranchIcon.sized()))
+                chips.append(
+                    ComposerChip(
+                        id: "branch", title: draft.worktree ? "New worktree" : (draft.branch ?? "Current branch"),
+                        symbol: nil, icon: BranchIcon.sized()))
             }
         } else {
             let host = app.hostOptions.first { $0.id == draft.hostId }
@@ -327,10 +357,18 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
         let model = draftModel
         // Never the harness name in place of a model: a model this host
         // hasn't listed still gets its catalog label.
-        let modelTitle = model?.label ?? draft.model.map { modelLabel(harness: draft.harness, model: $0) } ?? fallbackModels(harness: draft.harness).first?.label ?? HarnessNames.label(draft.harness)
-        chips.append(ComposerChip(id: "model", title: modelTitle, symbol: nil, icon: BrandMarks.image(for: draft.harness, side: 13)))
+        let modelTitle =
+            model?.label ?? draft.model.map { modelLabel(harness: draft.harness, model: $0) } ?? fallbackModels(
+                harness: draft.harness
+            ).first?.label ?? HarnessNames.label(draft.harness)
+        chips.append(
+            ComposerChip(
+                id: "model", title: modelTitle, symbol: nil, icon: BrandMarks.image(for: draft.harness, side: 13)))
         if let efforts = model?.efforts, !efforts.isEmpty {
-            chips.append(ComposerChip(id: "effort", title: (draft.effort ?? efforts[efforts.count / 2]).capitalized, symbol: "gauge.with.dots.needle.67percent"))
+            chips.append(
+                ComposerChip(
+                    id: "effort", title: (draft.effort ?? efforts[efforts.count / 2]).capitalized,
+                    symbol: "gauge.with.dots.needle.67percent"))
         }
         composer.chips = chips
         composer.chipMenus = [
@@ -355,52 +393,74 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
         }
         groups.sort { $0[0].groupName.localizedCaseInsensitiveCompare($1[0].groupName) == .orderedAscending }
         let picked = project?.groupKey
-        var sections: [UIMenuElement] = [UIMenu(options: .displayInline, children: groups.map { members in
-            let first = members[0]
-            var hosts: [String] = []
-            for m in members where !hosts.contains(m.deviceName) { hosts.append(m.deviceName) }
-            return UIAction(title: first.groupName, subtitle: hosts.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }.joined(separator: ", "), image: ProjectTile.image(name: first.groupName, colorIndex: first.colorIndex, side: 18), state: first.groupKey == picked ? .on : .off) { [weak self] _ in
-                self?.pickProject(members)
-            }
-        })]
-        sections.append(UIMenu(options: .displayInline, children: [
-            UIAction(title: "No Project…", image: UIImage(systemName: "tray"), state: draft.projectId == nil ? .on : .off) { [weak self] _ in
-                guard let self else { return }
-                self.draft.projectId = nil
-                self.draft.hostId = self.draft.hostId ?? self.app.hostOptions.first(where: \.online)?.id ?? self.app.hostOptions.first?.id
-                self.loadModels()
-            },
-            UIAction(title: "New Cloud Project…", image: UIImage(systemName: "cloud"), attributes: app.cloud.available ? [] : .hidden) { [weak self] _ in
-                guard let self else { return }
-                let vc = CloudRepoPickerViewController(app: self.app)
-                vc.onCreated = { [weak self] id in
-                    self?.draft.projectId = id
-                    self?.draft.hostId = nil
-                    self?.draft.branch = nil
-                    self?.draft.cloud = true
-                    self?.loadModels()
-                }
-                self.present(UINavigationController(rootViewController: vc), animated: true)
-            },
-            UIAction(title: "New Project…", image: UIImage(systemName: "folder.badge.plus")) { [weak self] _ in
-                guard let self else { return }
-                let vc = NewProjectViewController(app: self.app)
-                vc.onCreated = { [weak self] id in
-                    self?.draft.projectId = id
-                    self?.draft.hostId = nil
-                    self?.draft.branch = nil
-                    self?.loadModels()
-                }
-                self.present(UINavigationController(rootViewController: vc), animated: true)
-            },
-        ]))
+        var sections: [UIMenuElement] = [
+            UIMenu(
+                options: .displayInline,
+                children: groups.map { members in
+                    let first = members[0]
+                    var hosts: [String] = []
+                    for m in members where !hosts.contains(m.deviceName) { hosts.append(m.deviceName) }
+                    return UIAction(
+                        title: first.groupName,
+                        subtitle: hosts.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }.joined(
+                            separator: ", "),
+                        image: ProjectTile.image(name: first.groupName, colorIndex: first.colorIndex, side: 18),
+                        state: first.groupKey == picked ? .on : .off
+                    ) { [weak self] _ in
+                        self?.pickProject(members)
+                    }
+                })
+        ]
+        sections.append(
+            UIMenu(
+                options: .displayInline,
+                children: [
+                    UIAction(
+                        title: "No Project…", image: UIImage(systemName: "tray"),
+                        state: draft.projectId == nil ? .on : .off
+                    ) { [weak self] _ in
+                        guard let self else { return }
+                        self.draft.projectId = nil
+                        self.draft.hostId =
+                            self.draft.hostId ?? self.app.hostOptions.first(where: \.online)?.id
+                            ?? self.app.hostOptions.first?.id
+                        self.loadModels()
+                    },
+                    UIAction(
+                        title: "New Cloud Project…", image: UIImage(systemName: "cloud"),
+                        attributes: app.cloud.available ? [] : .hidden
+                    ) { [weak self] _ in
+                        guard let self else { return }
+                        let vc = CloudRepoPickerViewController(app: self.app)
+                        vc.onCreated = { [weak self] id in
+                            self?.draft.projectId = id
+                            self?.draft.hostId = nil
+                            self?.draft.branch = nil
+                            self?.draft.cloud = true
+                            self?.loadModels()
+                        }
+                        self.present(UINavigationController(rootViewController: vc), animated: true)
+                    },
+                    UIAction(title: "New Project…", image: UIImage(systemName: "folder.badge.plus")) { [weak self] _ in
+                        guard let self else { return }
+                        let vc = NewProjectViewController(app: self.app)
+                        vc.onCreated = { [weak self] id in
+                            self?.draft.projectId = id
+                            self?.draft.hostId = nil
+                            self?.draft.branch = nil
+                            self?.loadModels()
+                        }
+                        self.present(UINavigationController(rootViewController: vc), animated: true)
+                    },
+                ]))
         return UIMenu(title: "Project", children: sections)
     }
 
     /// Keep the host when it has a checkout of the project, else the first
     /// reachable one.
     private func pickProject(_ members: [ProjectOption]) {
-        let pick = members.first { $0.id == draft.projectId }
+        let pick =
+            members.first { $0.id == draft.projectId }
             ?? members.first { $0.device == deviceId }
             ?? members.first(where: \.online)
             ?? members[0]
@@ -431,65 +491,99 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
         if !checkouts.isEmpty || project != nil {
             var items: [UIMenuElement] = checkouts.map { p in
                 let shared = checkouts.filter { $0.device == p.device }.count > 1
-                return UIAction(title: p.deviceName, subtitle: shared ? p.path : (p.online ? "Online" : "Offline"), image: UIImage(systemName: "desktopcomputer"), state: p.id == draft.projectId && !runsOnCloud ? .on : .off) { [weak self] _ in
+                return UIAction(
+                    title: p.deviceName, subtitle: shared ? p.path : (p.online ? "Online" : "Offline"),
+                    image: UIImage(systemName: "desktopcomputer"),
+                    state: p.id == draft.projectId && !runsOnCloud ? .on : .off
+                ) { [weak self] _ in
                     self?.pickCheckout(p)
                 }
             }
             if cloudOffered {
                 let credits = app.cloud.credits.map { "\(CloudUI.credits($0)) credits left" } ?? "Its own machine"
-                items.append(UIMenu(options: .displayInline, children: [
-                    UIAction(title: "Cloud", subtitle: credits, image: UIImage(systemName: "cloud"), state: runsOnCloud ? .on : .off) { [weak self] _ in
-                        self?.pickCloud()
-                    },
-                ]))
+                items.append(
+                    UIMenu(
+                        options: .displayInline,
+                        children: [
+                            UIAction(
+                                title: "Cloud", subtitle: credits, image: UIImage(systemName: "cloud"),
+                                state: runsOnCloud ? .on : .off
+                            ) { [weak self] _ in
+                                self?.pickCloud()
+                            }
+                        ]))
             }
             return UIMenu(title: "Run on", children: items)
         }
-        return UIMenu(title: "Run on", children: app.hostOptions.map { h in
-            UIAction(title: h.name, subtitle: h.online ? "Online" : "Offline", image: UIImage(systemName: "desktopcomputer"), state: h.id == draft.hostId ? .on : .off) { [weak self] _ in
-                self?.draft.hostId = h.id
-                self?.loadModels()
-            }
-        })
+        return UIMenu(
+            title: "Run on",
+            children: app.hostOptions.map { h in
+                UIAction(
+                    title: h.name, subtitle: h.online ? "Online" : "Offline",
+                    image: UIImage(systemName: "desktopcomputer"), state: h.id == draft.hostId ? .on : .off
+                ) { [weak self] _ in
+                    self?.draft.hostId = h.id
+                    self?.loadModels()
+                }
+            })
     }
 
     private func branchMenu() -> UIMenu {
         if runsOnCloud, let repo = project?.githubRepo {
             // The machine clones the repository: pick the branch it starts from.
-            return UIMenu(title: "Start from", children: [UIDeferredMenuElement { [weak self] done in
-                guard let self else { return done([]) }
-                Task { @MainActor in
-                    let branches = await self.app.cloudBranches(repo: repo)
-                    done([UIAction(title: "Default branch", state: self.draft.branch == nil ? .on : .off) { [weak self] _ in
-                        self?.draft.branch = nil
-                        self?.refreshChips()
-                    }] + branches.map { b in
-                        UIAction(title: b, state: b == self.draft.branch ? .on : .off) { [weak self] _ in
-                            self?.draft.branch = b
-                            self?.refreshChips()
+            return UIMenu(
+                title: "Start from",
+                children: [
+                    UIDeferredMenuElement { [weak self] done in
+                        guard let self else { return done([]) }
+                        Task { @MainActor in
+                            let branches = await self.app.cloudBranches(repo: repo)
+                            done(
+                                [
+                                    UIAction(title: "Default branch", state: self.draft.branch == nil ? .on : .off) {
+                                        [weak self] _ in
+                                        self?.draft.branch = nil
+                                        self?.refreshChips()
+                                    }
+                                ]
+                                    + branches.map { b in
+                                        UIAction(title: b, state: b == self.draft.branch ? .on : .off) {
+                                            [weak self] _ in
+                                            self?.draft.branch = b
+                                            self?.refreshChips()
+                                        }
+                                    })
                         }
-                    })
-                }
-            }])
+                    }
+                ])
         }
-        return UIMenu(title: "Checkout", children: [
-            UIAction(title: "New worktree", state: draft.worktree ? .on : .off) { [weak self] _ in
-                self?.draft.worktree.toggle()
-                self?.refreshChips()
-            },
-            UIMenu(title: "Branch", options: .displayInline, children: [UIDeferredMenuElement { [weak self] done in
-                guard let self, let p = self.project else { return done([]) }
-                Task { @MainActor in
-                    let refs = await self.app.refs(projectId: p.id)
-                    done(refs.map { ref in
-                        UIAction(title: ref, state: ref == (self.draft.branch ?? refs.first) ? .on : .off) { [weak self] _ in
-                            self?.draft.branch = ref
-                            self?.refreshChips()
+        return UIMenu(
+            title: "Checkout",
+            children: [
+                UIAction(title: "New worktree", state: draft.worktree ? .on : .off) { [weak self] _ in
+                    self?.draft.worktree.toggle()
+                    self?.refreshChips()
+                },
+                UIMenu(
+                    title: "Branch", options: .displayInline,
+                    children: [
+                        UIDeferredMenuElement { [weak self] done in
+                            guard let self, let p = self.project else { return done([]) }
+                            Task { @MainActor in
+                                let refs = await self.app.refs(projectId: p.id)
+                                done(
+                                    refs.map { ref in
+                                        UIAction(
+                                            title: ref, state: ref == (self.draft.branch ?? refs.first) ? .on : .off
+                                        ) { [weak self] _ in
+                                            self?.draft.branch = ref
+                                            self?.refreshChips()
+                                        }
+                                    })
+                            }
                         }
-                    })
-                }
-            }]),
-        ])
+                    ]),
+            ])
     }
 
     /// A tab per provider the target runs (the draft's first), each listing
@@ -503,8 +597,10 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
             let rows = choices.map { ModelPickerRow(id: $0.id, label: $0.label, detail: $0.detail) }
             return ModelPickerTab(harness: h, label: first.harnessLabel) { rows }
         }
-        let host = runsOnCloud ? (name: "Cloud", symbol: "cloud") : (name: app.deviceName(deviceId), symbol: "desktopcomputer")
-        return ModelPickerViewController.sheet(tabs: tabs, harness: draft.harness, model: draft.model, host: host) { [weak self] harness, model in
+        let host =
+            runsOnCloud ? (name: "Cloud", symbol: "cloud") : (name: app.deviceName(deviceId), symbol: "desktopcomputer")
+        return ModelPickerViewController.sheet(tabs: tabs, harness: draft.harness, model: draft.model, host: host) {
+            [weak self] harness, model in
             guard let self else { return }
             if harness != self.draft.harness { self.draft.effort = nil }
             self.draft.harness = harness
@@ -524,12 +620,14 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
 
     private func effortMenu() -> UIMenu {
         let model = draftModel
-        return UIMenu(title: "Reasoning effort", children: (model?.efforts ?? []).map { e in
-            UIAction(title: e.capitalized, state: e == draft.effort ? .on : .off) { [weak self] _ in
-                self?.draft.effort = e
-                self?.refreshChips()
-            }
-        })
+        return UIMenu(
+            title: "Reasoning effort",
+            children: (model?.efforts ?? []).map { e in
+                UIAction(title: e.capitalized, state: e == draft.effort ? .on : .off) { [weak self] _ in
+                    self?.draft.effort = e
+                    self?.refreshChips()
+                }
+            })
     }
 
     /// False when the session couldn't be created (the prompt stays put).
@@ -540,7 +638,9 @@ final class NewSessionViewController: UIViewController, UIGestureRecognizerDeleg
             return false
         }
         guard let chatId = app.createSession(draft: draft, text: text, images: images) else {
-            let alert = UIAlertController(title: "Couldn't start the session", message: "Choose a project or a host that can run it.", preferredStyle: .alert)
+            let alert = UIAlertController(
+                title: "Couldn't start the session", message: "Choose a project or a host that can run it.",
+                preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default))
             present(alert, animated: true)
             return false
@@ -562,7 +662,8 @@ extension NewSessionViewController {
     fileprivate func createOnCloud(text: String, images: [StagedImage]) {
         guard !cloudStarting else { return }
         if app.cloud.outOfCredits {
-            return CloudRoutes.showOutOfCredits(app: app, from: self, above: composer)
+            CloudRoutes.showOutOfCredits(app: app, from: self, above: composer)
+            return
         }
         cloudStarting = true
         composer.isUserInteractionEnabled = false
@@ -584,10 +685,11 @@ extension NewSessionViewController {
                 self.composer.text = ""
                 self.composer.images = []
                 self.onCreatedHandler(chatId, handoff)
-            } catch where CloudRoutes.isOutOfCredits(error) {
+            } catch  where CloudRoutes.isOutOfCredits(error) {
                 CloudRoutes.showOutOfCredits(app: self.app, from: self, above: self.composer)
             } catch {
-                let alert = UIAlertController(title: "Couldn't start on Cloud", message: CloudStore.message(error), preferredStyle: .alert)
+                let alert = UIAlertController(
+                    title: "Couldn't start on Cloud", message: CloudStore.message(error), preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: "OK", style: .default))
                 self.present(alert, animated: true)
             }

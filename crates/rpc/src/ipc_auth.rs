@@ -92,10 +92,6 @@ pub fn issue_token(data_dir: &Path) -> io::Result<String> {
 /// exclusively (never follows a planted symlink) with mode 0600, fsynced, then
 /// renamed over the target. A reader sees the old token or the new one, never
 /// a torn write.
-///
-/// Windows has no mode bits: the file inherits the ACL of the data dir
-/// (`%LOCALAPPDATA%\Onicode` — owner, SYSTEM and Administrators only by
-/// default), the same protection `session.json` relies on there.
 pub fn write_token(path: &Path, token: &str) -> io::Result<()> {
     let dir = path
         .parent()
@@ -113,20 +109,14 @@ pub fn write_token(path: &Path, token: &str) -> io::Result<()> {
 
 /// Create `path` (which must not exist) owner-only and durably write `token`.
 fn write_exclusive(path: &Path, token: &str) -> io::Result<()> {
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(path)?;
-    #[cfg(unix)]
-    {
-        // umask can only clear bits, but be explicit about the contract.
-        use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    }
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?;
+    // umask can only clear bits, but be explicit about the contract.
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     file.write_all(token.as_bytes())?;
     file.write_all(b"\n")?;
     file.sync_all()
@@ -266,7 +256,6 @@ mod tests {
         let second = issue_token(dir.path()).unwrap();
         assert_ne!(first, second, "every engine start rotates the token");
         assert_eq!(read_token(&token_path(dir.path())).unwrap(), Some(second));
-        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let mode = std::fs::metadata(token_path(dir.path()))
@@ -283,7 +272,6 @@ mod tests {
         assert_eq!(names, vec![TOKEN_FILE_NAME.to_string()]);
     }
 
-    #[cfg(unix)]
     #[test]
     fn issue_replaces_a_planted_symlink_instead_of_writing_through_it() {
         let dir = tempfile::tempdir().unwrap();

@@ -78,18 +78,12 @@ impl Render for BackgroundAdjustmentZoomDrag {
 
 const BACKGROUND_ZOOM_STEP: f32 = 0.1;
 
-fn background_pinch_factor(factor: f32, delta: f32, relative_delta: bool) -> f32 {
+fn background_pinch_factor(factor: f32, delta: f32) -> f32 {
     if !delta.is_finite() {
         return factor;
     }
-    // Direct Manipulation reports a ratio to the last scale; the other
-    // native backends report an additive change to the gesture's scale.
-    let next = if relative_delta {
-        factor * (1.0 + delta)
-    } else {
-        factor + delta
-    };
-    next.max(0.001)
+    // The native backends report an additive change to the gesture's scale.
+    (factor + delta).max(0.001)
 }
 
 fn background_zoom_fraction(zoom: f32) -> f32 {
@@ -2830,8 +2824,7 @@ impl AppearancePage {
                 }
                 let current_zoom = dialog.draft.zoom;
                 let (start, factor) = dialog.pinch.get_or_insert((current_zoom, 1.0));
-                *factor =
-                    background_pinch_factor(*factor, event.delta, cfg!(target_os = "windows"));
+                *factor = background_pinch_factor(*factor, event.delta);
                 let zoom = *start * *factor;
                 this.zoom_background_around(zoom, Some(event.position), cx);
                 cx.stop_propagation();
@@ -4446,31 +4439,22 @@ mod tests {
 
     #[test]
     fn background_pinch_preserves_native_scale_and_round_trips() {
-        for relative_delta in [false, true] {
-            let mut previous = 1.0;
-            let mut factor = 1.0;
-            for scale in [1.5, 2.0, 1.5, 1.0] {
-                let delta = if relative_delta {
-                    scale / previous - 1.0
-                } else {
-                    scale - previous
-                };
-                factor = background_pinch_factor(factor, delta, relative_delta);
-                assert!((factor - scale).abs() < 0.00001);
-                previous = scale;
-            }
-            assert!((factor - 1.0).abs() < 0.00001);
+        let mut previous = 1.0;
+        let mut factor = 1.0;
+        for scale in [1.5, 2.0, 1.5, 1.0] {
+            factor = background_pinch_factor(factor, scale - previous);
+            assert!((factor - scale).abs() < 0.00001);
+            previous = scale;
         }
+        assert!((factor - 1.0).abs() < 0.00001);
     }
 
     #[test]
     fn background_pinch_clamps_degenerate_scales_and_ignores_invalid_deltas() {
-        for relative_delta in [false, true] {
-            assert_eq!(background_pinch_factor(1.0, -1.0, relative_delta), 0.001);
-            assert_eq!(background_pinch_factor(1.0, -2.0, relative_delta), 0.001);
-            for delta in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
-                assert_eq!(background_pinch_factor(1.5, delta, relative_delta), 1.5);
-            }
+        assert_eq!(background_pinch_factor(1.0, -1.0), 0.001);
+        assert_eq!(background_pinch_factor(1.0, -2.0), 0.001);
+        for delta in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert_eq!(background_pinch_factor(1.5, delta), 1.5);
         }
     }
 

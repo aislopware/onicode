@@ -10,16 +10,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 /// The app binary's subcommand that runs the background engine, for
-/// installs without a separate engine executable (Windows; development runs
-/// that only built the app).
+/// installs without a separate engine executable (development runs that only
+/// built the app).
 pub const ENGINE_SUBCOMMAND: &str = "engine";
 
 /// The separate engine executable's name next to the app's.
 #[cfg(target_os = "macos")]
 pub const ENGINE_EXECUTABLES: &[&str] = &["Onicode Engine", "onicode-engine"];
-#[cfg(windows)]
-pub const ENGINE_EXECUTABLES: &[&str] = &["onicode-engine.exe"];
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(target_os = "macos"))]
 pub const ENGINE_EXECUTABLES: &[&str] = &["onicode-engine"];
 
 /// Set on the background engine's environment by the app that started it.
@@ -105,39 +103,16 @@ pub fn spawn_detached(command: &mut Command) -> std::io::Result<Child> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        // A session of its own: no controlling terminal to hang up on it.
-        unsafe {
-            command.pre_exec(|| {
-                if libc::setsid() == -1 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-        command.spawn()
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt as _;
-        use windows_sys::Win32::System::Threading::{
-            CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
-        };
-        // Leave the app's job object too (a launcher's kill-on-close job
-        // would take the engine down with the app) — when the job allows it.
-        let detached = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP;
-        command.creation_flags(detached | CREATE_BREAKAWAY_FROM_JOB);
-        match command.spawn() {
-            Ok(child) => Ok(child),
-            Err(_) => {
-                command.creation_flags(detached);
-                command.spawn()
+    use std::os::unix::process::CommandExt as _;
+    // A session of its own: no controlling terminal to hang up on it.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
             }
-        }
+            Ok(())
+        });
     }
-    #[cfg(not(any(unix, windows)))]
     command.spawn()
 }
 
@@ -153,12 +128,10 @@ pub fn reap(mut child: Child) {
 
 /// Become the engine helper beside the app at `app_exe`, given `args` (this
 /// process's own, `onicode headless`'s `headless` and on): the standard helper
-/// pattern for an app whose interface binary doesn't link the engine. On
-/// Unix the helper replaces this process (`exec`), so the pid, signals,
-/// standard streams and exit status are the helper's own — a service
-/// manager watching `onicode headless` watches the engine. Elsewhere it runs
-/// as a child with the same streams, and its exit status is passed on.
-/// Returns only when it couldn't start.
+/// pattern for an app whose interface binary doesn't link the engine. The
+/// helper replaces this process (`exec`), so the pid, signals, standard
+/// streams and exit status are the helper's own — a service manager watching
+/// `onicode headless` watches the engine. Returns only when it couldn't start.
 pub fn exec_helper(app_exe: &Path, args: impl IntoIterator<Item = OsString>) -> std::io::Error {
     let Some(helper) = engine_executable(app_exe) else {
         return std::io::Error::new(
@@ -172,18 +145,8 @@ pub fn exec_helper(app_exe: &Path, args: impl IntoIterator<Item = OsString>) -> 
     };
     let mut command = Command::new(&helper);
     command.args(args);
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        command.exec()
-    }
-    #[cfg(not(unix))]
-    {
-        match command.status() {
-            Ok(status) => std::process::exit(status.code().unwrap_or(1)),
-            Err(error) => error,
-        }
-    }
+    use std::os::unix::process::CommandExt as _;
+    command.exec()
 }
 
 #[cfg(test)]

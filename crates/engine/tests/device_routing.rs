@@ -518,7 +518,7 @@ async fn checkout_change_request_stream_matches_locally_and_through_device_routi
 }
 
 /// Clients watch a chat's `sourceContext.repoRoot`. It is canonical, so it can
-/// differ from the chat's cwd (always on Windows, where it is `\\?\C:\…`). A
+/// differ from the chat's cwd (a symlinked checkout). A
 /// chat outside every project must still resolve, without a space scan, and
 /// a root that is gone must be rejected rather than resolved.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -997,7 +997,6 @@ async fn target_device_id_routes_over_the_relay() {
             worktree: None,
             resume: None,
             env: Default::default(),
-            extra_mcp: Vec::new(),
         }),
         message_id: "m-a-1".into(),
     })

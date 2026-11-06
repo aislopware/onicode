@@ -28,7 +28,8 @@ final class VoiceViewController: UIViewController, UICollectionViewDelegate {
         title = "Voice"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -56,7 +57,8 @@ final class VoiceViewController: UIViewController, UICollectionViewDelegate {
             cell.backgroundConfiguration = .clear()
         }
         let cell = UICollectionView.CellRegistration<UICollectionViewListCell, Row> { [weak self] cell, _, row in
-            var c = row.id == "style" ? UIListContentConfiguration.valueCell() : UIListContentConfiguration.subtitleCell()
+            var c =
+                row.id == "style" ? UIListContentConfiguration.valueCell() : UIListContentConfiguration.subtitleCell()
             c.text = row.title
             c.textProperties.font = Fonts.ui(.sansMedium, 16)
             c.textProperties.color = row.enabled ? Palette.text : Palette.tertiary
@@ -86,12 +88,16 @@ final class VoiceViewController: UIViewController, UICollectionViewDelegate {
             cell.accessibilityIdentifier = "voice-\(row.id)"
             cell.accessibilityTraits = row.selected ? [.button, .selected] : row.enabled ? .button : .notEnabled
         }
-        let header = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(elementKind: UICollectionView.elementKindSectionHeader) { view, _, path in
+        let header = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
+            elementKind: UICollectionView.elementKindSectionHeader
+        ) { view, _, path in
             var c = UIListContentConfiguration.groupedHeader()
             c.text = Self.header(Section(rawValue: path.section))
             view.contentConfiguration = c
         }
-        let footer = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(elementKind: UICollectionView.elementKindSectionFooter) { [weak self] view, _, path in
+        let footer = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
+            elementKind: UICollectionView.elementKindSectionFooter
+        ) { [weak self] view, _, path in
             var c = UIListContentConfiguration.groupedFooter()
             c.text = self?.footer(Section(rawValue: path.section))
             c.textProperties.font = Fonts.ui(.sans, 13)
@@ -125,9 +131,10 @@ final class VoiceViewController: UIViewController, UICollectionViewDelegate {
 
     private func footer(_ section: Section?) -> String? {
         switch section {
-        case .hosts: app.voice.live
-            ? "End the call to change devices."
-            : "Audio stays on this iPhone. Codex, its sign-in and its tools run on the device you choose."
+        case .hosts:
+            app.voice.live
+                ? "End the call to change devices."
+                : "Audio stays on this iPhone. Codex, its sign-in and its tools run on the device you choose."
         case .voice: "Applies to your next call."
         default: nil
         }
@@ -140,7 +147,8 @@ final class VoiceViewController: UIViewController, UICollectionViewDelegate {
         let voice = app.voice
         let devices = self.devices
         // Level frames during a call must not rebuild the list.
-        let signature = "\(voice.live)|\(voice.selectedHost ?? "")|\(voice.selectedStyle ?? "")|\(voice.styles)|"
+        let signature =
+            "\(voice.live)|\(voice.selectedHost ?? "")|\(voice.selectedStyle ?? "")|\(voice.styles)|"
             + devices.map { "\($0.id):\($0.online):\($0.capabilities)" }.joined()
         guard signature != self.signature else { return }
         self.signature = signature
@@ -150,28 +158,45 @@ final class VoiceViewController: UIViewController, UICollectionViewDelegate {
         s.appendItems([Row(id: "hero", title: "")], toSection: .hero)
         let chosen = voice.startHost?.id
         if devices.isEmpty {
-            s.appendItems([Row(id: "no-hosts", title: "No Mac or server yet", subtitle: "Open Onicode on your Mac or server with remote voice enabled.", symbol: "desktopcomputer", enabled: false)], toSection: .hosts)
+            s.appendItems(
+                [
+                    Row(
+                        id: "no-hosts", title: "No Mac or server yet",
+                        subtitle: "Open Onicode on your Mac or server with remote voice enabled.",
+                        symbol: "desktopcomputer", enabled: false)
+                ], toSection: .hosts)
         } else {
-            s.appendItems(devices.map { device in
-                let compatible = RemoteVoiceController.compatible(device)
-                let ready = device.online && compatible
-                return Row(
-                    id: "host-\(device.id)",
-                    title: device.name,
-                    subtitle: !device.online ? "Offline" : !compatible ? "Update Onicode and enable remote voice" : "Ready",
-                    symbol: Self.symbol(for: device.platform),
-                    selected: device.id == chosen,
-                    enabled: ready && !voice.live,
-                    status: ready ? Palette.success : Palette.tertiary
-                )
-            }, toSection: .hosts)
+            s.appendItems(
+                devices.map { device in
+                    let compatible = RemoteVoiceController.compatible(device)
+                    let ready = device.online && compatible
+                    return Row(
+                        id: "host-\(device.id)",
+                        title: device.name,
+                        subtitle: !device.online
+                            ? "Offline" : !compatible ? "Update Onicode and enable remote voice" : "Ready",
+                        symbol: Self.symbol(for: device.platform),
+                        selected: device.id == chosen,
+                        enabled: ready && !voice.live,
+                        status: ready ? Palette.success : Palette.tertiary
+                    )
+                }, toSection: .hosts)
         }
         s.appendItems([Row(id: "style", title: "Voice", symbol: "person.wave.2")], toSection: .voice)
-        s.appendItems([
-            Row(id: "tip-ear", title: "Hold it to your ear", subtitle: "The screen turns off and Codex plays through the earpiece.", symbol: "ear", enabled: true),
-            Row(id: "tip-lock", title: "Lock your iPhone", subtitle: "The call keeps going. An incoming call ends it.", symbol: "lock", enabled: true),
-            Row(id: "tip-bar", title: "Start from the bottom bar", subtitle: "Tap the waveform; hold it to switch device or voice.", symbol: "waveform", enabled: true),
-        ], toSection: .call)
+        s.appendItems(
+            [
+                Row(
+                    id: "tip-ear", title: "Hold it to your ear",
+                    subtitle: "The screen turns off and Codex plays through the earpiece.", symbol: "ear", enabled: true
+                ),
+                Row(
+                    id: "tip-lock", title: "Lock your iPhone",
+                    subtitle: "The call keeps going. An incoming call ends it.", symbol: "lock", enabled: true),
+                Row(
+                    id: "tip-bar", title: "Start from the bottom bar",
+                    subtitle: "Tap the waveform; hold it to switch device or voice.",
+                    symbol: "waveform", enabled: true),
+            ], toSection: .call)
         dataSource.apply(s, animatingDifferences: view.window != nil)
     }
 
@@ -183,7 +208,7 @@ final class VoiceViewController: UIViewController, UICollectionViewDelegate {
         }
     }
 
-    func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt path: IndexPath) -> Bool {
+    func collectionView(_: UICollectionView, shouldHighlightItemAt path: IndexPath) -> Bool {
         guard let row = dataSource.itemIdentifier(for: path) else { return false }
         return (row.id.hasPrefix("host-") && row.enabled) || row.id == "style"
     }
@@ -201,12 +226,15 @@ final class VoiceViewController: UIViewController, UICollectionViewDelegate {
     private func styleMenu() -> UIMenu {
         let voice = app.voice
         let styles: [String?] = [nil] + voice.styles.map(Optional.some)
-        return UIMenu(options: .singleSelection, children: styles.map { style in
-            UIAction(title: style?.capitalized ?? "Codex default", state: style == voice.selectedStyle ? .on : .off) { _ in
-                voice.selectedStyle = style
-                UISelectionFeedbackGenerator().selectionChanged()
-            }
-        })
+        return UIMenu(
+            options: .singleSelection,
+            children: styles.map { style in
+                UIAction(title: style?.capitalized ?? "Codex default", state: style == voice.selectedStyle ? .on : .off)
+                { _ in
+                    voice.selectedStyle = style
+                    UISelectionFeedbackGenerator().selectionChanged()
+                }
+            })
     }
 }
 
@@ -247,5 +275,6 @@ private final class VoiceHeroCell: UICollectionViewCell {
         accessibilityLabel = "Talk with Codex. " + (detail.text ?? "")
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 }

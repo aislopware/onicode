@@ -67,21 +67,3 @@ installed builds can update into Onicode. CI runs this on tags
    xcrun stapler staple Onicode.app
    ```
 5. Ship as a `.dmg` (`hdiutil create -volname Onicode -srcfolder Onicode.app -ov -format UDZO Onicode.dmg`).
-
-## Windows
-
-```powershell
-./scripts/package-windows.ps1 -ReleasesUrl https://github.com/zeronsh/onicode/releases/latest/download
-```
-
-Produces, under `target/package/`:
-
-- `onicode-<version>-windows-<arch>-setup.exe` — the per-user installer built
-  from `packaging/windows/onicode.iss` with Inno Setup 6
-- `onicode-<version>-windows-<arch>.zip` — the portable package
-- `onicode-<version>-windows-<arch>.exe` — the bare executable the in-app
-  updater downloads
-
-The installer and the zip both carry `onicode-update.json`, the marker that lets
-the app update itself in place. CI runs `scripts/test-windows-installer.ps1`
-against the setup on every Windows build.

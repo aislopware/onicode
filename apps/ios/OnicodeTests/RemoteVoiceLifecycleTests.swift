@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Onicode
 
 final class RemoteVoiceLifecycleTests: XCTestCase {
@@ -31,8 +32,14 @@ final class RemoteVoiceLifecycleTests: XCTestCase {
         peer.close()
         peer.close()
         XCTAssertThrowsError(try peer.setMuted(false))
-        do { _ = try await peer.offer(); XCTFail("Closed peer cannot negotiate") } catch {}
-        do { try await peer.apply(answer: "late answer"); XCTFail("Closed peer cannot apply answer") } catch {}
+        do {
+            _ = try await peer.offer()
+            XCTFail("Closed peer cannot negotiate")
+        } catch {}
+        do {
+            try await peer.apply(answer: "late answer")
+            XCTFail("Closed peer cannot apply answer")
+        } catch {}
     }
 
     @MainActor
@@ -65,7 +72,10 @@ final class RemoteVoiceLifecycleTests: XCTestCase {
 
     @MainActor
     func testEveryEndReasonExplainsItself() {
-        for reason: VoiceEndReason in [.microphoneDenied, .audioUnavailable, .signInRequired, .usageUnavailable, .busy, .hostUnavailable, .hostIncompatible, .connectionLost] {
+        for reason: VoiceEndReason in [
+            .microphoneDenied, .audioUnavailable, .signInRequired, .usageUnavailable, .busy, .hostUnavailable,
+            .hostIncompatible, .connectionLost,
+        ] {
             XCTAssertFalse(RemoteVoiceController.message(for: reason, host: "Fedora").isEmpty)
         }
     }

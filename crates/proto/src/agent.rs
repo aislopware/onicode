@@ -595,14 +595,6 @@ pub struct RunRequest {
     /// no Onicode tools; title runs never carry it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp: Option<McpServer>,
-    /// Native MCP servers from the host's plugins (those `on` with `native`
-    /// allowed and an `mcp` entry), each run from the plugin's verified
-    /// snapshot. Drivers add them next to [`Self::mcp`]; a driver that can
-    /// take only one server skips them. Stamped by the HOST engine for local
-    /// runs, like `mcp`: a host must replace whatever a sender put here, never
-    /// run it. Additive + serde-defaulted for wire compat.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub extra_mcp: Vec<McpServer>,
     /// Host-resolved environment for the spawned agent process (credential
     /// broker secrets on a Cloud device: `CODEX_HOME`, `GH_TOKEN`,
     /// `ANTHROPIC_API_KEY`, …). Filled by the HOST right before the request
@@ -635,7 +627,6 @@ impl std::fmt::Debug for RunRequest {
             worktree,
             mcp,
             env,
-            extra_mcp,
         } = self;
         f.debug_struct("RunRequest")
             .field("prompt", prompt)
@@ -652,7 +643,6 @@ impl std::fmt::Debug for RunRequest {
             .field("attachments", attachments)
             .field("worktree", worktree)
             .field("mcp", mcp)
-            .field("extra_mcp", extra_mcp)
             .field("env", &env.keys().collect::<Vec<_>>())
             .finish()
     }
@@ -999,6 +989,32 @@ pub struct UserInputQuestion {
     pub prefill: Option<String>,
     #[serde(default)]
     pub multiline: bool,
+    /// Set when the question is an agent's permission ask that carries
+    /// rules for how it may be answered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<ApprovalContext>,
+}
+
+/// How an approval question may be answered, as the agent asked.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalContext {
+    /// Approving must take a deliberate act: no option is pre-selected and
+    /// no single keystroke approves (its decline option comes first).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub default_to_no: bool,
+    /// No one-tap answer: the person answers on the card itself, never
+    /// from a shortcut, a notification action or an automatic rule.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub requires_user_interaction: bool,
+}
+
+impl ApprovalContext {
+    /// Whether a quick answer (a digit, a single tap that submits at once)
+    /// is allowed.
+    pub fn allows_quick_answer(&self) -> bool {
+        !self.default_to_no && !self.requires_user_interaction
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

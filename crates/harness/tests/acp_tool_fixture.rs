@@ -1,7 +1,6 @@
 //! `tests/fixtures/fake-acp-tool.py`: a fake ACP agent whose turn starts the
 //! MCP servers it was handed in `session/new` and calls one tool. Checked
-//! here against a tiny stub MCP server, with Onicode's own server in `mcp` and
-//! a plugin's in `extra_mcp`.
+//! here against a tiny stub MCP server standing in for Onicode's own (`mcp`).
 
 #![cfg(unix)]
 
@@ -91,7 +90,6 @@ fn request(prompt: &str, cwd: &Path, env: &[(&str, &str)]) -> RunRequest {
         attachments: Vec::new(),
         worktree: None,
         mcp: None,
-        extra_mcp: Vec::new(),
         env: env
             .iter()
             .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
@@ -142,7 +140,7 @@ async fn reply(req: RunRequest) -> String {
 }
 
 #[tokio::test]
-async fn calls_the_named_tool_on_the_server_that_lists_it() {
+async fn calls_the_named_tool_on_onicode_s_server() {
     let dir = tempfile::tempdir().unwrap();
     let stub = stub(dir.path());
     let mut req = request(
@@ -153,13 +151,11 @@ async fn calls_the_named_tool_on_the_server_that_lists_it() {
             ("FAKE_ACP_CALL_ARGS", r#"{"text":"a b c"}"#),
         ],
     );
-    // Onicode's own server does not list it; the plugin's does.
-    req.mcp = Some(server("onicode", &stub, "whoami"));
-    req.extra_mcp = vec![server("plugin-focus", &stub, "focus__count_words")];
+    req.mcp = Some(server("onicode", &stub, "focus__count_words"));
     let text = reply(req).await;
     let result: serde_json::Value = serde_json::from_str(&text).expect(&text);
     assert_eq!(result["isError"], false);
-    assert_eq!(result["structuredContent"]["label"], "plugin-focus");
+    assert_eq!(result["structuredContent"]["label"], "onicode");
     assert_eq!(
         result["structuredContent"]["args"],
         serde_json::json!({ "text": "a b c" })

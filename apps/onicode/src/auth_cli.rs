@@ -292,7 +292,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn login_and_logout_lock_out_a_running_engine() {
         let dir = tempfile::tempdir().unwrap();

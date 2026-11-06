@@ -33,12 +33,7 @@ impl NativeHost {
         for (k, v) in std::env::vars_os() {
             if matches!(
                 k.to_string_lossy().to_ascii_uppercase().as_str(),
-                "SYSTEMROOT"
-                    | "WINDIR"
-                    | "HOME"
-                    | "USERPROFILE"
-                    | "LOCALAPPDATA"
-                    | "APPDATA"
+                "HOME"
                     | "TEMP"
                     | "TMP"
                     | "TMPDIR"
@@ -67,12 +62,9 @@ impl NativeHost {
         ] {
             cmd.env(k, "");
         }
-        cmd.env(
-            "GST_REGISTRY",
-            if cfg!(windows) { "NUL" } else { "/dev/null" },
-        )
-        .env("GST_REGISTRY_UPDATE", "no")
-        .env("GST_REGISTRY_FORK", "no");
+        cmd.env("GST_REGISTRY", "/dev/null")
+            .env("GST_REGISTRY_UPDATE", "no")
+            .env("GST_REGISTRY_FORK", "no");
         #[cfg(target_os = "linux")]
         for directory in [
             "/usr/lib/x86_64-linux-gnu/alsa-lib",
@@ -276,17 +268,11 @@ fn runtime_target() -> Result<&'static str, VoiceRejection> {
         ("macos", "x86_64") => Ok("x86_64-apple-darwin"),
         ("linux", "x86_64") => Ok("x86_64-unknown-linux-gnu"),
         ("linux", "aarch64") => Ok("aarch64-unknown-linux-gnu"),
-        ("windows", "x86_64") => Ok("x86_64-pc-windows-msvc"),
-        ("windows", "aarch64") => Ok("aarch64-pc-windows-msvc"),
         _ => Err(VoiceRejection::Unsupported),
     }
 }
 
-const HELPER: &str = if cfg!(windows) {
-    "bin/codex-voice-host.exe"
-} else {
-    "bin/codex-voice-host"
-};
+const HELPER: &str = "bin/codex-voice-host";
 
 /// The helper shipped inside the device's standalone Codex installation (layout
 /// 1, version 0.159 or later), resolved from its `codex` executable. Onicode never
@@ -463,11 +449,7 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     fn codex_package(root: &Path, version: &str, helper: bool) -> PathBuf {
-        let codex = root.join(if cfg!(windows) {
-            "bin/codex.exe"
-        } else {
-            "bin/codex"
-        });
+        let codex = root.join("bin/codex");
         std::fs::create_dir_all(codex.parent().unwrap()).unwrap();
         std::fs::write(&codex, "").unwrap();
         std::fs::write(
@@ -577,7 +559,6 @@ mod tests {
         assert!(verify_runtime(&dir).is_err());
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn desktop_media_opens_default_devices_with_old_and_new_helpers() {
         use onicode_voice_session::VoiceMediaEndpoint;
@@ -641,7 +622,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn helper_that_cannot_start_its_runtime_is_a_runtime_failure() {
         use std::os::unix::fs::PermissionsExt;

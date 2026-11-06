@@ -260,25 +260,12 @@ fn conversation_width(viewport: f32, sidebar: f32, right: f32) -> f32 {
 /// The chat's working directory as the host device spells it — the folder the
 /// harness runs in (a worktree chat's worktree). Projectless `~` chats have
 /// none. Deliberately not `source_context.repo_root`: that is canonicalized
-/// (symlinks resolved, `\\?\` verbatim prefix on Windows hosts).
+/// (symlinks resolved).
 fn chat_copy_path(chat: &onicode_proto::Chat) -> Option<&str> {
     chat.cwd
         .as_deref()
         .map(str::trim)
-        .filter(|cwd| is_host_absolute_path(cwd))
-}
-
-/// Absolute on the HOST, whatever the viewer's OS: a remote engine may hand a
-/// POSIX path to a Windows viewport (no drive, so `Path::is_absolute` says
-/// no) or a drive path to a POSIX one.
-fn is_host_absolute_path(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    path.starts_with('/')
-        || path.starts_with("\\\\")
-        || (bytes.len() >= 3
-            && bytes[0].is_ascii_alphabetic()
-            && bytes[1] == b':'
-            && matches!(bytes[2], b'\\' | b'/'))
+        .filter(|cwd| cwd.starts_with('/'))
 }
 
 fn composer_target_width(panel_width: f32, content_width: f32, docked: bool) -> f32 {
@@ -327,7 +314,7 @@ pub fn titlebar_cluster_start(fullscreen: bool) -> f32 {
 
 /// Width of the spacer ahead of the control cluster for a strip that already
 /// carries `container_pad` px of its own left padding. macOS only — on
-/// Linux/Windows there are no traffic lights and the cluster hugs the edge.
+/// Linux there are no traffic lights and the cluster hugs the edge.
 pub fn titlebar_spacer_width(is_macos: bool, fullscreen: bool, container_pad: f32) -> f32 {
     if !is_macos {
         return 0.0;
@@ -4110,8 +4097,7 @@ impl Shell {
             self.open_chat_pull_request(url, target, window, cx);
             return LinkOutcome::Internal;
         }
-        let outcome =
-            resolved.web_outcome(cfg!(any(target_os = "macos", target_os = "linux", windows)));
+        let outcome = resolved.web_outcome(cfg!(any(target_os = "macos", target_os = "linux")));
         if outcome == LinkOutcome::Internal {
             self.set_surfaces_open(true, cx);
             self.add_browser_surface(activation.target.navigation.clone().ok(), window, cx);
@@ -8229,56 +8215,6 @@ impl Shell {
         titlebar_new_session_alpha(&self.route, self.state.read(cx).selected_chat.is_some())
     }
 
-    /// Native Windows caption controls integrated into Onicode's unified
-    /// titlebar. `WindowControlArea` maps these hit targets to HTMINBUTTON,
-    /// HTMAXBUTTON, and HTCLOSE, so Windows owns their behavior (including
-    /// Snap Layouts) while GPUI renders the system Segoe caption glyphs.
-    fn render_windows_caption_controls(&self, window: &Window, cx: &App) -> Option<AnyElement> {
-        if !cfg!(target_os = "windows") {
-            return None;
-        }
-
-        let theme = Theme::of(cx);
-        let (maximize_id, maximize_glyph) = if window.is_maximized() {
-            ("window-restore", "\u{e923}")
-        } else {
-            ("window-maximize", "\u{e922}")
-        };
-        Some(
-            div()
-                .id("windows-window-controls")
-                .absolute()
-                .top_0()
-                .right_0()
-                .h(px(Theme::TITLEBAR_HEIGHT))
-                .flex()
-                .flex_row()
-                .font_family("Segoe Fluent Icons")
-                .child(windows_caption_button(
-                    "window-minimize",
-                    "\u{e921}",
-                    WindowControlArea::Min,
-                    theme,
-                    false,
-                ))
-                .child(windows_caption_button(
-                    maximize_id,
-                    maximize_glyph,
-                    WindowControlArea::Max,
-                    theme,
-                    false,
-                ))
-                .child(windows_caption_button(
-                    "window-close",
-                    "\u{e8bb}",
-                    WindowControlArea::Close,
-                    theme,
-                    true,
-                ))
-                .into_any_element(),
-        )
-    }
-
     /// Which caption buttons onicode itself must draw on Linux: under
     /// client-side decorations (the Wayland default) nobody else will —
     /// without these the window has NO minimize/maximize/close at all.
@@ -8339,19 +8275,15 @@ impl Shell {
             .map_or(0, |l| l.right.iter().flatten().count())
     }
 
-    /// Right padding titlebar content needs to clear the platform's caption
-    /// controls (native Windows cluster / onicode-drawn Linux buttons).
+    /// Right padding titlebar content needs to clear the onicode-drawn Linux
+    /// caption buttons.
     pub(super) fn titlebar_right_pad(&self, base: f32) -> f32 {
-        titlebar_right_padding(
-            cfg!(target_os = "windows"),
-            self.linux_right_caption_count(),
-            base,
-        )
+        titlebar_right_padding(self.linux_right_caption_count(), base)
     }
 
     /// Onicode-drawn Linux caption controls, one overlay per populated side.
-    /// Shell-level chrome like the Windows cluster: mounted at the root so
-    /// they stay above the splash and every auth/org/error gate.
+    /// Shell-level chrome: mounted at the root so they stay above the splash
+    /// and every auth/org/error gate.
     fn render_linux_caption_controls(&self, window: &Window, cx: &App) -> Vec<AnyElement> {
         let Some(layout) = self.linux_captions else {
             return Vec::new();
@@ -10399,7 +10331,7 @@ impl Shell {
 
     /// Update strip: shown above the user menu whenever this app's release
     /// checker ([`crate::app_update`]) has found a newer version. Self-updating
-    /// installs (macOS bundles, Windows installs, Linux managed installs) show
+    /// installs (macOS bundles, Linux managed installs) show
     /// the background download and then "restart to apply"; installs that
     /// can't replace themselves explain why; advisory installs point at
     /// `onicode update` or the GitHub releases page and dismiss per version.
@@ -10692,11 +10624,7 @@ impl Shell {
             if on {
                 "You're getting beta updates. Turn this off to go back to Stable.".into()
             } else {
-                format!(
-                    "Try the next Onicode early. Needs macOS {} or later.",
-                    onicode_update::channel::BETA_MINIMUM_MACOS
-                )
-                .into()
+                "Try the next Onicode early.".into()
             }
         });
         Some(
@@ -12811,10 +12739,6 @@ impl Shell {
             .min_w_0()
             .overflow_x_scroll()
             .track_scroll(&self.right_tab_scroll)
-            // Windows caption hit-testing includes the scroll-only hitboxes
-            // behind each chip. Stop at the scroller so the titlebar cannot
-            // claim tab clicks, while wheel events still reach this scroller.
-            .when(cfg!(target_os = "windows"), |strip| strip.occlude())
             .on_drag_move::<RightTabDrag>(cx.listener(
                 move |this, event: &gpui::DragMoveEvent<RightTabDrag>, _, cx| {
                     let payload = event.drag(cx);
@@ -13558,7 +13482,7 @@ fn window_control_button_with(
         // quick click zooms NATIVELY on macOS), and the `click_count == 2`
         // zoom handler — never fires with the pointer over a button. It also
         // removes the button's rect from the native Drag control-area
-        // hit-test on Windows/Linux. The click-level stop_propagation is
+        // hit-test on Linux. The click-level stop_propagation is
         // zed's ButtonLike belt on top. Double-click on EMPTY strip space
         // still zooms — nothing occludes it there.
         .occlude()
@@ -13571,67 +13495,20 @@ fn window_control_button_with(
         .tooltip(crate::settings::widgets::text_tooltip(label))
 }
 
-const WINDOWS_CAPTION_BUTTON_WIDTH: f32 = 36.0;
-const WINDOWS_CAPTION_WIDTH: f32 = WINDOWS_CAPTION_BUTTON_WIDTH * 3.0;
-
-/// Right padding for titlebar content: past the native Windows caption
-/// cluster, or past onicode's own Linux caption buttons (10px edge inset +
-/// the button row) when the layout puts any on the right.
-fn titlebar_right_padding(is_windows: bool, linux_right_captions: usize, base: f32) -> f32 {
-    base + if is_windows {
-        WINDOWS_CAPTION_WIDTH
-    } else if linux_right_captions > 0 {
+/// Right padding for titlebar content: past onicode's own Linux caption
+/// buttons (10px edge inset + the button row) when the layout puts any on
+/// the right.
+fn titlebar_right_padding(linux_right_captions: usize, base: f32) -> f32 {
+    base + if linux_right_captions > 0 {
         10.0 + caption_buttons_width(linux_right_captions)
     } else {
         0.0
     }
 }
 
-/// A Windows-owned caption target using the same system glyphs and native
-/// non-client hit-test areas as GPUI/Zed's platform titlebar.
-fn windows_caption_button(
-    id: &'static str,
-    glyph: &'static str,
-    area: WindowControlArea,
-    theme: &Theme,
-    close: bool,
-) -> impl IntoElement {
-    let (hover_bg, hover_fg, active_bg, active_fg) = if close {
-        let red: gpui::Hsla = gpui::rgb(0xe81123).into();
-        (
-            red,
-            gpui::white(),
-            red.opacity(0.8),
-            gpui::white().opacity(0.8),
-        )
-    } else {
-        (
-            theme.glass_hover(),
-            theme.text,
-            theme.glass_hover().opacity(0.7),
-            theme.text,
-        )
-    };
-    div()
-        .id(id)
-        .w(px(WINDOWS_CAPTION_BUTTON_WIDTH))
-        .h_full()
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_size(crate::typography::ui_rems(10.0))
-        .text_color(theme.text)
-        .hover(move |style| style.bg(hover_bg).text_color(hover_fg))
-        .active(move |style| style.bg(active_bg).text_color(active_fg))
-        .occlude()
-        .window_control_area(area)
-        .child(glyph)
-}
-
 /// A Linux caption button in onicode's own cluster style (24px, rounded-6,
 /// 16px linear icon). gpui's `WindowControlArea` hit-testing is inert on
-/// Linux, so unlike the Windows cluster these carry explicit click handlers
+/// Linux, so these carry explicit click handlers
 /// (`minimize_window` / `zoom_window` / `remove_window`), the same calls
 /// zed's Linux titlebar makes. `occlude` + `prevent_default` keep them out
 /// of the drag strip's event surface (see [`window_control_button`]).
@@ -13863,7 +13740,7 @@ impl Render for Shell {
         self.settings.surface = crate::appearance::surface(cx);
         self.pull_settings(cx);
         let theme = Theme::of(cx);
-        // The shell frost sits over native desktop blur on macOS and Windows.
+        // The shell frost sits over native desktop blur on macOS.
         // Content surfaces add their own backgrounds over this shared tint.
         let (frost, text, font) = (theme.glass(), theme.text, theme.font_sans.clone());
         let (workspace_scope, auth) = {
@@ -13911,7 +13788,7 @@ impl Render for Shell {
         } else {
             px(0.0)
         };
-        #[cfg(any(target_os = "macos", windows))]
+        #[cfg(target_os = "macos")]
         let browser_overlay_width = px(if self.files_visible_width(cx) > 0.0 {
             self.files_visible_width(cx) + PANE_RESIZE_HITBOX_HALF_WIDTH
         } else {
@@ -13926,7 +13803,7 @@ impl Render for Shell {
             browser.update(cx, |browser, cx| {
                 #[cfg(target_os = "macos")]
                 browser.set_resize_inset(browser_resize_inset, cx);
-                #[cfg(any(target_os = "macos", windows))]
+                #[cfg(target_os = "macos")]
                 browser.set_right_occlusion(browser_overlay_width, cx);
                 browser.set_shortcuts(&self.settings.keymap);
                 browser.set_presentation(presentation, cx);
@@ -14665,9 +14542,8 @@ impl Render for Shell {
         // Caption controls are shell-level chrome, not Ready-page content:
         // keep them above the splash and every auth/org/error gate as well as
         // the full application. Gate pages also need a drag surface because
-        // they do not render the unified tabs/settings titlebar — on Windows
-        // the native `Drag` control area, on Linux the explicit
-        // `start_window_move` strip (the control-area hit-test is inert
+        // they do not render the unified tabs/settings titlebar — on Linux
+        // the explicit `start_window_move` strip (the control-area hit-test is inert
         // there); macOS drags gate windows natively.
         let root = if (!restart_required && matches!(gate, GatePhase::Ready))
             || cfg!(target_os = "macos")
@@ -14688,7 +14564,6 @@ impl Render for Shell {
             )
         };
         let root = root
-            .children(self.render_windows_caption_controls(window, cx))
             .children(self.render_linux_caption_controls(window, cx))
             // Last so the invisible CSD resize strips sit above every other
             // element at the window edges.
@@ -14747,25 +14622,12 @@ mod tests {
             Some(("/remote/repo/packages/app", "/remote/repo")),
         );
         assert_eq!(chat_copy_path(&chat), Some("/remote/repo/packages/app"));
-
-        let windows = chat_with_path(
-            Some(r"C:\Users\me\repo"),
-            Some((r"C:\Users\me\repo", r"\\?\C:\Users\me\repo")),
-        );
-        assert_eq!(chat_copy_path(&windows), Some(r"C:\Users\me\repo"));
     }
 
     #[test]
-    fn copy_path_accepts_host_absolute_paths_from_any_os() {
-        for cwd in [
-            "/home/me/repo",
-            r"C:\Users\me\repo",
-            "D:/work/repo",
-            r"\\server\share\repo",
-        ] {
-            let chat = chat_with_path(Some(cwd), None);
-            assert_eq!(chat_copy_path(&chat), Some(cwd));
-        }
+    fn copy_path_accepts_host_absolute_paths() {
+        let chat = chat_with_path(Some("/home/me/repo"), None);
+        assert_eq!(chat_copy_path(&chat), Some("/home/me/repo"));
     }
 
     #[test]
@@ -14777,7 +14639,7 @@ mod tests {
             Some("~"),
             Some("~/repo"),
             Some("."),
-            Some("C:"),
+            Some(r"C:\Users\me\repo"),
         ] {
             let chat = chat_with_path(cwd, None);
             assert_eq!(chat_copy_path(&chat), None);
@@ -15404,7 +15266,6 @@ mod tests {
         local.shutdown().await;
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn remote_shutdown_waits_for_engine_lock_release() {
         let dir = tempfile::tempdir().unwrap();
@@ -15735,7 +15596,7 @@ mod tests {
         // strip's own padding already exceeds the 12px cluster start).
         assert_eq!(titlebar_spacer_width(true, true, 10.0), 2.0);
         assert_eq!(titlebar_spacer_width(true, true, 26.0), 0.0);
-        // Linux / Windows: never any inset.
+        // Linux: never any inset.
         assert_eq!(titlebar_spacer_width(false, false, 10.0), 0.0);
         assert_eq!(titlebar_spacer_width(false, true, 10.0), 0.0);
         assert_eq!(
@@ -15746,22 +15607,17 @@ mod tests {
     }
 
     #[test]
-    fn windows_caption_controls_reserve_titlebar_space() {
-        assert_eq!(titlebar_right_padding(true, 0, 16.0), 124.0);
-        assert_eq!(titlebar_right_padding(false, 0, 16.0), 16.0);
-    }
-
-    #[test]
     fn linux_caption_controls_reserve_titlebar_space() {
         // 24px buttons on the cluster's 2px rhythm.
         assert_eq!(caption_buttons_width(0), 0.0);
         assert_eq!(caption_buttons_width(1), 24.0);
         assert_eq!(caption_buttons_width(3), 76.0);
+        assert_eq!(titlebar_right_padding(0, 16.0), 16.0);
         // Right-side captions (the Linux default: minimize,maximize,close):
         // content pads past the 10px edge inset + the button row.
-        assert_eq!(titlebar_right_padding(false, 3, 16.0), 16.0 + 10.0 + 76.0);
+        assert_eq!(titlebar_right_padding(3, 16.0), 16.0 + 10.0 + 76.0);
         // GNOME-vanilla ":close" — a single right button.
-        assert_eq!(titlebar_right_padding(false, 1, 16.0), 16.0 + 10.0 + 24.0);
+        assert_eq!(titlebar_right_padding(1, 16.0), 16.0 + 10.0 + 24.0);
         // Left-side captions ("close:…" layouts) shift the app cluster right
         // by the button row + one 2px gap.
         assert_eq!(cluster_buttons_start(false, false, 0), 10.0);
@@ -18251,7 +18107,6 @@ mod exit_regressions {
     /// Encoded destinations open the decoded path, and an absolute
     /// destination no root owns opens through the linking chat's own file
     /// context with its absolute path intact.
-    #[cfg(unix)]
     #[gpui::test]
     fn encoded_and_outside_file_links_open_in_the_linking_chats_context(cx: &mut TestAppContext) {
         use crate::markdown::render::{LinkAction, LinkActivation, LinkOutcome, LinkTarget};
@@ -19108,36 +18963,9 @@ mod right_tab_mouse_regressions {
         });
     }
 
-    #[cfg(target_os = "windows")]
-    #[gpui::test]
-    fn subagent_tab_click_jitter_selects_without_starting_a_drag(cx: &mut TestAppContext) {
-        let (shell, cx) = setup(cx);
-        let start = cx.debug_bounds("right-surface-tab-0").unwrap().center();
-        // Sub-threshold pointer jitter (the Windows drag rectangle is 4px,
-        // matching the system SM_CXDRAG default): a jittery click must stay
-        // a click — no drag ghost, tab still activates on release.
-        let end = start + gpui::point(px(3.), px(0.));
-
-        cx.simulate_mouse_down(start, MouseButton::Left, gpui::Modifiers::default());
-        cx.simulate_mouse_move(end, Some(MouseButton::Left), gpui::Modifiers::default());
-        cx.update(|_, cx| {
-            assert!(
-                !cx.has_active_drag(),
-                "ordinary Windows click jitter started a tab drag"
-            )
-        });
-        cx.simulate_mouse_up(end, MouseButton::Left, gpui::Modifiers::default());
-
-        shell.read_with(cx, |shell, cx| {
-            assert_eq!(shell.resolved_right_active(cx), RightSurface::Subagent(1));
-        });
-    }
-
     /// The user-visible contract: dragging a surface tab onto another slot
-    /// reorders the strip. On Windows the chip's `on_drag` used to be gated
-    /// off entirely (`click_activation_drag_enabled`), so the drag could
-    /// never start; on every platform the drop could not land on a chip
-    /// (BlockMouse carve-out). This test is the regression lock for both.
+    /// reorders the strip. The drop used to be unable to land on a chip
+    /// (BlockMouse carve-out); this test is the regression lock.
     #[gpui::test]
     fn surface_tab_drag_reorders_the_strip(cx: &mut TestAppContext) {
         let (shell, cx) = setup(cx);

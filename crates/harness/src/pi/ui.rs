@@ -48,6 +48,7 @@ impl Dialogs {
             multi_select: false,
             prefill: frame["prefill"].as_str().map(str::to_owned),
             multiline: method == "editor",
+            approval: None,
         };
         // Pi's `timeout` is in milliseconds; 0 means none, and a negative one
         // has already expired, so the dialog is over before it is shown. One

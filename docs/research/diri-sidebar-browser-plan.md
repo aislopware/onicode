@@ -14,7 +14,7 @@ The v1 design below is historical. The embedded browser now supports Linux as
 well as macOS. Website data is persistent per Zeron profile on Linux and macOS
 14+, and remains temporary with a visible notice on macOS 12/13. Changing
 profiles closes the old views without deleting persistent data; returning to a
-profile reopens its store. Windows uses the external browser. Tab restoration
+profile reopens its store. Tab restoration
 is still outside this feature. See [browser profiles](../reference/browser-profiles.md)
 and [Linux browser](../reference/linux-browser.md) for the current behavior.
 
@@ -169,4 +169,4 @@ Ship after the macOS fixture and real shell interactions pass. Source research o
 
 The embedded browser runs on the UI machine. Opening `localhost:3000` while controlling a remote Zeron engine reaches the UI machine, not that engine. The initial UI should explain this when a loopback URL is used with a remote session and allow an explicitly entered reachable URL. Existing device-room command/file RPC is not an HTTP/WebSocket tunnel.
 
-Follow-up work can add authenticated remote port forwarding, including HTTP/WebSocket upgrades and reconnect handling. It requires a separate engine/protocol/transport design. CEF should be reconsidered only when concrete needs justify it, such as Chromium-specific compatibility, a shared automation runtime, or platform requirements the system-webview path cannot satisfy. Compare installer size, cold browser startup, representative page memory and complete teardown before adopting it. A future Windows port can evaluate WebView2 composition independently. Embedded Linux browsing also needs a separate prototype for Zeron's X11 and Wayland hosts; Diri supplies no reusable Linux implementation. Restart tab restoration, developer tools, screenshots/attach-to-chat, console capture and agent control are later features rather than prerequisites for the sidebar browser.
+Follow-up work can add authenticated remote port forwarding, including HTTP/WebSocket upgrades and reconnect handling. It requires a separate engine/protocol/transport design. CEF should be reconsidered only when concrete needs justify it, such as Chromium-specific compatibility, a shared automation runtime, or platform requirements the system-webview path cannot satisfy. Compare installer size, cold browser startup, representative page memory and complete teardown before adopting it. Embedded Linux browsing also needs a separate prototype for Zeron's X11 and Wayland hosts; Diri supplies no reusable Linux implementation. Restart tab restoration, developer tools, screenshots/attach-to-chat, console capture and agent control are later features rather than prerequisites for the sidebar browser.

@@ -12,7 +12,7 @@
 //!   needs no loopback, so a remote login works without a tunnel.
 //! - **Devin** — `$XDG_DATA_HOME/devin/credentials.toml` (default
 //!   `~/.local/share/devin/`; older CLIs used `~/Library/Application
-//!   Support/devin/`, `%APPDATA%\devin`): a long-lived `windsurf_api_key`
+//!   Support/devin/`): a long-lived `windsurf_api_key`
 //!   plus server urls, no identity and no refresh token. Swap = rewrite the
 //!   file (running `devin acp` processes keep the key they started with).
 //!   Add account = the ACP `authenticate` `devin-browser` method with a
@@ -80,28 +80,17 @@ pub(super) fn default_devin_credentials_file() -> PathBuf {
     if primary.exists() {
         return primary;
     }
-    let mut fallbacks = Vec::new();
     if cfg!(target_os = "macos") {
-        fallbacks.push(
-            home_dir()
-                .join("Library")
-                .join("Application Support")
-                .join("devin")
-                .join("credentials.toml"),
-        );
+        let legacy = home_dir()
+            .join("Library")
+            .join("Application Support")
+            .join("devin")
+            .join("credentials.toml");
+        if legacy.exists() {
+            return legacy;
+        }
     }
-    if cfg!(windows) {
-        fallbacks.push(
-            env_dir("APPDATA")
-                .unwrap_or_else(|| home_dir().join("AppData").join("Roaming"))
-                .join("devin")
-                .join("credentials.toml"),
-        );
-    }
-    fallbacks
-        .into_iter()
-        .find(|file| file.exists())
-        .unwrap_or(primary)
+    primary
 }
 
 pub(super) fn default_opencode_auth_file() -> PathBuf {
@@ -115,12 +104,6 @@ pub(super) fn default_pi_agent_dir() -> PathBuf {
 pub(super) fn default_hermes_home() -> PathBuf {
     if let Some(home) = env_dir("HERMES_HOME") {
         return home;
-    }
-    if cfg!(windows)
-        && let Some(local) = env_dir("LOCALAPPDATA")
-        && local.join("hermes").join("auth.json").exists()
-    {
-        return local.join("hermes");
     }
     home_dir().join(".hermes")
 }
@@ -467,9 +450,8 @@ fn unresolved(store_key: &str, upstream: Upstream) -> Detected {
 
 const LOCK_WAIT: Duration = Duration::from_secs(5);
 
-/// An exclusive lock on a sidecar lock file — `flock` on unix,
-/// `LockFileEx` on Windows (std's `File::try_lock`), the primitives the
-/// Rust CLIs' own lock crates use. Grok's `auth.json.lock` is the CLI's
+/// An exclusive lock on a sidecar lock file — `flock` (std's
+/// `File::try_lock`), the primitive the Rust CLIs' own lock crates use. Grok's `auth.json.lock` is the CLI's
 /// convention; OpenCode has none, so it gets a onicode-side one. Released
 /// when dropped (the handle closes).
 pub(super) struct FileLock(#[allow(dead_code)] std::fs::File);
@@ -1300,8 +1282,6 @@ impl AgentAccounts {
         } = self.devin_login_dirs(&login_id)?;
         #[cfg(unix)]
         let browser = ensure_recording_browser(&self.inner.config.root_dir());
-        #[cfg(not(unix))]
-        let browser = None;
         let options = onicode_harness::acp::SignInOptions {
             browser,
             method: Some("devin-browser".into()),

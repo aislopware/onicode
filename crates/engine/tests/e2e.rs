@@ -42,7 +42,6 @@ fn run_request(prompt: &str) -> RunRequest {
         worktree: None,
         resume: None,
         env: Default::default(),
-        extra_mcp: Vec::new(),
     }
 }
 
@@ -759,10 +758,13 @@ async fn interrupt_stamps_streaming_entry_aborted() {
         MessagePart::Text { text, .. } => assert_eq!(text, "partial output"),
         other => panic!("unexpected part {other:?}"),
     }
-    assert_eq!(
-        command_status(&core, "cmd-int-1"),
-        Some((SessionCommandStatus::Applied, None))
-    );
+    // The abort stamp lands from the session's own task when the harness
+    // stops; the command resolves after `execute` returns, so wait for it.
+    wait_for(
+        || command_status(&core, "cmd-int-1") == Some((SessionCommandStatus::Applied, None)),
+        "interrupt applied",
+    )
+    .await;
     // Journal closed with a Done — nothing left to recover.
     let journal = RunJournal::open(dir.path().join("orgs/dev-org/dev-user/journals")).unwrap();
     assert!(journal.stale_sessions().unwrap().is_empty());
@@ -1152,6 +1154,68 @@ async fn processed_commands_are_skipped_on_redelivery() {
         },
     );
     assert_eq!(verdict, onicode_doc::CommandDisposition::Skip);
+}
+
+/// The processed-ledger write is the claim, not the earlier read. Another
+/// path (a racing drain of controls, a relayed copy) can claim and finish a
+/// command between the drain reading it as unprocessed and marking it; the
+/// drain then loses the claim and must not run the command a second time.
+/// Fault injection: a trigger makes the ledger refuse that one id while it
+/// still reads as unprocessed, which is exactly a lost claim.
+#[tokio::test]
+async fn a_command_whose_ledger_claim_is_lost_never_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let store_root = dir.path().join("orgs/dev-org/dev-user");
+    drop(DocsStore::open(&store_root).unwrap());
+    rusqlite::Connection::open(store_root.join("docs.sqlite3"))
+        .unwrap()
+        .execute_batch(
+            "CREATE TRIGGER lost_claim BEFORE INSERT ON processed_commands \
+             WHEN NEW.command_id = 'cmd-lost' BEGIN SELECT RAISE(IGNORE); END;",
+        )
+        .unwrap();
+
+    let core = assemble(
+        dir.path(),
+        Arc::new(MockHarness {
+            script: mock_script(),
+        }),
+    );
+    let handle = core.doc_host.open(CHAT).unwrap();
+    for (id, message_id, prompt) in [
+        ("cmd-lost", "m-lost", "claimed elsewhere"),
+        ("cmd-next", "m-next", "the next send"),
+    ] {
+        queue_as_viewer(
+            handle.doc(),
+            id,
+            SessionCommandPayload::Run {
+                request: Box::new(run_request(prompt)),
+                message_id: message_id.into(),
+            },
+        );
+    }
+
+    // The drain takes commands in order: by the time the second send has
+    // run, the first would have.
+    wait_for(
+        || {
+            entries_now(&core).iter().any(|e| {
+                e.role == MessageRole::Assistant && e.status == Some(MessageStatus::Complete)
+            })
+        },
+        "the next send runs to completion",
+    )
+    .await;
+    let entries = entries_now(&core);
+    assert!(
+        entries.iter().any(|e| e.id == "m-next"),
+        "the next send ran: {entries:#?}"
+    );
+    assert!(
+        !entries.iter().any(|e| e.id == "m-lost"),
+        "a command whose claim was lost ran anyway: {entries:#?}"
+    );
 }
 
 /// The v0.2.12 field report: a send whose command was consumed by the ledger
@@ -1625,6 +1689,7 @@ impl Harness for EchoAnswerHarness {
                 options: vec!["a".into(), "b".into()],
                 prefill: None,
                 multiline: false,
+                approval: None,
                 multi_select: false,
             }])
             .await
@@ -1763,6 +1828,7 @@ async fn closing_a_dead_runs_question_records_it_without_a_new_turn() {
                     options: vec!["a".into(), "b".into()],
                     prefill: None,
                     multiline: false,
+                    approval: None,
                     multi_select: false,
                 }],
                 resolved: false,
@@ -1942,6 +2008,7 @@ async fn wrong_id_respond_is_rejected_and_correct_answer_still_resumes() {
                     options: vec!["a".into(), "b".into()],
                     prefill: None,
                     multiline: false,
+                    approval: None,
                     multi_select: false,
                 }])
                 .await
@@ -2135,6 +2202,7 @@ async fn interrupt_unblocks_a_run_awaiting_input() {
                         options: vec!["a".into(), "b".into()],
                         prefill: None,
                         multiline: false,
+                        approval: None,
                         multi_select: false,
                     }])
                     .await;
@@ -2284,6 +2352,7 @@ async fn harness_emitted_input_twin_is_dropped_and_answer_resumes() {
                     options: vec!["a".into(), "b".into()],
                     prefill: None,
                     multiline: false,
+                    approval: None,
                     multi_select: false,
                 };
                 // The pre-fix Claude/Codex shape: surface the question under
@@ -2652,7 +2721,6 @@ async fn real_claude_sees_uploaded_image_inline() {
         resume: None,
         worktree: None,
         env: Default::default(),
-        extra_mcp: Vec::new(),
     };
     core.doc_host
         .queue_command(
@@ -3879,7 +3947,7 @@ async fn chat_images_come_only_from_their_chats_own_folder() {
     for (chat, device, cwd) in [
         ("ours", here.as_str(), folder(ours.path())),
         ("theirs", here.as_str(), folder(theirs.path())),
-        // `/`, or a drive (`C:\`) on Windows, where `/` isn't absolute.
+        // `/`.
         (
             "root",
             here.as_str(),

@@ -94,6 +94,7 @@ fn question(
         multi_select: multi,
         prefill: None,
         multiline: false,
+        approval: None,
     }
 }
 

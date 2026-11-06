@@ -34,7 +34,8 @@ final class SubagentViewController: UIViewController {
         hidesBottomBarWhenPushed = true
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -42,11 +43,13 @@ final class SubagentViewController: UIViewController {
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.title = titleText
         navigationItem.subtitle = "Subagent"
-        let copy = UIBarButtonItem(image: UIImage(systemName: "doc.on.doc"), primaryAction: UIAction { [weak self] _ in
-            guard let self else { return }
-            UIPasteboard.general.string = self.engine.frame().plainText()
-            Toast.show("Transcript copied", in: self.view.window)
-        })
+        let copy = UIBarButtonItem(
+            image: UIImage(systemName: "doc.on.doc"),
+            primaryAction: UIAction { [weak self] _ in
+                guard let self else { return }
+                UIPasteboard.general.string = self.engine.frame().plainText()
+                Toast.show("Transcript copied", in: self.view.window)
+            })
         copy.accessibilityLabel = "Copy transcript"
         navigationItem.rightBarButtonItem = copy
 
@@ -87,7 +90,8 @@ final class SubagentViewController: UIViewController {
                 showUnavailable()
             }
             if let host = app.row(rootChatId)?.deviceId {
-                engine.setVisualSource(client: client, deviceId: host, pixelScale: Float(max(2, traitCollection.displayScale)))
+                engine.setVisualSource(
+                    client: client, deviceId: host, pixelScale: Float(max(2, traitCollection.displayScale)))
             }
         }
         sessionToken = app.observeSession(rootChatId) { [weak self] in self?.syncStatus() }
@@ -142,10 +146,13 @@ final class SubagentViewController: UIViewController {
         let spawn = app.sessionSubagents(rootChatId).first { $0.docId == docId }
         if let spawn {
             running = spawn.state == .running
-            let since = Date(timeIntervalSince1970: Double(spawn.startedAtMs) / 1000)
-            let model = [spawn.model.map(SubagentFormat.model), spawn.kind].compactMap { $0 }.joined(separator: " · ")
-            bar.configure(spawn.state == .running ? .working : spawn.state == .failed ? .failed : .done, model: model.isEmpty ? nil : model, since: since)
-            navigationItem.subtitle = ["Subagent", model.isEmpty ? nil : model].compactMap { $0 }.joined(separator: " · ")
+            let since = Date(timeIntervalSince1970: Double(spawn.startedAtMs) / 1_000)
+            let model = [spawn.model.map(SubagentFormat.model), spawn.kind].compactMap(\.self).joined(separator: " · ")
+            bar.configure(
+                spawn.state == .running ? .working : spawn.state == .failed ? .failed : .done,
+                model: model.isEmpty ? nil : model, since: since)
+            navigationItem.subtitle = ["Subagent", model.isEmpty ? nil : model].compactMap(\.self).joined(
+                separator: " · ")
         } else {
             bar.configure(running ? .working : .done, model: nil, since: nil)
         }
@@ -220,7 +227,8 @@ final class SubagentStatusBar: UIView {
         isAccessibilityElement = true
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func configure(_ state: State, model: String?, since: Date?) {
         self.state = state
@@ -243,7 +251,7 @@ final class SubagentStatusBar: UIView {
             label.text = "Waiting for its computer…"
             detail.text = nil
         }
-        accessibilityLabel = [label.text, detail.text].compactMap { $0 }.joined(separator: ", ")
+        accessibilityLabel = [label.text, detail.text].compactMap(\.self).joined(separator: ", ")
     }
 
     private func render() {
@@ -253,6 +261,10 @@ final class SubagentStatusBar: UIView {
 
     override func willMove(toWindow newWindow: UIWindow?) {
         super.willMove(toWindow: newWindow)
-        if newWindow == nil { timer?.invalidate() } else if state == .working { configure(state, model: detail.text, since: since) }
+        if newWindow == nil {
+            timer?.invalidate()
+        } else if state == .working {
+            configure(state, model: detail.text, since: since)
+        }
     }
 }

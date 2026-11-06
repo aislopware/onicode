@@ -4982,7 +4982,7 @@ mod tests {
 
     #[test]
     fn search_matches_all_words_across_title_repo_number_and_status() {
-        let mut item = pull_request("OnicodeSH/Onicode", 181, 1, 1, 1);
+        let mut item = pull_request("AislopWare/Onicode", 181, 1, 1, 1);
         item.title = "Add a pull request dashboard".into();
         item.is_draft = true;
         assert!(matches_query(&item, "ONICODE dashboard #181 draft"));

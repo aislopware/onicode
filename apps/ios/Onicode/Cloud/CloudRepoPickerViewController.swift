@@ -19,7 +19,8 @@ final class CloudRepoPickerViewController: UITableViewController, UISearchResult
         title = "New Cloud Project"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     @MainActor private var cloud: CloudStore { app.cloud }
 
@@ -27,9 +28,11 @@ final class CloudRepoPickerViewController: UITableViewController, UISearchResult
         super.viewDidLoad()
         view.backgroundColor = Palette.background
         tableView.backgroundColor = .clear
-        navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .cancel, primaryAction: UIAction { [weak self] _ in
-            self?.dismiss(animated: true)
-        })
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            systemItem: .cancel,
+            primaryAction: UIAction { [weak self] _ in
+                self?.dismiss(animated: true)
+            })
         let search = UISearchController(searchResultsController: nil)
         search.searchResultsUpdater = self
         search.obscuresBackgroundDuringPresentation = false
@@ -68,7 +71,8 @@ final class CloudRepoPickerViewController: UITableViewController, UISearchResult
                 return spinner
             }
             let stack = UIStackView(arrangedSubviews: [
-                CloudUI.header("Couldn't load repositories", "Check your connection and try again.", alignment: .center),
+                CloudUI.header(
+                    "Couldn't load repositories", "Check your connection and try again.", alignment: .center),
                 CloudUI.secondaryButton("Try again", symbol: "arrow.clockwise") { [weak self] in self?.load() },
             ])
             stack.axis = .vertical
@@ -87,16 +91,21 @@ final class CloudRepoPickerViewController: UITableViewController, UISearchResult
         let connected = cloud.githubConnected
         let stack = UIStackView(arrangedSubviews: [
             CloudUI.tile(image: CloudUI.githubMark, side: 52),
-            CloudUI.header(connected ? "No repositories" : "Connect GitHub", connected ? "Cloud reaches the repositories the Onicode GitHub App is installed on." : "Cloud projects are GitHub repositories. Connect GitHub to pick one.", alignment: .center),
+            CloudUI.header(
+                connected ? "No repositories" : "Connect GitHub",
+                connected
+                    ? "Cloud reaches the repositories the Onicode GitHub App is installed on."
+                    : "Cloud projects are GitHub repositories. Connect GitHub to pick one.", alignment: .center),
         ])
         stack.axis = .vertical
         stack.alignment = .center
         stack.spacing = 16
         if !connected {
-            stack.addArrangedSubview(CloudUI.primaryButton("Connect GitHub") { [weak self] in
-                guard let self else { return }
-                self.present(GitHubConnectViewController.sheet(app: self.app), animated: true)
-            })
+            stack.addArrangedSubview(
+                CloudUI.primaryButton("Connect GitHub") { [weak self] in
+                    guard let self else { return }
+                    self.present(GitHubConnectViewController.sheet(app: self.app), animated: true)
+                })
         }
         let holder = UIView()
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -114,9 +123,9 @@ final class CloudRepoPickerViewController: UITableViewController, UISearchResult
         reloadRepos()
     }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { repos.count }
+    override func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { repos.count }
 
-    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+    override func tableView(_: UITableView, titleForFooterInSection _: Int) -> String? {
         repos.isEmpty ? nil : "Each session in a Cloud project runs on its own Cloud machine."
     }
 
@@ -126,7 +135,8 @@ final class CloudRepoPickerViewController: UITableViewController, UISearchResult
         var c = UIListContentConfiguration.subtitleCell()
         c.text = repo.fullName
         c.textProperties.font = Fonts.ui(.sansMedium, 16)
-        c.secondaryText = [repo.private ? "Private" : nil, repo.description].compactMap { $0 }.joined(separator: " · ").nonEmpty
+        c.secondaryText =
+            [repo.private ? "Private" : nil, repo.description].compactMap(\.self).joined(separator: " · ").nonEmpty
         c.secondaryTextProperties.font = Fonts.ui(.sans, 13)
         c.secondaryTextProperties.color = Palette.secondary
         c.secondaryTextProperties.numberOfLines = 1
@@ -161,7 +171,8 @@ final class CloudRepoPickerViewController: UITableViewController, UISearchResult
             } catch {
                 self.creating = nil
                 self.tableView.reloadData()
-                let a = UIAlertController(title: "Couldn't add the project", message: CloudStore.message(error), preferredStyle: .alert)
+                let a = UIAlertController(
+                    title: "Couldn't add the project", message: CloudStore.message(error), preferredStyle: .alert)
                 a.addAction(UIAlertAction(title: "OK", style: .default))
                 self.present(a, animated: true)
             }

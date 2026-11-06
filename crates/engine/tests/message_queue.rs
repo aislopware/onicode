@@ -116,6 +116,7 @@ impl Harness for HeldHarness {
                 options: vec!["a".into(), "b".into()],
                 prefill: None,
                 multiline: false,
+                approval: None,
                 multi_select: false,
             }])
         });

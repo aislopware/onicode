@@ -437,8 +437,6 @@ mod tests {
         out
     }
 
-    // File links are POSIX paths; Windows spans keep their code look.
-    #[cfg(unix)]
     #[test]
     fn a_context_directory_resolves_bare_names_that_follow_it() {
         let fixture = Fixture::new();
@@ -495,7 +493,6 @@ mod tests {
         assert_eq!(fixture.target(&linked, "SOURCES.md"), None);
     }
 
-    #[cfg(unix)]
     #[test]
     fn absolute_and_root_relative_and_location_spans_link() {
         let fixture = Fixture::new();
@@ -545,7 +542,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_linked_span_flattens_exactly_like_the_markdown_link_it_stands_for() {
         use crate::markdown::render::flatten_runs;
@@ -566,7 +562,6 @@ mod tests {
         assert_eq!(from_code.runs, from_link.runs);
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_nested_path_span_shows_its_file_name_and_keeps_the_path_for_copy() {
         use crate::markdown::render::flatten_runs;
@@ -600,7 +595,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn paths_sharing_a_file_name_show_enough_of_the_path_to_differ() {
         use crate::markdown::render::flatten_runs;

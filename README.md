@@ -11,7 +11,6 @@ Control your coding agents (Claude Code, Codex, Cursor, Devin, Grok, Hermes, Pi,
 Download the latest release for your platform from [GitHub Releases](https://github.com/zeronsh/zeron/releases/latest):
 
 - **macOS** — `zeron-<version>-macos-arm64.dmg`
-- **Windows** — `zeron-<version>-windows-x86_64-setup.exe`
 - **Linux** — `zeron-<version>-linux-<arch>.tar.gz`, then run its `install.sh`
 
 No account or network connection is needed; sessions stay on your device. The app updates itself.

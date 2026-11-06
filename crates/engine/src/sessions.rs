@@ -313,8 +313,6 @@ struct Inner {
     /// dispatch or accepted steer) — the diff sync snapshots the checkout tree
     /// for the Changes pane's "Latest turn" scope. Absent in bare tests.
     turn_listener: OnceLock<TurnListener>,
-    /// Plugins whose native MCP servers local runs get (absent in bare tests).
-    plugins: OnceLock<crate::plugins::Plugins>,
 }
 
 /// Turn-start hook: called with `(chat_id, cwd)`.
@@ -364,7 +362,6 @@ impl SessionsEngine {
                 generated_images: OnceLock::new(),
                 scratch_root: OnceLock::new(),
                 turn_listener: OnceLock::new(),
-                plugins: OnceLock::new(),
             }),
         }
     }
@@ -387,11 +384,6 @@ impl SessionsEngine {
     /// at dial time, so it follows token rotation across engine restarts.
     pub fn set_ipc_token_file(&self, path: std::path::PathBuf) {
         *lock(&self.inner.ipc_token_file) = Some(path);
-    }
-
-    /// Wire the plugins service: local runs get its native MCP servers.
-    pub fn set_plugins(&self, plugins: crate::plugins::Plugins) {
-        let _ = self.inner.plugins.set(plugins);
     }
 
     /// Wire the doc host (called once at engine assembly; the two services are mutually
@@ -500,6 +492,60 @@ impl SessionsEngine {
         lock(&self.inner.runs)
             .get(chat_id)
             .is_some_and(|h| h.turn.stop_background_process(task_id))
+    }
+
+    /// Restore the files the chat's live session changed since the user
+    /// message `message_id`; `dry_run` only says what would change. The
+    /// agent's own answer (which files, how many lines); an error when no
+    /// live runtime answers.
+    pub async fn rewind_files(
+        &self,
+        chat_id: &str,
+        message_id: &str,
+        dry_run: bool,
+    ) -> Result<serde_json::Value, EngineError> {
+        self.query_runtime(
+            chat_id,
+            onicode_harness::ControlQuery::RewindFiles {
+                message_id: message_id.to_owned(),
+                dry_run,
+            },
+        )
+        .await
+    }
+
+    /// Where the chat's live session's context window goes, by category,
+    /// in the agent's own shape. `full` counts exactly (slower).
+    pub async fn context_usage(
+        &self,
+        chat_id: &str,
+        full: bool,
+    ) -> Result<serde_json::Value, EngineError> {
+        self.query_runtime(
+            chat_id,
+            onicode_harness::ControlQuery::ContextUsage { full },
+        )
+        .await
+    }
+
+    async fn query_runtime(
+        &self,
+        chat_id: &str,
+        query: onicode_harness::ControlQuery,
+    ) -> Result<serde_json::Value, EngineError> {
+        /// A driver that takes no queries never answers.
+        const QUERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+        let turn = lock(&self.inner.runs)
+            .get(chat_id)
+            .map(|h| h.turn.clone())
+            .ok_or_else(|| EngineError::Other("the chat has no live session".into()))?;
+        match tokio::time::timeout(QUERY_TIMEOUT, turn.query(query)).await {
+            Ok(Ok(answer)) => answer.map_err(EngineError::Other),
+            Ok(Err(_)) => Err(EngineError::Other("the session ended first".into())),
+            Err(_) => Err(EngineError::Other(
+                "the agent did not answer (it may not support this)".into(),
+            )),
+        }
     }
 
     /// The tail of one background process's output; `None` when no live
@@ -1073,6 +1119,15 @@ impl SessionsEngine {
         };
         let interrupt_token = CancellationToken::new();
         let turn = TurnControl::default();
+        // The opening prompt is the transcript's user entry: a driver writes
+        // it under that id, so it can be named later (rewind, branch). A
+        // revival's continuation is onicode's own words, not the person's.
+        turn.set_opening_prompt(onicode_harness::OpeningPrompt {
+            message_id: (!idle).then(|| user_id.clone()),
+            composed: revival
+                .as_ref()
+                .is_some_and(|revival| revival.continuation.is_some()),
+        });
         let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let fork_history_sent = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (voice_handle, realtime, _voice_events) = onicode_harness::codex::realtime::channel();
@@ -1708,6 +1763,13 @@ impl SessionsEngine {
             if fresh && prompt.is_some() && request.is_none() {
                 tracing::warn!(chat = %chat_id, "auto-resume skipped: no run config");
             }
+            // Put away since (archived, deleted, or under a parent that is):
+            // nobody is waiting on the turn, and a delegate's result has no
+            // parent left to wake. Reviving it would only spend the quota.
+            let put_away = self
+                .inner
+                .doc_host()
+                .is_some_and(|host| host.workspace().is_some_and(|w| chat_put_away(w, &chat_id)));
             // A crash's journal can stay open past a finished turn: a parked
             // session's background subagents journal on after its Done. A
             // shutdown only marks a turn it cut off.
@@ -1715,6 +1777,7 @@ impl SessionsEngine {
                 Some((_, harness_id))
                     if fresh
                         && !stopped
+                        && !put_away
                         && !(crashed && tail.finished)
                         && prompt
                             .as_ref()
@@ -1767,6 +1830,7 @@ impl SessionsEngine {
                 crashed,
                 ?pickup,
                 attempts,
+                put_away,
                 reached_provider = tail.reached_provider,
                 "recovered interrupted session"
             );
@@ -1861,7 +1925,6 @@ impl SessionsEngine {
                     resume: None,
                     worktree: None,
                     env: Default::default(),
-                    extra_mcp: Vec::new(),
                 })
             })?;
         request.prompt = prompt.to_owned();
@@ -3081,6 +3144,30 @@ fn revival_prompt(original: &str) -> String {
 }
 
 /// The note a turn the engine's own shutdown cut off ends with.
+/// Whether the person put `chat_id` away: its row deleted or archived, or
+/// the same of a parent up its chain. A row not known here (not synced yet)
+/// counts as kept.
+fn chat_put_away(workspace: &crate::workspace_host::WorkspaceHost, chat_id: &str) -> bool {
+    let mut id = chat_id.to_owned();
+    // Parent chains are short; the bound only keeps a corrupt cycle finite.
+    for _ in 0..16 {
+        if workspace.chat_deleted(&id) {
+            return true;
+        }
+        let Ok(Some(chat)) = workspace.chat(&id) else {
+            return false;
+        };
+        if chat.archived {
+            return true;
+        }
+        match chat.parent_chat_id {
+            Some(parent) => id = parent,
+            None => return false,
+        }
+    }
+    false
+}
+
 const SHUTDOWN_NOTE: &str = "Run interrupted by engine shutdown";
 
 /// The note a reply opens with when the provider no longer had the session
@@ -3096,8 +3183,8 @@ const SPAWN_RETRY_DELAYS: [std::time::Duration; 3] = [
 ];
 
 /// Whether a run's start failure is plausibly transient: the OS refused the
-/// spawn for a moment (antivirus holding a freshly updated CLI on Windows,
-/// `ETXTBSY` while an update rewrites it, a busy or interrupted call).
+/// spawn for a moment (`ETXTBSY` while an update rewrites it, a busy or
+/// interrupted call).
 /// Deterministic failures — not installed, not signed in, protocol errors —
 /// surface at once. A refused permission is both: a CLI without its execute
 /// bit fails that way forever, so it counts only when the harness's CLI was
@@ -3114,8 +3201,7 @@ fn transient_start_failure(err: &onicode_harness::HarnessError, cli_just_replace
         | ErrorKind::ExecutableFileBusy
         | ErrorKind::WouldBlock
         | ErrorKind::Interrupted => true,
-        // ERROR_SHARING_VIOLATION / ERROR_LOCK_VIOLATION have no kind of their own.
-        _ => cfg!(windows) && matches!(err.raw_os_error(), Some(32 | 33)),
+        _ => false,
     }
 }
 
@@ -3570,13 +3656,6 @@ async fn drive_run(
     if request.mcp.is_none() {
         request.mcp = inner.onicode_mcp(&chat_id, side_chats_only);
     }
-    // Plugins' native MCP servers come from this host's own allowed plugins,
-    // run from their verified snapshots — never from what a sender put here.
-    request.extra_mcp = inner
-        .plugins
-        .get()
-        .map(crate::plugins::Plugins::native_mcp_servers)
-        .unwrap_or_default();
     // A revived turn the resumed session already holds: the provider gets
     // the continuation, while the transcript, preview and title keep the
     // user's own message (and the retries carry the revival on).
@@ -5475,7 +5554,6 @@ mod tests {
             attachments: Vec::new(),
             worktree: None,
             env: Default::default(),
-            extra_mcp: Vec::new(),
         }
     }
 
@@ -6171,11 +6249,6 @@ mod tests {
             &HarnessError::Protocol("bad frame".into()),
             true
         ));
-        // A sharing violation (antivirus scanning a just-updated CLI).
-        assert_eq!(
-            transient_start_failure(&HarnessError::Io(Error::from_raw_os_error(32)), false),
-            cfg!(windows)
-        );
     }
 
     #[test]

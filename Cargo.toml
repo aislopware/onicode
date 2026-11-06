@@ -33,7 +33,6 @@ members = [
     "crates/visual",
     "crates/visual-gpu",
     "crates/zatex",
-    "crates/plugin-guard",
     "apps/onicode",
     # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
     "crates/net",
@@ -82,7 +81,6 @@ onicode-text = { path = "crates/text" }
 zatex = { path = "crates/zatex" }
 onicode-visual = { path = "crates/visual" }
 onicode-visual-gpu = { path = "crates/visual-gpu" }
-onicode-plugin-guard = { path = "crates/plugin-guard" }
 
 # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
 onicode-net = { path = "crates/net" }
@@ -200,8 +198,8 @@ unicode-segmentation = "1"
 unicode-width = "0.2"
 fontdb = "0.23"
 ttf-parser = "0.25.1"
-# Packaged GUI apps do not inherit shell proxy variables; honor the macOS and
-# Windows system proxy for provider usage probes and other HTTP clients.
+# Packaged GUI apps do not inherit shell proxy variables; honor the macOS
+# system proxy for provider usage probes and other HTTP clients.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
 ignore = "0.4"
 # Workspace file/content search index (@ mentions, file tree, cmd+K).

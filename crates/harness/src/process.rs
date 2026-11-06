@@ -1,63 +1,7 @@
-//! Owned agent processes. Non-Windows builds retain Tokio's command and child.
-//! Windows uses native creation-time Job Object membership, never an implicit shell.
-#[cfg(not(windows))]
+//! Owned agent processes, on Tokio's command and child.
 pub use std::process::Stdio;
-#[cfg(not(windows))]
 pub use tokio::process::{Child, ChildStdin, ChildStdout, Command};
-#[cfg(any(windows, test))]
-pub(crate) mod cmd_shim;
-#[cfg(windows)]
-mod windows;
-#[cfg(windows)]
-pub use windows::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-/// Backoff for a Windows process creation that failed transiently.
-#[cfg(any(windows, test))]
-const SPAWN_RETRY_DELAYS: [std::time::Duration; 3] = [
-    std::time::Duration::from_millis(100),
-    std::time::Duration::from_millis(300),
-    std::time::Duration::from_millis(1000),
-];
-
-/// Sleep in a synchronous caller without stalling the async runtime it may
-/// run on: a multi-thread runtime's worker hands its other tasks off first
-/// (`block_in_place`). Outside a runtime, on a current-thread runtime (whose
-/// only thread would block regardless) or on a blocking-pool thread, a plain
-/// sleep.
-#[cfg(any(windows, test))]
-fn sleep_off_runtime(delay: std::time::Duration) {
-    match tokio::runtime::Handle::try_current() {
-        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
-            tokio::task::block_in_place(|| std::thread::sleep(delay));
-        }
-        _ => std::thread::sleep(delay),
-    }
-}
-
-/// Whether a failed Windows process creation is worth retrying: a sharing
-/// or lock violation on the image, or access denied on one modified in the
-/// last minute (the malware scanner holding a CLI that just updated).
-/// `image_age` is how long ago the launched image was last written.
-#[cfg(any(windows, test))]
-fn spawn_retryable(error: &std::io::Error, image_age: Option<std::time::Duration>) -> bool {
-    match error.raw_os_error() {
-        Some(32 | 33) => true,
-        Some(5) => image_age.is_some_and(|age| age < std::time::Duration::from_secs(60)),
-        _ => false,
-    }
-}
-
-/// Mark an agent that does not exit promptly on stdin EOF: Windows' teardown
-/// then terminates it rather than waiting out a grace for an exit that will
-/// not come. Unix teardown signals instead; nothing changes there.
-pub(crate) fn ignores_stdin_eof(child: &mut Child) {
-    #[cfg(windows)]
-    child.ignore_stdin_eof();
-    #[cfg(not(windows))]
-    let _ = child;
-}
-
-#[cfg(unix)]
 pub(crate) fn signal_target(child: &Child) -> Option<i32> {
     let pid = child.id()? as i32;
     // ACP children lead a private group; other harnesses retain pid signaling.
@@ -68,23 +12,17 @@ pub(crate) fn signal_target(child: &Child) -> Option<i32> {
         pid
     })
 }
-#[cfg(windows)]
-pub(crate) fn signal_target(child: &Child) -> Option<std::sync::Arc<crate::windows_process::Job>> {
-    Some(child.job.clone())
-}
 
 /// One process a descendant snapshot found: its pid and, where the process
 /// table reports it, its start time, which tells it apart from an unrelated
 /// process that later inherits the pid. Each snapshot carries its own
 /// identities to [`terminate_tree`]: runs never share or overwrite them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(not(unix), allow(dead_code))]
 pub(crate) struct Tracked {
     pub(crate) pid: i32,
     start: Option<u64>,
 }
 
-#[cfg(unix)]
 impl Tracked {
     /// `pid` as the process table describes it right now.
     #[cfg_attr(not(test), allow(dead_code))]
@@ -107,7 +45,6 @@ impl Tracked {
 /// Each descendant carries its start time, so [`terminate_tree`] can tell
 /// the process it found from an unrelated one that inherited the pid after
 /// it exited.
-#[cfg(unix)]
 pub(crate) async fn descendants(root: u32) -> Vec<Tracked> {
     let mut table = tokio::task::spawn_blocking(proc_table::read)
         .await
@@ -129,7 +66,6 @@ pub(crate) async fn descendants(root: u32) -> Vec<Tracked> {
 }
 
 /// One process-table row; `start` identifies the process across pid reuse.
-#[cfg(unix)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ProcEntry {
     pid: i32,
@@ -137,7 +73,6 @@ struct ProcEntry {
     start: Option<u64>,
 }
 
-#[cfg(unix)]
 fn tree_of(root: i32, table: &[ProcEntry]) -> Vec<i32> {
     let mut found = Vec::new();
     let mut frontier = vec![root];
@@ -152,7 +87,6 @@ fn tree_of(root: i32, table: &[ProcEntry]) -> Vec<i32> {
     found
 }
 
-#[cfg(unix)]
 async fn ps_table() -> Vec<ProcEntry> {
     let Ok(out) = tokio::process::Command::new("ps")
         .args(["-A", "-o", "pid=,ppid="])
@@ -180,7 +114,6 @@ async fn ps_table() -> Vec<ProcEntry> {
 
 /// Native process-table readers: Linux's /proc (slim images often ship no
 /// `ps`) and macOS's libproc. Both report each process's start time.
-#[cfg(unix)]
 mod proc_table {
     use super::ProcEntry;
 
@@ -291,7 +224,6 @@ mod proc_table {
 /// between the two, so the identity travels here.
 /// Whether `pid` is still the process a snapshot found: same start time when
 /// one was recorded, merely alive otherwise.
-#[cfg(unix)]
 fn still_same(pid: i32, recorded: Option<u64>) -> bool {
     match recorded {
         Some(start) => proc_table::start_time(pid) == Some(start),
@@ -303,7 +235,6 @@ fn still_same(pid: i32, recorded: Option<u64>) -> bool {
 /// Terminate `tracked` processes and the process groups they lead: SIGTERM,
 /// then SIGKILL whatever is still running after `grace`. A pid whose process
 /// has exited and been reused by another is never signaled.
-#[cfg(unix)]
 pub(crate) async fn terminate_tree(tracked: &[Tracked], grace: std::time::Duration) {
     let recorded: Vec<(i32, Option<u64>)> = tracked
         .iter()
@@ -351,61 +282,7 @@ pub(crate) async fn terminate_tree(tracked: &[Tracked], grace: std::time::Durati
     }
 }
 
-/// A retry's wait leaves a multi-thread runtime's other tasks running, and
-/// is safe wherever a synchronous spawn can be called from.
 #[cfg(test)]
-#[test]
-fn a_spawn_retry_wait_does_not_stall_the_runtime() {
-    use std::time::Duration;
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_all()
-        .build()
-        .unwrap();
-    runtime.block_on(async {
-        let ticker = tokio::spawn(async {
-            let mut ticks = 0;
-            for _ in 0..5 {
-                tokio::time::sleep(Duration::from_millis(20)).await;
-                ticks += 1;
-            }
-            ticks
-        });
-        // On the runtime's only worker: without the hand-off the ticker
-        // could not run until the wait was over.
-        tokio::spawn(async { sleep_off_runtime(Duration::from_millis(400)) });
-        let ticks = tokio::time::timeout(Duration::from_millis(300), ticker).await;
-        assert_eq!(ticks.ok().and_then(Result::ok), Some(5));
-        tokio::task::spawn_blocking(|| sleep_off_runtime(Duration::from_millis(1)))
-            .await
-            .unwrap();
-    });
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap()
-        .block_on(async { sleep_off_runtime(Duration::from_millis(1)) });
-    sleep_off_runtime(Duration::from_millis(1));
-}
-
-#[cfg(test)]
-#[test]
-fn windows_spawn_retries_only_sharing_failures_and_fresh_images() {
-    use std::io::Error;
-    use std::time::Duration;
-    let fresh = Some(Duration::from_secs(5));
-    let old = Some(Duration::from_secs(3600));
-    assert!(spawn_retryable(&Error::from_raw_os_error(32), old));
-    assert!(spawn_retryable(&Error::from_raw_os_error(33), None));
-    assert!(spawn_retryable(&Error::from_raw_os_error(5), fresh));
-    assert!(!spawn_retryable(&Error::from_raw_os_error(5), old));
-    assert!(!spawn_retryable(&Error::from_raw_os_error(5), None));
-    // ERROR_FILE_NOT_FOUND, ERROR_BAD_EXE_FORMAT: retrying cannot help.
-    assert!(!spawn_retryable(&Error::from_raw_os_error(2), fresh));
-    assert!(!spawn_retryable(&Error::from_raw_os_error(193), fresh));
-    assert_eq!(SPAWN_RETRY_DELAYS.len(), 3);
-}
-
-#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -542,3 +419,4 @@ mod tests {
 }
 
 pub(crate) mod owned;
+pub(crate) mod reaper;

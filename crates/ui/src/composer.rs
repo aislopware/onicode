@@ -484,12 +484,6 @@ pub fn flip_morph_step(
     Some(FlipMorph::collapse(last_height, now_ms))
 }
 
-/// Engines at or above this version understand `pending://` attachment refs
-/// and QueueCommand `transfers` (send-is-a-local-write attachments). Gated on
-/// BOTH the local engine (an IPC daemon may be older than this UI) and, for
-/// remotely-hosted chats, the host device's stamped registry version.
-const QUEUED_ATTACHMENTS_MIN: (u64, u64, u64) = (0, 2, 12);
-
 /// What the send button is right now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendButtonMode {
@@ -822,13 +816,28 @@ impl Wizard {
             WizardStep::Stay
         } else {
             *picked = vec![option_ix];
-            WizardStep::AutoAdvance
+            // An approval that must not be one tap away waits for the
+            // explicit submit.
+            if Self::quick_answer(question) {
+                WizardStep::AutoAdvance
+            } else {
+                WizardStep::Stay
+            }
         }
     }
 
-    /// Number key 1-9.
+    /// Whether one tap or keystroke may answer `question` (see
+    /// [`onicode_proto::ApprovalContext`]).
+    fn quick_answer(question: &UserInputQuestion) -> bool {
+        question
+            .approval
+            .as_ref()
+            .is_none_or(onicode_proto::ApprovalContext::allows_quick_answer)
+    }
+
+    /// Number key 1-9. An approval that takes no single keystroke ignores it.
     pub fn press_number(&mut self, number: usize) -> WizardStep {
-        if number == 0 {
+        if number == 0 || !self.current().is_none_or(Self::quick_answer) {
             return WizardStep::Stay;
         }
         self.select(number - 1)
@@ -1758,7 +1767,7 @@ fn input_bindings(context: &'static str) -> Vec<KeyBinding> {
         bindings.push(KeyBinding::new(&format!("{prefix}-z"), Undo, ctx));
         bindings.push(KeyBinding::new(&format!("shift-{prefix}-z"), Redo, ctx));
     }
-    // Word-level editing: Option on macOS, Ctrl on Windows/Linux.
+    // Word-level editing: Option on macOS, Ctrl on Linux.
     let word_edit_prefix = if cfg!(target_os = "macos") {
         "alt"
     } else {
@@ -9393,29 +9402,13 @@ impl Composer {
         // and let the engine push the bytes to a remote host afterwards —
         // staging must never gate the queue (2026-08-19 incident: a send
         // died with a zombie peer link because the upload sat in front of
-        // QueueCommand). Requires every engine involved to understand the
-        // ref scheme — the local engine (an IPC daemon may be older than
-        // this UI) and, for remotely-hosted chats, the host; anything older
-        // keeps the legacy blocking upload.
-        let host_is_remote = host_device_id
-            .as_deref()
-            .is_some_and(|id| local_device_id.as_deref() != Some(id));
+        // QueueCommand). Every Onicode engine understands the ref scheme.
         // Queue rows do not carry upstream's attachment-transfer escort, so
         // they retain the proven host-upload path and store absolute refs.
         // Appshot XML attributes require escaped final paths. The engine's plain
         // string replacement of pending refs cannot safely rewrite those, so
         // rich captures use the existing upload-before-send path.
-        let queued_flow = !queue && staged_appshots.is_empty() && !staged.is_empty() && {
-            let state = self.state.read(cx);
-            let local_ok = local_device_id
-                .as_deref()
-                .is_some_and(|id| state.device_version_at_least(id, QUEUED_ATTACHMENTS_MIN));
-            let host_ok = !host_is_remote
-                || host_device_id
-                    .as_deref()
-                    .is_some_and(|id| state.device_version_at_least(id, QUEUED_ATTACHMENTS_MIN));
-            local_ok && host_ok
-        };
+        let queued_flow = !queue && staged_appshots.is_empty() && !staged.is_empty();
         // Upload identities minted NOW: in the queued flow the `pending://`
         // ref IS the persisted transport until the host rewrites it, so the
         // id must exist before any bytes move.
@@ -9940,7 +9933,6 @@ impl Composer {
                         attachments: attachment_paths,
                         worktree: run_worktree,
                         env: Default::default(),
-                        extra_mcp: Vec::new(),
                     }),
                     message_id: message_id.clone(),
                 };
@@ -15947,6 +15939,7 @@ mod tests {
             options: options.iter().map(|s| s.to_string()).collect(),
             prefill: None,
             multiline: false,
+            approval: None,
             multi_select: multi,
         }
     }
@@ -16707,6 +16700,38 @@ mod tests {
         assert_eq!(answers.len(), 2);
         assert_eq!(answers[0].labels, vec!["b"]);
         assert_eq!(answers[1].labels, vec!["x"]);
+    }
+
+    /// An approval that must not be one tap away: a pick waits for the
+    /// explicit submit, and digits answer nothing.
+    #[test]
+    fn a_deliberate_approval_takes_no_quick_answer() {
+        for approval in [
+            onicode_proto::ApprovalContext {
+                default_to_no: true,
+                requires_user_interaction: false,
+            },
+            onicode_proto::ApprovalContext {
+                default_to_no: false,
+                requires_user_interaction: true,
+            },
+        ] {
+            let mut q = question("q", &["Deny", "Allow once"], false);
+            q.approval = Some(approval);
+            let mut w = Wizard::new("req".into(), vec![q]);
+            assert_eq!(w.press_number(2), WizardStep::Stay);
+            assert!(!w.page_has_pick());
+            assert_eq!(w.select(1), WizardStep::Stay);
+            let WizardStep::Done(answers) = w.advance() else {
+                panic!("expected Done")
+            };
+            assert_eq!(answers[0].labels, vec!["Allow once"]);
+        }
+        // Without the rules, the same pick still answers at once.
+        let mut q = question("q", &["Deny", "Allow once"], false);
+        q.approval = Some(onicode_proto::ApprovalContext::default());
+        let mut w = Wizard::new("req".into(), vec![q]);
+        assert_eq!(w.press_number(2), WizardStep::AutoAdvance);
     }
 
     #[test]

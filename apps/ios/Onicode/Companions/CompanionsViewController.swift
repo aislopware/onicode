@@ -58,7 +58,8 @@ final class CompanionsViewController: UIViewController, UICollectionViewDelegate
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -67,9 +68,11 @@ final class CompanionsViewController: UIViewController, UICollectionViewDelegate
         navigationItem.subtitle = "Agents, side chats & terminals"
         navigationItem.largeTitleDisplayMode = .never
         if inSheet {
-            navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in
-                self?.dismiss(animated: true)
-            })
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                systemItem: .close,
+                primaryAction: UIAction { [weak self] _ in
+                    self?.dismiss(animated: true)
+                })
         } else {
             syncClose()
         }
@@ -77,7 +80,8 @@ final class CompanionsViewController: UIViewController, UICollectionViewDelegate
         config.backgroundColor = .clear
         config.showsSeparators = false
         config.trailingSwipeActionsConfigurationProvider = { [weak self] path in self?.trailingSwipe(path) }
-        collectionView = UICollectionView(frame: view.bounds, collectionViewLayout: UICollectionViewCompositionalLayout.list(using: config))
+        collectionView = UICollectionView(
+            frame: view.bounds, collectionViewLayout: UICollectionViewCompositionalLayout.list(using: config))
         collectionView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         collectionView.backgroundColor = .clear
         collectionView.delegate = self
@@ -105,11 +109,12 @@ final class CompanionsViewController: UIViewController, UICollectionViewDelegate
         }
         let empty = UICollectionView.CellRegistration<UICollectionViewListCell, Section> { cell, _, section in
             var c = UIListContentConfiguration.cell()
-            c.text = switch section {
-            case .agents: "No subagents yet"
-            case .sideChats: "Ask something on the side without derailing the main thread."
-            case .terminals: "A shell on this session's computer, in its folder."
-            }
+            c.text =
+                switch section {
+                case .agents: "No subagents yet"
+                case .sideChats: "Ask something on the side without derailing the main thread."
+                case .terminals: "A shell on this session's computer, in its folder."
+                }
             c.textProperties.font = Fonts.ui(.sans, 14)
             c.textProperties.color = Palette.tertiary
             c.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 2, leading: 20, bottom: 8, trailing: 20)
@@ -130,10 +135,11 @@ final class CompanionsViewController: UIViewController, UICollectionViewDelegate
         }
         tokens.append(app.observeSession(chatId) { [weak self] in self?.scheduleReload() })
         tokens.append(app.observe { [weak self] in self?.scheduleReload() })
-        tokens.append(app.terminals.observe { [weak self] chat in
-            guard let self, chat == self.chatId else { return }
-            self.scheduleReload()
-        })
+        tokens.append(
+            app.terminals.observe { [weak self] chat in
+                guard let self, chat == self.chatId else { return }
+                self.scheduleReload()
+            })
         reload(animated: false)
     }
 
@@ -143,9 +149,13 @@ final class CompanionsViewController: UIViewController, UICollectionViewDelegate
 
     private func syncClose() {
         guard !inSheet else { return }
-        navigationItem.rightBarButtonItem = showsClose ? UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in
-            self?.close?()
-        }) : nil
+        navigationItem.rightBarButtonItem =
+            showsClose
+            ? UIBarButtonItem(
+                systemItem: .close,
+                primaryAction: UIAction { [weak self] _ in
+                    self?.close?()
+                }) : nil
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -178,18 +188,24 @@ final class CompanionsViewController: UIViewController, UICollectionViewDelegate
 
     private func headerButton(_ section: Section) -> UIButton? {
         guard section != .agents else { return nil }
-        let button = UIButton(configuration: {
-            var c = UIButton.Configuration.glass()
-            c.image = UIImage(systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))
-            c.baseForegroundColor = Palette.text
-            c.cornerStyle = .capsule
-            c.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6)
-            return c
-        }())
+        let button = UIButton(
+            configuration: {
+                var c = UIButton.Configuration.glass()
+                c.image = UIImage(
+                    systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))
+                c.baseForegroundColor = Palette.text
+                c.cornerStyle = .capsule
+                c.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6)
+                return c
+            }())
         if section == .sideChats {
             button.menu = UIMenu(children: [
-                UIAction(title: "New Side Chat", image: UIImage(systemName: "bubble.left.and.text.bubble.right")) { [weak self] _ in self?.perform(.newSideChat) },
-                UIAction(title: "Fork This Chat", image: UIImage(systemName: "arrow.triangle.branch")) { [weak self] _ in self?.perform(.fork) },
+                UIAction(title: "New Side Chat", image: UIImage(systemName: "bubble.left.and.text.bubble.right")) {
+                    [weak self] _ in self?.perform(.newSideChat)
+                },
+                UIAction(title: "Fork This Chat", image: UIImage(systemName: "arrow.triangle.branch")) {
+                    [weak self] _ in self?.perform(.fork)
+                },
             ])
             button.showsMenuAsPrimaryAction = true
             button.accessibilityLabel = "Add side chat"
@@ -227,12 +243,12 @@ final class CompanionsViewController: UIViewController, UICollectionViewDelegate
         let tabs = app.terminals.tabs(for: chatId)
         var changed: [Item] = []
         let oldAgents = agents
-        agents = Dictionary(agentRows.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        agents = Dictionary(agentRows.map { ($0.id, $0) }) { a, _ in a }
         changed += agents.filter { oldAgents[$0.key] != $0.value }.map { .agent($0.key) }
         let oldSides = sides
-        sides = Dictionary(sideRows.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        sides = Dictionary(sideRows.map { ($0.id, $0) }) { a, _ in a }
         changed += sides.filter { oldSides[$0.key] != $0.value }.map { .sideChat($0.key) }
-        terminals = Dictionary(tabs.map { (ObjectIdentifier($0), $0) }, uniquingKeysWith: { a, _ in a })
+        terminals = Dictionary(tabs.map { (ObjectIdentifier($0), $0) }) { a, _ in a }
         changed += tabs.map { .terminal(ObjectIdentifier($0)) }
 
         var s = NSDiffableDataSourceSnapshot<Section, Item>()
@@ -241,12 +257,18 @@ final class CompanionsViewController: UIViewController, UICollectionViewDelegate
             s.appendItems([.header(.agents)] + ordered.map { .agent($0.id) }, toSection: .agents)
         }
         s.appendSections([.sideChats])
-        s.appendItems([.header(.sideChats)] + (sideRows.isEmpty ? [.empty(.sideChats)] : sideRows.map { .sideChat($0.id) }), toSection: .sideChats)
+        s.appendItems(
+            [.header(.sideChats)] + (sideRows.isEmpty ? [.empty(.sideChats)] : sideRows.map { .sideChat($0.id) }),
+            toSection: .sideChats)
         if sideRows.isEmpty {
             s.appendItems([.action(.newSideChat), .action(.fork)], toSection: .sideChats)
         }
         s.appendSections([.terminals])
-        s.appendItems([.header(.terminals)] + (tabs.isEmpty ? [.empty(.terminals), .action(.newTerminal)] : tabs.map { .terminal(ObjectIdentifier($0)) }), toSection: .terminals)
+        s.appendItems(
+            [.header(.terminals)]
+                + (tabs.isEmpty
+                    ? [.empty(.terminals), .action(.newTerminal)] : tabs.map { .terminal(ObjectIdentifier($0)) }),
+            toSection: .terminals)
         let existing = Set(s.itemIdentifiers)
         s.reconfigureItems(changed.filter { existing.contains($0) && dataSource.snapshot().indexOfItem($0) != nil })
         dataSource.apply(s, animatingDifferences: animated && view.window != nil)
@@ -255,12 +277,13 @@ final class CompanionsViewController: UIViewController, UICollectionViewDelegate
 
     private func updateSheetTitle(agentRows: [SubagentRow]) {
         let running = agentRows.filter { $0.state == .running }.count
-        navigationItem.subtitle = running > 0 ? "\(running) agent\(running == 1 ? "" : "s") working" : "Agents, side chats & terminals"
+        navigationItem.subtitle =
+            running > 0 ? "\(running) agent\(running == 1 ? "" : "s") working" : "Agents, side chats & terminals"
     }
 
     // MARK: Selection
 
-    func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
+    func collectionView(_: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
         switch dataSource.itemIdentifier(for: indexPath) {
         case .header, .empty, nil: false
         case let .agent(id): agents[id]?.docId != nil
@@ -275,7 +298,9 @@ final class CompanionsViewController: UIViewController, UICollectionViewDelegate
         switch item {
         case let .agent(id):
             guard let row = agents[id], let doc = row.docId else { return }
-            open?(SubagentViewController(app: app, parentId: chatId, docId: doc, title: row.title, running: row.state == .running))
+            open?(
+                SubagentViewController(
+                    app: app, parentId: chatId, docId: doc, title: row.title, running: row.state == .running))
         case let .sideChat(id):
             openSideChat?(id)
         case let .terminal(id):
@@ -292,7 +317,8 @@ final class CompanionsViewController: UIViewController, UICollectionViewDelegate
         switch action {
         case .newSideChat:
             guard let id = app.createSideChat(parentId: chatId) else {
-                return Toast.show("Couldn't start a side chat", in: view.window)
+                Toast.show("Couldn't start a side chat", in: view.window)
+                return
             }
             openSideChat?(id)
         case .fork:
@@ -365,7 +391,10 @@ final class CompanionCell: UICollectionViewListCell {
     private let title = FadingLabel()
     private let detail = FadingLabel()
     private let trailing = UILabel()
-    private let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)))
+    private let chevron = UIImageView(
+        image: UIImage(
+            systemName: "chevron.right",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)))
     private var accent = false
 
     override init(frame: CGRect) {
@@ -384,7 +413,8 @@ final class CompanionCell: UICollectionViewListCell {
         backgroundConfiguration = bg
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func updateConfiguration(using state: UICellConfigurationState) {
         var bg = UIBackgroundConfiguration.listCell().updated(for: state)
@@ -394,7 +424,9 @@ final class CompanionCell: UICollectionViewListCell {
         backgroundConfiguration = bg
     }
 
-    override func preferredLayoutAttributesFitting(_ attrs: UICollectionViewLayoutAttributes) -> UICollectionViewLayoutAttributes {
+    override func preferredLayoutAttributesFitting(_ attrs: UICollectionViewLayoutAttributes)
+        -> UICollectionViewLayoutAttributes
+    {
         attrs.size.height = accent ? (48 * TypeScale.factor).rounded() : Self.height
         return attrs
     }
@@ -412,17 +444,20 @@ final class CompanionCell: UICollectionViewListCell {
         styleText()
         // The tile says how it's doing: working, done, failed.
         let symbol = row.state == .failed ? "xmark" : "checkmark"
-        icon.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))
+        icon.image = UIImage(
+            systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))
         icon.tintColor = row.state == .failed ? Palette.danger : StatusTone.done
-        tile.backgroundColor = row.state == .running ? Palette.accentSoft : row.state == .failed ? Palette.color(.dangerWash) : Palette.chip
+        tile.backgroundColor =
+            row.state == .running
+            ? Palette.accentSoft : row.state == .failed ? Palette.color(.dangerWash) : Palette.chip
         icon.isHidden = row.state == .running
         glyph.isHidden = row.state != .running
         glyph.kind = .spinner
         title.text = row.title
-        let model = [row.model.map(SubagentFormat.model), row.kind].compactMap { $0 }.joined(separator: " · ")
+        let model = [row.model.map(SubagentFormat.model), row.kind].compactMap(\.self).joined(separator: " · ")
         switch row.state {
         case .running:
-            let since = Date(timeIntervalSince1970: Double(row.startedAtMs) / 1000)
+            let since = Date(timeIntervalSince1970: Double(row.startedAtMs) / 1_000)
             trailing.text = SubagentFormat.elapsed(since: since)
             trailing.textColor = StatusTone.working
             detail.text = row.tail ?? (model.isEmpty ? "Working" : model)
@@ -435,7 +470,8 @@ final class CompanionCell: UICollectionViewListCell {
         }
         chevron.isHidden = row.docId == nil
         accessibilityIdentifier = "companion-agent"
-        accessibilityLabel = "\(row.title), \(row.state == .running ? "working" : row.state == .failed ? "failed" : "done")"
+        accessibilityLabel =
+            "\(row.title), \(row.state == .running ? "working" : row.state == .failed ? "failed" : "done")"
         setNeedsLayout()
     }
 
@@ -443,7 +479,9 @@ final class CompanionCell: UICollectionViewListCell {
         accent = false
         styleText()
         tile.backgroundColor = Palette.chip
-        icon.image = UIImage(systemName: "apple.terminal", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+        icon.image = UIImage(
+            systemName: "apple.terminal",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
         icon.tintColor = Palette.secondary
         icon.isHidden = false
         glyph.isHidden = true
@@ -470,12 +508,14 @@ final class CompanionCell: UICollectionViewListCell {
         accent = true
         styleText(titleColor: Palette.accent)
         tile.backgroundColor = Palette.accentSoft
-        let (symbol, text) = switch action {
-        case .newSideChat: ("plus", "New side chat")
-        case .fork: ("arrow.triangle.branch", busy ? "Forking…" : "Fork this chat")
-        case .newTerminal: ("plus", "New terminal")
-        }
-        icon.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold))
+        let (symbol, text) =
+            switch action {
+            case .newSideChat: ("plus", "New side chat")
+            case .fork: ("arrow.triangle.branch", busy ? "Forking…" : "Fork this chat")
+            case .newTerminal: ("plus", "New terminal")
+            }
+        icon.image = UIImage(
+            systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold))
         icon.tintColor = Palette.accent
         icon.isHidden = busy
         glyph.isHidden = !busy
@@ -533,9 +573,12 @@ final class CompanionHeaderCell: UICollectionViewListCell {
         backgroundConfiguration = bg
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    override func preferredLayoutAttributesFitting(_ attrs: UICollectionViewLayoutAttributes) -> UICollectionViewLayoutAttributes {
+    override func preferredLayoutAttributesFitting(_ attrs: UICollectionViewLayoutAttributes)
+        -> UICollectionViewLayoutAttributes
+    {
         attrs.size.height = 46
         return attrs
     }

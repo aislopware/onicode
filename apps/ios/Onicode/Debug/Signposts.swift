@@ -16,12 +16,18 @@ enum TranscriptPerf {
     nonisolated(unsafe) static var viewsCreated = 0
 
     static func reset() {
-        maxLayoutMs = 0; maxApplyMs = 0; maxSyncBuildMs = 0
-        syncBuilds = 0; asyncBuilds = 0; viewsCreated = 0
+        maxLayoutMs = 0
+        maxApplyMs = 0
+        maxSyncBuildMs = 0
+        syncBuilds = 0
+        asyncBuilds = 0
+        viewsCreated = 0
     }
 
     static var json: String {
-        String(format: "{\"maxLayoutMs\":%.2f,\"maxApplyMs\":%.2f,\"maxSyncBuildMs\":%.2f,\"syncBuilds\":%d,\"asyncBuilds\":%d,\"viewsCreated\":%d}",
-               maxLayoutMs, maxApplyMs, maxSyncBuildMs, syncBuilds, asyncBuilds, viewsCreated)
+        String(
+            format:
+                "{\"maxLayoutMs\":%.2f,\"maxApplyMs\":%.2f,\"maxSyncBuildMs\":%.2f,\"syncBuilds\":%d,\"asyncBuilds\":%d,\"viewsCreated\":%d}",
+            maxLayoutMs, maxApplyMs, maxSyncBuildMs, syncBuilds, asyncBuilds, viewsCreated)
     }
 }

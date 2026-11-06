@@ -79,7 +79,7 @@ final class TerminalTab: TerminalListener, @unchecked Sendable {
                 self.title = title
                 onPhaseChange?()
             }
-            observers.values.forEach { $0() }
+            for observer in observers.values { observer() }
         }
     }
 
@@ -115,7 +115,7 @@ final class TerminalStore {
     }
 
     private func notify(_ chatId: String) {
-        observers.values.forEach { $0(chatId) }
+        for observer in observers.values { observer(chatId) }
     }
 
     func tabs(for chatId: String) -> [TerminalTab] {
@@ -168,7 +168,9 @@ final class TerminalStore {
         let saved = (UserDefaults.standard.dictionary(forKey: Self.key)?[chatId] as? [[String: String]]) ?? []
         for (i, dict) in saved.enumerated() {
             guard let id = dict["id"], let device = dict["device"] else { continue }
-            let ref = TerminalRef(id: id, deviceId: device, cwd: dict["cwd"] ?? "", shell: dict["shell"] ?? "zsh", hostReplies: dict["replies"] != "0")
+            let ref = TerminalRef(
+                id: id, deviceId: device, cwd: dict["cwd"] ?? "", shell: dict["shell"] ?? "zsh",
+                hostReplies: dict["replies"] != "0")
             let relay = ListenerRelay()
             let session = client.attachTerminal(terminal: ref, cols: 80, rows: 24, listener: relay)
             _ = adopt(chatId: chatId, session: session, ordinal: i + 1, relay: relay)
@@ -179,7 +181,9 @@ final class TerminalStore {
         var all = UserDefaults.standard.dictionary(forKey: Self.key) ?? [:]
         let list = (tabs[chatId] ?? []).map { tab -> [String: String] in
             let r = tab.ref
-            return ["id": r.id, "device": r.deviceId, "cwd": r.cwd, "shell": r.shell, "replies": r.hostReplies ? "1" : "0"]
+            return [
+                "id": r.id, "device": r.deviceId, "cwd": r.cwd, "shell": r.shell, "replies": r.hostReplies ? "1" : "0",
+            ]
         }
         all[chatId] = list.isEmpty ? nil : list
         UserDefaults.standard.set(all, forKey: Self.key)
@@ -187,11 +191,11 @@ final class TerminalStore {
 
     /// Appearance changed: terminals resolve their palette again.
     func setDark(_ dark: Bool) {
-        for tab in tabs.values.flatMap({ $0 }) { tab.session.setDark(dark: dark) }
+        for tab in tabs.values.flatMap(\.self) { tab.session.setDark(dark: dark) }
     }
 
     func signOut() {
-        for tab in tabs.values.flatMap({ $0 }) { tab.session.detach() }
+        for tab in tabs.values.flatMap(\.self) { tab.session.detach() }
         tabs = [:]
         restored = []
         UserDefaults.standard.removeObject(forKey: Self.key)

@@ -161,7 +161,6 @@ async fn steering_never_aborts_a_running_tool() {
                     worktree: None,
                     resume: None,
                     env: Default::default(),
-                    extra_mcp: Vec::new(),
                 }),
             },
         )

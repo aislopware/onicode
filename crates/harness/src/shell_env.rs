@@ -42,7 +42,6 @@ use std::sync::OnceLock;
 /// rebuild PATH behind a same-named wrapper that then re-runs itself).
 /// The proxy variables ([`PROXY_VARS`]) are captured too, but applied as one
 /// group — never mixed item by item into an existing proxy configuration.
-#[cfg_attr(not(unix), allow(dead_code))]
 const CAPTURED_VARS: [&str; 9] = [
     "SSL_CERT_FILE",
     "SSL_CERT_DIR",
@@ -78,7 +77,6 @@ pub(crate) fn is_proxy_var(key: &OsStr) -> bool {
 }
 
 #[derive(Debug, Default)]
-#[cfg_attr(not(unix), allow(dead_code))]
 struct Snapshot {
     path: Option<OsString>,
     vars: Vec<(OsString, OsString)>,
@@ -86,35 +84,21 @@ struct Snapshot {
 
 static CACHE: OnceLock<Option<Snapshot>> = OnceLock::new();
 
-#[cfg(unix)]
 fn snapshot() -> Option<&'static Snapshot> {
     CACHE.get_or_init(unix::capture).as_ref()
 }
 
-#[cfg(not(unix))]
-fn snapshot() -> Option<&'static Snapshot> {
-    CACHE.get_or_init(|| None).as_ref()
-}
-
 /// The PATH the user's login shell reports, captured once and cached for the
-/// life of the process. `None` when disabled, non-unix, no usable shell, or
+/// life of the process. `None` when disabled, no usable shell, or
 /// the shell never produced a parseable snapshot.
 pub fn login_shell_path() -> Option<&'static OsStr> {
     snapshot()?.path.as_deref()
 }
 
 /// The PATH the user's own sessions get, beyond this process's: the login
-/// shell's on Unix; on Windows the persisted user + machine PATH, read fresh
-/// so a toolchain installed after onicode started is found without a restart.
+/// shell's.
 pub(crate) fn user_path() -> Option<OsString> {
-    #[cfg(windows)]
-    {
-        crate::windows_process::registry_path()
-    }
-    #[cfg(not(windows))]
-    {
-        login_shell_path().map(OsString::from)
-    }
+    login_shell_path().map(OsString::from)
 }
 
 /// Variables an agent child should get because our own environment lacks
@@ -160,17 +144,13 @@ fn defaults_for(
 /// Kick off the snapshot on a background thread so the first harness resolve
 /// doesn't pay the shell-startup latency inline. Call at daemon startup.
 pub fn prewarm() {
-    #[cfg(unix)]
-    {
-        let _ = std::thread::Builder::new()
-            .name("onicode-shell-env".into())
-            .spawn(|| {
-                let _ = login_shell_path();
-            });
-    }
+    let _ = std::thread::Builder::new()
+        .name("onicode-shell-env".into())
+        .spawn(|| {
+            let _ = login_shell_path();
+        });
 }
 
-#[cfg(unix)]
 mod unix {
     use super::{CAPTURED_VARS, PROXY_VARS, Snapshot};
     use std::ffi::OsString;

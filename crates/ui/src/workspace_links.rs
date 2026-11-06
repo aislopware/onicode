@@ -190,9 +190,9 @@ pub(crate) fn resolve_inline_code_path(
         None => String::new(),
     };
     let file = |path: &Path| {
-        // File links are POSIX-only: a drive path (Windows) would become a
-        // target the link grammar rejects, turning the span into a dead link,
-        // so it keeps its inline-code look instead.
+        // File links are POSIX-only: anything else would become a target the
+        // link grammar rejects, turning the span into a dead link, so it keeps
+        // its inline-code look instead.
         let path = path.to_string_lossy();
         path.starts_with('/')
             .then(|| InlineCodePath::File(format!("file://{}{anchor}", percent_encode_path(&path))))
@@ -553,9 +553,6 @@ fn parse_line_column(value: &str) -> Option<(u32, Option<u32>)> {
 /// clean relative path. Returns `None` when the path escapes the root.
 fn resolve_decoded_path(target: &str, root: &str) -> Option<String> {
     let root = Path::new(root);
-    // A remote engine may supply POSIX paths to a Windows viewport. A leading
-    // slash has a root on Windows, but is_absolute() also requires a drive;
-    // classify the link by its root instead of the viewer's absolute-path rules.
     let relative = if Path::new(target).has_root() {
         Path::new(target).strip_prefix(root).ok()?
     } else {
@@ -932,7 +929,6 @@ mod tests {
         ));
     }
 
-    #[cfg(unix)]
     #[test]
     fn inline_code_spans_probe_only_paths_that_exist() {
         let dir = tempfile::tempdir().unwrap();

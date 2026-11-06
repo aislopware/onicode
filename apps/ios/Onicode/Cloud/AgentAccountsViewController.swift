@@ -76,7 +76,8 @@ final class AgentAccountsViewController: UITableViewController {
         }
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     @MainActor private var cloud: CloudStore { app.cloud }
 
@@ -101,16 +102,20 @@ final class AgentAccountsViewController: UITableViewController {
         navigationItem.largeTitleDisplayMode = .never
         // Shown on its own (a sheet): a way out.
         if navigationController?.viewControllers.first === self, presentingViewController != nil {
-            navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in
-                self?.dismiss(animated: true)
-            })
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                systemItem: .done,
+                primaryAction: UIAction { [weak self] _ in
+                    self?.dismiss(animated: true)
+                })
         }
         tableView.sectionHeaderTopPadding = 8
         tableView.register(AccountCell.self, forCellReuseIdentifier: "account")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "row")
-        refreshControl = UIRefreshControl(frame: .zero, primaryAction: UIAction { [weak self] _ in
-            self?.load()
-        })
+        refreshControl = UIRefreshControl(
+            frame: .zero,
+            primaryAction: UIAction { [weak self] _ in
+                self?.load()
+            })
         if case .cloud = target {
             token = cloud.observe { [weak self] in self?.tableView.reloadData() }
         }
@@ -159,23 +164,30 @@ final class AgentAccountsViewController: UITableViewController {
                 let key = "\(agent.login):\(a.slot)"
                 let usage = cloud.usage[key]
                 // The live plan from the usage reply beats the sign-in's.
-                return Account(id: key, title: a.email ?? a.displayName ?? "\(agent.name) account",
-                               detail: [usage?.plan ?? a.plan, a.organization].compactMap { $0 }.joined(separator: " · ").nonEmpty,
-                               usage: usage?.windows ?? [],
-                               usageNote: a.needsReconnect ? "Sign in again" : usage?.windows.isEmpty == false ? nil : cloud.usageErrors[key],
-                               active: a.active, switchable: true, isKey: false, cloudProvider: agent.login)
+                return Account(
+                    id: key, title: a.email ?? a.displayName ?? "\(agent.name) account",
+                    detail: [usage?.plan ?? a.plan, a.organization].compactMap(\.self).joined(separator: " · ")
+                        .nonEmpty,
+                    usage: usage?.windows ?? [],
+                    usageNote: a.needsReconnect
+                        ? "Sign in again" : usage?.windows.isEmpty == false ? nil : cloud.usageErrors[key],
+                    active: a.active, switchable: true, isKey: false, cloudProvider: agent.login)
             }
             let keys = (cloud.accounts[agent.key] ?? []).map { a in
-                Account(id: "\(agent.key):\(a.slot)", title: agent.keyName, detail: nil, usage: [], usageNote: nil,
-                        active: a.active, switchable: true, isKey: true, cloudProvider: agent.key)
+                Account(
+                    id: "\(agent.key):\(a.slot)", title: agent.keyName, detail: nil, usage: [], usageNote: nil,
+                    active: a.active, switchable: true, isKey: true, cloudProvider: agent.key)
             }
             return logins + keys
         case .device:
             return (deviceAccounts ?? []).filter { $0.harness == harness }.map { a in
-                Account(id: a.id, title: a.email ?? a.displayName ?? (a.apiKey ? "API key" : "Account"),
-                        detail: [a.planLabel, a.organization, a.provider.flatMap(optionLabel)].compactMap { $0 }.joined(separator: " · ").nonEmpty,
-                        usage: rules.reportsUsage ? a.usage : [], usageNote: a.usageError,
-                        active: a.active, switchable: a.switchable && rules.switches, isKey: a.apiKey, cloudProvider: nil)
+                Account(
+                    id: a.id, title: a.email ?? a.displayName ?? (a.apiKey ? "API key" : "Account"),
+                    detail: [a.planLabel, a.organization, a.provider.flatMap(optionLabel)].compactMap(\.self).joined(
+                        separator: " · "
+                    ).nonEmpty,
+                    usage: rules.reportsUsage ? a.usage : [], usageNote: a.usageError,
+                    active: a.active, switchable: a.switchable && rules.switches, isKey: a.apiKey, cloudProvider: nil)
             }
         }
     }
@@ -197,7 +209,9 @@ final class AgentAccountsViewController: UITableViewController {
         var rows: [AddRow] = []
         if empty || !rules.keepsOneLogin {
             rows += rules.options.map { option in
-                AddRow(id: "add:\(option.provider ?? "")", title: empty ? option.firstTitle : option.moreTitle, option: option)
+                AddRow(
+                    id: "add:\(option.provider ?? "")", title: empty ? option.firstTitle : option.moreTitle,
+                    option: option)
             }
         }
         if case let .cloud(agent) = target {
@@ -222,13 +236,13 @@ final class AgentAccountsViewController: UITableViewController {
         return items
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { 1 }
+    override func numberOfSections(in _: UITableView) -> Int { 1 }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    override func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int {
         items.count
     }
 
-    override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+    override func tableView(_: UITableView, viewForHeaderInSection _: Int) -> UIView? {
         let header = UITableViewHeaderFooterView()
         var c = UIListContentConfiguration.groupedHeader()
         c.text = "Accounts on \(deviceName)"
@@ -236,16 +250,17 @@ final class AgentAccountsViewController: UITableViewController {
         return header
     }
 
-    override func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
+    override func tableView(_: UITableView, viewForFooterInSection _: Int) -> UIView? {
         let footer = UITableViewHeaderFooterView()
         var c = UIListContentConfiguration.groupedFooter()
-        let where_: String = switch target {
-        case .cloud:
-            "Cloud sessions use the account in use. Sign-ins and keys are kept in Cloud, never on this phone."
-        case let .device(_, name, _, _):
-            "Account changes affect new sessions on \(name). Signing in runs on \(name); you finish in the browser here."
-        }
-        c.text = [rules.note, where_].compactMap { $0 }.joined(separator: "\n\n")
+        let scope: String =
+            switch target {
+            case .cloud:
+                "Cloud sessions use the account in use. Sign-ins and keys are kept in Cloud, never on this phone."
+            case let .device(_, name, _, _):
+                "Account changes affect new sessions on \(name). Signing in runs on \(name); you finish in the browser here."
+            }
+        c.text = [rules.note, scope].compactMap(\.self).joined(separator: "\n\n")
         footer.contentConfiguration = c
         return footer
     }
@@ -253,8 +268,11 @@ final class AgentAccountsViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         switch items[indexPath.row] {
         case let .placeholder(text, detail):
-            return plainCell(text: text, detail: detail, symbol: detail == nil ? nil : "exclamationmark.triangle", tint: Palette.secondary)
+            return plainCell(
+                text: text, detail: detail, symbol: detail == nil ? nil : "exclamationmark.triangle",
+                tint: Palette.secondary)
         case let .account(account):
+            // swiftlint:disable:next force_cast - "account" is registered as AccountCell
             let cell = tableView.dequeueReusableCell(withIdentifier: "account", for: indexPath) as! AccountCell
             cell.configure(
                 icon: account.isKey ? CloudUI.symbol("key.fill", 15) : BrandMarks.image(for: harness, side: 20),
@@ -291,8 +309,9 @@ final class AgentAccountsViewController: UITableViewController {
             // ends with its browser sheet.
             var parts = [signIn?.message]
             if case .device = target { parts.append("Tap to cancel") }
-            let detail = parts.compactMap { $0 }.joined(separator: " · ")
-            let cell = plainCell(text: "Finish signing in in the browser…", detail: detail, symbol: nil, tint: Palette.secondary)
+            let detail = parts.compactMap(\.self).joined(separator: " · ")
+            let cell = plainCell(
+                text: "Finish signing in in the browser…", detail: detail, symbol: nil, tint: Palette.secondary)
             let spinner = UIActivityIndicatorView(style: .medium)
             spinner.startAnimating()
             cell.accessoryView = spinner
@@ -336,7 +355,7 @@ final class AgentAccountsViewController: UITableViewController {
         }
     }
 
-    override func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
+    override func tableView(_: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
         if case .add = items[indexPath.row] { return signIn == nil && busy == nil }
         if case .waiting = items[indexPath.row], case .device = target { return true }
         return false
@@ -353,7 +372,9 @@ final class AgentAccountsViewController: UITableViewController {
         if isMovingFromParent || isBeingDismissed { cancelSignIn() }
     }
 
-    override func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+    override func tableView(_: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath)
+        -> UISwipeActionsConfiguration?
+    {
         guard case let .account(account) = items[indexPath.row], busy == nil, account.switchable else { return nil }
         let remove = UIContextualAction(style: .destructive, title: "Remove") { [weak self] _, _, done in
             self?.remove(account)
@@ -362,16 +383,24 @@ final class AgentAccountsViewController: UITableViewController {
         return UISwipeActionsConfiguration(actions: [remove])
     }
 
-    override func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+    override func tableView(_: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point _: CGPoint)
+        -> UIContextMenuConfiguration?
+    {
         guard case let .account(account) = items[indexPath.row], busy == nil, account.switchable else { return nil }
-        return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
+        return UIContextMenuConfiguration { [weak self] _ in
             var actions: [UIMenuElement] = []
             if !account.active {
-                actions.append(UIAction(title: "Switch to This Account", image: UIImage(systemName: "arrow.left.arrow.right")) { _ in self?.activate(account) })
+                actions.append(
+                    UIAction(title: "Switch to This Account", image: UIImage(systemName: "arrow.left.arrow.right")) {
+                        _ in self?.activate(account)
+                    })
             }
-            actions.append(UIAction(title: "Remove Account", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in self?.remove(account) })
+            actions.append(
+                UIAction(title: "Remove Account", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
+                    self?.remove(account)
+                })
             return UIMenu(children: actions)
-        })
+        }
     }
 
     // MARK: Actions
@@ -455,7 +484,9 @@ final class AgentAccountsViewController: UITableViewController {
 
     private func askForKey() {
         guard case let .cloud(agent) = target else { return }
-        let alert = UIAlertController(title: agent.keyName, message: "Cloud sessions use this key instead of a subscription sign-in.", preferredStyle: .alert)
+        let alert = UIAlertController(
+            title: agent.keyName, message: "Cloud sessions use this key instead of a subscription sign-in.",
+            preferredStyle: .alert)
         alert.addTextField { field in
             field.placeholder = agent.key == "anthropic-key" ? "sk-ant-…" : "sk-…"
             field.isSecureTextEntry = true
@@ -463,10 +494,11 @@ final class AgentAccountsViewController: UITableViewController {
             field.autocapitalizationType = .none
         }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Save Key", style: .default) { [weak self, weak alert] _ in
-            guard let self, let key = alert?.textFields?.first?.text, !key.isEmpty else { return }
-            self.run("api-key") { _ in try await self.cloud.saveKey(key, for: agent) }
-        })
+        alert.addAction(
+            UIAlertAction(title: "Save Key", style: .default) { [weak self, weak alert] _ in
+                guard let self, let key = alert?.textFields?.first?.text, !key.isEmpty else { return }
+                self.run("api-key") { _ in try await self.cloud.saveKey(key, for: agent) }
+            })
         present(alert, animated: true)
     }
 
@@ -495,13 +527,14 @@ final class DeviceSignIn: NSObject, ASWebAuthenticationPresentationContextProvid
         harness: String,
         provider: String?,
         host: UIViewController,
-        message: @escaping (String?) -> Void
+        message: (String?) -> Void
     ) async throws -> [DeviceAccountInfo]? {
         self.host = host
         cancelled = false
         cancelled = false
         let done = ProviderSignIn.doneURL
-        let start = try await client.deviceLoginStart(deviceId: device, harness: harness, provider: provider, doneUrl: done)
+        let start = try await client.deviceLoginStart(
+            deviceId: device, harness: harness, provider: provider, doneUrl: done)
         if start.pasteCode {
             open(start.url)
             guard let code = await askForCode() else {
@@ -566,17 +599,20 @@ final class DeviceSignIn: NSObject, ASWebAuthenticationPresentationContextProvid
     private func askForCode() async -> String? {
         guard let host else { return nil }
         return await withCheckedContinuation { cont in
-            let alert = UIAlertController(title: "Paste the code", message: "Copy the code the sign-in page shows, then paste it here.", preferredStyle: .alert)
+            let alert = UIAlertController(
+                title: "Paste the code", message: "Copy the code the sign-in page shows, then paste it here.",
+                preferredStyle: .alert)
             alert.addTextField { field in
                 field.placeholder = "Authorization code"
                 field.autocorrectionType = .no
                 field.autocapitalizationType = .none
             }
             alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in cont.resume(returning: nil) })
-            alert.addAction(UIAlertAction(title: "Continue", style: .default) { [weak alert] _ in
-                let code = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
-                cont.resume(returning: code?.nonEmpty)
-            })
+            alert.addAction(
+                UIAlertAction(title: "Continue", style: .default) { [weak alert] _ in
+                    let code = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    cont.resume(returning: code?.nonEmpty)
+                })
             (host.presentedViewController ?? host).present(alert, animated: true)
         }
     }
@@ -586,7 +622,7 @@ final class DeviceSignIn: NSObject, ASWebAuthenticationPresentationContextProvid
         session?.cancel()
     }
 
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+    func presentationAnchor(for _: ASWebAuthenticationSession) -> ASPresentationAnchor {
         host?.view.window ?? ASPresentationAnchor()
     }
 }
@@ -646,16 +682,20 @@ final class AccountCell: UITableViewCell {
         separatorInset = UIEdgeInsets(top: 0, left: 56, bottom: 0, right: 0)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    func configure(icon image: UIImage?, title: String, detail: String?, usage: [UsageWindowInfo], note: String?, state: State, onSwitch: @escaping () -> Void) {
+    func configure(
+        icon image: UIImage?, title: String, detail: String?, usage: [UsageWindowInfo], note: String?, state: State,
+        onSwitch: @escaping () -> Void
+    ) {
         icon.image = image
         titleLabel.text = title
         titleLabel.textColor = state == .fixed ? Palette.tertiary : Palette.text
         detailLabel.text = detail
         detailLabel.isHidden = detail == nil
         self.onSwitch = onSwitch
-        meters.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in meters.arrangedSubviews { view.removeFromSuperview() }
         for window in usage.prefix(3) {
             meters.addArrangedSubview(UsageMeter(window: window))
         }
@@ -668,7 +708,7 @@ final class AccountCell: UITableViewCell {
             meters.addArrangedSubview(label)
         }
         meters.isHidden = meters.arrangedSubviews.isEmpty
-        trailing.subviews.forEach { $0.removeFromSuperview() }
+        for view in trailing.subviews { view.removeFromSuperview() }
         let accessory: UIView?
         switch state {
         case .inUse:
@@ -739,8 +779,9 @@ final class UsageMeter: UIView {
         var text = "\(Int((fraction * 100).rounded()))%"
         if let resets = window.resetsAtMs {
             // Until the window resets: "45m", "3h", "4d".
-            let left = max(0, TimeInterval(resets) / 1000 - Date().timeIntervalSince1970)
-            let span = left < 3600 ? "\(Int(left / 60))m" : left < 86_400 ? "\(Int(left / 3600))h" : "\(Int(left / 86_400))d"
+            let left = max(0, TimeInterval(resets) / 1_000 - Date().timeIntervalSince1970)
+            let span =
+                left < 3_600 ? "\(Int(left / 60))m" : left < 86_400 ? "\(Int(left / 3_600))h" : "\(Int(left / 86_400))d"
             text += " · \(span)"
         }
         value.text = text
@@ -772,5 +813,6 @@ final class UsageMeter: UIView {
         ])
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 }

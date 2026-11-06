@@ -4,21 +4,20 @@
 //! bootloader unpacks its payload (the Antigravity adapter unpacks ~1 GB) into
 //! a fresh `_MEI<random>` directory under the child's temp root on every
 //! launch, and removes that directory only when the bootloader process exits
-//! normally. Adapters are reaped through `TerminateJobObject`, which skips that
-//! path entirely, so the unpack directory outlives the run and accumulates on
+//! normally. A killed adapter skips that path entirely, so the unpack directory outlives the run and accumulates on
 //! disk — one gigabyte per Antigravity session.
 //!
 //! Pointing the child's temp variables at a directory this process owns moves
-//! the payload somewhere it can delete itself once the job is gone. Removal is
-//! retried briefly: the guard drops after the job is terminated, but the killed
-//! processes may still be closing handles on the way out.
+//! the payload somewhere it can delete itself once the adapter is gone. Removal
+//! is retried briefly: the killed processes may still be closing files on the
+//! way out.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-/// Temp variables the child reads to pick its unpack location. `TMPDIR` is the
-/// Unix name PyInstaller honors; `TEMP`/`TMP` are the Windows pair.
+/// Temp variables the child reads to pick its unpack location: PyInstaller and
+/// Python's `tempfile` honor all three.
 const TEMP_VARS: [&str; 3] = ["TEMP", "TMP", "TMPDIR"];
 
 /// How long to keep retrying a removal the child is still holding open.
@@ -49,7 +48,6 @@ impl ScratchDir {
                 NEXT_SCRATCH.fetch_add(1, Ordering::Relaxed)
             ));
             let mut builder = std::fs::DirBuilder::new();
-            #[cfg(unix)]
             {
                 use std::os::unix::fs::DirBuilderExt;
                 builder.mode(0o700);

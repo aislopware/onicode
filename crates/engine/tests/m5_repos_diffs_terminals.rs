@@ -371,13 +371,13 @@ async fn repository_identity_spans_worktrees_and_clones() {
             "remote",
             "set-url",
             "origin",
-            "https://GitHub.com/OnicodeSH/Onicode.git",
+            "https://GitHub.com/AislopWare/Onicode.git",
         ],
     )
     .await;
     assert_eq!(
         repos.repository_identity(&shallow).await.unwrap(),
-        "github.com/zeronsh/onicode"
+        "github.com/aislopware/onicode"
     );
 
     // No commits yet: the remote (origin, else the first), then a

@@ -3413,40 +3413,28 @@ async fn stream_bus_counts_only_framed_streams_and_abandons_silent_ones() {
 }
 
 #[test]
-fn attachment_urls_survive_reserved_characters_and_windows_paths() {
+fn attachment_urls_survive_reserved_characters() {
     for (path, url) in [
         ("/tmp/shot.png", "file:///tmp/shot.png"),
         ("/tmp/a b#c?%.png", "file:///tmp/a%20b%23c%3F%25.png"),
         ("/tmp/Zoë/shot 1.png", "file:///tmp/Zo%C3%AB/shot%201.png"),
-        (
-            r"C:\Users\Zoë\shot 1#.png",
-            "file:///C:/Users/Zo%C3%AB/shot%201%23.png",
-        ),
-        ("c:/x/y.png", "file:///c:/x/y.png"),
-        (
-            r"\\server\share\dir\f g.png",
-            "file://server/share/dir/f%20g.png",
-        ),
-        (r"\\?\C:\a\b.png", "file:///C:/a/b.png"),
-        (r"\\?\UNC\server\share\f.png", "file://server/share/f.png"),
     ] {
         assert_eq!(file_url(path), url, "{path}");
     }
-    let body = prompt_body("x", None, None, &[r"C:\Users\me\a b.png".to_owned()], None);
-    assert_eq!(body["parts"][1]["url"], "file:///C:/Users/me/a%20b.png");
+    let body = prompt_body("x", None, None, &["/Users/me/a b.png".to_owned()], None);
+    assert_eq!(body["parts"][1]["url"], "file:///Users/me/a%20b.png");
     let body = prompt_body_v2("x", &["/tmp/a#b.png".to_owned()], None);
     assert_eq!(body["files"][0]["uri"], "file:///tmp/a%23b.png");
     assert_eq!(body["files"][0]["name"], "a#b.png");
 }
 
 #[test]
-fn windows_directories_encode_like_encode_uri_component() {
+fn directories_encode_like_encode_uri_component() {
     // encodeURIComponent output, except `/` (which decodes the same).
     assert_eq!(
-        encode_directory(r"C:\Users\Zoë\my proj"),
-        "C%3A%5CUsers%5CZo%C3%AB%5Cmy%20proj"
+        encode_directory("/Users/Zoë/my proj"),
+        "/Users/Zo%C3%AB/my%20proj"
     );
-    assert_eq!(encode_directory(r"\\srv\share"), "%5C%5Csrv%5Cshare");
 }
 
 #[test]
@@ -3704,7 +3692,7 @@ http.createServer((req, res) => {
     })
     .await
     .unwrap();
-    // The bus alone would take 40 reconnects (10s+, far longer on Windows).
+    // The bus alone would take 40 reconnects (10s+).
     assert!(
         start.elapsed() < Duration::from_secs(4),
         "{:?}",
@@ -4162,4 +4150,30 @@ async fn a_stopped_server_process_fails_the_turn_and_is_torn_down() {
         .success();
     assert!(!alive, "the stopped server {pid} outlived its run");
     drop(steer_tx);
+}
+
+/// An empty after-text is a deletion or an emptied file, not a missing
+/// field: it is kept as given.
+#[test]
+fn empty_file_text_is_kept_exactly() {
+    let call = oc_tool_call(
+        "edit",
+        &json!({"filePath": "/w/a.rs", "oldString": "gone\n", "newString": ""}),
+    );
+    assert_eq!(
+        call,
+        ToolCall::EditFile {
+            path: "/w/a.rs".into(),
+            old_string: Some("gone\n".into()),
+            new_string: Some(String::new()),
+        }
+    );
+    let call = oc_tool_call("write", &json!({"filePath": "/w/empty", "content": ""}));
+    assert_eq!(
+        call,
+        ToolCall::WriteFile {
+            path: "/w/empty".into(),
+            content: Some(String::new()),
+        }
+    );
 }

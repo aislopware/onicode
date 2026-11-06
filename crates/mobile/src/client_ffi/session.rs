@@ -94,8 +94,6 @@ pub struct HostCapabilities {
     pub queue_attachments: bool,
     pub clean_attachment_text: bool,
     pub queue_edit_lease: bool,
-    /// Host ≥ 0.2.12: attachments ride `pending://` refs.
-    pub queued_attachments: bool,
     /// The chat's harness steers mid-turn (unknown until a live catalog).
     pub mid_turn_steering: Option<bool>,
     /// The host moves the chat to another provider between turns.
@@ -273,7 +271,6 @@ impl From<&zc::ComposerState> for ComposerState {
                     queue_attachments: caps.queue_attachments,
                     clean_attachment_text: caps.clean_attachment_text,
                     queue_edit_lease: caps.queue_edit_lease,
-                    queued_attachments: caps.queued_attachments,
                     mid_turn_steering: caps.mid_turn_steering,
                     provider_switch: caps.provider_switch,
                 },

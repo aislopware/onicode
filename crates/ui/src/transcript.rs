@@ -10364,10 +10364,9 @@ fn tool_icon_path(call: &ToolCall) -> &'static str {
 
 /// Compact file-action chips show only the final path component. The full
 /// path remains on the tool call (and in expanded diagnostics) for identity
-/// and disambiguation. Accept both separator styles because remote tools can
-/// report Windows paths even when the UI is running elsewhere.
+/// and disambiguation.
 fn file_badge_name(path: &str) -> &str {
-    path.rsplit(['/', '\\'])
+    path.rsplit('/')
         .find(|component| !component.is_empty())
         .unwrap_or(path)
 }
@@ -10936,19 +10935,21 @@ fn chip_header(
     )
 }
 
-/// Max chars a subagent tab title keeps. The strip chip is fixed-width and
+/// Max graphemes a subagent tab title keeps. The strip chip is fixed-width and
 /// truncates visually, but the derived title also rides drag ghosts and any
 /// future pickers — cap it at the source.
 const SUBAGENT_TITLE_MAX: usize = 40;
 
-/// First line of `text`, trimmed, capped at `max` chars with an ellipsis.
+/// First line of `text`, trimmed, capped at `max` graphemes with an ellipsis.
+/// Graphemes, not chars: a cut inside a flag, a keycap or before a combining
+/// mark would end the title in a broken character.
 fn title_line(text: &str, max: usize) -> Option<String> {
+    use unicode_segmentation::UnicodeSegmentation as _;
     let line = text.lines().find(|l| !l.trim().is_empty())?.trim();
-    let mut out: String = line.chars().take(max).collect();
-    if line.chars().count() > max {
-        out.push('…');
-    }
-    Some(out)
+    Some(match line.grapheme_indices(true).nth(max) {
+        Some((cut, _)) => format!("{}…", &line[..cut]),
+        None => line.to_owned(),
+    })
 }
 
 /// Drop a leading "Agent"/"Task" genus (with its `:` and spacing) from a
@@ -13257,6 +13258,7 @@ mod tests {
                     multi_select: false,
                     prefill: None,
                     multiline: false,
+                    approval: None,
                 }],
                 resolved,
                 answers,
@@ -17575,6 +17577,27 @@ mod tests {
         let title = subagent_tab_title(&long);
         assert_eq!(title.chars().count(), SUBAGENT_TITLE_MAX + 1);
         assert!(title.ends_with('…'));
+        // The cap never splits a character a person sees as one: a flag, a
+        // keycap, a skin-toned emoji or a letter with a combining accent at
+        // the cut stays whole.
+        let head = "a".repeat(SUBAGENT_TITLE_MAX - 1);
+        for whole in [
+            "🇯🇵",
+            "1\u{fe0f}\u{20e3}",
+            "👍🏽",
+            "e\u{301}",
+            "👨\u{200d}👩\u{200d}👧",
+        ] {
+            let long = ToolCall::Unknown {
+                name: format!("{head}{whole} and more work"),
+                input: None,
+            };
+            assert_eq!(
+                subagent_tab_title(&long).as_ref(),
+                format!("{head}{whole}…"),
+                "{whole:?}"
+            );
+        }
         // Non-spawn-shaped calls stay generic.
         assert_eq!(
             subagent_tab_title(&ToolCall::Exec {
@@ -17628,7 +17651,6 @@ mod tests {
             file_badge_name("crates/ui/src/transcript.rs"),
             "transcript.rs"
         );
-        assert_eq!(file_badge_name(r"C:\project\src\main.rs"), "main.rs");
         assert_eq!(file_badge_name("src/components/"), "components");
         assert_eq!(file_badge_name("main.rs"), "main.rs");
         assert_eq!(file_badge_name(""), "");

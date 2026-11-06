@@ -30,8 +30,7 @@ any folder would move into itself or two entries would land on the same name.
 Existing destinations are never overwritten or merged. The source remains
 visible until the host confirms the operation.
 
-Drag from the row on macOS, Linux, and Windows. The Windows drag threshold
-protects ordinary clicks from small pointer jitter. Search results and file
+Drag from the row on macOS and Linux. Search results and file
 tabs continue to support references into the conversation; only tree-originated
 drags can move entries.
 
@@ -100,11 +99,9 @@ Metadata revisions are not recursive directory snapshots, and operations do
 not provide transactions against arbitrary external processes. Cross-volume
 moves return an error instead of falling back to copying and deleting.
 
-Native moves use Linux `RENAME_NOREPLACE`, macOS `RENAME_EXCL`, and Windows
-`MoveFileExW` without replacement or cross-volume copy flags. See the
-[Linux rename manual](https://man7.org/linux/man-pages/man2/rename.2.html),
-[Apple's exclusive rename capability](https://developer.apple.com/documentation/foundation/urlresourcevalues/volumesupportsexclusiverenaming),
-and [Microsoft's MoveFileExW contract](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw).
+Native moves use Linux `RENAME_NOREPLACE` and macOS `RENAME_EXCL`. See the
+[Linux rename manual](https://man7.org/linux/man-pages/man2/rename.2.html)
+and [Apple's exclusive rename capability](https://developer.apple.com/documentation/foundation/urlresourcevalues/volumesupportsexclusiverenaming).
 Case-only aliases on case-insensitive Unix volumes use a unique temporary entry
 with no-replacement rollback. Distinct case-similar hard links are collisions.
 
@@ -130,9 +127,8 @@ cargo check --release --locked -p zeron
 ```
 
 This implementation was exercised on Linux with GPUI's test backend. Native
-macOS/Windows interaction, Windows junctions, and the case-insensitive-volume
-fallback require verification on those hosts. A Windows-specific regression is
-included for row-click jitter and intentional row dragging. A desktop visual
+macOS interaction and the case-insensitive-volume fallback require verification
+on macOS. A desktop visual
 review of themes, narrow windows and pointer feel is still required; headless
 tests do not establish native rendering quality.
 

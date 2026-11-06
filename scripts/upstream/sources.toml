@@ -23,8 +23,8 @@ upstream = "longbridge/gpui-fast"
 branch = "main"
 fork = "aislopware/gpui-fast"
 checkout = "forks/gpui-fast"
-base = "7fcd37e6ef8caf212e484d5a8e4cd971dad690e1"
-base_date = "2026-10-31"
+base = "5bf74804b5708619e096742e3c02061997ef8527"
+base_date = "2026-11-06"
 every_minutes = 0
 
 [gpui-kit]
@@ -64,8 +64,8 @@ upstream = "ghostty-org/ghostty"
 branch = "main"
 fork = "aislopware/ghostty"
 checkout = "forks/ghostty"
-base = "66af4c7458db7e19ae7adb44aa7054879be58b6b"
-base_date = "2026-11-05"
+base = "c445f448a7b0e409e71264ca10b302305a62f696"
+base_date = "2026-11-06"
 every_minutes = 0
 paths = [
     "src/terminal/",
@@ -75,6 +75,7 @@ paths = [
     "src/unicode/",
     "src/input/",
     "src/build/GhosttyLibVt.zig",
+    "pkg/",
     "build.zig",
     "build.zig.zon",
     "src/datastruct/",
@@ -89,8 +90,8 @@ upstream = "Uzaaft/libghostty-rs"
 branch = "master"
 fork = "aislopware/libghostty-rs"
 checkout = "forks/libghostty-rs"
-base = "575ed6b8ceb79ffaf247ecf7e34333876b0d5be4"
-base_date = "2026-10-30"
+base = "4230bfe2e00e081871b45ae14161d77c24304d50"
+base_date = "2026-11-06"
 every_minutes = 0
 
 # Vendored with onicode's patches (the notes in vendor/noq-proto); a bump re-applies them by hand.
@@ -156,7 +157,7 @@ every_minutes = 0
 [rune]
 upstream = "anomalyco/rune"
 branch = "dev"
-base = "ba5b054a681e59cc4e0833b41004062e66bd834d"
+base = "55217838ad88551dcb64dba3085c9e96e058bd99"
 base_date = "2026-11-06"
 every_minutes = 0
 pulls = true
@@ -166,7 +167,7 @@ releases = false
 [t3code]
 upstream = "pingdotgg/t3code"
 branch = "main"
-base = "4a087861d0764654c0e9f450f40015aea03d50a7"
+base = "6f54322e4a57e38c01fabf4e5da0d51fe3a24270"
 base_date = "2026-11-06"
 every_minutes = 0
 pulls = false
@@ -191,7 +192,7 @@ releases = true
 upstream = "sst/opencode"
 branch = "dev"
 paths = ["packages/"]
-base = "3523b9e747e36f4f4221f50964e700b58cb3999b"
+base = "866fb262bacd955dd26ee72331f18136e5575e98"
 base_date = "2026-11-06"
 every_minutes = 60
 pulls = false
@@ -201,7 +202,7 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "faeb379646bdbad016e11f7c9ca91113cad4bc9d"
+base = "7b8d67e4560e03d1c9a69a59f05ca005edf7e355"
 base_date = "2026-11-06"
 every_minutes = 60
 pulls = false

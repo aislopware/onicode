@@ -6,7 +6,8 @@ enum Motion {
     static let fold: TimeInterval = 0.14
     /// `EASE_OUT_EXPO` (0.16, 1, 0.3, 1) — new tool row height reveal (360 ms).
     static let rowReveal: TimeInterval = 0.36
-    static let expo = UICubicTimingParameters(controlPoint1: CGPoint(x: 0.16, y: 1), controlPoint2: CGPoint(x: 0.3, y: 1))
+    static let expo = UICubicTimingParameters(
+        controlPoint1: CGPoint(x: 0.16, y: 1), controlPoint2: CGPoint(x: 0.3, y: 1))
     /// Connector draw: 480 ms `EASE_OUT_QUINT` (0.22, 1, 0.36, 1).
     static let connector: Double = 0.48
     /// Row start stagger / first-row lead-in of a brand-new group.
@@ -51,14 +52,17 @@ final class ToolChevronView: UIImageView {
         if let previous, previous != expanded, !UIAccessibility.isReduceMotionEnabled {
             transform = angle(previous)
             DispatchQueue.main.async {
-                UIView.animate(withDuration: Motion.fold, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) { self.transform = angle(expanded) }
+                UIView.animate(withDuration: Motion.fold, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
+                    self.transform = angle(expanded)
+                }
             }
         } else {
             transform = angle(expanded)
         }
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
 /// The activity rail: a 1pt trunk under the chevron with a quadratic elbow
@@ -76,7 +80,10 @@ final class ToolRailView: UIView {
     private let rowWidth: CGFloat
     private let color: UIColor
 
-    init(key: UInt64, trunkX: Float, bend: Float, branchEnd: Float, rowMid: Float, tops: [Float], heights: [Float], rowWidth: CGFloat, live: Bool) {
+    init(
+        key: UInt64, trunkX: Float, bend: Float, branchEnd: Float, rowMid: Float, tops: [Float], heights: [Float],
+        rowWidth: CGFloat, live: Bool
+    ) {
         self.trunkX = CGFloat(trunkX)
         self.bend = CGFloat(bend)
         self.branchEnd = CGFloat(branchEnd)
@@ -96,7 +103,8 @@ final class ToolRailView: UIView {
         build(animateFrom: from, brandNew: known == nil)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private func segments(_ i: Int) -> (incoming: UIBezierPath, branch: UIBezierPath, continuation: UIBezierPath?) {
         let top = tops[i]
@@ -188,7 +196,8 @@ final class ToolRailView: UIView {
             let cover = CALayer()
             covers.append(cover)
             cover.backgroundColor = Palette.background.resolvedColor(with: traitCollection).cgColor
-            cover.frame = CGRect(x: branchEnd + 2, y: tops[i], width: max(0, rowWidth - branchEnd - 2), height: rowMid * 2)
+            cover.frame = CGRect(
+                x: branchEnd + 2, y: tops[i], width: max(0, rowWidth - branchEnd - 2), height: rowMid * 2)
             layer.addSublayer(cover)
             cover.opacity = 0
             let fade = keyframes(keyPath: "opacity", from: branchFrom, to: 1, start: start) { 1 - $0 }
@@ -206,7 +215,9 @@ final class ToolRailView: UIView {
 
     /// Sampled keyframes of `value(local)` where local is the connector
     /// progress (quint-out over 480 ms) mapped into [a, b].
-    private func keyframes(keyPath: String, from a: Double, to b: Double, start: CFTimeInterval, value: (Double) -> Double) -> CAKeyframeAnimation {
+    private func keyframes(
+        keyPath: String, from a: Double, to b: Double, start: CFTimeInterval, value: (Double) -> Double
+    ) -> CAKeyframeAnimation {
         let n = 24
         var values: [Double] = []
         var times: [NSNumber] = []
@@ -273,7 +284,8 @@ final class ShimmerView: UIView {
         sweepMask.add(sweep, forKey: "sweep")
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -302,12 +314,14 @@ private final class ShimmerText: UIView {
         contentMode = .redraw
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    override func draw(_ rect: CGRect) {
+    override func draw(_: CGRect) {
         guard let model, let ctx = UIGraphicsGetCurrentContext() else { return }
         ctx.translateBy(x: -origin.x, y: -origin.y)
-        model.drawRuns(in: CGRect(origin: origin, size: bounds.size), color: Palette.text, ctx: ctx, traits: traitCollection)
+        model.drawRuns(
+            in: CGRect(origin: origin, size: bounds.size), color: Palette.text, ctx: ctx, traits: traitCollection)
     }
 }
 
@@ -321,13 +335,17 @@ final class SubagentCardControl: UIControl {
         layer.cornerCurve = .continuous
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var isHighlighted: Bool {
         didSet {
             guard isHighlighted != oldValue else { return }
             let pressed = isHighlighted
-            UIView.animate(withDuration: pressed ? 0.12 : 0.28, delay: 0, usingSpringWithDamping: pressed ? 1 : 0.7, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState]) {
+            UIView.animate(
+                withDuration: pressed ? 0.12 : 0.28, delay: 0, usingSpringWithDamping: pressed ? 1 : 0.7,
+                initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState]
+            ) {
                 self.backgroundColor = pressed ? Palette.controlFill : .clear
             }
         }

@@ -160,7 +160,7 @@ pub fn exit_message(code: i32) -> Vec<u8> {
 
 /// Tab title from the session's shell path ("/bin/zsh" → "zsh").
 pub fn shell_title(shell: &str) -> String {
-    let name = shell.rsplit(['/', '\\']).next().unwrap_or(shell).trim();
+    let name = shell.rsplit('/').next().unwrap_or(shell).trim();
     if name.is_empty() {
         "terminal".to_string()
     } else {
@@ -2789,7 +2789,6 @@ mod tests {
     fn shell_titles() {
         assert_eq!(shell_title("/bin/zsh"), "zsh");
         assert_eq!(shell_title("/usr/local/bin/fish"), "fish");
-        assert_eq!(shell_title("C:\\Windows\\System32\\cmd.exe"), "cmd.exe");
         assert_eq!(shell_title("bash"), "bash");
         assert_eq!(shell_title(""), "terminal");
     }

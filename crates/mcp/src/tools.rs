@@ -22,11 +22,6 @@ use serde_json::{Value, json};
 use crate::onicode::{HarnessInfo, Onicode, TurnOutcome, session_for, short};
 use crate::transcript::{RenderOptions, RenderedMessage, render_entries};
 
-mod plugins;
-mod themes;
-pub use plugins::ListedTool;
-pub(crate) use plugins::is_plugin_tool_name;
-
 /// Default and ceiling for the blocking waits.
 const MAX_BATCH: usize = 32;
 /// Cloud runs these agents (Codex and Claude Code): a Cloud chat's harness.
@@ -47,9 +42,6 @@ pub struct Tools {
     // Remember successful sends on this MCP connection so wait_for_turn after
     // wait:false also waits for a newly created chat with no session row yet.
     pending_turns: tokio::sync::Mutex<HashMap<String, Arc<PendingTurn>>>,
-    /// Which plugin tools the client was last shown ([`Self::list_all`],
-    /// [`Self::watch_plugin_tools`]).
-    plugins: plugins::PluginState,
 }
 
 fn chat_key_schema(extra: Value) -> Value {
@@ -269,8 +261,6 @@ fn catalog() -> Vec<ToolDef> {
             "required": ["path"]
         }),
     });
-    tools.extend(plugins::catalog());
-    tools.extend(themes::catalog());
     tools
 }
 
@@ -740,7 +730,6 @@ impl Tools {
         Self {
             onicode,
             pending_turns: Default::default(),
-            plugins: Default::default(),
         }
     }
 
@@ -784,29 +773,6 @@ impl Tools {
             "archive_chat" => self.archive_chat(parse(args)?).await,
             SHOW_VISUAL => self.show_visual(parse(args)?).await,
             SHOW_IMAGE => self.show_image(parse(args)?).await,
-            plugins::CREATE_PLUGIN => return self.create_plugin(args).await,
-            plugins::LIST_PLUGINS => return self.list_plugins().await,
-            plugins::DESCRIBE_ELEMENTS => return self.describe_elements().await,
-            plugins::PLUGIN_STATUS => return self.plugin_status(args).await,
-            plugins::INSTALL_PLUGIN => return self.install_plugin(args).await,
-            plugins::UPDATE_PLUGIN => return self.update_plugin(args).await,
-            plugins::LIST_TEMPLATES
-            | plugins::CREATE_TEMPLATE
-            | plugins::USE_TEMPLATE
-            | plugins::TEMPLATE_STATUS
-            | plugins::DELETE_TEMPLATE
-            | plugins::DESCRIBE_APP => {
-                return self.templates(name, args).await;
-            }
-            plugins::EXPORT_TEMPLATE | plugins::IMPORT_TEMPLATE => {
-                return self.template_packages(name, args).await;
-            }
-            theme if themes::NAMES.contains(&theme) => {
-                return self.themes(theme, args).await;
-            }
-            plugin if is_plugin_tool_name(plugin) => {
-                return self.call_plugin_tool(plugin, args).await;
-            }
             other => return Err(format!("unknown tool: {other}")),
         };
         result.map_err(|e| format!("{e:#}"))
@@ -1641,7 +1607,6 @@ impl Tools {
                     attachments: Vec::new(),
                     worktree: None,
                     env: Default::default(),
-                    extra_mcp: Vec::new(),
                 };
                 self.onicode
                     .queue_command(

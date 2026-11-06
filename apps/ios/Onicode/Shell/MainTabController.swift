@@ -13,7 +13,7 @@ final class MainTabController: UIViewController, AppRouter {
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder _: NSCoder) { fatalError() }
 
     private lazy var sessionsList = SessionsViewController(app: app)
     private lazy var nav = sessionsNav()
@@ -54,11 +54,10 @@ final class MainTabController: UIViewController, AppRouter {
     /// Voice: a tap calls (or opens the live call); a long press picks the
     /// host and style.
     private lazy var voiceItem: UIBarButtonItem = {
-        let item = UIBarButtonItem(title: nil, image: UIImage(systemName: "waveform"), primaryAction: UIAction { [weak self] _ in
+        return UIBarButtonItem(title: nil, image: UIImage(systemName: "waveform"), primaryAction: UIAction { [weak self] _ in
             guard let self else { return }
             self.openVoice(app: self.app, source: nil)
         }, menu: voiceMenu(app: app))
-        return item
     }()
 
     private lazy var composeItem: UIBarButtonItem = {
@@ -104,7 +103,7 @@ final class MainTabController: UIViewController, AppRouter {
     static func nav(_ root: UIViewController) -> UINavigationController {
         let nav = UINavigationController(rootViewController: root)
         nav.navigationBar.prefersLargeTitles = true
-        // Setting an appearance object drops iOS 26's scroll-edge effect;
+        // Setting an appearance object drops the bar's scroll-edge effect;
         // style titles through the bar's own attributes instead.
         nav.navigationBar.largeTitleTextAttributes = [.font: Fonts.ui(.sansSemibold, 30), .foregroundColor: Palette.text]
         nav.navigationBar.titleTextAttributes = [.font: Fonts.ui(.sansSemibold, 17), .foregroundColor: Palette.text]
@@ -145,9 +144,11 @@ final class MainTabController: UIViewController, AppRouter {
     /// the sheet leaves without its slide, and the handoff animation carries
     /// the draft (page, composer, message) into the chat.
     func openSession(_ chatId: String, handoff: DraftHandoff?) {
-        guard let handoff, let window = view.window else { return openSession(chatId) }
+        guard let handoff, let window = view.window else { openSession(chatId)
+return }
         guard let session = SessionViewController(app: app, chatId: chatId) else {
-            return showSessionOpenError()
+            showSessionOpenError()
+            return
         }
         UIView.performWithoutAnimation {
             nav.popToRootViewController(animated: false)
@@ -208,7 +209,8 @@ final class MainTabController: UIViewController, AppRouter {
     /// Push a session on the Sessions list (from new-session, deep links, search).
     func openSession(_ chatId: String) {
         guard let session = SessionViewController(app: app, chatId: chatId) else {
-            return showSessionOpenError()
+            showSessionOpenError()
+            return
         }
         if presentedViewController != nil { dismiss(animated: true) }
         nav.popToRootViewController(animated: false)

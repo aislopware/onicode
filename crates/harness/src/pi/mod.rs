@@ -113,13 +113,7 @@ impl PiHarness {
         })
     }
     async fn probe(&self, cwd: &Path, models: bool) -> Result<Value, HarnessError> {
-        let mut process = self.spawn(
-            cwd,
-            &["--no-session".into()],
-            None,
-            &[],
-            &Default::default(),
-        )?;
+        let mut process = self.spawn(cwd, &["--no-session".into()], None, &Default::default())?;
         let (mut tx, rx) = tokio::sync::oneshot::channel();
         let grace = self.kill_grace;
         tokio::spawn(async move {
@@ -141,7 +135,6 @@ impl PiHarness {
         cwd: &Path,
         args: &[String],
         mcp: Option<&onicode_proto::McpServer>,
-        extra_mcp: &[onicode_proto::McpServer],
         run_env: &std::collections::BTreeMap<String, String>,
     ) -> Result<Process, HarnessError> {
         let exe = self.resolve_executable()?;
@@ -168,7 +161,9 @@ impl PiHarness {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        let scratch = self::mcp::configure_all(&mut cmd, mcp, extra_mcp)?;
+        let scratch = mcp
+            .map(|mcp| self::mcp::configure(&mut cmd, mcp))
+            .transpose()?;
         let child = cmd.spawn().map_err(|e| {
             crate::executable::spawn_error(e, Some(cwd), || crate::executable::binary_hint(&exe))
         })?;
@@ -252,7 +247,6 @@ impl Process {
     }
     async fn shutdown(&mut self, grace: Duration) {
         self.dialogs.cancel(&self.transport.client);
-        self.transport.close_input_for_teardown();
         self.child.shutdown(grace).await;
     }
 }
@@ -395,7 +389,6 @@ impl Harness for PiHarness {
             Path::new(&request.cwd),
             &args,
             request.mcp.as_ref(),
-            &request.extra_mcp,
             &request.env,
         )?;
         let (tx, rx) = mpsc::channel(256);

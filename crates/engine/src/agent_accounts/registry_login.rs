@@ -53,8 +53,6 @@ impl AgentAccounts {
         }
         #[cfg(unix)]
         let browser = super::ensure_recording_browser(&self.inner.config.root_dir());
-        #[cfg(not(unix))]
-        let browser = None;
         let options = onicode_harness::acp::SignInOptions {
             browser,
             method: method.map(str::to_owned),

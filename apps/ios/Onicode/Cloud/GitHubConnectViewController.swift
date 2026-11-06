@@ -32,18 +32,24 @@ final class GitHubConnectViewController: UIViewController {
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     deinit { poll?.cancel() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Palette.background
-        navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in
-            self?.dismiss(animated: true)
-        })
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            systemItem: .close,
+            primaryAction: UIAction { [weak self] _ in
+                self?.dismiss(animated: true)
+            })
         let tile = CloudUI.tile(image: CloudUI.githubMark, side: 56)
-        let header = CloudUI.header("Connect GitHub", "Enter this code on GitHub to let Cloud agents clone your repositories and push their work.", alignment: .center)
+        let header = CloudUI.header(
+            "Connect GitHub",
+            "Enter this code on GitHub to let Cloud agents clone your repositories and push their work.",
+            alignment: .center)
 
         codeLabel.font = UIFont.monospacedSystemFont(ofSize: 34, weight: .semibold)
         codeLabel.textColor = Palette.text
@@ -71,7 +77,9 @@ final class GitHubConnectViewController: UIViewController {
         statusRow.spacing = 8
         statusRow.alignment = .center
 
-        openButton = CloudUI.primaryButton("Copy Code & Open GitHub", symbol: "arrow.up.right") { [weak self] in self?.openGitHub() }
+        openButton = CloudUI.primaryButton("Copy Code & Open GitHub", symbol: "arrow.up.right") { [weak self] in
+            self?.openGitHub()
+        }
         openButton.isEnabled = false
         openButton.accessibilityIdentifier = "github-open"
 
@@ -96,7 +104,7 @@ final class GitHubConnectViewController: UIViewController {
     private func setStatus(_ text: String, busy: Bool, color: UIColor = Palette.secondary) {
         status.text = text
         status.textColor = color
-        busy ? spinner.startAnimating() : spinner.stopAnimating()
+        if busy { spinner.startAnimating() } else { spinner.stopAnimating() }
     }
 
     private func start() {
@@ -136,7 +144,8 @@ final class GitHubConnectViewController: UIViewController {
                     await self.connected(progress.account)
                     return
                 case "failed":
-                    self.setStatus(progress.error ?? "GitHub didn't connect. Try again.", busy: false, color: Palette.danger)
+                    self.setStatus(
+                        progress.error ?? "GitHub didn't connect. Try again.", busy: false, color: Palette.danger)
                     return
                 default:
                     continue

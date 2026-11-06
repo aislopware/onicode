@@ -41,24 +41,11 @@ pub(super) fn resolve_home(
     Ok(resolved)
 }
 
-#[cfg(unix)]
 fn user_home() -> Result<Option<PathBuf>, HarnessError> {
     match std::env::var_os("HOME") {
         Some(home) => Ok(Some(PathBuf::from(home))),
         None => passwd_entry(None).map(|(_, home)| Some(home)),
     }
-}
-
-#[cfg(windows)]
-fn user_home() -> Result<Option<PathBuf>, HarnessError> {
-    Ok(std::env::var_os("USERPROFILE")
-        .or_else(|| {
-            let path = std::env::var_os("HOMEPATH")?;
-            let mut drive = std::env::var_os("HOMEDRIVE").unwrap_or_default();
-            drive.push(path);
-            Some(drive)
-        })
-        .map(PathBuf::from))
 }
 
 pub(super) fn expand_user(path: &Path, home: Option<&Path>) -> Result<PathBuf, HarnessError> {
@@ -87,33 +74,10 @@ pub(super) fn expand_user(path: &Path, home: Option<&Path>) -> Result<PathBuf, H
     Ok(expanded.join(components.as_path()))
 }
 
-#[cfg(unix)]
 fn named_home(name: &str) -> Result<PathBuf, HarnessError> {
     passwd_entry(Some(name)).map(|(_, home)| home)
 }
 
-#[cfg(windows)]
-fn named_home(name: &str) -> Result<PathBuf, HarnessError> {
-    let home = user_home()?.ok_or_else(|| {
-        HarnessError::Protocol(
-            "cannot resolve a named home in GEMINI_HOME; set an absolute path".into(),
-        )
-    })?;
-    let username = std::env::var_os("USERNAME");
-    if username.as_deref() == Some(std::ffi::OsStr::new(name)) {
-        return Ok(home);
-    }
-    if username.is_some() && home.file_name() == username.as_deref() {
-        if let Some(parent) = home.parent() {
-            return Ok(parent.join(name));
-        }
-    }
-    Err(HarnessError::Protocol(
-        "cannot resolve a named home in GEMINI_HOME; set an absolute path".into(),
-    ))
-}
-
-#[cfg(unix)]
 pub(super) fn passwd_entry(name: Option<&str>) -> Result<(String, PathBuf), HarnessError> {
     use std::ffi::{CStr, CString, OsStr};
     use std::os::unix::ffi::OsStrExt;

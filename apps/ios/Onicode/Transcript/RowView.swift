@@ -16,13 +16,16 @@ final class RowCanvas: UIView {
         isUserInteractionEnabled = false
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    override func draw(_ rect: CGRect) {
+    override func draw(_: CGRect) {
         guard let model, let ctx = UIGraphicsGetCurrentContext() else { return }
         let state = Signposts.transcript.beginInterval("draw-row")
         defer { Signposts.transcript.endInterval("draw-row", state) }
-        model.draw(layer: layerIndex, in: ctx, traits: traitCollection, hairline: 1 / max(1, traitCollection.displayScale), pass: pass)
+        model.draw(
+            layer: layerIndex, in: ctx, traits: traitCollection, hairline: 1 / max(1, traitCollection.displayScale),
+            pass: pass)
     }
 
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {
@@ -101,7 +104,7 @@ final class RowView: UIView {
     /// Rings over thumbnails still uploading (`pending://` refs).
     private var uploadRings: [UploadRingView] = []
     var uploadProgress: Double? {
-        didSet { if uploadProgress != oldValue { uploadRings.forEach { $0.progress = uploadProgress } } }
+        didSet { if uploadProgress != oldValue { for ring in uploadRings { ring.progress = uploadProgress } } }
     }
     /// Pooled rows stay in the list, hidden: their visuals pause.
     override var isHidden: Bool {
@@ -126,12 +129,17 @@ final class RowView: UIView {
         clipsToBounds = false
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func configure(_ model: RowModel, kind: RowKind) {
         // Same row grew (streaming append): veil the new text in.
         let previous = self.model?.display
-        let grew = previous.map { $0.key == model.display.key && model.display.text.hasPrefix($0.text) && model.display.text.count > $0.text.count } ?? false
+        let grew =
+            previous.map {
+                $0.key == model.display.key && model.display.text.hasPrefix($0.text)
+                    && model.display.text.count > $0.text.count
+            } ?? false
         let veilFrom = grew ? UInt32((previous?.text ?? "").utf16.count) : 0
         self.model = model
         self.kind = kind
@@ -163,16 +171,17 @@ final class RowView: UIView {
         // row, followed by the row's native widgets (copy, disclosure…).
         let element = UIAccessibilityElement(accessibilityContainer: self)
         element.accessibilityLabel = kind == .user ? "You: \(d.copyText)" : (d.copyText.isEmpty ? d.text : d.copyText)
-        element.accessibilityIdentifier = switch kind {
-        case .user: "row-user"
-        case .markdown: "row-markdown"
-        case .tools: "row-tools"
-        case .chip: "row-chip"
-        case .notice: "row-notice"
-        case .image: "row-image"
-        case .working: "row-working"
-        case .visual: "row-visual"
-        }
+        element.accessibilityIdentifier =
+            switch kind {
+            case .user: "row-user"
+            case .markdown: "row-markdown"
+            case .tools: "row-tools"
+            case .chip: "row-chip"
+            case .notice: "row-notice"
+            case .image: "row-image"
+            case .working: "row-working"
+            case .visual: "row-visual"
+            }
         element.accessibilityTraits = .staticText
         element.accessibilityFrameInContainerSpace = bounds
         textElement = element
@@ -209,10 +218,10 @@ final class RowView: UIView {
                 c.model = model
             }
         }
-        layoutWidgets(d)
+        layoutWidgets(d, model: model)
     }
 
-    private func layoutWidgets(_ d: RowDisplay) {
+    private func layoutWidgets(_ d: RowDisplay, model: RowModel) {
         uploadRings.removeAll()
         // Only views still here: a visual's view moves between rows, and a
         // row reused later mustn't pull it out of the one showing it now.
@@ -230,10 +239,11 @@ final class RowView: UIView {
                 view = b
             case let .disclosure(expanded):
                 let b = DisclosureControl(expanded: expanded, chevron: false)
-                b.addAction(UIAction { [weak self] _ in
-                    guard let self else { return }
-                    self.delegate?.rowView(self, toggle: d.key)
-                }, for: .touchUpInside)
+                b.addAction(
+                    UIAction { [weak self] _ in
+                        guard let self else { return }
+                        self.delegate?.rowView(self, toggle: d.key)
+                    }, for: .touchUpInside)
                 view = b
             case let .toolStatus(running, failed):
                 view = ToolStatusView(running: running, failed: failed)
@@ -261,27 +271,37 @@ final class RowView: UIView {
             case .spinner:
                 view = StatusGlyph(.spinner)
             case let .working(sinceMs, streaming):
-                view = WorkingIndicatorView(since: sinceMs.map { Date(timeIntervalSince1970: Double($0) / 1000) }, streaming: streaming)
+                view = WorkingIndicatorView(
+                    since: sinceMs.map { Date(timeIntervalSince1970: Double($0) / 1_000) }, streaming: streaming)
             case let .detail(title):
                 let b = UIControl()
                 b.accessibilityLabel = "\(title) details"
                 b.accessibilityTraits = .button
                 let payload = w.payload ?? ""
-                b.addAction(UIAction { [weak self] _ in
-                    guard let vc = self?.findViewController() else { return }
-                    let sheet = UINavigationController(rootViewController: SelectTextViewController(text: payload, title: title, mono: true))
-                    if let s = sheet.sheetPresentationController { s.detents = [.medium(), .large()]; s.prefersGrabberVisible = true }
-                    vc.present(sheet, animated: true)
-                }, for: .touchUpInside)
+                b.addAction(
+                    UIAction { [weak self] _ in
+                        guard let vc = self?.findViewController() else { return }
+                        let sheet = UINavigationController(
+                            rootViewController: SelectTextViewController(text: payload, title: title, mono: true))
+                        if let s = sheet.sheetPresentationController {
+                            s.detents = [.medium(), .large()]
+                            s.prefersGrabberVisible = true
+                        }
+                        vc.present(sheet, animated: true)
+                    }, for: .touchUpInside)
                 view = b
             case let .icon(name, color):
                 // Desktop icon assets (tool-*, fileicon-*), else an SF symbol.
                 let iv: UIImageView
-                if let asset = RowView.asset(name) {
+                if let asset = Self.asset(name) {
                     iv = UIImageView(image: asset)
                     iv.contentMode = .scaleAspectFit
                 } else {
-                    iv = UIImageView(image: UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: rect.height * 0.8, weight: .medium)))
+                    iv = UIImageView(
+                        image: UIImage(
+                            systemName: name,
+                            withConfiguration: UIImage.SymbolConfiguration(
+                                pointSize: rect.height * 0.8, weight: .medium)))
                     iv.contentMode = .center
                 }
                 iv.tintColor = Palette.color(color)
@@ -289,17 +309,20 @@ final class RowView: UIView {
             case let .chevron(expanded):
                 view = ToolChevronView(key: d.key, expanded: expanded)
             case let .toolRail(trunkX, bend, branchEnd, rowMid, tops, heights):
-                let live = d.widgets.contains { if case .shimmer = $0.kind { return true } else { return false } }
-                view = ToolRailView(key: d.key, trunkX: trunkX, bend: bend, branchEnd: branchEnd, rowMid: rowMid, tops: tops, heights: heights, rowWidth: CGFloat(d.width) - rect.minX, live: live)
+                let live = d.widgets.contains { if case .shimmer = $0.kind { true } else { false } }
+                view = ToolRailView(
+                    key: d.key, trunkX: trunkX, bend: bend, branchEnd: branchEnd, rowMid: rowMid, tops: tops,
+                    heights: heights, rowWidth: CGFloat(d.width) - rect.minX, live: live)
             case let .toolToggle(detail, open):
                 let b = ToolToggleControl()
                 b.accessibilityTraits = .button
                 b.accessibilityLabel = open ? "Hide details" : "Show details"
-                b.addAction(UIAction { [weak self] _ in
-                    guard let self else { return }
-                    UISelectionFeedbackGenerator().selectionChanged()
-                    self.delegate?.rowView(self, toggleDetail: detail, open: open)
-                }, for: .touchUpInside)
+                b.addAction(
+                    UIAction { [weak self] _ in
+                        guard let self else { return }
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        self.delegate?.rowView(self, toggleDetail: detail, open: open)
+                    }, for: .touchUpInside)
                 view = b
             case let .action(action, label):
                 var c = UIButton.Configuration.filled()
@@ -313,11 +336,13 @@ final class RowView: UIView {
                     a.font = Fonts.ui(.sansSemibold, 14)
                     return a
                 }
-                let b = UIButton(configuration: c, primaryAction: UIAction { [weak self] _ in
-                    guard let self else { return }
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    self.delegate?.rowView(self, perform: action)
-                })
+                let b = UIButton(
+                    configuration: c,
+                    primaryAction: UIAction { [weak self] _ in
+                        guard let self else { return }
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        self.delegate?.rowView(self, perform: action)
+                    })
                 b.accessibilityIdentifier = "transcript-action-\(action)"
                 view = b
             case let .subagent(docId, title, running, failed):
@@ -328,15 +353,16 @@ final class RowView: UIView {
                 card.accessibilityIdentifier = "subagent-card"
                 card.isEnabled = docId != nil
                 if let docId {
-                    card.addAction(UIAction { [weak self] _ in
-                        guard let self else { return }
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        self.delegate?.rowView(self, openSubagent: docId, title: title, running: running)
-                    }, for: .touchUpInside)
+                    card.addAction(
+                        UIAction { [weak self] _ in
+                            guard let self else { return }
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            self.delegate?.rowView(self, openSubagent: docId, title: title, running: running)
+                        }, for: .touchUpInside)
                 }
                 view = card
             case .shimmer:
-                view = ShimmerView(model: model!, rect: rect)
+                view = ShimmerView(model: model, rect: rect)
             case let .visual(id):
                 view = delegate?.rowView(self, visualFor: id) ?? UIView()
                 (view as? VisualView)?.active = !isHidden
@@ -377,7 +403,8 @@ final class RowView: UIView {
                 let sv = scrollers[Int(s)]
                 p = CGPoint(x: point.x - sv.frame.minX + sv.contentOffset.x, y: point.y - sv.frame.minY)
             }
-            let r = CGRect(x: CGFloat(l.x), y: CGFloat(l.y), width: CGFloat(l.w), height: CGFloat(l.h)).insetBy(dx: -4, dy: -2)
+            let r = CGRect(x: CGFloat(l.x), y: CGFloat(l.y), width: CGFloat(l.w), height: CGFloat(l.h)).insetBy(
+                dx: -4, dy: -2)
             if r.contains(p) { return URL(string: l.url) }
         }
         return nil
@@ -398,7 +425,8 @@ final class CopyButton: UIButton {
         addAction(UIAction { [weak self] _ in self?.copy() }, for: .touchUpInside)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private func copy() {
         UIPasteboard.general.string = payload
@@ -407,7 +435,10 @@ final class CopyButton: UIButton {
         setImage(UIImage(systemName: "checkmark", withConfiguration: config), for: .normal)
         tintColor = Palette.accent
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
-            self?.setImage(UIImage(systemName: "square.on.square", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), for: .normal)
+            self?.setImage(
+                UIImage(
+                    systemName: "square.on.square",
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), for: .normal)
             self?.tintColor = Palette.tertiary
         }
     }
@@ -420,14 +451,18 @@ final class DisclosureControl: UIControl {
         accessibilityTraits = .button
         accessibilityLabel = expanded ? "Collapse" : "Expand"
         guard chevron else { return }
-        let iv = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)))
+        let iv = UIImageView(
+            image: UIImage(
+                systemName: "chevron.right",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)))
         iv.tintColor = Palette.tertiary
         iv.transform = expanded ? CGAffineTransform(rotationAngle: .pi / 2) : .identity
         iv.tag = 1
         addSubview(iv)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -452,7 +487,10 @@ final class ToolStatusView: UIView {
             grid.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             addSubview(grid)
         } else {
-            let iv = UIImageView(image: UIImage(systemName: failed ? "xmark" : "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .bold)))
+            let iv = UIImageView(
+                image: UIImage(
+                    systemName: failed ? "xmark" : "checkmark",
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .bold)))
             iv.tintColor = failed ? Palette.danger : Palette.tertiary
             iv.contentMode = .center
             iv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -460,11 +498,12 @@ final class ToolStatusView: UIView {
         }
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        subviews.forEach { $0.frame = bounds }
+        for view in subviews { view.frame = bounds }
     }
 }
 
@@ -489,13 +528,18 @@ final class WorkingIndicatorView: UIView {
         tick()
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private func tick() {
         let secs = since.map { max(0, Int(Date().timeIntervalSince($0))) } ?? 0
-        let text = NSMutableAttributedString(string: "\(word)…", attributes: [.font: label.font as Any, .foregroundColor: Palette.secondary])
+        let text = NSMutableAttributedString(
+            string: "\(word)…", attributes: [.font: label.font as Any, .foregroundColor: Palette.secondary])
         if secs > 0 {
-            text.append(NSAttributedString(string: "  \(StatusPill.elapsed(secs))", attributes: [.font: label.font as Any, .foregroundColor: Palette.tertiary]))
+            text.append(
+                NSAttributedString(
+                    string: "  \(StatusPill.elapsed(secs))",
+                    attributes: [.font: label.font as Any, .foregroundColor: Palette.tertiary]))
         }
         label.attributedText = text
         label.sizeToFit()
@@ -513,7 +557,8 @@ final class WorkingIndicatorView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         grid.frame = CGRect(x: 0, y: (bounds.height - 14) / 2, width: 14, height: 14)
-        label.frame = CGRect(x: 22, y: (bounds.height - label.bounds.height) / 2, width: label.bounds.width, height: label.bounds.height)
+        label.frame = CGRect(
+            x: 22, y: (bounds.height - label.bounds.height) / 2, width: label.bounds.width, height: label.bounds.height)
     }
 }
 
@@ -560,13 +605,17 @@ final class UploadRingView: UIView {
         accessibilityIdentifier = "upload-progress"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         let d = min(34, min(bounds.width, bounds.height) * 0.55)
         let r = CGRect(x: bounds.midX - d / 2, y: bounds.midY - d / 2, width: d, height: d)
-        let path = UIBezierPath(arcCenter: CGPoint(x: r.midX, y: r.midY), radius: d / 2, startAngle: -.pi / 2, endAngle: 1.5 * .pi, clockwise: true).cgPath
+        let path = UIBezierPath(
+            arcCenter: CGPoint(x: r.midX, y: r.midY), radius: d / 2, startAngle: -.pi / 2, endAngle: 1.5 * .pi,
+            clockwise: true
+        ).cgPath
         track.path = path
         arc.path = path
         label.frame = r

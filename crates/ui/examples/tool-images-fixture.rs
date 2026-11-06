@@ -104,7 +104,7 @@ fn capture(
     dir: &Path,
     name: &str,
 ) -> anyhow::Result<()> {
-    // Best effort: some platforms (Windows) have no render_to_image.
+    // Best effort: render_to_image may be unavailable.
     window.update(cx, |_, w, cx| {
         w.draw(cx).clear();
         if let Ok(image) = w.render_to_image() {
@@ -285,11 +285,7 @@ fn main() -> anyhow::Result<()> {
     let exec = |command: &str| ToolCall::Exec {
         command: command.into(),
     };
-    let outside = if cfg!(windows) {
-        r"C:\Windows\Web\Wallpaper\Windows\img0.jpg"
-    } else {
-        "/usr/share/backgrounds/outside.png"
-    };
+    let outside = "/usr/share/backgrounds/outside.png";
     let capture = std::env::args()
         .skip_while(|arg| arg != "--capture")
         .nth(1)

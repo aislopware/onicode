@@ -38,7 +38,7 @@ both during mouse-down and immediately after mouse-up; its border remains unchan
 Headless regression checks exercise pin/unpin, pin reordering, cancellation,
 remote pin conflicts, actual row-height hit testing, small pointer movements,
 project grouping/keyboard order, icon lookup priority, SVG/ICO decoding, and
-settings persistence. Native macOS and Windows interactions were not exercised.
+settings persistence. Native macOS interactions were not exercised.
 
 Validation: `cargo test -p zeron-ui --lib -- --test-threads=1` passed all 1,121
 tests. The native fixture build, formatting checks, and `git diff --check` passed.

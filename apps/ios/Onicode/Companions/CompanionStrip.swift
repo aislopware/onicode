@@ -34,11 +34,15 @@ final class CompanionStrip: UIView {
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
-        for (chip, section, id) in [(agents, CompanionsViewController.Section.agents, "chip-agents"), (sides, .sideChats, "chip-side-chats"), (terminals, .terminals, "chip-terminals")] {
-            chip.addAction(UIAction { [weak self] _ in
-                UISelectionFeedbackGenerator().selectionChanged()
-                self?.onTap?(section)
-            }, for: .touchUpInside)
+        for (chip, section, id) in [
+            (agents, CompanionsViewController.Section.agents, "chip-agents"), (sides, .sideChats, "chip-side-chats"),
+            (terminals, .terminals, "chip-terminals"),
+        ] {
+            chip.addAction(
+                UIAction { [weak self] _ in
+                    UISelectionFeedbackGenerator().selectionChanged()
+                    self?.onTap?(section)
+                }, for: .touchUpInside)
             chip.accessibilityIdentifier = id
             chip.isHidden = true
             stack.addArrangedSubview(chip)
@@ -46,19 +50,24 @@ final class CompanionStrip: UIView {
         setContentHuggingPriority(.required, for: .horizontal)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func apply(_ s: State) {
         guard s != state else { return }
         state = s
         agents.isHidden = s.agents == 0
         if s.runningAgents > 0 {
-            agents.configure(glyph: .spinner, symbol: nil, text: "\(s.runningAgents) working", label: "\(s.runningAgents) subagents working")
+            agents.configure(
+                glyph: .spinner, symbol: nil, text: "\(s.runningAgents) working",
+                label: "\(s.runningAgents) subagents working")
         } else {
             agents.configure(glyph: nil, symbol: "tool-bot", text: "\(s.agents)", label: "\(s.agents) subagents")
         }
         sides.isHidden = s.sideChats == 0
-        sides.configure(glyph: nil, symbol: "bubble.left.and.bubble.right", text: "\(s.sideChats)", label: "\(s.sideChats) side chats")
+        sides.configure(
+            glyph: nil, symbol: "bubble.left.and.bubble.right", text: "\(s.sideChats)",
+            label: "\(s.sideChats) side chats")
         terminals.isHidden = s.terminals == 0
         terminals.configure(
             glyph: s.liveTerminals > 0 ? .dot(StatusTone.done) : nil,
@@ -110,7 +119,8 @@ final class CompanionChip: UIControl {
         accessibilityTraits = .button
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     /// `symbol`: a `tool-*` asset or an SF symbol.
     func configure(glyph kind: StatusGlyph.Kind?, symbol: String?, text: String, label a11y: String) {
@@ -119,8 +129,11 @@ final class CompanionChip: UIControl {
         if spinning { glyph.kind = .spinner }
         icon.isHidden = spinning || symbol == nil
         if let symbol {
-            icon.image = Self.asset(symbol)
-                ?? UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
+            icon.image =
+                Self.asset(symbol)
+                ?? UIImage(
+                    systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+                )
         }
         if case let .dot(color)? = kind {
             dot.isHidden = false

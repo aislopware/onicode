@@ -10,12 +10,7 @@ publish.workspace = true
 # the command line (onicode-cli) and the zgx app, with no engine linked in.
 
 [dependencies]
-
-[target.'cfg(unix)'.dependencies]
 libc.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }
 
 [dev-dependencies]
 tempfile.workspace = true

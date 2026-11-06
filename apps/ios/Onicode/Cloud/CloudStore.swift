@@ -20,8 +20,12 @@ final class CloudStore {
     }
 
     static let agents: [Agent] = [
-        Agent(harness: "claude-code", name: "Claude Code", login: "claude", key: "anthropic-key", signInTitle: "Sign in with Claude", keyName: "Anthropic API key"),
-        Agent(harness: "codex", name: "Codex", login: "codex", key: "openai-key", signInTitle: "Sign in with ChatGPT", keyName: "OpenAI API key"),
+        Agent(
+            harness: "claude-code", name: "Claude Code", login: "claude", key: "anthropic-key",
+            signInTitle: "Sign in with Claude", keyName: "Anthropic API key"),
+        Agent(
+            harness: "codex", name: "Codex", login: "codex", key: "openai-key", signInTitle: "Sign in with ChatGPT",
+            keyName: "OpenAI API key"),
     ]
 
     private(set) var info: CloudInfo?
@@ -69,10 +73,14 @@ final class CloudStore {
     var problem: Problem? {
         guard let info, info.available else { return nil }
         if info.state == "error" {
-            return Problem(title: "Cloud ran into a problem", detail: info.error ?? "Something went wrong with Cloud.", billing: false)
+            return Problem(
+                title: "Cloud ran into a problem", detail: info.error ?? "Something went wrong with Cloud.",
+                billing: false)
         }
         if outOfCredits {
-            return Problem(title: "Out of credits", detail: "Cloud sessions can't start or wake until you add credits.", billing: true)
+            return Problem(
+                title: "Out of credits", detail: "Cloud sessions can't start or wake until you add credits.",
+                billing: true)
         }
         return nil
     }
@@ -116,7 +124,9 @@ final class CloudStore {
 
     func hasAccount(_ agent: Agent) -> Bool {
         !(accounts[agent.login] ?? []).isEmpty || !(accounts[agent.key] ?? []).isEmpty
-            || vault?.connections.contains { ($0.provider == agent.login || $0.provider == agent.key) && $0.accounts > 0 } == true
+            || vault?.connections.contains {
+                ($0.provider == agent.login || $0.provider == agent.key) && $0.accounts > 0
+            } == true
     }
 
     /// Cloud reaches `repo` (`owner/name`): its sessions can run there.
@@ -141,7 +151,7 @@ final class CloudStore {
     }
 
     private func changed() {
-        observers.values.forEach { $0() }
+        for observer in observers.values { observer() }
     }
 
     // MARK: Loading
@@ -240,14 +250,16 @@ final class CloudStore {
                 for (provider, slot) in logins {
                     group.addTask {
                         do {
-                            return ("\(provider):\(slot)", .success(try await client.vaultUsage(provider: provider, slot: slot)))
+                            return (
+                                "\(provider):\(slot)",
+                                .success(try await client.vaultUsage(provider: provider, slot: slot))
+                            )
                         } catch {
                             return ("\(provider):\(slot)", .failure(error))
                         }
                     }
                 }
-                for await (key, result) in group {
-                    guard self?.client === client else { continue }
+                for await (key, result) in group where self?.client === client {
                     switch result {
                     case let .success(usage):
                         self?.usage[key] = usage
@@ -346,7 +358,7 @@ final class CloudStore {
         guard let core = error as? CoreError else { return error.localizedDescription }
         switch core {
         case let .NotFound(m), let .InvalidArgument(m), let .HostUnavailable(m), let .Unsupported(m),
-             let .HostError(m), let .Network(m), let .Auth(m), let .Storage(m), let .NotImplemented(m), let .Internal(m):
+            let .HostError(m), let .Network(m), let .Auth(m), let .Storage(m), let .NotImplemented(m), let .Internal(m):
             return m
         case .Closed:
             return "You're signed out."
@@ -388,7 +400,7 @@ final class ProviderSignIn: NSObject, ASWebAuthenticationPresentationContextProv
         try await client.providerLoginFinish(loginId: start.loginId)
     }
 
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+    func presentationAnchor(for _: ASWebAuthenticationSession) -> ASPresentationAnchor {
         anchor?.window ?? ASPresentationAnchor()
     }
 }

@@ -845,8 +845,6 @@ pub struct EngineRpc {
     credentials: Option<crate::credentials::CredentialBroker>,
     /// Viewports' window focus, for desktop banners.
     viewport_focus: crate::desktop_notify::ViewportFocus,
-    /// The plugins service (absent in bare test assemblies).
-    plugins: Option<crate::plugins::Plugins>,
     engine_info: EngineInfo,
 }
 
@@ -907,15 +905,8 @@ impl EngineRpc {
             local_import: None,
             credentials: None,
             viewport_focus: Default::default(),
-            plugins: None,
             engine_info,
         }
-    }
-
-    /// Attach the plugins service (the Plugin* methods).
-    pub fn with_plugins(mut self, plugins: crate::plugins::Plugins) -> Self {
-        self.plugins = Some(plugins);
-        self
     }
 
     pub fn with_previews(mut self, previews: onicode_preview::PreviewService) -> Self {
@@ -1402,8 +1393,8 @@ impl EngineRpc {
     ///
     /// Clients watch a chat's `sourceContext.repoRoot`, which the engine
     /// captured from that chat's own checkout, so it is accepted like the
-    /// chat's cwd without asking git. That root is canonical (`\\?\C:\…` on
-    /// Windows) and never equals the cwd there, so before this every watch
+    /// chat's cwd without asking git. That root is canonical and can differ
+    /// from the cwd (a symlinked checkout), so before this every watch
     /// ran `git worktree list` once per local space, and a chat outside every
     /// space failed and was retried that way for as long as it stayed open.
     async fn change_request_root(&self, cwd: &str) -> Result<std::path::PathBuf, RpcError> {
@@ -2319,8 +2310,6 @@ fn forwardable(method: &str) -> bool {
             | methods::CANCEL_INSTALL
             | methods::GET_TITLE_SETTINGS
             | methods::SET_TITLE_SETTINGS
-            | methods::GET_COMMIT_CREDIT
-            | methods::SET_COMMIT_CREDIT
             | methods::GET_NATIVE_SUBAGENTS
             | methods::SET_NATIVE_SUBAGENTS
             | methods::SET_HARNESS_ENABLED
@@ -2434,20 +2423,6 @@ fn forwardable(method: &str) -> bool {
             | methods::CANCEL_HARNESS_UPDATE
             | methods::DISMISS_HARNESS_UPDATE
             | methods::SET_HARNESS_UPDATE_POLICY
-            // Plugins are per device (what it runs, what it allowed): Settings
-            // → Plugins' device switcher lists, declines, turns off, installs
-            // (from a link; it lands waiting there) and removes them on
-            // another of your devices from this one. Allowing stays with
-            // that device's own window (`onicode_rpc::peer_refused`, both ends).
-            | methods::LIST_PLUGINS
-            | methods::WATCH_PLUGINS
-            | methods::DECIDE_PLUGIN
-            | methods::SET_PLUGIN_OFF
-            | methods::REMOVE_PLUGIN
-            | methods::INSTALL_PLUGIN
-            | methods::CHECK_PLUGIN_UPDATES
-            | methods::UPDATE_PLUGIN
-            | methods::PLUGIN_STATUS
     )
 }
 
@@ -2467,7 +2442,6 @@ fn is_stream_method(method: &str) -> bool {
             | methods::WATCH_WORKSPACE_FILES
             | methods::UPDATE_STATUS
             | methods::WATCH_HARNESS_UPDATES
-            | methods::WATCH_PLUGINS
     )
 }
 
@@ -2804,22 +2778,6 @@ impl RpcService for EngineRpc {
             && target != self.doc_host.device_id()
         {
             let target = target.to_string();
-            // A file on this device can't be read there: another device
-            // installs from a link.
-            if method == methods::INSTALL_PLUGIN && params.get("path").is_some_and(|p| !p.is_null())
-            {
-                return Err(RpcError::BadParams(
-                    "Another device installs a plugin from a link (url), not a file on this one"
-                        .into(),
-                ));
-            }
-            // Allowing a plugin is that device's person's, in its own window
-            // (the receiving side refuses it too: `onicode_rpc::peer_refused`).
-            if onicode_rpc::peer_refused(method, &params) {
-                return Err(RpcError::Failed(format!(
-                    "{method}: only that device's own window can do that. It's waiting for you there."
-                )));
-            }
             // Settings → Providers' Cloud: its logins live in the vault.
             if crate::cloud_accounts::is_cloud_accounts_target(&target)
                 && crate::cloud_accounts::handles(method)
@@ -2884,27 +2842,10 @@ impl RpcService for EngineRpc {
         if voice_remote::handles(method) {
             return self.voice_remote(method, params).await;
         }
-        // Signing out retires this device's plugin signing key first, while
-        // the session can still revoke it on the edge.
-        if method == methods::SIGN_OUT
-            && self.auth().is_ok_and(|auth| !auth.is_runner())
-            && let Some(plugins) = self.plugins.clone()
-        {
-            Box::pin(plugins.retire_signing_key()).await;
-        }
         if AuthRpc::handles(method) {
             return AuthRpc::new(self.auth()?.clone())
                 .handle(method, params)
                 .await;
-        }
-        // Cloud device + credential vault: IPC-only (never in `forwardable`),
-        // acting for this runtime's signed-in user against the edge. Boxed so
-        // its state stays out of this dispatcher's already-large frame.
-        if crate::plugins::handles(method) {
-            let Some(plugins) = self.plugins.clone() else {
-                return Err(RpcError::Failed("Plugins aren't available here".into()));
-            };
-            return Box::pin(async move { plugins.dispatch(method, params).await }).await;
         }
         if crate::acp_registry::handles(method) {
             return Box::pin(crate::acp_registry::dispatch(
@@ -2915,6 +2856,9 @@ impl RpcService for EngineRpc {
             ))
             .await;
         }
+        // Cloud device + credential vault: IPC-only (never in `forwardable`),
+        // acting for this runtime's signed-in user against the edge. Boxed so
+        // its state stays out of this dispatcher's already-large frame.
         if crate::cloud_client::handles(method) {
             return Box::pin(crate::cloud_client::dispatch(
                 self.cloud(),
@@ -2946,26 +2890,6 @@ impl RpcService for EngineRpc {
                 RpcReply::value(&serde_json::json!({}))
             }
             methods::GET_TITLE_SETTINGS => RpcReply::value(&self.registry.title_settings()),
-            methods::GET_COMMIT_CREDIT => match self.registry.commit_credit() {
-                Some(credit) => RpcReply::value(&credit.status()),
-                None => Err(RpcError::Failed(
-                    "Commit credit isn't available on this engine.".into(),
-                )),
-            },
-            methods::SET_COMMIT_CREDIT => {
-                #[derive(serde::Deserialize)]
-                struct Params {
-                    enabled: bool,
-                }
-                let p: Params = parse_params(params)?;
-                let credit = self.registry.commit_credit().ok_or_else(|| {
-                    RpcError::Failed("Commit credit isn't available on this engine.".into())
-                })?;
-                let status = credit
-                    .set(p.enabled)
-                    .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&status)
-            }
             methods::SET_TITLE_SETTINGS => {
                 let p: crate::registry::TitleSettings = parse_params(params)?;
                 self.registry
@@ -3245,41 +3169,6 @@ impl RpcService for EngineRpc {
                 self.doc_host.persist_fork(&target).map_err(failed)?;
                 self.workspace.import_chat_row(&chat).map_err(failed)?;
                 RpcReply::value(&chat)
-            }
-            methods::POST_NOTIFICATION => {
-                #[derive(serde::Deserialize)]
-                struct Params {
-                    source: String,
-                    title: String,
-                    #[serde(default)]
-                    body: String,
-                    #[serde(default)]
-                    session: Option<String>,
-                }
-                let p: Params = parse_params(params)?;
-                let title: String = p
-                    .title
-                    .lines()
-                    .next()
-                    .unwrap_or_default()
-                    .trim()
-                    .chars()
-                    .take(120)
-                    .collect();
-                if title.is_empty() || p.source.is_empty() {
-                    return Err(RpcError::BadParams(
-                        "A notification needs a title and who asked".into(),
-                    ));
-                }
-                let outcome = crate::desktop_notify::post_for(
-                    self.repos.data_dir(),
-                    &self.viewport_focus,
-                    &p.source,
-                    &title,
-                    &p.body,
-                    p.session.as_deref(),
-                );
-                RpcReply::value(&serde_json::json!({ "outcome": outcome }))
             }
             methods::SET_VIEWPORT_FOCUS => {
                 #[derive(serde::Deserialize)]
@@ -6013,7 +5902,7 @@ mod tests {
         let missing = text(&home.path().join("gone"));
         let home_text = text(home.path());
         let above_home = text(home.path().parent().unwrap());
-        // `/`, or the drive (`C:\`) on Windows, where `/` isn't absolute.
+        // `/`.
         let root = text(home.path().ancestors().last().unwrap());
         let data_text = text(&data);
         let scratch_text = text(&scratch_root);

@@ -46,9 +46,14 @@ final class CodexVoicePeer: NSObject {
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
         config.bundlePolicy = .maxBundle
-        guard let connection = Self.factory.peerConnection(with: config, constraints: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil), delegate: self) else { throw Failure.unavailable }
+        guard
+            let connection = Self.factory.peerConnection(
+                with: config, constraints: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil),
+                delegate: self)
+        else { throw Failure.unavailable }
         peer = connection
-        let source = Self.factory.audioSource(with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
+        let source = Self.factory.audioSource(
+            with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
         let track = Self.factory.audioTrack(with: source, trackId: "voice-audio")
         track.isEnabled = false
         self.track = track
@@ -58,23 +63,38 @@ final class CodexVoicePeer: NSObject {
         channel = connection.dataChannel(forLabel: "oai-events", configuration: dataConfig)
         guard channel != nil else { throw Failure.unavailable }
         channel?.delegate = self
-        observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
-            // A phone call, Siri or an alarm takes the audio: end, never resume.
-            guard (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue else { return }
-            MainActor.assumeIsolated { self?.fail() }
-        })
-        observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] notification in
-            // Our own override reports a change too; everything else (a headset
-            // leaving, WebRTC re-applying its category) re-routes the call.
-            guard (notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) != AVAudioSession.RouteChangeReason.override.rawValue else { return }
-            MainActor.assumeIsolated { self?.applyRoute() }
-        })
+        observers.append(
+            NotificationCenter.default.addObserver(
+                forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+            ) { [weak self] notification in
+                // A phone call, Siri or an alarm takes the audio: end, never resume.
+                guard
+                    (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
+                        == AVAudioSession.InterruptionType.began.rawValue
+                else { return }
+                MainActor.assumeIsolated { self?.fail() }
+            })
+        observers.append(
+            NotificationCenter.default.addObserver(
+                forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
+            ) { [weak self] notification in
+                // Our own override reports a change too; everything else (a headset
+                // leaving, WebRTC re-applying its category) re-routes the call.
+                guard
+                    (notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt)
+                        != AVAudioSession.RouteChangeReason.override.rawValue
+                else { return }
+                MainActor.assumeIsolated { self?.applyRoute() }
+            })
     }
 
     func offer() async throws -> String {
         guard let peer, !closed else { throw Failure.closed }
         let offer: RTCSessionDescription = try await callback { complete in
-            peer.offer(for: RTCMediaConstraints(mandatoryConstraints: ["OfferToReceiveAudio": "true"], optionalConstraints: nil)) { description, error in
+            peer.offer(
+                for: RTCMediaConstraints(
+                    mandatoryConstraints: ["OfferToReceiveAudio": "true"], optionalConstraints: nil)
+            ) { description, error in
                 complete(description.map(Result.success) ?? .failure(error ?? Failure.unavailable))
             }
         }
@@ -132,7 +152,9 @@ final class CodexVoicePeer: NSObject {
     }
 
     func levels() async throws -> (UInt16, UInt16) {
-        guard let peer, !closed, peer.connectionState != .failed, peer.connectionState != .closed else { throw Failure.closed }
+        guard let peer, !closed, peer.connectionState != .failed, peer.connectionState != .closed else {
+            throw Failure.closed
+        }
         // Nobody sees the orb with the screen off; skip the statistics walk.
         guard UIApplication.shared.applicationState != .background else { return (0, 0) }
         let report: RTCStatisticsReport = try await callback { complete in peer.statistics { complete(.success($0)) } }
@@ -143,7 +165,7 @@ final class CodexVoicePeer: NSObject {
             if stat.type == "media-source" { microphone = max(microphone, level.doubleValue) }
             if stat.type == "inbound-rtp" { speaker = max(speaker, level.doubleValue) }
         }
-        return (UInt16(min(1, max(0, microphone)) * 65535), UInt16(min(1, max(0, speaker)) * 65535))
+        return (UInt16(min(1, max(0, microphone)) * 65_535), UInt16(min(1, max(0, speaker)) * 65_535))
     }
 
     func close() {
@@ -153,7 +175,9 @@ final class CodexVoicePeer: NSObject {
         RTCAudioSession.sharedInstance().isAudioEnabled = false
         channel?.close()
         peer?.close()
-        channel = nil; peer = nil; track = nil
+        channel = nil
+        peer = nil
+        track = nil
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers.removeAll()
         let audio = RTCAudioSession.sharedInstance()
@@ -164,7 +188,11 @@ final class CodexVoicePeer: NSObject {
         active = false
     }
 
-    private func fail() { guard !closed else { return }; close(); onFailure?() }
+    private func fail() {
+        guard !closed else { return }
+        close()
+        onFailure?()
+    }
     private func waitUntil(_ ready: () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(25))
         while !ready() {
@@ -181,7 +209,9 @@ final class CodexVoicePeer: NSObject {
                 slot.install(continuation)
                 start { slot.finish($0) }
             }
-        } onCancel: { slot.finish(.failure(CancellationError())) }
+        } onCancel: {
+            slot.finish(.failure(CancellationError()))
+        }
     }
 }
 
@@ -193,13 +223,20 @@ final class VoiceContinuation<T>: @unchecked Sendable {
     private var finished = false
     func install(_ continuation: CheckedContinuation<T, Error>) {
         lock.lock()
-        if let result { lock.unlock(); continuation.resume(with: result); return }
+        if let result {
+            lock.unlock()
+            continuation.resume(with: result)
+            return
+        }
         self.continuation = continuation
         lock.unlock()
     }
     func finish(_ result: Result<T, Error>) {
         lock.lock()
-        guard !finished else { lock.unlock(); return }
+        guard !finished else {
+            lock.unlock()
+            return
+        }
         finished = true
         self.result = result
         let continuation = self.continuation
@@ -210,21 +247,25 @@ final class VoiceContinuation<T>: @unchecked Sendable {
 }
 
 extension CodexVoicePeer: RTCPeerConnectionDelegate, RTCDataChannelDelegate {
-    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
-    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
-    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
-    nonisolated func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
-    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        if newState == .failed || newState == .closed || newState == .disconnected { Task { @MainActor [weak self] in self?.fail() } }
+    nonisolated func peerConnection(_: RTCPeerConnection, didChange _: RTCSignalingState) {}
+    nonisolated func peerConnection(_: RTCPeerConnection, didAdd _: RTCMediaStream) {}
+    nonisolated func peerConnection(_: RTCPeerConnection, didRemove _: RTCMediaStream) {}
+    nonisolated func peerConnectionShouldNegotiate(_: RTCPeerConnection) {}
+    nonisolated func peerConnection(_: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
+        if newState == .failed || newState == .closed || newState == .disconnected {
+            Task { @MainActor [weak self] in self?.fail() }
+        }
     }
-    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
-    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
-    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
-    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) { dataChannel.close() }
+    nonisolated func peerConnection(_: RTCPeerConnection, didChange _: RTCIceGatheringState) {}
+    nonisolated func peerConnection(_: RTCPeerConnection, didGenerate _: RTCIceCandidate) {}
+    nonisolated func peerConnection(_: RTCPeerConnection, didRemove _: [RTCIceCandidate]) {}
+    nonisolated func peerConnection(_: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) { dataChannel.close() }
     nonisolated func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
-        if dataChannel.readyState == .closed || dataChannel.readyState == .closing { Task { @MainActor [weak self] in self?.fail() } }
+        if dataChannel.readyState == .closed || dataChannel.readyState == .closing {
+            Task { @MainActor [weak self] in self?.fail() }
+        }
     }
-    nonisolated func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
+    nonisolated func dataChannel(_: RTCDataChannel, didReceiveMessageWith _: RTCDataBuffer) {
         // The host owns canonical transcripts and handoffs. Do not persist a second copy.
     }
 }

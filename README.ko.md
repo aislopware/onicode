@@ -11,7 +11,6 @@
 [GitHub Releases](https://github.com/zeronsh/zeron/releases/latest)에서 플랫폼에 맞는 최신 버전을 내려받으세요.
 
 - **macOS** — `zeron-<version>-macos-arm64.dmg`
-- **Windows** — `zeron-<version>-windows-x86_64-setup.exe`
 - **Linux** — `zeron-<version>-linux-<arch>.tar.gz`의 압축을 풀고 안에 있는 `install.sh` 실행
 
 계정이나 네트워크 연결이 필요 없으며, 세션은 사용 중인 기기에 저장됩니다. 앱은 자동으로 업데이트됩니다.

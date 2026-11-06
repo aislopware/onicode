@@ -199,11 +199,9 @@ impl Runner {
 
     /// Onicode's MCP server, as a session-scoped stdio server. `optional`: a
     /// server that cannot start must not fail the whole turn.
-    /// The plugins' native servers ([`RunRequest::extra_mcp`]) ride beside it.
     fn config(&self) -> Option<Value> {
         session_mcp_config(
             self.request.mcp.as_ref(),
-            &self.request.extra_mcp,
             self.host.granted.iter().any(|c| c == "sessionMcp"),
         )
     }
@@ -794,6 +792,7 @@ impl Runner {
                 multi_select: q["selection"]["mode"] == "multiple",
                 prefill: None,
                 multiline: false,
+                approval: None,
             })
             .collect();
         let answers = (input)(questions.clone());
@@ -902,9 +901,7 @@ fn answer(question: &UserInputQuestion, labels: &[String]) -> Value {
     answer
 }
 
-/// Muse rejects a non-canonical workspace root (macOS `/tmp`), and on
-/// Windows only the verbatim (`\\?\`) canonical form — which is what
-/// `canonicalize` returns there.
+/// Muse rejects a non-canonical workspace root (macOS `/tmp`).
 fn workspace_root(cwd: &Path) -> String {
     std::fs::canonicalize(cwd)
         .unwrap_or_else(|_| cwd.to_path_buf())
@@ -986,6 +983,7 @@ mod tests {
             multi_select: multi,
             prefill: None,
             multiline: false,
+            approval: None,
         }
     }
 
@@ -1024,17 +1022,11 @@ mod tests {
     }
 }
 
-/// `mcpServers` for a session: Onicode's own server and the plugins' native
-/// ones, each optional. `None` when there are none, or when the build can't
-/// take session servers (`granted` lacks `sessionMcp`).
-fn session_mcp_config(
-    mcp: Option<&onicode_proto::McpServer>,
-    extras: &[onicode_proto::McpServer],
-    session_mcp: bool,
-) -> Option<Value> {
-    if mcp.is_none() && extras.is_empty() {
-        return None;
-    }
+/// `mcpServers` for a session: Onicode's own server, optional. `None`
+/// without one, or when the build can't take session servers (`granted`
+/// lacks `sessionMcp`).
+fn session_mcp_config(mcp: Option<&onicode_proto::McpServer>, session_mcp: bool) -> Option<Value> {
+    let server = mcp?;
     if !session_mcp {
         tracing::warn!(
             target: "onicode_harness::muse",
@@ -1043,18 +1035,16 @@ fn session_mcp_config(
         return None;
     }
     let mut servers = serde_json::Map::new();
-    for server in extras.iter().chain(mcp) {
-        servers.insert(
-            server.name.clone(),
-            json!({
-                "transport": "stdio",
-                "command": server.command,
-                "args": server.args,
-                "env": server.env,
-                "mode": "optional",
-            }),
-        );
-    }
+    servers.insert(
+        server.name.clone(),
+        json!({
+            "transport": "stdio",
+            "command": server.command,
+            "args": server.args,
+            "env": server.env,
+            "mode": "optional",
+        }),
+    );
     Some(json!({ "mcpServers": servers }))
 }
 
@@ -1063,41 +1053,25 @@ mod session_mcp_tests {
     use super::*;
 
     #[test]
-    fn session_mcp_config_adds_plugin_servers_beside_onicode() {
+    fn session_mcp_config_spells_onicode_s_server_as_optional() {
         let onicode = onicode_proto::McpServer {
             name: "onicode".into(),
             command: "/opt/onicode/onicode".into(),
             args: vec!["mcp".into()],
             env: Default::default(),
         };
-        let extra = onicode_proto::McpServer {
-            name: "plugin-focus".into(),
-            command: "/data/plugins/.loaded/focus/0123/bin/server".into(),
-            args: vec![],
-            env: [("FOCUS".to_owned(), "1".to_owned())].into_iter().collect(),
-        };
-        assert_eq!(session_mcp_config(None, &[], true), None);
+        assert_eq!(session_mcp_config(None, true), None);
+        assert_eq!(session_mcp_config(Some(&onicode), false), None);
+        let config = session_mcp_config(Some(&onicode), true).unwrap();
         assert_eq!(
-            session_mcp_config(Some(&onicode), std::slice::from_ref(&extra), false),
-            None
-        );
-        let config =
-            session_mcp_config(Some(&onicode), std::slice::from_ref(&extra), true).unwrap();
-        assert_eq!(
-            config["mcpServers"]["onicode"]["command"],
-            "/opt/onicode/onicode"
-        );
-        assert_eq!(
-            config["mcpServers"]["plugin-focus"],
+            config["mcpServers"]["onicode"],
             json!({
                 "transport": "stdio",
-                "command": "/data/plugins/.loaded/focus/0123/bin/server",
-                "args": [],
-                "env": { "FOCUS": "1" },
+                "command": "/opt/onicode/onicode",
+                "args": ["mcp"],
+                "env": {},
                 "mode": "optional",
             })
         );
-        let only = session_mcp_config(None, &[extra], true).unwrap();
-        assert_eq!(only["mcpServers"].as_object().unwrap().len(), 1);
     }
 }

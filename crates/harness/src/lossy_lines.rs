@@ -1,15 +1,28 @@
 //! Newline-framed reading of a child's stdio that survives any bytes.
 //!
 //! `tokio::io::Lines` fails the whole stream on the first byte sequence that
-//! is not UTF-8. A child's output is not ours to vouch for: Windows tools and
-//! localized messages print in the console's ANSI/OEM code page, agents echo
-//! raw tool output into log lines, and a multibyte character can be split by
+//! is not UTF-8. A child's output is not ours to vouch for: localized tools
+//! print in legacy encodings, agents echo raw tool output into log lines, and a multibyte character can be split by
 //! a crash mid-write. With `Lines` one such byte ended a stderr drain — the
 //! read end then closed, so the child's next write hit a broken pipe — or
 //! ended a protocol reader as though the agent had exited. Here a bad byte
 //! becomes U+FFFD in that one line and reading continues.
 
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
+
+/// A JSON line as a JavaScript line reader takes it whole: U+2028 and
+/// U+2029, which JSON allows raw inside strings, are escaped, since some
+/// Node readers split lines on them. Outside a string JSON has no place for
+/// either, so the escape never changes what the line means.
+pub(crate) fn ndjson_safe(line: &str) -> std::borrow::Cow<'_, str> {
+    if line.contains(['\u{2028}', '\u{2029}']) {
+        line.replace('\u{2028}', "\\u2028")
+            .replace('\u{2029}', "\\u2029")
+            .into()
+    } else {
+        line.into()
+    }
+}
 
 pub(crate) struct LossyLines<R> {
     reader: BufReader<R>,
@@ -55,6 +68,36 @@ pub(crate) fn lossy_lines<R: AsyncRead + Unpin>(reader: R) -> LossyLines<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Seeded property test: escaped lines carry no raw separator and
+    /// parse to the same value, and lines without one are not copied.
+    #[test]
+    fn line_separators_are_escaped_without_changing_the_value() {
+        let alphabet = ['a', '"', '\\', '\n', '\u{2028}', '\u{2029}', 'ñ', ' '];
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        for _ in 0..500 {
+            let text: String = (0..next(24))
+                .map(|_| alphabet[next(alphabet.len() as u64) as usize])
+                .collect();
+            let value = serde_json::json!({ "text": text, "list": [text] });
+            let line = value.to_string();
+            let safe = ndjson_safe(&line);
+            assert!(!safe.contains(['\u{2028}', '\u{2029}']), "{safe:?}");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&safe).unwrap(),
+                value
+            );
+            if !line.contains(['\u{2028}', '\u{2029}']) {
+                assert!(matches!(safe, std::borrow::Cow::Borrowed(_)));
+            }
+        }
+    }
 
     #[tokio::test]
     async fn invalid_utf8_crlf_and_unterminated_lines_keep_reading() {

@@ -20,7 +20,8 @@ final class BillingViewController: UIViewController, SFSafariViewControllerDeleg
         title = "Billing"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     @MainActor private var cloud: CloudStore { app.cloud }
 
@@ -53,7 +54,7 @@ final class BillingViewController: UIViewController, SFSafariViewControllerDeleg
     // MARK: Layout
 
     private func render() {
-        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in stack.arrangedSubviews { view.removeFromSuperview() }
         guard let billing = cloud.billing else {
             stack.addArrangedSubview(spacer(40))
             if let error = cloud.billingError {
@@ -75,7 +76,8 @@ final class BillingViewController: UIViewController, SFSafariViewControllerDeleg
             return
         }
         if !billing.available {
-            stack.addArrangedSubview(note("Billing isn't set up on this server yet, so plans and credits can't be bought here."))
+            stack.addArrangedSubview(
+                note("Billing isn't set up on this server yet, so plans and credits can't be bought here."))
         }
         section("Credits", credits(billing))
         section("Plan", plans(billing))
@@ -117,7 +119,9 @@ final class BillingViewController: UIViewController, SFSafariViewControllerDeleg
         let plan: (String, String)
         if b.creditsMonthlyTotal > 0 {
             let of = "Of \(CloudUI.credits(b.creditsMonthlyTotal))"
-            plan = (b.creditsMonthlyEndsMs.map { "\(of) · resets \(CloudUI.shortDate($0))" } ?? of, CloudUI.credits(monthly))
+            plan = (
+                b.creditsMonthlyEndsMs.map { "\(of) · resets \(CloudUI.shortDate($0))" } ?? of, CloudUI.credits(monthly)
+            )
         } else {
             plan = ("No plan yet — choose one below", "—")
         }
@@ -142,16 +146,21 @@ final class BillingViewController: UIViewController, SFSafariViewControllerDeleg
             if isCurrent {
                 action = Self.button("Current plan", tone: .filled, enabled: false) {}
             } else if current != nil {
-                action = Self.button(busy == "plan:\(plan.id)" ? "Opening…" : "Switch", tone: .filled, enabled: idle) { [weak self] in
+                action = Self.button(busy == "plan:\(plan.id)" ? "Opening…" : "Switch", tone: .filled, enabled: idle) {
+                    [weak self] in
                     self?.portal(busy: "plan:\(plan.id)")
                 }
             } else {
-                action = Self.button(busy == "plan:\(plan.id)" ? "Opening…" : "Choose \(plan.name)", tone: ix == 0 ? .solid : .filled, enabled: idle) { [weak self] in
+                action = Self.button(
+                    busy == "plan:\(plan.id)" ? "Opening…" : "Choose \(plan.name)", tone: ix == 0 ? .solid : .filled,
+                    enabled: idle
+                ) { [weak self] in
                     self?.checkout(kind: "subscription", plan: plan.id, busy: "plan:\(plan.id)")
                 }
             }
             action.accessibilityIdentifier = "plan-\(plan.id)"
-            column.addArrangedSubview(PlanCard(plan: plan, current: isCurrent, hours: Self.hours(plan.monthlyCredits), action: action))
+            column.addArrangedSubview(
+                PlanCard(plan: plan, current: isCurrent, hours: Self.hours(plan.monthlyCredits), action: action))
         }
         if let plan = b.plan {
             let detail: String
@@ -160,11 +169,14 @@ final class BillingViewController: UIViewController, SFSafariViewControllerDeleg
                 detail = "Your last payment didn't go through — update your card to keep your plan."
                 tint = Palette.warning
             } else if b.cancelAtPeriodEnd {
-                detail = b.periodEndMs.map { "Ends \(CloudUI.shortDate($0)). You keep its credits until then." } ?? "Won't renew."
+                detail =
+                    b.periodEndMs.map { "Ends \(CloudUI.shortDate($0)). You keep its credits until then." }
+                    ?? "Won't renew."
             } else {
                 detail = b.periodEndMs.map { "Renews \(CloudUI.shortDate($0))." } ?? "Renews monthly."
             }
-            let manage = Self.button(busy == "portal" ? "Opening…" : "Manage", tone: .quiet, enabled: busy == nil) { [weak self] in
+            let manage = Self.button(busy == "portal" ? "Opening…" : "Manage", tone: .quiet, enabled: busy == nil) {
+                [weak self] in
                 self?.portal(busy: "portal")
             }
             manage.accessibilityIdentifier = "billing-manage"
@@ -182,9 +194,13 @@ final class BillingViewController: UIViewController, SFSafariViewControllerDeleg
             self?.packs = count
             self?.render()
         }
-        let row = line(CloudUI.credits(credits) + " credits", "Never expire · \(Self.hours(credits))", accessory: stepper)
+        let row = line(
+            CloudUI.credits(credits) + " credits", "Never expire · \(Self.hours(credits))", accessory: stepper)
         let idle = busy == nil && b.available
-        let buy = Self.button(busy == "credits" ? "Opening…" : "Buy for \(CloudUI.price(b.packPriceCents * UInt32(packs)))", tone: .solid, enabled: idle) { [weak self] in
+        let buy = Self.button(
+            busy == "credits" ? "Opening…" : "Buy for \(CloudUI.price(b.packPriceCents * UInt32(packs)))", tone: .solid,
+            enabled: idle
+        ) { [weak self] in
             guard let self else { return }
             self.checkout(kind: "credits", packs: self.packs, busy: "credits")
         }
@@ -194,7 +210,7 @@ final class BillingViewController: UIViewController, SFSafariViewControllerDeleg
 
     // MARK: Pieces
 
-    private static let captionTag = 7301
+    private static let captionTag = 7_301
 
     /// A titled row with a muted line under it and a value or control after.
     private func line(_ title: String, _ detail: String, value: String? = nil, accessory: UIView? = nil) -> UIView {
@@ -351,7 +367,8 @@ final class BillingViewController: UIViewController, SFSafariViewControllerDeleg
                 safari.delegate = self
                 self.present(safari, animated: true)
             } catch {
-                let a = UIAlertController(title: "Couldn't open payments", message: CloudStore.message(error), preferredStyle: .alert)
+                let a = UIAlertController(
+                    title: "Couldn't open payments", message: CloudStore.message(error), preferredStyle: .alert)
                 a.addAction(UIAlertAction(title: "OK", style: .default))
                 self.present(a, animated: true)
             }
@@ -360,7 +377,7 @@ final class BillingViewController: UIViewController, SFSafariViewControllerDeleg
 
     /// Back from Stripe: Checkout lands through a webhook, so re-read for a
     /// little while until the change shows.
-    func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
+    func safariViewControllerDidFinish(_: SFSafariViewController) {
         let before = (cloud.billing?.plan?.id, cloud.billing?.creditsTotal)
         Task { @MainActor in
             for _ in 0..<6 {
@@ -419,7 +436,8 @@ final class FigureRow: UIView {
         ])
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
 /// A thin track split into shares, each a fainter tint of the text color.
@@ -447,7 +465,8 @@ final class SplitBar: UIView {
         }
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
 /// A plan: its name (and "Current"), the price on a baseline with "/ month",
@@ -460,8 +479,9 @@ final class PlanCard: UIView {
         layer.cornerCurve = .continuous
         layer.borderWidth = current ? 1 : 0
         layer.borderColor = Palette.text.withAlphaComponent(0.25).cgColor
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (card: PlanCard, _) in
-            card.layer.borderColor = Palette.text.withAlphaComponent(0.25).resolvedColor(with: card.traitCollection).cgColor
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (card: Self, _) in
+            card.layer.borderColor =
+                Palette.text.withAlphaComponent(0.25).resolvedColor(with: card.traitCollection).cgColor
         }
         let name = UILabel()
         name.text = plan.name
@@ -506,7 +526,8 @@ final class PlanCard: UIView {
         ])
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
 /// − count + in one quiet pill.
@@ -521,7 +542,9 @@ final class PackStepper: UIView {
             c.image = CloudUI.symbol(symbol, 12, weight: .semibold)
             c.baseForegroundColor = Palette.secondary
             c.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 11, bottom: 10, trailing: 11)
-            let b = UIButton(configuration: c, primaryAction: UIAction { _ in onChange(Swift.min(max, Swift.max(1, count + delta))) })
+            let b = UIButton(
+                configuration: c, primaryAction: UIAction { _ in onChange(Swift.min(max, Swift.max(1, count + delta))) }
+            )
             b.isEnabled = enabled
             b.alpha = enabled ? 1 : 0.35
             b.accessibilityLabel = label
@@ -549,7 +572,8 @@ final class PackStepper: UIView {
         ])
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
 /// A label with room around its text (badges).
@@ -561,7 +585,8 @@ final class PaddedLabel: UILabel {
         super.init(frame: .zero)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func drawText(in rect: CGRect) {
         super.drawText(in: rect.inset(by: insets))

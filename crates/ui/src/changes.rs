@@ -5924,7 +5924,7 @@ rename to new_name.rs
     /// Uses the native font backend, not TestAppContext's simulated metrics.
     #[test]
     fn native_diff_font_geometry() {
-        // This regression needs actual DirectWrite/CoreText/fontconfig metrics.
+        // This regression needs actual CoreText/fontconfig metrics.
         let (_native, text_system) = crate::typography::native_text_system();
         let mut theme = Theme::dark();
         theme.font_mono = "Geist".into();

@@ -50,7 +50,9 @@ final class TerminalKeyBar: UIInputView {
         stack.translatesAutoresizingMaskIntoConstraints = false
         scroller.addSubview(stack)
 
-        let dismiss = key(symbol: "keyboard.chevron.compact.down", label: "Hide keyboard") { [weak self] in self?.onAction?(.dismiss) }
+        let dismiss = key(symbol: "keyboard.chevron.compact.down", label: "Hide keyboard") { [weak self] in
+            self?.onAction?(.dismiss)
+        }
         dismiss.translatesAutoresizingMaskIntoConstraints = false
         addSubview(dismiss)
 
@@ -94,7 +96,8 @@ final class TerminalKeyBar: UIInputView {
         accessibilityIdentifier = "terminal-key-bar"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -109,11 +112,12 @@ final class TerminalKeyBar: UIInputView {
     /// Tap: for the next key. Tap again while armed: locked. Again: off.
     private func toggle(_ latch: ReferenceWritableKeyPath<TerminalKeyBar, Latch>) {
         UISelectionFeedbackGenerator().selectionChanged()
-        self[keyPath: latch] = switch self[keyPath: latch] {
-        case .off: .once
-        case .once: .locked
-        case .locked: .off
-        }
+        self[keyPath: latch] =
+            switch self[keyPath: latch] {
+            case .off: .once
+            case .once: .locked
+            case .locked: .off
+            }
     }
 
     private func style(_ button: UIButton, _ latch: Latch) {
@@ -144,7 +148,9 @@ final class TerminalKeyBar: UIInputView {
         return a
     }
 
-    private func key(title: String? = nil, symbol: String? = nil, label: String, action: @escaping () -> Void) -> UIButton {
+    private func key(title: String? = nil, symbol: String? = nil, label: String, action: @escaping () -> Void)
+        -> UIButton
+    {
         var c = UIButton.Configuration.glass()
         c.baseForegroundColor = Palette.text
         c.cornerStyle = .capsule
@@ -154,7 +160,8 @@ final class TerminalKeyBar: UIInputView {
             c.titleTextAttributesTransformer = Self.titleFont
         }
         if let symbol {
-            c.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold))
+            c.image = UIImage(
+                systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold))
         }
         let b = UIButton(configuration: c, primaryAction: UIAction { _ in action() })
         b.accessibilityLabel = label
@@ -173,16 +180,17 @@ final class TerminalKeyBar: UIInputView {
     /// Arrows: one step on tap, then repeat while held.
     private func repeating(symbol: String, label: String, _ k: TerminalKey) -> UIButton {
         let b = key(symbol: symbol, label: label) {}
-        b.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            self.send(.key(k))
-            self.repeatTimer?.invalidate()
-            self.repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.38, repeats: false) { [weak self] _ in
-                self?.repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in
-                    self?.onAction?(.key(k))
+        b.addAction(
+            UIAction { [weak self] _ in
+                guard let self else { return }
+                self.send(.key(k))
+                self.repeatTimer?.invalidate()
+                self.repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.38, repeats: false) { [weak self] _ in
+                    self?.repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in
+                        self?.onAction?(.key(k))
+                    }
                 }
-            }
-        }, for: .touchDown)
+            }, for: .touchDown)
         for event: UIControl.Event in [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit] {
             b.addAction(UIAction { [weak self] _ in self?.repeatTimer?.invalidate() }, for: event)
         }

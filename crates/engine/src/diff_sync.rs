@@ -169,6 +169,62 @@ pub struct TurnSnapshot {
     pub at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Each chat's "Latest turn" base, written only by its newest turn's capture.
+/// Captures run in the background, so one can finish after the next turn's
+/// has started or even landed (a quick turn, then a queued message or a
+/// send after Stop). Each turn takes a ticket when it dispatches; a capture
+/// that lands for an older ticket is dropped instead of replacing the newer
+/// turn's base, or removing it.
+struct TurnBases<T> {
+    next_ticket: u64,
+    /// chat_id → the ticket of its newest turn.
+    latest: HashMap<String, u64>,
+    bases: HashMap<String, T>,
+}
+
+impl<T> Default for TurnBases<T> {
+    fn default() -> Self {
+        Self {
+            next_ticket: 0,
+            latest: HashMap::new(),
+            bases: HashMap::new(),
+        }
+    }
+}
+
+impl<T> TurnBases<T> {
+    /// A turn of `chat_id` dispatched: its ticket.
+    fn begin(&mut self, chat_id: &str) -> u64 {
+        self.next_ticket += 1;
+        self.latest.insert(chat_id.to_owned(), self.next_ticket);
+        self.next_ticket
+    }
+
+    /// The capture for `ticket` finished: `Some` base, or `None` when the
+    /// turn has none (not a checkout, a failed capture). Applied only while
+    /// `ticket` is the chat's newest turn. Returns what it displaced or
+    /// rejected, for the caller to drop.
+    fn settle(&mut self, chat_id: &str, ticket: u64, base: Option<T>) -> Option<T> {
+        if self.latest.get(chat_id) != Some(&ticket) {
+            return base;
+        }
+        match base {
+            Some(base) => self.bases.insert(chat_id.to_owned(), base),
+            None => self.bases.remove(chat_id),
+        }
+    }
+
+    fn get(&self, chat_id: &str) -> Option<&T> {
+        self.bases.get(chat_id)
+    }
+
+    /// Forget every chat `keep` rejects, turns still capturing included.
+    fn retain(&mut self, keep: impl Fn(&str) -> bool) {
+        self.bases.retain(|chat_id, _| keep(chat_id.as_str()));
+        self.latest.retain(|chat_id, _| keep(chat_id.as_str()));
+    }
+}
+
 struct DiffSyncInner {
     repos: Repos,
     workspace: WorkspaceHost,
@@ -188,7 +244,7 @@ struct DiffSyncInner {
     diffs_tx: watch::Sender<Vec<CheckoutDiff>>,
     statuses_tx: watch::Sender<Vec<onicode_proto::CheckoutGitStatus>>,
     /// chat_id → turn-start tree (see [`TurnSnapshot`]).
-    turn_trees: Mutex<HashMap<String, TurnSnapshot>>,
+    turn_trees: Mutex<TurnBases<TurnSnapshot>>,
     /// The tasks hold `Weak` refs, but an in-flight iteration holds an
     /// upgraded Arc — the token cuts it so no sidecar HTTP outlives shutdown.
     cancel: CancellationToken,
@@ -344,7 +400,7 @@ impl CheckoutDiffSync {
                 orphan_grace,
                 diffs_tx,
                 statuses_tx: watch::channel(Vec::new()).0,
-                turn_trees: Mutex::new(HashMap::new()),
+                turn_trees: Mutex::new(TurnBases::default()),
                 cancel: CancellationToken::new(),
                 supervisor: Mutex::new(None),
                 interest: Mutex::new(HashMap::new()),
@@ -454,6 +510,8 @@ impl CheckoutDiffSync {
     /// in the background so "Latest turn" has a base. Best-effort — failures
     /// only log; a chat outside a checkout simply records nothing.
     pub fn note_turn_start(&self, chat_id: &str, cwd: &str) {
+        // Ticketed now, in dispatch order: the captures themselves race.
+        let ticket = lock(&self.inner.turn_trees).begin(chat_id);
         let inner = Arc::downgrade(&self.inner);
         let chat_id = chat_id.to_string();
         let cwd = PathBuf::from(cwd);
@@ -463,28 +521,27 @@ impl CheckoutDiffSync {
                 Ok(identity) => identity,
                 Err(_) => {
                     // Not a checkout: no turn to diff, not the previous one.
-                    lock(&inner.turn_trees).remove(&chat_id);
+                    let displaced = lock(&inner.turn_trees).settle(&chat_id, ticket, None);
+                    drop(displaced);
                     return;
                 }
             };
-            match snapshot_tree(&inner.repos, &identity.root).await {
-                Ok(tree) => {
-                    lock(&inner.turn_trees).insert(
-                        chat_id,
-                        TurnSnapshot {
-                            root: identity.root,
-                            tree,
-                            at: chrono::Utc::now(),
-                        },
-                    );
-                }
+            let base = match snapshot_tree(&inner.repos, &identity.root).await {
+                Ok(tree) => Some(TurnSnapshot {
+                    root: identity.root,
+                    tree,
+                    at: chrono::Utc::now(),
+                }),
                 Err(err) => {
                     // Keeping the previous base would silently diff two turns.
-                    lock(&inner.turn_trees).remove(&chat_id);
                     tracing::debug!(chat = %chat_id, error = %err,
                         "diff-sync: turn snapshot failed");
+                    None
                 }
-            }
+            };
+            // Dropped outside the lock: a snapshot deletes its object store.
+            let displaced = lock(&inner.turn_trees).settle(&chat_id, ticket, base);
+            drop(displaced);
         });
     }
 
@@ -644,7 +701,7 @@ async fn reconcile(inner: &Arc<DiffSyncInner>, chats: Vec<Chat>, fresh: bool) {
             .filter(|chat| !chat.archived || interested.contains(&chat.id))
             .map(|chat| chat.id.as_str())
             .collect();
-        lock(&inner.turn_trees).retain(|chat_id, _| live.contains(chat_id.as_str()));
+        lock(&inner.turn_trees).retain(|chat_id| live.contains(chat_id));
     }
 
     // Close entries whose checkout has had no chats for a full grace period;
@@ -1077,11 +1134,6 @@ async fn capture_git_in<S: AsRef<OsStr>>(
     snapshot: Option<&TreeSnapshot>,
 ) -> Result<Capture, EngineError> {
     let mut cmd = tokio::process::Command::new("git");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.as_std_mut().creation_flags(0x08000000);
-    }
     cmd.arg("-C").arg(cwd).args(args);
     if let Some(snapshot) = snapshot {
         snapshot.apply_to(&mut cmd);
@@ -1711,14 +1763,9 @@ fn path_argument(path: &[u8]) -> OsString {
     OsString::from_vec(path.to_vec())
 }
 
-#[cfg(not(unix))]
-fn path_argument(path: &[u8]) -> OsString {
-    OsString::from(String::from_utf8_lossy(path).into_owned())
-}
-
-/// Path bytes per git invocation. Windows caps a whole command line at 32,767
-/// UTF-16 units (macOS/Linux at 1-2 MiB including the environment); a change
-/// set past that must not fail to spawn halfway through a discard.
+/// Path bytes per git invocation, far under the command-line cap (1-2 MiB on
+/// macOS/Linux including the environment); a change set past that must not
+/// fail to spawn halfway through a discard.
 const MAX_PATH_ARGUMENT_BYTES: usize = 16 * 1024;
 
 /// Split `paths` into consecutive batches of at most `budget` bytes (one NUL
@@ -1759,11 +1806,6 @@ async fn run_git_for_path_batch(
     paths: &[Vec<u8>],
 ) -> Result<(), EngineError> {
     let mut command = tokio::process::Command::new("git");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.as_std_mut().creation_flags(0x08000000);
-    }
     command
         .arg("-C")
         .arg(root)
@@ -2260,5 +2302,94 @@ mod watch_budget_tests {
         // A self-referential symlink cycle must not send the walk into a spin.
         std::os::unix::fs::symlink(root.join("real"), root.join("real/inner/loop")).unwrap();
         assert!(!exceeds_watch_budget(root)); // terminates, under budget
+    }
+}
+
+#[cfg(test)]
+mod turn_base_tests {
+    use super::TurnBases;
+
+    /// The race behind a wrong "Latest turn": turn 1's capture is slow, turn
+    /// 2 starts and lands its base, then turn 1's lands late — as a base or as
+    /// a failure. Neither may replace or remove turn 2's.
+    #[test]
+    fn a_late_capture_keeps_the_newer_turns_base() {
+        for late in [Some("turn 1"), None] {
+            let mut bases = TurnBases::default();
+            let first = bases.begin("chat");
+            let second = bases.begin("chat");
+            assert_eq!(bases.settle("chat", second, Some("turn 2")), None);
+            assert_eq!(
+                bases.settle("chat", first, late),
+                late,
+                "rejected, handed back"
+            );
+            assert_eq!(bases.get("chat"), Some(&"turn 2"));
+        }
+        // Another chat's turns never stand in the way.
+        let mut bases = TurnBases::default();
+        let a = bases.begin("a");
+        let b = bases.begin("b");
+        bases.settle("b", b, Some("b"));
+        bases.settle("a", a, Some("a"));
+        assert_eq!((bases.get("a"), bases.get("b")), (Some(&"a"), Some(&"b")));
+        // A chat forgotten mid-capture stays forgotten.
+        let late = bases.begin("a");
+        bases.retain(|chat| chat != "a");
+        assert_eq!(bases.settle("a", late, Some("late")), Some("late"));
+        assert_eq!(bases.get("a"), None);
+    }
+
+    /// Seeded schedules of dispatches and captures finishing in any order
+    /// over a few chats. The newest turn's capture always lands (base or
+    /// none), an older one never changes anything, and a chat's base never
+    /// goes back to an older turn.
+    #[test]
+    fn only_the_newest_turns_capture_lands_in_any_order() {
+        struct Rng(u64);
+        impl Rng {
+            fn next(&mut self) -> u64 {
+                self.0 ^= self.0 >> 12;
+                self.0 ^= self.0 << 25;
+                self.0 ^= self.0 >> 27;
+                self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
+            }
+            fn below(&mut self, n: usize) -> usize {
+                (self.next() % n as u64) as usize
+            }
+        }
+        const CHATS: [&str; 3] = ["a", "b", "c"];
+        for seed in 1..=300u64 {
+            let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15));
+            let mut bases = TurnBases::default();
+            let mut newest: std::collections::HashMap<&str, u64> = Default::default();
+            let mut capturing: Vec<(&str, u64)> = Vec::new();
+            let mut highest_kept: std::collections::HashMap<&str, u64> = Default::default();
+            for _ in 0..60 {
+                if capturing.is_empty() || rng.below(3) == 0 {
+                    let chat = CHATS[rng.below(CHATS.len())];
+                    let ticket = bases.begin(chat);
+                    newest.insert(chat, ticket);
+                    capturing.push((chat, ticket));
+                    continue;
+                }
+                let (chat, ticket) = capturing.swap_remove(rng.below(capturing.len()));
+                let base = (rng.below(4) != 0).then_some(ticket);
+                let before = bases.get(chat).copied();
+                let handed_back = bases.settle(chat, ticket, base);
+                if newest[chat] == ticket {
+                    assert_eq!(bases.get(chat).copied(), base, "seed {seed}");
+                    assert_eq!(handed_back, before, "seed {seed}: displaced");
+                } else {
+                    assert_eq!(bases.get(chat).copied(), before, "seed {seed}");
+                    assert_eq!(handed_back, base, "seed {seed}: rejected");
+                }
+                if let Some(kept) = bases.get(chat).copied() {
+                    let highest = highest_kept.entry(chat).or_default();
+                    assert!(kept >= *highest, "seed {seed}: {chat} went back a turn");
+                    *highest = kept;
+                }
+            }
+        }
     }
 }

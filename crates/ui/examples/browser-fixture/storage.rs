@@ -51,7 +51,7 @@ pub async fn exercise(
     }
     anyhow::ensure!(
         BrowserContext::fixture_persistence_supported(),
-        "persistent profiles require macOS 14+ or Linux"
+        "persistent profiles require macOS or Linux"
     );
     let (id, browser) = window.update(cx, |shell, window, cx| {
         shell.fixture_open_browser(Some(url.to_owned()), window, cx)

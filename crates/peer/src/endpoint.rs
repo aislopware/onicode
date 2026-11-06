@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use noq::VarInt;
 use onicode_net::admission::{Admission, Admitted, Cidr, Verdict};
-use onicode_net::hello::{self, HANDSHAKE_TIMEOUT};
+use onicode_net::hello::{self, HANDSHAKE_TIMEOUT, HELLO_TIMEOUT};
 use onicode_net::transport::{self, PORT};
 use onicode_net::{Hello, NetError, Role, Session, close};
 use onicode_tailnet::Tailnet;
@@ -260,8 +260,18 @@ impl PeerEndpoint {
                     tracing::info!(%remote, error = %e, "caller refused at the hello");
                     return None;
                 }
-                // A probe has read this node's hello; it closes the link itself.
-                (!session.peer.is_probe()).then_some(PeerSession { session, admitted })
+                if session.peer.is_probe() {
+                    // The prober closes the link once it has read this node's hello. Dropped
+                    // here first, the link would close at once and abandon that hello unsent.
+                    if tokio::time::timeout(HELLO_TIMEOUT, session.link.closed())
+                        .await
+                        .is_err()
+                    {
+                        session.link.close(close::PROBE, b"probe never closed");
+                    }
+                    return None;
+                }
+                Some(PeerSession { session, admitted })
             }
         }
     }

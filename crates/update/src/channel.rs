@@ -7,8 +7,8 @@
 //! inherits a channel from whoever started it.
 //!
 //! Only macOS app installs follow it. Managed installs (headless daemons, the
-//! Linux desktop), Windows and source builds are always on stable: beta
-//! publishes the macOS app alone.
+//! Linux desktop) and source builds are always on stable: beta publishes the
+//! macOS app alone.
 //!
 //!   stable  `{edge}/releases/manifest.json` (and `latest.txt`), unchanged
 //!   beta    `{edge}/releases/beta/manifest.json`
@@ -25,12 +25,6 @@ use serde::{Deserialize, Serialize};
 
 /// The file in the data dir that holds the channel.
 pub const FILE: &str = "update-channel.json";
-
-/// The oldest macOS a beta build runs on: 13.0, the floor of Ghostty, which
-/// draws the zgx interface's terminals (its build targets macOS 13; zgx's own
-/// newer-macOS calls fall back). The opt-in refuses older systems, and so
-/// does the updater when a manifest says `minimumMacOS`.
-pub const BETA_MINIMUM_MACOS: &str = "13.0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -208,21 +202,12 @@ pub fn macos_at_least(system: &str, minimum: &str) -> bool {
     }
 }
 
-/// Why this Mac can't take beta updates, in words for the person: not a
-/// macOS app install, or macOS older than [`BETA_MINIMUM_MACOS`].
+/// Why this Mac can't take beta updates, in words for the person: it is not a
+/// macOS app install. Beta runs wherever the app does; a beta that needs a
+/// newer macOS says so in its manifest's `minimumMacOS`.
 pub fn beta_unavailable() -> Option<String> {
-    if !matches!(crate::detect_install(), crate::InstallKind::MacApp { .. }) {
-        return Some("Beta updates are for the Onicode app on a Mac.".into());
-    }
-    match macos_version() {
-        Some(version) if macos_at_least(version, BETA_MINIMUM_MACOS) => None,
-        Some(version) => Some(format!(
-            "Onicode beta needs macOS {BETA_MINIMUM_MACOS} or later. This Mac has macOS {version}."
-        )),
-        None => Some(format!(
-            "Onicode beta needs macOS {BETA_MINIMUM_MACOS} or later."
-        )),
-    }
+    (!matches!(crate::detect_install(), crate::InstallKind::MacApp { .. }))
+        .then(|| "Beta updates are for the Onicode app on a Mac.".into())
 }
 
 #[cfg(test)]
@@ -296,10 +281,10 @@ mod tests {
 
     #[test]
     fn macos_versions_compare_numerically() {
-        assert!(macos_at_least("14.0", "14.0"));
-        assert!(macos_at_least("26.1", "14.0"));
-        assert!(macos_at_least("14", "14.0"));
-        assert!(!macos_at_least("13.6.1", "14.0"));
-        assert!(!macos_at_least("garbage", "14.0"));
+        assert!(macos_at_least("28.0", "28.0"));
+        assert!(macos_at_least("28.10", "28.2"));
+        assert!(macos_at_least("28", "28.0"));
+        assert!(!macos_at_least("27.2.1", "28.0"));
+        assert!(!macos_at_least("garbage", "28.0"));
     }
 }

@@ -390,9 +390,8 @@ struct InspectedFile {
 /// `path` canonicalized, when it lies strictly inside one of `roots`.
 ///
 /// Jailed lexically BEFORE any filesystem call: tool chips and replies send
-/// paths an agent printed, and merely opening `\\host\share\a.png` (or an
-/// autofs `/net/host/…`) reaches out to that host — on Windows with the
-/// user's NTLM credentials. Roots match in raw and canonical form (`/var` vs
+/// paths an agent printed, and merely opening an autofs `/net/host/…` path
+/// reaches out to that host. Roots match in raw and canonical form (`/var` vs
 /// `/private/var`, symlinked cwds). Then BOTH sides are canonicalized, so
 /// symlinks can't escape.
 fn jail(path: &str, roots: &[&Path]) -> Option<PathBuf> {
@@ -418,10 +417,8 @@ fn jail(path: &str, roots: &[&Path]) -> Option<PathBuf> {
 
 /// [`jail`] for one root, without following a single link below it: each
 /// component under the root is `lstat`ed before anything resolves the path,
-/// and a symlink (a Windows junction counts) refuses it unfollowed. So a link
-/// a repository planted can't send the read anywhere, not even to look: a
-/// junction to `\\host\share` would reach that host with the user's
-/// credentials. The root itself may sit behind links (`/tmp` →
+/// and a symlink refuses it unfollowed. So a link a repository planted can't
+/// send the read anywhere, not even to look. The root itself may sit behind links (`/tmp` →
 /// `/private/tmp`): a path matches it raw or canonical. Links swapped in
 /// after the walk aren't guarded: only the user's own processes could, and
 /// they can read all this already.
@@ -435,10 +432,6 @@ fn jail_without_links(path: &str, root: &Path) -> Option<PathBuf> {
         .len();
     let mut walked = canonical_root.clone();
     for name in &requested[depth..] {
-        #[cfg(windows)]
-        if is_windows_device_name(name) {
-            return None;
-        }
         walked.push(name);
         if std::fs::symlink_metadata(&walked)
             .ok()?
@@ -450,31 +443,6 @@ fn jail_without_links(path: &str, root: &Path) -> Option<PathBuf> {
     }
     let resolved = std::fs::canonicalize(&walked).ok()?;
     (resolved.starts_with(&canonical_root) && resolved != canonical_root).then_some(resolved)
-}
-
-/// A name Windows opens as a device in any folder and with any extension
-/// (`NUL.png`, `com1.jpg`, `CONIN$`), reaching a port or the console instead
-/// of a file.
-#[cfg_attr(not(windows), allow(dead_code))]
-fn is_windows_device_name(name: &std::ffi::OsStr) -> bool {
-    let name = name.to_string_lossy().to_ascii_uppercase();
-    let stem = name
-        .split(['.', ':'])
-        .next()
-        .unwrap_or_default()
-        .trim_end_matches(' ');
-    let numbered = |prefix: &str| {
-        stem.strip_prefix(prefix).is_some_and(|n| {
-            let mut chars = n.chars();
-            chars
-                .next()
-                .is_some_and(|c| c.is_ascii_digit() || matches!(c, '¹' | '²' | '³'))
-                && chars.next().is_none()
-        })
-    };
-    matches!(stem, "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
-        || numbered("COM")
-        || numbered("LPT")
 }
 
 /// One chunk of an image an agent's reply names in Markdown (`![alt](path)`),
@@ -533,26 +501,18 @@ pub fn read_chat_image_chunk(
 }
 
 /// An absolute local path's components with `.`/`..` resolved WITHOUT
-/// touching the filesystem. `None` for relative or drive-relative paths and
-/// for any Windows prefix but a drive letter (UNC, `\\.\` devices, verbatim
-/// non-disk). `C:` and `\\?\C:` agree; Windows compares case-insensitively.
+/// touching the filesystem. `None` for relative paths.
 fn lexical_components(path: &Path) -> Option<Vec<std::ffi::OsString>> {
-    use std::path::{Component, Prefix};
+    use std::path::Component;
     if !path.is_absolute() {
         return None;
     }
     let mut out: Vec<std::ffi::OsString> = Vec::new();
-    // Prefix + root: `/..` is `/`, so `..` never pops below them.
+    // `/..` is `/`, so `..` never pops below the root.
     let mut anchor = 0;
     for component in path.components() {
         match component {
-            Component::Prefix(prefix) => match prefix.kind() {
-                Prefix::Disk(drive) | Prefix::VerbatimDisk(drive) => {
-                    out.push(format!("{}:", drive.to_ascii_uppercase() as char).into());
-                    anchor = out.len();
-                }
-                _ => return None,
-            },
+            Component::Prefix(_) => return None,
             Component::RootDir => {
                 out.push(std::path::MAIN_SEPARATOR_STR.into());
                 anchor = out.len();
@@ -564,9 +524,6 @@ fn lexical_components(path: &Path) -> Option<Vec<std::ffi::OsString>> {
                 }
             }
             Component::Normal(name) => {
-                #[cfg(windows)]
-                out.push(name.to_string_lossy().to_lowercase().into());
-                #[cfg(not(windows))]
                 out.push(name.to_os_string());
             }
         }
@@ -743,16 +700,10 @@ mod tests {
         assert!(racing.exists(), "fresh empty staging dir was reclaimed");
 
         let stale = std::time::SystemTime::now() - (STAGING_TTL + Duration::from_secs(60));
-        let mut options = std::fs::OpenOptions::new();
-        options.read(true);
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            // A directory handle needs backup semantics; setting its timestamp
-            // needs FILE_WRITE_ATTRIBUTES rather than write access to its data.
-            options.custom_flags(0x02000000).access_mode(0x100);
-        }
-        options.open(&racing).unwrap().set_modified(stale).unwrap();
+        std::fs::File::open(&racing)
+            .unwrap()
+            .set_modified(stale)
+            .unwrap();
         uploads.append("upload-other", "aGk=", Some(0)).unwrap();
         assert!(
             !racing.exists(),
@@ -874,13 +825,9 @@ mod tests {
             .join(elsewhere.path().file_name().unwrap())
             .join("shot.png");
         let mut paths = vec![
-            r"\\host\share\x.png".to_string(),
-            "//host/share/x.png".into(),
-            r"\\?\UNC\host\share\x.png".into(),
-            r"\\.\pipe\x.png".into(),
+            "//host/share/x.png".to_string(),
             "file:////host/share/x.png".into(),
             "/net/somehost/x.png".into(),
-            "C:x.png".into(),
             "shot.png".into(),
             escape.to_string_lossy().into_owned(),
         ];
@@ -1009,12 +956,15 @@ mod tests {
         }
 
         // A folder reached through a link of its own (`/tmp` on macOS)
-        // serves its images by either name.
+        // serves its images by either name: the link's and the real one.
+        // The temp dir's own name is not the real one on macOS, where
+        // `/var/folders` is itself a link to `/private/var/folders`.
         #[cfg(unix)]
         {
             let via = elsewhere.path().join("chat-folder");
             std::os::unix::fs::symlink(folder.path(), &via).unwrap();
-            for path in [via.join("shots").join("before.png"), inside.clone()] {
+            let real = std::fs::canonicalize(&inside).unwrap();
+            for path in [via.join("shots").join("before.png"), real] {
                 let chunk = read_chat_image_chunk(path.to_str().unwrap(), 0, &via)
                     .unwrap_or_else(|e| panic!("{path:?}: {e}"));
                 assert_eq!(BASE64.decode(&chunk.data).unwrap(), png);
@@ -1023,56 +973,11 @@ mod tests {
     }
 
     #[test]
-    fn windows_device_names_are_recognized_whatever_their_extension() {
-        let device = |name: &str| is_windows_device_name(std::ffi::OsStr::new(name));
-        for name in [
-            "CON",
-            "nul.png",
-            "Aux.jpg",
-            "prn .gif",
-            "com1.png",
-            "LPT9.webp",
-            "com¹.png",
-            "conin$.png",
-            "CONOUT$",
-            "con:x.png",
-        ] {
-            assert!(device(name), "{name}");
-        }
-        for name in [
-            "console.png",
-            "com10.png",
-            "lpt.png",
-            "nul2.png",
-            "before.png",
-            "aux_",
-        ] {
-            assert!(!device(name), "{name}");
-        }
-    }
-
-    #[test]
-    fn lexical_components_resolve_dots_and_refuse_non_disk_prefixes() {
+    fn lexical_components_resolve_dots_and_refuse_relative_paths() {
         let lexical = |path: &str| lexical_components(Path::new(path));
         assert_eq!(lexical("/a/./b/../c/../../.."), lexical("/"));
         assert_eq!(lexical("/a/b/../c.png"), lexical("/a/c.png"));
         assert_eq!(lexical("relative/c.png"), None);
-        #[cfg(windows)]
-        {
-            assert_eq!(lexical(r"\\?\c:\A\b.png"), lexical(r"C:\a\B.PNG"));
-            assert_eq!(lexical(r"C:\..\..\a.png"), lexical(r"C:\a.png"));
-            for path in [
-                r"\\host\share\x.png",
-                "//host/share/x.png",
-                r"\\?\UNC\host\share\x.png",
-                r"\\.\pipe\x.png",
-                r"\\?\pipe\x.png",
-                "C:x.png",
-                r"\x.png",
-            ] {
-                assert_eq!(lexical(path), None, "{path}");
-            }
-        }
     }
 }
 
@@ -1119,10 +1024,7 @@ fn same_generated_file(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
 /// Walk canonical descendants relative to a pinned directory descriptor. A
 /// concurrent directory/symlink replacement cannot redirect the source open.
 #[cfg(unix)]
-fn open_generated_file(
-    root: &Path,
-    relative: &Path,
-) -> std::io::Result<(std::fs::File, Vec<std::fs::File>)> {
+fn open_generated_file(root: &Path, relative: &Path) -> std::io::Result<std::fs::File> {
     use std::os::{
         fd::{AsRawFd, FromRawFd},
         unix::{ffi::OsStrExt, fs::OpenOptionsExt},
@@ -1154,69 +1056,7 @@ fn open_generated_file(
         }
         file = unsafe { std::fs::File::from_raw_fd(fd) };
     }
-    Ok((file, Vec::new()))
-}
-
-#[cfg(not(any(unix, windows)))]
-fn open_generated_file(
-    root: &Path,
-    relative: &Path,
-) -> std::io::Result<(std::fs::File, Vec<std::fs::File>)> {
-    Ok((std::fs::File::open(root.join(relative))?, Vec::new()))
-}
-
-// Windows has no openat equivalent in std. Hold every traversed directory
-// without delete sharing, reject reparse points, and deny write/delete sharing
-// on the source until publication. This prevents path replacement and writes
-// even when NTFS timestamps and file lengths would compare equal.
-#[cfg(windows)]
-fn open_generated_file(
-    root: &Path,
-    relative: &Path,
-) -> std::io::Result<(std::fs::File, Vec<std::fs::File>)> {
-    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
-    const FILE_SHARE_READ: u32 = 1;
-    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x02000000;
-    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x00200000;
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-    let invalid = || std::io::Error::other("Invalid generated image path");
-    let open_directory = |path: &Path| -> std::io::Result<std::fs::File> {
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .share_mode(FILE_SHARE_READ)
-            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
-            .open(path)?;
-        let metadata = file.metadata()?;
-        if !metadata.is_dir() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-            return Err(invalid());
-        }
-        Ok(file)
-    };
-    let mut parents = vec![open_directory(root)?];
-    let mut path = root.to_path_buf();
-    let components: Vec<_> = relative.components().collect();
-    if components.is_empty() {
-        return Err(invalid());
-    }
-    for (index, component) in components.iter().enumerate() {
-        let std::path::Component::Normal(name) = component else {
-            return Err(invalid());
-        };
-        path.push(name);
-        if index + 1 < components.len() {
-            parents.push(open_directory(&path)?);
-        }
-    }
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .share_mode(FILE_SHARE_READ)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(&path)?;
-    let metadata = file.metadata()?;
-    if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err(invalid());
-    }
-    Ok((file, parents))
+    Ok(file)
 }
 
 impl Uploads {
@@ -1376,7 +1216,7 @@ impl Uploads {
         if relative.as_os_str().is_empty() {
             return Err(invalid());
         }
-        let (mut input, _pinned_directories) = open_generated_file(&root, relative)?;
+        let mut input = open_generated_file(&root, relative)?;
         let before = input.metadata()?;
         if !before.is_file() || before.len() > MAX_GENERATED_IMAGE_BYTES {
             return Err(invalid());
@@ -1518,30 +1358,5 @@ mod generated_image_tests {
             assert!(result.is_err());
             assert_eq!(std::fs::read_dir(store.path()).unwrap().count(), 0);
         }
-    }
-    #[cfg(windows)]
-    #[test]
-    fn generated_image_copy_locks_source_and_parent_against_mutation() {
-        let root = tempfile::tempdir().unwrap();
-        let store = tempfile::tempdir().unwrap();
-        let parent = root.path().join("nested");
-        std::fs::create_dir(&parent).unwrap();
-        let source = parent.join("source.png");
-        let replacement = root.path().join("replacement.png");
-        std::fs::write(&source, PNG).unwrap();
-        std::fs::write(&replacement, PNG).unwrap();
-        let uploads = Uploads::from_root(store.path());
-        let result = uploads
-            .import_generated_image_after_copy(&source, root.path(), "key", || {
-                assert!(std::fs::write(&source, b"changed").is_err());
-                assert!(std::fs::rename(&replacement, &source).is_err());
-                assert!(std::fs::rename(&parent, root.path().join("moved")).is_err());
-            })
-            .unwrap();
-        assert_eq!(std::fs::read(&result.path).unwrap(), PNG);
-        assert_eq!(std::fs::read_dir(store.path()).unwrap().count(), 1);
-        // All locks must be released after the operation.
-        std::fs::write(&source, b"changed").unwrap();
-        std::fs::rename(&parent, root.path().join("moved")).unwrap();
     }
 }

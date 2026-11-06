@@ -13,9 +13,14 @@ enum TerminalGlyphs {
 
     /// `cell` in UIKit coordinates (y down); `baseline` and `xHeight` place
     /// the bullet like a text glyph.
-    static func draw(_ scalar: Unicode.Scalar, in cell: CGRect, baseline: CGFloat, xHeight: CGFloat, color: UIColor, ctx: CGContext, scale: CGFloat) {
+    static func draw(
+        _ scalar: Unicode.Scalar, in cell: CGRect, baseline: CGFloat, xHeight: CGFloat, color: UIColor, ctx: CGContext,
+        scale: CGFloat
+    ) {
         let snap = { (v: CGFloat) in (v * scale).rounded() / scale }
-        let rect = CGRect(x: snap(cell.minX), y: snap(cell.minY), width: snap(cell.maxX) - snap(cell.minX), height: snap(cell.maxY) - snap(cell.minY))
+        let rect = CGRect(
+            x: snap(cell.minX), y: snap(cell.minY), width: snap(cell.maxX) - snap(cell.minX),
+            height: snap(cell.maxY) - snap(cell.minY))
         ctx.saveGState()
         defer { ctx.restoreGState() }
         ctx.setFillColor(color.cgColor)
@@ -35,8 +40,10 @@ enum TerminalGlyphs {
 
     private static func block(_ v: UInt32, _ r: CGRect, _ ctx: CGContext, _ snap: (CGFloat) -> CGFloat) {
         func fill(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat) {
-            let a = snap(r.minX + r.width * x0), b = snap(r.minY + r.height * y0)
-            ctx.fill(CGRect(x: a, y: b, width: snap(r.minX + r.width * x1) - a, height: snap(r.minY + r.height * y1) - b))
+            let a = snap(r.minX + r.width * x0)
+            let b = snap(r.minY + r.height * y0)
+            ctx.fill(
+                CGRect(x: a, y: b, width: snap(r.minX + r.width * x1) - a, height: snap(r.minY + r.height * y1) - b))
         }
         switch v {
         case 0x2580: fill(0, 0, 1, 0.5)
@@ -50,7 +57,10 @@ enum TerminalGlyphs {
         case 0x2595: fill(7.0 / 8, 0, 1, 1)
         default:
             // Quadrants: upper left, upper right, lower left, lower right.
-            let masks: [UInt32: Int] = [0x2596: 4, 0x2597: 8, 0x2598: 1, 0x2599: 13, 0x259A: 9, 0x259B: 7, 0x259C: 11, 0x259D: 2, 0x259E: 6, 0x259F: 14]
+            let masks: [UInt32: Int] = [
+                0x2596: 4, 0x2597: 8, 0x2598: 1, 0x2599: 13, 0x259A: 9, 0x259B: 7, 0x259C: 11, 0x259D: 2, 0x259E: 6,
+                0x259F: 14,
+            ]
             let mask = masks[v] ?? 0
             if mask & 1 != 0 { fill(0, 0, 0.5, 0.5) }
             if mask & 2 != 0 { fill(0.5, 0, 1, 0.5) }
@@ -77,12 +87,13 @@ enum TerminalGlyphs {
         "3030", "0303", "0031", "0013", "0033", "3001", "1003", "3003", // ═║╒╓╔╕╖╗
         "0130", "0310", "0330", "3100", "1300", "3300", "0131", "0313", // ╘╙╚╛╜╝╞╟
         "0333", "3101", "1303", "3303", "3031", "1013", "3033", "3130", // ╠╡╢╣╤╥╦╧
-        "1310", "3330", "3131", "1313", "3333", ".", ".", ".",          // ╨╩╪╫╬╭╮╯
-        ".", ".", ".", ".", "1000", "0100", "0010", "0001",             // ╰╱╲╳╴╵╶╷
+        "1310", "3330", "3131", "1313", "3333", ".", ".", ".", // ╨╩╪╫╬╭╮╯
+        ".", ".", ".", ".", "1000", "0100", "0010", "0001", // ╰╱╲╳╴╵╶╷
         "2000", "0200", "0020", "0002", "1020", "0102", "2010", "0201", // ╸╹╺╻╼╽╾╿
     ]
 
-    private static func box(_ v: UInt32, _ r: CGRect, _ ctx: CGContext, _ snap: (CGFloat) -> CGFloat, _ scale: CGFloat) {
+    private static func box(_ v: UInt32, _ r: CGRect, _ ctx: CGContext, _ snap: (CGFloat) -> CGFloat, _ scale: CGFloat)
+    {
         let light = max(1 / scale, snap(r.width / 9))
         let heavy = max(2 / scale, snap(light * 2))
         let gap = max(1 / scale, light)
@@ -95,9 +106,11 @@ enum TerminalGlyphs {
             switch v {
             case 0x256D...0x2570:
                 // Arcs: down-right, down-left, up-left, up-right.
-                let right = v == 0x256D || v == 0x2570, down = v <= 0x256E
+                let right = v == 0x256D || v == 0x2570
+                let down = v <= 0x256E
                 let radius = min(r.width, r.height) / 2
-                let endX = right ? r.maxX : r.minX, endY = down ? r.maxY : r.minY
+                let endX = right ? r.maxX : r.minX
+                let endY = down ? r.maxY : r.minY
                 path.move(to: CGPoint(x: cx, y: endY))
                 path.addArc(tangent1End: CGPoint(x: cx, y: cy), tangent2End: CGPoint(x: endX, y: cy), radius: radius)
                 path.addLine(to: CGPoint(x: endX, y: cy))
@@ -115,7 +128,7 @@ enum TerminalGlyphs {
             ctx.strokePath()
             return
         }
-        let digits = code.map { Int(String($0))! }
+        let digits = code.map { $0.wholeNumberValue ?? 0 }
         let (left, up, right, down) = (digits[0], digits[1], digits[2], digits[3])
         let width = { (style: Int) in style == 2 ? heavy : light }
         // How far a straight arm reaches past the center to square off a
@@ -126,18 +139,24 @@ enum TerminalGlyphs {
             if a == 3 || b == 3 { return gap + light / 2 }
             return style == 0 ? 0 : width(style) / 2
         }
-        let vReach = reach(up, down), hReach = reach(left, right)
+        let vReach = reach(up, down)
+        let hReach = reach(left, right)
         func horizontal(_ style: Int, toward end: CGFloat) {
             guard style != 0 else { return }
             let sign: CGFloat = end > cx ? 1 : -1
             if style == 3 {
                 for side: CGFloat in [-1, 1] {
                     // The arm on this line's side (up for the top line).
-                    let near = side < 0 ? up : down, far = side < 0 ? down : up
+                    let near = side < 0 ? up : down
+                    let far = side < 0 ? down : up
                     let start: CGFloat
-                    if near != 0 { start = near == 3 ? gap - light / 2 : light / 2 }
-                    else if far != 0 { start = -(far == 3 ? gap : 0) - light / 2 }
-                    else { start = 0 }
+                    if near != 0 {
+                        start = near == 3 ? gap - light / 2 : light / 2
+                    } else if far != 0 {
+                        start = -(far == 3 ? gap : 0) - light / 2
+                    } else {
+                        start = 0
+                    }
                     let x0 = cx + sign * start
                     let y = cy + side * gap
                     ctx.fill(CGRect(x: min(x0, end), y: y - light / 2, width: abs(end - x0), height: light))
@@ -153,11 +172,16 @@ enum TerminalGlyphs {
             let sign: CGFloat = end > cy ? 1 : -1
             if style == 3 {
                 for side: CGFloat in [-1, 1] {
-                    let near = side < 0 ? left : right, far = side < 0 ? right : left
+                    let near = side < 0 ? left : right
+                    let far = side < 0 ? right : left
                     let start: CGFloat
-                    if near != 0 { start = near == 3 ? gap - light / 2 : light / 2 }
-                    else if far != 0 { start = -(far == 3 ? gap : 0) - light / 2 }
-                    else { start = 0 }
+                    if near != 0 {
+                        start = near == 3 ? gap - light / 2 : light / 2
+                    } else if far != 0 {
+                        start = -(far == 3 ? gap : 0) - light / 2
+                    } else {
+                        start = 0
+                    }
                     let y0 = cy + sign * start
                     let x = cx + side * gap
                     ctx.fill(CGRect(x: x - light / 2, y: min(y0, end), width: light, height: abs(end - y0)))
@@ -168,12 +192,13 @@ enum TerminalGlyphs {
                 ctx.fill(CGRect(x: cx - t / 2, y: min(y0, end), width: t, height: abs(end - y0)))
             }
         }
-        let dashes: Int? = switch v {
-        case 0x2504...0x2507: 3
-        case 0x2508...0x250B: 4
-        case 0x254C...0x254F: 2
-        default: nil
-        }
+        let dashes: Int? =
+            switch v {
+            case 0x2504...0x2507: 3
+            case 0x2508...0x250B: 4
+            case 0x254C...0x254F: 2
+            default: nil
+            }
         if let dashes {
             // Dashed lines: evenly spaced segments with a gap between.
             let horizontalLine = left != 0
@@ -181,11 +206,16 @@ enum TerminalGlyphs {
             let length = horizontalLine ? r.width : r.height
             let step = length / CGFloat(dashes)
             for i in 0..<dashes {
-                let a = CGFloat(i) * step + step * 0.15, b = CGFloat(i + 1) * step - step * 0.15
+                let a = CGFloat(i) * step + step * 0.15
+                let b = CGFloat(i + 1) * step - step * 0.15
                 if horizontalLine {
-                    ctx.fill(CGRect(x: snap(r.minX + a), y: cy - t / 2, width: snap(r.minX + b) - snap(r.minX + a), height: t))
+                    ctx.fill(
+                        CGRect(
+                            x: snap(r.minX + a), y: cy - t / 2, width: snap(r.minX + b) - snap(r.minX + a), height: t))
                 } else {
-                    ctx.fill(CGRect(x: cx - t / 2, y: snap(r.minY + a), width: t, height: snap(r.minY + b) - snap(r.minY + a)))
+                    ctx.fill(
+                        CGRect(
+                            x: cx - t / 2, y: snap(r.minY + a), width: t, height: snap(r.minY + b) - snap(r.minY + a)))
                 }
             }
             return

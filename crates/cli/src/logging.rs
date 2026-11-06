@@ -149,16 +149,12 @@ impl RotatingLog {
         state.written = 0;
         let mut old = self.path.clone().into_os_string();
         old.push(".old");
-        // Windows can't rename a file it holds open: keep writing to it then.
         if std::fs::rename(&self.path, &old).is_err() {
             return;
         }
         if let Ok(file) = std::fs::File::create(&self.path) {
-            #[cfg(unix)]
-            {
-                use std::os::unix::io::AsRawFd;
-                unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-            }
+            use std::os::unix::io::AsRawFd;
+            unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
             state.file = file;
         }
     }
@@ -192,45 +188,37 @@ fn open_log_file_in(
     dir: &std::path::Path,
     mode: &str,
 ) -> Option<(std::fs::File, std::path::PathBuf)> {
+    use std::os::unix::io::AsRawFd;
     std::fs::create_dir_all(dir).ok()?;
     let path = dir.join(format!("onicode-{mode}.log"));
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::AsRawFd;
-        // Probe the CURRENT inode for a live writer before touching it.
-        let preexisting = path.exists();
-        let existing = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&path)
-            .ok()?;
-        let rc = unsafe { libc::flock(existing.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-        if rc != 0 {
-            // A live process owns the canonical log — leave it alone.
-            let overflow = dir.join(format!("onicode-{mode}.{}.log", std::process::id()));
-            return std::fs::File::create(&overflow)
-                .ok()
-                .map(|file| (file, overflow));
-        }
-        // No live writer: rotate, create fresh, and lock it as ours. (The
-        // probe's flock dies with `existing`; a first-ever launch has nothing
-        // to rotate — the probe itself created the empty file.)
-        drop(existing);
-        if preexisting {
-            let _ = std::fs::rename(&path, dir.join(format!("onicode-{mode}.log.old")));
-        }
-        let file = std::fs::File::create(&path).ok()?;
-        unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-        sweep_stale_pid_logs(dir, mode);
-        Some((file, path))
+    // Probe the CURRENT inode for a live writer before touching it.
+    let preexisting = path.exists();
+    let existing = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .ok()?;
+    let rc = unsafe { libc::flock(existing.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if rc != 0 {
+        // A live process owns the canonical log — leave it alone.
+        let overflow = dir.join(format!("onicode-{mode}.{}.log", std::process::id()));
+        return std::fs::File::create(&overflow)
+            .ok()
+            .map(|file| (file, overflow));
     }
-    #[cfg(not(unix))]
-    {
+    // No live writer: rotate, create fresh, and lock it as ours. (The
+    // probe's flock dies with `existing`; a first-ever launch has nothing
+    // to rotate — the probe itself created the empty file.)
+    drop(existing);
+    if preexisting {
         let _ = std::fs::rename(&path, dir.join(format!("onicode-{mode}.log.old")));
-        std::fs::File::create(&path).ok().map(|file| (file, path))
     }
+    let file = std::fs::File::create(&path).ok()?;
+    unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    sweep_stale_pid_logs(dir, mode);
+    Some((file, path))
 }
 
 #[cfg(test)]
@@ -255,7 +243,7 @@ mod rotating_log_tests {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod log_file_tests {
     use super::open_log_file_in;
 
@@ -289,7 +277,6 @@ mod log_file_tests {
 
 /// Delete `onicode-{mode}.{pid}.log` overflow files older than a week — they
 /// only exist when a second instance raced a live one for the canonical log.
-#[cfg(unix)]
 fn sweep_stale_pid_logs(dir: &std::path::Path, mode: &str) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;

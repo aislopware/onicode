@@ -24,27 +24,35 @@ final class VoiceStageViewController: UIViewController {
     private var captionSource: (item: String?, text: String, user: Bool) = (nil, "", false)
     /// The caption holds an end-of-call message instead of the utterance.
     private var captionShowsMessage = false
-    private lazy var minimize = Glass.circleButton(symbol: "chevron.down", size: 44, pointSize: 16, action: UIAction { [weak self] _ in
-        self?.dismiss(animated: true)
-    })
-    private lazy var transcript = Glass.circleButton(symbol: "text.bubble", size: 44, pointSize: 16, action: UIAction { [weak self] _ in
-        self?.openTranscript()
-    })
+    private lazy var minimize = Glass.circleButton(
+        symbol: "chevron.down", size: 44, pointSize: 16,
+        action: UIAction { [weak self] _ in
+            self?.dismiss(animated: true)
+        })
+    private lazy var transcript = Glass.circleButton(
+        symbol: "text.bubble", size: 44, pointSize: 16,
+        action: UIAction { [weak self] _ in
+            self?.openTranscript()
+        })
     private let badge = UIView()
     private let bar = Glass.surface()
     private let controls = UIStackView()
-    private lazy var mute = Self.callButton(symbol: "mic.fill", tint: Palette.text, background: Palette.controlFill) { [weak self] in
+    private lazy var mute = Self.callButton(symbol: "mic.fill", tint: Palette.text, background: Palette.controlFill) {
+        [weak self] in
         self?.voice.toggleMute()
     }
     private let route = AVRoutePickerView()
     private lazy var routeWell = Self.well(route)
-    private lazy var end = Self.callButton(symbol: "phone.down.fill", tint: .white, background: .systemRed, width: 88) { [weak self] in
+    private lazy var end = Self.callButton(symbol: "phone.down.fill", tint: .white, background: .systemRed, width: 88) {
+        [weak self] in
         self?.voice.stop()
     }
-    private lazy var retry = Self.pillButton(title: "Call again", tint: .white, background: Palette.accent) { [weak self] in
+    private lazy var retry = Self.pillButton(title: "Call again", tint: .white, background: Palette.accent) {
+        [weak self] in
         self?.retryCall()
     }
-    private lazy var close = Self.pillButton(title: "Close", tint: Palette.text, background: Palette.controlFill) { [weak self] in
+    private lazy var close = Self.pillButton(title: "Close", tint: Palette.text, background: Palette.controlFill) {
+        [weak self] in
         self?.voice.dismissEndReason()
         self?.dismiss(animated: true)
     }
@@ -56,7 +64,8 @@ final class VoiceStageViewController: UIViewController {
         modalPresentationStyle = .fullScreen
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -182,7 +191,7 @@ final class VoiceStageViewController: UIViewController {
 
         token = voice.observe { [weak self] in self?.refresh() }
         // The veil colors are resolved per appearance.
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: VoiceStageViewController, _) in
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _) in
             if !self.captionShowsMessage { self.paintCaption() }
         }
         refresh()
@@ -207,7 +216,9 @@ final class VoiceStageViewController: UIViewController {
         orb.setLevels(microphone: state?.microphone ?? 0, speaker: state?.speaker ?? 0)
 
         let awaiting = state?.work == .awaitingInput
-        dot.backgroundColor = !voice.active ? Palette.tertiary : awaiting ? Palette.warning : voice.muted ? Palette.tertiary : Palette.success
+        dot.backgroundColor =
+            !voice.active
+            ? Palette.tertiary : awaiting ? Palette.warning : voice.muted ? Palette.tertiary : Palette.success
         clock.text = voice.elapsedText ?? "–:––"
         host.text = voice.hostName
         transcript.isHidden = state?.chatId == nil
@@ -238,7 +249,9 @@ final class VoiceStageViewController: UIViewController {
         if shownMuted != voice.muted {
             shownMuted = voice.muted
             var config = mute.configuration
-            config?.image = UIImage(systemName: voice.muted ? "mic.slash.fill" : "mic.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold))
+            config?.image = UIImage(
+                systemName: voice.muted ? "mic.slash.fill" : "mic.fill",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold))
             // Inverted plate while muted, like the desktop call bar.
             config?.baseBackgroundColor = voice.muted ? Palette.text : Palette.controlFill
             config?.baseForegroundColor = voice.muted ? Palette.background : Palette.text
@@ -264,13 +277,17 @@ final class VoiceStageViewController: UIViewController {
     /// The tail of the utterance, its newest words fading in and the previous
     /// turn fading out; repaints every display frame until settled.
     private func paintCaption() {
-        let frame = captionFader.frame(item: captionSource.item, text: captionSource.text, reducedMotion: UIAccessibility.isReduceMotionEnabled)
+        let frame = captionFader.frame(
+            item: captionSource.item, text: captionSource.text, reducedMotion: UIAccessibility.isReduceMotionEnabled)
         let color = (captionSource.user ? Palette.tertiary : Palette.secondary).resolvedColor(with: traitCollection)
-        let text = NSMutableAttributedString(string: frame.text, attributes: [.font: caption.font as Any, .foregroundColor: color])
+        let text = NSMutableAttributedString(
+            string: frame.text, attributes: [.font: caption.font as Any, .foregroundColor: color])
         for span in frame.spans where span.alpha < 1 {
             let range = NSRange(location: Int(span.start), length: Int(span.end) - Int(span.start))
             guard NSMaxRange(range) <= text.length else { continue }
-            text.addAttribute(.foregroundColor, value: color.withAlphaComponent(color.cgColor.alpha * CGFloat(span.alpha)), range: range)
+            text.addAttribute(
+                .foregroundColor, value: color.withAlphaComponent(color.cgColor.alpha * CGFloat(span.alpha)),
+                range: range)
         }
         caption.attributedText = text
         previousCaption.text = frame.previous
@@ -294,9 +311,12 @@ final class VoiceStageViewController: UIViewController {
 
     deinit { captionLink?.invalidate() }
 
-    private static func callButton(symbol: String, tint: UIColor, background: UIColor, width: CGFloat = 60, action: @escaping () -> Void) -> UIButton {
+    private static func callButton(
+        symbol: String, tint: UIColor, background: UIColor, width: CGFloat = 60, action: @escaping () -> Void
+    ) -> UIButton {
         var config = UIButton.Configuration.filled()
-        config.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold))
+        config.image = UIImage(
+            systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold))
         config.baseForegroundColor = tint
         config.baseBackgroundColor = background
         config.cornerStyle = .capsule
@@ -309,7 +329,9 @@ final class VoiceStageViewController: UIViewController {
         return button
     }
 
-    private static func pillButton(title: String, tint: UIColor, background: UIColor, action: @escaping () -> Void) -> UIButton {
+    private static func pillButton(title: String, tint: UIColor, background: UIColor, action: @escaping () -> Void)
+        -> UIButton
+    {
         var config = UIButton.Configuration.filled()
         config.title = title
         config.baseForegroundColor = tint
@@ -375,19 +397,22 @@ extension UIViewController {
 
     func presentVoiceHostPicker(app: AppModel, source: UIView?) {
         let hosts = app.voice.hosts
-        let message = hosts.isEmpty
+        let message =
+            hosts.isEmpty
             ? "No online device can host Codex voice. Start Onicode with remote voice enabled on your Mac or server."
             : "Audio stays on this iPhone. Codex and its tools run on the device you pick."
         let sheet = UIAlertController(title: "Talk to Codex on…", message: message, preferredStyle: .actionSheet)
         for device in hosts {
-            sheet.addAction(UIAlertAction(title: device.name, style: .default) { [weak self] _ in
-                guard let self, app.voice.start(host: device) else { return }
-                self.presentVoiceStage(app: app, source: source)
-            })
+            sheet.addAction(
+                UIAlertAction(title: device.name, style: .default) { [weak self] _ in
+                    guard let self, app.voice.start(host: device) else { return }
+                    self.presentVoiceStage(app: app, source: source)
+                })
         }
-        sheet.addAction(UIAlertAction(title: "Voice Settings", style: .default) { [weak self] _ in
-            self?.presentVoiceSettings(app: app)
-        })
+        sheet.addAction(
+            UIAlertAction(title: "Voice Settings", style: .default) { [weak self] _ in
+                self?.presentVoiceSettings(app: app)
+            })
         sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         sheet.popoverPresentationController?.sourceView = source ?? view
         (presentedViewController ?? self).present(sheet, animated: true)
@@ -396,34 +421,49 @@ extension UIViewController {
     func presentVoiceSettings(app: AppModel) {
         let settings = VoiceViewController(app: app)
         let nav = MainTabController.nav(settings)
-        settings.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak nav] _ in
-            nav?.dismiss(animated: true)
-        })
+        settings.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            systemItem: .done,
+            primaryAction: UIAction { [weak nav] _ in
+                nav?.dismiss(animated: true)
+            })
         (presentedViewController ?? self).present(nav, animated: true)
     }
 
     /// Long-press menu of a voice control: host and style for the next call.
     func voiceMenu(app: AppModel) -> UIMenu {
-        UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] completion in
-            let voice = app.voice
-            let hosts = voice.hosts.map { device in
-                UIAction(title: device.name, image: UIImage(systemName: "desktopcomputer"), attributes: voice.live ? .disabled : [], state: device.id == voice.selectedHost ? .on : .off) { _ in
-                    voice.selectedHost = device.id
+        UIMenu(children: [
+            UIDeferredMenuElement.uncached { [weak self] completion in
+                let voice = app.voice
+                let hosts = voice.hosts.map { device in
+                    UIAction(
+                        title: device.name, image: UIImage(systemName: "desktopcomputer"),
+                        attributes: voice.live ? .disabled : [], state: device.id == voice.selectedHost ? .on : .off
+                    ) { _ in
+                        voice.selectedHost = device.id
+                    }
                 }
-            }
-            let styles = ([nil] + voice.styles.map(Optional.some)).map { style in
-                UIAction(title: style?.capitalized ?? "Codex default", state: style == voice.selectedStyle ? .on : .off) { _ in
-                    voice.selectedStyle = style
+                let styles = ([nil] + voice.styles.map(Optional.some)).map { style in
+                    UIAction(
+                        title: style?.capitalized ?? "Codex default", state: style == voice.selectedStyle ? .on : .off
+                    ) { _ in
+                        voice.selectedStyle = style
+                    }
                 }
+                var items: [UIMenuElement] = []
+                if !hosts.isEmpty {
+                    items.append(UIMenu(title: "Codex runs on", options: .displayInline, children: hosts))
+                }
+                items.append(
+                    UIMenu(
+                        title: "Voice", subtitle: voice.selectedStyle?.capitalized ?? "Codex default",
+                        image: UIImage(systemName: "person.wave.2"), children: styles))
+                items.append(
+                    UIAction(title: "Voice Settings", image: UIImage(systemName: "gearshape")) { _ in
+                        self?.presentVoiceSettings(app: app)
+                    })
+                completion(items)
             }
-            var items: [UIMenuElement] = []
-            if !hosts.isEmpty { items.append(UIMenu(title: "Codex runs on", options: .displayInline, children: hosts)) }
-            items.append(UIMenu(title: "Voice", subtitle: voice.selectedStyle?.capitalized ?? "Codex default", image: UIImage(systemName: "person.wave.2"), children: styles))
-            items.append(UIAction(title: "Voice Settings", image: UIImage(systemName: "gearshape")) { _ in
-                self?.presentVoiceSettings(app: app)
-            })
-            completion(items)
-        }])
+        ])
     }
 }
 

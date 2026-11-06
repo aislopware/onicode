@@ -57,7 +57,6 @@ async fn main() -> anyhow::Result<()> {
         worktree: None,
         resume: None,
         env: Default::default(),
-        extra_mcp: Vec::new(),
     };
     let controls = RunControls {
         realtime: None,

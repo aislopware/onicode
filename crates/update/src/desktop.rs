@@ -55,8 +55,8 @@ pub async fn stage_offer(
 }
 
 /// "Get beta updates" on or off: the beta channel needs a macOS app install
-/// on [`channel::BETA_MINIMUM_MACOS`] or later (the refusal says why, for the
-/// person); leaving it is always allowed. The channel chosen.
+/// (the refusal says why, for the person); leaving it is always allowed. The
+/// channel chosen.
 pub fn choose_channel(data_dir: &Path, beta: bool) -> Result<Channel, String> {
     if beta && let Some(why) = channel::beta_unavailable() {
         return Err(why);

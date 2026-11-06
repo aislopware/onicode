@@ -17,8 +17,6 @@
 //! - **MacApp** (running out of an app bundle): download the app tarball, swap the
 //!   bundle directory, relaunch, driven by the UI; or, asked from another device,
 //!   the engine's own trial of it ([`transaction`]).
-//! - **WindowsPortable** (the Windows installer or portable zip — both carry
-//!   `onicode-update.json`): swap the executable in place, the same two ways.
 //! - **Unmanaged** (source builds, hand-copied binaries): report only — the
 //!   UI's advisory strip links to [`RELEASES_PAGE`].
 //!
@@ -38,9 +36,6 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt as _;
 use tokio::sync::watch;
-
-#[cfg(windows)]
-pub mod windows;
 
 pub mod channel;
 pub mod desktop;
@@ -123,7 +118,7 @@ pub struct Manifest {
     )]
     pub engine_version: Option<String>,
     /// The oldest macOS the release's app runs on, when it's newer than the
-    /// stable app's (beta: [`channel::BETA_MINIMUM_MACOS`]).
+    /// running app's floor: a Mac below it is held on its current version.
     #[serde(
         default,
         rename = "minimumMacOS",
@@ -506,21 +501,17 @@ fn validate_release_override(value: &str) -> anyhow::Result<String> {
 /// The project's GitHub releases page — the advisory update strip opens this
 /// for unmanaged installs (source builds, hand-copied binaries), where no
 /// updater flow exists to drive.
-pub const RELEASES_PAGE: &str = "https://github.com/zeronsh/onicode/releases";
+pub const RELEASES_PAGE: &str = "https://github.com/aislopware/onicode/releases";
 
 /// The newest release's page — the download destination offered when this
 /// installation cannot replace itself.
-pub const LATEST_RELEASE_PAGE: &str = "https://github.com/zeronsh/onicode/releases/latest";
+pub const LATEST_RELEASE_PAGE: &str = "https://github.com/aislopware/onicode/releases/latest";
 
 fn release_base(edge_url: &str) -> anyhow::Result<String> {
     if let Ok(url) = std::env::var("ONICODE_RELEASES_URL")
         && !url.trim().is_empty()
     {
         return validate_release_override(&url);
-    }
-    #[cfg(windows)]
-    if let Some(url) = windows::release_url()? {
-        return Ok(url.trim_end_matches('/').to_owned());
     }
     let edge = edge_url.trim_end_matches('/');
     anyhow::ensure!(!edge.is_empty(), "no release feed is configured");
@@ -540,10 +531,6 @@ pub enum InstallKind {
     Managed { app_root: PathBuf },
     /// Running out of a macOS `.app` bundle.
     MacApp { bundle: PathBuf },
-    /// Windows installer or portable package with an explicit update-feed
-    /// configuration.
-    #[cfg(windows)]
-    WindowsPortable { directory: PathBuf },
     /// Source build or hand-copied binary — updates are report-only.
     Unmanaged,
 }
@@ -584,8 +571,6 @@ impl InstallKind {
             // The desktop path relaunches a GUI binary; on Linux that binary
             // is the managed install itself.
             Self::Managed { .. } => cfg!(target_os = "linux"),
-            #[cfg(windows)]
-            Self::WindowsPortable { .. } => true,
             Self::Unmanaged => false,
         }
     }
@@ -598,10 +583,6 @@ impl InstallKind {
             Self::MacApp { bundle } => mac_bundle_blocker(bundle, dir_writable),
             Self::Managed { app_root } => {
                 (!dir_writable(app_root)).then(|| UpdateBlocker::NotWritable(app_root.clone()))
-            }
-            #[cfg(windows)]
-            Self::WindowsPortable { directory } => {
-                (!dir_writable(directory)).then(|| UpdateBlocker::NotWritable(directory.clone()))
             }
             Self::Unmanaged => None,
         }
@@ -617,10 +598,6 @@ impl InstallKind {
             Self::MacApp { .. } => stage_mac_app(edge_url, manifest, data_dir).await,
             Self::Managed { app_root } if self.supports_desktop_update() => {
                 stage_headless(edge_url, manifest, app_root).await
-            }
-            #[cfg(windows)]
-            Self::WindowsPortable { directory } => {
-                windows::stage(edge_url, manifest, directory).await
             }
             _ => bail!("this installation does not support desktop updates"),
         }
@@ -665,8 +642,6 @@ impl InstallKind {
                 }
                 Ok(())
             }
-            #[cfg(windows)]
-            Self::WindowsPortable { directory } => windows::apply(staged, directory, relaunch),
             _ => bail!("this installation does not support desktop updates"),
         }
     }
@@ -727,8 +702,6 @@ pub enum InstallMethod {
     StartedByHand,
     /// The macOS app.
     MacApp,
-    /// The Windows installer or portable package.
-    WindowsApp,
     /// Built from source or copied by hand.
     Unmanaged,
     /// A newer engine's method this client doesn't know.
@@ -813,14 +786,6 @@ impl UpdateAbility {
                 supervised,
                 blocker,
             ),
-            #[cfg(windows)]
-            InstallKind::WindowsPortable { .. } => Self::desktop(
-                InstallMethod::WindowsApp,
-                "This Onicode wasn't started by the app, so nothing would bring it back after an \
-                 update. Update it from the Onicode app on that PC.",
-                supervised,
-                blocker,
-            ),
             InstallKind::Unmanaged => Self::refused(
                 InstallMethod::Unmanaged,
                 "This copy of Onicode wasn't installed by the installer, so it can't replace itself.",
@@ -861,12 +826,12 @@ impl UpdateAbility {
 }
 
 /// Set on a new version on trial: the installation it's running in place of
-/// (macOS: the app bundle; Windows: the folder).
+/// (the macOS app bundle).
 pub const INSTALLED_AT_ENV: &str = "ONICODE_INSTALLED_AT";
 
 /// Where this process was installed from, resolved once: an update moves
-/// the running image aside (Windows renames it to `onicode.exe.old`), and a
-/// long-running engine must still recognise the installation it belongs to.
+/// the running image aside, and a long-running engine must still recognise
+/// the installation it belongs to.
 pub fn detect_install() -> InstallKind {
     static INSTALL: std::sync::OnceLock<InstallKind> = std::sync::OnceLock::new();
     INSTALL
@@ -874,11 +839,6 @@ pub fn detect_install() -> InstallKind {
             // A new version on trial runs from beside the installation it's
             // going to become.
             if let Some(installed) = std::env::var_os(INSTALLED_AT_ENV).map(PathBuf::from) {
-                #[cfg(windows)]
-                return InstallKind::WindowsPortable {
-                    directory: installed,
-                };
-                #[cfg(not(windows))]
                 return InstallKind::MacApp { bundle: installed };
             }
             let Ok(exe) = std::env::current_exe() else {
@@ -895,14 +855,6 @@ fn detect_install_from(exe: &Path, home: Option<&Path>) -> InstallKind {
 }
 
 fn detect_install_from_for_os(exe: &Path, home: Option<&Path>, os: &str) -> InstallKind {
-    #[cfg(windows)]
-    if os == "windows" && windows::is_managed(exe) {
-        return InstallKind::WindowsPortable {
-            directory: exe.parent().unwrap().to_owned(),
-        };
-    }
-    // Never interpret a coincidental Windows `%HOME%\.onicode\app` layout as
-    // the Unix symlink-managed installation.
     if !managed_updates_supported(os) {
         return InstallKind::Unmanaged;
     }
@@ -937,8 +889,6 @@ pub fn installed_version(kind: &InstallKind) -> Option<String> {
             .to_str()?
             .to_owned(),
         InstallKind::MacApp { bundle } => bundle_engine_version(bundle)?,
-        #[cfg(windows)]
-        InstallKind::WindowsPortable { directory } => windows::installed_version(directory)?,
         _ => return None,
     };
     parse_version(&version).map(|_| version)
@@ -1131,24 +1081,15 @@ pub async fn stage_headless(
 /// Atomically repoint `app_root/current` at `app_root/<ver>` (symlink to a temp
 /// name, then rename over — never a window with no `current`).
 pub fn apply_headless(app_root: &Path, version: &str) -> anyhow::Result<()> {
-    #[cfg(unix)]
-    {
-        let target = app_root.join(version);
-        if !target.join("onicode").exists() {
-            bail!("{} is not a staged install", target.display());
-        }
-        let tmp = app_root.join(format!(".current-{}", std::process::id()));
-        let _ = std::fs::remove_file(&tmp);
-        std::os::unix::fs::symlink(&target, &tmp).context("creating current symlink")?;
-        std::fs::rename(&tmp, app_root.join("current")).context("swapping current symlink")?;
-        Ok(())
+    let target = app_root.join(version);
+    if !target.join("onicode").exists() {
+        bail!("{} is not a staged install", target.display());
     }
-    #[cfg(not(unix))]
-    {
-        let _ = (app_root, version);
-        require_managed_update_platform()?;
-        unreachable!("supported managed-update platforms are Unix")
-    }
+    let tmp = app_root.join(format!(".current-{}", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    std::os::unix::fs::symlink(&target, &tmp).context("creating current symlink")?;
+    std::fs::rename(&tmp, app_root.join("current")).context("swapping current symlink")?;
+    Ok(())
 }
 
 type ManagedRestart = Box<dyn Fn() -> anyhow::Result<()> + Send + Sync>;
@@ -1480,30 +1421,25 @@ pub fn apply_mac_app(staged: &Path, bundle: &Path) -> anyhow::Result<()> {
 /// single-instance engine lock and the IPC port. Paths travel as positional
 /// parameters, never spliced into the script. The caller quits after this.
 pub fn relaunch_after_exit(program: &Path, argument: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        let pid = std::process::id().to_string();
-        let script = r#"while /bin/kill -0 "$1" 2>/dev/null; do sleep 0.2; done
+    use std::os::unix::process::CommandExt as _;
+    let pid = std::process::id().to_string();
+    let script = r#"while /bin/kill -0 "$1" 2>/dev/null; do sleep 0.2; done
 if [ -n "$3" ]; then exec "$2" "$3"; else exec "$2"; fi"#;
-        let mut command = std::process::Command::new("/bin/sh");
-        command
-            .arg("-c")
-            .arg(script)
-            .arg("onicode-relaunch")
-            .arg(&pid)
-            .arg(program)
-            .arg(argument)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .process_group(0);
-        if let Err(err) = command.spawn() {
-            tracing::error!(error = %err, "failed to spawn the relauncher");
-        }
+    let mut command = std::process::Command::new("/bin/sh");
+    command
+        .arg("-c")
+        .arg(script)
+        .arg("onicode-relaunch")
+        .arg(&pid)
+        .arg(program)
+        .arg(argument)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .process_group(0);
+    if let Err(err) = command.spawn() {
+        tracing::error!(error = %err, "failed to spawn the relauncher");
     }
-    #[cfg(not(unix))]
-    let _ = (program, argument);
 }
 
 // ---------------------------------------------------------------------------
@@ -2140,28 +2076,6 @@ async fn prepare_this_install(
                 layout: Some(transaction::Layout::MacBundle { bundle, incoming }),
             }))
         }
-        #[cfg(windows)]
-        InstallKind::WindowsPortable { directory } => {
-            let from = windows::installed_version(&directory)
-                .unwrap_or_else(|| current_version().to_owned());
-            if !version_newer(&manifest.version, &from) {
-                return Ok(None);
-            }
-            let download = artifact_size(edge_url, manifest, &windows::artifact(&manifest.version))
-                .await
-                .unwrap_or(transaction::UNKNOWN_ARTIFACT_BYTES);
-            if let Err(why) = transaction::ensure_room(data_dir, &directory, download) {
-                bail!(why);
-            }
-            let incoming = windows::stage(edge_url, manifest, &directory).await?;
-            Ok(Some(PreparedInstall {
-                from,
-                layout: Some(transaction::Layout::WindowsFolder {
-                    directory,
-                    incoming,
-                }),
-            }))
-        }
         InstallKind::Unmanaged => bail!("this install doesn't update itself"),
     }
 }
@@ -2718,70 +2632,6 @@ mod tests {
         assert!(mac_app_artifact("0.2.0").ends_with("-app.tar.gz"));
     }
 
-    #[cfg(windows)]
-    #[test]
-    fn windows_is_not_misclassified_as_linux() {
-        assert_eq!(platform_key().0, "windows");
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn windows_install_is_always_unmanaged() {
-        assert_eq!(
-            detect_install_from(
-                Path::new(r"C:\Users\u\.onicode\app\0.2.0\onicode.exe"),
-                Some(Path::new(r"C:\Users\u")),
-            ),
-            InstallKind::Unmanaged
-        );
-    }
-
-    #[cfg(windows)]
-    #[tokio::test]
-    async fn windows_rejects_platform_specific_updates_before_side_effects() {
-        let tmp = tempfile::tempdir().unwrap();
-        let manifest = Manifest {
-            version: "9.9.9".into(),
-            ..Manifest::default()
-        };
-        let app_root = tmp.path().join("app");
-        let data_dir = tmp.path().join("data");
-
-        let managed_err = stage_headless("http://127.0.0.1:1", &manifest, &app_root)
-            .await
-            .unwrap_err();
-        assert!(managed_err.to_string().contains("not supported on windows"));
-        assert!(!app_root.exists(), "managed staging must not touch disk");
-
-        let mac_err = stage_mac_app("http://127.0.0.1:1", &manifest, &data_dir)
-            .await
-            .unwrap_err();
-        assert!(mac_err.to_string().contains("not supported on windows"));
-        assert!(!data_dir.exists(), "macOS staging must not touch disk");
-
-        assert!(
-            apply_headless(&app_root, &manifest.version)
-                .unwrap_err()
-                .to_string()
-                .contains("not supported on windows")
-        );
-        assert!(
-            apply_mac_app(
-                &data_dir.join("Onicode.app"),
-                &data_dir.join("Installed.app")
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("not supported on windows")
-        );
-        assert!(
-            restart_service()
-                .unwrap_err()
-                .to_string()
-                .contains("not supported on windows")
-        );
-    }
-
     #[test]
     fn manifest_parses_with_and_without_files() {
         let full: Manifest = serde_json::from_str(
@@ -2799,7 +2649,6 @@ mod tests {
         assert!(bare.files.is_empty());
     }
 
-    #[cfg(unix)]
     #[test]
     fn headless_symlink_swap() {
         let tmp = tempfile::tempdir().unwrap();
@@ -3091,16 +2940,16 @@ mod tests {
     #[test]
     fn a_release_for_a_newer_macos_is_held() {
         let beta = Manifest {
-            minimum_macos: Some("14.0".into()),
+            minimum_macos: Some("28.0".into()),
             ..manifest_of("0.2.136-beta.1", Channel::Beta)
         };
-        let held = offer(&beta, "0.2.135", Channel::Beta, None, Some("13.6"));
+        let held = offer(&beta, "0.2.135", Channel::Beta, None, Some("27.2"));
         assert!(
-            matches!(&held, Offer::Held(why) if why.contains("macOS 14.0")),
+            matches!(&held, Offer::Held(why) if why.contains("macOS 28.0")),
             "{held:?}"
         );
         assert_eq!(
-            offer(&beta, "0.2.135", Channel::Beta, None, Some("14.1")),
+            offer(&beta, "0.2.135", Channel::Beta, None, Some("28.1")),
             Offer::Newer
         );
         assert!(!held.installs());
@@ -3109,17 +2958,16 @@ mod tests {
     #[test]
     fn a_beta_manifest_reads_its_extra_fields() {
         let manifest: Manifest = serde_json::from_str(
-            r#"{"version":"0.2.136-beta.1","engineVersion":"0.2.135","minimumMacOS":"14.0","files":{}}"#,
+            r#"{"version":"0.2.136-beta.1","engineVersion":"0.2.135","minimumMacOS":"28.0","files":{}}"#,
         )
         .unwrap();
         assert_eq!(manifest.engine_version.as_deref(), Some("0.2.135"));
-        assert_eq!(manifest.minimum_macos.as_deref(), Some("14.0"));
+        assert_eq!(manifest.minimum_macos.as_deref(), Some("28.0"));
         // A stable manifest has neither.
         let stable: Manifest = serde_json::from_str(r#"{"version":"0.2.135","files":{}}"#).unwrap();
         assert_eq!((stable.engine_version, stable.minimum_macos), (None, None));
     }
 
-    #[cfg(unix)]
     #[test]
     fn installed_version_follows_the_current_symlink_and_bundle() {
         let tmp = tempfile::tempdir().unwrap();
@@ -3226,7 +3074,6 @@ mod tests {
     }
 
     /// A headless tarball whose `onicode` reports `reported` from `--version`.
-    #[cfg(unix)]
     fn fake_headless_tarball(dir: &Path, reported: &str) -> Vec<u8> {
         use std::os::unix::fs::PermissionsExt as _;
         let root = dir.join("onicode-pkg");
@@ -3249,7 +3096,6 @@ mod tests {
         std::fs::read(tarball).unwrap()
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn headless_staging_rejects_a_binary_that_is_not_the_promised_release() {
         let tmp = tempfile::tempdir().unwrap();

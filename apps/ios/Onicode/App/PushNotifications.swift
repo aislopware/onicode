@@ -144,10 +144,11 @@ final class PushNotifications: NSObject, UNUserNotificationCenterDelegate {
         return "sandbox"
         #else
         guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
-              let data = try? Data(contentsOf: url),
-              let text = String(data: data, encoding: .isoLatin1)
+            let data = try? Data(contentsOf: url),
+            let text = String(data: data, encoding: .isoLatin1)
         else { return "production" }
-        return text.range(of: "<key>aps-environment</key>\\s*<string>development</string>", options: .regularExpression) != nil
+        return text.range(of: "<key>aps-environment</key>\\s*<string>development</string>", options: .regularExpression)
+            != nil
             ? "sandbox" : "production"
         #endif
     }()
@@ -159,16 +160,16 @@ final class PushNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     /// In the app: no banner (the list and the session already show it).
     nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+        _: UNUserNotificationCenter,
+        willPresent _: UNNotification,
+        withCompletionHandler completionHandler: (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([])
     }
 
     /// Tapped: open that session.
     nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
+        _: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {

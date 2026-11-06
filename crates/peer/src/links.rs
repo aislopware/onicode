@@ -621,7 +621,10 @@ impl PeerLinks {
     }
 
     /// Dials `device` for the slot at `epoch`, after `first` when given, until it links, the
-    /// slot is taken over, or the directory no longer has the device.
+    /// slot is taken over, or the device is gone: the directory no longer has it and the node
+    /// it was seen on has left the tailnet. A device dropped from the directory while its node
+    /// is still there (a probe that met it falling asleep, an engine restarting) is backed off
+    /// and looked up again, so the link comes back once a refresh finds it.
     async fn dialing(self, device: String, epoch: u64, first: Option<Duration>) {
         let mut kick = self.0.kick.subscribe();
         if let Some(wait) = first
@@ -660,7 +663,8 @@ impl PeerLinks {
                     }
                 }
                 Err(e) => {
-                    let unknown = matches!(e, PeerError::Unknown(_));
+                    let gone = matches!(e, PeerError::Unknown(_))
+                        && self.0.endpoint.node_of(&device).is_none();
                     let wait = {
                         let mut entries = self.0.entries.lock();
                         let Some(entry) = entries.get_mut(&device) else {
@@ -669,7 +673,7 @@ impl PeerLinks {
                         if entry.epoch != epoch {
                             return;
                         }
-                        if unknown {
+                        if gone {
                             entries.remove(&device);
                             None
                         } else {

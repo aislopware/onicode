@@ -45,10 +45,12 @@ final class AgentSenderTests: XCTestCase {
         let sent = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label BEGINSWITH 'Message to'")).firstMatch
         XCTAssertTrue(sent.waitForExistence(timeout: 15))
-        XCTAssertFalse(app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS 'send_message'")).firstMatch.exists)
-        XCTAssertFalse(app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS 'Keeping the power curve'")).firstMatch.exists)
+        XCTAssertFalse(
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS 'send_message'")).firstMatch.exists)
+        XCTAssertFalse(
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS 'Keeping the power curve'")).firstMatch.exists)
         snapshot(app, "sent-message")
 
         let recipient = app.descendants(matching: .any)["Open chat"].firstMatch

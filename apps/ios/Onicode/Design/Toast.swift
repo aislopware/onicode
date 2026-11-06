@@ -9,7 +9,10 @@ final class Toast: UIView {
 
     /// `above`: a view of the screen's own (the composer) to float over
     /// instead of the tab chrome.
-    static func show(_ text: String, action: String? = nil, in window: UIWindow?, above anchor: UIView? = nil, handler: (() -> Void)? = nil) {
+    static func show(
+        _ text: String, action: String? = nil, in window: UIWindow?, above anchor: UIView? = nil,
+        handler: (() -> Void)? = nil
+    ) {
         guard let window else { return }
         current?.dismiss(animated: false)
         let toast = Toast(text: text, action: action, handler: handler)
@@ -72,10 +75,12 @@ final class Toast: UIView {
                 a.font = Fonts.ui(.sansSemibold, 14)
                 return a
             }
-            let b = UIButton(configuration: c, primaryAction: UIAction { [weak self] _ in
-                handler?()
-                self?.dismiss(animated: true)
-            })
+            let b = UIButton(
+                configuration: c,
+                primaryAction: UIAction { [weak self] _ in
+                    handler?()
+                    self?.dismiss(animated: true)
+                })
             b.accessibilityIdentifier = "toast-action"
             b.setContentHuggingPriority(.required, for: .horizontal)
             b.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -91,12 +96,14 @@ final class Toast: UIView {
             stack.topAnchor.constraint(equalTo: glass.contentView.topAnchor, constant: 12),
             stack.bottomAnchor.constraint(equalTo: glass.contentView.bottomAnchor, constant: -12),
             stack.leadingAnchor.constraint(equalTo: glass.contentView.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: glass.contentView.trailingAnchor, constant: action == nil ? -20 : -10),
+            stack.trailingAnchor.constraint(
+                equalTo: glass.contentView.trailingAnchor, constant: action == nil ? -20 : -10),
         ])
         accessibilityIdentifier = "toast"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private func present() {
         Glass.setVisible(glass, false, animated: false)
@@ -105,7 +112,8 @@ final class Toast: UIView {
             self.transform = .identity
         }
         Glass.setVisible(glass, true)
-        UIAccessibility.post(notification: .announcement, argument: (glass.contentView.subviews.first?.subviews.first as? UILabel)?.text)
+        UIAccessibility.post(
+            notification: .announcement, argument: (glass.contentView.subviews.first?.subviews.first as? UILabel)?.text)
         let work = DispatchWorkItem { [weak self] in self?.dismiss(animated: true) }
         dismissWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
@@ -113,10 +121,15 @@ final class Toast: UIView {
 
     func dismiss(animated: Bool) {
         dismissWork?.cancel()
-        guard animated else { return removeFromSuperview() }
+        guard animated else {
+            removeFromSuperview()
+            return
+        }
         Glass.setVisible(glass, false)
-        UIView.animate(withDuration: 0.25, animations: {
-            self.transform = CGAffineTransform(translationX: 0, y: 12)
-        }, completion: { _ in self.removeFromSuperview() })
+        UIView.animate(
+            withDuration: 0.25,
+            animations: {
+                self.transform = CGAffineTransform(translationX: 0, y: 12)
+            }, completion: { _ in self.removeFromSuperview() })
     }
 }

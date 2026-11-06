@@ -82,6 +82,45 @@ pub struct TurnControl {
     stop: std::sync::Arc<tokio::sync::Notify>,
     background: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     processes: std::sync::Arc<background::BackgroundWork>,
+    queries: std::sync::Arc<Queries>,
+    opening: std::sync::Arc<std::sync::Mutex<OpeningPrompt>>,
+}
+
+/// What the host knows about a run's opening prompt, set before the run
+/// starts ([`TurnControl::set_opening_prompt`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OpeningPrompt {
+    /// The transcript entry the prompt is (the engine's user message id).
+    /// A driver whose wire keys messages by a client id writes it under
+    /// this one, so the host can later name it (rewind, branch).
+    pub message_id: Option<String>,
+    /// Onicode composed the prompt itself (a revival's continuation): it
+    /// is not attributed to the person.
+    pub composed: bool,
+}
+
+/// A question the host asks a live runtime about its session, answered
+/// with the agent's own JSON ([`TurnControl::query`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ControlQuery {
+    /// Restore the files the session changed since the prompt written as
+    /// `message_id`; `dry_run` only says what would change.
+    RewindFiles { message_id: String, dry_run: bool },
+    /// Where the context window goes, by category. `full` counts each
+    /// category exactly (slower) instead of estimating.
+    ContextUsage { full: bool },
+}
+
+/// One [`ControlQuery`] awaiting the driver.
+pub struct PendingQuery {
+    pub query: ControlQuery,
+    pub reply: oneshot::Sender<Result<serde_json::Value, String>>,
+}
+
+#[derive(Default)]
+struct Queries {
+    pending: std::sync::Mutex<std::collections::VecDeque<PendingQuery>>,
+    notify: tokio::sync::Notify,
 }
 
 impl TurnControl {
@@ -152,6 +191,67 @@ impl TurnControl {
     pub fn background_output(&self, id: &str) -> Option<onicode_proto::BackgroundTaskOutput> {
         self.processes.output(id)
     }
+
+    /// Host, before the run starts: what its opening prompt is.
+    pub fn set_opening_prompt(&self, opening: OpeningPrompt) {
+        *self.opening.lock().unwrap_or_else(|e| e.into_inner()) = opening;
+    }
+
+    /// Driver: what the host said about the opening prompt.
+    pub fn opening_prompt(&self) -> OpeningPrompt {
+        self.opening
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Host: ask the live runtime about its session. The answer is an
+    /// `Err` when the runtime refused or ended first; a driver that takes no
+    /// queries never answers, so the host bounds its wait.
+    pub fn query(
+        &self,
+        query: ControlQuery,
+    ) -> oneshot::Receiver<Result<serde_json::Value, String>> {
+        let (reply, answer) = oneshot::channel();
+        self.queries
+            .pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push_back(PendingQuery { query, reply });
+        self.queries.notify.notify_one();
+        answer
+    }
+
+    /// Driver: the next query, oldest first.
+    pub async fn next_query(&self) -> PendingQuery {
+        loop {
+            let notified = self.queries.notify.notified();
+            if let Some(query) = self
+                .queries
+                .pending
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .pop_front()
+            {
+                return query;
+            }
+            notified.await;
+        }
+    }
+}
+
+/// Where a run picks its session's history up, instead of at its end
+/// ([`Harness::run_branch`]). Messages are named by the transcript entry ids
+/// they were written under ([`OpeningPrompt::message_id`],
+/// [`SteerMessage::message_id`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Branch {
+    /// Redo the session's last turn: drop `message_id`'s turn and continue
+    /// the same session from just before it (edit and resend).
+    Redo { message_id: String },
+    /// Continue in a new session holding a copy of the history: through
+    /// `message_id`'s turn with `keep_turn`, else up to just before it.
+    Fork { message_id: String, keep_turn: bool },
 }
 
 /// Run-config values compared as their wire meaning, not their JSON type:
@@ -341,6 +441,19 @@ pub trait Harness: Send + Sync {
         Err(HarnessError::Protocol("idle runtime unsupported".into()))
     }
 
+    /// Run from a point in `request.resume`'s history rather than its end
+    /// (see [`Branch`]). Drivers opt in.
+    async fn run_branch(
+        &self,
+        _request: RunRequest,
+        _controls: RunControls,
+        _branch: Branch,
+    ) -> Result<BoxStream<'static, Result<AgentEvent, HarnessError>>, HarnessError> {
+        Err(HarnessError::Protocol(
+            "this agent cannot branch a conversation".into(),
+        ))
+    }
+
     /// Run one (persistent) session; the stream ends with `AgentEvent::Done`.
     async fn run(
         &self,
@@ -380,8 +493,6 @@ pub mod process;
 mod scratch;
 pub mod shell_env;
 pub(crate) mod skills;
-#[cfg(windows)]
-pub mod windows_process;
 
 /// Add the login shell's PATH to a child process while preserving the PATH of
 /// the current process. This lets GUI/service launches find user-installed
@@ -424,64 +535,42 @@ fn compose_path<'a>(
         executable_dir.into_iter().map(Into::into).collect();
     let own = std::env::var_os("PATH");
     let user = shell_env::user_path();
-    #[cfg(windows)]
-    let node_dirs = executable::node_manager_dirs();
-    #[cfg(not(windows))]
-    let node_dirs = Vec::new();
-    let paths = child_path_entries(
-        executable::Platform::current(),
-        executable_dir,
-        own.as_deref(),
-        user.as_deref(),
-        node_dirs,
-    );
+    let paths = child_path_entries(executable_dir, own.as_deref(), user.as_deref());
     if let Ok(joined) = std::env::join_paths(paths) {
         cmd.env("PATH", joined);
     }
 }
 
-/// The child PATH's entries in precedence order. Unix puts the login shell's
-/// PATH before our own only when ours is a bare system PATH: a Dock/launchd
+/// The child PATH's entries in precedence order. The login shell's PATH goes
+/// before our own only when ours is a bare system PATH: a Dock/launchd
 /// launch inherits just that, whose `/usr/bin` stubs would otherwise shadow
 /// the user's Homebrew or nvm toolchain. A PATH set up on purpose (a venv,
 /// nix, direnv or nvm in the launching terminal, a service unit's own) keeps
-/// precedence (see [`executable::is_bare_system_path`]). Windows keeps its own PATH first (it already came from the
-/// user's environment, plus per-session additions like fnm's) and adds what
-/// the registry gained since we started, then the node-manager directories
-/// discovery searched, so `node`/`npx` MCP servers resolve like the CLI did.
+/// precedence (see [`executable::is_bare_system_path`]).
 fn child_path_entries(
-    platform: executable::Platform,
     executable_dir: Vec<std::path::PathBuf>,
     own: Option<&std::ffi::OsStr>,
     user: Option<&std::ffi::OsStr>,
-    node_dirs: Vec<std::path::PathBuf>,
 ) -> Vec<std::path::PathBuf> {
     let split = |path: Option<&std::ffi::OsStr>| -> Vec<std::path::PathBuf> {
         path.map(|p| std::env::split_paths(p).collect())
             .unwrap_or_default()
     };
     let mut paths = executable_dir;
-    if platform == executable::Platform::Unix && executable::is_bare_system_path(own) {
+    if executable::is_bare_system_path(own) {
         paths.extend(split(user));
         paths.extend(split(own));
     } else {
         paths.extend(split(own));
         paths.extend(split(user));
     }
-    paths.extend(node_dirs);
     let mut seen = std::collections::HashSet::new();
     paths.retain(|p| {
-        let key = if platform == executable::Platform::Windows {
-            // `C:\Tools\` and `c:\tools` are one directory to Windows.
-            p.to_string_lossy()
-                .trim_end_matches(['\\', '/'])
-                .to_lowercase()
-        } else {
-            p.components()
-                .collect::<std::path::PathBuf>()
-                .to_string_lossy()
-                .into_owned()
-        };
+        let key = p
+            .components()
+            .collect::<std::path::PathBuf>()
+            .to_string_lossy()
+            .into_owned();
         !key.is_empty() && seen.insert(key)
     });
     paths
@@ -589,12 +678,9 @@ pub(crate) fn describe_exit(status: Option<std::process::ExitStatus>) -> String 
     if let Some(code) = status.code() {
         return format!("exit code {code}");
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        if let Some(signal) = status.signal() {
-            return format!("killed by signal {signal}");
-        }
+    use std::os::unix::process::ExitStatusExt;
+    if let Some(signal) = status.signal() {
+        return format!("killed by signal {signal}");
     }
     "unknown exit".into()
 }
@@ -692,74 +778,46 @@ pub use pi::PiHarness;
 /// End an agent runtime together with every process it started. `earlier`
 /// is a descendant snapshot taken when the teardown began, in case the
 /// agent exits before this one: its orphans can no longer be traced then.
-/// Windows' job object already owns the whole tree.
 pub(crate) async fn shutdown_agent(
     child: &mut process::Child,
     earlier: Vec<process::Tracked>,
     kill_grace: std::time::Duration,
 ) {
-    #[cfg(unix)]
-    {
-        let mut tree = earlier;
-        if let Some(pid) = child.id() {
-            for found in process::descendants(pid).await {
-                if !tree.contains(&found) {
-                    tree.push(found);
-                }
+    let mut tree = earlier;
+    if let Some(pid) = child.id() {
+        for found in process::descendants(pid).await {
+            if !tree.contains(&found) {
+                tree.push(found);
             }
         }
-        shutdown_child(child, kill_grace).await;
-        process::terminate_tree(&tree, kill_grace).await;
     }
-    #[cfg(not(unix))]
-    {
-        let _ = earlier;
-        shutdown_child(child, kill_grace).await;
-    }
+    shutdown_child(child, kill_grace).await;
+    process::terminate_tree(&tree, kill_grace).await;
 }
 
-/// Reap the child: Unix sends SIGTERM then SIGKILL after `kill_grace`.
-/// Windows has no SIGTERM for a windowless child: when its stdin pipe is (or
-/// is now) closed and it exits on that EOF, it gets `kill_grace` to exit on
-/// its own (callers have already sent their protocol shutdown), so an agent
-/// is not killed mid-write to its session files. Then the owned job is
-/// terminated, descendants included — at once for a child with no stdin
-/// pipe, one whose stdin is still held elsewhere, or one that ignores EOF.
+/// Reap the child: SIGTERM, then SIGKILL after `kill_grace`.
 pub(crate) async fn shutdown_child(child: &mut process::Child, kill_grace: std::time::Duration) {
-    #[cfg(windows)]
-    {
-        if !matches!(child.try_wait(), Ok(Some(_))) && child.stdin_eof_coming().await {
-            // wait() drops the child's stdin first: EOF is the cue to exit.
-            let _ = tokio::time::timeout(kill_grace, child.wait()).await;
+    let target = process::signal_target(child);
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        if let Some(group) = target.filter(|pid| *pid < 0) {
+            send_signal(&group, Signal::Kill);
         }
-        let _ = child.start_kill();
-        let _ = child.wait().await;
         return;
     }
-    #[cfg(not(windows))]
-    {
-        let target = process::signal_target(child);
-        if matches!(child.try_wait(), Ok(Some(_))) {
-            if let Some(group) = target.filter(|pid| *pid < 0) {
-                send_signal(&group, Signal::Kill);
+    if let Some(pid) = target {
+        send_signal(&pid, Signal::Term);
+        if tokio::time::timeout(kill_grace, child.wait()).await.is_ok() {
+            if pid < 0 {
+                send_signal(&pid, Signal::Kill);
             }
             return;
         }
-        if let Some(pid) = target {
-            send_signal(&pid, Signal::Term);
-            if tokio::time::timeout(kill_grace, child.wait()).await.is_ok() {
-                if pid < 0 {
-                    send_signal(&pid, Signal::Kill);
-                }
-                return;
-            }
-        }
-        if let Some(pid) = target {
-            send_signal(&pid, Signal::Kill);
-        }
-        let _ = child.start_kill();
-        let _ = child.wait().await;
     }
+    if let Some(pid) = target {
+        send_signal(&pid, Signal::Kill);
+    }
+    let _ = child.start_kill();
+    let _ = child.wait().await;
 }
 
 #[derive(Clone, Copy)]
@@ -768,7 +826,6 @@ pub(crate) enum Signal {
     Kill,
 }
 
-#[cfg(unix)]
 pub(crate) fn send_signal(pid: &i32, signal: Signal) {
     let sig = match signal {
         Signal::Term => libc::SIGTERM,
@@ -778,13 +835,6 @@ pub(crate) fn send_signal(pid: &i32, signal: Signal) {
     // Negative targets include descendants after the group leader exits.
     unsafe {
         libc::kill(*pid, sig);
-    }
-}
-
-#[cfg(windows)]
-pub(crate) fn send_signal(job: &std::sync::Arc<windows_process::Job>, _signal: Signal) {
-    if let Err(error) = job.terminate() {
-        tracing::warn!(%error, "could not terminate Windows agent job");
     }
 }
 
@@ -813,7 +863,6 @@ pub fn switches_native_subagents(id: HarnessId) -> bool {
 #[cfg(test)]
 mod path_tests {
     use super::{child_path_entries, filter_child_env_defaults};
-    use crate::executable::Platform;
     use std::path::PathBuf;
 
     fn joined(entries: &[&str]) -> std::ffi::OsString {
@@ -825,11 +874,9 @@ mod path_tests {
         let own = joined(&["/usr/bin", "/bin"]);
         let user = joined(&["/opt/homebrew/bin", "/usr/bin/", "/bin"]);
         let paths = child_path_entries(
-            Platform::Unix,
             vec![PathBuf::from("/Users/a/.nvm/versions/node/v22/bin")],
             Some(&own),
             Some(&user),
-            Vec::new(),
         );
         assert_eq!(
             paths,
@@ -847,13 +894,7 @@ mod path_tests {
     fn unix_child_path_keeps_a_deliberate_process_path_first() {
         let own = joined(&["/home/a/project/.venv/bin", "/usr/bin", "/bin"]);
         let user = joined(&["/opt/homebrew/bin", "/usr/bin"]);
-        let paths = child_path_entries(
-            Platform::Unix,
-            Vec::new(),
-            Some(&own),
-            Some(&user),
-            Vec::new(),
-        );
+        let paths = child_path_entries(Vec::new(), Some(&own), Some(&user));
         assert_eq!(
             paths,
             [
@@ -873,33 +914,8 @@ mod path_tests {
             "/sbin",
             "/bin",
         ]);
-        let paths = child_path_entries(
-            Platform::Unix,
-            Vec::new(),
-            Some(&systemd),
-            Some(&user),
-            Vec::new(),
-        );
+        let paths = child_path_entries(Vec::new(), Some(&systemd), Some(&user));
         assert_eq!(paths[0], PathBuf::from("/opt/homebrew/bin"));
-    }
-
-    #[test]
-    fn windows_child_path_appends_registry_and_node_dirs_case_insensitively() {
-        // Built from strings: `join_paths` would use this host's separator.
-        let paths = child_path_entries(
-            Platform::Windows,
-            vec![PathBuf::from(r"C:\Users\a\AppData\Roaming\npm")],
-            None,
-            None,
-            vec![
-                PathBuf::from(r"c:\users\a\appdata\roaming\npm\"),
-                PathBuf::from(r"C:\nvm4w\nodejs"),
-            ],
-        );
-        assert_eq!(
-            paths,
-            [r"C:\Users\a\AppData\Roaming\npm", r"C:\nvm4w\nodejs"].map(PathBuf::from)
-        );
     }
 
     fn env_pairs(values: &[(&str, &str)]) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {

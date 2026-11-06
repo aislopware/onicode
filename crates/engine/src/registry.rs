@@ -213,8 +213,6 @@ pub struct HarnessRegistry {
     /// Spawn-time environment of the agent accounts onicode keeps itself
     /// (Muse's per-account roots); after the Cloud broker, never over it.
     account_environment: Mutex<Option<Arc<dyn RunEnvironment>>>,
-    /// Credits Onicode in agents' commits ([`crate::commit_credit`]).
-    commit_credit: std::sync::OnceLock<Arc<crate::commit_credit::CommitCredit>>,
 }
 
 impl Default for HarnessRegistry {
@@ -299,7 +297,6 @@ impl HarnessRegistry {
             update_generation,
             run_environment: Mutex::new(None),
             account_environment: Mutex::new(None),
-            commit_credit: std::sync::OnceLock::new(),
         }
     }
 
@@ -327,16 +324,7 @@ impl HarnessRegistry {
             .collect()
     }
 
-    pub fn set_commit_credit(&self, credit: Arc<crate::commit_credit::CommitCredit>) {
-        let _ = self.commit_credit.set(credit);
-    }
-
-    pub fn commit_credit(&self) -> Option<&Arc<crate::commit_credit::CommitCredit>> {
-        self.commit_credit.get()
-    }
-
-    /// Fill `request.env` for a spawn of `harness` (no-op without a provider),
-    /// and credit Onicode in its commits when that's on.
+    /// Fill `request.env` for a spawn of `harness` (no-op without a provider).
     pub async fn prepare_run(
         &self,
         harness: HarnessId,
@@ -344,9 +332,6 @@ impl HarnessRegistry {
     ) -> Result<(), String> {
         for environment in self.environments() {
             environment.prepare(harness, request).await?;
-        }
-        if let Some(credit) = self.commit_credit.get() {
-            credit.apply(&mut request.env);
         }
         Ok(())
     }
@@ -1981,42 +1966,5 @@ mod gate_tests {
             request.env.get("HARNESS").map(String::as_str),
             Some("Codex")
         );
-    }
-
-    /// Every agent spawn carries the commit-credit hooks while that's on.
-    #[tokio::test]
-    async fn runs_carry_the_commit_credit_hooks() {
-        let data = tempfile::tempdir().unwrap();
-        let mut request: onicode_proto::RunRequest = serde_json::from_str(
-            r#"{"prompt":"p","model":null,"reasoning":null,"cwd":".","sandbox":"workspace-write","resume":null}"#,
-        )
-        .unwrap();
-        let registry = HarnessRegistry::new();
-        let credit = Arc::new(crate::commit_credit::CommitCredit::open(data.path(), false));
-        credit.set(true).unwrap();
-        registry.set_commit_credit(credit.clone());
-        registry
-            .prepare_run(HarnessId::ClaudeCode, &mut request)
-            .await
-            .unwrap();
-        let hooks = data.path().join("git-hooks");
-        assert_eq!(
-            request.env.get("GIT_CONFIG_KEY_0").map(String::as_str),
-            Some("core.hooksPath")
-        );
-        assert_eq!(
-            request.env.get("GIT_CONFIG_VALUE_0").map(String::as_str),
-            Some(hooks.to_string_lossy().as_ref())
-        );
-        assert!(hooks.join("commit-msg").exists());
-
-        // Off on this device: nothing added.
-        credit.set(false).unwrap();
-        request.env.clear();
-        registry
-            .prepare_run(HarnessId::ClaudeCode, &mut request)
-            .await
-            .unwrap();
-        assert!(request.env.is_empty());
     }
 }

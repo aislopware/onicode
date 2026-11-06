@@ -35,20 +35,20 @@ struct Field {
 
 /// A form the input bridge can ask; [`Form::response`] turns the answers
 /// into the elicitation's reply.
-pub(super) struct Form {
+pub(crate) struct Form {
     fields: Vec<Field>,
-    pub(super) questions: Vec<UserInputQuestion>,
+    pub(crate) questions: Vec<UserInputQuestion>,
     /// An empty form: a plain confirmation, asked as Accept / Decline.
     confirm_id: Option<String>,
 }
 
-pub(super) fn decline() -> Value {
+pub(crate) fn decline() -> Value {
     json!({ "action": "decline" })
 }
 
 /// `None` for anything but a flat `form` of supported fields (URL and
 /// device-verification modes, nested or free-form schemas).
-pub(super) fn form(params: &Value) -> Option<Form> {
+pub(crate) fn form(params: &Value) -> Option<Form> {
     match params.get("mode").and_then(Value::as_str) {
         Some("form") | None => {}
         Some(_) => return None,
@@ -90,6 +90,7 @@ pub(super) fn form(params: &Value) -> Option<Form> {
             options: vec!["Accept".into(), "Decline".into()],
             prefill: None,
             multiline: false,
+            approval: None,
             multi_select: false,
         };
         return Some(Form {
@@ -134,6 +135,7 @@ pub(super) fn form(params: &Value) -> Option<Form> {
                 _ => None,
             },
             multiline: false,
+            approval: None,
             multi_select,
         };
         fields.push(Field {
@@ -213,7 +215,7 @@ fn kind(field: &Value) -> Option<Kind> {
 impl Form {
     /// The elicitation reply for `answers`. No answer at all (the person
     /// went away), a missing required field or an unreadable one declines.
-    pub(super) fn response(&self, answers: &[UserInputAnswer]) -> Value {
+    pub(crate) fn response(&self, answers: &[UserInputAnswer]) -> Value {
         let labels = |id: &str| -> Option<&[String]> {
             answers
                 .iter()

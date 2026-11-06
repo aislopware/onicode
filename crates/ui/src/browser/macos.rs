@@ -5,7 +5,7 @@ use super::model::{PageState, Presentation, allowed_navigation};
 use gpui::{Bounds, Pixels, Window};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, class, define_class, msg_send, sel};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, class, define_class, msg_send};
 use objc2_app_kit::{
     NSColor, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSScreen, NSView,
     NSWindowOrderingMode,
@@ -74,12 +74,12 @@ impl BrowserData {
         if data.store.is_none() {
             data.store = Some(unsafe {
                 match &data.profile {
-                    Some(profile) if persistent_profiles_supported() => {
+                    Some(profile) => {
                         let identifier =
                             objc2_foundation::NSUUID::from_bytes(profile.data_store_identifier());
                         objc2_web_kit::WKWebsiteDataStore::dataStoreForIdentifier(&identifier, mtm)
                     }
-                    _ => objc2_web_kit::WKWebsiteDataStore::nonPersistentDataStore(mtm),
+                    None => objc2_web_kit::WKWebsiteDataStore::nonPersistentDataStore(mtm),
                 }
             });
             let port = data
@@ -128,24 +128,26 @@ impl BrowserData {
     }
 }
 
-/// macOS 12/13 have only a single default persistent store. Do not silently
-/// share it across accounts; retain isolated temporary stores on those systems.
-pub(super) fn persistent_profiles_supported() -> bool {
-    unsafe {
-        msg_send![class!(WKWebsiteDataStore), respondsToSelector: sel!(dataStoreForIdentifier:)]
-    }
+// Network.framework's proxy objects are Objective-C OS objects, returned
+// retained.
+#[link(name = "Network", kind = "framework")]
+unsafe extern "C" {
+    fn nw_endpoint_create_host(
+        hostname: *const std::ffi::c_char,
+        port: *const std::ffi::c_char,
+    ) -> *mut objc2_foundation::NSObject;
+    fn nw_proxy_config_create_http_connect(
+        proxy_endpoint: *mut objc2_foundation::NSObject,
+        proxy_tls_options: *mut objc2_foundation::NSObject,
+    ) -> *mut objc2_foundation::NSObject;
+    fn nw_proxy_config_add_match_domain(
+        config: *mut objc2_foundation::NSObject,
+        match_domain: *const std::ffi::c_char,
+    );
 }
 
-impl BrowserData {
-    pub(super) fn persistence_notice(&self) -> Option<&'static str> {
-        (self.0.borrow().profile.is_some() && !persistent_profiles_supported())
-            .then_some("Logins are temporary on this macOS version. Use macOS 14 or later, or open this page in your default browser, to keep them.")
-    }
-}
-
-/// Network.framework objects are Objective-C OS objects. Resolve the newer API
-/// dynamically so older systems can still open ordinary browser tabs. Match
-/// only discovered/opened preview hostnames; other websites retain normal routing.
+/// Route only discovered/opened preview hostnames through the local preview
+/// proxy; other websites keep normal routing.
 fn configure_preview_proxy(
     store: &objc2_web_kit::WKWebsiteDataStore,
     hosts: &std::collections::BTreeSet<String>,
@@ -154,45 +156,23 @@ fn configure_preview_proxy(
     if hosts.is_empty() {
         return Ok(());
     }
-    use objc2_foundation::{NSArray, NSObject};
-    use std::ffi::{CStr, CString, c_char};
+    use objc2_foundation::NSArray;
+    use std::ffi::CString;
     unsafe {
-        let supported: bool = msg_send![store, respondsToSelector: sel!(setProxyConfigurations:)];
-        if !supported {
-            return Err("Automatic preview hostnames require macOS 14 or later".into());
-        }
-        static NETWORK: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-        let handle = *NETWORK.get_or_init(|| {
-            libc::dlopen(
-                c"/System/Library/Frameworks/Network.framework/Network".as_ptr(),
-                libc::RTLD_LAZY,
-            ) as usize
-        });
-        let symbol = |name: &CStr| -> Result<*mut std::ffi::c_void, String> {
-            let value = libc::dlsym(handle as *mut _, name.as_ptr());
-            if handle == 0 || value.is_null() {
-                Err("Preview proxy API unavailable".into())
-            } else {
-                Ok(value)
-            }
-        };
-        let endpoint: unsafe extern "C" fn(*const c_char, *const c_char) -> *mut NSObject =
-            std::mem::transmute(symbol(c"nw_endpoint_create_host")?);
-        let proxy: unsafe extern "C" fn(*mut NSObject, *mut NSObject) -> *mut NSObject =
-            std::mem::transmute(symbol(c"nw_proxy_config_create_http_connect")?);
-        let match_domain: unsafe extern "C" fn(*mut NSObject, *const c_char) =
-            std::mem::transmute(symbol(c"nw_proxy_config_add_match_domain")?);
         let port = CString::new(port.to_string()).map_err(|_| "Invalid preview port")?;
-        let endpoint = Retained::from_raw(endpoint(c"127.0.0.1".as_ptr(), port.as_ptr()))
-            .ok_or("Could not create preview endpoint")?;
-        let config = Retained::from_raw(proxy(
+        let endpoint = Retained::from_raw(nw_endpoint_create_host(
+            c"127.0.0.1".as_ptr(),
+            port.as_ptr(),
+        ))
+        .ok_or("Could not create preview endpoint")?;
+        let config = Retained::from_raw(nw_proxy_config_create_http_connect(
             Retained::as_ptr(&endpoint) as *mut _,
             std::ptr::null_mut(),
         ))
         .ok_or("Could not create preview proxy")?;
         for host in hosts {
             let host = CString::new(host.as_str()).map_err(|_| "Invalid preview hostname")?;
-            match_domain(Retained::as_ptr(&config) as *mut _, host.as_ptr());
+            nw_proxy_config_add_match_domain(Retained::as_ptr(&config) as *mut _, host.as_ptr());
         }
         let proxies = NSArray::arrayWithObject(&*config);
         let _: () = msg_send![store, setProxyConfigurations: &*proxies];

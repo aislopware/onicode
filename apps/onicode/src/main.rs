@@ -6,8 +6,6 @@
 //! zgx interface). This binary links the engine, so it runs the engine's
 //! subcommands itself; with no subcommand it opens the window.
 
-#![cfg_attr(windows, windows_subsystem = "windows")]
-
 use onicode_app::{edge_url_from_env, paths, workos_client_id_from_env};
 use onicode_cli::{Engines, Launch};
 

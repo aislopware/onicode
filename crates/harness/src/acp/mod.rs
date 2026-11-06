@@ -227,15 +227,6 @@ fn grok_install_paths() -> Vec<PathBuf> {
     dirs
 }
 
-/// Whether the agent exits promptly once its stdin closes, which Windows'
-/// teardown waits for (see [`crate::shutdown_child`]). Measured against the
-/// installed CLIs: Hermes keeps running after EOF, and Grok takes over 2s
-/// to go (on SIGTERM it takes a fifth of a second); Devin exits within a
-/// quarter second.
-fn exits_on_stdin_eof(id: HarnessId) -> bool {
-    !matches!(id, HarnessId::Grok | HarnessId::Hermes)
-}
-
 fn grok_spec() -> AcpAgentSpec {
     AcpAgentSpec {
         id: HarnessId::Grok,
@@ -559,18 +550,6 @@ fn antigravity_archive() -> Option<crate::archive_install::ArchivePin> {
             "agy_acp_server.par",
             "d907f928609ff2232bfeeec9177fe925d3e02e1773295cfb30097e5c4e134758021bff916ba5ae2e2e2ff81d374564349f268f92a4577bc88370537011473e29",
         )
-    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-        (
-            "https://dl.google.com/agy-extensions/releases/windows/agy-acp-server-1.2.1-windows-x86_64.zip",
-            "agy_acp_server.exe",
-            "515c0af1d00164ca3a608f4ef04caa4ef8045ffa94a3ef2405c9b43c87c7a74c9f71a232c81917353dc3f2d49b69230f935d2ebfa28f7ee021b5aa088f3fa554",
-        )
-    } else if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
-        (
-            "https://dl.google.com/agy-extensions/releases/windows/agy-acp-server-1.2.1-windows-arm64.zip",
-            "agy_acp_server.exe",
-            "ae3f4c2d2255c03d4d9548e10a760a107c41c99e4c6c710bd82758791e4fd497b75bdef0cd2cfd7fdff1a5bb2fee7afd81f5d043da92ab52dce5505dd2aa58b3",
-        )
     } else {
         return None;
     };
@@ -602,18 +581,6 @@ fn antigravity_legacy_archive() -> Option<crate::archive_install::ArchivePin> {
             "agy_acp_server.par",
             "f895b4ade624e25f9765c90df66f3a864b19b2d1f2bde2fc485de6b6782ce30be458abed2da587d7cdd2272ea0812a8452639682c6318127e4fe0b4b8fc62dcf",
         )
-    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-        (
-            "https://dl.google.com/agy-extensions/releases/windows/agy-acp-server-agy_acp_server_1.1.1-windows-x86_64.zip",
-            "agy_acp_server.exe",
-            "5f1c7ad17a3f3a877552bcb9c75da7c53d05417916728a3436962d81a136bb136e9d9e35a880c9c8ca4db0fcbab9c76e959b26965c5ce6e16ebdea51e4ea28b5",
-        )
-    } else if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
-        (
-            "https://dl.google.com/agy-extensions/releases/windows/agy-acp-server-agy_acp_server_1.1.1-windows-arm64.zip",
-            "agy_acp_server.exe",
-            "5ac47faa3d74a447f8c2b0aa6d174360c2fd08d0009368c2eff97ed8f24d0fedc6b798e5709e91d18ab756af9b06657dd9d90103cd37c67392afb94229fcc536",
-        )
     } else {
         return None;
     };
@@ -637,11 +604,7 @@ pub const ANTIGRAVITY_REGISTRY_URL: &str = "https://raw.githubusercontent.com/ag
 const ANTIGRAVITY_SIGNED_MARKER: &str = "google-code-signature";
 
 fn antigravity_entry() -> &'static str {
-    if cfg!(windows) {
-        "agy_acp_server.exe"
-    } else {
-        "agy_acp_server.par"
-    }
+    "agy_acp_server.par"
 }
 
 fn antigravity_registry_platform() -> Option<&'static str> {
@@ -653,10 +616,6 @@ fn antigravity_registry_platform() -> Option<&'static str> {
         "linux-x86_64"
     } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
         "linux-aarch64"
-    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-        "windows-x86_64"
-    } else if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
-        "windows-aarch64"
     } else {
         return None;
     })
@@ -853,14 +812,12 @@ pub fn prune_superseded_antigravity_installs() {
             continue;
         };
         let prefixes = install_path_prefixes(dir);
-        if running.iter().any(|line| {
-            let line = comparable_path(line);
-            prefixes.iter().any(|prefix| line.contains(prefix))
-        }) {
+        if running
+            .iter()
+            .any(|line| prefixes.iter().any(|prefix| line.contains(prefix)))
+        {
             continue;
         }
-        // windows also refuses to rename a directory holding a running
-        // image, which covers processes the scan could not open.
         let trash = adapters.join(format!(
             ".trash-{ANTIGRAVITY_ARCHIVE_NAME}-{version}-{}",
             std::process::id()
@@ -873,7 +830,6 @@ pub fn prune_superseded_antigravity_installs() {
     }
 }
 
-#[cfg(unix)]
 pub(crate) fn running_command_lines() -> Option<Vec<String>> {
     let output = std::process::Command::new("/bin/ps")
         .args(["-axww", "-o", "command="])
@@ -890,83 +846,16 @@ pub(crate) fn running_command_lines() -> Option<Vec<String>> {
     )
 }
 
-/// the image path of every process this user can inspect.
-#[cfg(windows)]
-pub(crate) fn running_command_lines() -> Option<Vec<String>> {
-    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
-    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
-        TH32CS_SNAPPROCESS,
-    };
-    use windows_sys::Win32::System::Threading::{
-        OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-        QueryFullProcessImageNameW,
-    };
-
-    // SAFETY: the snapshot and every process handle are closed below.
-    unsafe {
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if snapshot == INVALID_HANDLE_VALUE {
-            return None;
-        }
-        let mut entry = PROCESSENTRY32W {
-            dwSize: size_of::<PROCESSENTRY32W>() as u32,
-            ..Default::default()
-        };
-        let mut images = Vec::new();
-        let mut more = Process32FirstW(snapshot, &mut entry) != 0;
-        while more {
-            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, entry.th32ProcessID);
-            if !process.is_null() {
-                let mut path = [0u16; 32_768];
-                let mut length = path.len() as u32;
-                if QueryFullProcessImageNameW(
-                    process,
-                    PROCESS_NAME_WIN32,
-                    path.as_mut_ptr(),
-                    &mut length,
-                ) != 0
-                {
-                    images.push(String::from_utf16_lossy(&path[..length as usize]));
-                }
-                CloseHandle(process);
-            }
-            more = Process32NextW(snapshot, &mut entry) != 0;
-        }
-        CloseHandle(snapshot);
-        Some(images)
-    }
-}
-
-#[cfg(not(any(unix, windows)))]
-pub(crate) fn running_command_lines() -> Option<Vec<String>> {
-    None
-}
-
 /// how a process may name files under `dir`: as onicode spawned it, and in its
-/// canonical form, which windows reports for images even when the adapters
-/// directory was reached through an 8.3 short name such as `RUNNER~1`.
+/// canonical form.
 fn install_path_prefixes(dir: &Path) -> Vec<String> {
-    let with_separator = |path: &Path| {
-        let path = path.display().to_string();
-        let path = path.strip_prefix(r"\\?\").unwrap_or(&path);
-        comparable_path(&format!("{path}{}", std::path::MAIN_SEPARATOR))
-    };
+    let with_separator = |path: &Path| format!("{}{}", path.display(), std::path::MAIN_SEPARATOR);
     let mut prefixes = vec![with_separator(dir)];
     if let Ok(canonical) = std::fs::canonicalize(dir) {
         prefixes.push(with_separator(&canonical));
     }
     prefixes.dedup();
     prefixes
-}
-
-/// windows paths compare case-insensitively.
-fn comparable_path(path: &str) -> String {
-    if cfg!(windows) {
-        path.to_lowercase()
-    } else {
-        path.to_owned()
-    }
 }
 
 /// Whether the listing device has a pinned, explicitly installable archive.
@@ -1520,7 +1409,6 @@ fn choose_auth_method(initialized: &Value, wanted: Option<&str>) -> Option<AuthM
 /// The system's openers (`open`, `xdg-open`) as a sign-in sees them: a web
 /// address goes to `url_file` (beside it, the sign-in's own owner-only
 /// folder) instead of a browser here; anything else goes to the real one.
-#[cfg(unix)]
 fn login_openers(url_file: &Path) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     let dir = url_file.parent()?.join("openers");
@@ -1537,11 +1425,6 @@ fn login_openers(url_file: &Path) -> Option<PathBuf> {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).ok()?;
     }
     Some(dir)
-}
-
-#[cfg(not(unix))]
-fn login_openers(_url_file: &Path) -> Option<PathBuf> {
-    None
 }
 
 /// `dir` first on the child's PATH (as composed for it, else this process's).
@@ -1795,7 +1678,6 @@ impl AcpHarness {
             .await
         };
         let result = tokio::time::timeout(SIGN_OUT_TIMEOUT, flow).await;
-        client.close_stdin_for_teardown();
         child.shutdown(self.kill_grace).await;
         match result {
             Ok(outcome) => outcome.map(|_| ()),
@@ -1887,9 +1769,6 @@ impl AcpHarness {
             let cwd = home.as_deref().map(std::path::Path::new);
             crate::executable::spawn_error(e, cwd, || crate::executable::binary_hint(&exe))
         })?;
-        if !exits_on_stdin_eof(self.spec.id) {
-            crate::process::ignores_stdin_eof(&mut child);
-        }
         let on_progress = std::sync::Arc::new(on_progress);
         let announced = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         if let Some(stderr) = child.stderr.take() {
@@ -1945,7 +1824,6 @@ impl AcpHarness {
             .await
         };
         let result = tokio::time::timeout(SIGN_IN_TIMEOUT, flow).await;
-        client.close_stdin_for_teardown();
         shutdown_child(&mut child, self.kill_grace).await;
         match result {
             Ok(outcome) => outcome.map(|_| ()),
@@ -2056,12 +1934,10 @@ impl AcpHarness {
         {
             Ok(Ok(initialized)) => initialized,
             Ok(Err(error)) => {
-                client.close_stdin_for_teardown();
                 shutdown_child(&mut child, self.kill_grace).await;
                 return Err(error);
             }
             Err(_) => {
-                client.close_stdin_for_teardown();
                 shutdown_child(&mut child, self.kill_grace).await;
                 return Err(HarnessError::Protocol(format!(
                     "{display_name} didn't start its sign-in"
@@ -2070,7 +1946,6 @@ impl AcpHarness {
         };
         let chosen = choose_auth_method(&initialized, method.as_deref());
         let Some(chosen) = chosen else {
-            client.close_stdin_for_teardown();
             shutdown_child(&mut child, self.kill_grace).await;
             return Err(HarnessError::Protocol(format!(
                 "{display_name} offers no sign-in"
@@ -2142,7 +2017,6 @@ impl AcpHarness {
                     .await;
                     match first {
                         Ok(Ok(_)) => {
-                            client.close_stdin_for_teardown();
                             shutdown_child(&mut child, self.kill_grace).await;
                             return Ok(());
                         }
@@ -2218,7 +2092,6 @@ impl AcpHarness {
                         break;
                     }
                 }
-                client.close_stdin_for_teardown();
                 shutdown_child(&mut child, self.kill_grace).await;
                 match verified {
                     Ok(()) => Ok(()),
@@ -2243,7 +2116,6 @@ impl AcpHarness {
                 }
             }
             terminal @ AuthMethod::Terminal { .. } => {
-                client.close_stdin_for_teardown();
                 shutdown_child(&mut child, self.kill_grace).await;
                 self.terminal_sign_in(terminal, &exe, &args, &command, &on_progress)
                     .await
@@ -2270,7 +2142,6 @@ impl AcpHarness {
             ),
         )
         .await;
-        client.close_stdin_for_teardown();
         shutdown_child(&mut child, self.kill_grace).await;
         let display_name = self.spec.display_name;
         let signed_in = match session {
@@ -2324,7 +2195,6 @@ impl AcpHarness {
                 ))),
             }
         };
-        client.close_stdin_for_teardown();
         shutdown_child(&mut child, self.kill_grace).await;
         outcome
     }
@@ -2373,12 +2243,10 @@ impl AcpHarness {
         {
             Ok(Ok(initialized)) => Ok((child, client, incoming, initialized)),
             Ok(Err(error)) => {
-                client.close_stdin_for_teardown();
                 shutdown_child(&mut child, self.kill_grace).await;
                 Err(error)
             }
             Err(_) => {
-                client.close_stdin_for_teardown();
                 shutdown_child(&mut child, self.kill_grace).await;
                 Err(HarnessError::Protocol(format!(
                     "{display_name} didn't start"
@@ -2560,13 +2428,9 @@ impl AcpHarness {
     /// when neither the binary nor the machinery to install it (npm) exists.
     fn find_server(&self) -> Option<PathBuf> {
         find_on_paths(self.spec.executable, (self.spec.extra_paths)()).or_else(|| {
-            if self.spec.id == HarnessId::Antigravity {
-                ["agy_acp_server.par", "agy_acp_server.exe"]
-                    .into_iter()
-                    .find_map(|name| find_on_paths(name, (self.spec.cli_extra_paths)()))
-            } else {
-                None
-            }
+            (self.spec.id == HarnessId::Antigravity)
+                .then(|| find_on_paths("agy_acp_server.par", (self.spec.cli_extra_paths)()))
+                .flatten()
         })
     }
 
@@ -2776,9 +2640,6 @@ impl AcpHarness {
             crate::executable::spawn_error(e, cwd, || crate::executable::binary_hint(&exe))
         })?;
         let mut child = Child::new(child);
-        if !exits_on_stdin_eof(self.spec.id) {
-            crate::process::ignores_stdin_eof(&mut child);
-        }
         let stderr_tail = crate::StderrTail::default();
         let sign_in_prompted = CancellationToken::new();
         if let Some(stderr) = child.stderr.take() {
@@ -2874,7 +2735,6 @@ impl AcpHarness {
         let discovery =
             unless_sign_in_prompted(discovery, &sign_in_prompted, self.spec.display_name);
         let result = tokio::time::timeout(self.model_discovery_timeout, discovery).await;
-        client.close_stdin_for_teardown();
         child.shutdown(self.kill_grace).await;
         match result {
             Ok(inner) => inner,
@@ -2933,7 +2793,6 @@ impl AcpHarness {
             unless_sign_in_prompted(discovery, &sign_in_prompted, self.spec.display_name);
         let result = tokio::time::timeout(self.model_discovery_timeout, discovery).await;
         drain.abort();
-        client.close_stdin_for_teardown();
         child.shutdown(self.kill_grace).await;
         match result {
             Ok(inner) => inner,
@@ -3652,19 +3511,8 @@ fn cancel_params(harness: HarnessId, session_id: &str) -> Value {
 /// server as name/command/args plus `[{name, value}]` env pairs. Empty when
 /// the host injected nothing — the user's own servers come from the agent's
 /// config, never from here.
-#[cfg(test)]
 fn acp_mcp_servers(mcp: Option<&onicode_proto::McpServer>) -> Vec<Value> {
-    acp_session_mcp_servers(mcp, &[])
-}
-
-/// [`acp_mcp_servers`] plus the plugins' native servers
-/// ([`RunRequest::extra_mcp`]), Onicode's own first.
-fn acp_session_mcp_servers(
-    mcp: Option<&onicode_proto::McpServer>,
-    extras: &[onicode_proto::McpServer],
-) -> Vec<Value> {
     mcp.into_iter()
-        .chain(extras)
         .map(|mcp| {
             json!({
                 "name": mcp.name,
@@ -4396,6 +4244,7 @@ fn handle_server_request_live(
         options: names.clone(),
         prefill: None,
         multiline: false,
+        approval: None,
         multi_select: false,
     };
     let request_input = std::sync::Arc::clone(request_input);
@@ -4460,7 +4309,6 @@ async fn unless_sign_in_prompted<T>(
     }
 }
 
-#[cfg(not(windows))]
 fn noop_browser() -> Result<String, HarnessError> {
     unix_noop_browser(
         &[Path::new("/usr/bin/true"), Path::new("/bin/true")],
@@ -4471,7 +4319,6 @@ fn noop_browser() -> Result<String, HarnessError> {
 /// python's `webbrowser` splits `BROWSER` on `:` and then shell-splits each
 /// entry. hosts without `true` (nixos, minimal containers) fall back to
 /// onicode's own `--noop-browser` mode.
-#[cfg(any(not(windows), test))]
 fn unix_noop_browser(
     candidates: &[&Path],
     executable: Option<&Path>,
@@ -4488,25 +4335,6 @@ fn unix_noop_browser(
         ));
     }
     Ok(format!("'{executable}' --noop-browser %s"))
-}
-
-#[cfg(windows)]
-fn noop_browser() -> Result<String, HarnessError> {
-    windows_noop_browser(&std::env::current_exe()?)
-}
-
-#[cfg(any(windows, test))]
-fn windows_noop_browser(executable: &Path) -> Result<String, HarnessError> {
-    let executable = executable.to_str().ok_or_else(|| {
-        HarnessError::Protocol("Browser suppression requires a Unicode executable path".into())
-    })?;
-    if executable.contains([';', '"', '%']) {
-        return Err(HarnessError::Protocol(
-            "The executable path cannot be used for browser suppression".into(),
-        ));
-    }
-    let executable = executable.replace('\\', "\\\\");
-    Ok(format!("\"{executable}\" --noop-browser %s"))
 }
 
 /// How a resumed run restores its session: `session/load` replays the whole
@@ -4570,7 +4398,7 @@ async fn open_session(
 ) -> Result<(String, Value), HarnessError> {
     let params = json!({
         "cwd": request.cwd,
-        "mcpServers": acp_session_mcp_servers(request.mcp.as_ref(), &request.extra_mcp),
+        "mcpServers": acp_mcp_servers(request.mcp.as_ref()),
     });
     if let Some(resume) = &request.resume {
         let method = restore_method(init, harness);
@@ -5442,7 +5270,6 @@ async fn run_session(session: Session) {
                             session_id: None,
                         }))
                         .await;
-                    client.close_stdin_for_teardown();
                     child.shutdown(kill_grace).await;
                     return;
                 }
@@ -5494,7 +5321,6 @@ async fn run_session(session: Session) {
                     session_id: request.resume.clone(),
                 }))
                 .await;
-            client.close_stdin_for_teardown();
             child.shutdown(kill_grace).await;
             return;
         }
@@ -5514,7 +5340,6 @@ async fn run_session(session: Session) {
     )
     .await
     {
-        client.close_stdin_for_teardown();
         child.shutdown(kill_grace).await;
         return;
     }
@@ -5527,7 +5352,6 @@ async fn run_session(session: Session) {
         )
         .await
     {
-        client.close_stdin_for_teardown();
         child.shutdown(kill_grace).await;
         return;
     }
@@ -6728,7 +6552,6 @@ async fn run_session(session: Session) {
         }
     }
 
-    client.close_stdin_for_teardown();
     child.shutdown(kill_grace).await;
 }
 
@@ -6801,19 +6624,6 @@ mod tests {
         );
         assert_eq!(antigravity_build_version("Build label: nightly"), None);
         assert_eq!(antigravity_build_version("Built on Sep 2"), None);
-    }
-
-    #[test]
-    fn windows_browser_suppression_quotes_the_executable_path() {
-        let command = windows_noop_browser(Path::new(r"C:\Program Files\Onicode\onicode.exe"))
-            .expect("browser command");
-        assert_eq!(
-            command,
-            r#""C:\\Program Files\\Onicode\\onicode.exe" --noop-browser %s"#
-        );
-        for path in [r"C:\semi;colon\onicode.exe", r"C:\percent%s\onicode.exe"] {
-            assert!(windows_noop_browser(Path::new(path)).is_err());
-        }
     }
 
     #[test]
@@ -7089,7 +6899,6 @@ mod tests {
 
     /// runs in a child process, since installs resolve through the
     /// process-wide `ONICODE_ADAPTERS_DIR`.
-    #[cfg(any(unix, windows))]
     #[test]
     fn antigravity_launches_the_newest_trusted_install_and_prunes_the_rest() {
         let Ok(adapters) = std::env::var("ONICODE_TEST_AGY_ADAPTERS") else {
@@ -7151,27 +6960,9 @@ mod tests {
         assert_eq!(harness.executable_path(), Some(newest.clone()));
         assert!(is_managed_antigravity_server(&newest));
 
-        #[cfg(unix)]
-        let mut running = {
-            let mut command = std::process::Command::new("/bin/sh");
-            command
-                .args(["-c", "while :; do /bin/sleep 0.1; done"])
-                .arg(&legacy_server);
-            command
-        };
-        #[cfg(windows)]
-        let mut running = {
-            let system = std::env::var_os("SystemRoot").unwrap();
-            std::fs::copy(
-                Path::new(&system).join("System32").join("PING.EXE"),
-                &legacy_server,
-            )
-            .unwrap();
-            let mut command = std::process::Command::new(&legacy_server);
-            command.args(["-n", "60", "127.0.0.1"]);
-            command
-        };
-        let mut running = running
+        let mut running = std::process::Command::new("/bin/sh")
+            .args(["-c", "while :; do /bin/sleep 0.1; done"])
+            .arg(&legacy_server)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
@@ -7188,14 +6979,7 @@ mod tests {
 
         running.kill().unwrap();
         running.wait().unwrap();
-        // windows can hold an exited image's mapping for a moment
-        for _ in 0..50 {
-            prune_superseded_antigravity_installs();
-            if !legacy_server.exists() {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
+        prune_superseded_antigravity_installs();
         assert!(!legacy_server.exists());
         assert_eq!(harness.executable_path(), Some(newest));
         let leftovers: Vec<_> = std::fs::read_dir(root.parent().unwrap())
@@ -8255,33 +8039,5 @@ mod mcp_injection_tests {
                 "env": [{ "name": "ONICODE_IPC_PORT", "value": "27654" }],
             })]
         );
-    }
-    #[test]
-    fn acp_session_mcp_servers_list_plugin_servers_after_onicode() {
-        let onicode = onicode_proto::McpServer {
-            name: "onicode".into(),
-            command: "/opt/onicode/onicode".into(),
-            args: vec!["mcp".into()],
-            env: Default::default(),
-        };
-        let extra = onicode_proto::McpServer {
-            name: "plugin-focus".into(),
-            command: "/data/plugins/.loaded/focus/0123/bin/server".into(),
-            args: vec![],
-            env: [("FOCUS".to_owned(), "1".to_owned())].into_iter().collect(),
-        };
-        let servers = acp_session_mcp_servers(Some(&onicode), std::slice::from_ref(&extra));
-        assert_eq!(servers.len(), 2);
-        assert_eq!(servers[0]["name"], "onicode");
-        assert_eq!(
-            servers[1],
-            json!({
-                "name": "plugin-focus",
-                "command": "/data/plugins/.loaded/focus/0123/bin/server",
-                "args": [],
-                "env": [{ "name": "FOCUS", "value": "1" }],
-            })
-        );
-        assert_eq!(acp_session_mcp_servers(None, &[extra]).len(), 1);
     }
 }

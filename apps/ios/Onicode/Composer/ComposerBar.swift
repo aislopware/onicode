@@ -24,9 +24,9 @@ struct ComposerChip: Equatable {
     let id: String
     let title: String
     let symbol: String?
-    var tint: UIColor? = nil
+    var tint: UIColor?
     /// Brand mark / custom glyph (takes precedence over `symbol`).
-    var icon: UIImage? = nil
+    var icon: UIImage?
 }
 
 /// The composer. One glass surface with two states that morph into each
@@ -76,7 +76,13 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
     var chipMenus: [String: () -> UIMenu?] = [:] { didSet { applyChipMenus() } }
     /// Stay in the card state even when idle (new-session canvas).
     var chipsAlwaysVisible = false { didSet { updateMode(animated: false) } }
-    var images: [StagedImage] = [] { didSet { rebuildThumbs(); refreshAction(animated: true); updateMode(animated: true) } }
+    var images: [StagedImage] = [] {
+        didSet {
+            rebuildThumbs()
+            refreshAction(animated: true)
+            updateMode(animated: true)
+        }
+    }
 
     var text: String {
         get { textView.text }
@@ -125,7 +131,8 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
         build()
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private func build() {
         glass.translatesAutoresizingMaskIntoConstraints = false
@@ -146,7 +153,8 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
         content.addSubview(thumbsScroll)
 
         var attach = UIButton.Configuration.filled()
-        attach.image = UIImage(systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+        attach.image = UIImage(
+            systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
         attach.baseForegroundColor = Palette.text
         attach.baseBackgroundColor = Palette.controlFill
         attach.cornerStyle = .capsule
@@ -156,9 +164,11 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
         attachButton.accessibilityIdentifier = "composer-attach"
         attachButton.translatesAutoresizingMaskIntoConstraints = false
         // Built on open so "Paste Image" reflects the pasteboard right now.
-        attachButton.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] done in
-            done(self?.attachMenu?().children ?? [])
-        }])
+        attachButton.menu = UIMenu(children: [
+            UIDeferredMenuElement.uncached { [weak self] done in
+                done(self?.attachMenu?().children ?? [])
+            }
+        ])
         attachButton.showsMenuAsPrimaryAction = true
         content.addSubview(attachButton)
 
@@ -277,7 +287,7 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
 
     /// Taps on controls (attach, chips, send) are theirs: focusing would
     /// morph the capsule under the finger and cancel the control's menu.
-    func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    func gestureRecognizer(_: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         var v = touch.view
         while let view = v, view !== glass {
             if view is UIControl { return false }
@@ -325,14 +335,22 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
             }
             self.toolbarHeight.constant = card ? 50 : 0
             self.chipScroll.alpha = card ? 1 : 0
-            self.textView.textContainerInset = card ? UIEdgeInsets(top: 14, left: 0, bottom: 6, right: 0) : UIEdgeInsets(top: 14, left: 0, bottom: 14, right: 0)
+            self.textView.textContainerInset =
+                card
+                ? UIEdgeInsets(top: 14, left: 0, bottom: 6, right: 0)
+                : UIEdgeInsets(top: 14, left: 0, bottom: 14, right: 0)
             self.glass.cornerConfiguration = .uniformCorners(radius: .fixed(card ? 26 : 25))
             self.recomputeTextHeight()
             self.onHeightChange?()
             self.superview?.layoutIfNeeded()
         }
-        guard animated, window != nil, !UIAccessibility.isReduceMotionEnabled else { return change() }
-        UIView.animate(withDuration: 0.42, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState], animations: change)
+        guard animated, window != nil, !UIAccessibility.isReduceMotionEnabled else {
+            change()
+            return
+        }
+        UIView.animate(
+            withDuration: 0.42, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0,
+            options: [.allowUserInteraction, .beginFromCurrentState], animations: change)
     }
 
     // MARK: Mentions
@@ -392,7 +410,8 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
             while true {
                 let r = ns.range(of: token, options: [], range: search)
                 if r.location == NSNotFound { break }
-                styled.addAttributes([.foregroundColor: Palette.accent, .font: Fonts.ui(.sansMedium, font.pointSize)], range: r)
+                styled.addAttributes(
+                    [.foregroundColor: Palette.accent, .font: Fonts.ui(.sansMedium, font.pointSize)], range: r)
                 search = NSRange(location: r.upperBound, length: ns.length - r.upperBound)
             }
         }
@@ -409,7 +428,7 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
     @discardableResult
     override func resignFirstResponder() -> Bool { textView.resignFirstResponder() }
 
-    func textViewDidBeginEditing(_ textView: UITextView) {
+    func textViewDidBeginEditing(_: UITextView) {
         updateMode(animated: true)
         onFocusChange?(true)
     }
@@ -422,14 +441,16 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
     }
 
     private func rebuildChips() {
-        chipStrip.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in chipStrip.arrangedSubviews { view.removeFromSuperview() }
         for chip in chips {
             var config = UIButton.Configuration.filled()
             config.title = chip.title
             if let icon = chip.icon {
                 config.image = icon
             } else if let symbol = chip.symbol {
-                config.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 11.5, weight: .semibold))
+                config.image = UIImage(
+                    systemName: symbol,
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 11.5, weight: .semibold))
             }
             config.imagePadding = chip.id == "pr" ? 5 : 6
             // Tinted chips (the PR badge) use the desktop's tone wash: fill
@@ -450,10 +471,11 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
             b.accessibilityIdentifier = "composer-chip-\(chip.id)"
             b.setContentHuggingPriority(.required, for: .horizontal)
             b.setContentCompressionResistancePriority(.required, for: .horizontal)
-            b.addAction(UIAction { [weak self, weak b] _ in
-                guard let self, let b else { return }
-                self.onChipTap?(chip.id, b)
-            }, for: .touchUpInside)
+            b.addAction(
+                UIAction { [weak self, weak b] _ in
+                    guard let self, let b else { return }
+                    self.onChipTap?(chip.id, b)
+                }, for: .touchUpInside)
             chipStrip.addArrangedSubview(b)
         }
         applyChipMenus()
@@ -462,7 +484,7 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
     private func applyChipMenus() {
         for case let b as UIButton in chipStrip.arrangedSubviews {
             guard let id = b.accessibilityIdentifier?.replacingOccurrences(of: "composer-chip-", with: ""),
-                  let provider = chipMenus[id]
+                let provider = chipMenus[id]
             else { continue }
             b.menu = provider()
             b.showsMenuAsPrimaryAction = b.menu != nil
@@ -478,7 +500,7 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
     func clearImages() { images.removeAll() }
 
     private func rebuildThumbs() {
-        thumbs.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in thumbs.arrangedSubviews { view.removeFromSuperview() }
         for img in images {
             let iv = UIImageView(image: img.thumbnail)
             iv.contentMode = .scaleAspectFill
@@ -486,13 +508,15 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
             iv.layer.cornerRadius = 14
             iv.layer.cornerCurve = .continuous
             iv.layer.borderWidth = 1 / max(1, traitCollection.displayScale)
-            iv.layer.borderColor = Palette.hairline.resolvedColor(with: window?.traitCollection ?? traitCollection).cgColor
+            iv.layer.borderColor =
+                Palette.hairline.resolvedColor(with: window?.traitCollection ?? traitCollection).cgColor
             iv.isUserInteractionEnabled = true
             iv.translatesAutoresizingMaskIntoConstraints = false
             iv.widthAnchor.constraint(equalToConstant: 56).isActive = true
             iv.heightAnchor.constraint(equalToConstant: 56).isActive = true
             var x = UIButton.Configuration.filled()
-            x.image = UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 8, weight: .bold))
+            x.image = UIImage(
+                systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 8, weight: .bold))
             x.baseBackgroundColor = UIColor.black.withAlphaComponent(0.55)
             x.baseForegroundColor = .white
             x.cornerStyle = .capsule
@@ -500,9 +524,10 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
             let remove = UIButton(configuration: x)
             remove.accessibilityLabel = "Remove image"
             remove.translatesAutoresizingMaskIntoConstraints = false
-            remove.addAction(UIAction { [weak self] _ in
-                UIView.animate(withDuration: 0.25) { self?.images.removeAll { $0.id == img.id } }
-            }, for: .touchUpInside)
+            remove.addAction(
+                UIAction { [weak self] _ in
+                    UIView.animate(withDuration: 0.25) { self?.images.removeAll { $0.id == img.id } }
+                }, for: .touchUpInside)
             iv.addSubview(remove)
             NSLayoutConstraint.activate([
                 remove.topAnchor.constraint(equalTo: iv.topAnchor, constant: 4),
@@ -520,13 +545,13 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
 
     // MARK: Text
 
-    func textViewDidChange(_ textView: UITextView) {
+    func textViewDidChange(_: UITextView) {
         textChanged()
         styleMentions()
         updateMentionQuery()
     }
 
-    func textViewDidChangeSelection(_ textView: UITextView) {
+    func textViewDidChangeSelection(_: UITextView) {
         if mentionQuery != nil { updateMentionQuery() }
     }
 
@@ -566,7 +591,8 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        if textView.bounds.width > 0, !textView.text.isEmpty, abs(textView.contentSize.height - textHeight.constant) > 1 {
+        if textView.bounds.width > 0, !textView.text.isEmpty, abs(textView.contentSize.height - textHeight.constant) > 1
+        {
             recomputeTextHeight()
         }
     }
@@ -603,7 +629,9 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
             config.baseForegroundColor = Palette.background
             config.contentInsets = .zero
         }
-        config.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: action == .stop ? 11 : 15, weight: .bold))
+        config.image = UIImage(
+            systemName: symbol,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: action == .stop ? 11 : 15, weight: .bold))
         let changed = currentAction != action
         currentAction = action
         let apply = {
@@ -612,7 +640,9 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
             self.superview?.layoutIfNeeded()
         }
         if animated, changed, window != nil {
-            UIView.animate(withDuration: 0.32, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState], animations: apply)
+            UIView.animate(
+                withDuration: 0.32, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0,
+                options: [.allowUserInteraction, .beginFromCurrentState], animations: apply)
             actionButton.imageView?.addSymbolEffect(.bounce.byLayer, options: .nonRepeating)
         } else {
             apply()
@@ -625,12 +655,21 @@ final class ComposerBar: UIView, UITextViewDelegate, UIGestureRecognizerDelegate
         // Long-press offers the other delivery modes mid-turn.
         if action == .queue {
             var items: [UIMenuElement] = [
-                UIAction(title: "Queue for next turn", image: UIImage(systemName: "text.line.last.and.arrowtriangle.forward")) { [weak self] _ in self?.send(.queue) },
+                UIAction(
+                    title: "Queue for next turn", image: UIImage(systemName: "text.line.last.and.arrowtriangle.forward")
+                ) { [weak self] _ in self?.send(.queue) }
             ]
             if canSteer {
-                items.append(UIAction(title: "Steer now", subtitle: "Deliver into the running turn", image: UIImage(systemName: "arrow.turn.down.right")) { [weak self] _ in self?.send(.steer) })
+                items.append(
+                    UIAction(
+                        title: "Steer now", subtitle: "Deliver into the running turn",
+                        image: UIImage(systemName: "arrow.turn.down.right")
+                    ) { [weak self] _ in self?.send(.steer) })
             }
-            items.append(UIAction(title: "Stop and send", image: UIImage(systemName: "stop.circle"), attributes: .destructive) { [weak self] _ in self?.send(.interrupt) })
+            items.append(
+                UIAction(title: "Stop and send", image: UIImage(systemName: "stop.circle"), attributes: .destructive) {
+                    [weak self] _ in self?.send(.interrupt)
+                })
             actionButton.menu = UIMenu(title: "While the agent works", children: items)
             actionButton.showsMenuAsPrimaryAction = false
         } else {

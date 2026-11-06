@@ -16,7 +16,7 @@ struct DraftHandoff {
     /// Capture from the draft at the moment of sending (before the composer
     /// clears).
     @MainActor
-    static func capture(from vc: UIViewController, composer: ComposerBar, text: String) -> DraftHandoff? {
+    static func capture(from vc: UIViewController, composer: ComposerBar, text: String) -> Self? {
         guard let window = vc.view.window else { return nil }
         // Real pixels, not replicant snapshots: replicants go blank once the
         // sheet they mirror is torn down.
@@ -27,13 +27,18 @@ struct DraftHandoff {
         let composerFrame = composer.convert(composer.bounds, to: window)
         let tv = composer.textView
         let inset = tv.textContainerInset
-        let textFrame = tv.convert(CGRect(x: inset.left, y: inset.top, width: tv.bounds.width - inset.left - inset.right, height: max(20, tv.bounds.height - inset.top - inset.bottom)), to: window)
+        let textFrame = tv.convert(
+            CGRect(
+                x: inset.left, y: inset.top, width: tv.bounds.width - inset.left - inset.right,
+                height: max(20, tv.bounds.height - inset.top - inset.bottom)), to: window)
         // The page without its composer (the composer travels separately).
-        let host = vc.navigationController?.view ?? vc.view!
+        let host: UIView = vc.navigationController?.view ?? vc.view
         composer.alpha = 0
         let scene = image(of: host, afterScreenUpdates: true)
         let sceneFrame = host.convert(host.bounds, to: window)
-        return DraftHandoff(scene: scene, sceneFrame: sceneFrame, composer: composerSnap, composerFrame: composerFrame, text: text, textFrame: textFrame)
+        return Self(
+            scene: scene, sceneFrame: sceneFrame, composer: composerSnap, composerFrame: composerFrame, text: text,
+            textFrame: textFrame)
     }
 }
 
@@ -55,7 +60,9 @@ extension DraftHandoff {
 /// flies from the text field into its bubble, and the transcript fades in.
 @MainActor
 enum DraftHandoffAnimator {
-    static func run(_ h: DraftHandoff, into session: SessionViewController, window: UIWindow, completion: (() -> Void)? = nil) {
+    static func run(
+        _ h: DraftHandoff, into session: SessionViewController, window: UIWindow, completion: (() -> Void)? = nil
+    ) {
         let reduce = UIAccessibility.isReduceMotionEnabled
         h.scene.frame = h.sceneFrame
         h.composer.frame = h.composerFrame
@@ -76,7 +83,10 @@ enum DraftHandoffAnimator {
         }
     }
 
-    private static func animate(_ h: DraftHandoff, bubble: BubbleFlight, session: SessionViewController, window: UIWindow, reduce: Bool, completion: (() -> Void)?) {
+    private static func animate(
+        _ h: DraftHandoff, bubble: BubbleFlight, session: SessionViewController, window: UIWindow, reduce: Bool,
+        completion: (() -> Void)?
+    ) {
         let composerTarget = session.arrivalComposerFrame(in: window)
 
         // Draft page dissolves (slight settle), composer glides home.
@@ -90,7 +100,9 @@ enum DraftHandoffAnimator {
         // chat's resting capsule, bottom edges aligned, while they crossfade.
         ComposerGlide.run(view: h.composer, from: h.composerFrame, duration: reduce ? 0.2 : 0.55) {
             let live = session.arrivalComposerFrame(in: window) ?? composerTarget ?? h.composerFrame
-            return CGRect(x: live.minX, y: live.maxY - h.composerFrame.height, width: h.composerFrame.width, height: h.composerFrame.height)
+            return CGRect(
+                x: live.minX, y: live.maxY - h.composerFrame.height, width: h.composerFrame.width,
+                height: h.composerFrame.height)
         }
         UIView.animate(withDuration: 0.18, delay: reduce ? 0 : 0.36, options: [.curveEaseInOut]) {
             session.revealArrivalComposer()
@@ -102,8 +114,16 @@ enum DraftHandoffAnimator {
 
         // The bubble flies once the transcript has laid out its first row.
         waitForBubble(session, window: window, tries: 0) { target in
-            let target = target ?? CGRect(x: window.bounds.width - 16 - min(bubble.bounds.width, window.bounds.width * 0.8), y: window.safeAreaInsets.top + 60, width: min(bubble.bounds.width, window.bounds.width * 0.8), height: bubble.bounds.height)
-            UIView.animate(withDuration: reduce ? 0.2 : 0.5, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0, options: [.beginFromCurrentState]) {
+            let target =
+                target
+                ?? CGRect(
+                    x: window.bounds.width - 16 - min(bubble.bounds.width, window.bounds.width * 0.8),
+                    y: window.safeAreaInsets.top + 60, width: min(bubble.bounds.width, window.bounds.width * 0.8),
+                    height: bubble.bounds.height)
+            UIView.animate(
+                withDuration: reduce ? 0.2 : 0.5, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0,
+                options: [.beginFromCurrentState]
+            ) {
                 bubble.frame = target
                 bubble.settle()
                 bubble.layoutIfNeeded()
@@ -121,10 +141,18 @@ enum DraftHandoffAnimator {
         }
     }
 
-    private static func waitForBubble(_ session: SessionViewController, window: UIWindow, tries: Int, _ go: @escaping (CGRect?) -> Void) {
+    private static func waitForBubble(
+        _ session: SessionViewController, window: UIWindow, tries: Int, _ go: @escaping (CGRect?) -> Void
+    ) {
         session.view.layoutIfNeeded()
-        if let frame = session.arrivalBubbleFrame(in: window) { return go(frame) }
-        guard tries < 20 else { return go(nil) }
+        if let frame = session.arrivalBubbleFrame(in: window) {
+            go(frame)
+            return
+        }
+        guard tries < 20 else {
+            go(nil)
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
             waitForBubble(session, window: window, tries: tries + 1, go)
         }
@@ -165,7 +193,9 @@ private final class ComposerGlide: NSObject {
         let e = 1 - pow(1 - t, 4)
         let to = target()
         func lerp(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * CGFloat(e) }
-        view.frame = CGRect(x: lerp(from.minX, to.minX), y: lerp(from.minY, to.minY), width: lerp(from.width, to.width), height: lerp(from.height, to.height))
+        view.frame = CGRect(
+            x: lerp(from.minX, to.minX), y: lerp(from.minY, to.minY), width: lerp(from.width, to.width),
+            height: lerp(from.height, to.height))
         if t >= 1 || view.superview == nil {
             link?.invalidate()
             link = nil
@@ -197,10 +227,13 @@ private final class BubbleFlight: UIView {
         addSubview(label)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     static func frame(aroundText r: CGRect) -> CGRect {
-        CGRect(x: r.minX - pad.left, y: r.minY - pad.top, width: r.width + pad.left + pad.right, height: r.height + pad.top + pad.bottom)
+        CGRect(
+            x: r.minX - pad.left, y: r.minY - pad.top, width: r.width + pad.left + pad.right,
+            height: r.height + pad.top + pad.bottom)
     }
 
     func settle() { fill.alpha = 1 }

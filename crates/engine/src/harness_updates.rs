@@ -272,8 +272,7 @@ impl UpdatePlan {
 }
 
 /// The npm prefix owning an executable installed as a global package:
-/// `<prefix>/lib/node_modules/…` (Unix) or `<prefix>/node_modules/…`
-/// (Windows), judged by where the launcher really lives.
+/// `<prefix>/lib/node_modules/…`, judged by where the launcher really lives.
 fn npm_global_prefix(executable: &Path) -> Option<PathBuf> {
     let canonical = std::fs::canonicalize(executable).ok()?;
     let mut prefix = PathBuf::new();
@@ -2752,11 +2751,6 @@ fn codex_standalone_install(executable: &Path) -> Option<CodexStandaloneInstall>
     })
 }
 
-#[cfg(not(unix))]
-fn codex_standalone_install(_executable: &Path) -> Option<CodexStandaloneInstall> {
-    None
-}
-
 fn read_codex_manifest(directory: &Path) -> Result<CodexPackageManifest, String> {
     let bytes = std::fs::read(directory.join("codex-package.json"))
         .map_err(|error| format!("could not read Codex package manifest: {error}"))?;
@@ -2821,15 +2815,6 @@ fn activate_codex_release(
         let _ = directory.sync_all();
     }
     Ok(())
-}
-
-#[cfg(not(unix))]
-fn activate_codex_release(
-    _root: &Path,
-    _destination: &Path,
-    _nonce: uuid::Uuid,
-) -> Result<(), String> {
-    Err("automatic Codex standalone updates are not supported on this platform".into())
 }
 
 fn homebrew_token_ok(token: &str) -> bool {
@@ -2984,16 +2969,7 @@ fn claude_package_manager_command(path: &Path) -> Option<String> {
         return Some(package.upgrade_command());
     }
     let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let text = format!("{}\n{}", path.display(), canonical.display())
-        .replace('\\', "/")
-        .to_ascii_lowercase();
-    if text.contains("/winget/") || text.contains("/microsoft/winget/") {
-        Some("winget upgrade Anthropic.ClaudeCode".into())
-    } else if text.contains("/chocolatey/") {
-        // Only administrators can write there, and `claude update` through
-        // its shim would install a second copy somewhere else.
-        Some("choco upgrade claude-code".into())
-    } else if canonical.starts_with("/usr/bin")
+    if canonical.starts_with("/usr/bin")
         || canonical.starts_with("/nix/store")
         || canonical.starts_with("/snap")
     {
@@ -3007,10 +2983,7 @@ fn claude_package_manager_command(path: &Path) -> Option<String> {
 /// under /opt/homebrew/lib/node_modules belongs to npm, not a Claude cask.
 fn claude_cask_channel(path: &Path) -> Option<&'static str> {
     let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let text = canonical
-        .to_string_lossy()
-        .replace('\\', "/")
-        .to_ascii_lowercase();
+    let text = canonical.to_string_lossy().to_ascii_lowercase();
     for owner in ["/caskroom/", "/cellar/"] {
         if text.contains(&format!("{owner}claude-code@latest/")) {
             return Some("latest");
@@ -3308,9 +3281,6 @@ fn version_numbers(version: &str) -> Option<Vec<u64>> {
 /// Muse's official launcher (a small script that downloads and runs the
 /// build for its channel) — the only Muse install that can refresh itself.
 fn is_muse_launcher(path: &Path) -> bool {
-    if cfg!(windows) {
-        return false;
-    }
     let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     std::fs::metadata(&real)
         .is_ok_and(|metadata| metadata.is_file() && metadata.len() <= 128 * 1024)
@@ -5436,16 +5406,5 @@ esac
             UpdatePlan::MuseLauncher(plain.clone()),
             HarnessId::Muse
         ));
-    }
-
-    #[test]
-    fn chocolatey_claude_stays_with_chocolatey() {
-        let path =
-            std::path::Path::new("C:/ProgramData/chocolatey/lib/claude-code/tools/claude.exe");
-        assert_eq!(
-            super::claude_package_manager_command(path).as_deref(),
-            Some("choco upgrade claude-code")
-        );
-        assert!(!super::can_apply_update(HarnessId::ClaudeCode, path));
     }
 }

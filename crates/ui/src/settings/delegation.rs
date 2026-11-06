@@ -20,7 +20,7 @@ use onicode_rpc::methods;
 const NATIVE_SUBAGENTS_HINT: &str = "Off: delegate through side chats, from each chat's next turn.";
 
 /// The Delegation row's line when the device can't answer; an engine that
-/// predates the setting gets commit credit's wording.
+/// predates the setting asks to be updated.
 fn native_subagents_error(error: onicode_rpc::RpcError) -> String {
     match error {
         onicode_rpc::RpcError::UnknownMethod(_) => {
@@ -99,7 +99,7 @@ impl HarnessesPage {
     }
 
     fn toggle_native_subagents(&mut self, harness: HarnessId, cx: &mut Context<Self>) {
-        // One switch at a time, as commit credit does: the server answers
+        // One switch at a time: the server answers
         // each request in its own task, so a second could apply first.
         if self.native_subagents_saving {
             return;

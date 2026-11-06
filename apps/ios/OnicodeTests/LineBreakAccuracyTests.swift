@@ -1,12 +1,13 @@
 import CoreText
 import XCTest
+
 @testable import Onicode
 
 /// Pretext's accuracy methodology with CoreText as ground truth: lay out a
 /// corpus at many widths with Rust (`debug_line_starts`) and with
 /// CTFramesetter using the *same font bytes*, and compare line starts.
 final class LineBreakAccuracyTests: XCTestCase {
-    static let corpus: [String] = {
+    private static let corpus: [String] = {
         var c = [
             "The transcript is laid out analytically: every row's height is known before it is shown, so scrolling never guesses.",
             "Inline code spans get chips, links are tappable, and old ideas are struck through when they no longer apply to the plan.",
@@ -19,17 +20,19 @@ final class LineBreakAccuracyTests: XCTestCase {
             "A sentence with an em—dash, an en–dash, “smart quotes”, and (parentheses) [brackets] {braces} that should break sensibly.",
             "supercalifragilisticexpialidocious_is_a_single_identifier_that_is_longer_than_any_phone_screen_is_wide_by_itself",
         ]
-        for p in layoutFixtureMarkdown().components(separatedBy: "\n\n") where p.count > 40 && !p.hasPrefix("```") && !p.hasPrefix("|") {
+        for p in layoutFixtureMarkdown().components(separatedBy: "\n\n")
+        where p.count > 40 && !p.hasPrefix("```") && !p.hasPrefix("|") {
             c.append(p.replacingOccurrences(of: "\n", with: " "))
         }
         return c
     }()
 
-    func coreTextLineStarts(_ text: String, face: FaceRole, size: Float, width: CGFloat) -> [UInt32] {
+    private func coreTextLineStarts(_ text: String, face: FaceRole, size: Float, width: CGFloat) -> [UInt32] {
         let attr = NSAttributedString(string: text, attributes: [.font: Fonts.ctFont(face, size: size)])
         let setter = CTFramesetterCreateWithAttributedString(attr)
         let path = CGPath(rect: CGRect(x: 0, y: 0, width: width, height: 100_000), transform: nil)
         let frame = CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0), path, nil)
+        // swiftlint:disable:next force_cast - CTFrameGetLines returns an array of CTLine
         let lines = CTFrameGetLines(frame) as! [CTLine]
         return lines.map { UInt32(CTLineGetStringRange($0).location) }
     }
@@ -43,7 +46,8 @@ final class LineBreakAccuracyTests: XCTestCase {
             for size: Float in [14, 16.5, 19] {
                 for width in stride(from: CGFloat(180), through: 430, by: 9) {
                     for text in Self.corpus {
-                        let rust = debugLineStarts(textSystem: TextEngine.shared, face: face, size: size, width: Float(width), text: text)
+                        let rust = debugLineStarts(
+                            textSystem: TextEngine.shared, face: face, size: size, width: Float(width), text: text)
                         let ct = coreTextLineStarts(text, face: face, size: size, width: width)
                         cases += 1
                         if rust == ct {
@@ -51,7 +55,8 @@ final class LineBreakAccuracyTests: XCTestCase {
                         } else {
                             if rust.count != ct.count { lineDiff += 1 }
                             if report.count < 12 {
-                                report.append("\(face) \(size)pt w=\(width): rust \(rust) vs ct \(ct) — \(text.prefix(48))")
+                                report.append(
+                                    "\(face) \(size)pt w=\(width): rust \(rust) vs ct \(ct) — \(text.prefix(48))")
                             }
                         }
                     }
@@ -59,8 +64,10 @@ final class LineBreakAccuracyTests: XCTestCase {
             }
         }
         let rate = Double(exact) / Double(cases)
-        print("LINEBREAK ACCURACY exact=\(exact)/\(cases) (\(String(format: "%.2f", rate * 100))%) lineCountDiffs=\(lineDiff)")
-        report.forEach { print("  MISMATCH \($0)") }
+        print(
+            "LINEBREAK ACCURACY exact=\(exact)/\(cases) (\(String(format: "%.2f", rate * 100))%) lineCountDiffs=\(lineDiff)"
+        )
+        for line in report { print("  MISMATCH \(line)") }
         // Heights (line counts) must agree exactly; line starts nearly always.
         XCTAssertEqual(lineDiff, 0)
         XCTAssertGreaterThanOrEqual(rate, 0.999)

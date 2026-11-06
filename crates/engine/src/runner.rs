@@ -498,7 +498,7 @@ const TOKEN_DOMAIN: &str = "onicode-runner-token";
 const GRANT_DOMAIN: &str = "onicode-vault-grant";
 
 /// This engine's `Device::platform`: `ONICODE_DEVICE_PLATFORM` when set, else
-/// the OS (`macos` / `linux` / `windows`).
+/// the OS (`macos` / `linux`).
 pub fn device_platform() -> String {
     platform_from(std::env::var(PLATFORM_ENV).ok())
 }
@@ -953,8 +953,6 @@ fn write_atomic(path: &Path, bytes: &[u8], mode: Option<u32>) -> Result<(), Engi
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(mode);
         }
-        #[cfg(not(unix))]
-        let _ = mode;
         let mut file = options.open(&temp)?;
         file.write_all(bytes)?;
         file.sync_all()?;

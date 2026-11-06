@@ -33,10 +33,8 @@
 //! The other platforms keep the same rule with their own idea of `current`
 //! ([`Layout`]). A macOS app's new bundle waits beside the installed one and
 //! becomes it in one atomic swap; the engine replaces itself in place, so it is
-//! the same process, in the same session, with the same access. Windows can't
-//! replace a process, so the old one starts the new exe from beside the installed
-//! one and stays on as the watchdog; moving the exe into place is the commit.
-//! Neither needs the app to be open.
+//! the same process, in the same session, with the same access. Neither needs
+//! the app to be open.
 //!
 //! Only the SQLite stores roll back. Files outside them (journals, settings,
 //! attachments, the saved session) aren't copied, which is why the trial doesn't
@@ -76,15 +74,9 @@ const UNPACK_FACTOR: u64 = 4;
 pub(crate) const UNKNOWN_ARTIFACT_BYTES: u64 = 300 * 1024 * 1024;
 const GIB: u64 = 1024 * 1024 * 1024;
 
-// Only Unix runs the watchdog as its own process; on Windows the old version
-// stays on as it.
-#[cfg(unix)]
 const WATCH_ID_ENV: &str = "ONICODE_UPDATE_WATCH_ID";
-#[cfg(unix)]
 const WATCH_PID_ENV: &str = "ONICODE_UPDATE_WATCH_PID";
-#[cfg(unix)]
 const WATCH_DATA_ENV: &str = "ONICODE_UPDATE_WATCH_DATA";
-#[cfg(unix)]
 const WATCH_ARGS_ENV: &str = "ONICODE_UPDATE_WATCH_ARGS";
 
 /// The hidden subcommand that runs [`run_watchdog`].
@@ -133,12 +125,6 @@ pub enum Layout {
     Versioned { app_root: PathBuf },
     /// `bundle` is the installed app; `incoming` is the new one beside it.
     MacBundle { bundle: PathBuf, incoming: PathBuf },
-    /// `directory/onicode.exe` is installed; `incoming` is the new exe, in a folder
-    /// of its own inside `directory`.
-    WindowsFolder {
-        directory: PathBuf,
-        incoming: PathBuf,
-    },
 }
 
 impl Layout {
@@ -147,7 +133,6 @@ impl Layout {
         match self {
             Self::Versioned { app_root } => app_root.clone(),
             Self::MacBundle { bundle, .. } => bundle.parent().unwrap_or(bundle).to_path_buf(),
-            Self::WindowsFolder { directory, .. } => directory.clone(),
         }
     }
 
@@ -156,7 +141,6 @@ impl Layout {
         match self {
             Self::Versioned { app_root } => app_root.join(target).join(name),
             Self::MacBundle { incoming, .. } => incoming.join("Contents/MacOS").join(name),
-            Self::WindowsFolder { incoming, .. } => incoming.clone(),
         }
     }
 
@@ -165,7 +149,6 @@ impl Layout {
         match self {
             Self::Versioned { app_root } => app_root.join("current").join(name),
             Self::MacBundle { bundle, .. } => bundle.join("Contents/MacOS").join(name),
-            Self::WindowsFolder { directory, .. } => directory.join("onicode.exe"),
         }
     }
 
@@ -175,7 +158,6 @@ impl Layout {
         match self {
             Self::Versioned { .. } => None,
             Self::MacBundle { bundle, .. } => Some(bundle),
-            Self::WindowsFolder { directory, .. } => Some(directory),
         }
     }
 
@@ -204,24 +186,6 @@ impl Layout {
                 };
                 Some(Whoami { me, current })
             }
-            Self::WindowsFolder {
-                directory,
-                incoming,
-            } => {
-                #[cfg(windows)]
-                let current = crate::windows::installed_version(directory)
-                    .unwrap_or_else(|| transaction.from.clone());
-                #[cfg(not(windows))]
-                let current = transaction.from.clone();
-                let me = if inside(incoming) {
-                    transaction.target.clone()
-                } else if inside(&directory.join("onicode.exe")) {
-                    current.clone()
-                } else {
-                    return None;
-                };
-                Some(Whoami { me, current })
-            }
         }
     }
 
@@ -234,28 +198,16 @@ impl Layout {
                 sync_dir(app_root).context("saving the new version as current")
             }
             Self::MacBundle { bundle, incoming } => crate::swap_mac_bundles(incoming, bundle),
-            #[cfg(windows)]
-            Self::WindowsFolder {
-                directory,
-                incoming,
-            } => crate::windows::commit_trial(incoming, directory, target),
-            #[cfg(not(windows))]
-            Self::WindowsFolder { .. } => bail!("not supported on this platform"),
         }
     }
 
     /// What's left once the update has settled either way. Nothing in use is
     /// deleted: a process whose image is gone is what AppleSystemPolicy rejects
-    /// (#1037), and Windows refuses anyway.
+    /// (#1037).
     fn tidy(&self) {
         match self {
             Self::Versioned { .. } => {}
             Self::MacBundle { bundle, .. } => crate::prune_retired_mac_bundles(bundle),
-            Self::WindowsFolder { incoming, .. } => {
-                if let Some(folder) = incoming.parent() {
-                    let _ = std::fs::remove_dir_all(folder);
-                }
-            }
         }
     }
 }
@@ -350,11 +302,7 @@ fn crash_point(step: &str) {
 
 /// Make a rename or removal in `dir` survive a power cut.
 fn sync_dir(dir: &Path) -> std::io::Result<()> {
-    #[cfg(unix)]
-    std::fs::File::open(dir)?.sync_all()?;
-    #[cfg(not(unix))]
-    let _ = dir;
-    Ok(())
+    std::fs::File::open(dir)?.sync_all()
 }
 
 /// Replace `path` so that it holds either the old contents or the new, whatever
@@ -369,33 +317,13 @@ fn write_durably(path: &Path, contents: &[u8]) -> std::io::Result<()> {
         file.write_all(contents)?;
         file.sync_all()?;
         drop(file);
-        rename_replacing(&temp, path)?;
+        std::fs::rename(&temp, path)?;
         sync_dir(dir)
     })();
     if written.is_err() {
         let _ = std::fs::remove_file(&temp);
     }
     written
-}
-
-/// On Windows a rename over a file fails ("Access is denied") while anything has
-/// it open without delete sharing: antivirus, an indexer, a backup tool, or a
-/// script reading the record. Those opens are brief, so wait them out.
-fn rename_replacing(from: &Path, to: &Path) -> std::io::Result<()> {
-    let mut attempts = 0;
-    loop {
-        match std::fs::rename(from, to) {
-            Err(err)
-                if cfg!(windows)
-                    && err.kind() == std::io::ErrorKind::PermissionDenied
-                    && attempts < 40 =>
-            {
-                attempts += 1;
-                std::thread::sleep(Duration::from_millis(25));
-            }
-            result => return result,
-        }
-    }
 }
 
 /// The record. An unreadable one can't say what happened, so it's set aside and
@@ -461,42 +389,14 @@ pub fn fail_request(data_dir: &Path, id: &str, reason: String) {
 // ---------------------------------------------------------------------------
 
 fn free_bytes(path: &Path) -> std::io::Result<u64> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::ffi::OsStrExt as _;
-        let path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
-        let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
-        // SAFETY: `path` is NUL-terminated and `stats` is a valid out-pointer.
-        if unsafe { libc::statvfs(path.as_ptr(), &mut stats) } != 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        Ok(stats.f_bavail as u64 * stats.f_frsize as u64)
+    use std::os::unix::ffi::OsStrExt as _;
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
+    let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: `path` is NUL-terminated and `stats` is a valid out-pointer.
+    if unsafe { libc::statvfs(path.as_ptr(), &mut stats) } != 0 {
+        return Err(std::io::Error::last_os_error());
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::ffi::OsStrExt as _;
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let mut available = 0u64;
-        // SAFETY: `wide` is NUL-terminated; the out-pointer is valid and the
-        // others may be null.
-        let ok = unsafe {
-            windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
-                wide.as_ptr(),
-                &mut available,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        };
-        if ok == 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        Ok(available)
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = path;
-        Err(std::io::Error::other("not supported on this platform"))
-    }
+    Ok(stats.f_bavail as u64 * stats.f_frsize as u64)
 }
 
 fn gib(bytes: u64) -> String {
@@ -538,18 +438,10 @@ pub fn ensure_room(data_dir: &Path, app_root: &Path, download: u64) -> Result<()
 }
 
 fn same_filesystem(left: &Path, right: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt as _;
-        match (std::fs::metadata(left), std::fs::metadata(right)) {
-            (Ok(left), Ok(right)) => left.dev() == right.dev(),
-            _ => true,
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (left, right);
-        true
+    use std::os::unix::fs::MetadataExt as _;
+    match (std::fs::metadata(left), std::fs::metadata(right)) {
+        (Ok(left), Ok(right)) => left.dev() == right.dev(),
+        _ => true,
     }
 }
 
@@ -1089,7 +981,7 @@ fn start_trial<G>(
     crash_point("watchdog-started");
     drop(guard);
     tracing::info!(version = %transaction.target, "starting the new version as a trial");
-    let err = hand_over(data_dir, options, &mut transaction, &new_binary);
+    let err = hand_over(options, &transaction, &new_binary);
     // Only reached if the new binary couldn't be started at all.
     let why = format!(
         "Onicode {} couldn't start here, so it stayed on {}.",
@@ -1100,13 +992,7 @@ fn start_trial<G>(
 
 /// Become the new version: the same process, so that a service manager, and
 /// macOS's idea of who this is, see nothing change. Returns only on failure.
-#[cfg(unix)]
-fn hand_over(
-    _data_dir: &Path,
-    options: &BootOptions,
-    transaction: &mut Transaction,
-    binary: &Path,
-) -> std::io::Error {
+fn hand_over(options: &BootOptions, transaction: &Transaction, binary: &Path) -> std::io::Error {
     use std::os::unix::process::CommandExt as _;
     let mut command = std::process::Command::new(binary);
     command.args(&options.engine_args);
@@ -1114,51 +1000,6 @@ fn hand_over(
         command.env(crate::INSTALLED_AT_ENV, installed);
     }
     command.exec()
-}
-
-/// Windows can't replace a process: start the new version, and stay on as its
-/// watchdog until it's settled. Returns only on failure to start it.
-#[cfg(windows)]
-fn hand_over(
-    data_dir: &Path,
-    options: &BootOptions,
-    transaction: &mut Transaction,
-    binary: &Path,
-) -> std::io::Error {
-    let mut command = std::process::Command::new(binary);
-    command.args(&options.engine_args);
-    if let Some(installed) = transaction.layout.installed_at() {
-        command.env(crate::INSTALLED_AT_ENV, installed);
-    }
-    let child = match spawn_detached(&mut command) {
-        Ok(child) => child,
-        Err(err) => return err,
-    };
-    transaction.trial_pid = Some(child.id());
-    if let Err(err) = write(data_dir, transaction) {
-        tracing::error!(error = %format!("{err:#}"), "couldn't record the trial's process");
-    }
-    let args = options
-        .engine_args
-        .iter()
-        .map(|arg| arg.to_string_lossy().into_owned())
-        .collect::<Vec<_>>();
-    let exe_name = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.file_name().map(ToOwned::to_owned))
-        .unwrap_or_default();
-    watch(data_dir, &transaction.id, child.id(), &args, &exe_name);
-    std::process::exit(0)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn hand_over(
-    _data_dir: &Path,
-    _options: &BootOptions,
-    _transaction: &mut Transaction,
-    _binary: &Path,
-) -> std::io::Error {
-    std::io::Error::other("not supported on this platform")
 }
 
 fn roll_back(data_dir: &Path, mut transaction: Transaction) -> anyhow::Result<()> {
@@ -1204,7 +1045,6 @@ fn roll_back(data_dir: &Path, mut transaction: Transaction) -> anyhow::Result<()
 /// Start the watchdog from the old version's executable. It's a sibling rather
 /// than a child: the new version takes over this process and would never collect
 /// it, so it's left to the service manager to reap.
-#[cfg(unix)]
 fn prepare_watchdog(
     data_dir: &Path,
     options: &BootOptions,
@@ -1254,18 +1094,7 @@ fn prepare_watchdog(
     Ok(())
 }
 
-/// On Windows this process stays on as the watchdog (`hand_over`).
-#[cfg(not(unix))]
-fn prepare_watchdog(
-    _data_dir: &Path,
-    _options: &BootOptions,
-    _transaction: &Transaction,
-) -> anyhow::Result<()> {
-    Ok(())
-}
-
 /// The hidden subcommand's entry: keep watching the new version.
-#[cfg(unix)]
 pub fn run_watchdog() -> anyhow::Result<()> {
     extern "C" fn on_term(_: libc::c_int) {
         TERMINATED.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1296,11 +1125,6 @@ pub fn run_watchdog() -> anyhow::Result<()> {
         .to_owned();
     watch(&data_dir, &id, pid, &engine_args, &exe_name);
     Ok(())
-}
-
-#[cfg(not(unix))]
-pub fn run_watchdog() -> anyhow::Result<()> {
-    bail!("not used on this platform")
 }
 
 static TERMINATED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -1368,7 +1192,6 @@ fn watch(data_dir: &Path, id: &str, pid: u32, engine_args: &[String], exe_name: 
     }
 }
 
-#[cfg(unix)]
 fn process_running(pid: u32) -> bool {
     let pid = pid as libc::pid_t;
     // SAFETY: signal 0 only checks that the process exists.
@@ -1409,54 +1232,12 @@ fn process_running(pid: u32) -> bool {
     true
 }
 
-#[cfg(windows)]
-fn process_running(pid: u32) -> bool {
-    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
-    use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    };
-    // SAFETY: the handle is checked before use and closed once.
-    unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if handle.is_null() {
-            return false;
-        }
-        let mut code = 0u32;
-        let read = GetExitCodeProcess(handle, &mut code);
-        CloseHandle(handle);
-        read != 0 && code == STILL_ACTIVE as u32
-    }
-}
-
-#[cfg(not(any(unix, windows)))]
-fn process_running(_pid: u32) -> bool {
-    false
-}
-
 /// Not a polite stop: it's stuck, and a clean exit wouldn't count as a failure
 /// to a service manager that restarts on failure.
-#[cfg(unix)]
 fn kill_process(pid: u32) {
     // SAFETY: plain syscall on a pid we were given.
     unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
 }
-
-#[cfg(windows)]
-fn kill_process(pid: u32) {
-    use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess};
-    // SAFETY: the handle is checked before use and closed once.
-    unsafe {
-        let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
-        if !handle.is_null() {
-            TerminateProcess(handle, 1);
-            CloseHandle(handle);
-        }
-    }
-}
-
-#[cfg(not(any(unix, windows)))]
-fn kill_process(_pid: u32) {}
 
 /// Whether something asked the service manager to act on this unit: a stop or
 /// restart is a queued job, a unit stopping because its process exited isn't.
@@ -1490,37 +1271,9 @@ fn relaunch_installed(layout: &Layout, exe_name: &std::ffi::OsStr, engine_args: 
 }
 
 /// Started to outlive whoever started it.
-#[cfg(unix)]
 fn spawn_detached(command: &mut std::process::Command) -> std::io::Result<std::process::Child> {
     use std::os::unix::process::CommandExt as _;
     command.process_group(0).spawn()
-}
-
-#[cfg(windows)]
-fn spawn_detached(command: &mut std::process::Command) -> std::io::Result<std::process::Child> {
-    use std::os::windows::process::CommandExt as _;
-    use windows_sys::Win32::System::Threading::{
-        CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
-    };
-    command
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    // Out of the app's job too, when the job allows it (as the engine's own start).
-    let detached = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP;
-    command.creation_flags(detached | CREATE_BREAKAWAY_FROM_JOB);
-    match command.spawn() {
-        Ok(child) => Ok(child),
-        Err(_) => {
-            command.creation_flags(detached);
-            command.spawn()
-        }
-    }
-}
-
-#[cfg(not(any(unix, windows)))]
-fn spawn_detached(command: &mut std::process::Command) -> std::io::Result<std::process::Child> {
-    command.spawn()
 }
 
 #[cfg(test)]
@@ -1596,29 +1349,6 @@ mod tests {
         dir
     }
 
-    /// A reader that doesn't share delete access (as antivirus may) only delays
-    /// the record's replacement.
-    #[cfg(windows)]
-    #[test]
-    fn a_brief_reader_does_not_fail_the_record() {
-        use std::os::windows::fs::OpenOptionsExt as _;
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(FILE);
-        std::fs::write(&path, "old").unwrap();
-        let reader = std::fs::OpenOptions::new()
-            .read(true)
-            .share_mode(1) // FILE_SHARE_READ only
-            .open(&path)
-            .unwrap();
-        let release = std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(300));
-            drop(reader);
-        });
-        write_durably(&path, b"new").unwrap();
-        release.join().unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), b"new");
-    }
-
     #[test]
     fn only_the_engines_stores_are_backed_up() {
         let dir = data_dir_with_stores();
@@ -1682,7 +1412,6 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&docs).unwrap(), "prs");
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_store_behind_a_symlink_stays_a_symlink() {
         let dir = data_dir_with_stores();
@@ -1714,7 +1443,6 @@ mod tests {
 
     /// Against the real free space, so the numbers only have to be bigger than
     /// any disk.
-    #[cfg(unix)]
     #[test]
     fn room_counts_the_download_and_the_databases() {
         let dir = data_dir_with_stores();
@@ -1802,7 +1530,6 @@ mod tests {
 
     /// A trial that died under a parent that hasn't noticed still has a pid, and
     /// must not count as running.
-    #[cfg(unix)]
     #[test]
     fn a_zombie_doesnt_count_as_running() {
         let mut child = std::process::Command::new("/bin/sh")

@@ -42,7 +42,6 @@ pub mod chat2_host;
 mod chat_persistence;
 mod cloud_accounts;
 pub mod cloud_client;
-pub mod commit_credit;
 pub mod credentials;
 pub mod deferred;
 pub mod desktop_notify;
@@ -56,7 +55,6 @@ pub mod instance_lock;
 pub mod local_import;
 pub mod managed;
 mod model_catalogs;
-pub mod plugins;
 pub mod profile;
 pub mod project_actions;
 pub mod registry;
@@ -187,8 +185,6 @@ pub struct EngineCore {
     pub viewport_focus: desktop_notify::ViewportFocus,
     /// Local→synced profile import (account-scoped runtimes only).
     pub local_import: Option<local_import::LocalImporter>,
-    /// Plugins under `{data}/plugins/` (the plugins contract).
-    pub plugins: plugins::Plugins,
     workspace_scope: WorkspaceScope,
     /// Auth service (attached by [`Engine::run`]; a lazy dev-mode instance otherwise).
     auth: std::sync::Mutex<Option<Auth>>,
@@ -295,56 +291,7 @@ impl EngineCore {
         )?;
         doc_host.set_workspace(workspace.clone());
         doc_host.set_sessions(sessions.clone());
-        let plugins = plugins::Plugins::new(data_dir, &device_id);
-        plugins.set_workspace(workspace.clone());
-        // A service's `onicode.folders()`: where this device's chats and
-        // projects are (the built-in Git service works in these alone).
-        {
-            let (workspace, device_id) = (workspace.clone(), device_id.clone());
-            plugins.set_folders(move || {
-                let chats = workspace.read_chats().unwrap_or_default();
-                let spaces = workspace.read_spaces().unwrap_or_default();
-                let mut folders: Vec<String> = chats
-                    .into_iter()
-                    .filter(|c| c.device_id == device_id)
-                    .filter_map(|c| c.cwd)
-                    .chain(
-                        spaces
-                            .into_iter()
-                            .filter(|s| s.device_id == device_id)
-                            .map(|s| s.path),
-                    )
-                    .filter(|f| !f.is_empty())
-                    .collect();
-                folders.sort();
-                folders.dedup();
-                folders
-            });
-        }
-        // A plugin service's `onicode.notify`: as `PostNotification` posts.
         let viewport_focus = desktop_notify::ViewportFocus::default();
-        {
-            let (data_dir, focus) = (data_dir.to_path_buf(), viewport_focus.clone());
-            plugins.set_notifier(move |source, title, body, session| {
-                let title: String = title
-                    .lines()
-                    .next()
-                    .unwrap_or_default()
-                    .trim()
-                    .chars()
-                    .take(120)
-                    .collect();
-                desktop_notify::post_for(&data_dir, &focus, source, &title, body, session)
-                    .to_owned()
-            });
-        }
-        if let Some(edge) = &edge {
-            plugins.set_directory(Arc::new(plugins::keys::EdgeDirectory::new(
-                &edge.url,
-                edge.token.clone(),
-            )));
-        }
-        sessions.set_plugins(plugins.clone());
         sessions.set_doc_host(doc_host.clone());
         // A new version on trial may yet be undone, and recovering clears the
         // journals' marks of what to resume, which a rollback doesn't restore.
@@ -446,7 +393,6 @@ impl EngineCore {
             turn_diff.note_turn_start(chat_id, cwd);
         }));
         let spaces_sync = SpacesSync::start(repos.clone(), workspace.clone(), &device_id);
-        plugins.start();
         Ok(Self {
             sessions,
             doc_host,
@@ -466,7 +412,6 @@ impl EngineCore {
             harness_updates,
             device_id,
             local_import,
-            plugins,
             workspace_scope: profile.scope(),
             auth: std::sync::Mutex::new(None),
             links: std::sync::Mutex::new(None),
@@ -484,7 +429,6 @@ impl EngineCore {
 
     /// Attach the auth service (before building the RPC service / relays).
     pub fn set_auth(&self, auth: Auth) {
-        self.plugins.attach_auth(auth.clone());
         *self
             .auth
             .lock()
@@ -514,7 +458,6 @@ impl EngineCore {
     /// [`Self::dial_device`], and the doc host's queued-attachment transfers.
     pub fn set_links(&self, links: Arc<onicode_rpc::LinkCache>) {
         self.doc_host.set_links(links.clone());
-        self.plugins.set_links(links.clone());
         *self
             .links
             .lock()
@@ -611,8 +554,7 @@ impl EngineCore {
         .with_previews(self.previews.clone())
         .with_remote_terminals(self.remote_terminals.clone())
         .with_harness_updates(self.harness_updates.clone())
-        .with_viewport_focus(self.viewport_focus.clone())
-        .with_plugins(self.plugins.clone());
+        .with_viewport_focus(self.viewport_focus.clone());
         if let Some(links) = self.links() {
             rpc = rpc.with_links(links);
         }
@@ -676,7 +618,6 @@ impl EngineCore {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
-        self.plugins.shutdown();
         self.previews.shutdown().await;
         self.harness_updates.shutdown().await;
         // A run interruption transitions its chat to Idle, and Idle normally
@@ -1031,13 +972,6 @@ impl Engine {
             )?,
         };
         core.set_auth(auth.clone());
-        // Agents' commits credit Onicode (always on Cloud, else per the
-        // device's setting).
-        core.registry
-            .set_commit_credit(Arc::new(commit_credit::CommitCredit::open(
-                &config.data_dir,
-                runner::is_cloud_platform(),
-            )));
         // Cloud runner: the credential broker fills agent spawns' env (and
         // backs ListGithubRepos / CloneRepo); the heartbeat feeds idle sleep.
         // Attached before the host relay so relayed RPCs see the broker.
@@ -1155,20 +1089,6 @@ impl Engine {
             link_config.liveness = Some(Arc::new(move |device_id: &str| {
                 workspace_for_liveness.peer_liveness(device_id)
             }));
-            // Prove which device dials (its registered plugin key), so the
-            // peer's edge stamps it and the peer knows who's asking
-            // (`Caller::Peer{device}`); without a key, dials go unstamped.
-            let (proof_dir, proof_device) = (config.data_dir.clone(), core.device_id.clone());
-            link_config.caller_proof =
-                Some(Arc::new(move |target: &str, conn_id: &str, ts: i64| {
-                    let (key, signature) =
-                        plugins::signing::device_link_proof(&proof_dir, target, conn_id, ts)?;
-                    Some(onicode_rpc::CallerProof {
-                        device: proof_device.clone(),
-                        key,
-                        signature,
-                    })
-                }));
             let links = onicode_rpc::LinkCache::new(link_config);
             let links_for_presence = links.clone();
             core.workspace
@@ -1312,18 +1232,10 @@ async fn wait_for_signed_out(state: &mut tokio::sync::watch::Receiver<AuthState>
 /// restart) deliver SIGTERM — without catching it the daemon dies mid-write
 /// and every stop takes the crash-recovery path instead of the graceful drain.
 async fn shutdown_signal() -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        let mut sigterm =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-        tokio::select! {
-            result = tokio::signal::ctrl_c() => result,
-            _ = sigterm.recv() => Ok(()),
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        tokio::signal::ctrl_c().await
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => result,
+        _ = sigterm.recv() => Ok(()),
     }
 }
 
@@ -1546,7 +1458,6 @@ fn select_local_device_name(
         .unwrap_or_else(|| {
             let platform = match platform {
                 "macos" => "macOS",
-                "windows" => "Windows",
                 "linux" => "Linux",
                 _ => "Local",
             };
@@ -1569,51 +1480,7 @@ fn native_friendly_device_name() -> Option<String> {
 
 #[cfg(not(target_os = "macos"))]
 fn native_friendly_device_name() -> Option<String> {
-    #[cfg(target_os = "windows")]
-    return std::env::var("COMPUTERNAME").ok();
-
-    #[cfg(not(target_os = "windows"))]
     None
-}
-
-#[cfg(all(test, windows))]
-mod identity_lock_retry_tests {
-    use super::*;
-
-    /// A concurrent holder of the lock file (share_mode(0)) fails the open
-    /// with ERROR_SHARING_VIOLATION, which Rust reports as
-    /// ErrorKind::Uncategorized, not PermissionDenied. acquire must retry
-    /// through that error until the holder releases; before the fix the
-    /// retry loop never matched it and startup failed outright.
-    #[test]
-    fn acquire_retries_through_sharing_violations() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("device-id.lock");
-
-        // Hold the file exclusively for 50ms, then release. The retry loop
-        // has a 200 x 5ms budget, so the timing is comfortable.
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            let holder = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                .truncate(false)
-                .share_mode(0)
-                .open(&path)
-                .unwrap();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-                drop(holder);
-            });
-        }
-
-        let lock = DeviceIdentityLock::acquire(dir.path());
-        assert!(
-            lock.is_ok(),
-            "acquire did not retry through the sharing violation"
-        );
-    }
 }
 
 #[cfg(test)]
@@ -1656,18 +1523,6 @@ mod device_name_tests {
                 "macos"
             ),
             "MacBook Pro de Jose"
-        );
-    }
-
-    #[test]
-    fn windows_computer_name_is_used_when_present() {
-        assert_eq!(
-            name(
-                &[None, Some("DESKTOP-123"), Some("shell-host")],
-                "17bc0aa2-rest",
-                "windows"
-            ),
-            "DESKTOP-123"
         );
     }
 
@@ -1740,8 +1595,7 @@ fn load_or_create_device_id(data_dir: &Path) -> Result<String, EngineError> {
     }
 
     // Fresh installs use create-if-absent. Legacy empty files need an atomic
-    // same-directory replacement on Unix; the Windows fallback runs under the
-    // identity lock and remains recoverable if interrupted.
+    // same-directory replacement.
     let publish_result = if recovering_empty {
         match std::fs::read_to_string(&path) {
             Ok(id) if !id.trim().is_empty() => {
@@ -1781,75 +1635,28 @@ struct DeviceIdentityLock {
 
 impl DeviceIdentityLock {
     fn acquire(data_dir: &Path) -> Result<Self, EngineError> {
+        use std::os::unix::io::AsRawFd;
+
         let path = data_dir.join("device-id.lock");
         let mut options = std::fs::OpenOptions::new();
         options.read(true).write(true).create(true).truncate(false);
-
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            options.share_mode(0);
-            let mut retries = 200;
-            let file = loop {
-                match options.open(&path) {
-                    Ok(file) => break file,
-                    // share_mode(0) means a concurrent holder fails the open
-                    // with ERROR_SHARING_VIOLATION (raw os error 32), which
-                    // Rust maps to ErrorKind::Uncategorized, not
-                    // PermissionDenied. Retry through both.
-                    Err(err)
-                        if (err.raw_os_error()
-                            == Some(
-                                windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32,
-                            )
-                            || err.kind() == std::io::ErrorKind::PermissionDenied)
-                            && retries > 0 =>
-                    {
-                        retries -= 1;
-                        std::thread::sleep(std::time::Duration::from_millis(5));
-                    }
-                    Err(err) => return Err(err.into()),
-                }
-            };
-            return Ok(Self { _file: file });
-        }
-
-        #[cfg(not(windows))]
         let file = options.open(&path)?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::io::AsRawFd;
-            loop {
-                if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0 {
-                    break;
-                }
-                let err = std::io::Error::last_os_error();
-                if err.raw_os_error() != Some(libc::EINTR) {
-                    return Err(err.into());
-                }
+        loop {
+            if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0 {
+                break;
+            }
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() != Some(libc::EINTR) {
+                return Err(err.into());
             }
         }
 
-        #[cfg(not(windows))]
         Ok(Self { _file: file })
     }
 }
 
 fn replace_empty_device_id(temp_path: &Path, path: &Path) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        std::fs::rename(temp_path, path)
-    }
-    #[cfg(not(unix))]
-    {
-        match std::fs::remove_file(path) {
-            Ok(()) => {}
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(err) => return Err(err),
-        }
-        std::fs::hard_link(temp_path, path)
-    }
+    std::fs::rename(temp_path, path)
 }
 
 #[cfg(test)]

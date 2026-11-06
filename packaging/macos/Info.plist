@@ -42,7 +42,7 @@
         </dict>
     </array>
     <key>LSMinimumSystemVersion</key>
-    <string>12.0</string>
+    <string>27.2</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Onicode uses your microphone for on-device dictation and for voice sessions you start. Voice sessions stream your audio to OpenAI through your ChatGPT-authenticated Codex account.</string>
     <!-- macOS 26 attaches one-time-code AutoFill (a SafariPlatformSupport

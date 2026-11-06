@@ -94,14 +94,6 @@ fn mirror_config(real: &Path, root: &Path) -> std::io::Result<()> {
     })
 }
 
-#[cfg(not(unix))]
-fn mirror_config(_real: &Path, _root: &Path) -> std::io::Result<()> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "Muse accounts kept by Onicode need macOS or Linux",
-    ))
-}
-
 fn muse_error(err: impl std::fmt::Display) -> EngineError {
     EngineError::Other(format!("Muse Code: {err}"))
 }

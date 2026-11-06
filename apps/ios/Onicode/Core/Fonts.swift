@@ -24,9 +24,9 @@ enum Fonts {
         var graphics: [FaceRole: CGFont] = [:]
         for (role, name) in files {
             guard let url = Bundle.main.url(forResource: name, withExtension: "ttf"),
-                  let data = try? Data(contentsOf: url),
-                  let provider = CGDataProvider(data: data as CFData),
-                  let font = CGFont(provider)
+                let data = try? Data(contentsOf: url),
+                let provider = CGDataProvider(data: data as CFData),
+                let font = CGFont(provider)
             else { continue }
             CTFontManagerRegisterGraphicsFont(font, nil)
             faces.append(FaceData(role: role, bytes: data))
@@ -55,7 +55,9 @@ enum Fonts {
         if let graphic = registry.graphics[face] ?? registry.graphics[.sans] {
             font = CTFontCreateWithGraphicsFont(graphic, CGFloat(size), nil, nil)
         } else {
-            font = CTFontCreateUIFontForLanguage(.system, CGFloat(size), nil)!
+            font =
+                CTFontCreateUIFontForLanguage(.system, CGFloat(size), nil)
+                ?? CTFontCreateWithName("Helvetica" as CFString, CGFloat(size), nil)
         }
         cache[key] = font
         return font

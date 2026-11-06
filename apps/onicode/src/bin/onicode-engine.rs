@@ -7,10 +7,8 @@
 //! suppression for agents' sign-in flows). And it is the engine helper of an
 //! interface that doesn't link the engine (the zgx app): every `onicode`
 //! subcommand that runs the engine's code (`headless`, `login`, `status`,
-//! `plugin`, …) is handed here with the same arguments, and parsed by the
+//! …) is handed here with the same arguments, and parsed by the
 //! same command line (`onicode_cli`).
-
-#![cfg_attr(windows, windows_subsystem = "windows")]
 
 use onicode_cli::{Engines, Launch};
 

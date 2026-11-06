@@ -36,9 +36,16 @@ final class VoiceActivityController {
     }
 
     private func sync() {
-        guard let voice, voice.live else { return end() }
-        let state = VoiceActivityAttributes.ContentState(orb: Self.orb(voice), muted: voice.muted, since: voice.activeSince)
-        guard let activity else { return start(host: voice.hostName, state: state) }
+        guard let voice, voice.live else {
+            end()
+            return
+        }
+        let state = VoiceActivityAttributes.ContentState(
+            orb: Self.orb(voice), muted: voice.muted, since: voice.activeSince)
+        guard let activity else {
+            start(host: voice.hostName, state: state)
+            return
+        }
         guard state != sent else {
             pending?.cancel()
             pending = nil
@@ -86,7 +93,9 @@ final class VoiceActivityController {
         self.activity = nil
         let last = sent
         sent = nil
-        Task { await activity.end(last.map { ActivityContent(state: $0, staleDate: nil) }, dismissalPolicy: .immediate) }
+        Task {
+            await activity.end(last.map { ActivityContent(state: $0, staleDate: nil) }, dismissalPolicy: .immediate)
+        }
     }
 
     private static func orb(_ voice: RemoteVoiceController) -> VoiceActivityOrb {

@@ -321,30 +321,18 @@ struct AuthInner {
     /// (deleted/revoked device): bearer consumers see `SignedOut`.
     runner_rejected: std::sync::atomic::AtomicBool,
     /// The step-up ticket of the last interactive sign-in (`stepUp` from
-    /// `/auth/exchange`): proof a person just signed in, which binding a new
-    /// plugin signing key and deleting the account need. Memory only, never
-    /// on disk or over IPC; until it expires (10 min at most).
+    /// `/auth/exchange`): proof a person just signed in, which deleting the
+    /// account needs. Memory only, never on disk or over IPC; until it
+    /// expires (10 min at most).
     step_up: Mutex<Option<(String, Instant)>>,
     /// Sign-ins begun as a step-up for the account signed in now
     /// ([`Auth::start_step_up`]): their exchange keeps the ticket and
     /// nothing else.
     step_up_states: Mutex<std::collections::HashSet<String>>,
-    /// [`Auth::on_fresh_ticket`].
-    fresh_ticket: Mutex<Option<FreshTicketHook>>,
 }
 
 /// The longest a step-up ticket is kept.
 const STEP_UP_TTL: Duration = Duration::from_secs(10 * 60);
-/// How long a sign-in waits on what must happen while its ticket is fresh
-/// ([`Auth::on_fresh_ticket`]) before it's announced anyway.
-const FRESH_TICKET_WAIT: Duration = Duration::from_secs(8);
-
-/// What runs when an interactive sign-in (or step-up) brings a fresh ticket,
-/// given the signed-in user's id: before a sign-in is announced, so before
-/// the app restarts the engine and the in-memory ticket is gone.
-pub type FreshTicketHook = Arc<
-    dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync,
->;
 
 /// Why [`Auth::delete_account`] didn't.
 #[derive(Debug)]
@@ -508,7 +496,6 @@ impl Auth {
                 runner_rejected: std::sync::atomic::AtomicBool::new(false),
                 step_up: Mutex::new(None),
                 step_up_states: Mutex::new(std::collections::HashSet::new()),
-                fresh_ticket: Mutex::new(None),
             }),
         }
     }
@@ -776,27 +763,9 @@ impl Auth {
         self.finish_exchange(state, result, generation).await
     }
 
-    /// What must run while a sign-in's step-up ticket is fresh (registering
-    /// this device's plugin signing key): awaited, briefly, before the
-    /// sign-in is announced, and again on each step-up.
-    pub fn on_fresh_ticket(&self, hook: FreshTicketHook) {
-        *lock(&self.inner.fresh_ticket) = Some(hook);
-    }
-
-    async fn run_fresh_ticket(&self, user_id: String) {
-        let hook = lock(&self.inner.fresh_ticket).clone();
-        if let Some(hook) = hook
-            && tokio::time::timeout(FRESH_TICKET_WAIT, hook(user_id))
-                .await
-                .is_err()
-        {
-            tracing::warn!("auth: what a fresh sign-in runs took too long; signing in anyway");
-        }
-    }
-
     /// The step-up ticket of the last interactive sign-in, while it's
-    /// fresh. Not used up here: the edge uses it up when it binds a new key
-    /// or deletes the account.
+    /// fresh. Not used up here: the edge uses it up when it deletes the
+    /// account.
     pub fn step_up(&self) -> Option<String> {
         let mut slot = lock(&self.inner.step_up);
         match slot.as_ref() {
@@ -889,17 +858,10 @@ impl Auth {
                     "That was another account: sign in as the one using Onicode here".into(),
                 ));
             }
-            let fresh = result.step_up.is_some();
             self.keep_step_up(result.step_up);
-            if fresh {
-                self.run_fresh_ticket(result.user.id).await;
-            }
             return Ok(());
         }
         let (user, org_id) = self.commit_sign_in(result, generation)?;
-        // While the ticket is in this process: the app restarts the engine
-        // as soon as the sign-in is announced.
-        self.run_fresh_ticket(user.id.clone()).await;
         self.announce_sign_in(user, org_id, generation)
     }
 
@@ -1658,27 +1620,6 @@ fn state_for(user: AuthUser, org_id: Option<String>) -> AuthState {
     }
 }
 
-/// The session's bearer, whether or not the sign-in is announced yet
-/// ([`Auth::session_bearer`]).
-struct SessionBearer(Auth);
-
-#[async_trait::async_trait]
-impl onicode_rpc::TokenSource for SessionBearer {
-    async fn token(&self) -> Result<String, TokenError> {
-        self.0.access_token().await
-    }
-}
-
-impl Auth {
-    /// A token source for what runs while a sign-in's ticket is fresh
-    /// ([`Auth::on_fresh_ticket`]): the session's bearer, already there
-    /// though the sign-in isn't announced yet (the plain source says signed
-    /// out until it is).
-    pub fn session_bearer(&self) -> Arc<dyn onicode_rpc::TokenSource> {
-        Arc::new(SessionBearer(self.clone()))
-    }
-}
-
 /// The relay/room token seam: `Auth` IS a [`onicode_rpc::TokenSource`], so the host relay
 /// and link cache always dial with a fresh bearer after refreshes.
 #[async_trait::async_trait]
@@ -1902,10 +1843,6 @@ fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
         // An existing file keeps its old mode through OpenOptions — enforce 0600 anyway.
         file.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
         file.write_all(bytes)
-    }
-    #[cfg(not(unix))]
-    {
-        std::fs::write(path, bytes)
     }
 }
 

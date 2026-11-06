@@ -27,7 +27,7 @@ const WIDTH: f32 = 1200.;
 const HEIGHT: f32 = 760.;
 
 fn pr(number: u32) -> String {
-    format!("https://github.com/zeronsh/onicode/pull/{number}")
+    format!("https://github.com/aislopware/onicode/pull/{number}")
 }
 
 async fn pause(cx: &mut AsyncApp, ms: u64) {

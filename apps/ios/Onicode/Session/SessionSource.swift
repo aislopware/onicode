@@ -4,6 +4,7 @@ import UIKit
 /// into the layout engine and never crosses FFI as rows).
 struct SessionChrome: Equatable {
     enum Banner: Equatable {
+        // swiftlint:disable:next discouraged_none_name - never Optional; SessionViewController uses it
         case none
         case working(since: Date?, word: String)
         case sending
@@ -20,7 +21,7 @@ struct SessionChrome: Equatable {
         let text: String
         let options: [String]
         let multiSelect: Bool
-        var prefill: String? = nil
+        var prefill: String?
         var multiline: Bool = false
     }
 
@@ -46,7 +47,7 @@ struct SessionChrome: Equatable {
     var queue: [QueuedItem] = []
     var error: String?
 
-    static func == (a: SessionChrome, b: SessionChrome) -> Bool {
+    static func == (a: Self, b: Self) -> Bool {
         a.title == b.title && a.subtitle == b.subtitle && a.running == b.running && a.canSteer == b.canSteer
             && a.placeholder == b.placeholder && a.chips == b.chips && a.banner == b.banner
             && a.questions?.requestId == b.questions?.requestId && a.questions?.items == b.questions?.items
@@ -111,12 +112,14 @@ final class FixtureSessionSource: SessionSource {
         chrome.subtitle = subtitle
         chrome.placeholder = "Message Claude"
         chrome.chips = [
-            ComposerChip(id: "model", title: "Opus 4.5", symbol: nil, icon: BrandMarks.image(for: "claude-code", side: 13)),
+            ComposerChip(
+                id: "model", title: "Opus 4.5", symbol: nil, icon: BrandMarks.image(for: "claude-code", side: 13)),
             ComposerChip(id: "effort", title: "High", symbol: "gauge.with.dots.needle.67percent"),
             ComposerChip(id: "branch", title: "ios-rewrite", symbol: nil, icon: BranchIcon.sized()),
         ]
         for i in 0..<3 {
-            entries.append(DebugEntry(id: "u\(i)", user: true, text: TranscriptLabViewController.prompts[i], streaming: false))
+            entries.append(
+                DebugEntry(id: "u\(i)", user: true, text: TranscriptLabViewController.prompts[i], streaming: false))
             entries.append(DebugEntry(id: "a\(i)", user: false, text: fixture, streaming: false))
         }
     }
@@ -140,7 +143,9 @@ final class FixtureSessionSource: SessionSource {
 
     func send(text: String, images: [StagedImage], mode: DeliveryMode) -> Bool {
         if chrome.running, mode == .queue {
-            update { $0.queue.append(.init(id: UUID().uuidString, text: text, thumbnail: images.first?.thumbnail, gate: nil)) }
+            update {
+                $0.queue.append(.init(id: UUID().uuidString, text: text, thumbnail: images.first?.thumbnail, gate: nil))
+            }
             return true
         }
         timer?.invalidate()
@@ -193,7 +198,7 @@ final class FixtureSessionSource: SessionSource {
         }
     }
 
-    func answer(requestId: String, answers: [(questionId: String, labels: [String])]) {
+    func answer(requestId _: String, answers _: [(questionId: String, labels: [String])]) {
         update { $0.questions = nil }
     }
 
@@ -210,33 +215,46 @@ final class FixtureSessionSource: SessionSource {
     }
 
     func retryDelivery() {}
-    func beginEdit(_ id: String) async -> String? { chrome.queue.first { $0.id == id }?.text }
-    func finishEdit(text: String?) async {}
+    func beginEdit(_ id: String) -> String? { chrome.queue.first { $0.id == id }?.text }
+    func finishEdit(text _: String?) {}
     func chipMenu(_ id: String) -> UIMenu? {
         switch id {
         case "model":
-            return UIMenu(title: "Model", children: ["Opus 4.5", "Sonnet 4.5", "Haiku 4.5"].map { m in
-                UIAction(title: m, state: chrome.chips.first { $0.id == "model" }?.title == m ? .on : .off) { [weak self] _ in
-                    self?.update { c in
-                        if let i = c.chips.firstIndex(where: { $0.id == "model" }) { c.chips[i] = ComposerChip(id: "model", title: m, symbol: nil, icon: BrandMarks.image(for: "claude-code", side: 13)) }
+            return UIMenu(
+                title: "Model",
+                children: ["Opus 4.5", "Sonnet 4.5", "Haiku 4.5"].map { m in
+                    UIAction(title: m, state: chrome.chips.first { $0.id == "model" }?.title == m ? .on : .off) {
+                        [weak self] _ in
+                        self?.update { c in
+                            if let i = c.chips.firstIndex(where: { $0.id == "model" }) {
+                                c.chips[i] = ComposerChip(
+                                    id: "model", title: m, symbol: nil,
+                                    icon: BrandMarks.image(for: "claude-code", side: 13))
+                            }
+                        }
                     }
-                }
-            })
+                })
         case "effort":
-            return UIMenu(title: "Reasoning effort", children: ["Low", "Medium", "High", "Max"].map { e in
-                UIAction(title: e, state: chrome.chips.first { $0.id == "effort" }?.title == e ? .on : .off) { [weak self] _ in
-                    self?.update { c in
-                        if let i = c.chips.firstIndex(where: { $0.id == "effort" }) { c.chips[i] = ComposerChip(id: "effort", title: e, symbol: "gauge.with.dots.needle.67percent") }
+            return UIMenu(
+                title: "Reasoning effort",
+                children: ["Low", "Medium", "High", "Max"].map { e in
+                    UIAction(title: e, state: chrome.chips.first { $0.id == "effort" }?.title == e ? .on : .off) {
+                        [weak self] _ in
+                        self?.update { c in
+                            if let i = c.chips.firstIndex(where: { $0.id == "effort" }) {
+                                c.chips[i] = ComposerChip(
+                                    id: "effort", title: e, symbol: "gauge.with.dots.needle.67percent")
+                            }
+                        }
                     }
-                }
-            })
+                })
         default:
             return nil
         }
     }
-    func loadImage(_ reference: String, into view: UIImageView) {}
-    func image(_ reference: String) async -> UIImage? { nil }
-    func searchFiles(_ query: String) async -> [FileMatch] { [] }
+    func loadImage(_: String, into _: UIImageView) {}
+    func image(_: String) -> UIImage? { nil }
+    func searchFiles(_: String) -> [FileMatch] { [] }
 }
 
 extension SessionSource {

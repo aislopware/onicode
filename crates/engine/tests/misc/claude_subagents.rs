@@ -38,7 +38,6 @@ fn request(dir: &Path, scenario: &str) -> RunRequest {
             dir.join("claude").display().to_string(),
         )]
         .into(),
-        extra_mcp: Vec::new(),
     }
 }
 

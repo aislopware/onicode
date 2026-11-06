@@ -12,7 +12,6 @@ use crate::process::{Child as ProcessChild, Command};
 /// `CLAUDE_CODE_GIT_BASH_PATH`, `ANTHROPIC_*`) is kept. Every Claude Onicode
 /// starts, directly or through an adapter, reports Onicode as its entrypoint.
 pub(crate) fn configure(command: &mut Command) {
-    #[cfg(unix)]
     command.process_group(0);
     for key in INHERITED_SESSION_MARKERS {
         command.env_remove(key);
@@ -36,15 +35,18 @@ const INHERITED_SESSION_MARKERS: [&str; 11] = [
 
 pub(crate) struct Child {
     inner: ProcessChild,
-    #[cfg(unix)]
     group: Option<i32>,
 }
 
 impl Child {
+    /// Takes ownership of a child spawned by [`configure`]d command: its
+    /// group is registered with the engine's reaper until it is ended, so
+    /// it ends with the engine even when the engine crashes.
     pub(crate) fn new(inner: ProcessChild) -> Self {
+        let pid = inner.id().expect("newly spawned child") as i32;
+        crate::process::reaper::watch(pid);
         Self {
-            #[cfg(unix)]
-            group: Some(-(inner.id().expect("newly spawned child") as i32)),
+            group: Some(-pid),
             inner,
         }
     }
@@ -58,13 +60,12 @@ impl Child {
     /// orphans can no longer be traced from it.
     pub(crate) async fn shutdown_with(
         &mut self,
-        #[cfg_attr(not(unix), allow(unused_mut))] mut earlier: Vec<crate::process::Tracked>,
+        mut earlier: Vec<crate::process::Tracked>,
         grace: std::time::Duration,
     ) {
         // Everything the agent started, taken while it is still attached:
         // a command the agent ran in its own session (Devin does) is not in
         // the agent's process group and would outlive the runtime.
-        #[cfg(unix)]
         let tree = {
             if let (Some(_), Some(pid)) = (self.group, self.inner.id()) {
                 for found in crate::process::descendants(pid).await {
@@ -75,9 +76,6 @@ impl Child {
             }
             earlier
         };
-        #[cfg(not(unix))]
-        let _ = earlier;
-        #[cfg(unix)]
         if let Some(group) = self.group.take() {
             crate::send_signal(&group, crate::Signal::Term);
             // Pi uses detached bash groups and cleans them in its TERM handler.
@@ -95,23 +93,22 @@ impl Child {
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
+            crate::process::reaper::release(-group);
         }
         crate::shutdown_child(&mut self.inner, grace).await;
-        #[cfg(unix)]
         crate::process::terminate_tree(&tree, grace).await;
     }
 
     pub(crate) fn request_group_shutdown(&self) {
-        #[cfg(unix)]
         if let Some(group) = self.group {
             crate::send_signal(&group, crate::Signal::Term);
         }
     }
 
     pub(crate) fn terminate_group(&mut self) {
-        #[cfg(unix)]
         if let Some(group) = self.group.take() {
             crate::send_signal(&group, crate::Signal::Kill);
+            crate::process::reaper::release(-group);
         }
     }
 }
@@ -137,7 +134,7 @@ impl Drop for Child {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

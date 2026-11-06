@@ -4,7 +4,7 @@ storage and does not start an engine or connect to an account, so it shows no
 Files or In Files results.
 
 Run `cargo run -p zeron-ui --example command-palette-fixture` on a desktop, then
-press Cmd+K (Ctrl+K on Linux/Windows). Set `ZERON_PALETTE_LIGHT=1` for light mode.
+press Cmd+K (Ctrl+K on Linux). Set `ZERON_PALETTE_LIGHT=1` for light mode.
 
 ## Tabs and sections
 

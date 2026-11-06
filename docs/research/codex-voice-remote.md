@@ -129,7 +129,7 @@ zlib. The package's `NOTICE.md` identifies the upstream Codex
 Zeron does not redistribute this runtime: the desktop client of a remote call
 runs the helper of its own standalone Codex installation, as local voice does.
 Redistributing it would make Zeron responsible for the LGPL source offer, the
-Apache NOTICE, the Windows Visual C++ runtime terms and security updates of the
+Apache NOTICE and security updates of the
 media stack. `scripts/package-voice-runtime.py` remains a development tool that
 projects a pinned package for `ZERON_VOICE_MEDIA_DIR`. The helper only
 initializes from a `codex-resources/voice` directory: anywhere else it exits

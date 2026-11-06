@@ -128,7 +128,6 @@ fn run_payload(message_id: &str, repo_path: &str, space_id: Option<&str>) -> Ses
                 space_id: space_id.map(str::to_string),
             }),
             env: Default::default(),
-            extra_mcp: Vec::new(),
         }),
         message_id: message_id.into(),
     }
@@ -184,11 +183,6 @@ async fn check_worktree_setup_and_reuse(use_project_symlink: bool, test_setup: b
         assert_eq!(project_dir.canonicalize().unwrap(), repo_dir);
         project_dir
     } else {
-        repo_dir.clone()
-    };
-    #[cfg(not(unix))]
-    let project_dir = {
-        assert!(!use_project_symlink);
         repo_dir.clone()
     };
 
@@ -336,14 +330,8 @@ async fn check_worktree_setup_and_reuse(use_project_symlink: bool, test_setup: b
         )
         .await
         .expect("change destination while the old chat exists");
-    // Exercise identity across different spellings, including Windows verbatim
-    // versus Git-style paths. Avoid lowercasing names on case-sensitive volumes.
-    #[cfg(windows)]
-    let retry_path = repo_path
-        .strip_prefix(r"\\?\")
-        .unwrap_or(&repo_path)
-        .replace('\\', "/");
-    #[cfg(not(windows))]
+    // Exercise identity across different spellings. Avoid lowercasing names on
+    // case-sensitive volumes.
     let retry_path = format!("{repo_path}/.");
     let second_command = core
         .doc_host
@@ -446,163 +434,3 @@ async fn check_worktree_setup_and_reuse(use_project_symlink: bool, test_setup: b
     core.shutdown().await;
 }
 
-/// Long file paths are supported inside a checkout whose working directory
-/// fits Win32's process-start limit, regardless of global Git configuration.
-#[cfg(windows)]
-#[tokio::test]
-async fn worktree_location_supports_long_windows_files() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().canonicalize().unwrap();
-    let repo = root.join("repo");
-    std::fs::create_dir(&repo).unwrap();
-    git(&repo, &["init", "-b", "main"]);
-    git(&repo, &["config", "user.email", "t@example.com"]);
-    git(&repo, &["config", "user.name", "Test"]);
-    git(&repo, &["config", "core.longpaths", "true"]);
-    let relative = std::iter::repeat_n("nested folder 日本語", 18)
-        .collect::<PathBuf>()
-        .join("file.txt");
-    std::fs::create_dir_all(repo.join(&relative).parent().unwrap()).unwrap();
-    std::fs::write(repo.join(&relative), "long file").unwrap();
-    std::fs::write(repo.join("README.md"), "hello").unwrap();
-    git(&repo, &["add", "."]);
-    git(&repo, &["commit", "-m", "init"]);
-    std::fs::write(
-        repo.join(".git/hooks/post-checkout"),
-        "#!/bin/sh\ntest -f README.md || exit 42\nprintf '%s\\n' \"$1\" \"$2\" \"$3\" >> hook-arguments\n",
-    )
-    .unwrap();
-    git(&repo, &["config", "core.longpaths", "false"]);
-    // Exercise a launchable checkout above Git's separate GIT_DIR limit.
-    let destination = root.join("a".repeat(210 - root.to_string_lossy().encode_utf16().count()));
-    let repos = onicode_engine::Repos::with_worktrees_root(
-        &root.join("settings"),
-        "test-device",
-        root.join("default"),
-    );
-    repos
-        .set_worktree_settings(onicode_proto::WorktreeSettings {
-            use_custom_directory: true,
-            custom_directory: Some(destination.to_string_lossy().into_owned()),
-        })
-        .await
-        .unwrap();
-    let worktree = repos.create_worktree(&repo, "main").await.unwrap();
-    let long_file = PathBuf::from(&worktree.path).join(&relative);
-    assert!(long_file.to_string_lossy().encode_utf16().count() > 300);
-    assert_eq!(std::fs::read_to_string(long_file).unwrap(), "long file");
-    let hook_arguments =
-        std::fs::read_to_string(PathBuf::from(&worktree.path).join("hook-arguments")).unwrap();
-    let head = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(&repo)
-        .output()
-        .unwrap();
-    assert!(head.status.success());
-    let head = String::from_utf8(head.stdout).unwrap().trim().to_owned();
-    assert_eq!(
-        hook_arguments.lines().collect::<Vec<_>>(),
-        ["0".repeat(head.len()), head, "1".into()]
-    );
-    assert!(!repo.join("hook-arguments").exists());
-    assert_eq!(
-        std::fs::read_to_string(PathBuf::from(&worktree.path).join("README.md")).unwrap(),
-        "hello"
-    );
-    assert_eq!(
-        repos
-            .current_branch(std::path::Path::new(&worktree.path))
-            .await
-            .unwrap(),
-        worktree.branch
-    );
-    assert!(repos.refs(&repo).await.unwrap().iter().any(|entry| {
-        entry
-            .worktree_path
-            .as_ref()
-            .is_some_and(|path| same_file::is_same_file(path, &worktree.path).unwrap_or(false))
-    }));
-    let config = Command::new("git")
-        .args(["config", "--local", "core.longpaths"])
-        .current_dir(&repo)
-        .output()
-        .unwrap();
-    assert!(config.status.success());
-    assert_eq!(String::from_utf8_lossy(&config.stdout).trim(), "false");
-}
-
-#[cfg(windows)]
-#[tokio::test]
-async fn worktree_location_rejects_unlaunchable_windows_destinations() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().canonicalize().unwrap();
-    let default_root = root.join("default");
-    let repos = onicode_engine::Repos::with_worktrees_root(
-        &root.join("settings"),
-        "test",
-        default_root.clone(),
-    );
-    let mut destination = root.join("other disk");
-    while destination.to_string_lossy().encode_utf16().count() < 300 {
-        destination.push("long-folder-with-spaces 日本語");
-    }
-    let previous = repos.worktree_settings();
-    let error = repos
-        .set_worktree_settings(onicode_proto::WorktreeSettings {
-            use_custom_directory: true,
-            custom_directory: Some(destination.to_string_lossy().into_owned()),
-        })
-        .await
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("too long to start tools on Windows"),
-        "{error}"
-    );
-    assert!(!destination.exists(), "reject before creating the folder");
-    assert_eq!(repos.worktree_settings(), previous);
-
-    // A saved root can fit while root/repository/generated-name exceeds the
-    // limit. Validate the final checkout before creating any directory/branch.
-    let repo = root.join("repo");
-    std::fs::create_dir(&repo).unwrap();
-    git(&repo, &["init", "-b", "main"]);
-    git(
-        &repo,
-        &[
-            "-c",
-            "user.name=Test",
-            "-c",
-            "user.email=test@example.com",
-            "commit",
-            "--allow-empty",
-            "-m",
-            "init",
-        ],
-    );
-    let near_limit = root.join("a".repeat(250 - root.to_string_lossy().encode_utf16().count()));
-    repos
-        .set_worktree_settings(onicode_proto::WorktreeSettings {
-            use_custom_directory: true,
-            custom_directory: Some(near_limit.to_string_lossy().into_owned()),
-        })
-        .await
-        .unwrap();
-    let error = repos.create_worktree(&repo, "main").await.unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("too long to start tools on Windows"),
-        "{error}"
-    );
-    assert_eq!(std::fs::read_dir(&near_limit).unwrap().count(), 0);
-    assert!(
-        repos
-            .branches(&repo)
-            .await
-            .unwrap()
-            .iter()
-            .all(|branch| !branch.starts_with("onicode/"))
-    );
-}

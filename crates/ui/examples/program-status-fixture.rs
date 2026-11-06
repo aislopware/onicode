@@ -1,11 +1,5 @@
 //! Production Shell screenshots driven by real OSC reports in isolated PTYs.
 //! All profiles, reports, and PNGs live outside the repository. No agent runs.
-#[cfg(not(unix))]
-fn main() -> anyhow::Result<()> {
-    anyhow::bail!("This capture fixture requires Unix PTYs")
-}
-
-#[cfg(unix)]
 fn main() -> anyhow::Result<()> {
     use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
     use onicode_proto::{ChatIndicator, Session};

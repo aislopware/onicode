@@ -706,10 +706,6 @@ impl Shell {
             .min_w_0()
             .overflow_x_scroll()
             .track_scroll(&self.pull_request_pane.tab_scroll)
-            // Windows caption hit-testing includes the scroll-only hitboxes
-            // behind each chip. Stop at the scroller so the titlebar cannot
-            // claim tab clicks, while wheel events still reach this scroller.
-            .when(cfg!(target_os = "windows"), |strip| strip.occlude())
             // Drop math runs in content coordinates: viewport-relative x
             // plus the scrolled-off width.
             .on_drag_move::<PullRequestTabDrag>(cx.listener(

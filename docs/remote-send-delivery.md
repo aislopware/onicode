@@ -7,8 +7,7 @@ Investigation base: upstream `9e1a1115` (2026-10-03).
 The report describes a mobile send that looks active immediately, a new chat
 appearing on the desktop before execution starts, a delay of roughly 5–20+
 seconds, and occasional failures when the iOS app is closed before the first
-output. It was observed mainly with Codex, also with Cursor and Devin; Windows
-was suspected as the host platform.
+output. It was observed mainly with Codex, also with Cursor and Devin.
 
 The inspected code contains a delivery failure mechanism matching these
 symptoms. This is not proof that every reported delay has this cause: no logs
@@ -55,9 +54,8 @@ boot, model discovery, installation, or network latency.
 
 These paths are outside provider-specific harnesses and host-platform branches.
 The failure mechanism can affect iOS/iPadOS and other frontends using
-`zeron-client`, with Linux, macOS, or Windows execution hosts, and desktop-to-
-desktop remote sends using the engine. The tests vary host platform metadata
-and RunRequest harness selection; they are not native Windows/macOS/iOS runs.
+`zeron-client`, with Linux or macOS execution hosts, and desktop-to-desktop remote sends using the engine. The tests vary host platform metadata
+and RunRequest harness selection; they are not native macOS/iOS runs.
 
 ## Fix and delivery boundary
 
@@ -142,7 +140,7 @@ This does not treat a pending first Run as permission to start duplicate turns.
   relaunch, with no viewport open or preload.
 - Immediate exit after a new chat's first send must preserve the registry row,
   resume publication and host discovery, and keep exactly one original command.
-  The test covers Windows/Codex, macOS/Cursor, and Linux/Claude host metadata.
+  The test covers macOS/Cursor and Linux/Claude host metadata.
 - A successful wake to an empty room must retain the receipt until a final wake
   after row publication.
 - Desktop wake failure survives row ACK and a reopened DocsStore/WorkspaceHost.
@@ -180,5 +178,5 @@ All 166 executed tests passed on Linux:
 
 The new server tests establish stored-byte and durable host-wake delivery, not
 native provider execution. Native iOS background scheduling and visual rendering
-require Xcode/device validation. Native Windows and macOS provider launches were not exercised on the
+require Xcode/device validation. Native macOS provider launches were not exercised on the
 Linux validation host.

@@ -53,8 +53,7 @@ installed.
 
 The host's home is never given to fff. After a scan, fff opens every file up
 to 10 MB to tell text from binary, so indexing home downloaded every
-cloud-only file under it (OneDrive on Windows, iCloud Drive and File Provider
-folders on macOS; reported against 0.2.111). Home, which chats from before
+cloud-only file under it (iCloud Drive and File Provider folders on macOS; reported against 0.2.111). Home, which chats from before
 scratch folders and the new-project folder search still use, gets a
 names-only walk instead (`crates/engine/src/home_index.rs`):
 
@@ -62,8 +61,7 @@ names-only walk instead (`crates/engine/src/home_index.rs`):
   dependency folders (`node_modules`, `venv`, …), cloud folders directly
   under home (`OneDrive*`, `iCloudDrive`, `Dropbox`, `Google Drive`, `Box`, …),
   `Library`, `AppData` and `Applications`, and any folder a cloud client
-  still has to fetch (Windows recall/offline attributes, macOS
-  `SF_DATALESS`).
+  still has to fetch (macOS `SF_DATALESS`).
 - At most 250,000 paths, ranked by case-insensitive substring: exact name,
   name prefix, name, then path; shallower paths first.
 - No watcher: an index older than 60 s is rewalked in the background while
@@ -154,7 +152,7 @@ build CPU from ~2.0 s to ~0.9 s.
 
 ## Cost
 
-- Dependencies: 53 new lockfile entries (most are Windows target shims),
+- Dependencies: 53 new lockfile entries,
   including C builds of `libgit2-sys`, `libz-sys` and `lmdb-master-sys` (a C
   compiler is required on every platform) and `notify 9.0.0-rc` alongside our
   `notify 7`. `nucleo-matcher` is gone.

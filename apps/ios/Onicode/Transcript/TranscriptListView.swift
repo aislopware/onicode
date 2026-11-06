@@ -279,21 +279,26 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
         panGestureRecognizer.addTarget(self, action: #selector(panned(_:)))
         delegate = self
         // Display models are a pure cache (rebuilt from the frame on demand).
-        memoryObserver = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
+        memoryObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
+        ) { [weak self] _ in
             self?.cache.removeAll()
             self?.cacheOrder.removeAll()
-            self?.pool.forEach { $0.removeFromSuperview() }
+            for view in self?.pool ?? [] { view.removeFromSuperview() }
             self?.pool.removeAll()
         }
         // Rebuilt rows get new versions, so stale models just stop matching.
         MathSettings.apply(to: engine)
-        mathObserver = NotificationCenter.default.addObserver(forName: MathSettings.didChange, object: nil, queue: .main) { [weak self] _ in
+        mathObserver = NotificationCenter.default.addObserver(
+            forName: MathSettings.didChange, object: nil, queue: .main
+        ) { [weak self] _ in
             guard let self else { return }
             MathSettings.apply(to: self.engine)
         }
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     // MARK: Viewport
 
@@ -366,7 +371,7 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
     }
 
     /// Status-bar tap: the user is going to the top, not the tail.
-    func scrollViewShouldScrollToTop(_ scrollView: UIScrollView) -> Bool {
+    func scrollViewShouldScrollToTop(_: UIScrollView) -> Bool {
         setFollowing(false)
         return true
     }
@@ -401,7 +406,7 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
         let t0 = CACurrentMediaTime()
         defer {
             Signposts.transcript.endInterval("apply-frame", state)
-            TranscriptPerf.maxApplyMs = max(TranscriptPerf.maxApplyMs, (CACurrentMediaTime() - t0) * 1000)
+            TranscriptPerf.maxApplyMs = max(TranscriptPerf.maxApplyMs, (CACurrentMediaTime() - t0) * 1_000)
         }
         if frame.styleCount() != fonts.count { fonts.update(frame.styles()) }
         let first = current == nil || current?.rowCount() == 0
@@ -470,7 +475,7 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
         let t0 = CACurrentMediaTime()
         defer {
             Signposts.transcript.endInterval("layout-rows", state)
-            TranscriptPerf.maxLayoutMs = max(TranscriptPerf.maxLayoutMs, (CACurrentMediaTime() - t0) * 1000)
+            TranscriptPerf.maxLayoutMs = max(TranscriptPerf.maxLayoutMs, (CACurrentMediaTime() - t0) * 1_000)
         }
         let y0 = contentOffset.y - overscan
         let y1 = contentOffset.y + bounds.height + overscan
@@ -483,15 +488,23 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
             if let v = visible[p.key] {
                 view = v
             } else {
-                view = pool.popLast() ?? { TranscriptPerf.viewsCreated += 1; return RowView() }()
+                view =
+                    pool.popLast()
+                    ?? {
+                        TranscriptPerf.viewsCreated += 1
+                        return RowView()
+                    }()
                 view.delegate = self
                 visible[p.key] = view
                 if view.superview !== self { addSubview(view) }
                 view.isHidden = false
             }
-            let stale = view.model == nil || view.version != p.version || view.model?.display.width != width || view.key != p.key
+            let stale =
+                view.model == nil || view.version != p.version || view.model?.display.width != width
+                || view.key != p.key
             if stale, view.key == p.key, view.model?.display.width == width,
-               cache[ModelKey(key: p.key, version: p.version, width: width)] == nil {
+                cache[ModelKey(key: p.key, version: p.version, width: width)] == nil
+            {
                 // Same row, new content (a streaming tail): keep painting the
                 // current model and build the new one off the main thread.
                 upgradeAsync(p, frame: frame)
@@ -501,7 +514,9 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
                 if !knownKeys.contains(p.key) {
                     knownKeys.insert(p.key)
                     view.alpha = 0
-                    UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) { view.alpha = 1 }
+                    UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
+                        view.alpha = 1
+                    }
                 }
             }
             let rect = CGRect(x: 0, y: CGFloat(p.y), width: layoutWidth, height: CGFloat(p.height))
@@ -540,8 +555,9 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
         TranscriptPerf.syncBuilds += 1
         defer {
             Signposts.transcript.endInterval("build-model-sync", state)
-            TranscriptPerf.maxSyncBuildMs = max(TranscriptPerf.maxSyncBuildMs, (CACurrentMediaTime() - t0) * 1000)
+            TranscriptPerf.maxSyncBuildMs = max(TranscriptPerf.maxSyncBuildMs, (CACurrentMediaTime() - t0) * 1_000)
         }
+        // swiftlint:disable:next force_unwrapping - the placement came from this frame
         let display = frame.display(index: p.index)!
         let m = RowModel(display: display, fonts: fonts)
         store(m, for: k)
@@ -572,7 +588,8 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
                 self.store(model, for: k)
                 // Apply only if this is still the newest version on screen.
                 if let view = self.visible[p.key], let current = self.current,
-                   let i = current.indexOf(key: p.key), current.placement(index: i)?.version == p.version {
+                    let i = current.indexOf(key: p.key), current.placement(index: i)?.version == p.version
+                {
                     view.configure(model, kind: p.kind)
                     view.uploadProgress = self.uploadProgress
                 }
@@ -585,7 +602,8 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
     private func prefetch(frame: LayoutFrame, around band: ClosedRange<CGFloat>) {
         let ahead = bounds.height * 1.5
         let down = panGestureRecognizer.velocity(in: self).y <= 0
-        let ranges = down
+        let ranges =
+            down
             ? [(band.upperBound, band.upperBound + ahead), (band.lowerBound - ahead / 2, band.lowerBound)]
             : [(band.lowerBound - ahead, band.lowerBound), (band.upperBound, band.upperBound + ahead / 2)]
         var todo: [RowPlacement] = []
@@ -603,7 +621,9 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
         prefetchQueue.async { [weak self] in
             let built = todo.compactMap { p -> (ModelKey, RowModel)? in
                 guard let d = frame.display(index: p.index) else { return nil }
-                return (ModelKey(key: p.key, version: p.version, width: frame.width()), RowModel(display: d, fonts: fonts))
+                return (
+                    ModelKey(key: p.key, version: p.version, width: frame.width()), RowModel(display: d, fonts: fonts)
+                )
             }
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -635,12 +655,16 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
         let now = link.targetTimestamp
         let dt = min(1 / 30, max(0, now - lastSpringTick))
         lastSpringTick = now
-        guard following, !isTracking else { return stopSpring() }
+        guard following, !isTracking else {
+            stopSpring()
+            return
+        }
         let target = maxOffsetY
         let delta = target - contentOffset.y
         if abs(delta) < 0.5 {
             contentOffset.y = target
-            return stopSpring()
+            stopSpring()
+            return
         }
         if runwayHeight != nil {
             // Runway glide: the desktop's frame-rate-independent ease-out.
@@ -657,7 +681,7 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
         let rows = visible.values.filter { $0.kind == .user && !$0.isHidden }.sorted { $0.frame.minY < $1.frame.minY }
         for row in rows {
             guard let d = row.model?.display,
-                  let box = d.boxes.first(where: { $0.color == .userBubble && $0.scroller == nil })
+                let box = d.boxes.first(where: { $0.color == .userBubble && $0.scroller == nil })
             else { continue }
             let r = CGRect(x: CGFloat(box.x), y: CGFloat(box.y), width: CGFloat(box.w), height: CGFloat(box.h))
             return row.convert(r, to: target)
@@ -670,12 +694,12 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
     @objc private func tapped(_ tap: UITapGestureRecognizer) {
         let point = tap.location(in: self)
         guard let row = visible.values.first(where: { !$0.isHidden && $0.frame.contains(point) }),
-              let url = row.link(at: tap.location(in: row))
+            let url = row.link(at: tap.location(in: row))
         else { return }
         rowView(row, open: url)
     }
 
-    func rowView(_ view: RowView, toggle key: UInt64) {
+    func rowView(_: RowView, toggle key: UInt64) {
         UISelectionFeedbackGenerator().selectionChanged()
         pendingFold = key
         engine.toggle(key: key)
@@ -686,11 +710,11 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
         engine.toggleDetail(row: view.key, detail: detail, open: open)
     }
 
-    func rowView(_ view: RowView, perform action: String) {
+    func rowView(_: RowView, perform action: String) {
         onAction?(action)
     }
 
-    func rowView(_ view: RowView, openSubagent docId: String, title: String, running: Bool) {
+    func rowView(_: RowView, openSubagent docId: String, title: String, running: Bool) {
         onSubagent?(docId, title, running)
     }
 
@@ -698,8 +722,9 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
         guard let vc = findViewController() else { return }
         // An image chip opens its upload full size, as its thumbnail did.
         if url.scheme == "onicode-preview" {
-            guard let reference = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "ref" })?.value
+            guard
+                let reference = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first(where: { $0.name == "ref" })?.value
             else { return }
             Task { @MainActor [weak self, weak view, weak vc] in
                 guard let image = await self?.imageFetcher?(reference), let view, let vc else { return }
@@ -709,8 +734,9 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
         }
         // A sender caption opens the chat that sent the message.
         if url.scheme == "onicode-chat" {
-            guard let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "id" })?.value
+            guard
+                let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first(where: { $0.name == "id" })?.value
             else { return }
             onOpenChat?(id)
             return
@@ -724,11 +750,11 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
         }
     }
 
-    func rowView(_ view: RowView, imageFor reference: String, into imageView: UIImageView) {
+    func rowView(_: RowView, imageFor reference: String, into imageView: UIImageView) {
         imageLoader?(reference, imageView)
     }
 
-    func rowView(_ view: RowView, visualFor id: String) -> UIView? {
+    func rowView(_: RowView, visualFor id: String) -> UIView? {
         if let live = visuals[id] { return live }
         guard let session = engine.visual(id: id) else { return nil }
         let live = VisualView(session: session, scale: traitCollection.displayScale)
@@ -746,34 +772,43 @@ final class TranscriptListView: UIScrollView, RowViewDelegate, UIScrollViewDeleg
 }
 
 extension TranscriptListView: UIContextMenuInteractionDelegate {
-    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+    func contextMenuInteraction(_: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint)
+        -> UIContextMenuConfiguration?
+    {
         guard let row = row(at: location), let model = row.model, let frame = current,
-              let index = frame.indexOf(key: model.display.key)
+            let index = frame.indexOf(key: model.display.key)
         else { return nil }
         let block = model.display.copyText
         return UIContextMenuConfiguration(identifier: NSNumber(value: model.display.key), previewProvider: nil) { _ in
             var actions: [UIMenuElement] = []
             if !block.isEmpty {
-                actions.append(UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { _ in
-                    UIPasteboard.general.string = block
-                })
+                actions.append(
+                    UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { _ in
+                        UIPasteboard.general.string = block
+                    })
             }
             if let message = frame.messageText(index: index), !message.isEmpty, message != block {
-                actions.append(UIAction(title: "Copy Message", image: UIImage(systemName: "doc.on.clipboard")) { _ in
-                    UIPasteboard.general.string = message
-                })
+                actions.append(
+                    UIAction(title: "Copy Message", image: UIImage(systemName: "doc.on.clipboard")) { _ in
+                        UIPasteboard.general.string = message
+                    })
             }
             let selectable = frame.messageText(index: index) ?? block
             if !selectable.isEmpty {
-                actions.append(UIAction(title: "Select Text", image: UIImage(systemName: "character.cursor.ibeam")) { [weak self] _ in
-                    self?.presentSelection(selectable)
-                })
+                actions.append(
+                    UIAction(title: "Select Text", image: UIImage(systemName: "character.cursor.ibeam")) {
+                        [weak self] _ in
+                        self?.presentSelection(selectable)
+                    })
             }
             return actions.isEmpty ? nil : UIMenu(children: actions)
         }
     }
 
-    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+    func contextMenuInteraction(
+        _: UIContextMenuInteraction,
+        previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration
+    ) -> UITargetedPreview? {
         guard let key = (configuration.identifier as? NSNumber)?.uint64Value, let row = visible[key] else { return nil }
         let params = UIPreviewParameters()
         params.backgroundColor = Palette.background
@@ -811,7 +846,8 @@ final class SelectTextViewController: UIViewController {
         self.title = title
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -819,16 +855,19 @@ final class SelectTextViewController: UIViewController {
         let tv = UITextView()
         tv.text = text
         tv.isEditable = false
-        tv.font = mono ? Fonts.ui(.mono, 14) : Fonts.ui(.sans, UIFontMetrics(forTextStyle: .body).scaledValue(for: 16.5))
+        tv.font =
+            mono ? Fonts.ui(.mono, 14) : Fonts.ui(.sans, UIFontMetrics(forTextStyle: .body).scaledValue(for: 16.5))
         tv.textColor = Palette.text
         tv.backgroundColor = .clear
         tv.textContainerInset = UIEdgeInsets(top: 16, left: 14, bottom: 32, right: 14)
         tv.frame = view.bounds
         tv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(tv)
-        navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in
-            self?.dismiss(animated: true)
-        })
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            systemItem: .done,
+            primaryAction: UIAction { [weak self] _ in
+                self?.dismiss(animated: true)
+            })
         if !mono { DispatchQueue.main.async { tv.selectAll(nil) } }
     }
 }

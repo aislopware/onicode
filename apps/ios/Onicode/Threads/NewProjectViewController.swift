@@ -22,15 +22,18 @@ final class NewProjectViewController: UIViewController, UICollectionViewDelegate
         title = "New Project"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Palette.background
-        navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            systemItem: .close, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
         var config = UICollectionLayoutListConfiguration(appearance: .insetGrouped)
         config.backgroundColor = .clear
-        collectionView = UICollectionView(frame: view.bounds, collectionViewLayout: UICollectionViewCompositionalLayout.list(using: config))
+        collectionView = UICollectionView(
+            frame: view.bounds, collectionViewLayout: UICollectionViewCompositionalLayout.list(using: config))
         collectionView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         collectionView.backgroundColor = .clear
         collectionView.delegate = self
@@ -85,13 +88,20 @@ final class NewProjectViewController: UIViewController, UICollectionViewDelegate
         // Host picker lives in the navigation bar.
         let hosts = app.hostOptions
         device = hosts.first(where: \.online) ?? hosts.first
-        navigationItem.rightBarButtonItem = UIBarButtonItem(title: device?.name ?? "No hosts", menu: UIMenu(title: "Device", children: hosts.map { h in
-            UIAction(title: h.name, subtitle: h.online ? "Online" : "Offline", image: UIImage(systemName: "desktopcomputer")) { [weak self] _ in
-                self?.device = h
-                self?.navigationItem.rightBarButtonItem?.title = h.name
-                self?.load(nil)
-            }
-        }))
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: device?.name ?? "No hosts",
+            menu: UIMenu(
+                title: "Device",
+                children: hosts.map { h in
+                    UIAction(
+                        title: h.name, subtitle: h.online ? "Online" : "Offline",
+                        image: UIImage(systemName: "desktopcomputer")
+                    ) { [weak self] _ in
+                        self?.device = h
+                        self?.navigationItem.rightBarButtonItem?.title = h.name
+                        self?.load(nil)
+                    }
+                }))
         load(nil)
     }
 

@@ -9,14 +9,10 @@ use std::process::Command;
 /// The binary under the name people type: clap names it after argv[0].
 fn onicode(dir: &std::path::Path) -> PathBuf {
     let link = dir.join("onicode");
-    #[cfg(unix)]
     std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_onicode"), &link).unwrap();
-    #[cfg(not(unix))]
-    std::fs::copy(env!("CARGO_BIN_EXE_onicode"), &link).unwrap();
     link
 }
 
-#[cfg(unix)]
 #[test]
 fn every_subcommand_s_help_is_the_shared_command_line_s() {
     let dir = tempfile::tempdir().unwrap();

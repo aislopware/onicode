@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::ffi::{CStr, c_void};
 use std::ptr;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -16,15 +15,15 @@ use core_foundation::string::{CFString, CFStringRef};
 use core_graphics::access::ScreenCaptureAccess;
 use core_graphics::geometry::{CGPoint, CGRect, CGSize};
 use core_graphics::window::{
-    CGWindowID, copy_window_info, create_image, kCGNullWindowID, kCGWindowAlpha, kCGWindowBounds,
-    kCGWindowImageBoundsIgnoreFraming, kCGWindowImageNominalResolution, kCGWindowIsOnscreen,
-    kCGWindowLayer, kCGWindowListExcludeDesktopElements, kCGWindowListOptionAll,
-    kCGWindowListOptionIncludingWindow, kCGWindowName, kCGWindowNumber, kCGWindowOwnerPID,
+    CGWindowID, copy_window_info, kCGNullWindowID, kCGWindowAlpha, kCGWindowBounds,
+    kCGWindowIsOnscreen, kCGWindowLayer, kCGWindowListExcludeDesktopElements,
+    kCGWindowListOptionAll, kCGWindowListOptionIncludingWindow, kCGWindowName, kCGWindowNumber,
+    kCGWindowOwnerPID,
 };
 use futures::channel::mpsc;
 use objc2::encode::{Encoding, RefEncode};
 use objc2::rc::autoreleasepool;
-use objc2::runtime::{AnyClass, AnyObject};
+use objc2::runtime::AnyObject;
 use objc2::{class, msg_send};
 
 use super::{
@@ -124,9 +123,9 @@ unsafe extern "C" {
     ) -> i32;
 }
 
-unsafe extern "C" {
-    fn dlopen(path: *const std::ffi::c_char, mode: i32) -> *mut c_void;
-}
+// Linked so its classes are registered before `class!` looks them up.
+#[link(name = "ScreenCaptureKit", kind = "framework")]
+unsafe extern "C" {}
 
 struct FrontmostApplication {
     pid: i32,
@@ -411,20 +410,8 @@ fn capture_frontmost_window() -> Result<CapturedAppshot, CaptureError> {
         // Retain the AX window before asynchronous capture. Never resolve focus
         // again afterward: another document may have become active by then.
         let accessibility_window = preserved_accessibility_window(app.pid, preserved_window.id);
-        let (window, png) = match capture_with_screen_capture_kit(app.pid, preserved_window.id) {
-            Ok(Some(capture)) => capture,
-            Ok(None) => {
-                let png = capture_png(preserved_window.id)?;
-                (preserved_window, png)
-            }
-            Err(error) => {
-                // ScreenCaptureKit is the reliable path for fullscreen Spaces,
-                // but keep macOS 12/13 and transient framework failures useful.
-                tracing::warn!(%error, "ScreenCaptureKit Appshot failed; using CoreGraphics fallback");
-                let png = capture_png(preserved_window.id)?;
-                (preserved_window, png)
-            }
-        };
+        let (window, png) = capture_with_screen_capture_kit(app.pid, preserved_window.id)
+            .map_err(CaptureError::CaptureFailed)?;
         let pixels_ready = Instant::now();
         let (screenshot, screenshot_dimensions) = super::stage_appshot_png(&app.name, png)?;
         super::capture_ready();
@@ -691,24 +678,17 @@ fn dictionary_rect(dict: &CFDictionary, key: CFStringRef) -> Option<CGRect> {
         .and_then(|bounds| CGRect::from_dict_representation(&bounds))
 }
 
-/// ScreenCaptureKit is Space-independent and is Apple's supported replacement
-/// for the deprecated CGWindowListCreateImage path. It is essential for
-/// fullscreen windows, which live in their own Space.
+/// ScreenCaptureKit is Space-independent, so it captures fullscreen windows
+/// (each in its own Space) too. It is the only window capture there is:
+/// CoreGraphics window images (CGWindowListCreateImage) are obsolete.
 fn capture_with_screen_capture_kit(
     pid: i32,
     preserved_window_id: CGWindowID,
-) -> Result<Option<(FrontmostWindow, Vec<u8>)>, String> {
-    if !load_screen_capture_kit() {
-        return Ok(None);
-    }
-    let (Some(shareable_class), Some(filter_class), Some(configuration_class), Some(manager_class)) = (
-        AnyClass::get(c"SCShareableContent"),
-        AnyClass::get(c"SCContentFilter"),
-        AnyClass::get(c"SCStreamConfiguration"),
-        AnyClass::get(c"SCScreenshotManager"),
-    ) else {
-        return Ok(None);
-    };
+) -> Result<(FrontmostWindow, Vec<u8>), String> {
+    let shareable_class = class!(SCShareableContent);
+    let filter_class = class!(SCContentFilter);
+    let configuration_class = class!(SCStreamConfiguration);
+    let manager_class = class!(SCScreenshotManager);
 
     let (content_tx, content_rx) = std::sync::mpsc::sync_channel(1);
     let content_block = RcBlock::new(move |content: *mut AnyObject, error: *mut AnyObject| {
@@ -804,17 +784,7 @@ fn capture_with_screen_capture_kit(
     unsafe {
         CFRelease(image.cast());
     }
-    png.map(|png| Some((metadata, png)))
-}
-
-fn load_screen_capture_kit() -> bool {
-    static AVAILABLE: OnceLock<bool> = OnceLock::new();
-    *AVAILABLE.get_or_init(|| unsafe {
-        // Load dynamically so Onicode's macOS 12.0 minimum remains valid. The
-        // screenshot manager arrived in macOS 14; older systems use fallback.
-        let path = b"/System/Library/Frameworks/ScreenCaptureKit.framework/ScreenCaptureKit\0";
-        !dlopen(path.as_ptr().cast(), 1).is_null() // RTLD_LAZY
-    })
+    png.map(|png| (metadata, png))
 }
 
 /// Returns a retained SCWindow plus metadata and its size in screen points.
@@ -892,44 +862,6 @@ unsafe fn ns_error_message(error: *mut AnyObject, fallback: &str) -> String {
     }
     let description: *mut AnyObject = unsafe { msg_send![error, localizedDescription] };
     unsafe { nsstring(description) }.unwrap_or_else(|| fallback.into())
-}
-
-fn fallback_capture_dimensions(bounds: CGRect) -> Result<(u32, u32), CaptureError> {
-    if !bounds.origin.x.is_finite()
-        || !bounds.origin.y.is_finite()
-        || !bounds.size.width.is_finite()
-        || !bounds.size.height.is_finite()
-        || bounds.size.width <= 0.0
-        || bounds.size.height <= 0.0
-        || bounds.size.width > u32::MAX as f64
-        || bounds.size.height > u32::MAX as f64
-    {
-        return Err(CaptureError::NoEligibleWindow);
-    }
-    // Nominal resolution requests one pixel per point. Reject oversized
-    // rectangles before asking WindowServer to allocate the capture.
-    let dimensions = (
-        bounds.size.width.ceil() as u32,
-        bounds.size.height.ceil() as u32,
-    );
-    super::validate_capture_dimensions(dimensions.0, dimensions.1)?;
-    Ok(dimensions)
-}
-
-fn capture_png(window_id: CGWindowID) -> Result<Vec<u8>, CaptureError> {
-    let bounds = window_bounds(window_id).ok_or(CaptureError::NoEligibleWindow)?;
-    fallback_capture_dimensions(bounds)?;
-    let image = create_image(
-        bounds,
-        kCGWindowListOptionIncludingWindow,
-        window_id,
-        kCGWindowImageNominalResolution | kCGWindowImageBoundsIgnoreFraming,
-    )
-    .ok_or_else(|| {
-        CaptureError::CaptureFailed("The application window could not be captured.".into())
-    })?;
-    use foreign_types::ForeignType;
-    encode_png(image.as_ptr().cast()).map_err(CaptureError::CaptureFailed)
 }
 
 /// Opaque `CGImage`, typed so objc2 verifies `^{CGImage=}` method arguments.
@@ -1187,23 +1119,6 @@ mod tests {
         capture_dimensions, is_secure_ax_element, same_window_bounds, visible_capture_window,
     };
     use core_graphics::geometry::{CGPoint, CGRect, CGSize};
-
-    #[test]
-    fn fallback_rejects_oversized_or_invalid_native_acquisition() {
-        let bounds = |w, h| CGRect::new(&CGPoint::new(0.0, 0.0), &CGSize::new(w, h));
-        assert_eq!(
-            super::fallback_capture_dimensions(bounds(1440.2, 900.0)).unwrap(),
-            (1441, 900)
-        );
-        for (w, h) in [
-            (9000.0, 500.0),
-            (8192.0, 8192.0),
-            (f64::NAN, 500.0),
-            (100.0, 0.0),
-        ] {
-            assert!(super::fallback_capture_dimensions(bounds(w, h)).is_err());
-        }
-    }
 
     #[test]
     fn expired_ax_budget_never_calls_the_native_element() {

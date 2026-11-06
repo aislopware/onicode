@@ -393,7 +393,6 @@ content, with provenance and prompt-injection framing.
 
 - Configurable shortcut, sound, and capture transition.
 - Accessibility disclosure/inspection UI.
-- Windows is outside this contribution: Zeron does not yet ship a Windows app.
 - Wayland portal and X11 implementations with AT-SPI enrichment.
 
 ## Verification strategy
@@ -520,9 +519,7 @@ Fresh composer cards fade in and settle upward by 8 px over 240 ms using the sha
 motion curve. Entity-owned timestamps prevent replay when switching away and back;
 restored cards do not animate, and reduced motion bypasses the entrance.
 
-Removed the experimental Windows backend, its Appshots-only dependencies and its
-platform support claims. Existing unrelated Windows code is preserved. Linux native
-portal, X11 and AT-SPI behavior still needs native validation.
+Linux native portal, X11 and AT-SPI behavior still needs native validation.
 
 ### Transparent capture-surface padding
 

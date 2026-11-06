@@ -309,6 +309,7 @@ fn question_chip_reads_what_was_answered() {
         multi_select: false,
         prefill: None,
         multiline: false,
+        approval: None,
     };
     let chip = |questions: Vec<onicode_proto::UserInputQuestion>,
                 resolved: bool,

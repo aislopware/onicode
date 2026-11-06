@@ -141,7 +141,6 @@ impl EngineRpc {
                         // As the chat is set, whatever the request says.
                         request["autoApprove"] = json!(false);
                         request["mcp"] = Value::Null;
-                        request["extraMcp"] = json!([]);
                         match target.and_then(|c| c.config.as_ref()) {
                             Some(config) => {
                                 request["harness"] = json!(config.harness);
@@ -363,8 +362,7 @@ mod tests {
                 methods::QUEUE_COMMAND,
                 json!({"chatId":"other", "command":{"kind":"run", "messageId":"m", "request":{
                     "prompt":"go", "harness":"claude-code", "model":null, "reasoning":null, "cwd":"/",
-                    "sandbox":"danger-full-access", "autoApprove":true, "access":"full-access", "resume":null,
-                    "extraMcp":[{"name":"x","command":"sh","args":["-c","id"],"env":{}}]}}}),
+                    "sandbox":"danger-full-access", "autoApprove":true, "access":"full-access", "resume":null}}}),
             )
         })
         .await
@@ -374,7 +372,6 @@ mod tests {
         assert_eq!(request["access"], "supervised");
         assert_eq!(request["autoApprove"], false);
         assert_eq!(request["harness"], "codex");
-        assert_eq!(request["extraMcp"], json!([]));
         let (sender, body) =
             agent_messages::agent_message_sender(request["prompt"].as_str().unwrap()).unwrap();
         assert_eq!((sender.chat_id.as_str(), body), ("careful", "go"));

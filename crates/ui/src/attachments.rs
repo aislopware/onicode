@@ -404,9 +404,8 @@ fn stage_plain_file(path: &Path) -> Result<StagedAttachment, String> {
     Ok(StagedAttachment::from_file(&name, bytes))
 }
 
-/// Stage an image pasted from the clipboard. A BMP (what Windows puts there for
-/// a screenshot) is converted to PNG like [`stage_file`] does; one that won't
-/// decode stays as pasted.
+/// Stage an image pasted from the clipboard. A BMP is converted to PNG like
+/// [`stage_file`] does; one that won't decode stays as pasted.
 pub fn stage_clipboard_image(image: Image) -> StagedAttachment {
     let image = if image.format == ImageFormat::Bmp
         && let Ok(png) = bmp_to_png(&image)
@@ -418,8 +417,8 @@ pub fn stage_clipboard_image(image: Image) -> StagedAttachment {
     StagedAttachment::from_image(ensure_extension("image", image.format), image)
 }
 
-/// Windows screenshots are BMP, but no agent harness inlines BMP and the
-/// agent's `Read` tool can't decode one — so they go out as PNG.
+/// No agent harness inlines BMP and the agent's `Read` tool can't decode
+/// one — so BMPs go out as PNG.
 fn bmp_to_png(bmp: &Image) -> Result<Image, String> {
     let decoded = image::load_from_memory_with_format(&bmp.bytes, image::ImageFormat::Bmp)
         .map_err(|e| e.to_string())?;
@@ -1566,8 +1565,8 @@ mod tests {
         }
     }
 
-    /// A 1x1 32-bit BI_RGB bitmap as the Windows clipboard produces it: one
-    /// BGRX pixel, the fourth byte unused (zero).
+    /// A 1x1 32-bit BI_RGB bitmap: one BGRX pixel, the fourth byte unused
+    /// (zero).
     fn clipboard_bmp() -> Vec<u8> {
         let mut bmp = b"BM".to_vec();
         // File size, reserved, pixel offset, header size, width, height.

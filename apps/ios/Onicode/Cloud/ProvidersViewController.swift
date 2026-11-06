@@ -46,7 +46,8 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
         self.app = app
         let computers = app.hostOptions
         let remembered = UserDefaults.standard.string(forKey: Self.lastTargetKey)
-        self.target = target
+        self.target =
+            target
             ?? remembered.flatMap { r in r == Self.cloud || computers.contains { $0.id == r } ? r : nil }
             ?? computers.first(where: \.online)?.id
             ?? computers.first?.id
@@ -55,7 +56,8 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
         title = "Providers"
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     @MainActor private var cloud: CloudStore { app.cloud }
 
@@ -82,13 +84,16 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
         config.backgroundColor = .clear
         config.headerMode = .supplementary
         config.footerMode = .supplementary
-        collectionView = UICollectionView(frame: view.bounds, collectionViewLayout: UICollectionViewCompositionalLayout.list(using: config))
+        collectionView = UICollectionView(
+            frame: view.bounds, collectionViewLayout: UICollectionViewCompositionalLayout.list(using: config))
         collectionView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         collectionView.backgroundColor = .clear
         collectionView.delegate = self
-        collectionView.refreshControl = UIRefreshControl(frame: .zero, primaryAction: UIAction { [weak self] _ in
-            self?.load()
-        })
+        collectionView.refreshControl = UIRefreshControl(
+            frame: .zero,
+            primaryAction: UIAction { [weak self] _ in
+                self?.load()
+            })
         view.addSubview(collectionView)
 
         let cell = UICollectionView.CellRegistration<UICollectionViewListCell, Row> { [weak self] cell, _, row in
@@ -125,10 +130,16 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
                 name.text = self.targetName
                 name.font = Fonts.ui(.sansMedium, 15)
                 name.textColor = Palette.secondary
-                accessories.insert(.customView(configuration: .init(customView: name, placement: .trailing(displayed: .always), reservedLayoutWidth: .actual)), at: 0)
+                accessories.insert(
+                    .customView(
+                        configuration: .init(
+                            customView: name, placement: .trailing(displayed: .always), reservedLayoutWidth: .actual)),
+                    at: 0)
             } else if row.signIn, !row.busy {
                 let button = CloudRow.rowButton("Sign in") { [weak self] in
-                    guard let harness = row.harness, let agent = CloudStore.agents.first(where: { $0.harness == harness }) else { return }
+                    guard let harness = row.harness,
+                        let agent = CloudStore.agents.first(where: { $0.harness == harness })
+                    else { return }
                     self?.startSignIn(agent)
                 }
                 button.accessibilityIdentifier = "providers-sign-in-\(row.harness ?? "")"
@@ -143,23 +154,28 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
                 toggle.isEnabled = row.toggleEnabled
                 toggle.onTintColor = Palette.accent
                 toggle.accessibilityIdentifier = "toggle-\(row.id)"
-                toggle.addAction(UIAction { [weak self, weak toggle] _ in
-                    guard let harness = row.harness else { return }
-                    self?.setEnabled(harness, toggle?.isOn ?? false)
-                }, for: .valueChanged)
+                toggle.addAction(
+                    UIAction { [weak self, weak toggle] _ in
+                        guard let harness = row.harness else { return }
+                        self?.setEnabled(harness, toggle?.isOn ?? false)
+                    }, for: .valueChanged)
                 accessories.append(.customView(configuration: .init(customView: toggle, placement: .trailing())))
             }
             if row.disclosure { accessories.append(.disclosureIndicator()) }
             cell.accessories = accessories
             cell.accessibilityIdentifier = "providers-\(row.id)"
         }
-        let header = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(elementKind: UICollectionView.elementKindSectionHeader) { [weak self] view, _, path in
+        let header = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
+            elementKind: UICollectionView.elementKindSectionHeader
+        ) { [weak self] view, _, path in
             var c = UIListContentConfiguration.groupedHeader()
             let id = self?.dataSource.snapshot().sectionIdentifiers[path.section]
             c.text = id == "device" ? nil : id
             view.contentConfiguration = c
         }
-        let footer = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(elementKind: UICollectionView.elementKindSectionFooter) { [weak self] view, _, path in
+        let footer = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
+            elementKind: UICollectionView.elementKindSectionFooter
+        ) { [weak self] view, _, path in
             guard let self else { return }
             var c = UIListContentConfiguration.groupedFooter()
             let id = self.dataSource.snapshot().sectionIdentifiers[path.section]
@@ -188,12 +204,14 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
 
     private var footerText: String {
         if onCloud {
-            return "Cloud agents use the account marked in use. Signing in here stores the login in Cloud, not on this phone."
+            return
+                "Cloud agents use the account marked in use. Signing in here stores the login in Cloud, not on this phone."
         }
         if !targetOnline {
             return "\(targetName) is offline — showing what it last reported."
         }
-        return "Agents run with the logins on \(targetName). Switch accounts here; to add one, sign in from Onicode on that computer."
+        return
+            "Agents run with the logins on \(targetName). Switch accounts here; to add one, sign in from Onicode on that computer."
     }
 
     // MARK: Loading
@@ -232,7 +250,9 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
 
     private func deviceMenu() -> UIMenu {
         var actions: [UIMenuElement] = app.hostOptions.map { host in
-            let action = UIAction(title: host.name, subtitle: host.online ? nil : "Offline", image: UIImage(systemName: "laptopcomputer")) { [weak self] _ in
+            let action = UIAction(
+                title: host.name, subtitle: host.online ? nil : "Offline", image: UIImage(systemName: "laptopcomputer")
+            ) { [weak self] _ in
                 self?.select(host.id)
             }
             action.state = host.id == target ? .on : .off
@@ -268,7 +288,11 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
         var s = NSDiffableDataSourceSnapshot<String, Row>()
         s.appendSections(["device"])
         // The device in the row's value: switching re-renders it.
-        s.appendItems([Row(id: "device", title: "Device", subtitle: nil, symbol: onCloud ? "cloud" : "laptopcomputer", value: target)])
+        s.appendItems([
+            Row(
+                id: "device", title: "Device", subtitle: nil, symbol: onCloud ? "cloud" : "laptopcomputer",
+                value: target)
+        ])
         s.appendSections(["Agents"])
         s.appendItems(onCloud ? cloudRows() : computerRows())
         dataSource.apply(s, animatingDifferences: false)
@@ -276,7 +300,8 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
             onSummary?("a computer", false, [])
             return
         }
-        let names: [String]? = onCloud
+        let names: [String]? =
+            onCloud
             ? CloudStore.agents.map(\.name)
             : harnesses[target].map { $0.filter(\.installed).map(\.label) }
         onSummary?(targetName, onCloud, names)
@@ -290,7 +315,12 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
                 return [Row(id: "loading", title: "Loading…", symbol: "ellipsis")]
             }
             // Landed on Cloud (no computers yet) without being offered it.
-            return [Row(id: "no-computers", title: "No computers yet", subtitle: "Install Onicode on a computer to run agents and manage their accounts here.", symbol: "desktopcomputer")]
+            return [
+                Row(
+                    id: "no-computers", title: "No computers yet",
+                    subtitle: "Install Onicode on a computer to run agents and manage their accounts here.",
+                    symbol: "desktopcomputer")
+            ]
         }
         return CloudStore.agents.map { agent in
             let count = (cloud.accounts[agent.login] ?? []).count + (cloud.accounts[agent.key] ?? []).count
@@ -298,7 +328,13 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
             return Row(
                 id: "cloud:\(agent.harness)",
                 title: agent.name,
-                subtitle: busy ? "Finishing sign-in…" : Self.summary(active: cloud.activeAccount(agent).map { [$0.email ?? (($0.kind == "key") ? agent.keyName : nil), $0.plan].compactMap { $0 }.joined(separator: " · ") }, count: count),
+                subtitle: busy
+                    ? "Finishing sign-in…"
+                    : Self.summary(
+                        active: cloud.activeAccount(agent).map {
+                            [$0.email ?? (($0.kind == "key") ? agent.keyName : nil), $0.plan].compactMap(\.self).joined(
+                                separator: " · ")
+                        }, count: count),
                 harness: agent.harness,
                 disclosure: true,
                 busy: busy,
@@ -323,7 +359,9 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
             } else if accounts[target] == nil {
                 subtitle = failed[target] ?? (online ? "Installed" : "Offline")
             } else {
-                subtitle = Self.summary(active: mine.first(where: \.active).map(Self.accountTitle), count: mine.count, showsNone: agentLoginRules(harness: h.id).signsIn)
+                subtitle = Self.summary(
+                    active: mine.first(where: \.active).map(Self.accountTitle), count: mine.count,
+                    showsNone: agentLoginRules(harness: h.id).signsIn)
             }
             return Row(
                 id: "\(target):\(h.id)",
@@ -369,10 +407,13 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
             }
             guard let client = self.app.client else { return }
             do {
-                self.harnesses[device] = try await client.setHarnessEnabled(deviceId: device, harness: harness, enabled: on)
+                self.harnesses[device] = try await client.setHarnessEnabled(
+                    deviceId: device, harness: harness, enabled: on)
                 UISelectionFeedbackGenerator().selectionChanged()
             } catch {
-                let a = UIAlertController(title: on ? "Couldn't turn it on" : "Couldn't turn it off", message: CloudStore.message(error), preferredStyle: .alert)
+                let a = UIAlertController(
+                    title: on ? "Couldn't turn it on" : "Couldn't turn it off", message: CloudStore.message(error),
+                    preferredStyle: .alert)
                 a.addAction(UIAlertAction(title: "OK", style: .default))
                 self.present(a, animated: true)
             }
@@ -389,7 +430,8 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
             } catch is CancellationError {
             } catch {
-                let a = UIAlertController(title: "Couldn't sign in", message: CloudStore.message(error), preferredStyle: .alert)
+                let a = UIAlertController(
+                    title: "Couldn't sign in", message: CloudStore.message(error), preferredStyle: .alert)
                 a.addAction(UIAlertAction(title: "OK", style: .default))
                 self.present(a, animated: true)
             }
@@ -403,11 +445,14 @@ final class ProvidersViewController: UIViewController, UICollectionViewDelegate 
     /// (onboarding).
     private func show(_ vc: UIViewController) {
         if let nav = navigationController {
-            return nav.pushViewController(vc, animated: true)
+            nav.pushViewController(vc, animated: true)
+            return
         }
-        vc.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak vc] _ in
-            vc?.dismiss(animated: true)
-        })
+        vc.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            systemItem: .done,
+            primaryAction: UIAction { [weak vc] _ in
+                vc?.dismiss(animated: true)
+            })
         present(UINavigationController(rootViewController: vc), animated: true)
     }
 

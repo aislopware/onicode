@@ -330,10 +330,8 @@ impl HostRelayConfig {
     }
 }
 
-/// The service as relay clients see it: every method but the ones a peer
-/// may not have answered here ([`crate::peer_refused`]: the local-only
-/// ones, allowing a plugin, a file path on the caller's device), refused
-/// before they reach it; the rest served as [`crate::Caller::Peer`], with
+/// The service as relay clients see it: every method but the local-only
+/// ones ([`crate::local_only`]), refused before they reach it; the rest served as [`crate::Caller::Peer`], with
 /// the device the edge verified for this connection (`fromDevice`), if any.
 struct RelayGuard {
     inner: Arc<dyn RpcService>,
@@ -347,12 +345,10 @@ impl RpcService for RelayGuard {
         method: &str,
         params: serde_json::Value,
     ) -> Result<crate::RpcReply, RpcError> {
-        if crate::peer_refused(method, &params) {
-            return Err(RpcError::Failed(if crate::local_only(method) {
-                format!("{method} is only answered over this device's local IPC")
-            } else {
-                format!("{method}: only this device's own window can do that")
-            }));
+        if crate::local_only(method) {
+            return Err(RpcError::Failed(format!(
+                "{method} is only answered over this device's local IPC"
+            )));
         }
         let caller = crate::Caller::Peer {
             device: self.device.clone(),
@@ -873,7 +869,7 @@ pub struct LinkCacheConfig {
 }
 
 /// What proves the dialing device to the edge: this device's id, its
-/// registered plugin key (b64url) and that key's signature (b64url, no
+/// registered signing key (b64url) and that key's signature (b64url, no
 /// padding) over [`caller_proof_message`].
 #[derive(Clone, Debug)]
 pub struct CallerProof {
@@ -1312,99 +1308,6 @@ mod tests {
         assert_eq!(reached.load(Ordering::SeqCst), 3);
     }
 
-    /// R6/R25: a peer device can't allow a plugin here, mint a review, sign,
-    /// or install from a path; it can still decline, turn off and install
-    /// from a link (which lands waiting here). What it reaches runs as a
-    /// peer.
-    #[tokio::test]
-    async fn relay_refuses_allowing_and_paths_from_peers() {
-        use crate::{RpcReply, RpcService, methods};
-        use std::sync::{Arc, Mutex};
-
-        struct Seen(Arc<Mutex<Vec<(String, crate::Caller)>>>);
-        #[async_trait::async_trait]
-        impl RpcService for Seen {
-            async fn handle(
-                &self,
-                method: &str,
-                _params: serde_json::Value,
-            ) -> Result<RpcReply, crate::RpcError> {
-                self.0
-                    .lock()
-                    .unwrap()
-                    .push((method.to_owned(), crate::caller()));
-                Ok(RpcReply::Value(serde_json::json!({})))
-            }
-        }
-
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let guard = super::RelayGuard {
-            inner: Arc::new(Seen(seen.clone())),
-            device: None,
-        };
-        let hash = "ab".repeat(32);
-        for (method, params) in [
-            (
-                methods::DECIDE_PLUGIN,
-                serde_json::json!({"id": "x", "allow": true, "hash": hash}),
-            ),
-            (
-                methods::DECIDE_PLUGIN,
-                serde_json::json!({"id": "x", "allow": true, "hash": hash, "review": "r"}),
-            ),
-            (
-                methods::DECIDE_PLUGIN,
-                serde_json::json!({"id": "x", "hash": hash}),
-            ),
-            (
-                methods::REVIEW_PLUGIN,
-                serde_json::json!({"id": "x", "hash": hash}),
-            ),
-            (methods::SIGN_PLUGIN, serde_json::json!({"id": "x"})),
-            (
-                methods::DECIDE_TEMPLATE,
-                serde_json::json!({"pending": "x", "allow": true, "hash": hash}),
-            ),
-            (
-                methods::INSTALL_PLUGIN,
-                serde_json::json!({"path": "/tmp/x.onicode-plugin"}),
-            ),
-        ] {
-            assert!(
-                guard.handle(method, params.clone()).await.is_err(),
-                "a peer must not reach {method} {params}"
-            );
-        }
-        assert!(
-            seen.lock().unwrap().is_empty(),
-            "refused before the service"
-        );
-
-        for (method, params) in [
-            (
-                methods::DECIDE_PLUGIN,
-                serde_json::json!({"id": "x", "allow": false, "hash": hash}),
-            ),
-            (
-                methods::SET_PLUGIN_OFF,
-                serde_json::json!({"id": "x", "off": true}),
-            ),
-            (
-                methods::INSTALL_PLUGIN,
-                serde_json::json!({"url": "https://example.com/x.onicode-plugin"}),
-            ),
-        ] {
-            guard.handle(method, params).await.expect(method);
-        }
-        let seen = seen.lock().unwrap();
-        assert_eq!(seen.len(), 3);
-        assert!(
-            seen.iter()
-                .all(|(_, caller)| matches!(caller, crate::Caller::Peer { .. })),
-            "served as a peer: {seen:?}"
-        );
-    }
-
     #[tokio::test(start_paused = true)]
     async fn blocked_relay_upload_closes_link_and_fails_pending_rpc() {
         use tokio_tungstenite::{WebSocketStream, tungstenite::protocol::Role};
@@ -1560,7 +1463,7 @@ mod tests {
             header.from = Some(from.into());
             header.from_device = device.map(str::to_owned);
             let call =
-                serde_json::json!({"id": id, "method": "ListPlugins", "params": {}}).to_string();
+                serde_json::json!({"id": id, "method": "ListHarnesses", "params": {}}).to_string();
             encode_device_frame(&header, call.as_bytes()).unwrap()
         };
         handle_host_frame(

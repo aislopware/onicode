@@ -34,7 +34,7 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
         super.init(style: .doubleColumn)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder _: NSCoder) { fatalError() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -65,7 +65,7 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
         // A phone in landscape is compact in height but can be regular in
         // width (the larger models); it keeps the tab shell. The split
         // collapses on its own horizontal class, so pin that to compact.
-        registerForTraitChanges([UITraitVerticalSizeClass.self]) { (self: SplitRootController, _) in
+        registerForTraitChanges([UITraitVerticalSizeClass.self]) { (self: Self, _) in
             self.syncCollapse()
         }
         syncCollapse()
@@ -116,11 +116,13 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
 
     func openSession(_ chatId: String) {
         if presentedViewController != nil { dismiss(animated: true) }
-        guard !isCollapsed else { return tabs.openSession(chatId) }
+        guard !isCollapsed else { tabs.openSession(chatId)
+return }
         if currentChatId == chatId, detail.viewControllers.first is SessionViewController { return }
         followInspector(to: chatId)
         guard let session = SessionViewController(app: app, chatId: chatId) else {
-            return showSessionOpenError()
+            showSessionOpenError()
+            return
         }
         currentChatId = chatId
         sidebar.currentChatId = chatId
@@ -137,7 +139,8 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
     }
 
     func presentNewSession(prompt: String?) {
-        guard !isCollapsed else { return tabs.presentNewSession(prompt: prompt) }
+        guard !isCollapsed else { tabs.presentNewSession(prompt: prompt)
+return }
         showDraft(prompt: prompt, focus: true)
     }
 
@@ -170,7 +173,8 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
     }
 
     func showSettings() {
-        guard !isCollapsed else { return tabs.showSettings() }
+        guard !isCollapsed else { tabs.showSettings()
+return }
         let nav = MainTabController.nav(MoreViewController(app: app))
         nav.modalPresentationStyle = .formSheet
         nav.topViewController?.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak nav] _ in
@@ -180,7 +184,8 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
     }
 
     func showSearch() {
-        guard !isCollapsed else { return tabs.showSearch() }
+        guard !isCollapsed else { tabs.showSearch()
+return }
         if displayMode == .secondaryOnly { show(.primary) }
         sidebar.focusSearch()
     }
@@ -201,7 +206,8 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
     /// already showing that panel.
     func toggleCompanions(for chatId: String, section: CompanionsViewController.Section?) {
         if inspectorShown, inspectorChatId == chatId, inspector.viewControllers.count == 1 {
-            return hideCompanions()
+            hideCompanions()
+            return
         }
         let root = companionsRoot(for: chatId)
         root.initialSection = section
@@ -264,7 +270,7 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
     /// Narrow windows (iPad portrait, the unfolded Duo) can't fit sidebar,
     /// session and inspector: the sidebar steps aside while it shows.
     private func revealInspector() {
-        if view.bounds.width < 1100, displayMode != .secondaryOnly, modeBeforeInspector == nil {
+        if view.bounds.width < 1_100, displayMode != .secondaryOnly, modeBeforeInspector == nil {
             modeBeforeInspector = preferredDisplayMode
             UIView.animate(withDuration: 0.3) { self.preferredDisplayMode = .secondaryOnly }
         }
@@ -291,7 +297,7 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
     /// column lets go of its copy (one live view per session). The page
     /// itself moves, at once: rebuilding it showed the list, then a loading
     /// page, under iPhone Duo's fold animation.
-    func splitViewController(_ svc: UISplitViewController, topColumnForCollapsingToProposedTopColumn proposed: UISplitViewController.Column) -> UISplitViewController.Column {
+    func splitViewController(_: UISplitViewController, topColumnForCollapsingToProposedTopColumn _: UISplitViewController.Column) -> UISplitViewController.Column {
         // The companions panel rides along: folded, UIKit shows the
         // inspector as a sheet over the tab shell (with a Close button).
         // The sidebar comes back with the width (it stepped aside for the
@@ -318,7 +324,7 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
 
     /// Widening back brings the session last open in the tab shell into the
     /// main column (or the new-session page when none was).
-    func splitViewController(_ svc: UISplitViewController, displayModeForExpandingToProposedDisplayMode proposed: UISplitViewController.DisplayMode) -> UISplitViewController.DisplayMode {
+    func splitViewController(_: UISplitViewController, displayModeForExpandingToProposedDisplayMode proposed: UISplitViewController.DisplayMode) -> UISplitViewController.DisplayMode {
         (inspector.viewControllers.first as? CompanionsViewController)?.showsClose = false
         // The session page moves back as it is (see collapsing above).
         if let session = tabs.releaseSession() {
@@ -359,7 +365,7 @@ final class SidebarViewController: UIViewController, UISearchResultsUpdating {
     private let search = UISearchController(searchResultsController: nil)
     private var voiceBar: VoiceBarItem?
     /// A zero-size, invisible toolbar item: where it lands is the middle of
-    /// the toolbar's row. iOS 26 draws the toolbar outside `nav.toolbar`
+    /// the toolbar's row. UIKit draws the toolbar outside `nav.toolbar`
     /// (that view isn't even in the window), so the row can't be measured
     /// any other public way.
     private let toolbarProbe = UIView(frame: .zero)
@@ -384,7 +390,7 @@ final class SidebarViewController: UIViewController, UISearchResultsUpdating {
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder _: NSCoder) { fatalError() }
 
     override func viewDidLoad() {
         super.viewDidLoad()

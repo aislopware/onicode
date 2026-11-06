@@ -14,11 +14,11 @@ final class OnboardingViewController: UIViewController {
         var number: Int? { self == .done ? nil : rawValue + 1 }
         static let total = 5
 
-        var previous: Step? { Step(rawValue: rawValue - 1) }
-        var next: Step { Step(rawValue: rawValue + 1) ?? .done }
+        var previous: Self? { Self(rawValue: rawValue - 1) }
+        var next: Self { Self(rawValue: rawValue + 1) ?? .done }
 
         init?(name: String) {
-            guard let step = Step.allCases.first(where: { "\($0)" == name }) else { return nil }
+            guard let step = Self.allCases.first(where: { "\($0)" == name }) else { return nil }
             self = step
         }
     }
@@ -62,7 +62,8 @@ final class OnboardingViewController: UIViewController {
         modalPresentationStyle = .fullScreen
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     deinit { wallpaperObserver.map(NotificationCenter.default.removeObserver) }
 
@@ -118,7 +119,9 @@ final class OnboardingViewController: UIViewController {
             cloudToken = cloud.observe { [weak self] in self?.refresh() }
             cloud.refresh()
         }
-        wallpaperObserver = NotificationCenter.default.addObserver(forName: WallpaperStore.didChange, object: nil, queue: .main) { [weak self] _ in
+        wallpaperObserver = NotificationCenter.default.addObserver(
+            forName: WallpaperStore.didChange, object: nil, queue: .main
+        ) { [weak self] _ in
             if self?.step == .appearance { self?.render(animated: false) }
         }
         render(animated: false)
@@ -131,7 +134,10 @@ final class OnboardingViewController: UIViewController {
 
     private func refresh() {
         // The status arrived while on a Cloud-only step: move past it.
-        if step == .github, cloudWithheld { return go(.agents) }
+        if step == .github, cloudWithheld {
+            go(.agents)
+            return
+        }
         refresher?()
         renderFooter()
     }
@@ -171,7 +177,7 @@ final class OnboardingViewController: UIViewController {
             content.bottomAnchor.constraint(equalTo: page.bottomAnchor),
         ])
         guard animated, !UIAccessibility.isReduceMotionEnabled else {
-            old.forEach { $0.removeFromSuperview() }
+            for view in old { view.removeFromSuperview() }
             return
         }
         content.alpha = 0
@@ -179,15 +185,15 @@ final class OnboardingViewController: UIViewController {
         UIView.animate(withDuration: 0.3, delay: 0, options: [.curveEaseOut]) {
             content.alpha = 1
             content.transform = .identity
-            old.forEach { $0.alpha = 0 }
+            for view in old { view.alpha = 0 }
         } completion: { _ in
-            old.forEach { $0.removeFromSuperview() }
+            for view in old { view.removeFromSuperview() }
         }
     }
 
     /// The desktop's progress: a short bar per step, then "2 of 5".
     private func renderProgress() {
-        progress.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in progress.arrangedSubviews { view.removeFromSuperview() }
         guard let number = step.number else {
             progress.isHidden = true
             return
@@ -198,7 +204,9 @@ final class OnboardingViewController: UIViewController {
             bar.backgroundColor = ix <= number ? Palette.accent : Palette.controlFill
             bar.layer.cornerRadius = 1.5
             bar.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([bar.widthAnchor.constraint(equalToConstant: 20), bar.heightAnchor.constraint(equalToConstant: 3)])
+            NSLayoutConstraint.activate([
+                bar.widthAnchor.constraint(equalToConstant: 20), bar.heightAnchor.constraint(equalToConstant: 3),
+            ])
             progress.addArrangedSubview(bar)
         }
         let label = UILabel()
@@ -211,7 +219,7 @@ final class OnboardingViewController: UIViewController {
 
     /// Back on the left; Skip and the way forward on the right.
     private func renderFooter() {
-        footer.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in footer.arrangedSubviews { view.removeFromSuperview() }
         guard step != .done else {
             footer.isHidden = true
             return
@@ -247,13 +255,14 @@ final class OnboardingViewController: UIViewController {
             footer.addArrangedSubview(primary("Continue") { [weak self] in self?.go(.notifications) })
         case .notifications:
             footer.addArrangedSubview(ghost("Not now") { [weak self] in self?.go(.done) })
-            footer.addArrangedSubview(primary("Turn on") { [weak self] in
-                Task { @MainActor in
-                    PushNotifications.shared.enabled = true
-                    await PushNotifications.shared.requestPermission()
-                    self?.go(.done)
-                }
-            })
+            footer.addArrangedSubview(
+                primary("Turn on") { [weak self] in
+                    Task { @MainActor in
+                        PushNotifications.shared.enabled = true
+                        await PushNotifications.shared.requestPermission()
+                        self?.go(.done)
+                    }
+                })
         case .done:
             break
         }
@@ -265,22 +274,28 @@ final class OnboardingViewController: UIViewController {
         let scheme = UISegmentedControl(items: ["System", "Light", "Dark"])
         scheme.selectedSegmentIndex = style
         scheme.accessibilityIdentifier = "onboarding-scheme"
-        scheme.addAction(UIAction { [weak self, weak scheme] _ in
-            let style = scheme?.selectedSegmentIndex ?? 0
-            UserDefaults.standard.set(style, forKey: "appearance")
-            self?.view.window?.overrideUserInterfaceStyle = UIUserInterfaceStyle(rawValue: style) ?? .unspecified
-        }, for: .valueChanged)
+        scheme.addAction(
+            UIAction { [weak self, weak scheme] _ in
+                let style = scheme?.selectedSegmentIndex ?? 0
+                UserDefaults.standard.set(style, forKey: "appearance")
+                self?.view.window?.overrideUserInterfaceStyle = UIUserInterfaceStyle(rawValue: style) ?? .unspecified
+            }, for: .valueChanged)
 
         let set = WallpaperStore.isSet
-        let image = CloudRow(tile: CloudUI.tile(image: CloudUI.symbol("photo", 17)), title: set ? (WallpaperStore.name ?? "Wallpaper") : "No wallpaper", detail: "Shows behind every new chat.")
-        image.setAccessory(CloudRow.rowButton(set ? "Change" : "Choose image", prominent: !set) { [weak self] in
-            guard let self else { return }
-            WallpaperPicker.present(from: self)
-        })
+        let image = CloudRow(
+            tile: CloudUI.tile(image: CloudUI.symbol("photo", 17)),
+            title: set ? (WallpaperStore.name ?? "Wallpaper") : "No wallpaper", detail: "Shows behind every new chat.")
+        image.setAccessory(
+            CloudRow.rowButton(set ? "Change" : "Choose image", prominent: !set) { [weak self] in
+                guard let self else { return }
+                WallpaperPicker.present(from: self)
+            })
         image.accessibilityIdentifier = "onboarding-wallpaper"
         var rows: [UIView] = [image]
         if set {
-            let effect = CloudRow(tile: CloudUI.tile(image: CloudUI.symbol("wand.and.stars", 17)), title: "Background effect", detail: WallpaperStore.detail(WallpaperStore.effect))
+            let effect = CloudRow(
+                tile: CloudUI.tile(image: CloudUI.symbol("wand.and.stars", 17)), title: "Background effect",
+                detail: WallpaperStore.detail(WallpaperStore.effect))
             var c = UIButton.Configuration.glass()
             c.title = WallpaperStore.label(WallpaperStore.effect)
             c.image = CloudUI.symbol("chevron.up.chevron.down", 11, weight: .semibold)
@@ -294,11 +309,20 @@ final class OnboardingViewController: UIViewController {
                 return a
             }
             let menu = UIButton(configuration: c)
-            menu.menu = UIMenu(children: WallpaperStore.allEffects.map { e in
-                UIAction(title: WallpaperStore.label(e), state: e == WallpaperStore.effect ? .on : .off) { _ in WallpaperStore.effect = e }
-            } + [UIMenu(options: .displayInline, children: [
-                UIAction(title: "Remove Wallpaper", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in WallpaperStore.remove() },
-            ])])
+            menu.menu = UIMenu(
+                children: WallpaperStore.allEffects.map { e in
+                    UIAction(title: WallpaperStore.label(e), state: e == WallpaperStore.effect ? .on : .off) { _ in
+                        WallpaperStore.effect = e
+                    }
+                } + [
+                    UIMenu(
+                        options: .displayInline,
+                        children: [
+                            UIAction(
+                                title: "Remove Wallpaper", image: UIImage(systemName: "trash"), attributes: .destructive
+                            ) { _ in WallpaperStore.remove() }
+                        ])
+                ])
             menu.showsMenuAsPrimaryAction = true
             effect.setAccessory(menu)
             rows.append(effect)
@@ -315,10 +339,17 @@ final class OnboardingViewController: UIViewController {
     }
 
     private func syncPage() -> UIView {
-        let header = heading("Sync your work", "Log in to keep your chats, projects and settings in step everywhere you use Onicode.")
+        let header = heading(
+            "Sync your work", "Log in to keep your chats, projects and settings in step everywhere you use Onicode.")
         let rows = [
-            ("iphone.and.arrow.forward", "On every device", "Pick up a chat on your phone or another computer, right where you left it."),
-            ("laptopcomputer", "Run agents anywhere", "Start work on any of your machines from whichever one you're at."),
+            (
+                "iphone.and.arrow.forward", "On every device",
+                "Pick up a chat on your phone or another computer, right where you left it."
+            ),
+            (
+                "laptopcomputer", "Run agents anywhere",
+                "Start work on any of your machines from whichever one you're at."
+            ),
             ("cloud", "Onicode Cloud", "Hand chats to cloud machines that keep going while your computer sleeps."),
         ].map { symbol, title, detail in
             CloudRow(tile: CloudUI.tile(image: CloudUI.symbol(symbol, 17)), title: title, detail: detail)
@@ -337,7 +368,10 @@ final class OnboardingViewController: UIViewController {
     }
 
     private func githubPage() -> UIView {
-        let header = heading("Connect GitHub", "Cloud agents work in your repositories on machines of their own. Connect GitHub so they can clone and push — or skip and do it later in Settings → Cloud.")
+        let header = heading(
+            "Connect GitHub",
+            "Cloud agents work in your repositories on machines of their own. Connect GitHub so they can clone and push — or skip and do it later in Settings → Cloud."
+        )
         let row = CloudRow(tile: CloudUI.tile(image: CloudUI.githubMark), title: "GitHub", detail: nil)
         row.accessibilityIdentifier = "onboarding-github"
         refresher = { [weak self, weak row] in
@@ -369,11 +403,13 @@ final class OnboardingViewController: UIViewController {
                 return
             }
             if cloud {
-                detail?.text = "Cloud runs \(Self.join(names)) with your own subscriptions. Sign in to any you'd like to use."
+                detail?.text =
+                    "Cloud runs \(Self.join(names)) with your own subscriptions. Sign in to any you'd like to use."
             } else if names.isEmpty {
                 detail?.text = "Onicode runs the coding agents you already use, and none are on \(place) yet."
             } else {
-                detail?.text = "Found \(names.count > 3 ? "\(names.count) agents" : Self.join(names)) on \(place). Turn on the ones you'd like to use."
+                detail?.text =
+                    "Found \(names.count > 3 ? "\(names.count) agents" : Self.join(names)) on \(place). Turn on the ones you'd like to use."
             }
         }
         if self.providers == nil {
@@ -410,7 +446,8 @@ final class OnboardingViewController: UIViewController {
     }
 
     private func notificationsPage() -> UIView {
-        let header = heading("Stay in the loop", "Get a notification when an agent finishes, needs an answer, or runs into trouble.")
+        let header = heading(
+            "Stay in the loop", "Get a notification when an agent finishes, needs an answer, or runs into trouble.")
         let rows = [
             ("checkmark.circle", "Finished", "A session is done"),
             ("questionmark.bubble", "Needs you", "An agent is waiting on an answer"),
@@ -438,7 +475,9 @@ final class OnboardingViewController: UIViewController {
         ])
         let header = CloudUI.header(
             "You're all set",
-            cloudWithheld ? "Pick a project and start a session on any of your computers." : "Pick a project and start a session — on any of your computers, or on Cloud.",
+            cloudWithheld
+                ? "Pick a project and start a session on any of your computers."
+                : "Pick a project and start a session — on any of your computers, or on Cloud.",
             alignment: .center
         )
         let summary = UIStackView()
@@ -448,7 +487,7 @@ final class OnboardingViewController: UIViewController {
         summary.layer.cornerCurve = .continuous
         refresher = { [weak self, weak summary] in
             guard let self, let summary else { return }
-            summary.arrangedSubviews.forEach { $0.removeFromSuperview() }
+            for view in summary.arrangedSubviews { view.removeFromSuperview() }
             let style = ["System", "Light", "Dark"][min(2, max(0, UserDefaults.standard.integer(forKey: "appearance")))]
             let agents = CloudStore.agents.filter { self.cloud.activeAccount($0) != nil }.map(\.name)
             var lines = [
@@ -485,7 +524,9 @@ final class OnboardingViewController: UIViewController {
             }
         }
         refresher?()
-        let start = CloudUI.primaryButton("Start a session", symbol: "plus") { [weak self] in self?.finish(startSession: true) }
+        let start = CloudUI.primaryButton("Start a session", symbol: "plus") { [weak self] in
+            self?.finish(startSession: true)
+        }
         start.accessibilityIdentifier = "onboarding-finish"
         let later = CloudUI.plainButton("I'll do this later") { [weak self] in self?.finish(startSession: false) }
         let buttons = UIStackView(arrangedSubviews: [start, later])
@@ -607,7 +648,7 @@ final class OnboardingViewController: UIViewController {
         switch names.count {
         case 0: return ""
         case 1: return names[0]
-        default: return names.dropLast().joined(separator: ", ") + " and " + names.last!
+        default: return names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
         }
     }
 
@@ -655,13 +696,15 @@ private final class WallpaperPreview: UIView {
         imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(imageView)
         heightAnchor.constraint(equalToConstant: 132).isActive = true
-        observer = NotificationCenter.default.addObserver(forName: WallpaperStore.didChange, object: nil, queue: .main) { [weak self] _ in self?.reload() }
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: WallpaperPreview, _) in self.reload() }
+        observer = NotificationCenter.default.addObserver(forName: WallpaperStore.didChange, object: nil, queue: .main)
+        { [weak self] _ in self?.reload() }
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _) in self.reload() }
         accessibilityIdentifier = "onboarding-wallpaper-preview"
         reload()
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     deinit { observer.map(NotificationCenter.default.removeObserver) }
 
@@ -682,7 +725,8 @@ private final class FadingBottomView: UIView {
         layer.mask = fade
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func layoutSubviews() {
         super.layoutSubviews()

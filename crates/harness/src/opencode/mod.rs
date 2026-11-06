@@ -152,8 +152,7 @@ impl Default for BusTimeouts {
 }
 
 /// How often the run checks that its own server process is still alive. A
-/// crash otherwise surfaces only once the bus exhausts its reconnects, and
-/// each refused loopback connect costs about 2s on Windows.
+/// crash otherwise surfaces only once the bus exhausts its reconnects.
 const SERVER_POLL: Duration = Duration::from_millis(500);
 
 /// Prompt deliveries: one retry, posted only once the session is checked
@@ -204,9 +203,6 @@ fn stall_bound() -> Option<Duration> {
 
 fn opencode_install_paths() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    // `crate::executable::home_dir` checks USERPROFILE too, so the Unix-style
-    // install locations resolve on Windows (`~/.local/bin/opencode.exe`, the
-    // bun layout) instead of silently vanishing with an unset HOME.
     if let Some(home) = crate::executable::home_dir() {
         dirs.push(home.join(".opencode").join("bin").join("opencode"));
         dirs.push(home.join(".local").join("bin").join("opencode"));
@@ -220,16 +216,14 @@ fn opencode_install_paths() -> Vec<PathBuf> {
 
 const INSTALL_HINT: &str = "opencode (searched PATH, the login shell's PATH, ~/.opencode/bin, \
      ~/.local/bin, ~/.bun/bin, ~/.npm-global/bin, /opt/homebrew/bin, /usr/local/bin, and \
-     fnm/nvm/volta/pnpm/bun install dirs; Windows also checks USERPROFILE, \
-     %APPDATA%\\npm, and explicit NVM_SYMLINK/VOLTA_HOME/PNPM_HOME; install with \
+     fnm/nvm/volta/pnpm/bun install dirs; install with \
      `curl -fsSL https://opencode.ai/install | bash` or \
      `npm install -g @opencode/cli`, then `opencode auth login`; set \
      OPENCODE_EXECUTABLE to override)";
 
 /// The user's opencode: `OPENCODE_EXECUTABLE` when it exists, else PATH (plus
 /// install locations). The override is validated at launch through
-/// [`crate::executable::validate_native_override`] — including the `.cmd`
-/// shims npm installs on Windows.
+/// [`crate::executable::validate_native_override`].
 fn resolve_opencode_executable() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("OPENCODE_EXECUTABLE")
         && !path.is_empty()
@@ -445,7 +439,7 @@ impl OpencodeHarness {
         cwd: Option<&str>,
         mcp: Option<&onicode_proto::McpServer>,
     ) -> Result<Server, HarnessError> {
-        self.server_with_env(cwd, mcp, &[], &Default::default(), AccessMode::FullAccess)
+        self.server_with_env(cwd, mcp, &Default::default(), AccessMode::FullAccess)
             .await
     }
 
@@ -456,31 +450,14 @@ impl OpencodeHarness {
         &self,
         cwd: Option<&str>,
         mcp: Option<&onicode_proto::McpServer>,
-        extra_mcp: &[onicode_proto::McpServer],
         run_env: &std::collections::BTreeMap<String, String>,
         access: AccessMode,
     ) -> Result<Server, HarnessError> {
         if let Some(base) = &self.base_url {
-            if !extra_mcp.is_empty() {
-                tracing::warn!(
-                    target: "onicode_harness::opencode",
-                    count = extra_mcp.len(),
-                    "attached to an existing opencode server; plugin MCP servers are skipped"
-                );
-            }
             return Ok(Server::attached(base.clone()));
         }
         let exe = self.resolve_executable()?;
-        Server::spawn_with_extras(
-            &exe,
-            cwd,
-            self.startup_timeout,
-            mcp,
-            extra_mcp,
-            run_env,
-            access,
-        )
-        .await
+        Server::spawn_with_env(&exe, cwd, self.startup_timeout, mcp, run_env, access).await
     }
 
     /// One short-lived server answers both discovery calls. Also primes the
@@ -671,7 +648,6 @@ impl Harness for OpencodeHarness {
             .server_with_env(
                 cwd.as_deref(),
                 request.mcp.as_ref(),
-                &request.extra_mcp,
                 &request.env,
                 access(&request),
             )
@@ -760,7 +736,7 @@ impl Protocol {
     /// [`Self::detect`], probing `preferred`'s endpoints first. Every probe of
     /// the other generation hits the web UI catch-all (which 1.x proxies
     /// upstream), and while the port is still closed each costs a refused
-    /// loopback connect — about 2s on Windows, which retries the SYN.
+    /// loopback connect.
     async fn detect_preferring(
         server: &Server,
         preferred: Option<Protocol>,
@@ -851,8 +827,18 @@ impl Server {
         .await
     }
 
-    /// [`Self::spawn_with_extras`] without plugin MCP servers.
-    #[cfg(test)]
+    /// Spawn `opencode serve` on a free loopback port with a per-run Basic
+    /// password, and wait for a generation-bearing health answer (which
+    /// also resolves [`Protocol`]). `run_env` is the host-resolved run
+    /// environment ([`RunRequest::env`]); `access` adds its permission
+    /// rules ([`access_config`]).
+    ///
+    /// Every opencode process shares one SQLite database; a server booting
+    /// while another migrates or checkpoints it can exit with "database is
+    /// locked", and concurrent first starts
+    /// race each other's schema migration ([`MigrationRace`]). Those exits
+    /// alone are retried, and on a fresh port, which also covers the port
+    /// race inherent in handing a released port to the child.
     async fn spawn_with_env(
         exe: &std::path::Path,
         cwd: Option<&str>,
@@ -861,48 +847,12 @@ impl Server {
         run_env: &std::collections::BTreeMap<String, String>,
         access: AccessMode,
     ) -> Result<Self, HarnessError> {
-        Self::spawn_with_extras(exe, cwd, startup, mcp, &[], run_env, access).await
-    }
-
-    /// Spawn `opencode serve` on a free loopback port with a per-run Basic
-    /// password, and wait for a generation-bearing health answer (which
-    /// also resolves [`Protocol`]). `run_env` is the host-resolved run
-    /// environment ([`RunRequest::env`]); `access` adds its permission
-    /// rules ([`access_config`]). The plugins' native MCP servers
-    /// ([`RunRequest::extra_mcp`]) ride beside Onicode's own `mcp`.
-    ///
-    /// Every opencode process shares one SQLite database; a server booting
-    /// while another migrates or checkpoints it can exit with "database is
-    /// locked" (more often on Windows, whose file locks are mandatory and
-    /// whose malware scan holds new WAL files), and concurrent first starts
-    /// race each other's schema migration ([`MigrationRace`]). Those exits
-    /// alone are retried, and on a fresh port, which also covers the port
-    /// race inherent in handing a released port to the child.
-    async fn spawn_with_extras(
-        exe: &std::path::Path,
-        cwd: Option<&str>,
-        startup: Duration,
-        mcp: Option<&onicode_proto::McpServer>,
-        extra_mcp: &[onicode_proto::McpServer],
-        run_env: &std::collections::BTreeMap<String, String>,
-        access: AccessMode,
-    ) -> Result<Self, HarnessError> {
         // Known up front (cached per binary): it picks the MCP and
         // permission config shapes and which health endpoints to probe first.
         let version = opencode_version(exe).await;
         let mut attempt = 0;
         loop {
-            match Self::spawn_once(
-                exe,
-                cwd,
-                startup,
-                mcp,
-                extra_mcp,
-                run_env,
-                access,
-                version.as_ref(),
-            )
-            .await
+            match Self::spawn_once(exe, cwd, startup, mcp, run_env, access, version.as_ref()).await
             {
                 Err(SpawnFailure::Retryable(error)) if attempt < SPAWN_RETRIES => {
                     attempt += 1;
@@ -922,13 +872,11 @@ impl Server {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn spawn_once(
         exe: &std::path::Path,
         cwd: Option<&str>,
         startup: Duration,
         mcp: Option<&onicode_proto::McpServer>,
-        extra_mcp: &[onicode_proto::McpServer],
         run_env: &std::collections::BTreeMap<String, String>,
         access: AccessMode,
         version: Option<&semver::Version>,
@@ -956,7 +904,7 @@ impl Server {
         crate::compose_child_path(&mut cmd, exe);
         crate::apply_run_env(&mut cmd, run_env);
         let restricted = !access.is_full_access();
-        if mcp.is_some() || !extra_mcp.is_empty() || restricted {
+        if mcp.is_some() || restricted {
             // The config shape differs by generation. If even the cold probe
             // can't tell, run without the Onicode MCP server rather than fail,
             // but never without the rules a restricted mode relies on: the
@@ -969,7 +917,9 @@ impl Server {
                         .get("OPENCODE_CONFIG_CONTENT")
                         .cloned()
                         .or_else(|| std::env::var("OPENCODE_CONFIG_CONTENT").ok());
-                    inline = mcp_configs(inline, mcp, extra_mcp, protocol).map_err(fatal)?;
+                    if let Some(mcp) = mcp {
+                        inline = Some(mcp_config(inline.as_deref(), mcp, protocol).map_err(fatal)?);
+                    }
                     if restricted {
                         inline = Some(
                             access_config(inline.as_deref(), access, protocol).map_err(fatal)?,
@@ -1508,9 +1458,9 @@ fn http_client() -> reqwest::Client {
 }
 
 /// The official SDK sends `x-opencode-directory` percent-encoded. Both
-/// generations decode it with `decodeURIComponent`, so a Windows path
-/// (`C%3A%5CUsers%5C…`) arrives byte-identical to what the SDK's
-/// `encodeURIComponent` produces; `/` is left as is, which decodes the same.
+/// generations decode it with `decodeURIComponent`, so a path arrives
+/// byte-identical to what the SDK's `encodeURIComponent` produces; `/` is
+/// left as is, which decodes the same.
 fn encode_directory(dir: &str) -> String {
     percent_encode_path(dir)
 }
@@ -1959,8 +1909,7 @@ struct TurnState {
     /// Deadline for the first session-scoped event after the prompt.
     stall_deadline: Option<tokio::time::Instant>,
     /// The prompt POST has not been answered yet. The stall clock waits for
-    /// it: a server slow to admit a prompt (a contended database on Windows)
-    /// has not yet had the chance to make progress, and the POST is bounded
+    /// it: a server slow to admit a prompt (a contended database) has not yet had the chance to make progress, and the POST is bounded
     /// on its own.
     prompt_in_flight: bool,
     /// Main-session tool calls started and not yet finished.
@@ -3301,29 +3250,8 @@ fn attachment_name(path: &str) -> String {
 
 /// `path` as the `file:` URL Node's `fileURLToPath` (how both wires read an
 /// attachment) maps back to the same path. Every byte outside the unreserved
-/// set is percent-encoded, so `#`, `?`, `%` and spaces survive; a Windows
-/// drive path becomes `file:///C:/…`, a UNC path `file://server/share/…`
-/// (its server is the URL's host), and verbatim `\\?\` prefixes are dropped.
+/// set is percent-encoded, so `#`, `?`, `%` and spaces survive.
 fn file_url(path: &str) -> String {
-    let unc = path.strip_prefix(r"\\?\UNC\").or_else(|| {
-        path.strip_prefix(r"\\")
-            .filter(|rest| !rest.starts_with(r"?\"))
-    });
-    if let Some(unc) = unc {
-        let unc = unc.replace('\\', "/");
-        let (host, share) = unc.split_once('/').unwrap_or((&unc, ""));
-        return format!("file://{host}/{}", percent_encode_path(share));
-    }
-    let path = path.strip_prefix(r"\\?\").unwrap_or(path);
-    let bytes = path.as_bytes();
-    if bytes.len() >= 2
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && matches!(bytes.get(2), None | Some(b'\\' | b'/'))
-    {
-        let rest = path[2..].replace('\\', "/");
-        return format!("file:///{}:{}", &path[..1], percent_encode_path(&rest));
-    }
     let root = if path.starts_with('/') { "" } else { "/" };
     format!("file://{root}{}", percent_encode_path(path))
 }
@@ -4760,6 +4688,7 @@ fn map_questions(props: &Value) -> Vec<(String, UserInputQuestion)> {
                                 .unwrap_or_default(),
                             prefill: None,
                             multiline: false,
+                            approval: None,
                             multi_select: q
                                 .get("multiple")
                                 .and_then(Value::as_bool)
@@ -4816,6 +4745,14 @@ fn oc_tool_call(name: &str, input: &Value) -> ToolCall {
             .filter(|v| !v.is_empty())
             .map(str::to_owned)
     };
+    // File text exactly as given: an empty `newString` is a deletion, an
+    // empty `content` an emptied file.
+    let text = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|k| input.get(*k))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
     match name {
         "bash" => ToolCall::Exec {
             command: s(&["command"]).unwrap_or_default(),
@@ -4825,12 +4762,12 @@ fn oc_tool_call(name: &str, input: &Value) -> ToolCall {
         },
         "write" => ToolCall::WriteFile {
             path: s(&["filePath", "file_path", "path"]).unwrap_or_default(),
-            content: s(&["content"]),
+            content: text(&["content"]),
         },
         "edit" => ToolCall::EditFile {
             path: s(&["filePath", "file_path", "path"]).unwrap_or_default(),
-            old_string: s(&["oldString", "old_string"]),
-            new_string: s(&["newString", "new_string"]),
+            old_string: text(&["oldString", "old_string"]),
+            new_string: text(&["newString", "new_string"]),
         },
         "patch" => ToolCall::ApplyPatch {
             path: s(&["filePath", "file_path", "path"]),
@@ -5709,7 +5646,7 @@ mod context_tests {
 
 /// Budget for a `--version` the shared probe gave up on: a freshly installed
 /// binary's first exec waits on the OS malware scan (1.1s on an M-series Mac
-/// for 2.0.20, longer on slower machines and under Windows Defender).
+/// for 2.0.20, longer on slower machines).
 const COLD_VERSION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The shared probe caps `--version` at 2s and caches a timeout for the
@@ -5797,22 +5734,6 @@ fn mcp_config(
     }
     servers.insert(mcp.name.clone(), server);
     Ok(config.to_string())
-}
-
-/// [`mcp_config`] for Onicode's own server and then each plugin server
-/// ([`RunRequest::extra_mcp`]); the inherited config passes through
-/// untouched when there are none.
-fn mcp_configs(
-    inherited: Option<String>,
-    mcp: Option<&onicode_proto::McpServer>,
-    extras: &[onicode_proto::McpServer],
-    protocol: Protocol,
-) -> Result<Option<String>, HarnessError> {
-    let mut inline = inherited;
-    for server in mcp.into_iter().chain(extras) {
-        inline = Some(mcp_config(inline.as_deref(), server, protocol)?);
-    }
-    Ok(inline)
 }
 
 /// The access mode `request` runs with; `auto_approve` still means full
@@ -5988,55 +5909,10 @@ fn permission_list<'a>(
         .ok_or_else(|| HarnessError::Protocol(format!("{path}.permissions must be a list")))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod mcp_injection_tests {
     use super::*;
 
-    #[test]
-    fn mcp_configs_add_plugin_servers_beside_onicode_in_both_generations() {
-        let onicode = onicode_proto::McpServer {
-            name: "onicode".into(),
-            command: "/opt/onicode/onicode".into(),
-            args: vec!["mcp".into()],
-            env: Default::default(),
-        };
-        let extra = onicode_proto::McpServer {
-            name: "plugin-focus".into(),
-            command: "/data/plugins/.loaded/focus/0123/bin/server".into(),
-            args: vec!["--stdio".into()],
-            env: [("FOCUS".to_owned(), "1".to_owned())].into_iter().collect(),
-        };
-        assert_eq!(
-            mcp_configs(Some("{\"model\":\"keep\"}".into()), None, &[], Protocol::V1).unwrap(),
-            Some("{\"model\":\"keep\"}".into())
-        );
-        for (protocol, servers) in [(Protocol::V1, "/mcp"), (Protocol::V2, "/mcp/servers")] {
-            let inline = mcp_configs(
-                Some(r#"{"model":"keep"}"#.into()),
-                Some(&onicode),
-                std::slice::from_ref(&extra),
-                protocol,
-            )
-            .unwrap()
-            .unwrap();
-            let config: Value = serde_json::from_str(&inline).unwrap();
-            assert_eq!(config["model"], "keep");
-            let servers = config.pointer(servers).unwrap();
-            assert_eq!(
-                servers["onicode"]["command"],
-                json!(["/opt/onicode/onicode", "mcp"])
-            );
-            let plugin = &servers["plugin-focus"];
-            assert_eq!(
-                plugin["command"],
-                json!(["/data/plugins/.loaded/focus/0123/bin/server", "--stdio"])
-            );
-            assert_eq!(plugin["environment"], json!({ "FOCUS": "1" }));
-            assert_eq!(plugin["type"], "local");
-        }
-    }
-
-    #[cfg(unix)]
     #[tokio::test]
     async fn mcp_injection_reaches_isolated_server_processes() {
         use std::os::unix::fs::PermissionsExt;

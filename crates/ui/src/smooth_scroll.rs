@@ -30,20 +30,21 @@
 //! fractional lines outside macOS (X11 touchpads, high-resolution wheels; see
 //! `notch`); notches with Ctrl, Alt, Cmd or Fn held (zoom and other modified gestures stay
 //! discrete, and pressing one mid-glide drops the rest rather than replaying
-//! it as a zoom); notches over a [`raw_wheel_region`], for content that eases
-//! them itself. A press ends a glide too. Off under reduced motion.
+//! it as a zoom). A press ends a glide too. Off under reduced motion.
 //!
 //! A macOS web page's wheel never reaches the root: AppKit hands it to the
 //! page, and `browser::macos` glides it on the same [`Glide`].
 
-use std::cell::{Cell, RefCell};
+#[cfg(target_os = "macos")]
+use std::cell::Cell;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
 use gpui::{
-    AnyElement, App, Bounds, DispatchPhase, Element, ElementId, GlobalElementId, HitboxBehavior,
+    AnyElement, App, Bounds, DispatchPhase, Element, ElementId, GlobalElementId,
     InspectorElementId, IntoElement, LayoutId, Modifiers, MouseDownEvent, Pixels, PlatformInput,
-    Point, ScrollDelta, ScrollWheelEvent, Styled as _, TouchPhase, Window, canvas, point,
+    Point, ScrollDelta, ScrollWheelEvent, TouchPhase, Window, point,
 };
 
 /// Chrome's wheel easing control points, `(x1, y1, x2, y2)`
@@ -60,13 +61,10 @@ const EPSILON_LINES: f64 = 0.01 / PX_PER_LINE;
 /// integral notch delivers exactly its lines.
 const GRID_LINES: f32 = 1.0 / 4096.0;
 
+#[cfg(target_os = "macos")]
 thread_local! {
-    /// Set in a wheel event's capture phase by the [`raw_wheel_region`] under
-    /// the pointer; read by the root's listener later in the same phase.
-    static KEEP_RAW: Cell<bool> = const { Cell::new(false) };
     /// [`enabled`] as of the last root paint, for AppKit callbacks, which
     /// can't read the App.
-    #[cfg(target_os = "macos")]
     static GLIDING: Cell<bool> = const { Cell::new(false) };
 }
 
@@ -84,27 +82,6 @@ pub fn smooth_scroll(child: impl IntoElement) -> SmoothScroll {
     }
 }
 
-/// Keep wheel notches over this region raw, for content that eases them
-/// itself (a native web view). Absolutely positioned: make it a child of the
-/// region it covers. Occluding overlays above it still glide.
-pub fn raw_wheel_region() -> impl IntoElement {
-    canvas(
-        |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
-        |_, hitbox, window, _| {
-            window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, _| {
-                if phase == DispatchPhase::Capture
-                    && !event.delta.precise()
-                    && hitbox.should_handle_scroll(window)
-                {
-                    KEEP_RAW.set(true);
-                }
-            });
-        },
-    )
-    .absolute()
-    .inset_0()
-}
-
 /// Whether notches glide: the preference, unless motion is reduced.
 fn enabled(cx: &App) -> bool {
     crate::settings::smooth_scrolling(cx) && !crate::motion::reduced_motion(cx)
@@ -118,9 +95,9 @@ fn commanded(modifiers: Modifiers) -> bool {
 
 /// Whether `lines` is a wheel notch. macOS flags trackpads precise, so any
 /// line delta there is a wheel (slow notches from some mice arrive as
-/// fractions). Elsewhere a notch is whole lines (3 a detent, or Windows' lines
-/// setting), while X11 reports touchpads, and X11, Wayland and Windows report
-/// high-resolution wheels, as fractional lines that already stream smoothly.
+/// fractions). Elsewhere a notch is whole lines (3 a detent), while X11
+/// reports touchpads, and X11 and Wayland report high-resolution wheels, as
+/// fractional lines that already stream smoothly.
 fn notch(lines: Point<f32>) -> bool {
     cfg!(target_os = "macos") || (lines.x.fract() == 0.0 && lines.y.fract() == 0.0)
 }
@@ -414,7 +391,6 @@ impl Bezier {
 fn intercept(
     root: &Rc<RefCell<Root>>,
     event: &ScrollWheelEvent,
-    keep_raw: bool,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -425,9 +401,7 @@ fn intercept(
     let lines = match event.delta {
         // Nothing to glide, and nothing to interrupt one in flight.
         ScrollDelta::Lines(lines) if lines == Point::default() => return,
-        ScrollDelta::Lines(lines)
-            if notch(lines) && !keep_raw && !commanded(event.modifiers) && enabled(cx) =>
-        {
+        ScrollDelta::Lines(lines) if notch(lines) && !commanded(event.modifiers) && enabled(cx) => {
             lines
         }
         _ => {
@@ -543,15 +517,9 @@ impl Element for SmoothScroll {
         });
         #[cfg(target_os = "macos")]
         GLIDING.set(enabled(cx));
-        // Both first in their capture phase, where nothing in the tree can
-        // stop them: a claim left by a wheel event that never reached the
-        // root listener can't carry over, and a press (a scrollbar grab, a
-        // click to stop) always takes over from a glide.
-        window.on_mouse_event(|_: &ScrollWheelEvent, phase, _, _| {
-            if phase == DispatchPhase::Capture {
-                KEEP_RAW.set(false);
-            }
-        });
+        // First in its capture phase, where nothing in the tree can stop
+        // it: a press (a scrollbar grab, a click to stop) always takes over
+        // from a glide.
         let press = root.clone();
         window.on_mouse_event(move |_: &MouseDownEvent, phase, _, _| {
             if phase == DispatchPhase::Capture {
@@ -559,10 +527,9 @@ impl Element for SmoothScroll {
             }
         });
         self.child.paint(window, cx);
-        // After the whole tree, so every region's claim is in.
         window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
             if phase == DispatchPhase::Capture {
-                intercept(&root, event, KEEP_RAW.take(), window, cx);
+                intercept(&root, event, window, cx);
             }
         });
     }
@@ -583,6 +550,7 @@ mod tests {
         Context, ModifiersChangedEvent, MouseButton, Render, ScrollHandle, TestAppContext,
         VisualTestContext, div, prelude::*, px,
     };
+    use std::cell::Cell;
     use std::time::Duration;
 
     thread_local! {
@@ -770,33 +738,27 @@ mod tests {
 
     struct Fixture {
         scroll: ScrollHandle,
-        raw: bool,
     }
 
     impl Render for Fixture {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
             smooth_scroll(
-                div()
-                    .relative()
-                    .size(px(200.0))
-                    .child(
-                        div()
-                            .id("list")
-                            .size_full()
-                            .overflow_y_scroll()
-                            .track_scroll(&self.scroll)
-                            .child(div().w_full().h(px(5000.0))),
-                    )
-                    .when(self.raw, |el| el.child(raw_wheel_region())),
+                div().relative().size(px(200.0)).child(
+                    div()
+                        .id("list")
+                        .size_full()
+                        .overflow_y_scroll()
+                        .track_scroll(&self.scroll)
+                        .child(div().w_full().h(px(5000.0))),
+                ),
             )
         }
     }
 
-    fn open(cx: &mut TestAppContext, raw: bool) -> (ScrollHandle, &mut VisualTestContext) {
+    fn open(cx: &mut TestAppContext) -> (ScrollHandle, &mut VisualTestContext) {
         let scroll = ScrollHandle::new();
         let (_, cx) = cx.add_window_view(|_, _| Fixture {
             scroll: scroll.clone(),
-            raw,
         });
         cx.update(|window, cx| window.draw(cx).clear());
         (scroll, cx)
@@ -860,7 +822,7 @@ mod tests {
     #[gpui::test]
     fn a_notch_glides_as_far_as_it_used_to_jump(cx: &mut TestAppContext) {
         let _dir = init(cx);
-        let (scroll, cx) = open(cx, false);
+        let (scroll, cx) = open(cx);
         set_smooth(false, cx);
         notch(cx);
         let jump = top(&scroll);
@@ -885,7 +847,7 @@ mod tests {
     #[gpui::test]
     fn precise_modified_and_reduced_input_scrolls_at_once(cx: &mut TestAppContext) {
         let _dir = init(cx);
-        let (scroll, cx) = open(cx, false);
+        let (scroll, cx) = open(cx);
         let expect_instant = |cx: &mut VisualTestContext, delta, modifiers| {
             scroll.set_offset(point(px(0.0), px(0.0)));
             cx.update(|window, cx| window.draw(cx).clear());
@@ -918,7 +880,7 @@ mod tests {
     #[gpui::test]
     fn an_empty_notch_queues_no_frames(cx: &mut TestAppContext) {
         let _dir = init(cx);
-        let (_, cx) = open(cx, false);
+        let (_, cx) = open(cx);
         wheel(
             cx,
             ScrollDelta::Lines(point(0.0, 0.0)),
@@ -928,18 +890,9 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_raw_region_keeps_its_notches(cx: &mut TestAppContext) {
-        let _dir = init(cx);
-        let (scroll, cx) = open(cx, true);
-        notch(cx);
-        assert!(top(&scroll) < 0.0);
-        assert_eq!(next_frame(cx), 0);
-    }
-
-    #[gpui::test]
     fn a_press_a_trackpad_or_a_modifier_ends_a_glide(cx: &mut TestAppContext) {
         let _dir = init(cx);
-        let (scroll, cx) = open(cx, false);
+        let (scroll, cx) = open(cx);
         let interruptions: [&dyn Fn(&mut VisualTestContext); 3] = [
             &|cx| {
                 cx.simulate_event(MouseDownEvent {

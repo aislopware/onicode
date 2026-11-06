@@ -13,7 +13,7 @@
 //!   permission tool — needs a server process and was rejected. The run's
 //!   access mode decides what is asked: full access allows every tool call
 //!   (as every run did before modes), auto-accept edits allows the edit
-//!   tools and asks before the rest, supervised asks before each; a yes/no
+//!   tools and asks before the rest, supervised asks before each; a
 //!   question through [`RunControls::request_input`]. `AskUserQuestion`
 //!   round-trips through it too.
 //! - ACCESS AND PLAN MODES map onto the CLI's `--permission-mode`
@@ -36,7 +36,16 @@
 //!   uuid, and the CLI reports each one's `command_lifecycle`. A result
 //!   while one of ours is still written/queued is a boundary (a `now` steer
 //!   aborting the turn, resume settling dead background tasks) — that
-//!   message's turn ends with its own result. See [`Commands`].
+//!   message's turn ends with its own result. See [`Commands`]. A CLI that
+//!   reports `session_state_changed` also says which messages a result
+//!   consumed, whether more turns are queued, and when it is `idle`: those
+//!   settle every held result and stop, and no quiet-time timer runs.
+//! - APPROVALS offer allow once / for this chat / always (the CLI's own
+//!   `permission_suggestions`), deny with a note, and stop; a
+//!   `control_cancel_request` closes the card. See [`approvals`].
+//! - The CLI's version gates flags it may not know ([`features`]); a
+//!   session another live process writes is not resumed beside it
+//!   ([`live_session`]); a branch resumes part of a session ([`branch`]).
 //! - Steering: queued [`SteerMessage`]s are written to stdin as user lines at
 //!   any time; the CLI folds them into the running turn at its own step
 //!   boundary. A steer's changed model/effort/options apply to the live
@@ -50,10 +59,14 @@
 //! - Interrupt: cancelling [`RunControls::interrupt`] tears the runtime down —
 //!   the interrupt control request, then SIGTERM and SIGKILL.
 
+mod approvals;
 mod background;
+mod branch;
 pub mod catalog;
 mod discovery;
+mod features;
 mod fork_tail;
+mod live_session;
 mod normalize;
 pub mod refresh_lock;
 mod wire;
@@ -74,15 +87,15 @@ use onicode_proto::{
     SteeringMode, UserInputAnswer, UserInputQuestion,
 };
 
-use crate::approval::{self, Action};
 use crate::process::owned::Child;
 use crate::process::{ChildStdin, Command, Stdio};
-use crate::{Harness, HarnessError, RunControls, Signal, send_signal};
+use crate::{Branch, ControlQuery, Harness, HarnessError, RunControls, Signal, send_signal};
 use catalog::{apply_ultrathink, to_effort};
+use features::Feature;
 use fork_tail::ForkTail;
 use normalize::{Normalizer, Transcript};
 use wire::{
-    ControlRequestFrame, Frame, allow_response, control_error_line, control_response_line,
+    ControlRequestFrame, Frame, Origin, allow_response, control_error_line, control_response_line,
     deny_response,
 };
 
@@ -101,27 +114,7 @@ fn resolve_claude_executable() -> Option<PathBuf> {
     }
     extra.push(PathBuf::from("/opt/homebrew/bin/claude"));
     extra.push(PathBuf::from("/usr/local/bin/claude"));
-    let found = crate::executable::find_on_paths("claude", extra)?;
-    Some(native_beside_npm_shim(&found).unwrap_or(found))
-}
-
-/// npm installs Claude Code on Windows as a `claude.cmd` shim, and current
-/// packages carry the native CLI beside it. Launched directly, it skips a
-/// `cmd.exe` → node hop that mangles arguments (our JSON `--settings` and
-/// `--mcp-config` values) and outlives a killed parent.
-fn native_beside_npm_shim(shim: &std::path::Path) -> Option<PathBuf> {
-    let ext = shim.extension()?.to_str()?;
-    if !(ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("bat")) {
-        return None;
-    }
-    let native = shim
-        .parent()?
-        .join("node_modules")
-        .join("@anthropic-ai")
-        .join("claude-code")
-        .join("bin")
-        .join("claude.exe");
-    native.is_file().then_some(native)
+    crate::executable::find_on_paths("claude", extra)
 }
 
 /// Claude's config root for a run: the run's own `CLAUDE_CONFIG_DIR` or
@@ -145,8 +138,6 @@ fn config_root(env: &std::collections::BTreeMap<String, String>) -> PathBuf {
 fn managed_mcp_config() -> bool {
     let path = if cfg!(target_os = "macos") {
         "/Library/Application Support/ClaudeCode/managed-mcp.json"
-    } else if cfg!(windows) {
-        r"C:\Program Files\ClaudeCode\managed-mcp.json"
     } else {
         "/etc/claude-code/managed-mcp.json"
     };
@@ -165,7 +156,6 @@ const SESSION_LOST: &str = "The previous Claude session could not be restored, s
 
 /// The inline `--mcp-config` JSON for an injected server (the CLI accepts a
 /// JSON string as well as a file path).
-#[cfg(test)]
 fn mcp_config_arg(mcp: &onicode_proto::McpServer) -> String {
     serde_json::json!({
         "mcpServers": {
@@ -177,30 +167,6 @@ fn mcp_config_arg(mcp: &onicode_proto::McpServer) -> String {
         }
     })
     .to_string()
-}
-
-/// The inline `--mcp-config` JSON for Onicode's own server plus the plugins'
-/// native servers ([`RunRequest::extra_mcp`]), or `None` when there are none.
-/// Onicode's own server wins a name clash.
-fn mcp_servers_config_arg(
-    mcp: Option<&onicode_proto::McpServer>,
-    extras: &[onicode_proto::McpServer],
-) -> Option<String> {
-    if mcp.is_none() && extras.is_empty() {
-        return None;
-    }
-    let mut servers = serde_json::Map::new();
-    for server in extras.iter().chain(mcp) {
-        servers.insert(
-            server.name.clone(),
-            serde_json::json!({
-                "command": server.command,
-                "args": server.args,
-                "env": server.env,
-            }),
-        );
-    }
-    Some(serde_json::json!({ "mcpServers": servers }).to_string())
 }
 
 /// The `--model` value: the 1M context window is selected via a model-id
@@ -286,52 +252,6 @@ fn strictness(mode: &str) -> u8 {
     }
 }
 
-/// Claude's file-changing tools: auto-accept edits allows these unasked.
-const EDIT_TOOLS: [&str; 4] = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
-
-/// What a `can_use_tool` request has to ask the person before it is
-/// allowed, in `access`; `None` allows it now. `ExitPlanMode` (the plan is
-/// ready) asks whether to start implementing it.
-fn approval_question(
-    tool: &str,
-    display_name: Option<&str>,
-    description: Option<&str>,
-    input: &Value,
-    access: AccessMode,
-) -> Option<UserInputQuestion> {
-    if tool == "ExitPlanMode" {
-        return (!access.is_full_access()).then(|| {
-            approval::question(
-                "Approve plan",
-                "Claude wants to start implementing its plan. Allow it?",
-            )
-        });
-    }
-    let edit = EDIT_TOOLS.contains(&tool);
-    let action = if edit { Action::Edit } else { Action::Other };
-    if approval::allowed_without_asking(access, action) {
-        return None;
-    }
-    let field = |key: &str| input.get(key).and_then(Value::as_str);
-    Some(if tool == "Bash" {
-        approval::command("Claude", field("command").unwrap_or_default())
-    } else if edit {
-        let paths: Vec<&str> = field("file_path")
-            .or_else(|| field("notebook_path"))
-            .into_iter()
-            .collect();
-        approval::edit("Claude", &paths)
-    } else {
-        let name = display_name
-            .filter(|n| !n.trim().is_empty())
-            .unwrap_or(tool);
-        approval::tool("Claude", name, description)
-    })
-}
-
-/// What a refused approval tells the agent.
-const APPROVAL_DENIED: &str = "The user did not allow this.";
-
 /// The Claude Code harness. Construct with [`ClaudeHarness::new`]; tests point
 /// it at a fake CLI with [`ClaudeHarness::with_executable`].
 pub struct ClaudeHarness {
@@ -389,8 +309,7 @@ impl ClaudeHarness {
             HarnessError::NotInstalled(
                 "claude (searched PATH, the login shell's PATH, ~/.claude/local, \
                  ~/.local/bin, /opt/homebrew/bin, /usr/local/bin, and \
-                 fnm/nvm/volta/pnpm/bun install dirs; Windows also checks USERPROFILE \
-                 and explicit NVM_SYMLINK/VOLTA_HOME/PNPM_HOME; set \
+                 fnm/nvm/volta/pnpm/bun install dirs; set \
                  CLAUDE_CODE_EXECUTABLE to override)"
                     .into(),
             )
@@ -458,7 +377,12 @@ impl ClaudeHarness {
         args
     }
 
-    fn build_command(exe: &std::path::Path, request: &RunRequest, title_only: bool) -> Command {
+    fn build_command(
+        exe: &std::path::Path,
+        request: &RunRequest,
+        title_only: bool,
+        launch: &Launch,
+    ) -> Command {
         let mut cmd = Command::new(exe);
         // Its own process group, so teardown reaches the MCP servers and
         // tools it started; and no inherited Claude Code session markers.
@@ -480,9 +404,20 @@ impl ClaudeHarness {
         // from the user's own key, `GH_TOKEN`, …). Never a Claude.ai
         // subscription token: those stay inside the CLI's own login.
         crate::apply_run_env(&mut cmd, &request.env);
+        // After the run's own environment: the run loop depends on these.
+        // `session_state_changed` (`idle` = the turn is over) is the turn
+        // end's authority; a startup failure arrives as a `result` with a
+        // `startup_failure_reason` instead of a bare exit.
+        cmd.env("CLAUDE_CODE_SDK_READS_SESSION_STATE", "1")
+            .env("CLAUDE_CODE_STARTUP_FAILURE_RESULTS", "1");
         cmd.args(Self::launch_args(request));
         if let Some(resume) = &request.resume {
             cmd.arg(format!("--resume={resume}"));
+            if let Some(branch) = &launch.branch {
+                cmd.args(branch.args());
+            }
+        } else if let Some(session_id) = &launch.session_id {
+            cmd.arg(format!("--session-id={session_id}"));
         }
         if title_only {
             cmd.args([
@@ -499,11 +434,22 @@ impl ClaudeHarness {
                 cmd.arg("--strict-mcp-config");
             }
         } else {
-            // Onicode's own server (and the plugins' native ones) ride beside
-            // the user's configured servers (no `--strict-mcp-config`): the
-            // CLI merges an inline JSON config with settings-sourced ones.
-            if let Some(config) = mcp_servers_config_arg(request.mcp.as_ref(), &request.extra_mcp) {
-                cmd.args(["--mcp-config", &config]);
+            let version = launch.version.as_ref();
+            // File checkpoints, so a turn's edits can be undone
+            // (`rewind_files`).
+            if Feature::FileCheckpointing.supported(version) {
+                cmd.env("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "true");
+            }
+            // Startup hooks reported, so a slow SessionStart hook is not
+            // taken for a hung CLI.
+            if Feature::HookEvents.supported(version) {
+                cmd.arg("--include-hook-events");
+            }
+            // Onicode's own server rides beside the user's configured
+            // servers (no `--strict-mcp-config`): the CLI merges an inline
+            // JSON config with settings-sourced ones.
+            if let Some(mcp) = &request.mcp {
+                cmd.args(["--mcp-config", &mcp_config_arg(mcp)]);
             }
             // Delegation goes through that server's side chats only. A bare
             // tool name "removes the matching tools from Claude's context"
@@ -536,8 +482,9 @@ impl ClaudeHarness {
         exe: &std::path::Path,
         request: &RunRequest,
         title_only: bool,
+        launch: &Launch,
     ) -> Result<Runtime, HarnessError> {
-        let mut child = Self::build_command(exe, request, title_only)
+        let mut child = Self::build_command(exe, request, title_only, launch)
             .spawn()
             .map_err(|e| {
                 let cwd = (!request.cwd.is_empty()).then(|| std::path::Path::new(&request.cwd));
@@ -546,6 +493,7 @@ impl ClaudeHarness {
         let stdin = child.stdin.take();
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
+        let own = OwnPid::new(child.id());
         let child = Child::new(child);
         let stdin =
             stdin.ok_or_else(|| HarnessError::Protocol("claude child has no stdin".into()))?;
@@ -564,6 +512,7 @@ impl ClaudeHarness {
                 refresh_lock::config_dir_for(&request.env),
             ),
             stderr_tail,
+            own,
         })
     }
 
@@ -714,8 +663,8 @@ impl ClaudeHarness {
     }
 }
 
-/// How long the discovery probe waits: a cold start on Windows or behind
-/// Bedrock can take well over 10s.
+/// How long the discovery probe waits: a cold start behind Bedrock can take
+/// well over 10s.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(25);
 
 /// The discovery probe's timeout, with what the CLI printed (redacted).
@@ -920,7 +869,19 @@ impl Harness for ClaudeHarness {
         request: RunRequest,
         controls: RunControls,
     ) -> Result<BoxStream<'static, Result<AgentEvent, HarnessError>>, HarnessError> {
-        self.run_with_mode(request, controls, false).await
+        self.run_with_mode(request, controls, false, None).await
+    }
+
+    /// Edit and resend (`Redo`) truncates the session at the prompt's
+    /// parent and drops exactly that turn; a fork resumes into a copy.
+    async fn run_branch(
+        &self,
+        request: RunRequest,
+        controls: RunControls,
+        branch: Branch,
+    ) -> Result<BoxStream<'static, Result<AgentEvent, HarnessError>>, HarnessError> {
+        self.run_with_mode(request, controls, false, Some(branch))
+            .await
     }
 
     async fn run_title(
@@ -932,13 +893,12 @@ impl Harness for ClaudeHarness {
         request.worktree = None;
         request.attachments.clear();
         request.mcp = None;
-        request.extra_mcp.clear();
         request.model_options.clear();
         request.auto_approve = false;
         // Its tools are off and denied: the chat's modes do not apply.
         request.access = AccessMode::default();
         request.plan = false;
-        self.run_with_mode(request, controls, true).await
+        self.run_with_mode(request, controls, true, None).await
     }
 }
 
@@ -948,19 +908,62 @@ impl ClaudeHarness {
         mut request: RunRequest,
         controls: RunControls,
         title_only: bool,
+        from: Option<Branch>,
     ) -> Result<BoxStream<'static, Result<AgentEvent, HarnessError>>, HarnessError> {
         let exe = self.resolve_executable()?;
+        // Flags the binary might not know are gated on its version; an
+        // unknown one (a wrapper script, a failed probe) is taken as current.
+        let version = if title_only {
+            None
+        } else {
+            let exe = exe.clone();
+            tokio::task::spawn_blocking(move || crate::executable::binary_version(&exe))
+                .await
+                .ok()
+                .flatten()
+        };
+        let claude_root = config_root(&request.env);
+        let mut launch = Launch {
+            version: version.clone(),
+            ..Launch::default()
+        };
+        if let Some(from) = &from {
+            launch.branch =
+                Some(branch_args(&claude_root, &request, from, version.as_ref()).await?);
+        }
+        // Two writers of one session lose each other's turns: a session a
+        // terminal (or another server) holds is not resumed beside it. A
+        // fork only reads it.
+        if !title_only
+            && let Some(session_id) = request.resume.clone()
+            && !matches!(from, Some(Branch::Fork { .. }))
+        {
+            let root = claude_root.clone();
+            let writer = tokio::task::spawn_blocking(move || foreign_writer(&root, &session_id))
+                .await
+                .ok()
+                .flatten();
+            if let Some(writer) = writer {
+                tracing::info!(
+                    target: "onicode_harness::claude",
+                    pid = writer.pid,
+                    kind = ?writer.kind,
+                    "session held by another live process; not resumed"
+                );
+                return Err(HarnessError::Protocol(writer.refusal()));
+            }
+        }
         // A session whose transcript holds no conversation cannot be
         // resumed: the CLI says so and exits, every time. Start fresh
         // instead — the chat's history is gone either way, and the user is
         // told. A transcript not found here is still resumed: the CLI may
         // keep it elsewhere, and says so when it does not.
         let mut notice = None;
-        let normalizer = match request.resume.clone() {
+        let mut normalizer = match request.resume.clone() {
             Some(session_id) => {
                 let (normalizer, transcript) =
-                    Normalizer::for_resume(&config_root(&request.env), &session_id).await;
-                if transcript == Transcript::Empty {
+                    Normalizer::for_resume(&claude_root, &session_id).await;
+                if transcript == Transcript::Empty && launch.branch.is_none() {
                     tracing::info!(
                         target: "onicode_harness::claude",
                         %session_id,
@@ -973,16 +976,28 @@ impl ClaudeHarness {
             }
             None => Normalizer::new(),
         };
+        // A fresh session's id is onicode's: known before the CLI's `init`,
+        // so a run that dies first still names its session.
+        if !title_only && request.resume.is_none() && Feature::SessionId.supported(version.as_ref())
+        {
+            let session_id = uuid::Uuid::new_v4().to_string();
+            normalizer = normalizer.with_session(&session_id);
+            launch.session_id = Some(session_id);
+        }
         let Runtime {
             child,
             stdout_lines,
             mut stdin,
             stderr_tail,
-        } = Self::launch(&exe, &request, title_only)?;
+            own,
+        } = Self::launch(&exe, &request, title_only, &launch)?;
 
         let lock_dir = refresh_lock::config_dir_for(&request.env);
         if !title_only {
-            stdin.line(wire::initialize_request_line("onicode_initialize"));
+            stdin.line(wire::initialize_request_line(
+                INITIALIZE_ID,
+                Feature::RapidFollowupPreempt.supported(version.as_ref()),
+            ));
         }
 
         // The initial prompt as the first stdin user line (streaming-input
@@ -991,11 +1006,21 @@ impl ClaudeHarness {
         // ahead of the text (verified against the real CLI); their path refs
         // also ride the prompt text, so a skipped/unreadable file degrades to
         // the old-app behavior (the agent opens the path with its Read tool).
+        // The person typed it, unless onicode composed it (a revival's
+        // continuation, a title).
+        let opening = controls.turn.opening_prompt();
+        let mut prompts = Prompts::default();
+        let first_command = prompts.name(opening.message_id.as_deref(), &normalizer);
+        let origin = if title_only || opening.composed {
+            Origin::Onicode
+        } else {
+            Origin::Human
+        };
         let images = load_image_blocks(&request.attachments).await;
-        let first_command = uuid::Uuid::new_v4().to_string();
         let first = wire::prompt_line(
             &apply_ultrathink(request.reasoning, &request.prompt),
             &first_command,
+            origin,
             &images,
         );
         stdin.line(first);
@@ -1009,9 +1034,12 @@ impl ClaudeHarness {
             title_only,
             exe,
             launched: request.clone(),
+            version,
             child,
+            own,
             stdout_lines,
             first_command,
+            prompts,
             stdin,
             event_tx,
             controls,
@@ -1026,6 +1054,109 @@ impl ClaudeHarness {
             rx.recv().await.map(|ev| (ev, rx))
         })
         .boxed())
+    }
+}
+
+/// The id of the run's opening `initialize` request.
+const INITIALIZE_ID: &str = "onicode_initialize";
+
+/// Turn stops' request ids (`onicode_turn_stop_<n>`).
+const TURN_STOP_PREFIX: &str = "onicode_turn_stop_";
+
+/// How long the CLI may take to answer `initialize`, counted from launch or
+/// from its last startup hook ending. A SessionStart or Setup hook still
+/// running stretches it, up to [`STARTUP_HOOKS_MAX`] from launch.
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
+const STARTUP_HOOKS_MAX: Duration = Duration::from_secs(600);
+
+/// When a CLI launched at `started` that has not answered `initialize`
+/// is given up on: [`STARTUP_TIMEOUT`] after launch or after its last
+/// startup hook ended (`quiet_since`), never while one is still running,
+/// and never past [`STARTUP_HOOKS_MAX`].
+fn startup_deadline(
+    started: tokio::time::Instant,
+    quiet_since: tokio::time::Instant,
+    hook_running: bool,
+) -> tokio::time::Instant {
+    let limit = started + STARTUP_HOOKS_MAX;
+    if hook_running {
+        limit
+    } else {
+        (quiet_since.max(started) + STARTUP_TIMEOUT).min(limit)
+    }
+}
+
+/// The truncating-resume flags for `from`, refused before launch when the
+/// CLI is too old or its transcript does not hold the message.
+async fn branch_args(
+    claude_root: &std::path::Path,
+    request: &RunRequest,
+    from: &Branch,
+    version: Option<&semver::Version>,
+) -> Result<branch::BranchArgs, HarnessError> {
+    let Some(session_id) = request.resume.clone() else {
+        return Err(HarnessError::Protocol(
+            "this chat has no Claude session to branch".into(),
+        ));
+    };
+    let needs = match from {
+        Branch::Redo { .. } => [Feature::ResumeAt, Feature::ResumeDropsTurn],
+        Branch::Fork { .. } => [Feature::ResumeAt, Feature::ForkSession],
+    };
+    if let Some(missing) = needs.into_iter().find(|f| !f.supported(version)) {
+        return Err(HarnessError::Protocol(missing.required(version)));
+    }
+    let root = claude_root.to_owned();
+    let entries = tokio::task::spawn_blocking(move || branch::read_entries(&root, &session_id))
+        .await
+        .map_err(|e| HarnessError::Protocol(e.to_string()))?
+        .map_err(HarnessError::Protocol)?;
+    branch::resolve(&entries, from).map_err(HarnessError::Protocol)
+}
+
+/// A live process other than ours writing `session_id`. One that is not a
+/// terminal gets a few seconds to go first: the reaper ends a crashed
+/// engine's CLIs within about three, and boot recovery may resume their
+/// sessions sooner than that.
+fn foreign_writer(root: &std::path::Path, session_id: &str) -> Option<live_session::LiveWriter> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(4);
+    loop {
+        let writer = live_session::live_writer(root, session_id, &own_pids())?;
+        if writer.kind.as_deref() == Some("interactive") || std::time::Instant::now() >= deadline {
+            return Some(writer);
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+}
+
+/// The uuids the run's prompts were written under, and which host message
+/// each one is.
+#[derive(Default)]
+struct Prompts {
+    written: std::collections::HashSet<String>,
+    /// Host message id → the uuid it went to the CLI as, where they differ.
+    renamed: std::collections::HashMap<String, String>,
+}
+
+impl Prompts {
+    /// The uuid to write the host's `message_id` under (see [`prompt_uuid`]).
+    fn name(&mut self, message_id: Option<&str>, norm: &Normalizer) -> String {
+        let id = prompt_uuid(message_id, &norm.known_user_ids, &self.written);
+        self.written.insert(id.clone());
+        if let Some(message_id) = message_id
+            && message_id != id
+        {
+            self.renamed.insert(message_id.to_owned(), id.clone());
+        }
+        id
+    }
+
+    /// The CLI's uuid for the host's `message_id`.
+    fn cli_id(&self, message_id: &str) -> String {
+        self.renamed
+            .get(message_id)
+            .cloned()
+            .unwrap_or_else(|| message_id.to_owned())
     }
 }
 
@@ -1046,6 +1177,64 @@ struct Runtime {
     stdout_lines: crate::lossy_lines::LossyLines<crate::process::ChildStdout>,
     stdin: Stdin,
     stderr_tail: crate::StderrTail,
+    own: OwnPid,
+}
+
+/// What one launch adds to its request's own flags.
+#[derive(Clone, Debug, Default)]
+struct Launch {
+    /// `--session-id`: the id onicode chose for a fresh session.
+    session_id: Option<String>,
+    /// Where a resume picks the history up (`run_branch`).
+    branch: Option<branch::BranchArgs>,
+    /// The binary's `--version`, gating flags it might not know.
+    version: Option<semver::Version>,
+}
+
+/// The pids of the CLIs this process runs: a session one of them holds is
+/// ours, not a foreign writer (see [`live_session`]).
+static OWN_PIDS: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
+
+fn own_pids() -> Vec<u32> {
+    OWN_PIDS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// One CLI's place in [`OWN_PIDS`], for as long as its runtime lives.
+struct OwnPid(Option<u32>);
+
+impl OwnPid {
+    fn new(pid: Option<u32>) -> Self {
+        if let Some(pid) = pid {
+            OWN_PIDS.lock().unwrap_or_else(|e| e.into_inner()).push(pid);
+        }
+        Self(pid)
+    }
+}
+
+impl Drop for OwnPid {
+    fn drop(&mut self) {
+        if let Some(pid) = self.0 {
+            let mut pids = OWN_PIDS.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(at) = pids.iter().position(|p| *p == pid) {
+                pids.swap_remove(at);
+            }
+        }
+    }
+}
+
+/// The uuid a prompt is written to the CLI under: the host's own message
+/// id where it is a uuid the session has not seen, so the host can name it
+/// later (rewind, branch); a fresh one otherwise.
+fn prompt_uuid(
+    message_id: Option<&str>,
+    known: &std::collections::HashSet<String>,
+    written: &std::collections::HashSet<String>,
+) -> String {
+    message_id
+        // The canonical spelling only: the CLI keys its records by it.
+        .filter(|id| uuid::Uuid::parse_str(id).is_ok_and(|u| u.hyphenated().to_string() == *id))
+        .filter(|id| !known.contains(*id) && !written.contains(*id))
+        .map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned)
 }
 
 /// The run's stdin, through its writer task. Until the CLI reports its
@@ -1076,15 +1265,6 @@ impl Stdin {
 
     fn line(&mut self, line: String) -> bool {
         self.send(StdinMsg::Line(line))
-    }
-
-    /// Before the CLI's teardown: Windows' gives it its grace to exit on
-    /// stdin EOF, which the writer holds off while any sender (a pending
-    /// permission answer's) is alive. Unix teardown signals instead; its
-    /// order is unchanged.
-    fn close_for_teardown(&self) {
-        #[cfg(windows)]
-        let _ = self.tx.send(StdinMsg::Close);
     }
 }
 
@@ -1118,7 +1298,7 @@ fn image_media_type(path: &std::path::Path, bytes: &[u8]) -> Option<&'static str
     };
     by_ext.or(match bytes {
         [0x89, b'P', b'N', b'G', ..] => Some("image/png"),
-        [0xFF, 0xD8, 0xFF, ..] => Some("image/jpeg"),
+        [0xff, 0xd8, 0xff, ..] => Some("image/jpeg"),
         [b'G', b'I', b'F', b'8', ..] => Some("image/gif"),
         [
             b'R',
@@ -1180,6 +1360,7 @@ async fn stdin_writer(
     while let Some(msg) = rx.recv().await {
         match msg {
             StdinMsg::Line(line) => {
+                let line = crate::lossy_lines::ndjson_safe(&line);
                 let write = async {
                     stdin.write_all(line.as_bytes()).await?;
                     stdin.write_all(b"\n").await?;
@@ -1206,10 +1387,14 @@ struct Session {
     /// session cannot be restored.
     exe: PathBuf,
     launched: RunRequest,
+    /// The binary's `--version` at launch, until the CLI reports its own.
+    version: Option<semver::Version>,
     child: Child,
+    own: OwnPid,
     stdout_lines: crate::lossy_lines::LossyLines<crate::process::ChildStdout>,
     /// The uuid the opening prompt was written with.
     first_command: String,
+    prompts: Prompts,
     stdin: Stdin,
     event_tx: mpsc::Sender<Result<AgentEvent, HarnessError>>,
     controls: RunControls,
@@ -1233,9 +1418,12 @@ async fn run_session(session: Session) {
         title_only,
         exe,
         launched,
+        mut version,
         mut child,
+        own: mut _own,
         mut stdout_lines,
         first_command,
+        mut prompts,
         mut stdin,
         event_tx,
         controls,
@@ -1294,6 +1482,9 @@ async fn run_session(session: Session) {
     // take. The CLI answers a stop between turns without any result — the
     // deadline settles that shape so the host never waits on it.
     const STOP_SETTLE: Duration = Duration::from_secs(3);
+    // With state reports, how long a stop waits for `idle` or the stopped
+    // turn's result before it is settled anyway.
+    const STOP_SAFETY: Duration = Duration::from_secs(30);
     let mut stops_sent = 0u64;
     let mut stopping: Option<String> = None;
     let mut stop_settle_at: Option<tokio::time::Instant> = None;
@@ -1317,13 +1508,16 @@ async fn run_session(session: Session) {
     // starts its own turn, which ends with its own result; it is released
     // as the turn's end if that message is cancelled before it starts.
     let mut held_done: Option<AgentEvent> = None;
+    // The held result waits on the CLI's own queue (more turns queued, a
+    // preempting follow-up), not only on messages of ours: our lifecycle
+    // reports alone do not release it — `idle` or the next turn does.
+    let mut held_by_cli = false;
     // Last stdout activity, for the held result's settle fallback.
     let mut last_frame_at = tokio::time::Instant::now();
     let mut done_after_interrupt = false;
     let mut escalation: Option<tokio::task::JoinHandle<()>> = None;
     // The runtime's process tree when its teardown began (see
     // [`crate::shutdown_agent`]).
-    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut torn_down: Vec<crate::process::Tracked> = Vec::new();
     // The typed fork whose transcript is read off disk (see [`fork_tail`]).
     let claude_root = config_root(&launched.env);
@@ -1332,6 +1526,36 @@ async fn run_session(session: Session) {
     // [`background`]), and the stops asked of them.
     let mut shells = background::BackgroundShells::default();
     let mut task_stops_sent = 0u64;
+    // The CLI reports `session_state_changed` (see `build_command`): its
+    // `idle` is the turn's end, and no quiet-time guess settles anything.
+    // A CLI that never does keeps the settle timers.
+    let mut state_reported = false;
+    let mut cli_idle = false;
+    // `turn_preempted`: a follow-up stopped the turn to fold into it, so
+    // that turn's result is a boundary, not the end.
+    let mut preempted = false;
+    // Our messages still open when the last stop went out: a result that
+    // consumed only these is the stopped turn's, reporting after its stop
+    // settled.
+    let mut stopped_commands: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // The person's pending answers to the CLI's own requests, by request
+    // id: `control_cancel_request` closes the card.
+    let mut asks: std::collections::HashMap<String, tokio::task::JoinHandle<()>> =
+        std::collections::HashMap::new();
+    // The host's queries in flight (`TurnControl::query`), by request id.
+    let mut queries: std::collections::HashMap<
+        String,
+        tokio::sync::oneshot::Sender<Result<Value, String>>,
+    > = std::collections::HashMap::new();
+    let mut queries_sent = 0u64;
+    // Startup: the CLI answers our `initialize` once it is up. A
+    // SessionStart or Setup hook still running holds that answer back, and
+    // stretches the wait (see [`STARTUP_TIMEOUT`]).
+    let mut started_at = tokio::time::Instant::now();
+    let mut initialized = title_only;
+    let mut startup_hooks: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    let mut hooks_quiet_since = started_at;
 
     'main: loop {
         if std::mem::take(&mut relaunch) {
@@ -1342,18 +1566,31 @@ async fn run_session(session: Session) {
             if matches!(child.try_wait(), Ok(None)) {
                 refresh_lock::settle(&lock_dir, refresh_lock::SETTLE_MAX).await;
             }
-            stdin.close_for_teardown();
             child.shutdown(kill_grace).await;
             shells = background::BackgroundShells::default();
             turn.set_background_processes(Vec::new());
             let mut fresh = launched.clone();
             fresh.resume = None;
-            match ClaudeHarness::launch(&exe, &fresh, title_only) {
+            let mut launch = Launch {
+                version: version.clone(),
+                ..Launch::default()
+            };
+            if !title_only && Feature::SessionId.supported(version.as_ref()) {
+                let session_id = uuid::Uuid::new_v4().to_string();
+                norm.session_id = Some(session_id.clone());
+                launch.session_id = Some(session_id);
+            }
+            match ClaudeHarness::launch(&exe, &fresh, title_only, &launch) {
                 Ok(runtime) => {
                     child = runtime.child;
                     stdout_lines = runtime.stdout_lines;
                     stdin = runtime.stdin;
                     stderr_tail = runtime.stderr_tail;
+                    _own = runtime.own;
+                    started_at = tokio::time::Instant::now();
+                    hooks_quiet_since = started_at;
+                    initialized = title_only;
+                    startup_hooks.clear();
                 }
                 Err(error) => {
                     let _ = event_tx.send(Err(error)).await;
@@ -1384,6 +1621,8 @@ async fn run_session(session: Session) {
             None => tail = None,
         }
         let tail_at = tail.as_ref().and_then(ForkTail::next_read);
+        let startup_at = (!initialized && !interrupted)
+            .then(|| startup_deadline(started_at, hooks_quiet_since, !startup_hooks.is_empty()));
         tokio::select! {
             line = stdout_lines.next_line() => match line {
                 Ok(Some(line)) => {
@@ -1421,8 +1660,47 @@ async fn run_session(session: Session) {
                     }
                     if let Frame::ControlResponse(response) = &frame {
                         let response = &response.response;
-                        if stopping.as_deref() == Some(response.request_id.as_str()) {
-                            stop_settle_at = Some(tokio::time::Instant::now() + STOP_SETTLE);
+                        let id = response.request_id.as_str();
+                        if id == INITIALIZE_ID {
+                            initialized = true;
+                            startup_hooks.clear();
+                            if let Some(reported) = response.claude_code_version() {
+                                tracing::info!(
+                                    target: "onicode_harness::claude",
+                                    version = reported,
+                                    "Claude Code version"
+                                );
+                                if let Some(parsed) = features::parse(reported) {
+                                    version = Some(parsed);
+                                }
+                            }
+                        }
+                        if let Some(reply) = queries.remove(id) {
+                            let _ = reply.send(match response.error_message() {
+                                Some(error) => Err(error),
+                                None => Ok(response.response.clone().unwrap_or(Value::Null)),
+                            });
+                            continue;
+                        }
+                        // A stop's receipt: what it cancelled never runs, so
+                        // nothing waits for it.
+                        if id.starts_with(TURN_STOP_PREFIX) {
+                            for cancelled in response.interrupt_receipt().cancelled {
+                                commands.open.remove(&cancelled);
+                                pending_steers.retain(|p| *p != cancelled);
+                            }
+                        }
+                        if stopping.as_deref() == Some(id) {
+                            // A CLI that reports its state ends the stop at
+                            // `idle` — already, if it was between turns — or
+                            // with the stopped turn's result; the wait is a
+                            // safety net only. An older one settles on time.
+                            let wait = match (state_reported, cli_idle) {
+                                (true, true) => Duration::ZERO,
+                                (true, false) => STOP_SAFETY,
+                                (false, _) => STOP_SETTLE,
+                            };
+                            stop_settle_at = Some(tokio::time::Instant::now() + wait);
                         }
                         let error = response.error_message();
                         if let Some((what, asked, _)) = pending_controls.remove(&response.request_id) {
@@ -1443,6 +1721,14 @@ async fn run_session(session: Session) {
                                 request = %response.request_id,
                                 "control request failed: {error}"
                             );
+                        }
+                        continue;
+                    }
+                    // The CLI no longer needs an answer: close the card. No
+                    // reply is written.
+                    if let Frame::ControlCancel(cancel) = &frame {
+                        if let Some(ask) = asks.remove(&cancel.request_id) {
+                            ask.abort();
                         }
                         continue;
                     }
@@ -1468,11 +1754,87 @@ async fn run_session(session: Session) {
                             // The first, or a background wake's: either way a
                             // turn is running.
                             "init" => turn_open = true,
+                            "session_state_changed" => {
+                                state_reported = true;
+                                match system.state.as_deref() {
+                                    Some("idle") => cli_idle = true,
+                                    Some(_) => {
+                                        cli_idle = false;
+                                        turn_open = true;
+                                    }
+                                    None => {}
+                                }
+                            }
+                            "turn_preempted" => {
+                                tracing::debug!(
+                                    target: "onicode_harness::claude",
+                                    by = ?system.preempted_by_uuid,
+                                    "turn preempted by a follow-up"
+                                );
+                                preempted = true;
+                            }
+                            "hook_started"
+                                if !initialized
+                                    && matches!(
+                                        system.hook_event.as_deref(),
+                                        Some("SessionStart" | "Setup")
+                                    ) =>
+                            {
+                                if let Some(hook) = &system.hook_id {
+                                    let name = system
+                                        .hook_name
+                                        .clone()
+                                        .filter(|n| !n.is_empty())
+                                        .unwrap_or_else(|| "a startup hook".into());
+                                    startup_hooks.insert(hook.clone(), name);
+                                }
+                            }
+                            "hook_response" => {
+                                if let Some(hook) = &system.hook_id
+                                    && startup_hooks.remove(hook).is_some()
+                                {
+                                    hooks_quiet_since = tokio::time::Instant::now();
+                                }
+                            }
                             _ => {}
+                        }
+                        // The CLI is idle: whatever turn ran is over.
+                        if system.subtype == "session_state_changed" && cli_idle {
+                            if stopping.is_some() {
+                                // Settled in its own arm, at once.
+                                stop_settle_at = Some(tokio::time::Instant::now());
+                            } else if held_done.is_some()
+                                && (!commands.reported || !commands.unacknowledged())
+                            {
+                                // Nothing queued is left to start: the held
+                                // result was the turn's end after all. A CLI
+                                // that reports its state but never
+                                // `command_lifecycle` (2.1.228) cannot
+                                // acknowledge a message, so `idle` alone
+                                // settles it: nothing it read is left.
+                                commands.cancel_waiting();
+                                while pending_steers.pop_front().is_some() {
+                                    let (prev, next) = norm.rotate_for_steer();
+                                    if event_tx.send(Ok(AgentEvent::Steered {
+                                        assistant_message_id: Some(prev), next_assistant_message_id: Some(next),
+                                    })).await.is_err() { break 'main; }
+                                }
+                                let done = held_done.take().expect("checked");
+                                if event_tx.send(Ok(done)).await.is_err() {
+                                    break 'main;
+                                }
+                                turn_open = false;
+                            }
                         }
                     }
                     if let Frame::ControlRequest(req) = frame {
-                        handle_control_request(req, title_only, &config, &request_input, &stdin.tx);
+                        let id = req.request_id.clone();
+                        if let Some(ask) =
+                            handle_control_request(req, title_only, &config, &request_input, &stdin.tx)
+                        {
+                            asks.retain(|_, ask| !ask.is_finished());
+                            asks.insert(id, ask);
+                        }
                         continue;
                     }
                     // Only the CLI confirms that a prompt joined its
@@ -1515,6 +1877,7 @@ async fn run_session(session: Session) {
                     // the held result was the turn's real end after all.
                     if matches!(frame, Frame::CommandLifecycle(_))
                         && !commands.waiting()
+                        && !held_by_cli
                         && let Some(done) = held_done.take()
                     {
                         if event_tx.send(Ok(done)).await.is_err() {
@@ -1526,11 +1889,23 @@ async fn run_session(session: Session) {
                     // since the stop's Done. Judged on the frame, before it
                     // expands — its own Usage is not new activity — and
                     // dropped whole, usage included.
+                    // A CLI that reports its state names the messages a
+                    // result's turn consumed instead: one that consumed only
+                    // stopped messages is late. Without that, the window rule.
+                    let consumed = match &frame {
+                        Frame::Result(result) => result.consumed().unwrap_or_default(),
+                        _ => Vec::new(),
+                    };
                     if matches!(frame, Frame::Result(_))
                         && !interrupted
                         && stopping.is_none()
-                        && !active_since_stop
-                        && stop_done_at.is_some_and(|at| at.elapsed() < STOP_SETTLE)
+                        && if state_reported {
+                            !consumed.is_empty()
+                                && consumed.iter().all(|id| stopped_commands.contains(id))
+                        } else {
+                            !active_since_stop
+                                && stop_done_at.is_some_and(|at| at.elapsed() < STOP_SETTLE)
+                        }
                     {
                         tracing::debug!(
                             target: "onicode_harness::claude",
@@ -1538,7 +1913,34 @@ async fn run_session(session: Session) {
                         );
                         continue;
                     }
-                    let events = norm.normalize(frame, interrupted || stopping.is_some());
+                    // What the result's turn consumed is done waiting; more
+                    // turns queued behind it, or a preempted turn, make it a
+                    // boundary.
+                    let mut result_boundary = false;
+                    if let Frame::Result(result) = &frame {
+                        for id in &consumed {
+                            commands.open.remove(id);
+                        }
+                        result_boundary = std::mem::take(&mut preempted)
+                            || result.queued_turn_count.unwrap_or(0) > 0;
+                    }
+                    // A superseded message's tool calls never get a result.
+                    let tombstoned: Vec<String> = match &frame {
+                        Frame::Tombstone(t) if t.parent_tool_use_id().is_none() => t
+                            .tool_use_ids()
+                            .into_iter()
+                            .filter(|id| open_tools.contains(id))
+                            .collect(),
+                        _ => Vec::new(),
+                    };
+                    let mut events = norm.normalize(frame, interrupted || stopping.is_some());
+                    events.extend(tombstoned.into_iter().map(|id| AgentEvent::ToolResult {
+                        id,
+                        is_error: true,
+                        output: None,
+                        diff: None,
+                        exit_code: None,
+                    }));
                     // The session is the CLI's now: nothing left to replay.
                     if norm.started() {
                         restore_fallback = false;
@@ -1560,7 +1962,9 @@ async fn run_session(session: Session) {
                         // result frame, and a message queued behind a turn
                         // that just ended starts another: either way that
                         // result is a steer boundary, not the end of the turn.
-                        let boundary = if commands.reported {
+                        let boundary = if state_reported {
+                            result_boundary || commands.waiting()
+                        } else if commands.reported {
                             commands.waiting()
                         } else {
                             !pending_steers.is_empty()
@@ -1581,6 +1985,7 @@ async fn run_session(session: Session) {
                         }
                         if is_done && !interrupted && stopping.is_none() && boundary {
                             held_done = Some(ev);
+                            held_by_cli = state_reported && result_boundary;
                             continue;
                         }
                         if is_done {
@@ -1675,12 +2080,13 @@ async fn run_session(session: Session) {
                         pending_controls.insert(id, ("permission mode", Value::from(mode), deadline));
                         if !stdin.line(line) { break 'main; }
                     }
-                    let id = uuid::Uuid::new_v4().to_string();
+                    let id = prompts.name(msg.message_id.as_deref(), &norm);
                     let images = load_image_blocks(&msg.attachments).await;
                     let line = wire::steer_message_line_with_images(
                         &apply_ultrathink(config.reasoning, &msg.prompt),
                         &id,
                         open_tools.is_empty(),
+                        Origin::Human,
                         &images,
                     );
                     pending_steers.push_back(id.clone());
@@ -1702,8 +2108,9 @@ async fn run_session(session: Session) {
             // stopped turn must not continue into them.
             _ = turn.stop_requested(), if !interrupted => {
                 stops_sent += 1;
-                let id = format!("onicode_stop_{stops_sent}");
+                let id = format!("{TURN_STOP_PREFIX}{stops_sent}");
                 pending_steers.clear();
+                stopped_commands = commands.open.keys().cloned().collect();
                 commands.cancel_waiting();
                 stopping = Some(id.clone());
                 stop_settle_at = None;
@@ -1791,8 +2198,8 @@ async fn run_session(session: Session) {
             },
 
             _ = tokio::time::sleep_until(
-                last_frame_at + commands.held_settle().unwrap_or_default()
-            ), if held_done.is_some() && commands.held_settle().is_some() => {
+                last_frame_at + commands.held_settle(state_reported).unwrap_or_default()
+            ), if held_done.is_some() && commands.held_settle(state_reported).is_some() => {
                 // The steers were absorbed into the turn that just ended.
                 commands.cancel_waiting();
                 while pending_steers.pop_front().is_some() {
@@ -1806,6 +2213,56 @@ async fn run_session(session: Session) {
                     break 'main;
                 }
                 turn_open = false;
+            },
+
+            // The host asks the live session something: the CLI answers on
+            // the control channel.
+            query = turn.next_query(), if !interrupted && !title_only => {
+                queries_sent += 1;
+                let id = format!("onicode_query_{queries_sent}");
+                let line = match query.query {
+                    ControlQuery::RewindFiles { message_id, dry_run } => {
+                        if !Feature::FileCheckpointing.supported(version.as_ref()) {
+                            let refusal = Feature::FileCheckpointing.required(version.as_ref());
+                            let _ = query.reply.send(Err(refusal));
+                            continue;
+                        }
+                        wire::rewind_files_request_line(&id, &prompts.cli_id(&message_id), dry_run)
+                    }
+                    ControlQuery::ContextUsage { full } => wire::context_usage_request_line(&id, full),
+                };
+                queries.insert(id, query.reply);
+                if !stdin.line(line) {
+                    break 'main;
+                }
+            },
+
+            // The CLI never came up: say so, naming a startup hook still
+            // running, and end the run.
+            _ = tokio::time::sleep_until(startup_at.unwrap_or_else(tokio::time::Instant::now)),
+                if startup_at.is_some() => {
+                let waited = started_at.elapsed().as_secs();
+                let mut hooks: Vec<&str> = startup_hooks.values().map(String::as_str).collect();
+                hooks.sort_unstable();
+                let error = if hooks.is_empty() {
+                    format!("Claude Code did not start within {waited}s.")
+                } else {
+                    format!(
+                        "Claude Code did not start within {waited}s: its startup hook {} was still running.",
+                        hooks.join(", ")
+                    )
+                };
+                tracing::warn!(target: "onicode_harness::claude", "{error}");
+                let _ = event_tx
+                    .send(Ok(AgentEvent::Done {
+                        status: DoneStatus::Errored,
+                        result: None,
+                        error: Some(error),
+                        session_id: norm.session_id.clone(),
+                    }))
+                    .await;
+                turn_open = false;
+                break 'main;
             },
 
             // A configuration request the CLI never answered: assume the
@@ -1825,6 +2282,11 @@ async fn run_session(session: Session) {
 
             _ = event_tx.closed() => break 'main,
         }
+    }
+
+    // Nothing the CLI asked is answered after the run: the cards close.
+    for (_, ask) in asks.drain() {
+        ask.abort();
     }
 
     // A turn end still held when the CLI exited is the run's real end.
@@ -1882,7 +2344,6 @@ async fn run_session(session: Session) {
     if matches!(child.try_wait(), Ok(None)) {
         refresh_lock::settle(&lock_dir, refresh_lock::SETTLE_MAX).await;
     }
-    stdin.close_for_teardown();
     child.shutdown_with(torn_down, kill_grace).await;
     if let Some(handle) = escalation {
         handle.abort();
@@ -1954,6 +2415,11 @@ impl Commands {
         next == CommandState::Started
     }
 
+    /// A message the CLI has not acknowledged reading yet.
+    fn unacknowledged(&self) -> bool {
+        self.open.values().any(|s| *s == CommandState::Written)
+    }
+
     /// A message is written or queued but no turn has taken it up.
     fn waiting(&self) -> bool {
         self.open.values().any(|s| *s != CommandState::Started)
@@ -1965,13 +2431,17 @@ impl Commands {
     }
 
     /// The quiet time after which a held result is released as the turn's
-    /// end; `None` = only the CLI's own lifecycle settles it.
-    fn held_settle(&self) -> Option<Duration> {
-        if !self.reported {
-            Some(Self::UNREPORTED_SETTLE)
-        } else if self.open.values().any(|s| *s == CommandState::Queued) {
+    /// end; `None` = only the CLI's own reports settle it. With
+    /// `state_reported`, `idle` releases it, and a wait remains only as the
+    /// safety net for a message the CLI never acknowledges.
+    fn held_settle(&self, state_reported: bool) -> Option<Duration> {
+        if self.open.values().any(|s| *s == CommandState::Queued) {
             // A queued message always starts or is cancelled.
             None
+        } else if state_reported {
+            self.unacknowledged().then_some(Self::UNACKNOWLEDGED_SETTLE)
+        } else if !self.reported {
+            Some(Self::UNREPORTED_SETTLE)
         } else {
             Some(Self::UNACKNOWLEDGED_SETTLE)
         }
@@ -1984,91 +2454,90 @@ type RequestInputFn = Box<
         + Sync,
 >;
 
-/// Serve one `can_use_tool` control request (the CLI blocks until SOME
-/// response arrives, so every request must be answered). What `config`'s
-/// access mode covers is allowed at once; anything else asks the person
-/// first (see [`approval_question`]), in a subtask so the frame loop keeps
-/// flowing, and only a yes allows it. `AskUserQuestion` is intercepted —
-/// surface the questions through the engine's input bridge (which owns the
-/// `InputRequested`/`InputResolved` lifecycle), wait for the user's answers,
-/// and hand them back keyed by question text, as the tool expects.
+/// Serve one control request from the CLI; the answer to one the person
+/// must give comes from a task, whose handle is returned so a
+/// `control_cancel_request` can close it.
 ///
-/// Any other request is answered with an error: the CLI waits for a reply to
-/// every request it sends, and one left unanswered would stall the run.
+/// `can_use_tool`: what `config`'s access mode covers is allowed at once;
+/// anything else asks the person first (see [`approvals`]) and only an
+/// allow allows it. `AskUserQuestion` is intercepted — its questions go
+/// through the engine's input bridge (which owns the
+/// `InputRequested`/`InputResolved` lifecycle), and the answers go back
+/// keyed by question text, as the tool expects. An MCP server's
+/// `elicitation` is asked the same way.
+///
+/// `request_user_dialog` is never answered: the run declared no dialog
+/// kinds, so the CLI fails such a flow closed. Any other request is
+/// answered with an error: the CLI waits for a reply to every request it
+/// sends, and one left unanswered would stall the run.
 fn handle_control_request(
     req: ControlRequestFrame,
     title_only: bool,
     config: &RunRequest,
     request_input: &Arc<RequestInputFn>,
     stdin_tx: &mpsc::UnboundedSender<StdinMsg>,
-) {
-    if req.request.subtype != "can_use_tool" {
-        tracing::debug!(
-            target: "onicode_harness::claude",
-            "unhandled control_request subtype: {}", req.request.subtype
-        );
-        let line = control_error_line(
-            &req.request_id,
-            &format!("unsupported control request: {}", req.request.subtype),
-        );
-        let _ = stdin_tx.send(StdinMsg::Line(line));
-        return;
+) -> Option<tokio::task::JoinHandle<()>> {
+    let reply = |stdin_tx: &mpsc::UnboundedSender<StdinMsg>, request_id: &str, response: Value| {
+        let _ = stdin_tx.send(StdinMsg::Line(control_response_line(request_id, response)));
+    };
+    match req.request.subtype.as_str() {
+        "can_use_tool" => {}
+        "elicitation" => return elicit(req, title_only, request_input, stdin_tx),
+        "request_user_dialog" => {
+            tracing::debug!(
+                target: "onicode_harness::claude",
+                "request_user_dialog left unanswered: no dialog kinds were declared"
+            );
+            return None;
+        }
+        other => {
+            tracing::debug!(
+                target: "onicode_harness::claude",
+                "unhandled control_request subtype: {other}"
+            );
+            let line = control_error_line(
+                &req.request_id,
+                &format!("unsupported control request: {other}"),
+            );
+            let _ = stdin_tx.send(StdinMsg::Line(line));
+            return None;
+        }
     }
     if title_only {
-        let line = control_response_line(
+        reply(
+            stdin_tx,
             &req.request_id,
-            serde_json::json!({
-                "behavior": "deny", "message": "Tools are disabled for title generation"
-            }),
+            deny_response("Tools are disabled for title generation"),
         );
-        let _ = stdin_tx.send(StdinMsg::Line(line));
-        return;
+        return None;
     }
     if req.request.tool_name != "AskUserQuestion" {
         let body = req.request;
         // Approving the plan leaves plan mode for the run's access mode,
         // not the CLI's `default`.
-        let allow = {
-            let after_plan = access_permission_mode(config);
-            let exit_plan = body.tool_name == "ExitPlanMode";
-            move |input: Value| {
-                if exit_plan {
-                    wire::exit_plan_response(input, after_plan)
-                } else {
-                    allow_response(input)
-                }
-            }
-        };
-        let question = approval_question(
-            &body.tool_name,
-            body.display_name.as_deref(),
-            body.description.as_deref(),
-            &body.input,
-            access(config),
-        );
-        let Some(question) = question else {
-            let line = control_response_line(&req.request_id, allow(body.input));
-            let _ = stdin_tx.send(StdinMsg::Line(line));
-            return;
-        };
-        let answers = (request_input)(vec![question.clone()]);
-        let stdin_tx = stdin_tx.clone();
-        tokio::spawn(async move {
-            // A dropped sender or no answer is a refusal, like a no.
-            let answers = answers.await.unwrap_or_default();
-            let response = if approval::approved(&question, &answers) {
-                allow(body.input)
+        let after_plan = access_permission_mode(config);
+        let Some(ask) = approvals::ask(&body, access(config)) else {
+            let response = if body.tool_name == "ExitPlanMode" {
+                wire::exit_plan_response(body.input, after_plan)
             } else {
-                deny_response(APPROVAL_DENIED)
+                allow_response(body.input)
             };
-            let line = control_response_line(&req.request_id, response);
-            let _ = stdin_tx.send(StdinMsg::Line(line));
-        });
-        return;
+            reply(stdin_tx, &req.request_id, response);
+            return None;
+        };
+        let answers = (request_input)(vec![ask.question.clone()]);
+        let stdin_tx = stdin_tx.clone();
+        return Some(tokio::spawn(async move {
+            // A dropped sender or no answer is a refusal, like a deny.
+            let answers = answers.await.unwrap_or_default();
+            let decision = ask.decide(&answers);
+            let response = ask.response(&decision, body.input, after_plan);
+            reply(&stdin_tx, &req.request_id, response);
+        }));
     }
     let request_input = Arc::clone(request_input);
     let stdin_tx = stdin_tx.clone();
-    tokio::spawn(async move {
+    Some(tokio::spawn(async move {
         let request_id = req.request_id;
         let input = req.request.input;
         let questions = parse_questions(&input);
@@ -2085,13 +2554,39 @@ fn handle_control_request(
         // unblocked rather than wedged.
         let answers = (request_input)(questions.clone()).await.unwrap_or_default();
         let response = if answers.is_empty() {
-            serde_json::json!({ "behavior": "deny", "message": QUESTIONS_DISMISSED })
+            deny_response(QUESTIONS_DISMISSED)
         } else {
             allow_response(updated_input_with_answers(&input, &questions, &answers))
         };
-        let line = control_response_line(&request_id, response);
+        reply(&stdin_tx, &request_id, response);
+    }))
+}
+
+/// An MCP server's `elicitation`, asked through the input bridge (see
+/// [`approvals::Elicitation`]). A title run, or a form the bridge cannot
+/// ask, declines at once.
+fn elicit(
+    req: ControlRequestFrame,
+    title_only: bool,
+    request_input: &Arc<RequestInputFn>,
+    stdin_tx: &mpsc::UnboundedSender<StdinMsg>,
+) -> Option<tokio::task::JoinHandle<()>> {
+    let elicitation = (!title_only)
+        .then(|| approvals::Elicitation::new(&req.request))
+        .flatten();
+    let Some(elicitation) = elicitation else {
+        let line =
+            control_response_line(&req.request_id, serde_json::json!({ "action": "decline" }));
         let _ = stdin_tx.send(StdinMsg::Line(line));
-    });
+        return None;
+    };
+    let answers = (request_input)(elicitation.questions());
+    let stdin_tx = stdin_tx.clone();
+    Some(tokio::spawn(async move {
+        let answers = answers.await.unwrap_or_default();
+        let line = control_response_line(&req.request_id, elicitation.response(&answers));
+        let _ = stdin_tx.send(StdinMsg::Line(line));
+    }))
 }
 
 /// What a declined `AskUserQuestion` tells the agent.
@@ -2114,6 +2609,7 @@ fn parse_questions(input: &Value) -> Vec<UserInputQuestion> {
                 question: field(["question", "prompt"]).unwrap_or("").into(),
                 prefill: None,
                 multiline: false,
+                approval: None,
                 multi_select: ["multiSelect", "multi_select"]
                     .iter()
                     .find_map(|k| q.get(*k).and_then(Value::as_bool))
@@ -2194,6 +2690,157 @@ mod tests {
     }
 
     #[test]
+    fn startup_waits_out_running_hooks_but_not_forever() {
+        let t0 = tokio::time::Instant::now();
+        let s = Duration::from_secs;
+        // Nothing reported: a minute from launch.
+        assert_eq!(startup_deadline(t0, t0, false), t0 + s(60));
+        // A hook running holds it to the hard limit; once it ends, a
+        // minute from then.
+        assert_eq!(startup_deadline(t0, t0, true), t0 + s(600));
+        assert_eq!(startup_deadline(t0, t0 + s(50), false), t0 + s(110));
+        assert_eq!(startup_deadline(t0, t0 + s(590), false), t0 + s(600));
+        // Seeded property: never before a minute after launch nor past
+        // the hard limit, and a later quiet never brings it closer.
+        let mut seed = 0x51_7cc1_b727_220au64;
+        for _ in 0..200 {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            let a = s(seed % 700);
+            let b = s((seed >> 20) % 700);
+            let running = seed & 1 == 1;
+            let (early, late) = (a.min(b), a.max(b));
+            let first = startup_deadline(t0, t0 + early, running);
+            let second = startup_deadline(t0, t0 + late, running);
+            assert!(first >= t0 + s(60) && first <= t0 + s(600));
+            assert!(second >= first);
+        }
+    }
+
+    #[test]
+    fn prompts_go_out_under_the_hosts_id_unless_it_would_collide() {
+        let norm = Normalizer::new();
+        let mut prompts = Prompts::default();
+        let id = "0b6c7d4e-1f2a-4b3c-8d9e-0f1a2b3c4d5e";
+        assert_eq!(prompts.name(Some(id), &norm), id);
+        assert_eq!(prompts.cli_id(id), id);
+        // Written once already, or not a canonical uuid: a fresh one, and
+        // the host's id still finds it.
+        let again = prompts.name(Some(id), &norm);
+        assert_ne!(again, id);
+        assert!(uuid::Uuid::parse_str(&again).is_ok());
+        assert_eq!(prompts.cli_id(id), again);
+        let upper = "0B6C7D4E-1F2A-4B3C-8D9E-0F1A2B3C4D5F";
+        assert_ne!(prompts.name(Some(upper), &norm), upper);
+        assert_ne!(prompts.name(Some("client-7"), &norm), "client-7");
+        // One the resumed transcript already holds.
+        let mut resumed = Normalizer::new();
+        let held = "11111111-2222-4333-8444-555555555555";
+        resumed.known_user_ids.insert(held.into());
+        assert_ne!(Prompts::default().name(Some(held), &resumed), held);
+        assert!(uuid::Uuid::parse_str(&Prompts::default().name(None, &norm)).is_ok());
+    }
+
+    #[test]
+    fn runs_launch_with_the_session_flags_they_were_given() {
+        let request = RunRequest {
+            mcp: None,
+            prompt: "hi".into(),
+            harness: None,
+            model: None,
+            reasoning: None,
+            model_options: serde_json::Map::new(),
+            cwd: String::new(),
+            sandbox: onicode_proto::SandboxLevel::WorkspaceWrite,
+            auto_approve: false,
+            access: Default::default(),
+            plan: false,
+            attachments: Vec::new(),
+            worktree: None,
+            resume: None,
+            env: Default::default(),
+        };
+        let args =
+            |request: &RunRequest, launch: &Launch| -> (Vec<String>, Vec<(String, String)>) {
+                let mut cmd = ClaudeHarness::build_command(
+                    std::path::Path::new("claude"),
+                    request,
+                    false,
+                    launch,
+                );
+                let std = cmd.as_std_mut();
+                (
+                    std.get_args()
+                        .map(|a| a.to_string_lossy().into_owned())
+                        .collect(),
+                    std.get_envs()
+                        .filter_map(|(k, v)| {
+                            Some((
+                                k.to_string_lossy().into_owned(),
+                                v?.to_string_lossy().into_owned(),
+                            ))
+                        })
+                        .collect(),
+                )
+            };
+        let fresh = Launch {
+            session_id: Some("s-new".into()),
+            ..Launch::default()
+        };
+        let (argv, env) = args(&request, &fresh);
+        assert!(argv.contains(&"--session-id=s-new".to_owned()), "{argv:?}");
+        assert!(
+            argv.contains(&"--include-hook-events".to_owned()),
+            "{argv:?}"
+        );
+        for (key, value) in [
+            ("CLAUDE_CODE_SDK_READS_SESSION_STATE", "1"),
+            ("CLAUDE_CODE_STARTUP_FAILURE_RESULTS", "1"),
+            ("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "true"),
+            ("CLAUDE_CODE_FORWARD_SUBAGENT_TEXT", "1"),
+        ] {
+            assert!(
+                env.contains(&(key.into(), value.into())),
+                "{key} in {env:?}"
+            );
+        }
+        // A resume never names a new session; a branch adds its cut.
+        let mut resumed = request.clone();
+        resumed.resume = Some("s-old".into());
+        let branch = Launch {
+            session_id: Some("s-new".into()),
+            branch: Some(branch::BranchArgs {
+                at: "a1".into(),
+                drops_turn: Some("p2".into()),
+                fork: false,
+            }),
+            ..Launch::default()
+        };
+        let (argv, _) = args(&resumed, &branch);
+        assert!(
+            !argv.iter().any(|a| a.starts_with("--session-id")),
+            "{argv:?}"
+        );
+        let at = argv.iter().position(|a| a == "--resume=s-old").unwrap();
+        assert_eq!(
+            argv[at + 1..at + 3],
+            ["--resume-session-at=a1", "--resume-drops-turn=p2"]
+        );
+        // An old CLI is not handed flags it would exit on.
+        let old = Launch {
+            version: Some(semver::Version::new(2, 1, 100)),
+            ..Launch::default()
+        };
+        let (argv, env) = args(&request, &old);
+        assert!(!argv.contains(&"--include-hook-events".to_owned()));
+        assert!(
+            !env.iter()
+                .any(|(k, _)| k == "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING")
+        );
+    }
+
+    #[test]
     fn parses_questions_tolerantly() {
         let input = json!({
             "questions": [
@@ -2249,9 +2896,13 @@ mod tests {
             worktree: None,
             resume: None,
             env: Default::default(),
-            extra_mcp: Vec::new(),
         };
-        let mut cmd = ClaudeHarness::build_command(std::path::Path::new("claude"), &request, false);
+        let mut cmd = ClaudeHarness::build_command(
+            std::path::Path::new("claude"),
+            &request,
+            false,
+            &Launch::default(),
+        );
         let value = cmd
             .as_std_mut()
             .get_envs()
@@ -2283,7 +2934,6 @@ mod access_tests {
             worktree: None,
             resume: None,
             env: Default::default(),
-            extra_mcp: Vec::new(),
         }
     }
 
@@ -2401,12 +3051,12 @@ mod access_tests {
         let edit = json!({"file_path": "/work/src/lib.rs", "old_string": "a"});
         let notebook = json!({"notebook_path": "/work/a.ipynb"});
         let ask = |tool: &str, input: &Value, access: AccessMode| {
-            approval_question(tool, None, None, input, access).map(|q| q.question)
+            approvals::approval_question(tool, None, None, input, access).map(|q| q.question)
         };
         for tool in ["Bash", "Edit", "WebFetch", "ExitPlanMode", "mcp__x__y"] {
             assert_eq!(ask(tool, &bash, FullAccess), None, "{tool}");
         }
-        for tool in EDIT_TOOLS {
+        for tool in approvals::EDIT_TOOLS {
             assert_eq!(ask(tool, &edit, AutoAcceptEdits), None, "{tool}");
         }
         assert_eq!(
@@ -2421,7 +3071,7 @@ mod access_tests {
             ask("NotebookEdit", &notebook, Supervised).as_deref(),
             Some("Claude wants to modify /work/a.ipynb. Allow it?")
         );
-        let mcp = approval_question(
+        let mcp = approvals::approval_question(
             "mcp__linear__search",
             Some("search (linear)"),
             Some("Find the bug"),
@@ -2438,32 +3088,22 @@ mod access_tests {
             ask("ExitPlanMode", &json!({"plan": "p"}), AutoAcceptEdits).as_deref(),
             Some("Claude wants to start implementing its plan. Allow it?")
         );
-        let plan = approval_question("ExitPlanMode", None, None, &json!({}), Supervised).unwrap();
-        assert_eq!(plan.options, vec![approval::ALLOW, approval::DENY]);
+        let plan = approvals::approval_question("ExitPlanMode", None, None, &json!({}), Supervised)
+            .unwrap();
+        assert_eq!(
+            plan.options,
+            vec![
+                approvals::IMPLEMENT,
+                approvals::KEEP_PLANNING,
+                approvals::STOP
+            ]
+        );
     }
 }
 
 #[cfg(test)]
 mod resolution_tests {
     use super::*;
-
-    #[test]
-    fn an_npm_shim_resolves_to_the_native_cli_beside_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let shim = dir.path().join("claude.cmd");
-        std::fs::write(&shim, b"@echo off").unwrap();
-        // An older package without the native binary: keep the shim.
-        assert_eq!(native_beside_npm_shim(&shim), None);
-        let bin = dir
-            .path()
-            .join("node_modules/@anthropic-ai/claude-code/bin");
-        std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join("claude.exe"), b"MZ").unwrap();
-        assert_eq!(native_beside_npm_shim(&shim), Some(bin.join("claude.exe")));
-        // Only shims are redirected.
-        assert_eq!(native_beside_npm_shim(&dir.path().join("claude.exe")), None);
-        assert_eq!(native_beside_npm_shim(&dir.path().join("claude")), None);
-    }
 
     #[test]
     fn a_runs_own_config_dir_wins() {
@@ -2502,40 +3142,5 @@ mod mcp_injection_tests {
             parsed["mcpServers"]["onicode"]["env"]["ONICODE_CHAT_ID"],
             "chat-1"
         );
-    }
-    #[test]
-    fn mcp_servers_config_arg_adds_plugin_servers_beside_onicode() {
-        let onicode = onicode_proto::McpServer {
-            name: "onicode".into(),
-            command: "/opt/onicode/onicode".into(),
-            args: vec!["mcp".into()],
-            env: Default::default(),
-        };
-        let extra = onicode_proto::McpServer {
-            name: "plugin-focus".into(),
-            command: "/data/plugins/.loaded/focus/0123/bin/server".into(),
-            args: vec!["--stdio".into()],
-            env: [("FOCUS".to_owned(), "1".to_owned())].into_iter().collect(),
-        };
-        assert_eq!(mcp_servers_config_arg(None, &[]), None);
-        let both: Value = serde_json::from_str(
-            &mcp_servers_config_arg(Some(&onicode), std::slice::from_ref(&extra)).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(
-            both["mcpServers"]["onicode"]["command"],
-            "/opt/onicode/onicode"
-        );
-        let plugin = &both["mcpServers"]["plugin-focus"];
-        assert_eq!(
-            plugin["command"],
-            "/data/plugins/.loaded/focus/0123/bin/server"
-        );
-        assert_eq!(plugin["args"], serde_json::json!(["--stdio"]));
-        assert_eq!(plugin["env"]["FOCUS"], "1");
-        let only: Value =
-            serde_json::from_str(&mcp_servers_config_arg(None, &[extra]).unwrap()).unwrap();
-        assert!(only["mcpServers"].get("onicode").is_none());
-        assert!(only["mcpServers"].get("plugin-focus").is_some());
     }
 }
