@@ -1,0 +1,52 @@
+name: macOS CI setup
+description: >-
+  Xcode 27.2 with its Metal toolchain, room on the disk, the Rust toolchain
+  (with the iOS simulator target when asked) and the main-seeded Rust cache,
+  on GitHub's xcode-27 image. Run actions/checkout first.
+
+inputs:
+  rust-cache:
+    description: rust-cache shared key; jobs sharing it must build the same dependency graph.
+    required: true
+  ios:
+    description: Add the aarch64-apple-ios-sim target ('true' or 'false').
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    # The image defaults to Xcode 27.1; onicode builds against the 27.2 SDK. The other Xcodes go, for room:
+    # the image guarantees only 14 GB free, and the workspace's target alone is about that.
+    - name: Xcode 27.2
+      shell: bash
+      run: |
+        sudo xcode-select -s /Applications/Xcode_27.2.app
+        echo "DEVELOPER_DIR=/Applications/Xcode_27.2.app/Contents/Developer" >> "$GITHUB_ENV"
+        for x in /Applications/Xcode_27.app /Applications/Xcode_27.1.app; do
+          if [[ -d "$x" ]]; then sudo rm -rf "$x" & fi
+        done
+        wait
+        xcodebuild -version
+        df -h /
+    # gpui-fast compiles its Metal shaders at build time with the Metal toolchain, a separate component.
+    - name: Metal toolchain
+      shell: bash
+      run: xcrun metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+    - name: Rust toolchain
+      shell: bash
+      env:
+        IOS: ${{ inputs.ios }}
+      run: |
+        rustup show active-toolchain || rustup toolchain install
+        if [[ "$IOS" == true ]]; then rustup target add aarch64-apple-ios-sim; fi
+    # No debug info in the dev profile (smaller, faster). CARGO_* variables are part of the rust-cache key.
+    - name: Build settings
+      shell: bash
+      run: echo "CARGO_PROFILE_DEV_DEBUG=0" >> "$GITHUB_ENV"
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        prefix-key: ci-mac-v1
+        shared-key: ${{ inputs.rust-cache }}
+        add-job-id-key: false
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        cache-on-failure: true

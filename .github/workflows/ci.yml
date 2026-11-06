@@ -1,16 +1,15 @@
 name: CI
 
-# Pull requests, main and the nightly run. macOS and iOS are tested thoroughly on the office Macs; Linux gets
-# the cheap gates only; nothing else is a target.
+# Pull requests, main and the nightly run. macOS and iOS are tested thoroughly; Linux gets the cheap gates
+# only; nothing else is a target.
 #
 #   static    every checker that builds nothing (scripts/dev/check.sh static, fmt, deps)
 #   lint      clippy for Linux, so cfg(linux) code still compiles, and rustdoc, warnings denied
+#   mac       scripts/ci/mac.sh: clippy for macOS, the app, every test, mutants on the diff; nightly gates
+#   ios       scripts/ci/ios.sh: swift format, the mobile core, binding drift, the unit tests on iOS 27.2
 #   result    "CI result", the GitHub-side check to require
 #
-# The macOS and iOS lanes are not GitHub jobs: hosted macOS runners cannot run onicode (macOS 27.2 and later
-# only), and GitLab refuses authenticated calls from outside the office network. scripts/ci/office_mac.py polls
-# GitHub from an office-network Mac, runs scripts/ci/mac.sh and ios.sh on the GitLab office Macs, and posts the
-# `office-mac/mac`, `office-mac/ios` and nightly statuses (docs/onicode/ci.md).
+# mac and ios run on GitHub's xcode-27 image (macOS 27, Xcode 27.2 with the 27.2 SDKs and simulator).
 
 on:
   pull_request:
@@ -37,6 +36,7 @@ jobs:
     timeout-minutes: 3
     outputs:
       rust: ${{ steps.diff.outputs.rust }}
+      ios: ${{ steps.diff.outputs.ios }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,12 +48,18 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           if { [ "$EVENT" != pull_request ] && [ "$EVENT" != push ]; } || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            echo "rust=true" >> "$GITHUB_OUTPUT"; exit 0
+            { echo "rust=true"; echo "ios=true"; } >> "$GITHUB_OUTPUT"; exit 0
           fi
           files=$(git diff --name-only "$BASE" HEAD)
           echo "$files"
           if echo "$files" | grep -qvE '^(docs/|.*\.md$|LICENSE|\.research/)'; then rust=true; else rust=false; fi
-          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+          # iOS builds from its app, the shared crates and the build scripts; the desktop-only crates don't reach it.
+          ios=false
+          if echo "$files" | grep -E '^(apps/ios/|crates/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|scripts/ios/|scripts/ci/|\.github/)' \
+            | grep -qvE '^crates/(ui|engine|harness|preview|preview-label|cli|launch|notify|update|audio|mcp|rpc)/'; then
+            ios=true
+          fi
+          { echo "rust=$rust"; echo "ios=$ios"; } >> "$GITHUB_OUTPUT"
 
   static:
     name: static
@@ -112,9 +118,47 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --locked --no-deps --document-private-items --workspace --features onicode-harness/native-fixture
 
+  mac:
+    name: mac
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/mac-ci # zizmor: ignore[self-repository]
+        with:
+          rust-cache: mac
+      - name: mac.sh
+        env:
+          SUITE: ${{ github.event_name == 'schedule' && 'nightly' || 'pr' }}
+        run: scripts/ci/mac.sh "$SUITE"
+
+  ios:
+    name: ios
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/mac-ci # zizmor: ignore[self-repository]
+        with:
+          rust-cache: ios
+          ios: 'true'
+      - name: ios.sh
+        env:
+          SUITE: ${{ github.event_name == 'schedule' && 'nightly' || 'pr' }}
+        run: scripts/ci/ios.sh "$SUITE"
+
   result:
     name: CI result
-    needs: [changes, static, lint]
+    needs: [changes, static, lint, mac, ios]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 3
