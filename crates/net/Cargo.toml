@@ -1,0 +1,36 @@
+[package]
+name = "onicode-net"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "onicode's transport: plaintext QUIC over the tailnet (vendored noq, null crypto), stream kinds, datagram channels, admission by whois"
+
+[dependencies]
+bytes.workspace = true
+noq.workspace = true
+noq-proto.workspace = true
+onicode-tailnet.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+socket2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+# `EMSGSIZE`, to tell a datagram too large for the interface from other send errors (`udp`), and
+# the QUIC threads' QoS class on Apple platforms.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+# Apple's batched `sendmsg_x`/`recvmsg_x` datapath, compiled in on macOS only (private calls
+# reached by `dlsym`, never on iOS), on unless `ONICODE_BATCHED_UDP=0`.
+[target.'cfg(target_os = "macos")'.dependencies]
+noq = { workspace = true, features = ["fast-apple-datapath"] }
+
+[dev-dependencies]
+onicode-net-sim.workspace = true
+# `start_paused`: the simulated network runs on tokio's paused clock (`tests/sim.rs`).
+tokio = { workspace = true, features = ["test-util"] }

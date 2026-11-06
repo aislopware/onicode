@@ -1,0 +1,32 @@
+[package]
+name = "onicode-peer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "onicode's peers over the tailnet: the endpoint on the tailnet addresses, discovery, one deduplicated link per device, and RPC over QUIC streams"
+
+[dependencies]
+async-trait.workspace = true
+bytes.workspace = true
+noq.workspace = true
+onicode-net.workspace = true
+onicode-rpc.workspace = true
+onicode-tailnet.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+socket2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+# `getifaddrs`, to find the interface that holds a tailnet address and bind the socket to it.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[dev-dependencies]
+futures.workspace = true
+onicode-net-sim.workspace = true
+# `start_paused`: every test runs on the simulated tailnet in virtual time.
+tokio = { workspace = true, features = ["test-util"] }

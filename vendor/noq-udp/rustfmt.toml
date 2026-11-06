@@ -1,0 +1,3 @@
+# noq's own options (its repository's rustfmt.toml): vendored as published, so it stays
+# byte-for-byte diffable with upstream, and the patches are formatted as upstream formats.
+style_edition = "2024"
