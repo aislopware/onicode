@@ -295,8 +295,8 @@ mod mac {
 }
 
 fn main() {
-    let measuring =
-        !std::env::args().any(|arg| arg == "--list") && std::env::var_os("ONICODE_MEASURE").is_some();
+    let measuring = !std::env::args().any(|arg| arg == "--list")
+        && std::env::var_os("ONICODE_MEASURE").is_some();
     #[cfg(target_os = "macos")]
     if measuring {
         mac::run();
