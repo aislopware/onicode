@@ -1051,11 +1051,11 @@ impl super::BrowserSurface {
                     page.loading = false;
                 }
                 if !self.address.focus_handle(cx).is_focused(window) {
-                    if let Some(url) = &page.url {
-                        if self.address.read(cx).text() != url {
-                            self.address
-                                .update(cx, |input, cx| input.set_text(url.clone(), cx));
-                        }
+                    if let Some(url) = &page.url
+                        && self.address.read(cx).text() != url
+                    {
+                        self.address
+                            .update(cx, |input, cx| input.set_text(url.clone(), cx));
                     }
                     self.address_edited = false;
                 }

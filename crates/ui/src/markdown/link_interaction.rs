@@ -671,8 +671,10 @@ mod rendered_tests {
     use gpui_platform::headless as test_application;
 
     use super::*;
+    type TooltipBounds = Rc<Cell<Option<Bounds<Pixels>>>>;
+
     thread_local! {
-        pub(super) static TOOLTIP_BOUNDS: RefCell<Option<Rc<Cell<Option<Bounds<Pixels>>>>>> = RefCell::default();
+        pub(super) static TOOLTIP_BOUNDS: RefCell<Option<TooltipBounds>> = RefCell::default();
     }
     fn draw_has_tooltip(window: &mut Window, cx: &mut App) -> bool {
         TOOLTIP_BOUNDS.with(|bounds| {

@@ -417,8 +417,7 @@ fn window_class(connection: &RustConnection, window: Window) -> Option<String> {
     bytes
         .split(|byte| *byte == 0)
         .filter_map(|part| std::str::from_utf8(part).ok())
-        .filter(|value| !value.trim().is_empty())
-        .next_back()
+        .rfind(|value| !value.trim().is_empty())
         .map(str::to_string)
 }
 
