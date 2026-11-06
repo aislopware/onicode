@@ -1156,6 +1156,10 @@ pub struct UiSettings {
     /// Desktop banners for newly discovered agent CLI releases. In-app chips
     /// remain enabled independently of this preference.
     pub agent_update_notifications: bool,
+    /// Hold off idle system sleep while this Mac's engine runs an agent turn
+    /// or a terminal command (`onicode_engine::keep_awake`). The display
+    /// still sleeps.
+    pub keep_awake_while_agents_run: bool,
     pub right_pane_width: f32,
     /// Width of the pull request pane beside the board.
     pub pull_request_pane_width: f32,
@@ -1328,6 +1332,7 @@ impl Default for UiSettings {
             notifications_background_only: true,
             files_panel_width: FILES_PANEL_DEFAULT,
             agent_update_notifications: true,
+            keep_awake_while_agents_run: true,
             right_pane_width: RIGHT_PANE_DEFAULT,
             pull_request_pane_width: PULL_REQUEST_PANE_DEFAULT,
             right_pane_open: false,
@@ -2112,6 +2117,7 @@ impl UiSettings {
             notifications_background_only,
             files_panel_width,
             agent_update_notifications,
+            keep_awake_while_agents_run,
             right_pane_width,
             pull_request_pane_width,
             right_pane_open,
@@ -3304,6 +3310,7 @@ mod tests {
             notifications_background_only: false,
             files_panel_width: 310.0,
             agent_update_notifications: false,
+            keep_awake_while_agents_run: false,
             right_pane_width: 700.0,
             pull_request_pane_width: 820.0,
             right_pane_open: true,
@@ -3742,6 +3749,10 @@ mod tests {
         assert!(
             loaded.notifications_background_only,
             "pre-banner files default background-only on"
+        );
+        assert!(
+            loaded.keep_awake_while_agents_run,
+            "older files keep the Mac awake while agents run"
         );
         assert!(
             !loaded.escape_stops_active_agent,

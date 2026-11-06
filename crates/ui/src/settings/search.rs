@@ -141,6 +141,8 @@ settings_index! {
         "question waiting approval audio sound"),
     (ErrorSound, Notifications, Some("Sounds"), "Errors and disconnections",
         "failure offline audio sound"),
+    (KeepAwake, Notifications, Some("Power"), "Keep this Mac awake while agents run",
+        "sleep caffeinate power assertion idle energy"),
     (CodexVoiceDevice, Voice, None, "Codex voice device",
         "remote host machine"),
     (CodexVoiceStyle, Voice, None, "Codex voice style",

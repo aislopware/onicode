@@ -1,5 +1,6 @@
 //! Settings → Notifications: independently configurable session chimes plus
-//! desktop banners on the same status transitions (`shell::on_state_changed`).
+//! desktop banners on the same status transitions (`shell::on_state_changed`),
+//! and whether this Mac stays awake while its agents run.
 //!
 //! The ShortcutsPage arrangement: the page holds a working copy, every flip
 //! emits [`NotificationsEvent::Changed`], and the shell persists it. Nothing
@@ -24,6 +25,7 @@ pub enum NotificationsEvent {
         desktop: bool,
         background_only: bool,
         agent_updates: bool,
+        keep_awake: bool,
     },
 }
 
@@ -36,6 +38,7 @@ pub struct NotificationsPage {
     desktop: bool,
     background_only: bool,
     agent_updates: bool,
+    keep_awake: bool,
 }
 
 impl EventEmitter<NotificationsEvent> for NotificationsPage {}
@@ -49,6 +52,7 @@ enum NotificationPreference {
     Desktop,
     BackgroundOnly,
     AgentUpdates,
+    KeepAwake,
 }
 
 fn is_switch_activation(key: &str, is_held: bool) -> bool {
@@ -85,6 +89,7 @@ impl NotificationsPage {
         desktop: bool,
         background_only: bool,
         agent_updates: bool,
+        keep_awake: bool,
     ) -> Self {
         Self {
             scroll: widgets::PageScroll::default(),
@@ -95,6 +100,7 @@ impl NotificationsPage {
             desktop,
             background_only,
             agent_updates,
+            keep_awake,
         }
     }
 
@@ -107,6 +113,7 @@ impl NotificationsPage {
             desktop: self.desktop,
             background_only: self.background_only,
             agent_updates: self.agent_updates,
+            keep_awake: self.keep_awake,
         });
     }
 
@@ -119,6 +126,7 @@ impl NotificationsPage {
             NotificationPreference::Desktop => &mut self.desktop,
             NotificationPreference::BackgroundOnly => &mut self.background_only,
             NotificationPreference::AgentUpdates => &mut self.agent_updates,
+            NotificationPreference::KeepAwake => &mut self.keep_awake,
         };
         *value = !*value;
         self.emit(cx);
@@ -153,6 +161,7 @@ impl Render for NotificationsPage {
         let desktop = self.desktop;
         let background_only = self.background_only;
         let agent_updates = self.agent_updates;
+        let keep_awake = self.keep_awake;
         let toggle = |id: &'static str, label: &'static str, enabled: bool, interactive: bool| {
             // Keep the visual inside its 56×40 activation target.
             // Disabled subordinate controls remain named switches in the
@@ -370,6 +379,43 @@ impl Render for NotificationsPage {
                     )
                     .search_anchor(SettingId::BackgroundOnly),
             );
+        let power_card = widgets::section_card(&theme).mt_0().child(
+            widgets::card_row(&theme, true)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .child(widgets::row_title(
+                            &theme,
+                            "Keep this Mac awake while agents run",
+                        ))
+                        .child(widgets::meta_line(
+                            &theme,
+                            vec![
+                                div()
+                                    .child(SharedString::from(
+                                        "Idle sleep waits for agent turns and terminal commands. \
+                                         The display still sleeps.",
+                                    ))
+                                    .into_any_element(),
+                            ],
+                        )),
+                )
+                .child(interactive_switch(
+                    toggle(
+                        "notifications-keep-awake-toggle",
+                        "Keep this Mac awake while agents run",
+                        keep_awake,
+                        true,
+                    ),
+                    accent,
+                    NotificationPreference::KeepAwake,
+                    cx,
+                ))
+                .search_anchor(SettingId::KeepAwake),
+        );
 
         let scrollbar = popover::rail(self, "notifications-page-scrollbar", &theme, cx);
         div()
@@ -393,7 +439,8 @@ impl Render for NotificationsPage {
                                 .child(
                                     widgets::section(&theme, "Desktop", desktop_card).mt(px(24.0)),
                                 )
-                                .child(widgets::section(&theme, "Sounds", card)),
+                                .child(widgets::section(&theme, "Sounds", card))
+                                .child(widgets::section(&theme, "Power", power_card)),
                         ),
                 )
                 .fade_overflow_y(&self.scroll.scroll),

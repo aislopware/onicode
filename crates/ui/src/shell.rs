@@ -5577,6 +5577,7 @@ impl Shell {
                             self.settings.notifications_enabled,
                             self.settings.notifications_background_only,
                             self.settings.agent_update_notifications,
+                            self.settings.keep_awake_while_agents_run,
                         )
                     });
                     // Persist the flags whenever the page flips one.
@@ -5591,6 +5592,7 @@ impl Shell {
                                 desktop,
                                 background_only,
                                 agent_updates,
+                                keep_awake,
                             } = *event;
                             this.settings.sound_enabled = sound;
                             this.settings.sound_completion_enabled = completion_sound;
@@ -5599,6 +5601,7 @@ impl Shell {
                             this.settings.notifications_enabled = desktop;
                             this.settings.notifications_background_only = background_only;
                             this.settings.agent_update_notifications = agent_updates;
+                            this.settings.keep_awake_while_agents_run = keep_awake;
                             this.schedule_save(cx);
                             cx.notify();
                         },
