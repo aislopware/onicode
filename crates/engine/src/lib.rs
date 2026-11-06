@@ -47,6 +47,7 @@ mod fs_watch;
 pub mod harness_updates;
 pub(crate) mod home_index;
 pub mod instance_lock;
+pub mod keep_awake;
 pub mod managed;
 mod model_catalogs;
 pub mod paths;
@@ -171,8 +172,10 @@ pub struct EngineCore {
     pub agent_accounts: AgentAccounts,
     pub harness_updates: harness_updates::HarnessUpdateCoordinator,
     pub device_id: String,
-    /// Which app windows are focused (desktop banners hold back while one is).
+    /// Which app windows are focused and the chat each shows (alerts hold back for them).
     pub viewport_focus: desktop_notify::ViewportFocus,
+    /// The agent alerts that should show now (`WatchAlerts`; desktop engines only).
+    pub alerts: desktop_notify::AlertFeed,
     /// Links to the user's other engines on the tailnet, once it is up: `targetDeviceId`
     /// routing and every stream to a peer.
     links: std::sync::Mutex<Option<Arc<onicode_peer::PeerLinks>>>,
@@ -365,6 +368,7 @@ impl EngineCore {
             clipboard,
             updater: std::sync::Mutex::new(None),
             viewport_focus,
+            alerts: desktop_notify::AlertFeed::default(),
             _instance_lock: lock,
         })
     }
@@ -445,6 +449,7 @@ impl EngineCore {
         .with_remote_terminals(self.remote_terminals.clone())
         .with_harness_updates(self.harness_updates.clone())
         .with_viewport_focus(self.viewport_focus.clone())
+        .with_alerts(self.alerts.clone())
         .with_transfers(self.transfers.clone())
         .with_clipboard(self.clipboard.clone());
         if let Some(links) = self.links() {
@@ -567,8 +572,8 @@ pub struct Engine {
 pub struct EngineRuntime {
     core: EngineCore,
     peers: std::sync::Mutex<Option<peers::Peers>>,
-    /// Desktop banners for this engine's sessions (desktop engines only).
-    notifier: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Desktop banners and alerts (desktop engines only), and the keep-awake watch.
+    watchers: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
 /// IPC-only lifecycle control owned by `onicode headless`. The regular
@@ -603,7 +608,7 @@ impl EngineRuntime {
     }
 
     pub async fn shutdown(&self) {
-        self.stop_notifier();
+        self.stop_watchers();
         // Off the tailnet before draining: no peer call may start work meanwhile.
         self.peers
             .lock()
@@ -612,12 +617,12 @@ impl EngineRuntime {
         self.core.shutdown().await;
     }
 
-    fn stop_notifier(&self) {
-        if let Some(task) = self
-            .notifier
+    fn stop_watchers(&self) {
+        for task in self
+            .watchers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
+            .drain(..)
         {
             task.abort();
         }
@@ -626,7 +631,7 @@ impl EngineRuntime {
 
 impl Drop for EngineRuntime {
     fn drop(&mut self) {
-        self.stop_notifier();
+        self.stop_watchers();
         self.peers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -753,10 +758,12 @@ impl Engine {
 
         let notifier = desktop_notify::enabled()
             .then(|| desktop_notify::spawn(&core, config.data_dir.clone()));
+        let keep_awake =
+            keep_awake::enabled().then(|| keep_awake::spawn(&core, config.data_dir.clone()));
         Ok(EngineRuntime {
             core,
             peers: std::sync::Mutex::new(peers),
-            notifier: std::sync::Mutex::new(notifier),
+            watchers: std::sync::Mutex::new(notifier.into_iter().chain(keep_awake).collect()),
         })
     }
 
@@ -765,6 +772,7 @@ impl Engine {
     pub async fn run(self) -> anyhow::Result<()> {
         let config = self.config;
         tracing::info!(data_dir = %config.data_dir.display(), "engine starting");
+        keep_awake::enable();
 
         std::fs::create_dir_all(&config.data_dir)?;
         update_trial::boot(&config.data_dir)?;

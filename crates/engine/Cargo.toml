@@ -68,6 +68,8 @@ onicode-grants.workspace = true
 plist.workspace = true
 
 [dev-dependencies]
+# The keep-awake machine's property tests.
+proptest.workspace = true
 # A thin client joining an engine by a listed address (tests/thin_client.rs).
 onicode-client.workspace = true
 onicode-net-sim.workspace = true

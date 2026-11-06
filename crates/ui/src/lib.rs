@@ -255,6 +255,7 @@ pub fn run_app(config: UiConfig) {
         // the choice with ONICODE_EMBED_ENGINE=1. An embedded engine posts the
         // banners itself.
         onicode_engine::desktop_notify::enable();
+        onicode_engine::keep_awake::enable();
         if std::env::var_os("ONICODE_EMBED_ENGINE")
             .is_none_or(|value| value.is_empty() || value == "0")
         {
