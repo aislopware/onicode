@@ -150,7 +150,7 @@ releases = true
 [claude-agent-sdk-py]
 upstream = "anthropics/claude-agent-sdk-python"
 branch = "main"
-base = "407dadbe6578af173bee7330beea5a6809a76884"
+base = "2209f2c134fee914c0f75733b631a5fc238ca846"
 base_date = "2026-11-06"
 every_minutes = 0
 pulls = false
@@ -200,7 +200,7 @@ releases = true
 upstream = "sst/opencode"
 branch = "dev"
 paths = ["packages/"]
-base = "188eee33956e358d57871c59ad1a0834873968b8"
+base = "1a5b7239bebd9a282ac7df9a693ffe41b8650342"
 base_date = "2026-11-06"
 every_minutes = 60
 pulls = false
@@ -210,7 +210,7 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "4980f9585a0a2dea0cdc4bb0cee4e631b75fcf5c"
+base = "4688e49329637b8b50dd8450ef784020537e2215"
 base_date = "2026-11-06"
 every_minutes = 60
 pulls = false
