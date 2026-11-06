@@ -1,14 +1,14 @@
 //! A minimal in-process edge for live-mode tests: one TCP port that routes
 //! WebSocket upgrades by path, like the Worker:
 //!
-//! - `/registry/{org}/ws` → proxied to onicode-sync's `MockRegistryServer`
-//!   (the SAME merge fn as production);
-//! - `/chat2/{chat}/ws`   → a small chat2 room (hello/state, rowsReq/rows/
-//!   rowsDone, push/ack + broadcast, probe/probeOk) with no checkpoint;
-//! - `/device/{id}/ws`    → the DeviceRoom relay (host/client routing by
-//!   `from`/`to`, `host_offline` bounces) — port of onicode-rpc's test fake;
-//! - anything else (plain HTTP pulls, nudges) is refused, which the client
-//!   must tolerate (it falls back to the sockets).
+//! - `/registry/{org}/ws` → proxied to onicode-sync's `MockRegistryServer` (the SAME merge fn as
+//!   production);
+//! - `/chat2/{chat}/ws`   → a small chat2 room (hello/state, rowsReq/rows/ rowsDone, push/ack +
+//!   broadcast, probe/probeOk) with no checkpoint;
+//! - `/device/{id}/ws`    → the DeviceRoom relay (host/client routing by `from`/`to`,
+//!   `host_offline` bounces) — port of onicode-rpc's test fake;
+//! - anything else (plain HTTP pulls, nudges) is refused, which the client must tolerate (it falls
+//!   back to the sockets).
 //!
 //! Tests play the host by reading rows ([`MockEdge::rows`]) and injecting
 //! host-authored Loro updates ([`MockEdge::inject`]).
@@ -19,12 +19,12 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use futures::{SinkExt, StreamExt};
 use onicode_sync::chat_frames::{self, frame_type};
 use onicode_sync::registry::mock_server::MockRegistryServer;
 use serde_json::json;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio_tungstenite::tungstenite::Message;

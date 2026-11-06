@@ -2,10 +2,10 @@
 //! the composer state, and every command a viewer can issue.
 //!
 //! Writer discipline (what a viewer writes into the session doc):
-//! - `commands`: append-only own entries (run / steer / interrupt /
-//!   respondInput) with client-minted message ids for optimistic echo;
-//! - `queue`: enqueue + reorder. Edits and removals go through the host
-//!   (lease / acknowledgement RPCs) because it serializes them with delivery.
+//! - `commands`: append-only own entries (run / steer / interrupt / respondInput) with
+//!   client-minted message ids for optimistic echo;
+//! - `queue`: enqueue + reorder. Edits and removals go through the host (lease / acknowledgement
+//!   RPCs) because it serializes them with delivery.
 //!
 //! The host writes all transcript entries and command outcomes.
 
@@ -24,20 +24,18 @@ use onicode_doc::{
 use onicode_proto::{
     ChatIndicator, ContextUsage, RunRequest, SandboxLevel, UserInputAnswer, WorktreeSpec,
 };
-use tokio::sync::watch;
-
 pub use snapshot::{
     AppendHint, ComposerState, Entry, HostCapabilities, HostInfo, InputRequest, LiveStatus,
     LocalEcho, PendingKind, PendingSend, QueueGate, QueueItem, RoomState, SessionSnapshot,
     SnapshotDelta,
 };
+use tokio::sync::watch;
 use transcript::{Dirty, Tracker};
 
-use crate::attachments;
 use crate::client::ClientInner;
 use crate::connectivity::{SendState, send_state};
 use crate::error::{ClientError, Result};
-use crate::{lock, now_ms, read, write};
+use crate::{attachments, lock, now_ms, read, write};
 
 /// Coalescing window for remote-import republishes (one display frame).
 const REFRESH_FRAME: std::time::Duration = std::time::Duration::from_millis(16);

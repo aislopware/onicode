@@ -26,7 +26,7 @@ pub enum OutputSource {
     /// A file the agent writes the output to (Claude's task output files).
     File(PathBuf),
     /// Output the driver received on the wire, kept as its last
-    /// [`OUTPUT_TAIL_BYTES`].
+    /// `OUTPUT_TAIL_BYTES`.
     Buffer { text: String, truncated: bool },
 }
 

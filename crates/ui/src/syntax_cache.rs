@@ -3,10 +3,8 @@
 //! Colors and GPUI runs deliberately stay outside this cache so appearance
 //! changes recolor existing spans without parsing again.
 
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::Arc,
-};
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 
 use onicode_syntax::{HighlightedDocument, LanguageId};
 use sha2::{Digest, Sha256};

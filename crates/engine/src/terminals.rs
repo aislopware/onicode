@@ -1,17 +1,15 @@
 //! Terminals — PTY sessions owned by this device (feature-inventory §3.4; port of
 //! onicode's `terminals.ts` over `portable-pty`).
 //!
-//! - `open` spawns the user's login shell in the chat's cwd; `subscribe` replays a
-//!   bounded 1MB window (resumable via `afterSeq`) then tails live output — sent
-//!   as soon as it is read, paced at [`TERMINAL_OUTPUT_BATCH_MS`] only while it
-//!   streams; data rides base64 (PTY bytes ≠ UTF-8).
-//! - Live shells survive subscriber detach — a detached session is the user's
-//!   running process, kept until its tab is explicitly closed or the engine exits.
-//!   Only EXITED sessions expire (30min TTL on their inert replay buffers), and
-//!   [`MAX_TERMINALS`] bounds leakage from renderers that lost their tab state.
-//! - Ownership: M5 is single-user local — every IPC/relay caller is the device
-//!   owner, so the per-user owner re-checks from onicode's Router land with real
-//!   multi-account auth in M6.
+//! - `open` spawns the user's login shell in the chat's cwd; `subscribe` replays a bounded 1MB
+//!   window (resumable via `afterSeq`) then tails live output — sent as soon as it is read, paced
+//!   at [`TERMINAL_OUTPUT_BATCH_MS`] only while it streams; data rides base64 (PTY bytes ≠ UTF-8).
+//! - Live shells survive subscriber detach — a detached session is the user's running process, kept
+//!   until its tab is explicitly closed or the engine exits. Only EXITED sessions expire (30min TTL
+//!   on their inert replay buffers), and `MAX_TERMINALS` bounds leakage from renderers that lost
+//!   their tab state.
+//! - Ownership: M5 is single-user local — every IPC/relay caller is the device owner, so the
+//!   per-user owner re-checks from onicode's Router land with real multi-account auth in M6.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
@@ -20,11 +18,10 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-use tokio::sync::{mpsc, watch};
-
 use onicode_doc::TERMINAL_OUTPUT_BATCH_MS;
 use onicode_proto::{TerminalActivity, TerminalEvent, TerminalSession, TerminalStatus};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use tokio::sync::{mpsc, watch};
 
 pub mod link;
 mod program_status;
@@ -287,7 +284,7 @@ impl Terminals {
     }
 
     /// Terminal id → chat for every terminal opened for a chat, open or
-    /// since closed (the newest [`REMEMBERED_TERMINAL_CHATS`]). Everything a
+    /// since closed (the newest `REMEMBERED_TERMINAL_CHATS`). Everything a
     /// terminal starts carries its id (see [`onicode_proto::ORIGIN_ENV`]).
     pub fn chats(&self) -> HashMap<String, String> {
         lock(&self.inner.chats).iter().cloned().collect()
@@ -854,8 +851,9 @@ async fn reaper_task(inner: Weak<TerminalsInner>) {
 
 #[cfg(test)]
 mod initial_command_tests {
-    use super::*;
     use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
 
     #[tokio::test]
     async fn status_says_whether_a_program_is_running() {

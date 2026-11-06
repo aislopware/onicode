@@ -17,6 +17,7 @@ impl CatalogFailureCode {
             Self::AuthRequired => "auth_required",
         }
     }
+
     pub fn allows_stale(self) -> bool {
         matches!(self, Self::Timeout | Self::Failed)
     }

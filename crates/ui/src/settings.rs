@@ -101,8 +101,8 @@ pub struct NewThreadBackgroundAdjustment {
 }
 
 impl NewThreadBackgroundAdjustment {
-    pub const MIN_ZOOM: f32 = 1.0;
     pub const MAX_ZOOM: f32 = 4.0;
+    pub const MIN_ZOOM: f32 = 1.0;
 
     pub fn normalized(mut self) -> Self {
         let defaults = Self::default();
@@ -348,12 +348,12 @@ pub struct GitHistoryColumnWidths {
 }
 
 impl GitHistoryColumnWidths {
-    pub const AUTHOR_MIN: f32 = 44.0;
     pub const AUTHOR_MAX: f32 = 220.0;
-    pub const DATE_MIN: f32 = 68.0;
+    pub const AUTHOR_MIN: f32 = 44.0;
     pub const DATE_MAX: f32 = 180.0;
-    pub const SHA_MIN: f32 = 58.0;
+    pub const DATE_MIN: f32 = 68.0;
     pub const SHA_MAX: f32 = 140.0;
+    pub const SHA_MIN: f32 = 58.0;
 
     pub fn clamped(mut self) -> Self {
         let defaults = Self::default();
@@ -1107,7 +1107,7 @@ pub struct UiSettings {
     /// Open session tabs in visual order (drag-reorder edits in place).
     /// Device-local: a tab is a local viewport onto the synced session list —
     /// closing one never archives the session. Ids of archived/deleted chats
-    /// are pruned against the doc ([`Shell::sync_open_tabs`]). `None` = file
+    /// are pruned against the doc (`Shell::sync_open_tabs`). `None` = file
     /// written by a pre-tabs build; seeded once from the last space's sessions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open_tabs: Option<Vec<String>>,
@@ -1213,7 +1213,7 @@ pub struct UiSettings {
     /// The bundled face typeset math is set in.
     pub math_font: MathFont,
     /// Typeset math size, as a percent of the text around it. Read
-    /// tolerantly ([`deserialize_math_size`]).
+    /// tolerantly (`deserialize_math_size`).
     #[serde(deserialize_with = "deserialize_math_size")]
     pub math_size: u16,
     /// Maximum message and docked composer surface width in logical pixels.
@@ -1564,7 +1564,7 @@ pub struct KeymapConfig {
     /// One combo per jump slot, in slot order. A list rather than nine fields:
     /// [`UiSettings::load`] discards the WHOLE file on a parse error, so a
     /// fixed-length array would let one malformed entry reset every unrelated
-    /// setting. [`Self::healed`] restores the length instead.
+    /// setting. `Self::healed` restores the length instead.
     pub jump_session: Vec<String>,
     /// Whether custom combos are stored in US keys, as every map this version
     /// writes is. Older maps kept them as the recording layout typed them;
@@ -2007,7 +2007,7 @@ fn bound_combo(combo: &str) -> String {
     BOUND_KEY_EQUIVALENTS.with_borrow(|equivalents| localize_combo(combo, equivalents))
 }
 
-/// [`bound_combo`] for a bare key, for hints that spell their own modifiers.
+/// `bound_combo` for a bare key, for hints that spell their own modifiers.
 pub fn bound_key(key: &str) -> String {
     BOUND_KEY_EQUIVALENTS.with_borrow(|equivalents| localize_key(key, equivalents).into_owned())
 }

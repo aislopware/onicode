@@ -3,7 +3,10 @@
 //! This crate intentionally has no UI, RPC, or engine dependencies. Public
 //! ranges are byte offsets relative to one UTF-8 source line.
 
-use std::{collections::BTreeSet, ops::Range, path::Path, sync::atomic::AtomicUsize};
+use std::collections::BTreeSet;
+use std::ops::Range;
+use std::path::Path;
+use std::sync::atomic::AtomicUsize;
 
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 

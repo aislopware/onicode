@@ -1,6 +1,7 @@
 //! Source-aware Markdown editing helpers. The draft is always plain Markdown.
-use pulldown_cmark::{Event, Options, Parser, Tag};
 use std::ops::Range;
+
+use pulldown_cmark::{Event, Options, Parser, Tag};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Face {

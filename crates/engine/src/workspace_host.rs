@@ -24,12 +24,12 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
 use chrono::Utc;
-use tokio::sync::watch;
-
 use onicode_doc::{DeletedSpace, REGISTRY_DOC_ID, RegistryDoc, WorkspaceDoc};
-use onicode_proto::projectless;
-use onicode_proto::{Chat, ChatConfig, Device, HarnessId, Session, SidebarPreferencesState, Space};
+use onicode_proto::{
+    Chat, ChatConfig, Device, HarnessId, Session, SidebarPreferencesState, Space, projectless,
+};
 use onicode_sync::{DocsStore, RegistryClient, RegistryTuning};
+use tokio::sync::watch;
 
 use crate::doc_host::EdgeConfig;
 use crate::http_error::describe_http_error;
@@ -2009,9 +2009,10 @@ mod tests {
 
     #[tokio::test]
     async fn registry_http_sync_retains_dns_cause() {
+        use onicode_sync::RegistryTransport;
+
         use super::*;
         use crate::http_error::test_support::FailingDns;
-        use onicode_sync::RegistryTransport;
 
         let dns = Arc::new(FailingDns::default());
         let transport = WsDerivedRegistryTransport {

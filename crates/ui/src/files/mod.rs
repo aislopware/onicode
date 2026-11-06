@@ -1,21 +1,18 @@
 //! Workspace file browsing surface.
 
-use std::{
-    collections::HashMap,
-    sync::atomic::{AtomicU64, Ordering},
-    time::Duration,
-};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
+use gpui::prelude::*;
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, ListAlignment, ListState, Pixels, Point, Render,
-    SharedString, Subscription, Task, Window, div, prelude::*, px,
+    SharedString, Subscription, Task, Window, div, px,
 };
 use onicode_proto::ListWorkspaceDirectoryRequest;
 
-use crate::{
-    composer::{ComposerInput, ComposerInputEvent},
-    state::AppState,
-};
+use crate::composer::{ComposerInput, ComposerInputEvent};
+use crate::state::AppState;
 
 pub mod client;
 mod context_menu;
@@ -1333,9 +1330,12 @@ impl FilesSurface {
 
 #[cfg(test)]
 mod explorer_tests {
-    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     use gpui::{AppContext, TestAppContext};
-    use std::{cell::RefCell, rc::Rc};
+
+    use super::*;
 
     #[gpui::test]
     fn explorer_header_search_and_visibility_toggle(cx: &mut TestAppContext) {

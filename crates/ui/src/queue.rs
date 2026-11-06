@@ -8,11 +8,8 @@
 //! Editing moves the message into the composer while its leased row reserves
 //! its position.
 
-use gpui::{
-    AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
-    SharedString, StatefulInteractiveElement as _, Styled, Window, div, prelude::*, px,
-};
-
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, IntoElement, Render, SharedString, Styled, Window, div, px};
 use onicode_doc::{QueueDeliveryGate, QueuedMessage};
 use onicode_rpc::methods;
 
@@ -2279,8 +2276,9 @@ mod tests {
     /// `onicode-invoke:`/`onicode-file:` links, and still hide attachment trailers.
     #[test]
     fn queue_rows_label_commands_skills_and_files() {
-        use crate::composer::ChipKind;
         use onicode_proto::invocation::Invocation;
+
+        use crate::composer::ChipKind;
         let command = Invocation::Command {
             name: "compact".into(),
         }
@@ -2378,8 +2376,9 @@ mod tests {
 
 #[cfg(test)]
 mod scroll_tests {
-    use super::*;
     use gpui::{AppContext, ScrollHandle, TestAppContext, point};
+
+    use super::*;
 
     struct QueueScrollTestView {
         queue: ScrollHandle,
@@ -2528,8 +2527,9 @@ mod scroll_tests {
 
 #[cfg(test)]
 mod appshot_edit_tests {
-    use super::*;
     use gpui::{AppContext, TestAppContext};
+
+    use super::*;
 
     #[gpui::test]
     fn restoring_displaced_draft_keeps_appshots_and_new_captures(cx: &mut TestAppContext) {

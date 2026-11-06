@@ -10,25 +10,23 @@
 //! Mirroring lightness produces the classic "washed-out inverted" look, for three
 //! reasons this module handles explicitly:
 //!
-//! 1. **Surface order flips meaning.** In dark, the main content panel is the
-//!    *darkest* plane and raised surfaces get *lighter*. In light, the content
-//!    panel is *white* and the shell/sidebar goes *grey* — chrome recedes by
-//!    getting darker, not lighter. Popovers stay white and earn separation from a
-//!    border and shadow rather than from lightness.
-//! 2. **Elevation reverses.** On dark, a faint *white* wash means "raised". Its
-//!    literal translation — a faint *black* wash on white — means "recessed", so
-//!    the composer read as a dent instead of a plate. Light lifts with white plus
-//!    a border and shadow ([`Theme::input_bg`], the elevation ladder). Fill
-//!    *alphas* carry over unchanged ([`INK_FILL_SCALE`]); only hairlines scale, so
-//!    a 1px edge survives a bright surround ([`INK_HAIRLINE_SCALE`]).
-//! 3. **Accents must move down the scale.** The dark palette's 400-level accents
-//!    (indigo/red/amber) are chosen for contrast against near-black; on white they
-//!    fall to 2–4:1 and fail WCAG AA. Light mode uses the 600-level siblings at the
-//!    same hue, which restores the *contrast ratio* the dark token had.
+//! 1. **Surface order flips meaning.** In dark, the main content panel is the *darkest* plane and
+//!    raised surfaces get *lighter*. In light, the content panel is *white* and the shell/sidebar
+//!    goes *grey* — chrome recedes by getting darker, not lighter. Popovers stay white and earn
+//!    separation from a border and shadow rather than from lightness.
+//! 2. **Elevation reverses.** On dark, a faint *white* wash means "raised". Its literal translation
+//!    — a faint *black* wash on white — means "recessed", so the composer read as a dent instead of
+//!    a plate. Light lifts with white plus a border and shadow ([`Theme::input_bg`], the elevation
+//!    ladder). Fill *alphas* carry over unchanged ([`INK_FILL_SCALE`]); only hairlines scale, so a
+//!    1px edge survives a bright surround ([`INK_HAIRLINE_SCALE`]).
+//! 3. **Accents must move down the scale.** The dark palette's 400-level accents (indigo/red/amber)
+//!    are chosen for contrast against near-black; on white they fall to 2–4:1 and fail WCAG AA.
+//!    Light mode uses the 600-level siblings at the same hue, which restores the *contrast ratio*
+//!    the dark token had.
 //!
 //! Text tones are chosen so each light token lands within ~0.5 of its dark
 //! counterpart's contrast ratio against its own background — the pairing is
-//! verified in [`tests::text_contrast_is_paired_across_appearances`], not eyeballed.
+//! verified in `tests::text_contrast_is_paired_across_appearances`, not eyeballed.
 //!
 //! Installed as a gpui [`Global`] at boot; read with [`Theme::of`].
 
@@ -787,6 +785,10 @@ impl TerminalColors {
 }
 
 impl Theme {
+    /// Message bubble corner radius.
+    pub const BUBBLE_RADIUS: f32 = 16.0;
+    /// Small control radius (buttons, chips).
+    pub const CONTROL_RADIUS: f32 = 6.0;
     // ---- numbers drive layout (px) ----
     /// Frost translucency over the blurred window background (macOS
     /// vibrancy). Linux stays opaque because compositor blur is not
@@ -809,6 +811,20 @@ impl Theme {
     pub const GLASS_ALPHA_LIGHT: f32 = if cfg!(target_os = "macos") { 0.80 } else { 1.0 };
     /// Main-panel header height (onicode `h-11`) — in-card headers (changes pane).
     pub const HEADER_HEIGHT: f32 = 44.0;
+    /// Panel / card corner radius.
+    pub const PANEL_RADIUS: f32 = 10.0;
+    pub const SPACE_LG: f32 = 16.0;
+    pub const SPACE_MD: f32 = 12.0;
+    pub const SPACE_SM: f32 = 8.0;
+    /// Base spacing steps.
+    pub const SPACE_XS: f32 = 4.0;
+    /// Reserved status strip under the content outlet (onicode `h-6`) — the
+    /// WorkingIndicator row; reserving it keeps the composer from shifting.
+    pub const STATUS_STRIP_HEIGHT: f32 = 24.0;
+    /// Optical separation for a tightly coupled title/description stack.
+    /// This is intentionally outside the base spacing ladder: it corrects
+    /// line-box whitespace rather than separating layout regions.
+    pub const TEXT_STACK_GAP: f32 = 1.0;
     /// The unified window titlebar (traffic lights + cluster + tabs). Content
     /// rides [`Self::TITLEBAR_TOP_PAD`] lower than center so the air above
     /// matches the perceived gap to the inset card below (border + card body).
@@ -816,30 +832,12 @@ impl Theme {
     /// Top-only padding moves the flex center by half this value. On macOS,
     /// 38 / 2 + 4 / 2 = 21 matches the native traffic lights' center.
     pub const TITLEBAR_TOP_PAD: f32 = 4.0;
-    /// Reserved status strip under the content outlet (onicode `h-6`) — the
-    /// WorkingIndicator row; reserving it keeps the composer from shifting.
-    pub const STATUS_STRIP_HEIGHT: f32 = 24.0;
     /// Height of the gradient that fades the transcript into the panel
     /// background at its bottom edge. The transcript's last row must pad
     /// itself past this band so settled content (message text, the
     /// hover-revealed timestamp) never sits inside the fade when scrolled
     /// to the bottom.
     pub const TRANSCRIPT_FADE_BAND: f32 = 24.0;
-    /// Message bubble corner radius.
-    pub const BUBBLE_RADIUS: f32 = 16.0;
-    /// Panel / card corner radius.
-    pub const PANEL_RADIUS: f32 = 10.0;
-    /// Small control radius (buttons, chips).
-    pub const CONTROL_RADIUS: f32 = 6.0;
-    /// Base spacing steps.
-    pub const SPACE_XS: f32 = 4.0;
-    pub const SPACE_SM: f32 = 8.0;
-    pub const SPACE_MD: f32 = 12.0;
-    pub const SPACE_LG: f32 = 16.0;
-    /// Optical separation for a tightly coupled title/description stack.
-    /// This is intentionally outside the base spacing ladder: it corrects
-    /// line-box whitespace rather than separating layout regions.
-    pub const TEXT_STACK_GAP: f32 = 1.0;
 
     /// The selected theme's shell tint painted over the blurred window
     /// background (macOS glass). Keeping the hue theme-owned matters when a

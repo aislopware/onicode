@@ -1,13 +1,12 @@
 //! Canonical editor selections survive persistence, queue editing and retries;
 //! provider text is produced only at each fresh-run or steering boundary.
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::{StreamExt, stream::BoxStream};
+use futures::StreamExt;
+use futures::stream::BoxStream;
 use onicode_doc::{MessagePart, MessageRole};
 use onicode_engine::doc_host::{
     BeginQueueEditOutcome, FinishQueueEditAction, FinishQueueEditOutcome,
@@ -63,21 +62,27 @@ impl Harness for RecordingHarness {
     fn id(&self) -> HarnessId {
         self.id
     }
+
     fn display_name(&self) -> &str {
         "Rich reference delivery probe"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn commands_for(
         &self,
         cwd: &std::path::Path,
@@ -89,6 +94,7 @@ impl Harness for RecordingHarness {
             input_hint: None,
         }])
     }
+
     async fn skills(
         &self,
         cwd: &std::path::Path,
@@ -102,6 +108,7 @@ impl Harness for RecordingHarness {
             command: None,
         }]))
     }
+
     async fn run(
         &self,
         request: RunRequest,

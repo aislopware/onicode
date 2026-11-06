@@ -7,8 +7,8 @@
 //! `uleb128(header_len) ‖ UTF-8 JSON header ‖ payload`, header `{s, k, to?, from?}`.
 //! - client → DO: the DO stamps `from = connId` and forwards to the host socket;
 //! - host → DO: must carry `to = connId`; the DO strips routing keys and delivers;
-//! - relay control frames use kind [`RELAY_KIND`] with payload `{"error": code}` —
-//!   codes `host_offline`, `host_closed`, `client_gone`, `client_closed`;
+//! - relay control frames use kind [`RELAY_KIND`] with payload `{"error": code}` — codes
+//!   `host_offline`, `host_closed`, `client_gone`, `client_closed`;
 //! - nudge frames use kind [`NUDGE_KIND`] with payload `{"chatId": …}`.
 //!
 //! The RPC path multiplexes NOTHING new: each distinct client `connId` becomes a virtual
@@ -331,8 +331,9 @@ impl HostRelayConfig {
 }
 
 /// The service as relay clients see it: every method but the local-only
-/// ones ([`crate::local_only`]), refused before they reach it; the rest served as [`crate::Caller::Peer`], with
-/// the device the edge verified for this connection (`fromDevice`), if any.
+/// ones ([`crate::local_only`]), refused before they reach it; the rest served as
+/// [`crate::Caller::Peer`], with the device the edge verified for this connection (`fromDevice`),
+/// if any.
 struct RelayGuard {
     inner: Arc<dyn RpcService>,
     device: Option<String>,
@@ -1257,9 +1258,10 @@ impl LinkCache {
 mod tests {
     #[tokio::test]
     async fn relay_refuses_local_only_methods_and_serves_the_rest() {
-        use crate::{RpcReply, RpcService, methods};
         use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use crate::{RpcReply, RpcService, methods};
 
         /// Answers every call with its method name, counting what reached it.
         struct Echo(Arc<AtomicUsize>);
@@ -1310,7 +1312,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn blocked_relay_upload_closes_link_and_fails_pending_rpc() {
-        use tokio_tungstenite::{WebSocketStream, tungstenite::protocol::Role};
+        use tokio_tungstenite::WebSocketStream;
+        use tokio_tungstenite::tungstenite::protocol::Role;
         let (client, _peer) = tokio::io::duplex(64);
         let (client, progress) = onicode_sync::socket::ProgressIo::new(client);
         let socket = onicode_sync::socket::Connection {
@@ -1333,7 +1336,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn dropping_link_releases_a_blocked_transport() {
         use tokio::io::AsyncReadExt;
-        use tokio_tungstenite::{WebSocketStream, tungstenite::protocol::Role};
+        use tokio_tungstenite::WebSocketStream;
+        use tokio_tungstenite::tungstenite::protocol::Role;
         let (client, mut peer) = tokio::io::duplex(8);
         let (client, progress) = onicode_sync::socket::ProgressIo::new(client);
         let socket = onicode_sync::socket::Connection {
@@ -1430,8 +1434,9 @@ mod tests {
     /// conn whose frames name a different device later is not believed.
     #[tokio::test]
     async fn the_edge_verified_device_reaches_the_service() {
-        use crate::{RpcReply, RpcService};
         use std::sync::Mutex;
+
+        use crate::{RpcReply, RpcService};
 
         struct Seen(Arc<Mutex<Vec<crate::Caller>>>);
         #[async_trait::async_trait]

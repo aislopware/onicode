@@ -12,7 +12,7 @@
 //!
 //! The host's home folder is the exception: fff would read every file under
 //! it, cloud-only ones included, so home gets a names-only walk instead
-//! ([`crate::home_index`]) and no content search.
+//! (`crate::home_index`) and no content search.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -423,7 +423,7 @@ impl WorkspaceSearch {
     }
 
     /// Drop every index idle past [`IDLE_EVICT`] (the reaper runs this every
-    /// [`REAPER_INTERVAL`]).
+    /// `REAPER_INTERVAL`).
     pub fn evict_idle(&self) {
         let now = (self.inner.clock)();
         let expired: Vec<(PathBuf, Entry)> = {

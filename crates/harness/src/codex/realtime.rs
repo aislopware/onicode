@@ -2,13 +2,18 @@
 //! WebSocket appendAudio is deliberately unavailable: in Codex 0.159 it needs an API key.
 #[path = "realtime_host.rs"]
 mod host;
-use crate::jsonrpc::{Incoming, RpcClient};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde_json::{Value, json};
+use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use std::{path::PathBuf, sync::atomic::Ordering, time::Duration};
+use std::time::Duration;
+
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
+use serde_json::{Value, json};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
+
+use crate::jsonrpc::{Incoming, RpcClient};
 type AudioAbort = Arc<Mutex<Option<(u64, CancellationToken)>>>;
 use onicode_proto::voice::*;
 
@@ -69,6 +74,7 @@ impl RealtimeHandle {
     pub fn invalidated(&self) -> bool {
         self.invalidated.load(Ordering::Acquire)
     }
+
     /// Immediately closes native capture even if the control actor is waiting on I/O.
     pub fn abort_voice(&self, generation: u64) {
         if let Some((current, cancel)) = self.audio_abort.lock().unwrap().as_ref()
@@ -81,9 +87,11 @@ impl RealtimeHandle {
     pub async fn probe(&self) -> Result<VoiceEligibility, VoiceRejection> {
         self.probe_mode(false).await
     }
+
     pub async fn probe_external(&self) -> Result<VoiceEligibility, VoiceRejection> {
         self.probe_mode(true).await
     }
+
     async fn probe_mode(&self, external: bool) -> Result<VoiceEligibility, VoiceRejection> {
         let (reply, rx) = oneshot::channel();
         tokio::time::timeout(Duration::from_secs(15), async {
@@ -109,6 +117,7 @@ impl RealtimeHandle {
         .await
         .map_err(|_| VoiceRejection::Protocol)?
     }
+
     pub async fn mute(&self, muted: bool) -> Result<(), VoiceRejection> {
         let (reply, rx) = oneshot::channel();
         tokio::time::timeout(Duration::from_secs(8), async {

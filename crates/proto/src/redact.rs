@@ -13,13 +13,13 @@
 /// replaced:
 /// - url query strings and fragments (`?state=…`, `#code=…`) and userinfo;
 /// - device / user codes (`ABCD-1234`);
-/// - the value after a label naming a secret (`token: …`, `state=…`,
-///   `"password": "…"`, OpenCode / Pi's `"access"` / `"refresh"`), whatever
-///   it looks like — a quoted value through its closing quote;
-/// - an `Authorization` / `Proxy-Authorization` value through end-of-line
-///   (only its scheme word — `Bearer`, `Digest`, … — stays);
-/// - JWTs (`eyJ…`), vendor-prefixed keys (`sk-…`, `ghp_…`, `gho_…`, `xai-…`,
-///   …), the value after `Bearer`, and long base64 / hex runs.
+/// - the value after a label naming a secret (`token: …`, `state=…`, `"password": "…"`, OpenCode /
+///   Pi's `"access"` / `"refresh"`), whatever it looks like — a quoted value through its closing
+///   quote;
+/// - an `Authorization` / `Proxy-Authorization` value through end-of-line (only its scheme word —
+///   `Bearer`, `Digest`, … — stays);
+/// - JWTs (`eyJ…`), vendor-prefixed keys (`sk-…`, `ghp_…`, `gho_…`, `xai-…`, …), the value after
+///   `Bearer`, and long base64 / hex runs.
 pub fn redact_output(text: &str) -> String {
     redact_with(&strip_ansi(text), Redactor::default())
 }
@@ -27,14 +27,14 @@ pub fn redact_output(text: &str) -> String {
 /// [`redact_output`], hardened for a command's output, which persists in a
 /// chat's doc (synced to the person's other devices and the cloud) where a
 /// sign-in error is only shown:
-/// - private key blocks (`-----BEGIN … PRIVATE KEY-----` … `-----END …`,
-///   PEM and OpenSSH) are dropped whole, an unterminated one to the end;
-/// - an env-style assignment (`AWS_SECRET_ACCESS_KEY=…`, `export PATH=…`:
-///   an uppercase `KEY=`) hides its value, whatever the key;
-/// - keys naming a password, private key or webhook (`DB_PASS`, `pwd`,
-///   `private_key`, `slack_webhook`) are secret labels too;
-/// - (as everywhere) url userinfo and queries, webhook urls' paths
-///   ([`WEBHOOK_HOSTS`]), JWTs, vendor keys and long opaque runs.
+/// - private key blocks (`-----BEGIN … PRIVATE KEY-----` … `-----END …`, PEM and OpenSSH) are
+///   dropped whole, an unterminated one to the end;
+/// - an env-style assignment (`AWS_SECRET_ACCESS_KEY=…`, `export PATH=…`: an uppercase `KEY=`)
+///   hides its value, whatever the key;
+/// - keys naming a password, private key or webhook (`DB_PASS`, `pwd`, `private_key`,
+///   `slack_webhook`) are secret labels too;
+/// - (as everywhere) url userinfo and queries, webhook urls' paths ([`WEBHOOK_HOSTS`]), JWTs,
+///   vendor keys and long opaque runs.
 ///
 /// A command that prints secrets by nature keeps none of its output: see
 /// [`command_prints_secrets`].
@@ -1294,9 +1294,11 @@ mod tests {
                 self.0 ^= self.0 >> 27;
                 self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
             }
+
             fn below(&mut self, n: usize) -> usize {
                 (self.next() % n as u64) as usize
             }
+
             fn byte_in(&mut self, lo: u8, hi: u8) -> char {
                 char::from(lo + self.below(usize::from(hi - lo) + 1) as u8)
             }

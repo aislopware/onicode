@@ -1,6 +1,7 @@
+use onicode_proto::attachment_mentions::{attachment_mention_indices, attachment_mention_link};
+
 use super::tests::composer_focus_window;
 use super::*;
-use onicode_proto::attachment_mentions::{attachment_mention_indices, attachment_mention_link};
 
 fn png() -> gpui::Image {
     let mut bytes = std::io::Cursor::new(Vec::new());

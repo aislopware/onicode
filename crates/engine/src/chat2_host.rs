@@ -117,6 +117,7 @@ impl ChatDocSink for EngineChatSink {
     fn cursor_is_verified(&self) -> bool {
         self.persistence.cursor_verified()
     }
+
     fn reset_cursor(&self, cursor: u64) {
         self.persistence.reset_cursor(cursor);
     }
@@ -142,16 +143,19 @@ impl ChatDocSink for EngineChatSink {
         }
         Ok(updates)
     }
+
     fn reject_update(&self, batch_id: &str) -> Result<(), String> {
         self.store
             .reject_chat_update(&self.chat_id, batch_id)
             .map_err(|e| e.to_string())
     }
+
     fn persist_update(&self, batch_id: &str, bytes: &[u8]) -> Result<(), String> {
         self.store
             .enqueue_chat_update(&self.chat_id, batch_id, bytes)
             .map_err(|e| e.to_string())
     }
+
     fn acknowledge_update(&self, batch_id: &str) -> Result<(), String> {
         self.store
             .acknowledge_chat_update(&self.chat_id, batch_id)
@@ -468,13 +472,15 @@ impl onicode_sync::chat_client::ChatTransport for EdgeChatTransport {
 
 #[cfg(test)]
 mod frontier_tests {
-    use super::*;
     use std::sync::Arc;
+
+    use super::*;
 
     #[tokio::test]
     async fn http_sync_and_exhausted_checkpoint_retries_retain_dns_cause() {
-        use crate::http_error::test_support::FailingDns;
         use onicode_sync::chat_client::ChatTransport;
+
+        use crate::http_error::test_support::FailingDns;
 
         let dns = Arc::new(FailingDns::default());
         let edge = EdgeConfig::with_static_token("https://edge.invalid", "token-secret");
@@ -693,8 +699,9 @@ impl OwnOpsOrder {
 
 #[cfg(test)]
 mod own_ops_order_tests {
-    use super::OwnOpsOrder;
     use std::sync::{Arc, Mutex};
+
+    use super::OwnOpsOrder;
 
     /// Three local commits and the bytes each one's hook received.
     fn three_commits() -> (loro::LoroDoc, OwnOpsOrder, Vec<Vec<u8>>) {

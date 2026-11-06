@@ -38,8 +38,9 @@ impl Rng {
         self.0 ^= self.0 >> 12;
         self.0 ^= self.0 << 25;
         self.0 ^= self.0 >> 27;
-        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
     }
+
     fn below(&mut self, n: usize) -> usize {
         (self.next() % n as u64) as usize
     }
@@ -90,7 +91,7 @@ fn segment_seams_reproduce_whole_paragraph_shaping() {
         "@you",
     ];
     let mut fx = Fixture::without_fallback();
-    let mut rng = Rng(0xFEED);
+    let mut rng = Rng(0xfeed);
     for case in 0..400 {
         let n = 1 + rng.below(12);
         let mut text = String::new();

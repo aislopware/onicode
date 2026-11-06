@@ -17,13 +17,6 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use futures::stream::BoxStream;
 use futures::{SinkExt, StreamExt};
-use tokio::net::TcpListener;
-use tokio::sync::mpsc;
-use tokio_tungstenite::tungstenite::Message as WsMessage;
-use tokio_tungstenite::tungstenite::handshake::server::{
-    Request as WsRequest, Response as WsResponse,
-};
-
 use onicode_doc::SessionCommandPayload;
 use onicode_engine::{
     BranchHeadContext, ChangeRequestError, CheckoutChangeRequestLookup, CheckoutChangeRequests,
@@ -37,6 +30,12 @@ use onicode_proto::{
 use onicode_rpc::{
     DeviceFrameHeader, HostRelay, HostRelayConfig, LinkCache, LinkCacheConfig, RpcError, RpcReply,
     RpcService, StaticToken, decode_device_frame, encode_device_frame, methods,
+};
+use tokio::net::TcpListener;
+use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::Message as WsMessage;
+use tokio_tungstenite::tungstenite::handshake::server::{
+    Request as WsRequest, Response as WsResponse,
 };
 
 // ---------------------------------------------------------------------------
@@ -139,21 +138,27 @@ impl Harness for InstantHarness {
     fn id(&self) -> HarnessId {
         self.0
     }
+
     fn display_name(&self) -> &str {
         "Instant"
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         _request: RunRequest,

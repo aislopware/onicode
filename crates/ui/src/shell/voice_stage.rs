@@ -3,8 +3,9 @@
 //! surface lives inside the conversation column — the user moves between
 //! threads freely while the orchestrator keeps listening.
 
-use super::*;
 use onicode_proto::voice::{VoicePhase, VoiceWork};
+
+use super::*;
 
 /// The stage paints the hero preset magnified to fill the canvas.
 pub(super) const VOICE_STAGE_ORB_SCALE: f32 = 2.25;

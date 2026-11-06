@@ -1,8 +1,10 @@
 //! Credential bytes are hashed locally and never included in diagnostics or disk catalogs.
-use crate::{HarnessError, ModelContext};
+use std::path::{Path, PathBuf};
+
 use onicode_proto::HarnessId;
 use sha2::{Digest, Sha256};
-use std::path::{Path, PathBuf};
+
+use crate::{HarnessError, ModelContext};
 
 pub(crate) fn root(variable: &str, fallback: PathBuf) -> PathBuf {
     std::env::var_os(variable)
@@ -156,6 +158,7 @@ impl ModelContext {
     pub(crate) fn key(&self) -> [u8; 32] {
         Sha256::digest(self.hash.as_bytes()).into()
     }
+
     pub(crate) fn log(&self) {
         tracing::info!(binary_path = %self.binary_path.display(), binary_version = self.binary_version.as_deref().unwrap_or("unknown"), "Model discovery binary");
     }

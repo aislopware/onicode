@@ -13,14 +13,15 @@
 
 mod contained;
 mod hover_intent;
-pub(crate) use contained::{MenuAlign, contained_menu};
-pub use hover_intent::{HoverAction, HoverIntent};
+use std::time::{Duration, Instant};
 
+pub(crate) use contained::{MenuAlign, contained_menu};
+use gpui::prelude::*;
 use gpui::{
     Anchor, AnyElement, Context, Div, ElementId, IntoElement, MouseButton, MouseDownEvent,
-    MouseUpEvent, Pixels, Point, ScrollHandle, SharedString, Stateful, Window, div, prelude::*, px,
+    MouseUpEvent, Pixels, Point, ScrollHandle, SharedString, Stateful, Window, div, px,
 };
-use std::time::{Duration, Instant};
+pub use hover_intent::{HoverAction, HoverIntent};
 
 use crate::motion::{self, ONICODE_PULSE};
 use crate::theme::{Theme, hairline, ink};
@@ -175,7 +176,7 @@ impl<T> Popup<T> {
     }
 
     /// Drop the state if the exit phase has run its course. A popup reopened
-    /// (or re-closed) since the matching [`begin_close`] is left alone — the
+    /// (or re-closed) since the matching `begin_close` is left alone — the
     /// newer phase's own reap handles it.
     pub fn finish_close(&mut self) {
         if let Some((_, Some(since))) = &self.inner
@@ -841,7 +842,7 @@ pub fn menu_at(
 /// scope. Mirrors [`Theme::scrim`], which is pinned at `X = 0.6` dark /
 /// `0.32` light; other dark-mode alphas scale the light side by the same
 /// ratio so the *dark* result is always exactly `alpha_dark` (never routed
-/// through [`Hsla::opacity`], whose `0..=1` clamp would clip a
+/// through `Hsla::opacity`, whose `0..=1` clamp would clip a
 /// larger-than-0.6 alpha before it could scale the light side).
 pub(crate) fn scrim_alpha(alpha_dark: f32) -> gpui::Hsla {
     crate::theme::scrim(alpha_dark)
@@ -1007,7 +1008,7 @@ pub fn menu_separator() -> gpui::Div {
 /// The recessed band tone for a palette/picker header or footer strip — a
 /// translucent black so the glass still reads through (the add-space palette
 /// converged on this; measured subtler tones vanish against the dim scrim).
-/// Free function (like [`ink`]/[`hairline`]/[`wash`]), mirroring
+/// Free function (like [`ink`]/[`hairline`]/`wash`), mirroring
 /// [`Theme::band`], for the several callers with no `Theme`/`cx` in scope
 /// (some outside this crate's `ui` module tree — threading a `&Theme` param
 /// would ripple past this task's file scope).
@@ -1635,6 +1636,7 @@ impl MenuScrollbarState {
             current_scroll,
         )
     }
+
     /// Whether the rail paints at all: a drag or a track-hover holds it
     /// open, otherwise **recent scroll motion** does — hovering the list
     /// alone shows nothing, scrolling shows it even with the pointer

@@ -1,7 +1,9 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use sha2::{Digest, Sha256};
+
 use crate::HarnessError;
 pub(crate) use crate::catalog::Catalog;
-use sha2::{Digest, Sha256};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The SDK's saved login (`Cursor.auth.login`'s default store).
 pub(crate) fn sdk_auth_file() -> std::path::PathBuf {

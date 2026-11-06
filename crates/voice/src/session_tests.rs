@@ -1,10 +1,9 @@
 //! Deterministic barriers exercise the production capture/loading coordinator.
+use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::thread::JoinHandle;
+use std::time::Duration;
+
 use super::*;
-use std::{
-    sync::mpsc::{self, Receiver, SyncSender},
-    thread::JoinHandle,
-    time::Duration,
-};
 
 const WAIT: Duration = Duration::from_secs(5);
 
@@ -16,6 +15,7 @@ impl Recording for FakeCapture {
     fn ended(&self) -> bool {
         self.ended.load(Ordering::Acquire)
     }
+
     fn finish(self) -> Result<(Vec<f32>, u32)> {
         Ok((vec![0.25; 3200], 16_000))
     }
@@ -38,6 +38,7 @@ impl Fixture {
     fn new(open: Option<(Receiver<()>, SyncSender<()>)>) -> Self {
         Self::with_admission(open, None)
     }
+
     fn with_admission(
         open: Option<(Receiver<()>, SyncSender<()>)>,
         admission: Option<BusyGuard>,
@@ -102,12 +103,14 @@ impl Fixture {
             worker,
         }
     }
+
     fn listening(&self) {
         assert!(matches!(
             self.session.events.recv_timeout(WAIT).unwrap(),
             Event::Listening
         ));
     }
+
     fn release(self, result: Result<()>) -> Result<Option<String>> {
         self.load.send(result).unwrap();
         let result = self.result.recv_timeout(WAIT).unwrap();

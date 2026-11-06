@@ -16,13 +16,12 @@
 
 use async_trait::async_trait;
 use futures::stream::BoxStream;
-use tokio::sync::{mpsc, oneshot};
-pub use tokio_util::sync::CancellationToken;
-
 use onicode_proto::{
     AccessMode, AgentEvent, HarnessId, Model, ReasoningLevel, RunRequest, SlashCommand,
     SteeringMode, UserInputAnswer, UserInputQuestion,
 };
+use tokio::sync::{mpsc, oneshot};
+pub use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, thiserror::Error)]
 pub enum HarnessError {
@@ -299,7 +298,7 @@ pub struct RunControls {
     pub turn: TurnControl,
 }
 
-/// Catalog provenance stays internal; RPC clients retain the Vec<Model> shape.
+/// Catalog provenance stays internal; RPC clients retain the `Vec<Model>` shape.
 #[derive(Clone, Debug)]
 pub struct ModelCatalog {
     pub models: Vec<Model>,
@@ -613,8 +612,8 @@ fn filter_child_env_defaults(
 }
 
 /// Rolling tail of a child's stderr, shared between the reader task and the
-/// crash-message composer: an unexpected exit surfaces "<name> exited
-/// unexpectedly (<status>): <last stderr lines>" instead of a bare shrug —
+/// crash-message composer: an unexpected exit surfaces `"<name>` exited
+/// unexpectedly `(<status>):` `<last stderr lines>"` instead of a bare shrug —
 /// the proper background-crash message old onicode showed (user requirement).
 #[derive(Clone, Default)]
 pub(crate) struct StderrTail(
@@ -623,6 +622,9 @@ pub(crate) struct StderrTail(
 );
 
 impl StderrTail {
+    const KEEP_BYTES: usize = 700;
+    const KEEP_LINES: usize = 6;
+
     pub(crate) fn close(&self) {
         self.1.notify_one();
     }
@@ -631,9 +633,6 @@ impl StderrTail {
         let _ =
             tokio::time::timeout(std::time::Duration::from_millis(200), self.1.notified()).await;
     }
-
-    const KEEP_LINES: usize = 6;
-    const KEEP_BYTES: usize = 700;
 
     pub(crate) fn push(&self, line: &str) {
         let line = line.trim();
@@ -862,8 +861,9 @@ pub fn switches_native_subagents(id: HarnessId) -> bool {
 
 #[cfg(test)]
 mod path_tests {
-    use super::{child_path_entries, filter_child_env_defaults};
     use std::path::PathBuf;
+
+    use super::{child_path_entries, filter_child_env_defaults};
 
     fn joined(entries: &[&str]) -> std::ffi::OsString {
         std::env::join_paths(entries).unwrap()

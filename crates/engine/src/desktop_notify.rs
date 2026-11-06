@@ -6,15 +6,14 @@
 //! in-process fallback call [`enable`]); a server or Cloud machine never
 //! does. The decision is the one the app used to make itself:
 //!
-//! - one baseline per session; a row's first appearance seeds it silently,
-//!   so a boot or replay never rings;
+//! - one baseline per session; a row's first appearance seeds it silently, so a boot or replay
+//!   never rings;
 //! - side chats keep their baselines current but never ring;
-//! - preferences come from the app's `ui-settings.json` (read when a banner
-//!   is due, so changes apply at once): `notificationsEnabled`,
-//!   `notificationsBackgroundOnly`, `agentUpdateNotifications`;
-//! - "background only" holds banners while any app window is focused, as
-//!   viewports report through `SetViewportFocus` (the app's chime covers
-//!   the foreground case).
+//! - preferences come from the app's `ui-settings.json` (read when a banner is due, so changes
+//!   apply at once): `notificationsEnabled`, `notificationsBackgroundOnly`,
+//!   `agentUpdateNotifications`;
+//! - "background only" holds banners while any app window is focused, as viewports report through
+//!   `SetViewportFocus` (the app's chime covers the foreground case).
 //!
 //! The app keeps the chimes; it uses [`SessionNotificationState`] and
 //! [`ConnectivityNotificationState`] for them, so sound and banner always
@@ -433,8 +432,9 @@ pub(crate) fn spawn(core: &crate::EngineCore, data_dir: PathBuf) -> tokio::task:
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::{Arc, Mutex};
+
+    use super::*;
 
     fn baseline(indicator: Indicator, turn: Option<&str>) -> SessionNotificationState {
         SessionNotificationState {

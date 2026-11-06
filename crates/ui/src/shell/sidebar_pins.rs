@@ -1,10 +1,12 @@
 //! Optimistic pin/section writes are an overlay, never the authoritative watch state.
 //! Serialize drops per attachment; old replies cannot undo a newer drop/profile.
 
+use std::collections::VecDeque;
+
+use onicode_proto::{SidebarPinChange, SidebarPreferencesState};
+
 use super::*;
 use crate::state::EngineHandle;
-use onicode_proto::{SidebarPinChange, SidebarPreferencesState};
-use std::collections::VecDeque;
 
 pub(super) struct PendingSidebarPins {
     pub id: u64,

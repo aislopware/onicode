@@ -4,12 +4,12 @@
 
 use std::rc::Rc;
 
-use gpui::{AnyElement, Context, Pixels, ScrollHandle, SharedString, Window, div, prelude::*, px};
-
-use crate::popover::{self, MenuScrollbarMetrics, MenuScrollbarState, ScrollRailHost};
-use crate::theme::Theme;
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, Pixels, ScrollHandle, SharedString, Window, div, px};
 
 pub use super::search::page_reveal;
+use crate::popover::{self, MenuScrollbarMetrics, MenuScrollbarState, ScrollRailHost};
+use crate::theme::Theme;
 
 /// Width of the section column beside the settings page, published by the
 /// shell each frame so dropdowns and responsive pages measure the page pane.

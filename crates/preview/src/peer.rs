@@ -1,26 +1,22 @@
 //! Authenticated signaling supplies SDP/DTLS fingerprints. Preview bytes only
 //! use the resulting reliable, ordered DataChannel; there is no edge byte relay.
-use crate::mux::{Connector, Mux, PeerScoped, Stream, Transport};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
 use tokio::sync::{Mutex, Notify, mpsc, watch};
 use tokio_util::sync::CancellationToken;
-use webrtc::{
-    data_channel::{DataChannel, DataChannelEvent},
-    peer_connection::{
-        PeerConnection, PeerConnectionBuilder, PeerConnectionEventHandler, RTCConfigurationBuilder,
-        RTCIceCandidateType, RTCIceGatheringState, RTCIceServer, RTCPeerConnectionIceEvent,
-        RTCPeerConnectionState, RTCSessionDescription, SettingEngine,
-    },
+use webrtc::data_channel::{DataChannel, DataChannelEvent};
+use webrtc::peer_connection::{
+    PeerConnection, PeerConnectionBuilder, PeerConnectionEventHandler, RTCConfigurationBuilder,
+    RTCIceCandidateType, RTCIceGatheringState, RTCIceServer, RTCPeerConnectionIceEvent,
+    RTCPeerConnectionState, RTCSessionDescription, SettingEngine,
 };
+
+use crate::mux::{Connector, Mux, PeerScoped, Stream, Transport};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -97,6 +93,7 @@ impl Peers {
             receiver,
         )
     }
+
     /// Replace STUN servers; an empty list pairs over host candidates only.
     /// Must be called before the handle is shared.
     pub fn set_ice_servers(&mut self, urls: Vec<String>) -> anyhow::Result<()> {
@@ -111,6 +108,7 @@ impl Peers {
         };
         Ok(())
     }
+
     /// Bind ICE to these local addresses (default: every interface). Tests
     /// pair over loopback, which a host firewall doesn't filter. Must be
     /// called before the handle is shared.
@@ -119,9 +117,11 @@ impl Peers {
         inner.udp_addrs = addrs;
         Ok(())
     }
+
     async fn send(&self, to: &str, signal: Signal) -> anyhow::Result<()> {
         tokio::select! { _ = self.0.stop.cancelled() => anyhow::bail!("preview networking stopped"), result = self.0.output.send(OutgoingSignal { to: to.into(), signal }) => { result?; Ok(()) } }
     }
+
     async fn create(
         &self,
         device: &str,
@@ -172,6 +172,7 @@ impl Peers {
             stop,
         }))
     }
+
     async fn description(&self, peer: &Peer, offer: bool) -> anyhow::Result<RTCSessionDescription> {
         tracing::debug!(offer, "creating preview description");
         let description = if offer {
@@ -208,6 +209,7 @@ impl Peers {
         );
         Ok(description)
     }
+
     /// `requested` marks an offer made because the other device asked for one.
     async fn offer(&self, device: &str, session: String, requested: bool) -> anyhow::Result<()> {
         let mut peers = self.0.peers.lock().await;
@@ -247,6 +249,7 @@ impl Peers {
         }
         result
     }
+
     /// Called only for messages stamped by the authenticated coordinator.
     pub async fn signal(&self, device: &str, signal: Signal) -> anyhow::Result<()> {
         anyhow::ensure!(
@@ -320,6 +323,7 @@ impl Peers {
         self.0.changed.notify_waiters();
         Ok(())
     }
+
     pub async fn open(
         &self,
         device: &str,
@@ -328,6 +332,7 @@ impl Peers {
     ) -> anyhow::Result<Stream> {
         self.connect(device).await?.open(service, websocket).await
     }
+
     /// The live connection to `device`, pairing first when there is none.
     pub async fn connect(&self, device: &str) -> anyhow::Result<Mux> {
         let device = device.to_owned();
@@ -353,6 +358,7 @@ impl Peers {
         }
         result.context("Could not connect directly to this device. Check that both devices are online and their networks allow WebRTC.")?
     }
+
     /// The open connection to `device`, without pairing.
     pub async fn ready(&self, device: &str) -> Option<Mux> {
         let mux = self
@@ -364,6 +370,7 @@ impl Peers {
             .and_then(|peer| peer.ready.borrow().clone());
         mux.filter(|m| !m.is_closed())
     }
+
     /// Starts (or asks the initiating device to start) a pairing attempt, at
     /// most once per pacing interval per device. `remove` resets the pacing.
     async fn pair(&self, device: &str) -> anyhow::Result<()> {
@@ -393,6 +400,7 @@ impl Peers {
             .await
         }
     }
+
     pub async fn remove(&self, device: &str) {
         self.0.requested.lock().await.remove(device);
         if let Some(peer) = self.0.peers.lock().await.remove(device) {
@@ -400,6 +408,7 @@ impl Peers {
         }
         self.0.changed.notify_waiters();
     }
+
     pub async fn clear(&self) {
         self.0.requested.lock().await.clear();
         let peers = std::mem::take(&mut *self.0.peers.lock().await);
@@ -411,12 +420,11 @@ impl Peers {
 }
 /// ICE tuned for pairing fast — a person is waiting on it (a terminal
 /// screen, a preview page):
-/// - checks every 50ms (RFC 8445's Ta; the library's default is 200ms),
-///   up to 20 per pair, so a lossy path still gets ~1s of attempts;
-/// - a working server-reflexive or peer-reflexive pair (a phone on cellular,
-///   another network) is nominated after 100ms / 150ms instead of 500ms /
-///   1s. Those waits only let a better pair win, and a host pair on a shared
-///   network answers in a millisecond or two.
+/// - checks every 50ms (RFC 8445's Ta; the library's default is 200ms), up to 20 per pair, so a
+///   lossy path still gets ~1s of attempts;
+/// - a working server-reflexive or peer-reflexive pair (a phone on cellular, another network) is
+///   nominated after 100ms / 150ms instead of 500ms / 1s. Those waits only let a better pair win,
+///   and a host pair on a shared network answers in a millisecond or two.
 fn setting_engine() -> SettingEngine {
     let mut setting = SettingEngine::default();
     setting.set_ice_connection_attempts(Some(Duration::from_millis(50)), Some(20));
@@ -494,11 +502,13 @@ impl PeerConnectionEventHandler for Handler {
             self.gathered.send_replace(true);
         }
     }
+
     async fn on_ice_candidate(&self, event: RTCPeerConnectionIceEvent) {
         if event.candidate.typ == RTCIceCandidateType::Srflx {
             self.gathered.send_replace(true);
         }
     }
+
     async fn on_connection_state_change(&self, state: RTCPeerConnectionState) {
         if matches!(
             state,
@@ -511,6 +521,7 @@ impl PeerConnectionEventHandler for Handler {
             self.changed.notify_waiters();
         }
     }
+
     async fn on_data_channel(&self, channel: Arc<dyn DataChannel>) {
         self.attach(channel);
     }
@@ -522,6 +533,7 @@ impl Transport for ChannelTransport {
         self.0.send(bytes::BytesMut::from(bytes)).await?;
         Ok(())
     }
+
     async fn receive(&self) -> anyhow::Result<Vec<u8>> {
         loop {
             match self.0.poll().await {
@@ -543,8 +555,9 @@ impl Transport for ChannelTransport {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::*;
     struct Echo;
     #[async_trait::async_trait]
     impl Connector for Echo {

@@ -2,13 +2,12 @@
 //! run or terminal that started it (see [`onicode_proto::ORIGIN_ENV`]). HTTP probes
 //! run only after that origin is established and commands performing
 //! authentication have been excluded.
+use std::collections::{HashMap, HashSet};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
 use onicode_proto::ORIGIN_ENV;
-use std::{
-    collections::{HashMap, HashSet},
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
-    path::{Path, PathBuf},
-    time::Duration,
-};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Debug, Clone)]
@@ -314,7 +313,8 @@ pub fn same_process(pid: u32, started_at: u64) -> bool {
 /// keeps what it last saw rather than reading a failed scan as "nothing runs".
 #[cfg(target_os = "linux")]
 pub fn listeners(origins: &mut Origins) -> Option<Vec<Listener>> {
-    use std::{fs, os::unix::fs::MetadataExt};
+    use std::fs;
+    use std::os::unix::fs::MetadataExt;
     let mut sockets = HashMap::new();
     let mut tables = 0;
     for (file, ipv6) in [("/proc/net/tcp", false), ("/proc/net/tcp6", true)] {
@@ -423,9 +423,9 @@ fn proc_address(value: &str, ipv6: bool) -> Option<SocketAddr> {
                     .to_le_bytes(),
             );
         }
-        IpAddr::V6(Ipv6Addr::from(bytes))
+        std::net::IpAddr::V6(Ipv6Addr::from(bytes))
     } else {
-        IpAddr::V4(Ipv4Addr::from(
+        std::net::IpAddr::V4(Ipv4Addr::from(
             u32::from_str_radix(host, 16).ok()?.to_le_bytes(),
         ))
     };
@@ -479,7 +479,8 @@ pub fn same_process(pid: u32, started_at: u64) -> bool {
 /// checked: lsof exits 1 when it simply found nothing.
 #[cfg(target_os = "macos")]
 fn command_output(program: &str, args: &[&str], timeout: Duration) -> Option<Vec<u8>> {
-    use std::{io::Read, process::Stdio};
+    use std::io::Read;
+    use std::process::Stdio;
     let mut child = std::process::Command::new(program)
         .args(args)
         .env("LC_ALL", "C")

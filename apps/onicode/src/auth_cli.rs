@@ -243,8 +243,9 @@ fn engine_lock(config: &EngineConfig, verb: &str) -> anyhow::Result<InstanceLock
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_engine::{AuthUser, HarnessId};
+
+    use super::*;
 
     fn config(data_dir: &std::path::Path) -> EngineConfig {
         EngineConfig {

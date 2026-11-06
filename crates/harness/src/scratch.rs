@@ -4,8 +4,8 @@
 //! bootloader unpacks its payload (the Antigravity adapter unpacks ~1 GB) into
 //! a fresh `_MEI<random>` directory under the child's temp root on every
 //! launch, and removes that directory only when the bootloader process exits
-//! normally. A killed adapter skips that path entirely, so the unpack directory outlives the run and accumulates on
-//! disk — one gigabyte per Antigravity session.
+//! normally. A killed adapter skips that path entirely, so the unpack directory outlives the run
+//! and accumulates on disk — one gigabyte per Antigravity session.
 //!
 //! Pointing the child's temp variables at a directory this process owns moves
 //! the payload somewhere it can delete itself once the adapter is gone. Removal

@@ -7,8 +7,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use futures::StreamExt;
-use tokio::sync::{mpsc, oneshot};
-
 use onicode_harness::acp::SignInProgress;
 use onicode_harness::{
     AcpHarness, CancellationToken, Harness, HarnessError, RunControls, SteerMessage,
@@ -17,6 +15,7 @@ use onicode_proto::{
     AccessMode, AgentEvent, DoneStatus, HarnessId, ReasoningLevel, RunRequest, SandboxLevel,
     SteeringMode, TodoItem, TodoStatus, ToolCall, UserInputAnswer,
 };
+use tokio::sync::{mpsc, oneshot};
 
 fn fixture_path() -> PathBuf {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

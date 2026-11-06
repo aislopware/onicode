@@ -14,8 +14,8 @@
 //! * [`whois`]: the node and user behind an address, with the grants it carries.
 //! * [`policy`]: which of those onicode lets in, and in what role.
 //! * [`watch`]: the daemon's change notifications.
-//! * [`Tailnet`]: the seam every consumer reads through, so a simulated tailnet
-//!   (`onicode-net-sim`) or a later embedded one stands in for the daemon.
+//! * [`Tailnet`]: the seam every consumer reads through, so a simulated tailnet (`onicode-net-sim`)
+//!   or a later embedded one stands in for the daemon.
 //! * [`Relooking`]: this machine's daemon, found again when it is missing or stops answering.
 //!
 //! iOS has no `LocalAPI` a third-party app can reach; a phone learns engines from an engine.

@@ -9,13 +9,12 @@
 //! reaches the store logs the user out on the next refresh, and onicode used to
 //! lose one in two ways:
 //!
-//! - **Killing a child mid-refresh.** SIGKILL saves nothing; on SIGTERM the
-//!   CLI waits only 2s for an in-flight refresh before exiting without it.
-//!   Short-lived probe children (`initialize`) start right when an expired
-//!   token gets refreshed, and are torn down as soon as they answer.
-//! - **Swapping the stored login mid-refresh.** The CLI's CAS then drops the
-//!   rotated pair, so the saved slot of the old account keeps a spent refresh
-//!   token — and switching back to it installs a dead login.
+//! - **Killing a child mid-refresh.** SIGKILL saves nothing; on SIGTERM the CLI waits only 2s for
+//!   an in-flight refresh before exiting without it. Short-lived probe children (`initialize`)
+//!   start right when an expired token gets refreshed, and are torn down as soon as they answer.
+//! - **Swapping the stored login mid-refresh.** The CLI's CAS then drops the rotated pair, so the
+//!   saved slot of the old account keeps a spent refresh token — and switching back to it installs
+//!   a dead login.
 //!
 //! The CLI serialises refreshes across processes with a proper-lockfile
 //! directory lock: `<config>/.oauth_refresh.lock` (2.1.x; stale after 60s,

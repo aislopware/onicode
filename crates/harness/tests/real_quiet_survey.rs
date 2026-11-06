@@ -9,12 +9,11 @@
 use std::time::Duration;
 
 use futures::StreamExt;
-use tokio::sync::{mpsc, oneshot};
-
 use onicode_harness::{AcpHarness, CancellationToken, Harness, RunControls, SteerMessage};
 use onicode_proto::{
     AgentEvent, DoneStatus, RunRequest, SandboxLevel, UserInputAnswer, UserInputQuestion,
 };
+use tokio::sync::{mpsc, oneshot};
 
 const POST_DONE_WINDOW: Duration = Duration::from_secs(20);
 

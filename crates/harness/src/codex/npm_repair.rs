@@ -185,8 +185,9 @@ fn tail(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
 
     fn script(path: &Path, body: &str) {
         std::fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();

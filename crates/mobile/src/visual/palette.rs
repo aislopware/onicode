@@ -50,19 +50,19 @@ impl Rgba {
 impl Palette {
     pub fn new(dark: bool) -> Self {
         let pick = |light: u32, night: u32| hex(if dark { night } else { light });
-        let text = pick(0x27272C, 0xE8E8EA);
-        let accent = pick(0x5B43E8, 0x8B7CF6);
+        let text = pick(0x27272c, 0xe8e8ea);
+        let accent = pick(0x5b43e8, 0x8b7cf6);
         Self {
             dark,
             text,
-            muted: pick(0x62626A, 0xA9A9AE),
-            faint: pick(0x97979F, 0x6B6B72),
+            muted: pick(0x62626a, 0xa9a9ae),
+            faint: pick(0x97979f, 0x6b6b72),
             accent,
-            on_accent: hex(0xFFFFFF),
-            success: pick(0x15803D, 0x34D399),
-            warning: pick(0xA16207, 0xFACC15),
-            danger: pick(0xDC2626, 0xF87171),
-            border: pick(0xE2E2E6, 0x232327),
+            on_accent: hex(0xffffff),
+            success: pick(0x15803d, 0x34d399),
+            warning: pick(0xa16207, 0xfacc15),
+            danger: pick(0xdc2626, 0xf87171),
+            border: pick(0xe2e2e6, 0x232327),
             border_strong: text.alpha(0.28),
             wash: text.alpha(0.075),
             chart: chart_series(accent, dark),

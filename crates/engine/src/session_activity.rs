@@ -1,8 +1,9 @@
 //! One projection for local watchers, the synced registry, sidebar, and MCP.
 //! Native execution state stays separate from terminal-reported activity.
 
-use super::*;
 use onicode_proto::TerminalActivity;
+
+use super::*;
 
 impl SessionsEngine {
     pub(crate) fn track_terminal_activity(
@@ -193,8 +194,9 @@ fn project(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_proto::{ProgramInputKind, ProgramState, ProgramStatus};
+
+    use super::*;
 
     /// A run can start before its chat's row reaches this workspace (it is
     /// created on another device, or the row is still syncing). Its status

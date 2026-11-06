@@ -2,13 +2,13 @@
 //! This models delayed bytes, a temporary blackout and a connection reset;
 //! it does not claim to reproduce TCP packet loss or an airline network.
 
-use onicode_doc::RegistryDoc;
-use onicode_sync::{RegistryClient, registry::mock_server::MockRegistryServer};
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
+
+use onicode_doc::RegistryDoc;
+use onicode_sync::RegistryClient;
+use onicode_sync::registry::mock_server::MockRegistryServer;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, watch};

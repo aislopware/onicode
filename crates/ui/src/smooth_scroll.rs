@@ -33,7 +33,7 @@
 //! it as a zoom). A press ends a glide too. Off under reduced motion.
 //!
 //! A macOS web page's wheel never reaches the root: AppKit hands it to the
-//! page, and `browser::macos` glides it on the same [`Glide`].
+//! page, and `browser::macos` glides it on the same `Glide`.
 
 #[cfg(target_os = "macos")]
 use std::cell::Cell;
@@ -465,8 +465,8 @@ pub struct SmoothScroll {
 }
 
 impl Element for SmoothScroll {
-    type RequestLayoutState = ();
     type PrepaintState = ();
+    type RequestLayoutState = ();
 
     /// None: the wrapper must not change the global ids beneath it.
     fn id(&self) -> Option<ElementId> {
@@ -545,13 +545,16 @@ impl IntoElement for SmoothScroll {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use gpui::{
-        Context, ModifiersChangedEvent, MouseButton, Render, ScrollHandle, TestAppContext,
-        VisualTestContext, div, prelude::*, px,
-    };
     use std::cell::Cell;
     use std::time::Duration;
+
+    use gpui::prelude::*;
+    use gpui::{
+        Context, ModifiersChangedEvent, MouseButton, Render, ScrollHandle, TestAppContext,
+        VisualTestContext, div, px,
+    };
+
+    use super::*;
 
     thread_local! {
         pub(super) static CLOCK: Cell<Option<Instant>> = const { Cell::new(None) };

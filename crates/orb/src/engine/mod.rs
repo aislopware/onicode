@@ -12,19 +12,20 @@ mod ribbon;
 mod web;
 
 pub use core::{Dot, Frame, Line, Proj, make_proj, sort_dots};
-pub use profiles::{
-    MAX_ICON_D, MAX_MORPH_DOTS, MAX_NODE_N, MAX_SIZE, MIN_SIZE, ModeOpts, base_profile,
-    sanitize_mode_opts, sanitize_size, scale_counts, scale_radii,
-};
 
-use crate::types::ModeKey;
 use braid::draw_braid_into;
 use concepts::{draw_echo_into, draw_focus_into, draw_gyroscope_into};
 use lattice::{draw_globe_into, draw_rubik_into, draw_wave_into};
 use morph::draw_morph_into;
 use orbits::draw_orbits_into;
+pub use profiles::{
+    MAX_ICON_D, MAX_MORPH_DOTS, MAX_NODE_N, MAX_SIZE, MIN_SIZE, ModeOpts, base_profile,
+    sanitize_mode_opts, sanitize_size, scale_counts, scale_radii,
+};
 use ribbon::draw_ribbon_into;
 use web::draw_web_into;
+
+use crate::types::ModeKey;
 
 /// Paint one frame for the given mode into an existing [`Frame`], reusing its
 /// buffers.

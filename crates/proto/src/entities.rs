@@ -166,8 +166,8 @@ pub struct SpaceIcon {
 impl SpaceIcon {
     /// The longest emoji kept (a ZWJ family with skin tones is ~35 bytes).
     pub const MAX_EMOJI_BYTES: usize = 64;
-    pub const MAX_IMAGE_URL_BYTES: usize = 1024;
     pub const MAX_HUE_BYTES: usize = 24;
+    pub const MAX_IMAGE_URL_BYTES: usize = 1024;
 
     /// Trimmed, each part checked: an emoji short and without control
     /// characters, an image an https URL, a hue a lowercase word. `None`
@@ -1861,8 +1861,9 @@ pub struct ChatConnectivity {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::TimeZone;
+
+    use super::*;
 
     #[test]
     fn outside_workspace_reads_round_trip_without_breaking_older_reasons() {

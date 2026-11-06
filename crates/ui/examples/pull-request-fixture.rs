@@ -11,9 +11,12 @@
 //!
 //!   Xvfb :99 -screen 0 1400x900x24 & DISPLAY=:99 openbox &
 //!   WAYLAND_DISPLAY= DISPLAY=:99 cargo run …
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
 use gpui::{AppContext, AsyncApp, Bounds, WindowBounds, WindowOptions, px, size};
 use onicode_ui::*;
-use std::{path::PathBuf, sync::Arc, time::Duration};
 
 async fn pause(cx: &mut AsyncApp, ms: u64) {
     cx.background_executor()

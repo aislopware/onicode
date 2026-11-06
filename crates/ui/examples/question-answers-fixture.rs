@@ -15,6 +15,10 @@
 //! `chips.png` (every chip state) and `result.txt` (the command ledger and each
 //! question part as the doc holds it), and prints PASS once the close reached
 //! the doc as a decline.
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
 use gpui::{
     AppContext, Bounds, KeyDownEvent, Keystroke, PlatformInput, WindowBounds, WindowOptions, px,
     size,
@@ -26,11 +30,6 @@ use onicode_doc::{
 use onicode_proto::{UserInputAnswer, UserInputQuestion};
 use onicode_ui::*;
 use serde_json::json;
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
 
 const CHAT: &str = "questions";
 /// The question left open for the panel.

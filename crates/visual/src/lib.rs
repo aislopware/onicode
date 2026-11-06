@@ -31,10 +31,9 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use mlua::{Function, Lua, LuaOptions, StdLib, Table, Value, VmState};
-
 pub use assets::Assets;
 pub use draw::{DrawCmd, DrawText, Pointer};
+use mlua::{Function, Lua, LuaOptions, StdLib, Table, Value, VmState};
 pub use node::{
     Axis, Canvas, Chart, ChartKind, Column, HandlerId, Node, NodeKind, NumberFormat, SceneNode,
     Series, ShaderNode, Span, Stack, Table_ as TableNode, Text,

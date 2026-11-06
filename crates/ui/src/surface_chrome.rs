@@ -1,6 +1,7 @@
 //! Shared metrics for sidebar surface toolbars and their controls.
 
-use gpui::{Div, div, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{Div, div, px};
 
 use crate::theme::Theme;
 

@@ -167,7 +167,7 @@ impl EdgeFaded {
 
     /// Keep an enclosing wrapper's vertical fade instead of replacing it: a
     /// folded bubble's bottom fade still fades with the transcript under the
-    /// titlebar and composer. See [`compose_vertical`].
+    /// titlebar and composer. See `compose_vertical`.
     pub fn compose_vertical(mut self) -> Self {
         self.compose_vertical = true;
         self
@@ -189,8 +189,8 @@ impl EdgeFaded {
 }
 
 impl Element for EdgeFaded {
-    type RequestLayoutState = ();
     type PrepaintState = ();
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<gpui::ElementId> {
         None
@@ -362,9 +362,12 @@ impl IntoElement for EdgeFaded {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use gpui::{AppContext, Context, Render, Styled, div, prelude::*};
     use std::rc::Rc;
+
+    use gpui::prelude::*;
+    use gpui::{AppContext, Context, Render, Styled, div};
+
+    use super::*;
 
     #[test]
     fn a_nested_bottom_fade_keeps_the_parents_edges() {

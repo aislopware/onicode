@@ -294,10 +294,6 @@ pub enum VaultProvider {
 }
 
 impl VaultProvider {
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|p| p.as_str() == value)
-    }
-
     pub const ALL: [VaultProvider; 5] = [
         VaultProvider::Codex,
         VaultProvider::Claude,
@@ -305,6 +301,10 @@ impl VaultProvider {
         VaultProvider::AnthropicKey,
         VaultProvider::OpenaiKey,
     ];
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.as_str() == value)
+    }
 
     pub fn as_str(self) -> &'static str {
         match self {

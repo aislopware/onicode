@@ -1,7 +1,9 @@
 //! Settings → General: device-addressed git settings — where new worktrees
 //! go.
 
-use gpui::{AnyElement, Context, Entity, Render, Task, Window, div, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, Entity, Render, Task, Window, div, px};
+use onicode_proto::device_paths::{child_folder as child_path, parent_folder as folder_parent};
 use onicode_proto::{FolderListing, WorktreeSettings, WorktreeSettingsStatus};
 use onicode_rpc::methods;
 
@@ -11,7 +13,6 @@ use crate::icons;
 use crate::popover::Loadable;
 use crate::state::AppState;
 use crate::theme::Theme;
-use onicode_proto::device_paths::{child_folder as child_path, parent_folder as folder_parent};
 
 pub(super) struct WorktreeSettingsCard {
     state: Entity<AppState>,

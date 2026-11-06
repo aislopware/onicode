@@ -10,9 +10,11 @@
 //! Coordinates are logical points in a `size × size` box. `white` is ink
 //! (0 = darkest on paper); dark appearances paint `1 - white`. Paint lines,
 //! then dots, onto a transparent canvas.
-use onicode_orb::{OrbAnimator, OrbSize, OrbState, engine::Frame};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use onicode_orb::engine::Frame;
+use onicode_orb::{OrbAnimator, OrbSize, OrbState};
 
 /// The four tuned size presets (inline 20, avatar 64, large 96, hero 128).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]

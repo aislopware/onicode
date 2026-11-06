@@ -13,12 +13,11 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::{OnceLock, RwLock};
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
 pub use builtins::builtin_registry;
 pub use library::{
     CustomThemeEntry, CustomThemeLibrary, CustomThemeSource, CustomThemeStatus, InstallMode,
 };
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 fn custom_families() -> &'static RwLock<Vec<ThemeFamily>> {
     static CUSTOM: OnceLock<RwLock<Vec<ThemeFamily>>> = OnceLock::new();

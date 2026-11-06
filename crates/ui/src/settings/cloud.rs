@@ -13,11 +13,10 @@
 use std::time::Duration;
 
 use chrono::Utc;
+use gpui::prelude::*;
 use gpui::{
-    AnyElement, ClipboardItem, Context, Entity, SharedString, Subscription, Task, Window, div,
-    prelude::*, px,
+    AnyElement, ClipboardItem, Context, Entity, SharedString, Subscription, Task, Window, div, px,
 };
-
 use onicode_proto::{
     CloudState, CloudStatus, CloudUsage, GithubConnectProgress, GithubConnectState,
     GithubDeviceFlow, VaultProvider, VaultStatus,

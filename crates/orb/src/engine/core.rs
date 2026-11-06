@@ -2,7 +2,8 @@
 //! Shared primitives for the dotted 3D thought-orbs.
 //! Ported from thinking-orbs / inkform (HalftoneSphere lineage).
 
-use std::{cell::RefCell, f32::consts::PI};
+use std::cell::RefCell;
+use std::f32::consts::PI;
 
 type Vec3 = [f32; 3];
 type Vec2 = [f32; 2];

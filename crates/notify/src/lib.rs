@@ -2,26 +2,21 @@
 //! — the app's background engine (`onicode-engine`) or, when the app embeds its
 //! engine, the app itself. Platform facilities, failures swallowed:
 //!
-//! - macOS: `NSUserNotification` through the ObjC runtime, so the banner is
-//!   attributed to the app with its icon. The API is deprecated (10.14) but
-//!   shipping and fits banners that need no actions/attachments; a delegate
-//!   answers "present" unconditionally, overriding the center's own
-//!   suppress-while-frontmost policy — WHETHER to ping (including the
-//!   background-only setting's focus check) is decided by the caller.
-//!   Posting hops to the main queue, so any thread may post; the process
-//!   must service the main queue (AppKit's loop, or the engine's
-//!   `CFRunLoopRun`). A process without a bundle identifier of its own (the
-//!   engine binary, `cargo run`) adopts the app's — [`set_app_bundle_id`],
-//!   the terminal-notifier technique: override `-[NSBundle
-//!   bundleIdentifier]` for the main bundle — so its banners carry the app's
-//!   name and icon. Machines without the app installed fall back to
-//!   `osascript`, attributed to Script Editor (cosmetics only).
-//! - Linux: `notify-send` (libnotify's CLI, present on every mainstream
-//!   desktop).
-//! - `ONICODE_DISABLE_NOTIFICATIONS` env kill-switch (callers also check the
-//!   `notificationsEnabled` setting);
-//! - failures are logged and swallowed — a missing notifier must never
-//!   bother the session flow.
+//! - macOS: `NSUserNotification` through the ObjC runtime, so the banner is attributed to the app
+//!   with its icon. The API is deprecated (10.14) but shipping and fits banners that need no
+//!   actions/attachments; a delegate answers "present" unconditionally, overriding the center's own
+//!   suppress-while-frontmost policy — WHETHER to ping (including the background-only setting's
+//!   focus check) is decided by the caller. Posting hops to the main queue, so any thread may post;
+//!   the process must service the main queue (AppKit's loop, or the engine's `CFRunLoopRun`). A
+//!   process without a bundle identifier of its own (the engine binary, `cargo run`) adopts the
+//!   app's — [`set_app_bundle_id`], the terminal-notifier technique: override `-[NSBundle
+//!   bundleIdentifier]` for the main bundle — so its banners carry the app's name and icon.
+//!   Machines without the app installed fall back to `osascript`, attributed to Script Editor
+//!   (cosmetics only).
+//! - Linux: `notify-send` (libnotify's CLI, present on every mainstream desktop).
+//! - `ONICODE_DISABLE_NOTIFICATIONS` env kill-switch (callers also check the `notificationsEnabled`
+//!   setting);
+//! - failures are logged and swallowed — a missing notifier must never bother the session flow.
 
 // objc 0.2's `msg_send!` checks a `cargo-clippy` feature this crate lacks.
 #![allow(unexpected_cfgs)]
@@ -509,9 +504,10 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn clicked_banner_reports_its_target() {
+        use std::sync::{Arc, Mutex};
+
         use objc::runtime::Object;
         use objc::{class, msg_send, sel, sel_impl};
-        use std::sync::{Arc, Mutex};
 
         let clicked = Arc::new(Mutex::new(Vec::new()));
         let sink = clicked.clone();

@@ -15,14 +15,17 @@ impl Rng {
         self.0 ^= self.0 >> 12;
         self.0 ^= self.0 << 25;
         self.0 ^= self.0 >> 27;
-        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
     }
+
     fn below(&mut self, n: usize) -> usize {
         (self.next() % n as u64) as usize
     }
+
     fn f32(&mut self, lo: f32, hi: f32) -> f32 {
         lo + (self.next() >> 40) as f32 / (1u64 << 24) as f32 * (hi - lo)
     }
+
     fn pick<'a>(&mut self, xs: &[&'a str]) -> &'a str {
         xs[self.below(xs.len())]
     }
@@ -299,7 +302,7 @@ fn random_paragraphs_hold_invariants() {
         WhiteSpace::PreWrap,
         WhiteSpace::Pre,
     ];
-    let (cases, seed) = knobs(1500, 0x9E37_79B9_7F4A_7C15);
+    let (cases, seed) = knobs(1500, 0x9e37_79b9_7f4a_7c15);
     let mut rng = Rng(seed);
     for case in 0..cases {
         let text = random_text(&mut rng);

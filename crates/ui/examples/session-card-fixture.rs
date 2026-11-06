@@ -10,11 +10,12 @@
 //! renders the light theme; ONICODE_CARD_OPAQUE=1 forces the opaque surface
 //! (the default is the shipping "theme default" surface). ONICODE_CARD_TOGGLE=x,y
 //! overrides the toggle's computed position (logical px).
+use std::path::PathBuf;
+
 use anyhow::Context as _;
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 use onicode_ui::*;
 use serde_json::json;
-use std::path::PathBuf;
 
 /// Main column 1100 − 256 = 844 < 1092, the least that docks the card
 /// beside the default 736px reading column.

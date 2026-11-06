@@ -2,10 +2,11 @@
 //! summary and the expanded list. Geometry uses the shell's reversible RESIZE
 //! tweens; content keeps its final width while the outer surface clips it.
 
-use super::*;
 use onicode_proto::{
     HarnessId, HarnessUpdateFailureKind, HarnessUpdatePhase as Phase, HarnessUpdateStatus,
 };
+
+use super::*;
 
 pub(super) fn versionless_notification_key(device: &str, harness: HarnessId) -> String {
     format!("{device}:{harness:?}:versionless")
@@ -813,6 +814,7 @@ impl Shell {
             .children(rows);
         Some(crate::frost::frosted(radius, 16.0, card).into_any_element())
     }
+
     pub(super) fn refresh_harness_update_watch(&mut self, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
         if !matches!(state.connection, ConnectionStatus::Ready) {
@@ -940,8 +942,9 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::BTreeMap;
+
+    use super::*;
 
     fn status(phase: Phase) -> HarnessUpdateStatus {
         HarnessUpdateStatus {

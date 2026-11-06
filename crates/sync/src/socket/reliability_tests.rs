@@ -1,18 +1,16 @@
 //! Comparative tests against the pre-change pump from 94cc6753 (also the
 //! document-pump behavior at main 67c960f4). Both run the same byte transport.
-use super::*;
-use std::{
-    io,
-    pin::Pin,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-    task::{Context, Poll},
-};
+use std::io;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::task::{Context, Poll};
+
 use tokio::io::{DuplexStream, ReadBuf};
 use tokio::time::{Instant, Sleep};
 use tokio_tungstenite::tungstenite::protocol::Role;
+
+use super::*;
 
 #[allow(clippy::collapsible_if)] // Keep the baseline control flow unchanged.
 async fn original_pump<S, T>(
@@ -147,9 +145,11 @@ impl AsyncWrite for MeteredIo {
         }
         result
     }
+
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.inner).poll_flush(cx)
     }
+
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.inner).poll_shutdown(cx)
     }

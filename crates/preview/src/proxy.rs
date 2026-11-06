@@ -1,21 +1,21 @@
 //! HTTP/1 reverse proxy. Hyper owns HTTP framing; upgrades carry their original
 //! bytes through the same multiplexed stream, including WebSocket close frames.
-use crate::{
-    catalog::Catalog,
-    mux::{Mux, Stream},
-    peer::Peers,
-};
+use std::convert::Infallible;
+use std::sync::Arc;
+
 use bytes::Bytes;
-use http_body_util::{BodyExt, Full, combinators::UnsyncBoxBody};
-use hyper::{
-    Request, Response, StatusCode,
-    body::Incoming,
-    header::{self, HeaderMap, HeaderValue},
-};
+use http_body_util::combinators::UnsyncBoxBody;
+use http_body_util::{BodyExt, Full};
+use hyper::body::Incoming;
+use hyper::header::{self, HeaderMap, HeaderValue};
+use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use std::{convert::Infallible, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
+
+use crate::catalog::Catalog;
+use crate::mux::{Mux, Stream};
+use crate::peer::Peers;
 
 type Body = UnsyncBoxBody<Bytes, hyper::Error>;
 fn tunnel_slot() -> anyhow::Result<tokio::sync::SemaphorePermit<'static>> {
@@ -36,6 +36,7 @@ impl Router {
             self.peers.open(device, service, websocket).await
         }
     }
+
     /// The macOS browser's per-domain CONNECT proxy for preview hostnames
     /// reaches this same loopback HTTP listener, so `*.localhost` names need no
     /// hosts-file entry. Targets are catalog names at our port only.
@@ -75,6 +76,7 @@ impl Router {
                 .boxed_unsync(),
         ))
     }
+
     async fn request(&self, mut request: Request<Incoming>) -> anyhow::Result<Response<Body>> {
         if request.method() == hyper::Method::CONNECT {
             return self.connect_loopback(request).await;
@@ -181,15 +183,18 @@ struct GuardedBody {
 impl hyper::body::Body for GuardedBody {
     type Data = Bytes;
     type Error = hyper::Error;
+
     fn poll_frame(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Result<hyper::body::Frame<Bytes>, Self::Error>>> {
         std::pin::Pin::new(&mut self.body).poll_frame(cx)
     }
+
     fn is_end_stream(&self) -> bool {
         self.body.is_end_stream()
     }
+
     fn size_hint(&self) -> hyper::body::SizeHint {
         self.body.size_hint()
     }

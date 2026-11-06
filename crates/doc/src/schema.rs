@@ -2,22 +2,22 @@
 //!
 //! Container layout (MUST stay shape-compatible with the TS edge/tail materializer):
 //! - `meta`:     LoroMap  { chatId: string, schemaVersion: number }         (host-only writer)
-//! - `messages`: LoroList of LoroMap {
-//!   id, role, parts: LoroList<part map>, createdAt, deviceId, status?,
-//!   continuationOf?, durationMs? }
-//! - `commands`: LoroList of LoroMap {
-//!   id, kind, payload(json), issuedBy, issuedAt, basedOn?, expiresAt?, status, resolution? }
-//! - `queue`:    LoroMovableList of LoroMap {
-//!   id, text, attachments?, issuedBy, issuedAt, editedAt? }        (any device writes)
+//! - `messages`: LoroList of LoroMap { id, role, parts: `LoroList<part map>,` createdAt, deviceId,
+//!   status?, continuationOf?, durationMs? }
+//! - `commands`: LoroList of LoroMap { id, kind, payload(json), issuedBy, issuedAt, basedOn?,
+//!   expiresAt?, status, resolution? }
+//! - `queue`:    LoroMovableList of LoroMap { id, text, attachments?, issuedBy, issuedAt, editedAt?
+//!   }        (any device writes)
 //!
 //! Part maps: { id, kind: "text"|"reasoning"|"tool"|"input"|"error"|"image", text?: LoroText,
 //! reasoning?: LoroText, call?: json, isError?, questions?: json, resolved?, message? }.
 //! Text bodies are **LoroText** so streaming appends RLE-merge (1.03x oplog overhead vs
 //! 125x for whole-value rewrites).
 
+use std::collections::BTreeMap;
+
 use loro::{ExportMode, LoroDoc, LoroError, LoroList, LoroMap, LoroText, LoroValue, ToJson};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 use crate::commands::{SessionCommandEntry, SessionCommandStatus};
 use crate::constants::{SESSION_SCHEMA_VERSION, TAIL_MESSAGE_COUNT};
@@ -667,7 +667,7 @@ impl SessionDoc {
     ///
     /// Same skip-not-fail policy as `read_entries`: any device can append
     /// here, and one malformed entry must not wedge command draining for the
-    /// chat forever (an unparseable command can't be executed anyway).
+    /// chat forever (an unparsable command can't be executed anyway).
     pub fn read_commands(&self) -> Result<Vec<SessionCommandEntry>, DocError> {
         // Container-scoped for the same reason as `read_entries`: the drain
         // loop runs this per tick and must not pay for the transcript.
@@ -2210,7 +2210,9 @@ mod tests {
         let mut writer = SegmentWriter::begin(&doc, "a1", "dev-a", 5).unwrap();
 
         let mut folded = Vec::new();
+        // spellchecker:off
         fold_event_into_parts(&mut folded, &AgentEvent::TextDelta { text: "Hel".into() });
+        // spellchecker:on
         writer.sync(&folded).unwrap();
         fold_event_into_parts(&mut folded, &AgentEvent::TextDelta { text: "lo".into() });
         writer.sync(&folded).unwrap();

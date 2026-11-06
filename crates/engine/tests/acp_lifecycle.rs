@@ -1,5 +1,8 @@
 //! #296 through the engine: completed tools must not park a pending ACP turn.
 //! Separate binary because the diagnostic watchdog setting is process-wide.
+use std::sync::Arc;
+use std::time::Duration;
+
 use onicode_doc::{
     MessagePart, MessageRole, MessageStatus, SessionCommandEntry, SessionCommandPayload,
     SessionCommandStatus,
@@ -7,7 +10,6 @@ use onicode_doc::{
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::AcpHarness;
 use onicode_proto::{HarnessId, RunRequest, SandboxLevel, SessionStatus};
-use std::{sync::Arc, time::Duration};
 
 async fn wait_for(mut condition: impl FnMut() -> bool) {
     tokio::time::timeout(Duration::from_secs(15), async {

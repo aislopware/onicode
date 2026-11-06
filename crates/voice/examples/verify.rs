@@ -1,4 +1,6 @@
-use std::{path::PathBuf, sync::atomic::AtomicBool, time::Instant};
+use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::time::Instant;
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
     let dir = PathBuf::from(args.next().expect("model directory"));

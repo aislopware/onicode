@@ -1,7 +1,10 @@
 //! AppKit boundary for the browser. Wry owns the native child and its UI
 //! delegate; our navigation delegate supplies browser policy and state. All
 //! callbacks enqueue events, never re-enter GPUI. No page-to-engine IPC.
-use super::model::{PageState, Presentation, allowed_navigation};
+use std::cell::{Cell, RefCell};
+use std::mem::ManuallyDrop;
+use std::rc::Rc;
+
 use gpui::{Bounds, Pixels, Window};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
@@ -18,12 +21,9 @@ use objc2_web_kit::{
     WKNavigation, WKNavigationAction, WKNavigationActionPolicy, WKNavigationDelegate,
     WKNavigationResponse, WKNavigationResponsePolicy, WKWebView,
 };
-use std::{
-    cell::{Cell, RefCell},
-    mem::ManuallyDrop,
-    rc::Rc,
-};
 use wry::{WebView, WebViewBuilderExtMacos, WebViewExtMacOS};
+
+use super::model::{PageState, Presentation, allowed_navigation};
 
 #[derive(Default)]
 struct BrowserStore {
@@ -66,6 +66,7 @@ impl BrowserData {
             Self(store)
         })
     }
+
     fn configuration(
         &self,
         mtm: MainThreadMarker,
@@ -97,6 +98,7 @@ impl BrowserData {
         }
         configuration
     }
+
     pub(super) fn register_preview(&self, address: &str) {
         let Ok(url) = url::Url::parse(address) else {
             return;
@@ -156,8 +158,9 @@ fn configure_preview_proxy(
     if hosts.is_empty() {
         return Ok(());
     }
-    use objc2_foundation::NSArray;
     use std::ffi::CString;
+
+    use objc2_foundation::NSArray;
     unsafe {
         let port = CString::new(port.to_string()).map_err(|_| "Invalid preview port")?;
         let endpoint = Retained::from_raw(nw_endpoint_create_host(
@@ -281,6 +284,7 @@ impl Observer {
         });
         unsafe { msg_send![super(object), init] }
     }
+
     fn changed(&self) {
         if !self.ivars().pending.replace(true)
             && self.ivars().tx.try_send(NativeEvent::Changed).is_err()
@@ -288,6 +292,7 @@ impl Observer {
             self.ivars().pending.set(false);
         }
     }
+
     fn fail(&self, message: &str) {
         *self.ivars().error.borrow_mut() = Some(message.into());
         self.changed();
@@ -539,18 +544,23 @@ impl NativePage {
             tx,
         }))))
     }
+
     pub fn handle(&self) -> Rc<RefCell<Host>> {
         self.0.clone()
     }
+
     pub fn focus_chrome(&self) {
         self.0.borrow().focus_chrome();
     }
+
     pub fn set_shortcuts(&self, shortcuts: Vec<String>) {
         *self.0.borrow().shortcuts.borrow_mut() = shortcuts;
     }
+
     pub fn present(&mut self, presentation: Presentation) {
         self.0.borrow_mut().present(presentation);
     }
+
     pub fn load(&self, url: &str) -> Result<(), String> {
         let host = self.0.borrow();
         host.data.register_preview(url);
@@ -558,6 +568,7 @@ impl NativePage {
         *host.observer.ivars().requested_url.borrow_mut() = Some(url.into());
         host.web.load_url(url).map_err(|e| e.to_string())
     }
+
     pub fn reload(&self) {
         let host = self.0.borrow();
         host.observer.ivars().error.borrow_mut().take();
@@ -567,6 +578,7 @@ impl NativePage {
         }
         host.observer.changed();
     }
+
     pub fn history(&self, forward: bool) {
         let host = self.0.borrow();
         unsafe {
@@ -577,6 +589,7 @@ impl NativePage {
             }
         }
     }
+
     pub fn state(&self) -> PageState {
         let host = self.0.borrow();
         host.observer.ivars().pending.set(false);
@@ -602,6 +615,7 @@ impl NativePage {
             }
         }
     }
+
     /// Run `script` in the page; a string result arrives as
     /// [`NativeEvent::Evaluated`].
     pub fn evaluate(&self, script: &str) {
@@ -916,12 +930,14 @@ impl Host {
         }
         self.update_visibility();
     }
+
     /// Return the keyboard to GPUI if the page holds it.
     pub fn focus_chrome(&self) {
         if has_focus(&self.view) {
             let _ = self.web.focus_parent();
         }
     }
+
     fn update_visibility(&self) {
         let visible = self.presentation != Presentation::Hidden
             && self.observer.ivars().error.borrow().is_none()
@@ -939,6 +955,7 @@ impl Host {
         }
         self.clip.setHidden(!visible);
     }
+
     fn present(&mut self, presentation: Presentation) {
         self.presentation = presentation;
         self.clip
@@ -991,6 +1008,7 @@ impl NativePage {
             ));
         }
     }
+
     pub fn fixture_backdrop_layers(&self) -> String {
         unsafe fn describe(layer: *mut AnyObject, depth: usize, out: &mut String) {
             if layer.is_null() || depth > 8 {
@@ -1021,6 +1039,7 @@ impl NativePage {
         }
         out
     }
+
     pub fn fixture_page_hit(&self, x: f64, y: f64) -> bool {
         let host = self.0.borrow();
         let point = objc2_foundation::NSPoint::new(x, host.parent.bounds().size.height - y);
@@ -1028,6 +1047,7 @@ impl NativePage {
             .hitTest(point)
             .is_some_and(|hit| hit.isDescendantOf(&host.clip))
     }
+
     pub fn fixture_backdrops(&self) -> Vec<(f64, f64, f64, f64)> {
         let host = self.0.borrow();
         host.parent
@@ -1045,6 +1065,7 @@ impl NativePage {
             })
             .collect()
     }
+
     pub fn fixture_geometry(&self) -> (f32, f32, f32) {
         let host = self.0.borrow();
         (
@@ -1053,10 +1074,12 @@ impl NativePage {
             host.visible_bounds.unwrap().size.width.into(),
         )
     }
+
     pub fn fixture_origin(&self) -> (f32, f32) {
         let b = self.0.borrow().bounds.unwrap();
         (b.origin.x.into(), b.origin.y.into())
     }
+
     pub fn fixture_overlay_visible(&self) -> bool {
         let host = self.0.borrow();
         host.parent
@@ -1065,16 +1088,20 @@ impl NativePage {
             .iter()
             .any(|v| v.class().name() == c"GPUIOverlayView" && !v.isHidden())
     }
+
     pub fn fixture_visibility_changes(&self) -> u64 {
         let host = self.0.borrow();
         host.visibility_changes.get()
     }
+
     pub fn fixture_focus(&self) {
         let _ = self.0.borrow().web.focus();
     }
+
     pub fn fixture_focused(&self) -> bool {
         has_focus(&self.0.borrow().view)
     }
+
     pub fn fixture_overlay_at(&self, x: f64, y: f64) -> bool {
         let host = self.0.borrow();
         let parent = host.parent.clone();
@@ -1090,6 +1117,7 @@ impl NativePage {
             .hitTest(point)
             .is_some_and(|hit| hit.class().name() == c"GPUIOverlayView")
     }
+
     pub fn fixture_click(&self, x: f64, y: f64) {
         self.fixture_move_cursor(x, y);
         let host = self.0.borrow();
@@ -1105,9 +1133,11 @@ impl NativePage {
             app.postEvent_atStart(&event, false);
         }
     }
+
     pub fn fixture_visible(&self) -> bool {
         !self.0.borrow().view.isHidden()
     }
+
     pub fn fixture_cookies(&self, completion: impl FnOnce(Vec<String>) + 'static) {
         use objc2_foundation::{NSArray, NSHTTPCookie};
         let completion = RefCell::new(Some(completion));
@@ -1155,8 +1185,9 @@ impl NativePage {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::time::{Duration, Instant};
+
+    use super::*;
 
     #[test]
     fn a_tick_glides_in_whole_pixels_to_exactly_its_lines() {

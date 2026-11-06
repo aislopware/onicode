@@ -5,11 +5,10 @@
 //! The stream is opened as service `terminal/{id}` on the host device and
 //! speaks length-prefixed binary frames, `kind u8 ‖ len u32 BE ‖ payload`:
 //!
-//! - viewer → host: `ATTACH {afterSeq u64, client utf8}` (first frame,
-//!   exactly once), `INPUT {seq u64, bytes}`, `RESIZE {cols u16, rows u16}`,
-//!   `PING {nonce u64}`;
-//! - host → viewer: `DATA {seq u64, bytes}`, `EXIT {seq u64, code i32}`,
-//!   `ERROR utf8`, `PONG {nonce u64}`, `ACK {inputSeq u64}`.
+//! - viewer → host: `ATTACH {afterSeq u64, client utf8}` (first frame, exactly once), `INPUT {seq
+//!   u64, bytes}`, `RESIZE {cols u16, rows u16}`, `PING {nonce u64}`;
+//! - host → viewer: `DATA {seq u64, bytes}`, `EXIT {seq u64, code i32}`, `ERROR utf8`, `PONG {nonce
+//!   u64}`, `ACK {inputSeq u64}`.
 //!
 //! The host's side is an ordinary terminal subscription ([`HostTerminals`]),
 //! so replay and `afterSeq` resume behave exactly as over the relay. Input is
@@ -282,7 +281,7 @@ pub enum Outgoing {
 pub struct Link {
     pub outgoing: mpsc::UnboundedSender<Outgoing>,
     /// Host events in order. Ends after `Exit`, or when the path dies
-    /// (closed, or silent past [`SILENCE_LIMIT`]) — then the caller resumes
+    /// (closed, or silent past `SILENCE_LIMIT`) — then the caller resumes
     /// from its last seq over whatever path is available.
     pub events: mpsc::UnboundedReceiver<TerminalEvent>,
     /// Highest input seq the host has applied, as it acknowledges them.

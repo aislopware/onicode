@@ -24,10 +24,9 @@ use onicode_proto::{AgentEvent, DoneStatus, ToolCall};
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 
+use super::normalize::{OUTPUT_CAP, cap_text, xai_tool_name};
 use crate::HarnessError;
 use crate::jsonl_tail::TailReader;
-
-use super::normalize::{OUTPUT_CAP, cap_text, xai_tool_name};
 
 /// Cadence of the transcript tail (the CLI appends at message granularity, so
 /// sub-second polling is plenty "live").
@@ -583,8 +582,9 @@ async fn tail_task(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn spawn_completion_output_yields_the_subagent_id() {

@@ -21,13 +21,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Instant;
 
-use onicode_doc::parts::MessagePart;
-use onicode_doc::parts::MessageStatus;
-use onicode_doc::schema::{MessageRole, SessionMessageEntry};
-use onicode_text::WidthCache;
-
 use display::{DisplayBuilder, MathFace, RowDisplay};
 use markdown::{Ctx, MathFailures, MathSettings, Px};
+use onicode_doc::parts::{MessagePart, MessageStatus};
+use onicode_doc::schema::{MessageRole, SessionMessageEntry};
+use onicode_text::WidthCache;
 use rows::{Gap, Placed, RowBuilder, RowCore, place_row};
 pub use rows::{PendingUser, RowKind, TranscriptInput};
 use style::Typography;
@@ -179,21 +177,27 @@ impl LayoutFrame {
     pub fn revision(&self) -> u64 {
         self.revision
     }
+
     pub fn width(&self) -> f32 {
         self.width
     }
+
     pub fn total_height(&self) -> f32 {
         self.total
     }
+
     pub fn row_count(&self) -> u32 {
         self.rows.len() as u32
     }
+
     pub fn build_micros(&self) -> u64 {
         self.build_micros
     }
+
     pub fn styles(&self) -> Vec<StyleDesc> {
         self.styles.as_ref().clone()
     }
+
     pub fn style_count(&self) -> u32 {
         self.styles.len() as u32
     }

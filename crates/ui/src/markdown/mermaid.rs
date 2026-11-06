@@ -1,6 +1,7 @@
 //! Isolated native Mermaid adapter. Call only on a background executor.
-use crate::theme::Theme;
 use std::sync::Mutex;
+
+use crate::theme::Theme;
 
 pub const ENGINE_VERSION: &str = "mermaid-rs-renderer/0.3.1";
 pub const MAX_SOURCE_BYTES: usize = 16 * 1024;

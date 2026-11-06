@@ -922,9 +922,11 @@ pub fn strip_context_for_display(text: &str) -> &str {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
-    use gpui::{Image, ImageFormat};
     use std::sync::Arc;
+
+    use gpui::{Image, ImageFormat};
+
+    use super::*;
 
     pub(crate) fn shot() -> CapturedAppshot {
         CapturedAppshot {

@@ -8,8 +8,8 @@
 //! * on loopback, as the owner;
 //! * in a range the settings list (a plain VPN), as the owner, since an address is all such a
 //!   network says;
-//! * a node of the tailnet the local Tailscale vouches for: the user's own machines as the
-//!   owner, another user's or a tagged node in the roles a tailnet grant gives it
+//! * a node of the tailnet the local Tailscale vouches for: the user's own machines as the owner,
+//!   another user's or a tagged node in the roles a tailnet grant gives it
 //!   (`onicode_tailnet::policy`).
 //!
 //! Where no Tailscale this process can read answers, every tailnet address is refused: fail

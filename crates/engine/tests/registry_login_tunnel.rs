@@ -9,16 +9,17 @@
 
 #![cfg(unix)]
 
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
 use futures::{SinkExt, StreamExt};
 use onicode_engine::{AgentAccounts, AgentAccountsConfig};
 use onicode_preview::{PreviewService, Scope, signaling};
 use onicode_proto::{AgentLoginStatus, HarnessId, RegistryAgent};
-use std::{path::PathBuf, sync::Arc, time::Duration};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
-    sync::{Mutex, mpsc},
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{Mutex, mpsc};
 use tokio_tungstenite::tungstenite::Message;
 
 struct Token;

@@ -5,7 +5,7 @@
 //! settings row naming its page, the labeled block it sits in, the title the
 //! row shows and the words people search by that the title lacks. The row
 //! carries its [`SettingId`] as a [`SearchAnchor`], which is how a hit lands
-//! on it ([`reveal`]). Shortcuts list themselves from [`ShortcutId::ALL`], as
+//! on it ([`reveal`](fn@reveal)). Shortcuts list themselves from [`ShortcutId::ALL`], as
 //! the Shortcuts page does, and every page is an entry of its own.
 //!
 //! Ranking follows the palette's thread search: every query word must match
@@ -813,14 +813,16 @@ mod tests {
     #[test]
     fn misspelled_words_still_find_their_title() {
         assert_eq!(
-            top("notifcations"),
+            top("notifcations"), // spellchecker:disable-line
             Target::Page(SettingsSection::Notifications)
         );
         assert_eq!(top("microphnoe"), Target::Setting(SettingId::Microphone));
         assert_eq!(top("dictatoin"), Target::Setting(SettingId::Dictation));
         // A word cut short still counts, as far as it is typed.
+        // spellchecker:off
         assert_eq!(top("wallpapr"), Target::Setting(SettingId::WallpaperColors));
-        let hit = &search("wallpapr folder", |_| true)[0];
+        // spellchecker:on
+        let hit = &search("wallpapr folder", |_| true)[0]; // spellchecker:disable-line
         assert_eq!(
             hit.entry.target,
             Target::Setting(SettingId::WallpaperFolder)

@@ -3,9 +3,8 @@
 #![allow(dead_code)]
 
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use onicode_text::*;
 use unicode_segmentation::UnicodeSegmentation;
@@ -28,13 +27,13 @@ pub struct TestFallback {
 pub fn is_wide(g: &str) -> bool {
     g.chars().any(|c| {
         let u = c as u32;
-        (0x1F000..=0x1FAFF).contains(&u)
-            || (0x2600..=0x27BF).contains(&u)
-            || (0x2E80..=0x9FFF).contains(&u)
-            || (0xAC00..=0xD7AF).contains(&u)
-            || (0xF900..=0xFAFF).contains(&u)
-            || (0xFF00..=0xFFEF).contains(&u)
-            || (0x20000..=0x3FFFF).contains(&u)
+        (0x1f000..=0x1faff).contains(&u)
+            || (0x2600..=0x27bf).contains(&u)
+            || (0x2e80..=0x9fff).contains(&u)
+            || (0xac00..=0xd7af).contains(&u)
+            || (0xf900..=0xfaff).contains(&u)
+            || (0xff00..=0xffef).contains(&u)
+            || (0x20000..=0x3ffff).contains(&u)
             || c == '\u{FE0F}'
             || c == '\u{20E3}'
     })

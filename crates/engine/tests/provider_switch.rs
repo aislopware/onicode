@@ -3,8 +3,12 @@
 //! switch is marked in the transcript. Switching back resumes the provider's
 //! own session and hands it only the turns it missed.
 
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use async_trait::async_trait;
-use futures::{StreamExt, stream::BoxStream};
+use futures::StreamExt;
+use futures::stream::BoxStream;
 use onicode_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::{Harness, HarnessError, RunControls};
@@ -13,8 +17,6 @@ use onicode_proto::{
     SessionStatus, SteeringMode,
 };
 use onicode_rpc::methods;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tokio::sync::Notify;
 
 type Seen = Arc<Mutex<Vec<(HarnessId, RunRequest)>>>;
@@ -36,21 +38,27 @@ impl Harness for Fake {
     fn id(&self) -> HarnessId {
         self.id
     }
+
     fn display_name(&self) -> &str {
         self.name
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,

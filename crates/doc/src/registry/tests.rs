@@ -3,8 +3,9 @@
 //! The typed-API cases mirror `workspace.rs`'s tests so the drop-in claim is
 //! tested, not asserted.
 
-use super::*;
 use onicode_proto::{HarnessId, SandboxLevel, SessionStatus};
+
+use super::*;
 
 fn ts(ms: i64) -> DateTime<Utc> {
     DateTime::from_timestamp_millis(ms).unwrap_or(DateTime::UNIX_EPOCH)
@@ -130,11 +131,13 @@ fn same_ms_conflicts_settle_by_device_deterministically() {
     let ab = apply_op(apply_op(Some(&base), &from_a).0.as_ref(), &from_b)
         .0
         .unwrap();
+    // spellchecker:off
     let ba = apply_op(apply_op(Some(&base), &from_b).0.as_ref(), &from_a)
+        // spellchecker:on
         .0
         .unwrap();
     assert_eq!(ab.fields["title"], json!("B"));
-    assert_eq!(ba.fields["title"], json!("B"));
+    assert_eq!(ba.fields["title"], json!("B")); // spellchecker:disable-line
 }
 
 #[test]
@@ -1593,7 +1596,8 @@ fn sidebar_sections_sync_metadata_membership_and_delete_without_deleting_session
 
 #[test]
 fn sidebar_sections_concurrent_pin_and_section_moves_converge() {
-    use onicode_proto::{SidebarPinChange, SidebarSectionChange::*};
+    use onicode_proto::SidebarPinChange;
+    use onicode_proto::SidebarSectionChange::*;
     for reverse in [false, true] {
         let mut a = RegistryDoc::new("a");
         let mut b = RegistryDoc::new("b");

@@ -44,7 +44,7 @@ impl std::fmt::Debug for Relooking {
 }
 
 impl Relooking {
-    /// This machine's Tailscale ([`LocalApi::find`]), looked up again at most every [`RELOOK`]
+    /// This machine's Tailscale ([`LocalApi::find`]), looked up again at most every `RELOOK`
     /// while none is found.
     #[must_use]
     pub fn system() -> Self {

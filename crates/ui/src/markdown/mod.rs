@@ -3,16 +3,15 @@
 //! Tree-sitter paint-only syntax highlighting. No zed GPL crates.
 //!
 //! Design (docs/research/mugen-pretext.md §2):
-//! - the parse is block-granular and append-incremental: streaming reparses only
-//!   from the last stable top-level block boundary;
-//! - highlighting is **pure paint** — token colors on identical mono runs, so
-//!   layout never depends on it;
-//! - streaming fade-in is a per-appended-chunk opacity veil over the text runs
-//!   ([`veil`]) — paint-only, never measured, layout commits instantly;
-//! - hanging inline markers (`**bold`, `[link](url…`) are auto-closed in the
-//!   streaming *display* parse only ([`mend`]), so closing markers never
-//!   reflow already-painted text; the canonical parse settles honestly on
-//!   completion.
+//! - the parse is block-granular and append-incremental: streaming reparses only from the last
+//!   stable top-level block boundary;
+//! - highlighting is **pure paint** — token colors on identical mono runs, so layout never depends
+//!   on it;
+//! - streaming fade-in is a per-appended-chunk opacity veil over the text runs ([`veil`]) —
+//!   paint-only, never measured, layout commits instantly;
+//! - hanging inline markers (`**bold`, `[link](url…`) are auto-closed in the streaming *display*
+//!   parse only ([`mend`]), so closing markers never reflow already-painted text; the canonical
+//!   parse settles honestly on completion.
 
 pub(crate) mod inline_code_links;
 mod link_destination;

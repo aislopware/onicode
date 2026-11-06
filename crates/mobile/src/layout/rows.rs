@@ -12,8 +12,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use onicode_client::workspace::WorkspaceSnapshot;
-use onicode_doc::parts::MessagePart;
-use onicode_doc::parts::MessageStatus;
+use onicode_doc::parts::{MessagePart, MessageStatus};
 use onicode_doc::schema::{MessageRole, SessionMessageEntry};
 use onicode_markdown::parser::{IncrementalParser, TopBlock};
 use onicode_text::WhiteSpace;
@@ -1259,7 +1258,7 @@ fn chat_caption(
     }
 }
 
-/// The provider-switch seam: "Switched from [logo] to [logo]", each
+/// The provider-switch seam: "Switched from `logo` to `logo`", each
 /// provider by its logo alone (its name stays in the copied text). A seam
 /// written without harness ids names them instead.
 fn switch_row(

@@ -11,10 +11,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use serde::{Deserialize, Serialize};
-
-use onicode_harness::{Harness, HarnessError, mock::MockHarness};
+use onicode_harness::mock::MockHarness;
+use onicode_harness::{Harness, HarnessError};
 use onicode_proto::{AccessMode, AgentEvent, DoneStatus, HarnessId, ReasoningLevel, SteeringMode};
+use serde::{Deserialize, Serialize};
 
 /// What `ListHarnesses` reports per harness.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1727,28 +1727,35 @@ mod gate_tests {
         fn id(&self) -> HarnessId {
             HarnessId::Codex
         }
+
         fn display_name(&self) -> &str {
             "Discovery fixture"
         }
+
         fn supports_steering(&self) -> bool {
             false
         }
+
         fn steering_mode(&self) -> SteeringMode {
             SteeringMode::TurnBoundary
         }
+
         fn reasoning_levels(&self) -> &[ReasoningLevel] {
             &[]
         }
+
         async fn models(&self) -> Result<Vec<onicode_proto::Model>, HarnessError> {
             self.started.notify_one();
             self.release.notified().await;
             Ok(vec![])
         }
+
         async fn commands(&self) -> Result<Vec<onicode_proto::SlashCommand>, HarnessError> {
             self.started.notify_one();
             self.release.notified().await;
             Ok(vec![])
         }
+
         async fn run(
             &self,
             _: onicode_proto::RunRequest,

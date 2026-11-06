@@ -1,16 +1,13 @@
 //! Desktop-local Parakeet v3. No engine, document, RPC or audio persistence.
+use std::io::Write;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+
 use anyhow::{Context, Result, bail};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use parakeet_rs::{ParakeetTDT, Transcriber};
 use sha2::{Digest, Sha256};
-use std::{
-    io::Write,
-    path::Path,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicU32, Ordering},
-    },
-};
 
 mod resample;
 
@@ -96,6 +93,7 @@ impl Recognizer {
             |_| anyhow::anyhow!("Could not load Parakeet v3"),
         )?))
     }
+
     pub fn transcribe(&mut self, samples: Vec<f32>, rate: u32) -> Result<String> {
         if !(8_000..=192_000).contains(&rate) {
             bail!("Unsupported microphone sample rate")
@@ -263,9 +261,11 @@ impl Capture {
             rate,
         })
     }
+
     pub fn ended(&self) -> bool {
         self.audio.full.load(Ordering::Acquire) || self.audio.failed.load(Ordering::Acquire)
     }
+
     pub fn finish(mut self) -> Result<(Vec<f32>, u32)> {
         self.stream.take();
         if self.audio.failed.load(Ordering::Acquire) {
@@ -301,6 +301,7 @@ impl Recording for Capture {
     fn ended(&self) -> bool {
         self.ended()
     }
+
     fn finish(self) -> Result<(Vec<f32>, u32)> {
         self.finish()
     }
@@ -499,12 +500,15 @@ impl Session {
             events,
         })
     }
+
     pub fn poll(&mut self) -> Option<Event> {
         self.events.try_recv().ok()
     }
+
     pub fn finish(&mut self) {
         self.stop.store(true, Ordering::Release);
     }
+
     /// Peak microphone RMS (0–1) since the previous call. Level only; the
     /// samples themselves stay on the worker.
     pub fn take_level(&self) -> f32 {
@@ -529,8 +533,9 @@ pub fn unload() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use cpal::Sample;
+
+    use super::*;
     #[test]
     fn native_sample_formats_preserve_levels_and_downmix_channels() {
         fn check<T: cpal::Sample + cpal::FromSample<f32>>()

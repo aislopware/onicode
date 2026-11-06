@@ -1,12 +1,13 @@
 //! CPAL streams: callbacks touch only preallocated lock-free rings and atomics.
-use crate::{AudioError, dsp::Resampler};
-use cpal::{
-    FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
-    traits::{DeviceTrait, HostTrait, StreamTrait},
-};
-use crossbeam_queue::ArrayQueue;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig};
+use crossbeam_queue::ArrayQueue;
+
+use crate::AudioError;
+use crate::dsp::Resampler;
 
 const MAX_RING_SAMPLES: usize = 38_400;
 fn ring_samples(rate: u32) -> usize {
@@ -121,6 +122,7 @@ impl AudioIo {
             scratch: Vec::with_capacity(MAX_RING_SAMPLES),
         })
     }
+
     pub fn start(&self) -> Result<(), AudioError> {
         self.output.play().map_err(|_| AudioError::Device)?;
         if self.input.play().is_err() {
@@ -129,6 +131,7 @@ impl AudioIo {
         }
         Ok(())
     }
+
     pub fn enqueue(&mut self, frame: &onicode_proto::voice::VoiceFrame) -> Result<(), AudioError> {
         if frame.generation != self.generation.load(Ordering::Acquire) {
             return Err(AudioError::Frame);
@@ -151,10 +154,12 @@ impl AudioIo {
         }
         Ok(())
     }
+
     pub fn mute(&self, value: bool) {
         self.muted.store(value, Ordering::Release);
         while self.capture.pop().is_some() {}
     }
+
     pub fn flush(&mut self, next_generation: u64) {
         self.generation.store(next_generation, Ordering::Release);
         while self.playout.pop().is_some() {}

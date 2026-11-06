@@ -9,15 +9,13 @@
 //! their encoding (cursor modes, Ctrl/Alt folding, bracketed paste, pointer
 //! and wheel reports) is decided in one place, as on the desktop:
 //!
-//! - **Typing feels local.** Over the relay a keystroke's echo is a round
-//!   trip away; once the host has proven it echoes, typed characters paint
-//!   ahead of it with a faint underline, and the host's screen always wins
-//!   (a password prompt never echoes, so it never shows a guess).
-//! - **Scrollback glides** by the pixel: the frame carries the fraction of a
-//!   row the view sits past its line, plus the row that reveals.
-//! - **Programs get what they asked for**: wheel reports or arrow keys on a
-//!   full-screen program's screen, taps as clicks when it tracks the
-//!   pointer, focus changes when it wants them.
+//! - **Typing feels local.** Over the relay a keystroke's echo is a round trip away; once the host
+//!   has proven it echoes, typed characters paint ahead of it with a faint underline, and the
+//!   host's screen always wins (a password prompt never echoes, so it never shows a guess).
+//! - **Scrollback glides** by the pixel: the frame carries the fraction of a row the view sits past
+//!   its line, plus the row that reveals.
+//! - **Programs get what they asked for**: wheel reports or arrow keys on a full-screen program's
+//!   screen, taps as clicks when it tracks the pointer, focus changes when it wants them.
 //!
 //! [`TerminalLink`]: onicode_client::TerminalLink
 

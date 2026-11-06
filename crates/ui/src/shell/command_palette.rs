@@ -1,13 +1,14 @@
 //! Global search over actions, conversations and the focused chat's
 //! workspace, using the sidebar's conversation rows. Results are grouped in
 //! sections; tabs narrow them to one kind.
-use super::*;
-use crate::appearance::AppearanceMode;
-use crate::files::client::{FilesClientError, FilesRequestContext, WorkspaceFilesClient};
 use onicode_proto::{
     SearchWorkspaceContentRequest, SearchWorkspaceFilesRequest, WorkspaceContentMatch,
     WorkspaceEntryKind, WorkspaceFileSearchMatch, WorkspaceSearchIndexState, WorkspaceTarget,
 };
+
+use super::*;
+use crate::appearance::AppearanceMode;
+use crate::files::client::{FilesClientError, FilesRequestContext, WorkspaceFilesClient};
 
 /// Key context of the palette card: its mod-1…4 tab bindings live here.
 pub(super) const KEY_CONTEXT: &str = "CommandPalette";
@@ -1503,9 +1504,10 @@ pub(super) fn command_key_hint(theme: &Theme, keys: &str, label: &'static str) -
 
 #[cfg(test)]
 mod tests {
+    use gpui::{AppContext, TestAppContext};
+
     use super::*;
     use crate::appearance::AppearanceMode;
-    use gpui::{AppContext, TestAppContext};
 
     fn palette_window(cx: &mut TestAppContext) -> (gpui::WindowHandle<Shell>, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();

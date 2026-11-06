@@ -37,6 +37,22 @@ pub enum OrbState {
 }
 
 impl OrbState {
+    /// The original nine-state gallery.
+    ///
+    /// Kept at its original array type for source compatibility. New code
+    /// should iterate [`Self::ALL_STATES`].
+    #[deprecated(since = "0.2.0", note = "use OrbState::ALL_STATES")]
+    pub const ALL: [OrbState; 9] = [
+        OrbState::Working,
+        OrbState::Searching,
+        OrbState::Solving,
+        OrbState::Listening,
+        OrbState::Connecting,
+        OrbState::Weaving,
+        OrbState::Composing,
+        OrbState::Breathing,
+        OrbState::Shaping,
+    ];
     /// All states in playground / gallery order.
     ///
     /// This is a slice so adding future states does not change its public type.
@@ -53,23 +69,6 @@ impl OrbState {
         OrbState::Focusing,
         OrbState::Reasoning,
         OrbState::Recalling,
-    ];
-
-    /// The original nine-state gallery.
-    ///
-    /// Kept at its original array type for source compatibility. New code
-    /// should iterate [`Self::ALL_STATES`].
-    #[deprecated(since = "0.2.0", note = "use OrbState::ALL_STATES")]
-    pub const ALL: [OrbState; 9] = [
-        OrbState::Working,
-        OrbState::Searching,
-        OrbState::Solving,
-        OrbState::Listening,
-        OrbState::Connecting,
-        OrbState::Weaving,
-        OrbState::Composing,
-        OrbState::Breathing,
-        OrbState::Shaping,
     ];
 
     /// Human-readable status label (matches upstream aria defaults).

@@ -10,15 +10,15 @@
 //! releases published before the manifest existed.
 //!
 //! Install kinds and their update paths:
-//! - **Managed** (`~/.onicode/app/<ver>` + `current` symlink — the curl|sh
-//!   installer and the Linux tarball's `install.sh`): download the headless
-//!   tarball into a new versioned dir, then restart into a trial of it that
-//!   moves the symlink only once it has proved it's ready ([`transaction`]).
-//! - **MacApp** (running out of an app bundle): download the app tarball, swap the
-//!   bundle directory, relaunch, driven by the UI; or, asked from another device,
-//!   the engine's own trial of it ([`transaction`]).
-//! - **Unmanaged** (source builds, hand-copied binaries): report only — the
-//!   UI's advisory strip links to [`RELEASES_PAGE`].
+//! - **Managed** (`~/.onicode/app/<ver>` + `current` symlink — the curl|sh installer and the Linux
+//!   tarball's `install.sh`): download the headless tarball into a new versioned dir, then restart
+//!   into a trial of it that moves the symlink only once it has proved it's ready
+//!   ([`transaction`]).
+//! - **MacApp** (running out of an app bundle): download the app tarball, swap the bundle
+//!   directory, relaunch, driven by the UI; or, asked from another device, the engine's own trial
+//!   of it ([`transaction`]).
+//! - **Unmanaged** (source builds, hand-copied binaries): report only — the UI's advisory strip
+//!   links to [`RELEASES_PAGE`].
 //!
 //! Desktop installs download as soon as a release is seen and install either
 //! on "Restart to update" or when the app next quits, so an app nobody
@@ -255,7 +255,7 @@ fn parse_version(v: &str) -> Option<Version> {
 
 /// Strictly-newer compare (`0.1.10` > `0.1.9` > `0.1`), semver's for
 /// prereleases: `0.2.135` < `0.2.136-beta.1` < `0.2.136-beta.2` < `0.2.136`.
-/// Unparseable versions never count as newer — a garbage `latest.txt` must not
+/// Unparsable versions never count as newer — a garbage `latest.txt` must not
 /// trigger an update loop.
 pub fn version_newer(latest: &str, current: &str) -> bool {
     match (parse_version(latest), parse_version(current)) {
@@ -289,11 +289,11 @@ impl Offer {
 /// whose bundle carries the engine `running_engine`, on macOS `macos`.
 ///
 /// - Its channel's release installs when newer.
-/// - Choosing beta on a stable build installs a beta only when it's newer:
-///   a stable that moved past the last beta waits for the next one.
-/// - Choosing stable on a beta build installs stable even when older, unless
-///   stable's engine is older than the one the beta brought (it would run on
-///   data a newer engine wrote): then it waits until stable catches up.
+/// - Choosing beta on a stable build installs a beta only when it's newer: a stable that moved past
+///   the last beta waits for the next one.
+/// - Choosing stable on a beta build installs stable even when older, unless stable's engine is
+///   older than the one the beta brought (it would run on data a newer engine wrote): then it waits
+///   until stable catches up.
 /// - A release needing a newer macOS than this one is held.
 pub fn offer(
     manifest: &Manifest,
@@ -1565,7 +1565,7 @@ enum Role {
 /// publishes [`UpdateStatus`] over a watch channel. In the engine, managed
 /// installs with `ONICODE_AUTO_UPDATE` set stage + apply + service restart on
 /// their own — but only in a quiet window: while `quiescent` reports activity,
-/// the apply defers and re-probes every [`IDLE_RECHECK`].
+/// the apply defers and re-probes every `IDLE_RECHECK`.
 #[derive(Clone)]
 pub struct Updater {
     edge_url: String,
@@ -2376,6 +2376,7 @@ mod tests {
     #[tokio::test]
     async fn stalled_update_headers_and_body_time_out_but_progressing_body_survives() {
         use std::time::Duration;
+
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         for stall_body in [false, true] {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2447,6 +2448,7 @@ mod tests {
     #[tokio::test]
     async fn release_metadata_has_size_and_total_time_limits() {
         use std::time::Duration;
+
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         // Reject an advertised oversized body before buffering it.

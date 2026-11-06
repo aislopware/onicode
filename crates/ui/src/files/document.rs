@@ -382,8 +382,9 @@ fn writable_line_ending(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_proto::WorkspaceTextEncoding;
+
+    use super::*;
 
     fn key(path: &str) -> DocumentKey {
         DocumentKey {

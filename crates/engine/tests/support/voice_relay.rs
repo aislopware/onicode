@@ -1,9 +1,10 @@
 //! Route-only test relay; no cloud service or credentials.
 #![allow(clippy::result_large_err)]
-use futures::{SinkExt, StreamExt};
-use onicode_rpc::{DeviceFrameHeader, decode_device_frame, encode_device_frame};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+use futures::{SinkExt, StreamExt};
+use onicode_rpc::{DeviceFrameHeader, decode_device_frame, encode_device_frame};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message as WsMessage;

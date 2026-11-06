@@ -14,7 +14,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-
 use onicode_doc::{MessageRole, MessageStatus, SessionCommandPayload, SessionMessageEntry};
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::{Harness, HarnessError, RunControls};
@@ -33,21 +32,27 @@ impl Harness for OneLinerHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "OneLiner"
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,

@@ -119,7 +119,7 @@ jobs:
       - name: rustdoc
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --locked --no-deps --workspace --features onicode-harness/native-fixture
+        run: cargo doc --locked --no-deps --document-private-items --workspace --features onicode-harness/native-fixture
 
   # The office Macs only take trusted code: fork pull requests get no secrets, so they never touch the shared
   # CICache. Both lanes move their secrets into the office-mac environment.

@@ -1,7 +1,10 @@
+use std::cell::RefCell;
+use std::collections::VecDeque;
+
+use gpui::{AppContext, TestAppContext};
+
 use super::*;
 use crate::dictation::{Event, Phase, Transcriber};
-use gpui::{AppContext, TestAppContext};
-use std::{cell::RefCell, collections::VecDeque};
 
 #[derive(Default)]
 struct FakeState {
@@ -15,6 +18,7 @@ impl Transcriber for Fake {
     fn poll(&mut self) -> Option<Event> {
         self.0.borrow_mut().events.pop_front()
     }
+
     fn finish(&mut self) {
         self.0.borrow_mut().finishes += 1;
     }
@@ -153,7 +157,7 @@ fn dictation_send_finalizes_once_and_keeps_latest_final(cx: &mut TestAppContext)
         deliver(
             input,
             &fake,
-            [Event::Listening, Event::Partial("hel".into())],
+            [Event::Listening, Event::Partial("hel".into())], // spellchecker:disable-line
             cx,
         );
         assert!(input.finish_dictation(true, cx));

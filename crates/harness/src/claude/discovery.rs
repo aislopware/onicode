@@ -1,8 +1,11 @@
 //! One initialize response feeds both picker catalogs for two minutes.
-use crate::HarnessError;
+use std::future::Future;
+use std::time::Duration;
+
 use serde_json::Value;
-use std::{future::Future, time::Duration};
 use tokio::time::Instant;
+
+use crate::HarnessError;
 
 #[derive(Default)]
 pub(super) struct InitializeCache {
@@ -53,8 +56,10 @@ impl InitializeCache {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering::Relaxed;
+
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     #[tokio::test(start_paused = true)]
     async fn initialize_coalesces_expires_and_invalidates_with_credentials() {
         let cache = InitializeCache::default();

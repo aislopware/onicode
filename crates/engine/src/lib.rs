@@ -12,7 +12,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 pub use onicode_proto::{EngineInfo, HarnessId, WorkspaceScope};
 use onicode_rpc::{RpcError, RpcReply, RpcService, methods};
-
 use onicode_sync::DocsStore;
 
 pub mod acp_registry;
@@ -1366,7 +1365,7 @@ async fn read_stdin_line() -> Option<String> {
 /// TTY workspace onboarding for an org-less session (ports old onicode's
 /// `backend login` flow): no memberships → prompt a name and create; exactly
 /// one → auto-join; several → numbered picker. Success flips the auth state to
-/// `SignedIn`, which ends [`wait_for_sign_in`]'s wait (and aborts this task).
+/// `SignedIn`, which ends `wait_for_sign_in`'s wait (and aborts this task).
 async fn run_org_onboarding(auth: Auth) {
     let orgs = match auth.list_orgs().await {
         Ok(orgs) => orgs,

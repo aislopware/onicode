@@ -51,6 +51,7 @@ impl Screen {
     fn text(&self) -> String {
         String::from_utf8_lossy(&self.bytes.lock().unwrap()).into_owned()
     }
+
     fn exited(&self) -> bool {
         self.updates
             .lock()
@@ -115,6 +116,7 @@ impl SubagentSink for Transcript {
     fn transcript(&self, entries: Vec<Arc<SessionMessageEntry>>) {
         self.0.lock().unwrap().push(entries);
     }
+
     fn unavailable(&self, message: String) {
         panic!("host unavailable: {message}");
     }

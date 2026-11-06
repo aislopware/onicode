@@ -18,9 +18,8 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use serde::{Deserialize, Serialize};
-
 use onicode_proto::{AgentEvent, ToolCall};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error)]
 pub enum JournalError {
@@ -563,8 +562,9 @@ fn sanitize_id(chat_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_proto::DoneStatus;
+
+    use super::*;
 
     fn text(s: &str) -> AgentEvent {
         AgentEvent::TextDelta { text: s.into() }

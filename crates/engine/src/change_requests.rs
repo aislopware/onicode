@@ -8,11 +8,10 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use futures::stream::BoxStream;
+use onicode_proto::CheckoutChangeRequestStatus;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-
-use onicode_proto::CheckoutChangeRequestStatus;
 
 use crate::repos::{CheckoutIdentity, Repos};
 use crate::source_control::{

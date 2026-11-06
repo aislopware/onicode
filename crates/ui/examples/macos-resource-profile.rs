@@ -1,13 +1,12 @@
 //! UI-only replay with native CoreText/Metal and real animation clocks.
 //! Input is frames.json from scripts/resource-profile.mjs. An offscreen target
 //! replaces the window compositor; this is not a whole-app CPU measurement.
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
+
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 use onicode_ui::*;
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    time::{Duration, Instant},
-};
 
 #[cfg(target_os = "macos")]
 #[global_allocator]

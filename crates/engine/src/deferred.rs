@@ -241,8 +241,9 @@ impl DeferredEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::time::Duration;
+
+    use super::*;
 
     fn engine(state: watch::Receiver<DeferredState>) -> (tempfile::TempDir, DeferredEngineRpc) {
         let dir = tempfile::tempdir().unwrap();

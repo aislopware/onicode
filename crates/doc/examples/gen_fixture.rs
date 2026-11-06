@@ -1,5 +1,6 @@
 //! Generates a session-doc snapshot fixture for the cross-language compat check
-//! (`edge/scripts/compat-check.mjs`). Usage: `cargo run -p onicode-doc --example gen_fixture -- <out>`
+//! (`edge/scripts/compat-check.mjs`). Usage: `cargo run -p onicode-doc --example gen_fixture --
+//! <out>`
 
 use onicode_doc::{
     MessagePart, MessageRole, MessageStatus, SegmentWriter, SessionCommandEntry,

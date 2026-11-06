@@ -5,24 +5,23 @@
 //! away and lets the host's echo confirm them, so typing feels local while the
 //! screen stays the host's truth:
 //!
-//! - **Trust is earned per run of typing.** A run starts after Enter, a
-//!   control key or a misprediction, and only once the host has drawn
-//!   something since. Its first character is held back until the host echoes
-//!   it — the right character in the predicted cell, with the cursor moved
-//!   past it (a blank cell "matching" a space proves nothing) — and only then
-//!   are the run's characters painted ahead of their echo. A password prompt
-//!   never echoes, so nothing typed into one is ever painted.
-//! - **Trust is lost the moment the host stops echoing.** Output that
-//!   confirms none of the run's pending characters (a `Passphrase:` prompt
-//!   appearing mid-run), or a cursor that left the run's row, ends it.
-//! - **The host always wins.** Each output batch checks every prediction
-//!   against the cell it claimed: a match retires it, a different character
-//!   past its echo deadline wipes every prediction and starts a new run.
-//! - **Only where it's safe.** The panel predicts on the primary screen with
-//!   the view at the live bottom and a visible cursor; full-screen programs
-//!   draw what they like, so they get no predictions.
-//! - **Only when it helps.** Predictions show once the measured echo time is
-//!   long enough to notice (with hysteresis), never on a fast link.
+//! - **Trust is earned per run of typing.** A run starts after Enter, a control key or a
+//!   misprediction, and only once the host has drawn something since. Its first character is held
+//!   back until the host echoes it — the right character in the predicted cell, with the cursor
+//!   moved past it (a blank cell "matching" a space proves nothing) — and only then are the run's
+//!   characters painted ahead of their echo. A password prompt never echoes, so nothing typed into
+//!   one is ever painted.
+//! - **Trust is lost the moment the host stops echoing.** Output that confirms none of the run's
+//!   pending characters (a `Passphrase:` prompt appearing mid-run), or a cursor that left the run's
+//!   row, ends it.
+//! - **The host always wins.** Each output batch checks every prediction against the cell it
+//!   claimed: a match retires it, a different character past its echo deadline wipes every
+//!   prediction and starts a new run.
+//! - **Only where it's safe.** The panel predicts on the primary screen with the view at the live
+//!   bottom and a visible cursor; full-screen programs draw what they like, so they get no
+//!   predictions.
+//! - **Only when it helps.** Predictions show once the measured echo time is long enough to notice
+//!   (with hysteresis), never on a fast link.
 
 use std::time::{Duration, Instant};
 
@@ -254,16 +253,19 @@ mod tests {
                 now: Instant::now(),
             }
         }
+
         fn type_text(&mut self, text: &str) {
             let cursor = self.emulator.live_cursor();
             self.predictor.typed(text, cursor, 20, self.now);
             self.predictor.sent(self.now);
         }
+
         fn host_writes(&mut self, bytes: &[u8]) {
             self.now += RTT;
             self.emulator.feed(bytes);
             self.predictor.output(&self.emulator, self.now);
         }
+
         fn shown(&self) -> String {
             self.predictor.overlay().0.iter().map(|c| c.2).collect()
         }

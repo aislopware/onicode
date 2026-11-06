@@ -1,25 +1,19 @@
-use std::{
-    collections::{HashMap, HashSet},
-    time::Duration,
-};
+use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
-use gpui::{
-    AnyElement, Context, ListSizingBehavior, SharedString, Task, Window, div, list, prelude::*, px,
-};
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, ListSizingBehavior, SharedString, Task, Window, div, list, px};
 use onicode_proto::{
     ListWorkspaceDirectoryRequest, SearchWorkspaceFilesRequest, WorkspaceEntryKind,
     WorkspaceFileSearchMatch,
 };
 
-use super::{
-    FilesSurface, WorkspacePathDrag, client::WorkspaceFilesClient, model::parent_path,
-    workspace_path_drag_ghost,
-};
-use crate::{
-    file_icons::{self, FileIconIdentity},
-    icons::{self, icon},
-    theme::Theme,
-};
+use super::client::WorkspaceFilesClient;
+use super::model::parent_path;
+use super::{FilesSurface, WorkspacePathDrag, workspace_path_drag_ghost};
+use crate::file_icons::{self, FileIconIdentity};
+use crate::icons::{self, icon};
+use crate::theme::Theme;
 
 pub const SEARCH_ROW_HEIGHT: f32 = 27.0;
 const SEARCH_RESULT_LIMIT: usize = 200;
@@ -807,10 +801,14 @@ mod tests {
 
 #[cfg(test)]
 mod reveal_tests {
-    use super::*;
-    use crate::files::{FilesEvent, client::FilesRequestContext};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     use gpui::{AppContext, TestAppContext};
-    use std::{cell::RefCell, rc::Rc};
+
+    use super::*;
+    use crate::files::FilesEvent;
+    use crate::files::client::FilesRequestContext;
 
     fn context(checkout: &str) -> FilesRequestContext {
         FilesRequestContext {

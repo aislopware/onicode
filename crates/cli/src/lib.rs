@@ -7,13 +7,12 @@
 //! (`update`, `daemon`, `--noop-browser`, help and version). What's left is
 //! the caller's:
 //!   - no subcommand: open the window ([`Launch::Window`]);
-//!   - a subcommand that runs the engine's code here ([`EngineCommand`]:
-//!     `headless`, `engine`, `login`, `logout`, `status`, `sync`, `quiesce`,
-//!     `mcp`). A binary that links the engine runs it
-//!     itself ([`Engines::InProcess`], `onicode_app::run_engine_command`); an
-//!     interface that doesn't hands the whole command line to the engine
-//!     helper beside it ([`Engines::Helper`]: `Contents/MacOS/Onicode Engine`
-//!     in a macOS bundle), which replaces this process and runs it there.
+//!   - a subcommand that runs the engine's code here ([`EngineCommand`]: `headless`, `engine`,
+//!     `login`, `logout`, `status`, `sync`, `quiesce`, `mcp`). A binary that links the engine runs
+//!     it itself ([`Engines::InProcess`], `onicode_app::run_engine_command`); an interface that
+//!     doesn't hands the whole command line to the engine helper beside it ([`Engines::Helper`]:
+//!     `Contents/MacOS/Onicode Engine` in a macOS bundle), which replaces this process and runs it
+//!     there.
 
 pub mod daemon;
 mod env;
@@ -22,7 +21,6 @@ pub mod paths;
 pub mod update_cli;
 
 use clap::{CommandFactory as _, FromArgMatches as _, Parser, Subcommand};
-
 pub use env::{
     DEFAULT_EDGE_URL, DEFAULT_IPC_PORT, DEFAULT_WORKOS_CLIENT_ID, edge_url_from_env, ipc_port_from,
     ipc_port_from_env, workos_client_id_from_env,

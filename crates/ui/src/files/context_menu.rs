@@ -1,8 +1,10 @@
 //! Tree menus share the editor's popup surface, positioning and dismissal.
-use super::*;
-use crate::{icons, popover, theme::Theme};
 use gpui::{ClipboardItem, KeyDownEvent, MouseButton};
 use mutations::WorkspaceInteractionOrigin;
+
+use super::*;
+use crate::theme::Theme;
+use crate::{icons, popover};
 
 pub(super) struct TreeContextMenu {
     /// Selection roots in visible order; one entry for a plain right-click.
@@ -255,8 +257,9 @@ impl FilesSurface {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::{AppContext, TestAppContext};
+
+    use super::*;
 
     #[test]
     fn full_paths_join_the_workspace_root() {

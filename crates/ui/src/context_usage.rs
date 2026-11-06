@@ -1,7 +1,9 @@
 //! Context occupancy is read from the replicated chat snapshot, never local CLI state.
-use crate::theme::Theme;
-use gpui::{IntoElement, PathBuilder, SharedString, canvas, div, point, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{IntoElement, PathBuilder, SharedString, canvas, div, point, px};
 use onicode_proto::ContextUsage;
+
+use crate::theme::Theme;
 
 /// The context ring's trigger chip; the footer ([`crate::account_usage`])
 /// opens [`card`] from it on click.

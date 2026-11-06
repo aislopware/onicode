@@ -1,15 +1,17 @@
 //! GitHub description media is opt-in. Transcript Markdown draws only local
 //! images inside the chat's folder (`reply_images.rs`).
-use std::{cell::RefCell, rc::Rc};
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use gpui::{AnyElement, IntoElement, SharedString, div, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{AnyElement, IntoElement, SharedString, div, px};
 use html5ever::tokenizer::{BufferQueue, TagKind, Token, TokenSink, TokenSinkResult, Tokenizer};
 use pulldown_cmark::{Event, Options, Parser};
 
-use crate::{
-    markdown::{self, BlockTree, parser::InlineImage, render::MediaUi},
-    theme::Theme,
-};
+use crate::markdown::parser::InlineImage;
+use crate::markdown::render::MediaUi;
+use crate::markdown::{self, BlockTree};
+use crate::theme::Theme;
 
 #[derive(Default)]
 struct DescriptionHtml {
@@ -179,8 +181,8 @@ fn pr_image_mime(content_type: Option<&str>, bytes: &[u8]) -> &'static str {
 }
 
 impl gpui::Asset for PrImageLoader {
-    type Source = SharedString;
     type Output = Result<crate::image_media::MediaImage, SharedString>;
+    type Source = SharedString;
 
     fn load(
         source: Self::Source,
@@ -232,18 +234,20 @@ struct PreviewImage {
 
 impl IntoElement for PreviewImage {
     type Element = Self;
+
     fn into_element(self) -> Self {
         self
     }
 }
 
 impl gpui::Element for PreviewImage {
-    type RequestLayoutState = Option<Result<crate::image_media::MediaImage, SharedString>>;
     type PrepaintState = AnyElement;
+    type RequestLayoutState = Option<Result<crate::image_media::MediaImage, SharedString>>;
 
     fn id(&self) -> Option<gpui::ElementId> {
         Some(self.id.clone().into())
     }
+
     fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
         None
     }
@@ -674,11 +678,10 @@ mod tests {
     fn pull_request_description_fetches_images_and_shows_load_failures(
         cx: &mut gpui::TestAppContext,
     ) {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
         use gpui::http_client::{FakeHttpClient, Response};
-        use std::sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        };
         let raster = image::RgbaImage::from_pixel(2400, 1200, image::Rgba([120, 160, 210, 255]));
         let mut png = std::io::Cursor::new(Vec::new());
         raster.write_to(&mut png, image::ImageFormat::Png).unwrap();

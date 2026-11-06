@@ -63,7 +63,7 @@ pub(crate) fn binary_hint(path: &Path) -> String {
 /// What a failed agent launch reports. A working directory that is gone
 /// fails the spawn with `NotFound` on Unix too, which must not read as a
 /// missing binary; `binary` names the binary when it really is missing.
-/// Everything else stays [`HarnessError::Io`], kind intact (the engine
+/// Everything else stays `HarnessError::Io`, kind intact (the engine
 /// retries the transient kinds).
 pub(crate) fn spawn_error(
     error: std::io::Error,
@@ -163,7 +163,7 @@ const VERSION_FAILURE_TTL: std::time::Duration = std::time::Duration::from_secs(
 
 enum Probe {
     /// The binary answered: a version, or a definite failure (non-zero exit,
-    /// unparseable output). Cached for the executable's identity.
+    /// unparsable output). Cached for the executable's identity.
     Answered(Option<semver::Version>),
     /// The probe could not finish; cached only briefly.
     Inconclusive,
@@ -491,8 +491,9 @@ pub(crate) fn find_on_paths_matching_with(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::HashMap;
+
+    use super::*;
 
     /// Resolution walks the PATHs in the child PATH's order: the login shell
     /// first only behind a bare system PATH.

@@ -1,7 +1,8 @@
 //! Canonical final text reducer. Call from the engine's serialized document
 //! owner; this never submits a command and never accepts PCM or partial text.
-use crate::{DocError, MessagePart, MessageRole, MessageStatus, SessionDoc, SessionMessageEntry};
 use onicode_proto::voice::{MAX_TRANSCRIPT_BYTES, VoiceRole, VoiceTranscript};
+
+use crate::{DocError, MessagePart, MessageRole, MessageStatus, SessionDoc, SessionMessageEntry};
 
 pub fn commit_voice_transcript(
     doc: &SessionDoc,
@@ -66,8 +67,9 @@ pub fn commit_voice_transcript(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use loro::ToJson;
+
+    use super::*;
     #[test]
     fn final_identity_survives_replay_and_snapshot_without_commands_or_audio() {
         let doc = SessionDoc::init("chat").unwrap();

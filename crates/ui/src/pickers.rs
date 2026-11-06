@@ -13,22 +13,23 @@
 
 mod compact;
 
-use crate::roll_text::{roll_text, rolling};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Entity, FocusHandle, Focusable as _, KeyDownEvent, SharedString,
-    Subscription, Task, Window, div, prelude::*, px,
+    Subscription, Task, Window, div, px,
 };
-
 use onicode_engine::registry::{HarnessDescriptor, TitleSettings};
 use onicode_proto::{
     AccessMode, ChatConfig, FolderListing, HarnessId, Model, ReasoningLevel, RepoRef, SandboxLevel,
     Space,
 };
 use onicode_rpc::methods;
+
+use crate::roll_text::{roll_text, rolling};
 
 /// Display cap for the ref list (t3code shows pages of 100 with a status
 /// footer; a flat cap + "Showing X of Y refs" reads the same without
@@ -6193,7 +6194,7 @@ impl Pickers {
 /// The floating-scrollbar treatment for every picker list
 /// ([`popover::rail`] folds the note/hide/metrics/render + pointer listeners
 /// into one call): one shared rail state, fed by whichever handle
-/// [`Pickers::active_menu_scroll`] resolves for the mounted menu.
+/// `Pickers::active_menu_scroll` resolves for the mounted menu.
 impl popover::ScrollRailHost for Pickers {
     fn rail_bar(&mut self) -> &mut popover::MenuScrollbarState {
         &mut self.menu_bar
@@ -6969,8 +6970,9 @@ fn access_row_text(label: &'static str, description: &'static str, theme: &Theme
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_proto::{FolderEntry, Model, ModelOption, ModelOptionChoice};
+
+    use super::*;
 
     #[test]
     fn an_unoffered_access_mode_never_falls_back_to_more_access() {
@@ -7930,7 +7932,8 @@ mod tests {
 
     #[gpui::test]
     fn open_model_card_keeps_height_when_options_change(cx: &mut gpui::TestAppContext) {
-        use std::{cell::Cell, rc::Rc};
+        use std::cell::Cell;
+        use std::rc::Rc;
         struct Fixture {
             pickers: Entity<Pickers>,
             bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
@@ -9019,7 +9022,8 @@ mod tests {
     /// Fusion's settings live only in its card (not the tray).
     #[gpui::test]
     fn fusion_card_mouse_paths(cx: &mut gpui::TestAppContext) {
-        use std::{cell::Cell, rc::Rc};
+        use std::cell::Cell;
+        use std::rc::Rc;
         struct CardFixture {
             pickers: Entity<Pickers>,
             bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
@@ -9214,7 +9218,8 @@ mod tests {
 
     #[gpui::test]
     fn nested_model_menu_mouse_paths_work_on_both_sides(cx: &mut gpui::TestAppContext) {
-        use std::{cell::Cell, rc::Rc};
+        use std::cell::Cell;
+        use std::rc::Rc;
         struct MouseFixture {
             pickers: Entity<Pickers>,
             on_left: bool,

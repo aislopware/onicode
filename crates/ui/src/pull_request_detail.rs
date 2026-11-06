@@ -5,21 +5,25 @@ mod code;
 mod handoff;
 #[path = "pull_request_interactions.rs"]
 mod interactions;
-use crate::{
-    settings::{self, PullRequestDestination, widgets},
-    state::AppState,
-    theme::Theme,
-};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
+#[cfg(test)]
+use std::time::Duration;
+use std::time::Instant;
+
+use gpui::prelude::*;
 use gpui::{
     Action, AnyElement, App, Context, Entity, Focusable, IntoElement, Render, SharedString,
-    Subscription, Task, Window, div, prelude::*, px,
+    Subscription, Task, Window, div, px,
 };
 use onicode_proto::change_request_assessment::{CiState, Facts, check_failed, check_status};
 use onicode_proto::{ChangeRequestDetail, ChangeRequestListItem};
 use onicode_rpc::methods;
-#[cfg(test)]
-use std::time::Duration;
-use std::{cell::RefCell, rc::Rc, sync::Arc, time::Instant};
+
+use crate::settings::{self, PullRequestDestination, widgets};
+use crate::state::AppState;
+use crate::theme::Theme;
 
 #[derive(Clone, PartialEq, Action)]
 #[action(namespace = shell, no_json)]
@@ -1613,6 +1617,7 @@ impl crate::popover::ScrollRailHost for PullRequestDetailPage {
     fn rail_bar(&mut self) -> &mut crate::popover::MenuScrollbarState {
         self.scroll.rail_bar()
     }
+
     fn rail_scroll(&self) -> Option<gpui::ScrollHandle> {
         self.scroll.rail_scroll()
     }

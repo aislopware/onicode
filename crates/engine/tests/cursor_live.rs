@@ -1,12 +1,15 @@
 //! Opt-in production engine + Cursor SDK checks. Uses real account quota.
-//! ONICODE_CURSOR_STATE_DIR=$(mktemp -d) cargo test -p onicode-engine --test cursor_live -- --ignored --nocapture --test-threads=1
+//! ONICODE_CURSOR_STATE_DIR=$(mktemp -d) cargo test -p onicode-engine --test cursor_live --
+//! --ignored --nocapture --test-threads=1
+use std::sync::Arc;
+use std::time::Duration;
+
 use onicode_doc::{
     MessagePart, MessageRole, MessageStatus, SessionCommandPayload, SessionMessageEntry,
 };
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::CursorHarness;
 use onicode_proto::{HarnessId, RunRequest, SandboxLevel};
-use std::{sync::Arc, time::Duration};
 
 const CHAT: &str = "cursor-live-audit";
 fn setup(path: &std::path::Path) -> EngineCore {

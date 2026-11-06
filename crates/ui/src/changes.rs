@@ -1,50 +1,46 @@
 //! The right-pane "Changes" content (feature-inventory §1.11): a unified-diff
 //! viewer over `WatchCheckoutDiffs`.
 //!
-//! - pure patch parser: `diff --git` sections → file/hunk/line/notice rows,
-//!   with add/delete/rename/binary detection and per-file counts;
-//! - resolution: the shown diff matches the selected chat by `checkout_id`
-//!   first, then by device+cwd, then cwd alone;
-//! - states: *preparing* (no diff yet), *clean* (empty patch), *list*; a watch
-//!   error shows a banner while the last content stays;
-//! - virtualized with gpui `list()` at LINE granularity — every file header,
-//!   hunk header, and diff line is its own row (the flat model Zed's editor
-//!   uses for its project diff: only the visible slice materializes, and a
-//!   collapsed file's body rows are removed from the list outright, not
-//!   hidden); nowrap sections collapse with a 180 ms height tween on a
-//!   clipped stand-in row (analytic heights, capped to what the clip can
-//!   reveal), while variable-height wrapped sections settle immediately;
-//! - syntax highlight reuses the markdown tokenizer per diff line, computed
-//!   time-sliced on the background executor and applied as paint-only run
-//!   colors (layout never changes);
-//! - scopes (t3code parity): *Working tree* rides the watch stream; *Branch
-//!   changes* (vs a selectable base ref, default branch preselected) and
-//!   *Latest turn* fetch one-shot `GetCheckoutDiff` captures, refreshed when
-//!   the watch checksum says the tree moved;
-//! - two layouts ([`DiffMode`], toolbar toggle, persisted): *unified* stacks
-//!   old and new; *split* pairs each hunk's deletions against its additions
-//!   into one row with two columns. Split is a pure re-flatten of the same
-//!   parse — the row model, virtualization, folds, and highlights are shared.
-//!   Its left column is inert: notes are cited against the post-change file,
-//!   so only the right column takes a `+` (already-staged old-side notes
-//!   still show their cards).
-//! - long-line wrapping is a persisted toolbar choice. It only changes the
-//!   code plane: gutters, comment affordances, and sticky headers stay fixed,
-//!   while the virtual list measures each logical row's resulting height.
+//! - pure patch parser: `diff --git` sections → file/hunk/line/notice rows, with
+//!   add/delete/rename/binary detection and per-file counts;
+//! - resolution: the shown diff matches the selected chat by `checkout_id` first, then by
+//!   device+cwd, then cwd alone;
+//! - states: *preparing* (no diff yet), *clean* (empty patch), *list*; a watch error shows a banner
+//!   while the last content stays;
+//! - virtualized with gpui `list()` at LINE granularity — every file header, hunk header, and diff
+//!   line is its own row (the flat model Zed's editor uses for its project diff: only the visible
+//!   slice materializes, and a collapsed file's body rows are removed from the list outright, not
+//!   hidden); nowrap sections collapse with a 180 ms height tween on a clipped stand-in row
+//!   (analytic heights, capped to what the clip can reveal), while variable-height wrapped sections
+//!   settle immediately;
+//! - syntax highlight reuses the markdown tokenizer per diff line, computed time-sliced on the
+//!   background executor and applied as paint-only run colors (layout never changes);
+//! - scopes (t3code parity): *Working tree* rides the watch stream; *Branch changes* (vs a
+//!   selectable base ref, default branch preselected) and *Latest turn* fetch one-shot
+//!   `GetCheckoutDiff` captures, refreshed when the watch checksum says the tree moved;
+//! - two layouts ([`DiffMode`], toolbar toggle, persisted): *unified* stacks old and new; *split*
+//!   pairs each hunk's deletions against its additions into one row with two columns. Split is a
+//!   pure re-flatten of the same parse — the row model, virtualization, folds, and highlights are
+//!   shared. Its left column is inert: notes are cited against the post-change file, so only the
+//!   right column takes a `+` (already-staged old-side notes still show their cards).
+//! - long-line wrapping is a persisted toolbar choice. It only changes the code plane: gutters,
+//!   comment affordances, and sticky headers stay fixed, while the virtual list measures each
+//!   logical row's resulting height.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
+use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Entity, FocusHandle, Focusable as _, ListAlignment, ListState,
-    SharedString, Subscription, Task, Window, div, font, list, prelude::*, px,
+    SharedString, Subscription, Task, Window, div, font, list, px,
 };
-use unicode_width::UnicodeWidthChar as _;
-
 use onicode_proto::{Chat, CheckoutDiff, GitHistoryCommit};
 use onicode_rpc::methods;
+use onicode_syntax::LanguageId as Lang;
+use unicode_width::UnicodeWidthChar as _;
 
 use crate::comments::{self, CommentSide, ReviewComment};
 use crate::composer::{ComposerInput, ComposerInputEvent};
@@ -57,7 +53,6 @@ use crate::motion::{self, AnimationExt as _, CHEVRON, COLLAPSE};
 use crate::popover::{self, Popup};
 use crate::state::{AppState, EngineHandle};
 use crate::theme::Theme;
-use onicode_syntax::LanguageId as Lang;
 
 // ---------------------------------------------------------------------------
 // Layout numbers (analytic — they drive the fold tween)
@@ -94,7 +89,7 @@ const DIFF_TAB_SIZE: usize = 4;
 const DIFF_TEXT_SIZE_RATIO: f32 = DIFF_TEXT_SIZE / crate::typography::CODE_FONT_SIZE_DEFAULT;
 
 /// Size of the painted diff body text, and the size the column measurement in
-/// [`DiffHorizontalGeometry::resolve`] must use: they desync otherwise.
+/// `DiffHorizontalGeometry::resolve` must use: they desync otherwise.
 pub(crate) fn diff_text_size(theme: &Theme) -> f32 {
     crate::typography::clamp_font_size(theme.code_font_size * DIFF_TEXT_SIZE_RATIO)
 }
@@ -5220,8 +5215,9 @@ impl Render for Changes {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::Utc;
+
+    use super::*;
 
     #[gpui::test]
     fn editing_staged_diff_comments_preserves_identity_and_cancellation(

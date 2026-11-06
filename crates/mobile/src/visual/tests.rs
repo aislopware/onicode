@@ -21,6 +21,7 @@ impl VisualListener for Collect {
     fn display(&self, display: VisualDisplay) {
         let _ = self.0.lock().unwrap().send(Event::Display(display));
     }
+
     fn frame(&self, frame: SurfaceFrame) {
         let _ = self.0.lock().unwrap().send(Event::Frame(frame));
     }

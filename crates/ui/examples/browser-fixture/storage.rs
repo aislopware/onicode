@@ -1,13 +1,10 @@
 //! Invoked repeatedly by test-browser-storage.py with one stable HTTP origin.
+use std::path::Path;
+use std::time::{Duration, Instant};
+
 use gpui::{AsyncApp, Entity, WindowHandle};
-use onicode_ui::{
-    browser::{BrowserContext, BrowserSurface},
-    shell::Shell,
-};
-use std::{
-    path::Path,
-    time::{Duration, Instant},
-};
+use onicode_ui::browser::{BrowserContext, BrowserSurface};
+use onicode_ui::shell::Shell;
 
 async fn loaded(browser: &Entity<BrowserSurface>, cx: &mut AsyncApp) -> anyhow::Result<()> {
     let deadline = Instant::now() + Duration::from_secs(30);

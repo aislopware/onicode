@@ -1,19 +1,19 @@
 //! What an agent (its `onicode mcp` server's scoped token, [`Caller::Agent`])
 //! may do to chats, checked before anything is forwarded or written:
 //!
-//! - A chat it creates never runs with more access than its own: the new
-//!   chat's sandbox and access mode are capped at the creating chat's,
-//!   silently (Onicode's MCP tool says so in its reply). Cloud children too.
-//! - Of `Mutate`, only what its tools do: create, rename and archive chats.
-//!   Never `setChatConfig` (raising a chat's access) or deleting.
-//! - A run it starts in a chat runs as that chat is set (its harness,
-//!   sandbox, access, plan mode and folder), never as the request says.
-//! - Approving a question another chat asks (an approval to run a command,
-//!   change files, use a tool) is only for an agent whose own chat runs with
-//!   full access: anything less would let a supervised agent approve, through
-//!   a chat it made, what it would itself have to ask the person for.
-//! - What it writes into a chat carries Onicode's header naming the sending
-//!   chat, built here; a header in the text can't claim another chat.
+//! - A chat it creates never runs with more access than its own: the new chat's sandbox and access
+//!   mode are capped at the creating chat's, silently (Onicode's MCP tool says so in its reply).
+//!   Cloud children too.
+//! - Of `Mutate`, only what its tools do: create, rename and archive chats. Never `setChatConfig`
+//!   (raising a chat's access) or deleting.
+//! - A run it starts in a chat runs as that chat is set (its harness, sandbox, access, plan mode
+//!   and folder), never as the request says.
+//! - Approving a question another chat asks (an approval to run a command, change files, use a
+//!   tool) is only for an agent whose own chat runs with full access: anything less would let a
+//!   supervised agent approve, through a chat it made, what it would itself have to ask the person
+//!   for.
+//! - What it writes into a chat carries Onicode's header naming the sending chat, built here; a
+//!   header in the text can't claim another chat.
 //!
 //! The calling chat is the one its MCP server names (`x-onicode-chat`): the
 //! engine sets that server's environment, so a sandboxed agent can't change
@@ -204,10 +204,11 @@ impl EngineRpc {
 
 #[cfg(test)]
 mod tests {
-    use crate::registry::HarnessRegistry;
     use onicode_proto::{HarnessId, agent_messages};
     use onicode_rpc::{Caller, RpcService, methods, with_caller};
     use serde_json::{Value, json};
+
+    use crate::registry::HarnessRegistry;
 
     async fn core() -> (tempfile::TempDir, crate::EngineCore) {
         let temp = tempfile::tempdir().unwrap();

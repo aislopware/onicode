@@ -1538,9 +1538,10 @@ fn read_image_blocking(
     relative: &WorkspaceRelativePath,
     request: &onicode_proto::ReadWorkspaceImageRequest,
 ) -> Result<onicode_proto::WorkspaceImageChunk, WorkspaceFilesError> {
+    use std::io::Read;
+
     use base64::Engine as _;
     use onicode_proto::{MAX_WORKSPACE_IMAGE_BYTES, WORKSPACE_IMAGE_CHUNK_BYTES};
-    use std::io::Read;
     let mime = match relative
         .as_path()
         .extension()
@@ -3597,8 +3598,9 @@ mod tests {
 
 #[cfg(test)]
 mod image_tests {
-    use super::*;
     use onicode_proto::{ReadWorkspaceImageRequest, WORKSPACE_IMAGE_CHUNK_BYTES, WorkspaceTarget};
+
+    use super::*;
 
     /// A Cloud session machine's chat belongs to it, but its project was
     /// made on the laptop: files resolve to the machine's own checkout, and

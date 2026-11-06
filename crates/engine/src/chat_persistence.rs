@@ -1,10 +1,11 @@
 //! Coalesced chat snapshots. Cursor is sampled BEFORE export; snapshot and
 //! cursor commit atomically. Queue/lock waits never occupy a Tokio worker.
-use onicode_doc::SessionDoc;
-use onicode_sync::DocsStore;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
+
+use onicode_doc::SessionDoc;
+use onicode_sync::DocsStore;
 use tokio::sync::mpsc;
 
 const SAVE_INTERVAL: Duration = Duration::from_secs(1);

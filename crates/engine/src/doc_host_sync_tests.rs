@@ -1,9 +1,11 @@
 //! Exercise the dispatcher against slow but live loopback transports.
-use super::*;
+use std::time::Duration;
+
 use futures::{SinkExt, StreamExt};
 use onicode_sync::chat_frames::{decode, encode, frame_type};
-use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+use super::*;
 
 #[derive(Clone, Copy)]
 enum Hold {

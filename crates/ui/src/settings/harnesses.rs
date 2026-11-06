@@ -18,18 +18,13 @@
 //! enforces the same gates where the state lives, so a raced or stale toggle
 //! self-corrects from the RPC reply.
 
-use gpui::{
-    AnyElement, Context, Entity, IntoElement, Render, SharedString, Task, Window, div, prelude::*,
-    px,
-};
-
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, Entity, IntoElement, Render, SharedString, Task, Window, div, px};
 use onicode_engine::registry::{HarnessDescriptor, descriptor_enabled};
-
 use onicode_proto::{
     HarnessId, HarnessUpdateFailureKind, HarnessUpdatePhase, HarnessUpdatePolicy,
     HarnessUpdateStatus,
 };
-
 use onicode_rpc::methods;
 
 use crate::motion;
@@ -1124,7 +1119,7 @@ impl HarnessesPage {
                     };
                 // The one enabled harness left can't be switched off — the
                 // composer needs something to run — but only when it could
-                // actually run: an uninstalled last harness stays togglable
+                // actually run: an uninstalled last harness stays toggleable
                 // (its hint says to turn it off) and the composer handles the
                 // resulting empty set (mirrors the engine guard).
                 let last_enabled = enabled && enabled_count == 1 && installed;
@@ -1472,6 +1467,7 @@ impl HarnessesPage {
             })
             .collect()
     }
+
     fn on_scroll_hovered(&mut self, hovered: &bool, _: &mut Window, cx: &mut Context<Self>) {
         if self.scroll.set_list_hovered(*hovered) {
             cx.notify();

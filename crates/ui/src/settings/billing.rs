@@ -9,9 +9,8 @@
 
 use std::time::{Duration, Instant};
 
-use gpui::{
-    AnyElement, Context, Entity, SharedString, Subscription, Task, Window, div, prelude::*, px,
-};
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, Entity, SharedString, Subscription, Task, Window, div, px};
 use onicode_proto::{BillingLink, BillingPlan, BillingStatus};
 use onicode_rpc::methods;
 
@@ -939,8 +938,9 @@ impl Render for BillingPage {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_proto::{BillingCredits, BillingPack, BillingSubscription};
+
+    use super::*;
 
     fn status(plan: Option<&str>, extra: f64, cancel: bool) -> BillingStatus {
         let plans = vec![

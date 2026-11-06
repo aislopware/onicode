@@ -1,14 +1,14 @@
 //! Per-agent composer completion preferences inside Settings → Providers.
 
-use super::HarnessesPage;
-use crate::{
-    settings,
-    settings::search::{SearchAnchor, SettingId},
-    settings::widgets,
-    theme::Theme,
-};
-use gpui::{AnyElement, Context, div, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, div, px};
 use onicode_proto::HarnessId;
+
+use super::HarnessesPage;
+use crate::settings;
+use crate::settings::search::{SearchAnchor, SettingId};
+use crate::settings::widgets;
+use crate::theme::Theme;
 
 impl HarnessesPage {
     fn toggle_completion(&mut self, harness: HarnessId, dollar: bool, cx: &mut Context<Self>) {

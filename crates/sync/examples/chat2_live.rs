@@ -8,7 +8,8 @@
 //!   cargo run -p onicode-sync --example chat2_live -- <baseUrl> <chatId> <token> <device>
 //!
 //! Prints a single JSON result line prefixed RESULT: for the driver to parse.
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
@@ -33,6 +34,7 @@ impl ChatDocSink for DocSink {
         self.rows_applied.fetch_add(1, Relaxed);
         RowImportOutcome::Applied
     }
+
     fn apply_checkpoint(&self, bytes: &[u8], cursor: u64) -> Result<(), String> {
         let doc = self.doc.lock().unwrap();
         doc.import(bytes).map_err(|e| e.to_string())?;
@@ -40,6 +42,7 @@ impl ChatDocSink for DocSink {
         self.checkpoint_applied.store(true, Relaxed);
         Ok(())
     }
+
     fn contains_frontier(&self, frontier: &[u8]) -> bool {
         if frontier.is_empty() {
             return true;
@@ -49,6 +52,7 @@ impl ChatDocSink for DocSink {
         };
         self.doc.lock().unwrap().oplog_vv().includes_vv(&vv)
     }
+
     fn advance_cursor(&self, cursor: u64) {
         self.cursor.store(cursor, Relaxed);
     }

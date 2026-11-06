@@ -11,26 +11,23 @@
 //! after adapter-mediated ACP kept manufacturing done-status bugs the native
 //! wires don't have (turn-hold bookkeeping vs the CLI's own eager result).
 //!
-//! - `initialize` (protocolVersion 1, fs/terminal capabilities declined) →
-//!   `session/new`, or `session/load` with a fresh-session fallback when
-//!   resuming; replayed history during a load is dropped (the doc already
-//!   holds it).
-//! - `session/prompt` owns the turn: its response's `stopReason` ends the
-//!   turn (`cancelled` → Interrupted, `refusal` → Errored, else Completed).
-//! - `session/update` notifications normalize per [`normalize::map_update`].
-//! - Permission requests auto-accept with the agent's preferred allow option
-//!   in full access; an agent that honors other access modes (Antigravity)
-//!   is kept in its asking session mode and each permission is decided per
-//!   [`permission`]. Question-shaped requests block on the engine's input
+//! - `initialize` (protocolVersion 1, fs/terminal capabilities declined) → `session/new`, or
+//!   `session/load` with a fresh-session fallback when resuming; replayed history during a load is
+//!   dropped (the doc already holds it).
+//! - `session/prompt` owns the turn: its response's `stopReason` ends the turn (`cancelled` →
+//!   Interrupted, `refusal` → Errored, else Completed).
+//! - `session/update` notifications normalize per `normalize::map_update`.
+//! - Permission requests auto-accept with the agent's preferred allow option in full access; an
+//!   agent that honors other access modes (Antigravity) is kept in its asking session mode and each
+//!   permission is decided per `permission`. Question-shaped requests block on the engine's input
 //!   bridge.
-//! - Steering: agents advertising `_session/steering` get mid-turn injection;
-//!   others queue steers and deliver them as the next `session/prompt` at the
-//!   turn boundary. The session stays parked between turns while the
-//!   steering mailbox lives.
-//! - Turn stop ([`crate::TurnControl::stop_turn`]): `session/cancel` settles
-//!   the prompt `cancelled`; the agent and its session take the next prompt.
-//! - Interrupt: `session/cancel`, escalating SIGTERM → SIGKILL; the stream
-//!   always ends with `Done { status: Interrupted }`.
+//! - Steering: agents advertising `_session/steering` get mid-turn injection; others queue steers
+//!   and deliver them as the next `session/prompt` at the turn boundary. The session stays parked
+//!   between turns while the steering mailbox lives.
+//! - Turn stop ([`crate::TurnControl::stop_turn`]): `session/cancel` settles the prompt
+//!   `cancelled`; the agent and its session take the next prompt.
+//! - Interrupt: `session/cancel`, escalating SIGTERM → SIGKILL; the stream always ends with `Done {
+//!   status: Interrupted }`.
 
 mod antigravity_paths;
 mod devin_models;
@@ -44,30 +41,28 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::process::{ChildStdin, ChildStdout};
 use async_trait::async_trait;
+use child::Child;
 use futures::StreamExt;
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
-use serde_json::{Value, json};
-use tokio::sync::mpsc;
-
+use normalize::{map_update, parse_commands, preferred_allow_option};
 use onicode_proto::{
     AccessMode, AgentEvent, DoneStatus, HarnessId, Model, ModelOption, ModelOptionChoice,
     ReasoningLevel, RunRequest, SlashCommand, SteeringMode, UserInputAnswer, UserInputQuestion,
 };
+use serde_json::{Value, json};
+use subagent::SubagentTracker;
+use subagent_devin::DevinTracker;
+use tokio::sync::mpsc;
 
 use crate::jsonrpc::{Incoming, RpcClient};
 pub(crate) use crate::process::owned as child;
-use crate::process::{Command, Stdio};
+use crate::process::{ChildStdin, ChildStdout, Command, Stdio};
 use crate::scratch::ScratchDir;
 use crate::{
     CancellationToken, Harness, HarnessError, RunControls, Signal, send_signal, shutdown_child,
 };
-use child::Child;
-use normalize::{map_update, parse_commands, preferred_allow_option};
-use subagent::SubagentTracker;
-use subagent_devin::DevinTracker;
 
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(120);
 const DEFAULT_MODEL_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -3066,19 +3061,23 @@ impl Harness for AcpHarness {
     fn id(&self) -> HarnessId {
         self.spec.id
     }
+
     fn display_name(&self) -> &str {
         self.spec.display_name
     }
+
     fn authoritative_prompt_end(&self) -> bool {
         // ACP session/prompt owns the turn until its response. The engine's
         // quiet watchdog must not park a still-pending model request either.
         true
     }
+
     /// `session/cancel` settles the prompt `cancelled`; the agent process
     /// and its session take the next `session/prompt`.
     fn stops_turn_in_place(&self) -> bool {
         true
     }
+
     /// The session's model, effort and model options are selected over the
     /// protocol (`session/set_model`, `session/set_config_option`), so a
     /// change applies between turns without a new agent. Clearing one back
@@ -3099,12 +3098,15 @@ impl Harness for AcpHarness {
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         self.spec.steering_mode
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         self.spec.reasoning_levels
     }
+
     /// Per agent (see `AcpAgentSpec::access_modes`). None of them advertises
     /// a plan session mode, so plan mode is not offered.
     fn access_modes(&self) -> &[AccessMode] {
@@ -3197,9 +3199,11 @@ impl Harness for AcpHarness {
         };
         crate::model_context::context(self.id(), &binary, &extra).map(Some)
     }
+
     fn fallback_models(&self) -> Vec<Model> {
         (self.spec.models)()
     }
+
     async fn model_catalog(&self, force: bool) -> Result<crate::ModelCatalog, HarnessError> {
         self.model_context()?.unwrap().log();
         self.models_cache
@@ -3220,6 +3224,7 @@ impl Harness for AcpHarness {
             )
             .await
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         self.resolve_launch()?;
         match self.model_catalog(true).await {
@@ -3759,14 +3764,13 @@ const ASKING_MODES: [&str; 1] = ["default"];
 
 /// The `session/set_config_option` calls a session response's `configOptions`
 /// warrant for this run:
-/// - the requested model (category `model`; a `contextWindow: "1m"` model
-///   option composes the `<model>[1m]` id first, the CLI's own convention),
-/// - the effort (category `thought_level`, first advertised value from the
-///   spec's preference list),
-/// - the session mode (category `mode`) for `access`: the no-prompts mode in
-///   full access, an asking mode otherwise,
-/// - any remaining `model_options` matched by normalized id — selects take
-///   the choice id, booleans take `on`/`true` truthiness (fastMode, thinking).
+/// - the requested model (category `model`; a `contextWindow: "1m"` model option composes the
+///   `<model>[1m]` id first, the CLI's own convention),
+/// - the effort (category `thought_level`, first advertised value from the spec's preference list),
+/// - the session mode (category `mode`) for `access`: the no-prompts mode in full access, an asking
+///   mode otherwise,
+/// - any remaining `model_options` matched by normalized id — selects take the choice id, booleans
+///   take `on`/`true` truthiness (fastMode, thinking).
 ///
 /// Matched against advertised values and skipped when already current. Pure
 /// so it's testable; the returned value is the request's flattened `value`
@@ -4527,7 +4531,7 @@ struct EffortGroup<'a> {
 }
 
 /// group advertised `(id, name)` choices by their display name. antigravity
-/// names every effort variant "<model> (Low|Medium|High)", but its ids don't
+/// names every effort variant `"<model>` (Low|Medium|High)", but its ids don't
 /// always follow (a signed-in account pairs `gemini-3.1-pro-low` with
 /// `gemini-pro-agent` for High), so the name is the only reliable key. A
 /// group's id is a variant id minus its level suffix, falling back to the

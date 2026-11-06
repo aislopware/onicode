@@ -1,10 +1,12 @@
 //! Exclusive, local, ephemeral voice ownership. Native media remains in Codex's helper.
 pub(crate) mod remote;
-use onicode_harness::codex::realtime::{RealtimeHandle, VoiceCommand};
-use onicode_proto::{SessionStatus, voice::*};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use onicode_harness::codex::realtime::{RealtimeHandle, VoiceCommand};
+use onicode_proto::SessionStatus;
+use onicode_proto::voice::*;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -55,13 +57,16 @@ impl VoiceManager {
     pub(crate) async fn preparation(&self) -> tokio::sync::MutexGuard<'_, ()> {
         self.inner.preparation.lock().await
     }
+
     pub(crate) fn identity_epoch(&self) -> u64 {
         self.inner.identity_epoch.load(Ordering::Acquire)
     }
+
     #[cfg(test)]
     pub(crate) fn reserve(&self, chat: &str) -> Result<VoiceLease, VoiceRejection> {
         self.reserve_with_deadline(chat, self.identity_epoch(), 5)
     }
+
     fn reserve_with_deadline(
         &self,
         chat: &str,
@@ -117,6 +122,7 @@ impl VoiceManager {
         });
         Ok(lease)
     }
+
     fn expire_unattached(&self, lease: &VoiceLease) {
         let expired = self.inner.slot.lock().unwrap().as_ref().is_some_and(|s| {
             Self::matches(s, lease) && !s.owner_attached && Instant::now() >= s.attach_deadline
@@ -125,11 +131,13 @@ impl VoiceManager {
             let _ = self.stop(lease);
         }
     }
+
     fn matches(s: &Slot, l: &VoiceLease) -> bool {
         s.lease.session_id == l.session_id
             && s.lease.generation == l.generation
             && s.lease.token == l.token
     }
+
     pub fn own(&self, lease: VoiceLease) -> Result<VoiceOwner, VoiceRejection> {
         let mut state = self.inner.slot.lock().unwrap();
         let slot = state
@@ -150,6 +158,7 @@ impl VoiceManager {
             events,
         })
     }
+
     fn publish(&self, lease: &VoiceLease, event: VoiceEvent) -> Result<(), VoiceRejection> {
         let result = {
             let state = self.inner.slot.lock().unwrap();
@@ -166,6 +175,7 @@ impl VoiceManager {
         }
         result
     }
+
     fn update(
         &self,
         lease: &VoiceLease,
@@ -182,9 +192,11 @@ impl VoiceManager {
         };
         self.publish(lease, VoiceEvent::Snapshot { snapshot })
     }
+
     pub fn stop(&self, lease: &VoiceLease) -> Result<(), VoiceRejection> {
         self.finish(lease, None)
     }
+
     fn finish(
         &self,
         lease: &VoiceLease,
@@ -202,6 +214,7 @@ impl VoiceManager {
         Self::close_slot(s, reason);
         Ok(())
     }
+
     fn close_slot(s: Slot, reason: Option<VoiceRejection>) {
         s.cancel.cancel();
         if let Some(provider) = s.provider.as_ref() {
@@ -212,6 +225,7 @@ impl VoiceManager {
             reason,
         });
     }
+
     #[cfg(test)]
     pub(crate) fn owns_chat(&self, chat: &str) -> bool {
         self.inner
@@ -221,6 +235,7 @@ impl VoiceManager {
             .as_ref()
             .is_some_and(|s| s.snapshot.chat_id == chat)
     }
+
     pub fn retire(&self) {
         let mut state = self.inner.slot.lock().unwrap();
         // The same lock covers reservation and identity changes: a pending probe
@@ -236,6 +251,7 @@ impl VoiceManager {
             Self::close_slot(slot, None);
         }
     }
+
     pub(crate) fn retire_chat(&self, chat: &str) {
         let mut state = self.inner.slot.lock().unwrap();
         self.inner.identity_epoch.fetch_add(1, Ordering::AcqRel);

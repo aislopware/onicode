@@ -14,6 +14,7 @@ impl PlatformMeasurer for FixedFallback {
     fn measure(&self, _face: FaceRole, size: f32, _ligatures: bool, text: String) -> f32 {
         text.chars().count() as f32 * size * 1.1
     }
+
     fn measure_run(&self, _face: FaceRole, size: f32, _ligatures: bool, text: String) -> Vec<f32> {
         text.chars().map(|_| size * 1.1).collect()
     }
@@ -799,7 +800,8 @@ fn huge_single_paragraph_thought_stops_reshaping() {
     );
 }
 
-/// Release-mode timings (run with `cargo test --release -p onicode-mobile -- --ignored --nocapture`).
+/// Release-mode timings (run with `cargo test --release -p onicode-mobile -- --ignored
+/// --nocapture`).
 #[test]
 #[ignore]
 fn bench_layout_passes() {
@@ -1278,7 +1280,7 @@ fn inline_math_paints_glyphs_and_grows_its_line() {
     }
     // `start` points at the placeholder, for the streaming veil.
     let units: Vec<u16> = d.text.encode_utf16().collect();
-    assert_eq!(units[d.glyphs[0].start as usize], 0xFFFC);
+    assert_eq!(units[d.glyphs[0].start as usize], 0xfffc);
     assert_eq!(d.copy_text, r"A fraction $\frac{a^2}{b_k}$ on one line.");
 }
 

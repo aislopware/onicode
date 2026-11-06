@@ -1,10 +1,11 @@
 //! Pull requests opened from what Shell painted — a sidebar badge, a board
 //! row, a link in a message — through Shell's own listeners and link handler,
 //! to the place Settings sends them.
-use super::*;
-use crate::settings::PullRequestDestination;
 use gpui::{AppContext, TestAppContext, VisualTestContext};
 use onicode_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
+
+use super::*;
+use crate::settings::PullRequestDestination;
 
 fn pull_request(number: u64) -> String {
     format!("https://github.com/acme/onicode/pull/{number}")

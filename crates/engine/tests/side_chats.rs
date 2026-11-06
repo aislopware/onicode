@@ -1,5 +1,8 @@
+use std::sync::{Arc, Mutex};
+
 use async_trait::async_trait;
-use futures::{StreamExt, stream::BoxStream};
+use futures::StreamExt;
+use futures::stream::BoxStream;
 use onicode_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry, SubagentStatus};
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::{Harness, HarnessError, RunControls};
@@ -8,7 +11,6 @@ use onicode_proto::{
     SteeringMode, ToolCall,
 };
 use onicode_rpc::methods;
-use std::sync::{Arc, Mutex};
 
 struct Capture(Arc<Mutex<Vec<RunRequest>>>);
 #[async_trait]
@@ -16,21 +18,27 @@ impl Harness for Capture {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Capture"
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,
@@ -660,21 +668,27 @@ impl Harness for Warm {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Warm"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,
@@ -852,21 +866,27 @@ impl Harness for Dropping {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Dropping"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,

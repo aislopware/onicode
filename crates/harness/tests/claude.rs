@@ -9,8 +9,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::StreamExt;
-use tokio::sync::{mpsc, oneshot};
-
 use onicode_harness::{
     CancellationToken, ClaudeHarness, Harness, HarnessError, RunControls, SteerMessage,
 };
@@ -18,6 +16,7 @@ use onicode_proto::{
     AgentEvent, DoneStatus, HarnessId, RunRequest, SandboxLevel, ToolCall, UserInputAnswer,
     UserInputQuestion,
 };
+use tokio::sync::{mpsc, oneshot};
 
 fn fixture_path() -> PathBuf {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1246,10 +1245,8 @@ async fn shared_skill_colliding_with_builtin_keeps_file_delivery() {
 
 #[tokio::test]
 async fn claude_skills_follow_native_availability_and_dollar_selection_keeps_arguments() {
-    use onicode_proto::{
-        HarnessId,
-        invocation::{Invocation, harness_prompt},
-    };
+    use onicode_proto::HarnessId;
+    use onicode_proto::invocation::{Invocation, harness_prompt};
     let cwd = tempfile::tempdir().unwrap();
     std::fs::create_dir(cwd.path().join(".git")).unwrap();
     for name in ["review", "disabled-plugin"] {

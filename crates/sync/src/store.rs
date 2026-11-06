@@ -86,8 +86,8 @@ const STORE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// bursts a truncate/re-extend cycle on every write.
 const JOURNAL_SIZE_LIMIT_BYTES: i64 = 64 * 1024 * 1024;
 
-/// VACUUM ([`DocsStore::reclaim_free_space`]) only when free pages are BOTH a large share of the file
-/// and a meaningful absolute size: a healthy database never pays the rewrite.
+/// VACUUM ([`DocsStore::reclaim_free_space`]) only when free pages are BOTH a large share of the
+/// file and a meaningful absolute size: a healthy database never pays the rewrite.
 const VACUUM_MIN_FREE_BYTES: i64 = 32 * 1024 * 1024;
 /// `freelist_count / page_count` above which reclaiming is worth a rewrite.
 const VACUUM_MIN_FREE_DENOMINATOR: i64 = 4;

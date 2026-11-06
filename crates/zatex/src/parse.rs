@@ -1,4 +1,4 @@
-//! LaTeX math source → [`ast::Node`] list.
+//! LaTeX math source → `ast::Node` list.
 //!
 //! A single-pass recursive-descent parser over a hand-rolled tokenizer (no
 //! macro expansion). Strict: anything it doesn't know is an error with a byte
@@ -8,9 +8,8 @@
 use std::ops::Range;
 
 use crate::ast::{Align, Array, ArrayKind, Class, Dim, List, Node, Style};
-use crate::symbols;
 use crate::unicode::Variant;
-use crate::{Error, ErrorKind};
+use crate::{Error, ErrorKind, symbols};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Tok<'a> {

@@ -5,48 +5,43 @@
 //! - `ListHarnesses` → `[HarnessDescriptor]`
 //! - `ListModels {harness}` → `[Model]`
 //! - `QueueCommand {chatId, command}` → `{commandId}` (durable doc command)
-//! - `WatchDocMessages {chatId}` → stream of joined `SessionMessageEntry[]`,
-//!   re-emitted on every doc change
+//! - `WatchDocMessages {chatId}` → stream of joined `SessionMessageEntry[]`, re-emitted on every
+//!   doc change
 //! - `WatchChats` / `WatchDevices` → streams of the workspace doc's entity rows
-//! - `WatchSessions` → stream of `Session[]`: this engine's live statuses merged with
-//!   remote devices' workspace session rows
+//! - `WatchSessions` → stream of `Session[]`: this engine's live statuses merged with remote
+//!   devices' workspace session rows
 //! - `Mutate {op, …}` → `{ok}` — workspace entity mutations (createChat, renameChat,
 //!   setChatArchived, deleteChat, renameDevice, markChatSeen)
-//! - `EngineInfo` → `{deviceId, workspaceScope}` — this runtime's fixed identity
-//!   and data boundary (never forwarded)
+//! - `EngineInfo` → `{deviceId, workspaceScope}` — this runtime's fixed identity and data boundary
+//!   (never forwarded)
 //! - `LocalDevice` → `{deviceId}` — legacy engine identity (never forwarded)
-//! - AuthRpc (feature-inventory §2): `AuthStatus` (stream), `SignIn`/`SignInHeadless` →
-//!   `{url}`, `CompleteSignIn {code}`, `SignOut`, `ListOrgs`, `CreateOrg {name}`,
-//!   `SelectOrg {organizationId}`
-//! - Repos (§3.5): `ListRepos`, `AddRepo {path}`, `CloneRepo {url}`,
-//!   `CreateRepo {name}`, `ListBranches {repoPath}` (default branch first),
-//!   `ListFolders {path?}`, `CreateWorktree {repoPath, branch}`, `DeleteWorktree
-//!   {repoPath, worktreePath}`; `WatchCheckoutDiffs` → stream of `CheckoutDiff[]`
-//! - Workspace files: lazy directory listing, recursive path search, bounded text
-//!   reads, hash-guarded writes, and a checkout-scoped filesystem change stream.
+//! - AuthRpc (feature-inventory §2): `AuthStatus` (stream), `SignIn`/`SignInHeadless` → `{url}`,
+//!   `CompleteSignIn {code}`, `SignOut`, `ListOrgs`, `CreateOrg {name}`, `SelectOrg
+//!   {organizationId}`
+//! - Repos (§3.5): `ListRepos`, `AddRepo {path}`, `CloneRepo {url}`, `CreateRepo {name}`,
+//!   `ListBranches {repoPath}` (default branch first), `ListFolders {path?}`, `CreateWorktree
+//!   {repoPath, branch}`, `DeleteWorktree {repoPath, worktreePath}`; `WatchCheckoutDiffs` → stream
+//!   of `CheckoutDiff[]`
+//! - Workspace files: lazy directory listing, recursive path search, bounded text reads,
+//!   hash-guarded writes, and a checkout-scoped filesystem change stream.
 //! - Terminals (§3.4): `OpenTerminal {chatId, cols, rows, cwd?}` → `TerminalSession`,
-//!   `SubscribeTerminal {terminalId, afterSeq?}` → stream of `TerminalEvent`
-//!   (replay then live tail), `WriteTerminal {terminalId, data}`, `ResizeTerminal`,
-//!   `CloseTerminal`. M5 is single-user local: per-user owner checks land with
-//!   real multi-account auth in M6.
-//! - Agent accounts (§3.7): `ListAgentAccounts {forceUsage?}` →
-//!   `AgentAccountsSnapshot`, `ActivateAgentAccount`/`ForgetAgentAccount`
-//!   `{harness, accountId}` → snapshot, `StartAgentLogin {harness}` →
-//!   `{loginId, url, mode}`, `CompleteAgentLogin {loginId, code}` → snapshot,
-//!   `PollAgentLogin {loginId}`, `CancelAgentLogin {loginId}`.
-//! - Uploads (§3.7): `UploadChunk {uploadId, data, seq?}`,
-//!   `UploadCommit {uploadId, fileName}` → `{path}`,
-//!   `ReadAttachmentChunk {path, offset}` → `{name, mimeType, data, nextOffset,
-//!   done}` (path-jailed to the uploads dir + workspace-known chat cwds),
-//!   `ReadChatImageChunk {chatId, path, offset}` → the same reply, for an image
-//!   a reply names in Markdown (jailed to that one chat's working folder, no
-//!   link followed).
-//! - Tool outputs: `ReadToolOutput {chatId, toolId, offset}` → `ToolOutputChunk`
-//!   (`{text, nextOffset, done, bytes, lines, trimmed, exitCode?}`): one command's
-//!   whole output from this host's run journal, redacted as the doc's tail is
-//!   ([`crate::tool_output`]). Answered only by the chat's host; a command it
-//!   has no record of fails `tool_output.unavailable`, one still running
-//!   `tool_output.not_finished` (capability error codes).
+//!   `SubscribeTerminal {terminalId, afterSeq?}` → stream of `TerminalEvent` (replay then live
+//!   tail), `WriteTerminal {terminalId, data}`, `ResizeTerminal`, `CloseTerminal`. M5 is
+//!   single-user local: per-user owner checks land with real multi-account auth in M6.
+//! - Agent accounts (§3.7): `ListAgentAccounts {forceUsage?}` → `AgentAccountsSnapshot`,
+//!   `ActivateAgentAccount`/`ForgetAgentAccount` `{harness, accountId}` → snapshot,
+//!   `StartAgentLogin {harness}` → `{loginId, url, mode}`, `CompleteAgentLogin {loginId, code}` →
+//!   snapshot, `PollAgentLogin {loginId}`, `CancelAgentLogin {loginId}`.
+//! - Uploads (§3.7): `UploadChunk {uploadId, data, seq?}`, `UploadCommit {uploadId, fileName}` →
+//!   `{path}`, `ReadAttachmentChunk {path, offset}` → `{name, mimeType, data, nextOffset, done}`
+//!   (path-jailed to the uploads dir + workspace-known chat cwds), `ReadChatImageChunk {chatId,
+//!   path, offset}` → the same reply, for an image a reply names in Markdown (jailed to that one
+//!   chat's working folder, no link followed).
+//! - Tool outputs: `ReadToolOutput {chatId, toolId, offset}` → `ToolOutputChunk` (`{text,
+//!   nextOffset, done, bytes, lines, trimmed, exitCode?}`): one command's whole output from this
+//!   host's run journal, redacted as the doc's tail is ([`crate::tool_output`]). Answered only by
+//!   the chat's host; a command it has no record of fails `tool_output.unavailable`, one still
+//!   running `tool_output.not_finished` (capability error codes).
 //!
 //! ## Device-addressed routing (`targetDeviceId`, feature-inventory §2.1)
 //!
@@ -55,22 +50,20 @@
 //! the [`LinkCache`] — the remote engine sees its own id and handles locally, so the
 //! forward can never loop. Streaming methods are proxied by re-subscribing remotely and
 //! piping items. To make another method device-addressable, nothing per-method is needed
-//! beyond listing it in [`forwardable`] (and [`is_stream_method`] if it streams);
+//! beyond listing it in `forwardable` (and `is_stream_method` if it streams);
 //! handlers stay transport-agnostic. This includes the workspace file surface,
 //! whose checkout always lives on the routed target device.
 
 mod agent_gate;
 mod voice_chat;
 mod voice_remote;
+use std::collections::HashSet;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use base64::Engine as _;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-use serde::Deserialize;
-use std::collections::HashSet;
-use std::time::Duration;
-use tokio::sync::watch;
-
 use onicode_doc::{MessagePart, SessionCommandPayload};
 use onicode_proto::{
     AgentEvent, ChatConfig, CreateWorktreeOutcome, EngineInfo, HarnessId, HarnessUpdatePolicy,
@@ -79,6 +72,8 @@ use onicode_proto::{
 use onicode_rpc::{
     LinkCache, RpcError, RpcReply, RpcService, capability_errors, methods, parse_params,
 };
+use serde::Deserialize;
+use tokio::sync::watch;
 
 use crate::agent_accounts::AgentAccounts;
 use crate::auth::Auth;
@@ -2191,6 +2186,7 @@ impl Installations {
             cancel,
         })
     }
+
     fn cancel(&self, harness: HarnessId) {
         if let Some(cancel) = self
             .0
@@ -2752,6 +2748,7 @@ impl crate::remote_terminals::Relay for EngineRpc {
             RpcReply::Stream(_) => Err(RpcError::Failed(format!("{method} replied with a stream"))),
         }
     }
+
     async fn subscribe(
         &self,
         target: &str,
@@ -5334,7 +5331,8 @@ mod tests {
     // Each subprocess has private HOME/PATH/overrides, avoiding process-global test races.
     #[cfg(unix)]
     async fn installer_rpc_fixture(mode: &str) {
-        use std::{os::unix::fs::PermissionsExt, sync::Arc};
+        use std::os::unix::fs::PermissionsExt;
+        use std::sync::Arc;
         if std::env::var_os("ONICODE_INSTALL_FIXTURE_CHILD").is_none() {
             let root = tempfile::tempdir().unwrap();
             let bin = root.path().join("bin");
@@ -5488,9 +5486,10 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_install_rpc_verifies_archive_and_refreshes_descriptors() {
+        use std::io::Write;
+
         use onicode_harness::archive_install::{ArchivePin, ensure_installed, installed_entry};
         use sha2::{Digest, Sha512};
-        use std::io::Write;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         if std::env::var_os("ONICODE_INSTALL_RPC_TEST").is_none() {
             let root = tempfile::tempdir().unwrap();
@@ -5599,8 +5598,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn local_opening_tail_arrives_before_full_mirror_and_keeps_all_history() {
-        use crate::doc_host::{DocHost, DocHostConfig};
         use std::sync::Arc;
+
+        use crate::doc_host::{DocHost, DocHostConfig};
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(onicode_sync::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
@@ -6027,14 +6027,17 @@ mod tests {
 
 #[cfg(test)]
 mod context_usage_tests {
-    use super::*;
-    use futures::StreamExt;
     use std::sync::Arc;
+
+    use futures::StreamExt;
+
+    use super::*;
 
     #[tokio::test]
     async fn replay_cutoff_travels_with_coalesced_backfill_and_live_content() {
-        use crate::doc_host::{DocHost, DocHostConfig};
         use onicode_sync::chat_client::ChatDocSink;
+
+        use crate::doc_host::{DocHost, DocHostConfig};
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(onicode_sync::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
@@ -6157,8 +6160,9 @@ mod context_usage_tests {
 
     #[tokio::test]
     async fn replay_metadata_and_backfill_leave_interleaved_local_content_live() {
-        use crate::doc_host::{DocHost, DocHostConfig};
         use onicode_sync::chat_client::ChatDocSink;
+
+        use crate::doc_host::{DocHost, DocHostConfig};
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(onicode_sync::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
@@ -6235,8 +6239,9 @@ mod context_usage_tests {
 
     #[tokio::test]
     async fn replay_preserves_each_watchers_opening_cutoff_without_consuming_live_text() {
-        use crate::doc_host::{DocHost, DocHostConfig};
         use onicode_sync::chat_client::ChatDocSink;
+
+        use crate::doc_host::{DocHost, DocHostConfig};
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(onicode_sync::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
@@ -6327,8 +6332,9 @@ mod context_usage_tests {
 
     #[tokio::test]
     async fn reopening_rearms_history_for_previously_live_text() {
-        use crate::doc_host::{DocHost, DocHostConfig};
         use onicode_sync::chat_client::ChatDocSink;
+
+        use crate::doc_host::{DocHost, DocHostConfig};
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(onicode_sync::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(

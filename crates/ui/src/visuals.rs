@@ -17,10 +17,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
-use gpui::AppContext as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Bounds, Context, EventEmitter, FontStyle, FontWeight, Hsla,
+    AnyElement, App, AppContext as _, Bounds, Context, EventEmitter, FontStyle, FontWeight, Hsla,
     InteractiveElement, IntoElement, MouseButton, MouseMoveEvent, ParentElement, PathBuilder,
     Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled, StyledText, Task,
     TextAlign, TextRun, Window, canvas, div, point, px,

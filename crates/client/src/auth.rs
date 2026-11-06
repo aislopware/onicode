@@ -2,11 +2,11 @@
 //! (edge/src/auth-routes.ts), plus the per-client bearer provider.
 //!
 //! Two live modes, mirroring the engine:
-//! - WorkOS: paste-code exchange → access/refresh pair; a refresh scoped to an
-//!   organization adds the `org_id` claim the registry room requires.
+//! - WorkOS: paste-code exchange → access/refresh pair; a refresh scoped to an organization adds
+//!   the `org_id` claim the registry room requires.
 //! - Dev (`AUTH_MODE=dev` edge): the bearer IS `userId@orgId`.
 //!
-//! WorkOS refresh tokens are single-use: [`TokenProvider`] single-flights every
+//! WorkOS refresh tokens are single-use: `TokenProvider` single-flights every
 //! refresh (a cold launch's N room dials used to race N refreshes with the
 //! same token — one won, the rest dialed with a dead token and sat in
 //! backoff), and reports the rotated pair to the platform.
@@ -251,7 +251,7 @@ pub async fn refresh(
     .await
 }
 
-/// Decode a JWT's `exp` claim (seconds). `None` for anything unparseable.
+/// Decode a JWT's `exp` claim (seconds). `None` for anything unparsable.
 pub fn jwt_expiry(jwt: &str) -> Option<i64> {
     let mut segments = jwt.split('.');
     let (_, payload, _) = (segments.next()?, segments.next()?, segments.next()?);
@@ -260,7 +260,7 @@ pub fn jwt_expiry(jwt: &str) -> Option<i64> {
     claims.get("exp")?.as_f64().map(|exp| exp as i64)
 }
 
-/// Expired (or inside the early-refresh margin). Unparseable tokens read as
+/// Expired (or inside the early-refresh margin). Unparsable tokens read as
 /// NOT expired — the server is the arbiter.
 pub fn jwt_expired(jwt: &str, now_secs: i64) -> bool {
     jwt_expiry(jwt).is_some_and(|exp| now_secs > exp - EARLY_REFRESH_SECS)

@@ -8,7 +8,13 @@
 //! full packet fails to send (EMSGSIZE) and is retried forever: the ordered
 //! channel stalls behind it, and nothing on the link gets through. Letting
 //! the kernel fragment those packets restores what a plain UDP socket does.
-use std::{fmt, future::Future, io, net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
+use std::future::Future;
+use std::net::SocketAddr;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
+use std::{fmt, io};
+
 use webrtc::runtime::{
     AsyncInterval, AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket, JoinHandle, Runtime,
     TokioRuntime,
@@ -31,6 +37,7 @@ impl Runtime for Fragmenting {
     fn spawn(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) -> Box<dyn JoinHandle> {
         self.0.spawn(future)
     }
+
     fn spawn_reactor(
         &self,
         reactor_pool_size: usize,
@@ -38,6 +45,7 @@ impl Runtime for Fragmenting {
     ) -> Box<dyn JoinHandle> {
         self.0.spawn_reactor(reactor_pool_size, future)
     }
+
     fn wrap_udp_socket(&self, socket: std::net::UdpSocket) -> io::Result<Arc<dyn AsyncUdpSocket>> {
         // Options belong to the socket, not the descriptor: a duplicate lets
         // us undo quinn-udp's after it has set them.
@@ -46,36 +54,44 @@ impl Runtime for Fragmenting {
         allow_fragmentation(&duplicate);
         Ok(wrapped)
     }
+
     fn wrap_tcp_listener(
         &self,
         listener: std::net::TcpListener,
     ) -> io::Result<Arc<dyn AsyncTcpListener>> {
         self.0.wrap_tcp_listener(listener)
     }
+
     fn connect_tcp<'a>(
         &'a self,
         remote_addr: SocketAddr,
     ) -> Pin<Box<dyn Future<Output = io::Result<Arc<dyn AsyncTcpStream>>> + Send + 'a>> {
         self.0.connect_tcp(remote_addr)
     }
+
     fn resolve_host<'a>(
         &'a self,
         host: &'a str,
     ) -> Pin<Box<dyn Future<Output = io::Result<Vec<SocketAddr>>> + Send + 'a>> {
         self.0.resolve_host(host)
     }
+
     fn sleep(&self, duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         self.0.sleep(duration)
     }
+
     fn interval(&self, period: Duration) -> Box<dyn AsyncInterval> {
         self.0.interval(period)
     }
+
     fn block_on(&self, future: Pin<Box<dyn Future<Output = ()> + '_>>) {
         self.0.block_on(future)
     }
+
     fn yield_now(&self) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         self.0.yield_now()
     }
+
     fn name(&self) -> &'static str {
         self.0.name()
     }

@@ -7,8 +7,9 @@
 //! `contains_pointer` from a window mouse listener to dismiss outside the safe
 //! trigger → child corridor. This works for children on either side.
 
-use gpui::{Bounds, Context, Pixels, Point, Task, px};
 use std::time::Duration;
+
+use gpui::{Bounds, Context, Pixels, Point, Task, px};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum HoverAction {
@@ -174,8 +175,9 @@ fn corridor(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::{point, size};
+
+    use super::*;
 
     #[test]
     fn diagonal_travel_renews_grace_but_reversing_switches_on_either_side() {

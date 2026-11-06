@@ -13,7 +13,6 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-
 use onicode_doc::{
     MessageRole, MessageStatus, SessionCommandPayload, SessionCommandStatus, SessionMessageEntry,
 };
@@ -33,21 +32,27 @@ impl Harness for AckHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Ack"
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,

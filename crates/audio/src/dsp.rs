@@ -15,6 +15,7 @@ impl Resampler {
             },
         )
     }
+
     pub fn push(&mut self, sample: f32, output: &mut Vec<f32>) {
         let sample = if sample.is_finite() {
             sample.clamp(-1.0, 1.0)

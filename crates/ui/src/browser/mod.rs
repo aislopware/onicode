@@ -11,11 +11,12 @@ pub mod model;
 pub(crate) mod profile;
 mod view;
 
-use crate::composer::{ComposerInput, ComposerInputEvent};
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, Subscription, Window,
 };
 use model::{PageState, Presentation};
+
+use crate::composer::{ComposerInput, ComposerInputEvent};
 gpui::actions!(
     browser,
     [Reload, FocusAddress, NewTab, CloseTab, Back, Forward]
@@ -290,9 +291,11 @@ impl BrowserSurface {
     pub fn title(&self) -> gpui::SharedString {
         self.page.label().into()
     }
+
     pub fn set_remote(&mut self, remote: bool) {
         self.remote = remote;
     }
+
     pub fn set_shortcuts(&mut self, keymap: &crate::settings::KeymapConfig) {
         #[cfg(target_os = "macos")]
         if let Some(native) = &self.native {
@@ -354,6 +357,7 @@ impl BrowserSurface {
     pub fn fixture_previews(&self) -> onicode_proto::PreviewSnapshot {
         self.previews.clone()
     }
+
     #[cfg(feature = "browser-fixture")]
     pub fn fixture_preview_open_position(&self) -> Option<gpui::Point<gpui::Pixels>> {
         self.fixture_preview_open.get()
@@ -917,38 +921,47 @@ impl BrowserSurface {
     pub fn fixture_history(&mut self, forward: bool) {
         self.history(forward);
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_move_cursor(&self, x: f64, y: f64) {
         self.native.as_ref().unwrap().fixture_move_cursor(x, y);
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_origin(&self) -> (f32, f32) {
         self.native.as_ref().unwrap().fixture_origin()
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_overlay_visible(&self) -> bool {
         self.native.as_ref().unwrap().fixture_overlay_visible()
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_visibility_changes(&self) -> u64 {
         self.native.as_ref().unwrap().fixture_visibility_changes()
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_focus(&self) {
         self.native.as_ref().unwrap().fixture_focus();
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_focused(&self) -> bool {
         self.native.as_ref().unwrap().fixture_focused()
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_overlay_at(&self, x: f64, y: f64) -> bool {
         self.native.as_ref().unwrap().fixture_overlay_at(x, y)
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_click(&self, x: f64, y: f64) {
         self.native.as_ref().unwrap().fixture_click(x, y);
     }
+
     pub fn fixture_native_visible(&self) -> bool {
         #[cfg(target_os = "macos")]
         {
@@ -966,22 +979,27 @@ impl BrowserSurface {
             false
         }
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_backdrop_layers(&self) -> String {
         self.native.as_ref().unwrap().fixture_backdrop_layers()
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_page_hit(&self, x: f64, y: f64) -> bool {
         self.native.as_ref().unwrap().fixture_page_hit(x, y)
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_backdrops(&self) -> Vec<(f64, f64, f64, f64)> {
         self.native.as_ref().unwrap().fixture_backdrops()
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_geometry(&self) -> (f32, f32, f32) {
         self.native.as_ref().unwrap().fixture_geometry()
     }
+
     #[cfg(target_os = "macos")]
     pub fn fixture_cookies(&self, completion: impl FnOnce(Vec<String>) + 'static) {
         self.native

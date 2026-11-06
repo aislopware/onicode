@@ -6,24 +6,21 @@ pub use onicode_term_link::remote::*;
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::*;
-    use base64::Engine as _;
-    use std::sync::atomic::AtomicBool;
-
-    use onicode_term_link::remote::TerminalPath;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use async_trait::async_trait;
+    use base64::Engine as _;
     use futures::StreamExt;
     use futures::stream::BoxStream;
     use onicode_preview::mux::BoxIo;
     use onicode_proto::TerminalEvent;
     use onicode_rpc::{RpcError, methods};
+    use onicode_term_link::remote::TerminalPath;
 
-    use crate::terminals::Terminals;
-    use crate::terminals::link;
+    use super::*;
+    use crate::terminals::{Terminals, link};
 
     fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         mutex
@@ -55,10 +52,12 @@ mod tests {
                 black_hole: AtomicBool::new(false),
             })
         }
+
         fn set_direct(&self, up: bool) {
             self.direct_up.store(up, Ordering::SeqCst);
             self.changed.notify_waiters();
         }
+
         /// Sever every live direct link (a network change mid-session).
         fn cut_links(&self) {
             for link in lock(&self.links).drain(..) {
@@ -72,6 +71,7 @@ mod tests {
         async fn ready(&self, _device: &str) -> bool {
             self.direct_up.load(Ordering::SeqCst)
         }
+
         async fn open(&self, _device: &str, service: &str) -> anyhow::Result<BoxIo> {
             // Pairing: wait until the path exists.
             loop {
@@ -133,6 +133,7 @@ mod tests {
             }
             Ok(serde_json::json!({ "ok": true }))
         }
+
         async fn subscribe(
             &self,
             _target: &str,
@@ -191,6 +192,7 @@ mod tests {
                 text: String::new(),
             }
         }
+
         fn type_line(&self, line: &str) {
             let relay: Arc<dyn Relay> = self.host.clone();
             self.hub
@@ -202,6 +204,7 @@ mod tests {
                 )
                 .unwrap();
         }
+
         async fn until(&mut self, needle: &str) {
             tokio::time::timeout(Duration::from_secs(15), async {
                 while !self.text.contains(needle) {
@@ -222,6 +225,7 @@ mod tests {
             .await
             .unwrap_or_else(|_| panic!("never saw {needle:?}; saw {:?}", self.text));
         }
+
         fn assert_contiguous(&self) {
             for pair in self.seqs.windows(2) {
                 assert_eq!(pair[1], pair[0] + 1, "gap or repeat in {:?}", self.seqs);
@@ -353,9 +357,11 @@ mod tests {
         async fn ready(&self, device: &str) -> bool {
             self.peers.ready(device).await.is_some()
         }
+
         async fn open(&self, device: &str, service: &str) -> anyhow::Result<BoxIo> {
             Ok(Box::new(self.peers.open(device, service, false).await?))
         }
+
         async fn changed(&self) {
             let mut changes = self.changes.subscribe();
             let _ = changes.changed().await;

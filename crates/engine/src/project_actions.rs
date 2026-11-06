@@ -605,8 +605,9 @@ fn project_file_issue(message: String) -> (Vec<ProjectActionDraft>, Option<Strin
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     fn draft(name: &str, command: &str) -> ProjectActionDraft {
         ProjectActionDraft {
@@ -972,7 +973,9 @@ mod tests {
     fn project_file_special_files_do_not_block() {
         const CHILD_ENV: &str = "ONICODE_TEST_PROJECT_FILE_SPECIAL_FILES";
         if std::env::var_os(CHILD_ENV).is_some() {
-            use std::os::unix::{ffi::OsStrExt, fs::symlink, net::UnixListener};
+            use std::os::unix::ffi::OsStrExt;
+            use std::os::unix::fs::symlink;
+            use std::os::unix::net::UnixListener;
             let (_temp, store_root, project_root) = roots();
             let store = ProjectActionsStore::open(&store_root).unwrap();
             let path = project_root.join(PROJECT_FILE);

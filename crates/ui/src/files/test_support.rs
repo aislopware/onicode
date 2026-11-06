@@ -1,6 +1,7 @@
-use super::*;
 use gpui::{AppContext, TestAppContext, VisualTestContext};
 use onicode_proto::{WorkspaceDirectoryPage, WorkspaceEntry, WorkspaceEntryKind};
+
+use super::*;
 
 pub(crate) fn state() -> AppState {
     let mut state = AppState::new();

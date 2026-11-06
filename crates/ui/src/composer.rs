@@ -13,23 +13,23 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use gpui::prelude::*;
 use gpui::{
     AnyTooltip, App, BorderStyle, Bounds, ClipboardEntry, ClipboardItem, Context, CursorStyle,
     DispatchPhase, ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle,
     Focusable, GlobalElementId, KeyBinding, KeyDownEvent, KeyUpEvent, Keystroke, LayoutId,
     ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit,
     PaintQuad, PathPromptOptions, Pixels, Point, Role, ScrollWheelEvent, SharedString, Style,
-    StyledImage as _, Subscription, Task, TextRun, TextStyle, UTF16Selection, UnderlineStyle,
-    Window, WrappedLine, actions, div, fill, img, point, prelude::*, px, quad, relative, size,
+    Subscription, Task, TextRun, TextStyle, UTF16Selection, UnderlineStyle, Window, WrappedLine,
+    actions, div, fill, img, point, px, quad, relative, size,
 };
-use unicode_segmentation::UnicodeSegmentation;
-
 use onicode_doc::{MessagePart, MessageRole, SessionCommandPayload, SessionMessageEntry};
 use onicode_proto::{
     FileSearchMatch, HarnessId, RunRequest, SandboxLevel, SlashCommand, UserInputAnswer,
     UserInputQuestion, capabilities,
 };
 use onicode_rpc::{RpcError, methods};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::appshots::{self, CapturedAppshot};
 use crate::attachments::{self, StagedAttachment};
@@ -133,8 +133,8 @@ pub const RESIZE_SETTLE_MS: u64 = 150;
 /// - a newline always expands;
 /// - while `resizing`, an expanded composer stays expanded until sizes settle;
 /// - a too-narrow pill (`capacity < MIN_COMPACT_INPUT_WIDTH`) always expands;
-/// - compact expands only when `text_width > capacity`; expanded collapses
-///   only when `text_width < capacity - COLLAPSE_HYSTERESIS`.
+/// - compact expands only when `text_width > capacity`; expanded collapses only when `text_width <
+///   capacity - COLLAPSE_HYSTERESIS`.
 pub fn composer_flip(
     expanded: bool,
     text_width: f32,
@@ -3102,7 +3102,7 @@ impl ComposerInput {
             cx.propagate();
             return;
         }
-        // Mirror `apply_keymap`, which binds the default for an unparseable
+        // Mirror `apply_keymap`, which binds the default for an unparsable
         // combo, on the key the active layout types for it.
         let equivalents = crate::settings::key_equivalents(cx);
         let parse = |combo: &str| {
@@ -5154,14 +5154,15 @@ struct ComposerTextPrepaint {
 
 impl IntoElement for ComposerTextElement {
     type Element = Self;
+
     fn into_element(self) -> Self {
         self
     }
 }
 
 impl gpui::Element for ComposerTextElement {
-    type RequestLayoutState = ();
     type PrepaintState = ComposerTextPrepaint;
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<gpui::ElementId> {
         None
@@ -10761,7 +10762,8 @@ impl Composer {
         frame: Option<&VoiceFrame>,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
-        use crate::dictation::{Phase, glass, waveform::Mode};
+        use crate::dictation::waveform::Mode;
+        use crate::dictation::{Phase, glass};
         if !crate::dictation::enabled(cx) || self.wizard.is_some() {
             return None;
         }
@@ -11010,7 +11012,8 @@ impl Composer {
     /// Advances the dictation morph. Returns its eased progress and the frame
     /// to draw: live while dictating, the last live frame while retracting.
     fn update_voice(&mut self, window: &mut Window, cx: &App) -> (f32, Option<VoiceFrame>) {
-        use crate::dictation::{Phase, waveform::Mode};
+        use crate::dictation::Phase;
+        use crate::dictation::waveform::Mode;
         let now = Instant::now();
         let reduced = motion::reduced_motion(cx);
         let dictation = &self.input.read(cx).dictation;
@@ -11217,7 +11220,7 @@ pub(crate) fn send_circle(
 
 /// The completion popups' floating rails run through
 /// [`crate::popover::rail`]: the shared `popup_bar` state plus whichever
-/// popup's rows are mounted — see [`Composer::active_popup_scroll`].
+/// popup's rows are mounted — see `Composer::active_popup_scroll`.
 impl crate::popover::ScrollRailHost for Composer {
     fn rail_bar(&mut self) -> &mut crate::popover::MenuScrollbarState {
         &mut self.popup_bar
@@ -12352,7 +12355,7 @@ mod tests {
             cx.simulate_keystrokes(handle.into(), "shift-backspace");
             handle
                 .update(cx, |input, _, cx| {
-                    assert_eq!(input.text(), "caf", "{context}");
+                    assert_eq!(input.text(), "caf", "{context}"); // spellchecker:disable-line
                     input.set_text("hello world", cx);
                     input.move_to(6, cx);
                     input.extend_selection(11, cx);
@@ -17279,8 +17282,9 @@ mod tests {
 
 #[cfg(test)]
 mod appshot_rebase_tests {
-    use super::*;
     use gpui::{AppContext, TestAppContext};
+
+    use super::*;
 
     #[gpui::test]
     fn appshot_only_draft_counts_as_content_and_removal_clears_it(cx: &mut TestAppContext) {
@@ -17357,6 +17361,7 @@ impl Composer {
         self.appshots.clear();
         cx.notify();
     }
+
     /// A typed draft, as the input holds it.
     pub fn fixture_draft(&mut self, text: &str, cx: &mut Context<Self>) {
         self.input.update(cx, |input, cx| input.set_text(text, cx));

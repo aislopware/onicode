@@ -832,7 +832,7 @@ impl ToolCall {
 /// a new adapter naming it any of these needs no code change here.
 pub const SUBAGENT_MODEL_KEYS: [&str; 4] = ["model", "modelId", "model_id", "subagent_model"];
 
-/// The spawn-input keys [`sanitize_tool_call`](crate::) must preserve so the
+/// The spawn-input keys `sanitize_tool_call` must preserve so the
 /// chip can name the child's model. Deliberately tiny: everything else on a
 /// spawn's input (the whole prompt, most of all) stays host-local.
 pub const SUBAGENT_INPUT_KEEP: [&str; 5] = [
@@ -1443,8 +1443,9 @@ mod generated_image_tests {
 
 #[cfg(test)]
 mod todo_item_tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn legacy_items_without_status_derive_from_done() {

@@ -3456,7 +3456,7 @@ fn prompt_message_ids_sort_like_the_servers() {
         .unwrap()
         .as_millis() as u64;
     let stamp = u64::from_str_radix(&ids[63][4..16], 16).unwrap();
-    assert!((stamp >> 12).abs_diff(now & 0xF_FFFF_FFFF) < 10_000);
+    assert!((stamp >> 12).abs_diff(now & 0xf_ffff_ffff) < 10_000);
 }
 
 /// The bus never replays: requests asked while it reconnected are listed

@@ -1,15 +1,15 @@
 //! Production ChatClient + Loro + SQLite against an explicit test edge.
 //! Run through scripts/transport-proxy.py for controlled network conditions.
 //! Usage: transport_live <proxy-base> <cloudflare-origin> <stream|outage|http|catchup|upload>
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering::Relaxed;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
 use futures::future::BoxFuture;
 use loro::{ExportMode, LoroDoc, VersionVector};
 use onicode_sync::chat_client::{ChatTransport, RowImportOutcome};
 use onicode_sync::{ChatClient, ChatDocSink, CheckpointFetcher, DocsStore, StaticUrl, SyncError};
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicU64, Ordering::Relaxed},
-};
-use std::time::{Duration, Instant};
 
 struct Sink {
     doc: Mutex<LoroDoc>,
@@ -31,6 +31,7 @@ impl Sink {
             arrivals: Mutex::new(vec![]),
         }
     }
+
     fn append(&self, text: &str) -> Vec<u8> {
         let doc = self.doc.lock().unwrap();
         let before = doc.oplog_vv();
@@ -42,6 +43,7 @@ impl Sink {
             .unwrap();
         doc.export(ExportMode::updates(&before)).unwrap()
     }
+
     fn text(&self) -> String {
         self.doc.lock().unwrap().get_text("text").to_string()
     }
@@ -52,16 +54,19 @@ impl ChatDocSink for Sink {
             .pending_chat_updates("live")
             .map_err(|e| e.to_string())
     }
+
     fn persist_update(&self, id: &str, bytes: &[u8]) -> Result<(), String> {
         self.store
             .enqueue_chat_update("live", id, bytes)
             .map_err(|e| e.to_string())
     }
+
     fn acknowledge_update(&self, id: &str) -> Result<(), String> {
         self.store
             .acknowledge_chat_update("live", id)
             .map_err(|e| e.to_string())
     }
+
     fn apply_row(&self, bytes: &[u8], cursor: u64) -> RowImportOutcome {
         let doc = self.doc.lock().unwrap();
         if doc.import(bytes).unwrap().pending.is_some() {
@@ -79,14 +84,17 @@ impl ChatDocSink for Sink {
         self.arrivals.lock().unwrap().push((cursor, Instant::now()));
         RowImportOutcome::Applied
     }
+
     fn apply_checkpoint(&self, bytes: &[u8], cursor: u64) -> Result<(), String> {
         self.apply_row(bytes, cursor);
         Ok(())
     }
+
     fn contains_frontier(&self, bytes: &[u8]) -> bool {
         VersionVector::decode(bytes)
             .is_ok_and(|v| self.doc.lock().unwrap().oplog_vv().includes_vv(&v))
     }
+
     fn advance_cursor(&self, cursor: u64) {
         self.cursor.store(cursor, Relaxed);
     }
@@ -134,6 +142,7 @@ impl ChatTransport for Http {
                 .await
         })
     }
+
     fn push(&self, id: String, bytes: Vec<u8>) -> BoxFuture<'static, Result<String, SyncError>> {
         let this = self.clone();
         Box::pin(async move {

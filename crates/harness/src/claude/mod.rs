@@ -3,61 +3,50 @@
 //! from the pre-ACP driver (see docs/research/harness.md) and modernized
 //! against CLI 2.1.228.
 //!
-//! - stdout JSONL frames are normalized into [`AgentEvent`]s (init dedupe,
-//!   subagent tagging, typed tool decoding, error-code mapping).
-//! - PERMISSIONS ride the stdio control channel: `--permission-prompt-tool
-//!   stdio` (undocumented — absent from `claude --help`, but it is the same
-//!   transport the Claude Agent SDK's `query()` drives, and was re-validated
-//!   live against 2.1.228: `can_use_tool` control requests arrive and
-//!   allow/deny responses are honored). The alternative channel — an MCP
-//!   permission tool — needs a server process and was rejected. The run's
-//!   access mode decides what is asked: full access allows every tool call
-//!   (as every run did before modes), auto-accept edits allows the edit
-//!   tools and asks before the rest, supervised asks before each; a
-//!   question through [`RunControls::request_input`]. `AskUserQuestion`
-//!   round-trips through it too.
-//! - ACCESS AND PLAN MODES map onto the CLI's `--permission-mode`
-//!   ([`permission_mode`]) and change on the live process with
-//!   `set_permission_mode`. Plan mode ends when the person approves
-//!   `ExitPlanMode`; the run then continues in its access mode, and the next
-//!   turn returns to plan mode while the chat is still in it.
-//! - DONE is the CLI's own `result` frame, eagerly: background work (a
-//!   spawned subagent) never holds the turn. The CLI natively runs a second
-//!   wake turn when a background task finishes — a fresh `init` (same
-//!   session id, deduped) plus another `result` — and both are forwarded;
-//!   the engine's parked-session resume path turns them into the
-//!   done→Working→done wake.
-//! - SUBAGENT frames arrive on the same stdout tagged with a top-level
-//!   `parent_tool_use_id`; they are wrapped in [`AgentEvent::Subagent`] and
-//!   NEVER folded into the parent feed (a background subagent interleaves
-//!   with the parent's own stream — folding them in split contiguous text
+//! - stdout JSONL frames are normalized into [`AgentEvent`]s (init dedupe, subagent tagging, typed
+//!   tool decoding, error-code mapping).
+//! - PERMISSIONS ride the stdio control channel: `--permission-prompt-tool stdio` (undocumented —
+//!   absent from `claude --help`, but it is the same transport the Claude Agent SDK's `query()`
+//!   drives, and was re-validated live against 2.1.228: `can_use_tool` control requests arrive and
+//!   allow/deny responses are honored). The alternative channel — an MCP permission tool — needs a
+//!   server process and was rejected. The run's access mode decides what is asked: full access
+//!   allows every tool call (as every run did before modes), auto-accept edits allows the edit
+//!   tools and asks before the rest, supervised asks before each; a question through
+//!   [`RunControls::request_input`]. `AskUserQuestion` round-trips through it too.
+//! - ACCESS AND PLAN MODES map onto the CLI's `--permission-mode` (`permission_mode`) and change on
+//!   the live process with `set_permission_mode`. Plan mode ends when the person approves
+//!   `ExitPlanMode`; the run then continues in its access mode, and the next turn returns to plan
+//!   mode while the chat is still in it.
+//! - DONE is the CLI's own `result` frame, eagerly: background work (a spawned subagent) never
+//!   holds the turn. The CLI natively runs a second wake turn when a background task finishes — a
+//!   fresh `init` (same session id, deduped) plus another `result` — and both are forwarded; the
+//!   engine's parked-session resume path turns them into the done→Working→done wake.
+//! - SUBAGENT frames arrive on the same stdout tagged with a top-level `parent_tool_use_id`; they
+//!   are wrapped in [`AgentEvent::Subagent`] and NEVER folded into the parent feed (a background
+//!   subagent interleaves with the parent's own stream — folding them in split contiguous text
 //!   around phantom tool calls).
-//! - A `result` that is not a turn's end: every stdin user line carries a
-//!   uuid, and the CLI reports each one's `command_lifecycle`. A result
-//!   while one of ours is still written/queued is a boundary (a `now` steer
-//!   aborting the turn, resume settling dead background tasks) — that
-//!   message's turn ends with its own result. See [`Commands`]. A CLI that
-//!   reports `session_state_changed` also says which messages a result
-//!   consumed, whether more turns are queued, and when it is `idle`: those
-//!   settle every held result and stop, and no quiet-time timer runs.
-//! - APPROVALS offer allow once / for this chat / always (the CLI's own
-//!   `permission_suggestions`), deny with a note, and stop; a
-//!   `control_cancel_request` closes the card. See [`approvals`].
-//! - The CLI's version gates flags it may not know ([`features`]); a
-//!   session another live process writes is not resumed beside it
-//!   ([`live_session`]); a branch resumes part of a session ([`branch`]).
-//! - Steering: queued [`SteerMessage`]s are written to stdin as user lines at
-//!   any time; the CLI folds them into the running turn at its own step
-//!   boundary. A steer's changed model/effort/options apply to the live
-//!   process first (`set_model`, `apply_flag_settings`) — never a restart.
-//! - Turn stop ([`crate::TurnControl::stop_turn`]): the `interrupt` control
-//!   request with `cancel_queued` ends the turn and the CLI keeps reading
-//!   stdin. The run opens with an `initialize` declaring
-//!   `perTaskStopAffordance`, which makes that interrupt spare background
-//!   agents (the CLI otherwise stops them all); background shells survive
-//!   either way. `background_tasks_changed` reports the live set to the host.
-//! - Interrupt: cancelling [`RunControls::interrupt`] tears the runtime down —
-//!   the interrupt control request, then SIGTERM and SIGKILL.
+//! - A `result` that is not a turn's end: every stdin user line carries a uuid, and the CLI reports
+//!   each one's `command_lifecycle`. A result while one of ours is still written/queued is a
+//!   boundary (a `now` steer aborting the turn, resume settling dead background tasks) — that
+//!   message's turn ends with its own result. See `Commands`. A CLI that reports
+//!   `session_state_changed` also says which messages a result consumed, whether more turns are
+//!   queued, and when it is `idle`: those settle every held result and stop, and no quiet-time
+//!   timer runs.
+//! - APPROVALS offer allow once / for this chat / always (the CLI's own `permission_suggestions`),
+//!   deny with a note, and stop; a `control_cancel_request` closes the card. See `approvals`.
+//! - The CLI's version gates flags it may not know (`features`); a session another live process
+//!   writes is not resumed beside it (`live_session`); a branch resumes part of a session
+//!   (`branch`).
+//! - Steering: queued `SteerMessage`s are written to stdin as user lines at any time; the CLI folds
+//!   them into the running turn at its own step boundary. A steer's changed model/effort/options
+//!   apply to the live process first (`set_model`, `apply_flag_settings`) — never a restart.
+//! - Turn stop ([`crate::TurnControl::stop_turn`]): the `interrupt` control request with
+//!   `cancel_queued` ends the turn and the CLI keeps reading stdin. The run opens with an
+//!   `initialize` declaring `perTaskStopAffordance`, which makes that interrupt spare background
+//!   agents (the CLI otherwise stops them all); background shells survive either way.
+//!   `background_tasks_changed` reports the live set to the host.
+//! - Interrupt: cancelling [`RunControls::interrupt`] tears the runtime down — the interrupt
+//!   control request, then SIGTERM and SIGKILL.
 
 mod approvals;
 mod background;
@@ -76,28 +65,27 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use catalog::{apply_ultrathink, to_effort};
+use features::Feature;
+use fork_tail::ForkTail;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-use serde_json::Value;
-use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc;
-
+use normalize::{Normalizer, Transcript};
 use onicode_proto::{
     AccessMode, AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SlashCommand,
     SteeringMode, UserInputAnswer, UserInputQuestion,
+};
+use serde_json::Value;
+use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc;
+use wire::{
+    ControlRequestFrame, Frame, Origin, allow_response, control_error_line, control_response_line,
+    deny_response,
 };
 
 use crate::process::owned::Child;
 use crate::process::{ChildStdin, Command, Stdio};
 use crate::{Branch, ControlQuery, Harness, HarnessError, RunControls, Signal, send_signal};
-use catalog::{apply_ultrathink, to_effort};
-use features::Feature;
-use fork_tail::ForkTail;
-use normalize::{Normalizer, Transcript};
-use wire::{
-    ControlRequestFrame, Frame, Origin, allow_response, control_error_line, control_response_line,
-    deny_response,
-};
 
 /// Locate the device's installed Claude Code CLI: our own PATH, then the
 /// login-shell PATH snapshot (the user's shell init shapes PATH in ways a
@@ -717,15 +705,19 @@ impl Harness for ClaudeHarness {
     fn id(&self) -> HarnessId {
         HarnessId::ClaudeCode
     }
+
     fn display_name(&self) -> &str {
         "Claude Code"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[
             ReasoningLevel::Low,
@@ -735,24 +727,29 @@ impl Harness for ClaudeHarness {
             ReasoningLevel::Max,
         ]
     }
+
     fn installed(&self) -> bool {
         // The launch resolver, not bare discovery: a valid CLAUDE_CODE_EXECUTABLE
         // (or a test `executable`) must report installed, and an invalid one
         // must not — availability and launches share one resolution.
         self.resolve_executable().is_ok()
     }
+
     fn executable_path(&self) -> Option<PathBuf> {
         self.resolve_executable().ok()
     }
+
     /// Done is the CLI's own terminal frame, for wake turns too.
     fn deterministic_turn_end(&self) -> bool {
         true
     }
+
     /// The `interrupt` control request ends the turn and the CLI keeps
     /// reading stdin; background agents and shells run on.
     fn stops_turn_in_place(&self) -> bool {
         true
     }
+
     /// Same launch arguments, cwd and access. The CLI ignores the sandbox
     /// level, and option spellings that launch the same flags are the same
     /// runtime; supervised and full access without `auto_approve` launch
@@ -762,6 +759,7 @@ impl Harness for ClaudeHarness {
             && Self::launch_args(live) == Self::launch_args(next)
             && access(live) == access(next)
     }
+
     /// Model, context window, effort, fast mode, thinking, ultracode, the
     /// access mode and plan mode all change on the live process
     /// (`set_model`, `apply_flag_settings`, `set_permission_mode`). The
@@ -774,9 +772,11 @@ impl Harness for ClaudeHarness {
             && live.auto_approve == next.auto_approve
             && strictness(permission_mode(next)) <= strictness(permission_mode(live))
     }
+
     fn access_modes(&self) -> &[AccessMode] {
         &AccessMode::ALL
     }
+
     /// The CLI's own plan mode; approving `ExitPlanMode` ends it.
     fn supports_plan(&self) -> bool {
         true
@@ -786,9 +786,11 @@ impl Harness for ClaudeHarness {
     fn model_context(&self) -> Result<Option<crate::ModelContext>, HarnessError> {
         crate::model_context::context(self.id(), &self.resolve_executable()?, &[]).map(Some)
     }
+
     fn fallback_models(&self) -> Vec<Model> {
         catalog::configured_models()
     }
+
     async fn model_catalog(&self, force: bool) -> Result<crate::ModelCatalog, HarnessError> {
         self.model_context()?.unwrap().log();
         self.models_cache
@@ -803,6 +805,7 @@ impl Harness for ClaudeHarness {
             )
             .await
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         self.resolve_executable()?;
         match self.model_catalog(false).await {
@@ -1636,7 +1639,7 @@ async fn run_session(session: Session) {
                     let frame = match wire::parse_frame(line) {
                         Ok(frame) => frame,
                         Err(e) => {
-                            tracing::debug!(target: "onicode_harness::claude", "unparseable frame (skipped): {e}");
+                            tracing::debug!(target: "onicode_harness::claude", "unparsable frame (skipped): {e}");
                             continue;
                         }
                     };
@@ -2378,13 +2381,13 @@ enum CommandState {
 }
 
 impl Commands {
-    /// Without lifecycle reports, how long a held result waits in silence
-    /// for the replay that supersedes it.
-    const UNREPORTED_SETTLE: Duration = Duration::from_secs(5);
     /// A lifecycle-reporting CLI acknowledges a message as soon as it reads
     /// it. A hold resting only on unacknowledged messages is a safety net
     /// against a message the CLI never reports, not a timing guess.
     const UNACKNOWLEDGED_SETTLE: Duration = Duration::from_secs(30);
+    /// Without lifecycle reports, how long a held result waits in silence
+    /// for the replay that supersedes it.
+    const UNREPORTED_SETTLE: Duration = Duration::from_secs(5);
 
     fn written(&mut self, id: String) {
         self.open.insert(id, CommandState::Written);
@@ -2666,8 +2669,9 @@ fn updated_input_with_answers(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn probe_timeout_says_what_the_cli_printed_without_its_secrets() {
@@ -2914,8 +2918,9 @@ mod tests {
 
 #[cfg(test)]
 mod access_tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     fn request(access: AccessMode, auto_approve: bool, plan: bool) -> RunRequest {
         RunRequest {

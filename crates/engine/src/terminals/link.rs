@@ -14,6 +14,7 @@ impl HostTerminals for Terminals {
     ) -> Result<tokio::sync::mpsc::UnboundedReceiver<onicode_proto::TerminalEvent>, String> {
         Terminals::subscribe(self, terminal_id, Some(after_seq)).map_err(|e| e.to_string())
     }
+
     fn write_sequenced(
         &self,
         terminal_id: &str,
@@ -23,6 +24,7 @@ impl HostTerminals for Terminals {
     ) -> Result<bool, String> {
         Terminals::write_sequenced(self, terminal_id, client, seq, bytes).map_err(|e| e.to_string())
     }
+
     fn resize(&self, terminal_id: &str, cols: u16, rows: u16) -> Result<(), String> {
         Terminals::resize(self, terminal_id, cols, rows).map_err(|e| e.to_string())
     }
@@ -53,6 +55,7 @@ impl onicode_preview::mux::Connector for Service {
     async fn connect(&self, service: &str) -> anyhow::Result<onicode_preview::mux::BoxIo> {
         self.connect_from(None, service).await
     }
+
     async fn connect_from(
         &self,
         peer: Option<&str>,
@@ -75,11 +78,13 @@ impl onicode_preview::mux::Connector for Service {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::*;
+    use std::time::Duration;
+
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
     use onicode_proto::TerminalEvent;
-    use std::time::Duration;
+
+    use super::*;
 
     fn text(events: &[TerminalEvent]) -> String {
         let mut out = Vec::new();

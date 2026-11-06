@@ -1,8 +1,12 @@
-use super::{normalize::string, rpc::Client};
+use std::sync::{Arc, Mutex, PoisonError};
+
 use onicode_proto::{UserInputAnswer, UserInputQuestion};
 use serde_json::{Value, json};
-use std::sync::{Arc, Mutex, PoisonError};
-use tokio::{sync::oneshot, task::JoinSet};
+use tokio::sync::oneshot;
+use tokio::task::JoinSet;
+
+use super::normalize::string;
+use super::rpc::Client;
 pub(super) type Input =
     dyn Fn(Vec<UserInputQuestion>) -> oneshot::Receiver<Vec<UserInputAnswer>> + Send + Sync;
 #[derive(Default)]
@@ -97,6 +101,7 @@ impl Dialogs {
             }
         });
     }
+
     /// Close every open dialog. The process may live on (a turn ended, an
     /// interrupt), and an extension awaiting its dialog would wait forever,
     /// so each is answered `cancelled` first.
@@ -106,6 +111,7 @@ impl Dialogs {
             let _ = client.send(json!({"type":"extension_ui_response","id":id,"cancelled":true}));
         }
     }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Value>> {
         self.open.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -113,8 +119,9 @@ impl Dialogs {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tokio::io::{AsyncBufReadExt, BufReader};
+
+    use super::*;
 
     #[tokio::test]
     async fn timeout_cancels_instead_of_selecting_and_drops_the_input_receiver() {

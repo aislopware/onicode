@@ -709,8 +709,8 @@ impl Origin {
     }
 }
 
-/// [`steer_message_line`] carrying inline images ahead of the text, in the
-/// same block shape as [`user_message_line_with_images`].
+/// `steer_message_line` carrying inline images ahead of the text, in the
+/// same block shape as `user_message_line_with_images`.
 pub(crate) fn steer_message_line_with_images(
     text: &str,
     id: &str,
@@ -743,7 +743,7 @@ pub(crate) struct ImageBlock {
 /// content blocks in user frames). Empty `images` degrades to the plain line.
 /// The run's opening prompt, tagged with `id` so its `command_lifecycle`
 /// frames can be told apart from a steer's. Images precede the text, as in
-/// [`user_message_line_with_images`].
+/// `user_message_line_with_images`.
 pub(crate) fn prompt_line(text: &str, id: &str, origin: Origin, images: &[ImageBlock]) -> String {
     let content = if images.is_empty() {
         Value::String(text.to_owned())

@@ -9,7 +9,8 @@ use onicode_proto::{
     WriteWorkspaceFileRequest,
 };
 use onicode_rpc::{RpcError, methods};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -357,7 +358,8 @@ pub fn request_params<Request: Serialize>(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Mutex};
+    use std::collections::HashMap;
+    use std::sync::Mutex;
 
     use super::*;
 
@@ -833,6 +835,7 @@ mod tests {
                 .pop_front()
                 .expect("unexpected extra request")
         }
+
         async fn subscribe(&self, _: &str, _: Value) -> Result<mpsc::Receiver<Value>, RpcError> {
             unreachable!()
         }

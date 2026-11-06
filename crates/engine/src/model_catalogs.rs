@@ -1,14 +1,13 @@
 //! Persist only successful live catalogs, partitioned by credential/binary context.
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use onicode_harness::{
     CatalogFailure, CatalogFailureCode, Harness, HarnessError, ModelCatalog, ModelContext,
 };
 use onicode_proto::Model;
 use serde::{Deserialize, Serialize};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
 
 #[derive(Serialize, Deserialize)]
 struct Saved {
@@ -253,29 +252,37 @@ mod tests {
         fn id(&self) -> onicode_proto::HarnessId {
             self.harness
         }
+
         fn display_name(&self) -> &str {
             "Fixture"
         }
+
         fn supports_steering(&self) -> bool {
             false
         }
+
         fn steering_mode(&self) -> onicode_proto::SteeringMode {
             onicode_proto::SteeringMode::TurnBoundary
         }
+
         fn reasoning_levels(&self) -> &[onicode_proto::ReasoningLevel] {
             &[]
         }
+
         fn model_context(&self) -> Result<Option<ModelContext>, HarnessError> {
             Ok(Some(context(&self.account.load(SeqCst).to_string())))
         }
+
         fn fallback_models(&self) -> Vec<Model> {
             let mut rows = models();
             rows[0].id = "static".into();
             rows
         }
+
         async fn models(&self) -> Result<Vec<Model>, HarnessError> {
             Ok(models())
         }
+
         async fn model_catalog(&self, force: bool) -> Result<ModelCatalog, HarnessError> {
             self.forced.store(force, SeqCst);
             if self.delay.load(SeqCst) {
@@ -293,6 +300,7 @@ mod tests {
                 },
             })
         }
+
         async fn run(
             &self,
             _: onicode_proto::RunRequest,

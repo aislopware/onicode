@@ -4,16 +4,20 @@
 //! engine's own `ReadChatImageChunk` verdict for every path. `show-image`: the
 //! image parts `show_image` publishes, stored as it stores them.
 //!
-//! `cargo run -p onicode-ui --features appshots-fixture,resource-profile --example reply-images-fixture -- \
-//!    [hold-secs] [app-id] [markdown|show-image]`
+//! `cargo run -p onicode-ui --features appshots-fixture,resource-profile --example
+//! reply-images-fixture -- \    [hold-secs] [app-id] [markdown|show-image]`
 //!
 //! Prints `READY` once the reads have landed (or been refused), keeps the
 //! window up for `hold-secs` (default 20) so the compositor can capture it,
 //! then quits. Captures: `docs/screenshots/agent-images/`.
+use std::io::Write;
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 use onicode_ui::*;
 use serde_json::json;
-use std::{io::Write, path::Path, sync::Arc, time::Duration};
 
 fn port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")

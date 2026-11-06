@@ -183,8 +183,9 @@ async fn deliver(weak: std::sync::Weak<DocHostInner>, chat: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::*;
 
     #[tokio::test]
     async fn remote_chat_transports_carry_the_host_on_both_paths() {

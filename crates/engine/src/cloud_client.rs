@@ -1222,10 +1222,12 @@ fn edge_error(status: u16, body: &[u8], what: &str) -> EngineError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use onicode_proto::{CloudState, GithubConnectState, VaultConnectionStatus};
     use std::sync::Mutex;
+
+    use onicode_proto::{CloudState, GithubConnectState, VaultConnectionStatus};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::*;
 
     #[derive(Debug, Clone)]
     struct Recorded {

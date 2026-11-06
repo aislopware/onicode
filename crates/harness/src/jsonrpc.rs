@@ -3,15 +3,15 @@
 //! the Codex app-server harness and the ACP harness — both protocols are
 //! newline-framed JSON-RPC 2.0 over stdio.
 //!
-//! - Responses are matched to callers by numeric id (a shared pending map the
-//!   reader task resolves directly, so requests can be awaited from anywhere —
-//!   including inside the session loop — without starving notifications).
-//! - Notifications and server→client requests (approvals) are pumped into an
-//!   [`Incoming`] channel the session loop drains.
-//! - Writes to a dead child's stdin (EPIPE) are tolerated and logged, matching
-//!   the TS harness's swallowed-EPIPE behavior — but they close the client:
-//!   every pending request fails at once instead of waiting for stdout EOF,
-//!   which a descendant holding the pipe open can delay indefinitely.
+//! - Responses are matched to callers by numeric id (a shared pending map the reader task resolves
+//!   directly, so requests can be awaited from anywhere — including inside the session loop —
+//!   without starving notifications).
+//! - Notifications and server→client requests (approvals) are pumped into an [`Incoming`] channel
+//!   the session loop drains.
+//! - Writes to a dead child's stdin (EPIPE) are tolerated and logged, matching the TS harness's
+//!   swallowed-EPIPE behavior — but they close the client: every pending request fails at once
+//!   instead of waiting for stdout EOF, which a descendant holding the pipe open can delay
+//!   indefinitely.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};

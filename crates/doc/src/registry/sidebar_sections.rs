@@ -1,10 +1,11 @@
 //! Per-section metadata and one placement register per session. Concurrent moves
 //! can never place a session in two sections, or in both a section and Pinned.
-use super::*;
 use onicode_proto::{
     SidebarSection, SidebarSectionChange, pin_order_key_between, section_insert_index,
     valid_pin_order_key,
 };
+
+use super::*;
 
 const SECTIONS: &str = "sidebarSections";
 const LOCATIONS: &str = "sidebarLocations";

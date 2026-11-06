@@ -1,11 +1,11 @@
 //! A failed refresh is not a new catalog. Keep the last successful response
 //! for the same credential context, coalesce callers, and respect rate limits.
-use crate::{CatalogFailure, CatalogFailureCode, HarnessError, ModelCatalog};
+use std::future::Future;
+use std::time::{Duration, Instant};
+
 use onicode_proto::Model;
-use std::{
-    future::Future,
-    time::{Duration, Instant},
-};
+
+use crate::{CatalogFailure, CatalogFailureCode, HarnessError, ModelCatalog};
 
 #[derive(Default)]
 pub(crate) struct Catalog {
@@ -193,11 +193,10 @@ fn cached(state: &State) -> Result<Vec<Model>, HarnessError> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
     fn models(id: &str) -> Vec<Model> {
         vec![Model {
             id: id.into(),
@@ -470,9 +469,9 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn real_subprocess_large_catalog_survives_malformed_and_failed_refreshes() {
-        use crate::CursorHarness;
-        use crate::Harness;
         use std::os::unix::fs::PermissionsExt;
+
+        use crate::{CursorHarness, Harness};
         let dir = tempfile::tempdir().unwrap();
         let script = dir.path().join("shim");
         std::fs::write(&script, "#!/bin/sh\ncd -- \"$(dirname -- \"$0\")\"\nprintf 'probe\\n' >> calls\ncat response\nexit \"$(cat status)\"\n").unwrap();

@@ -2,11 +2,11 @@
 //! journal + broadcast fan-out, and 120ms coalesced doc streaming.
 //!
 //! Pragmatic port of onicode's `sessions.ts` (spec: feature-inventory §3.2):
-//! - every `AgentEvent` is (a) appended to the on-disk run journal, (b) broadcast to
-//!   in-process subscribers, (c) folded via `fold_event_into_parts` and diffed into the
-//!   chat's `SessionDoc` through `SegmentWriter` on a coalesced `STREAM_COMMIT_MS` timer;
-//! - the user message entry is pushed to the doc immediately on dispatch (id = the
-//!   command's client-minted message id, so optimistic echoes never flicker);
+//! - every `AgentEvent` is (a) appended to the on-disk run journal, (b) broadcast to in-process
+//!   subscribers, (c) folded via `fold_event_into_parts` and diffed into the chat's `SessionDoc`
+//!   through `SegmentWriter` on a coalesced `STREAM_COMMIT_MS` timer;
+//! - the user message entry is pushed to the doc immediately on dispatch (id = the command's
+//!   client-minted message id, so optimistic echoes never flicker);
 //! - a `Steered` event splits the assistant entry at the exact boundary;
 //! - recovery (interrupt or a stale journal at boot) stamps the streaming entry `aborted`.
 //!
@@ -22,8 +22,6 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
 use chrono::Utc;
 use futures::StreamExt;
-use tokio::sync::{broadcast, mpsc, oneshot, watch};
-
 use onicode_doc::{
     DocError, MessagePart, MessageRole, MessageStatus, STREAM_COMMIT_MS, SegmentWriter, SessionDoc,
     SessionMessageEntry, fold_event_into_parts, sanitize_tool_call,
@@ -33,6 +31,7 @@ use onicode_proto::{
     AgentEvent, DoneStatus, HarnessId, RunRequest, Session, SessionStatus, UserInputAnswer,
     UserInputQuestion,
 };
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 use crate::doc_host::{ChatDocHandle, DocHost};
 
@@ -131,6 +130,7 @@ impl VoiceActivity {
     pub(crate) fn live(&self) -> bool {
         self.calls.load(std::sync::atomic::Ordering::Acquire) > 0
     }
+
     /// A live call until the returned guard drops.
     pub(crate) fn call(self: &Arc<Self>) -> VoiceCall {
         self.calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
@@ -371,7 +371,7 @@ impl SessionsEngine {
     }
 
     /// Record the loopback IPC port this engine serves. Runs started after
-    /// this carry Onicode's MCP server (see [`Inner::onicode_mcp`]); until then —
+    /// this carry Onicode's MCP server (see `Inner::onicode_mcp`); until then —
     /// or with 0 — agents get no Onicode tools rather than a dead server.
     pub fn set_ipc_port(&self, port: u16) {
         self.inner
@@ -469,7 +469,7 @@ impl SessionsEngine {
     }
 
     /// Whether this chat has a turn in flight — streaming, or parked on a
-    /// question it is still owed an answer to (see [`is_active`]). A persistent
+    /// question it is still owed an answer to (see `is_active`). A persistent
     /// session parked BETWEEN turns is not: it holds a warm child with nothing
     /// outstanding, and takes the next prompt straight through its mailbox.
     pub fn turn_in_flight(&self, chat_id: &str) -> bool {
@@ -758,9 +758,9 @@ impl SessionsEngine {
     /// Start (or route) a run for `chat_id`.
     ///
     /// - The user message entry is written to the doc immediately (id = `message_id`).
-    /// - A live steerable run receives the prompt as its next turn via the mailbox
-    ///   (onicode's persistent-session routing); otherwise any live run is interrupted
-    ///   first — never two runtimes driving one chat.
+    /// - A live steerable run receives the prompt as its next turn via the mailbox (onicode's
+    ///   persistent-session routing); otherwise any live run is interrupted first — never two
+    ///   runtimes driving one chat.
     pub async fn dispatch(
         &self,
         chat_id: &str,
@@ -4646,19 +4646,16 @@ async fn drive_run(
         // keeps forwarding `session/update` frames after a turn completes,
         // and they split two ways:
         //
-        // - Post-turn NOISE — late tool_call_updates for commands folded in a
-        //   prior segment, command refreshes, reasoning heartbeats. Treating
-        //   those as "the next turn" re-armed Working with no Done ever
-        //   coming (the eternally-running session bug) and folded orphan
+        // - Post-turn NOISE — late tool_call_updates for commands folded in a prior segment,
+        //   command refreshes, reasoning heartbeats. Treating those as "the next turn" re-armed
+        //   Working with no Done ever coming (the eternally-running session bug) and folded orphan
         //   parts into a phantom segment. Still dropped.
-        // - SELF-CONTINUED WORK — Claude Code re-invokes itself when a
-        //   background task finishes (turns no prompt started) and streams
-        //   real output for them. Dropping those LOST transcript content
-        //   (2026-08-12: "Build finished successfully…" streamed by the
-        //   agent, absent from the doc). Fresh text or a genuinely new tool
-        //   call resumes the session: new segment, Working, and the turn
-        //   settles again via Done — or via the quiesce watchdog, which is
-        //   what makes this resume safe where the naive version was not.
+        // - SELF-CONTINUED WORK — Claude Code re-invokes itself when a background task finishes
+        //   (turns no prompt started) and streams real output for them. Dropping those LOST
+        //   transcript content (2026-08-12: "Build finished successfully…" streamed by the agent,
+        //   absent from the doc). Fresh text or a genuinely new tool call resumes the session: new
+        //   segment, Working, and the turn settles again via Done — or via the quiesce watchdog,
+        //   which is what makes this resume safe where the naive version was not.
         //
         // The RESUME_GATE separates the two by arrival time: a finished
         // turn's tail flush lands within milliseconds of its Done, while a
@@ -5567,21 +5564,27 @@ mod tests {
         fn id(&self) -> HarnessId {
             HarnessId::Codex
         }
+
         fn display_name(&self) -> &str {
             "Offline idle fixture"
         }
+
         fn supports_steering(&self) -> bool {
             false
         }
+
         fn steering_mode(&self) -> onicode_proto::SteeringMode {
             onicode_proto::SteeringMode::TurnBoundary
         }
+
         fn reasoning_levels(&self) -> &[onicode_proto::ReasoningLevel] {
             &[]
         }
+
         async fn models(&self) -> Result<Vec<onicode_proto::Model>, onicode_harness::HarnessError> {
             Ok(vec![])
         }
+
         async fn start_idle(
             &self,
             request: RunRequest,
@@ -5616,6 +5619,7 @@ mod tests {
                 .chain(futures::stream::pending())
                 .boxed())
         }
+
         async fn run(
             &self,
             _request: RunRequest,
@@ -5866,21 +5870,27 @@ mod tests {
         fn id(&self) -> HarnessId {
             HarnessId::Mock
         }
+
         fn display_name(&self) -> &str {
             "Feed"
         }
+
         fn supports_steering(&self) -> bool {
             true
         }
+
         fn steering_mode(&self) -> onicode_proto::SteeringMode {
             onicode_proto::SteeringMode::StepBoundary
         }
+
         fn reasoning_levels(&self) -> &[onicode_proto::ReasoningLevel] {
             &[onicode_proto::ReasoningLevel::Medium]
         }
+
         async fn models(&self) -> Result<Vec<onicode_proto::Model>, onicode_harness::HarnessError> {
             Ok(vec![])
         }
+
         async fn run(
             &self,
             _request: RunRequest,
@@ -6215,8 +6225,9 @@ mod tests {
 
     #[test]
     fn only_transient_start_failures_retry() {
-        use onicode_harness::HarnessError;
         use std::io::{Error, ErrorKind};
+
+        use onicode_harness::HarnessError;
         for kind in [
             ErrorKind::ResourceBusy,
             ErrorKind::ExecutableFileBusy,

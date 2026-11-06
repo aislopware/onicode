@@ -12,14 +12,14 @@
 //!
 //! Two rules keep that from happening again:
 //!
-//! - **Onicode's objects stay in Onicode's directory.** Each snapshot writes into
-//!   its own object directory under the data dir (`GIT_OBJECT_DIRECTORY`) and
-//!   reads the checkout's objects as an alternate. The checkout's database is
-//!   never written to, and the directory is deleted with the snapshot.
-//! - **The work is bounded.** Untracked files past [`MAX_UNTRACKED_FILE_BYTES`]
-//!   and untracked directories past the untracked budget are left out, and the
-//!   whole snapshot runs under [`SNAPSHOT_TIMEOUT`]. A left-out path simply
-//!   never shows in the turn diff; tracked files are always snapshotted.
+//! - **Onicode's objects stay in Onicode's directory.** Each snapshot writes into its own object
+//!   directory under the data dir (`GIT_OBJECT_DIRECTORY`) and reads the checkout's objects as an
+//!   alternate. The checkout's database is never written to, and the directory is deleted with the
+//!   snapshot.
+//! - **The work is bounded.** Untracked files past [`MAX_UNTRACKED_FILE_BYTES`] and untracked
+//!   directories past the untracked budget are left out, and the whole snapshot runs under
+//!   [`SNAPSHOT_TIMEOUT`]. A left-out path simply never shows in the turn diff; tracked files are
+//!   always snapshotted.
 //!
 //! Git still refreshes the mtime of checkout objects a snapshot finds there
 //! instead of writing them (as it did before), so pruning the checkout while

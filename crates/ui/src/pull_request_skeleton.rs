@@ -1,8 +1,11 @@
 //! Loading placeholders shaped like the content they stand in for, so the
 //! board and detail keep their layout while GitHub answers. Bars pulse on the
 //! shared loader clock (static under reduced motion).
-use crate::{settings::widgets, theme::Theme};
-use gpui::{AnyElement, App, EntityId, div, prelude::*, px, relative};
+use gpui::prelude::*;
+use gpui::{AnyElement, App, EntityId, div, px, relative};
+
+use crate::settings::widgets;
+use crate::theme::Theme;
 
 /// One pulsing placeholder bar; `index` staggers its phase down a column.
 pub(crate) fn bar(

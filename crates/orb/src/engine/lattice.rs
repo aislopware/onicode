@@ -1,11 +1,15 @@
 // Extracted from Bezel 6141af9c16f7353cdf36003f7404e0a94566a163; MIT. See THIRD_PARTY_NOTICES.md.
 //! Sphere-lattice modes: globe (searching), rubik (solving), wave (listening).
 
-use crate::engine::{
-    core::{Dot, Frame, angle_delta, hash_d, make_proj, radius_scale, with_unit_circle},
-    profiles::{MAX_LATTICE_RINGS, MAX_LON_DENSITY, MAX_MOVE_COUNT, ModeOpts, count_usize},
+use std::cell::RefCell;
+use std::f32::consts::PI;
+
+use crate::engine::core::{
+    Dot, Frame, angle_delta, hash_d, make_proj, radius_scale, with_unit_circle,
 };
-use std::{cell::RefCell, f32::consts::PI};
+use crate::engine::profiles::{
+    MAX_LATTICE_RINGS, MAX_LON_DENSITY, MAX_MOVE_COUNT, ModeOpts, count_usize,
+};
 
 struct Move {
     axis: u8,

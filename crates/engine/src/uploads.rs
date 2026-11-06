@@ -448,7 +448,7 @@ fn jail_without_links(path: &str, root: &Path) -> Option<PathBuf> {
 /// One chunk of an image an agent's reply names in Markdown (`![alt](path)`),
 /// read from strictly inside `root`, the chat's working folder as configured
 /// (the RPC layer resolves it and refuses home and anything above it), with
-/// no link on the way ([`jail_without_links`]). Only a PNG, JPEG, WebP, or
+/// no link on the way (`jail_without_links`). Only a PNG, JPEG, WebP, or
 /// GIF by its extension AND its first bytes, of at most
 /// [`onicode_proto::IMAGE_MAX_BYTES`]: not the uploads dir, not another chat's
 /// folder, not any other file type.
@@ -1025,10 +1025,9 @@ fn same_generated_file(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
 /// concurrent directory/symlink replacement cannot redirect the source open.
 #[cfg(unix)]
 fn open_generated_file(root: &Path, relative: &Path) -> std::io::Result<std::fs::File> {
-    use std::os::{
-        fd::{AsRawFd, FromRawFd},
-        unix::{ffi::OsStrExt, fs::OpenOptionsExt},
-    };
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::OpenOptionsExt;
     let mut file = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
@@ -1147,8 +1146,9 @@ impl Uploads {
         name: &str,
         bytes: &[u8],
     ) -> Result<ImportedImage, EngineError> {
-        use onicode_proto::{IMAGE_MAX_BYTES, IMAGE_MAX_SIDE};
         use std::io::Write;
+
+        use onicode_proto::{IMAGE_MAX_BYTES, IMAGE_MAX_SIDE};
         let (ext, mime) = raster_signature(bytes)
             .ok_or_else(|| EngineError::Other("not a PNG, JPEG, WebP, or GIF image".into()))?;
         if bytes.len() > IMAGE_MAX_BYTES {
@@ -1204,8 +1204,9 @@ impl Uploads {
         stable_key: &str,
         after_copy: impl FnOnce(),
     ) -> Result<ImportedImage, EngineError> {
-        use sha2::{Digest, Sha256};
         use std::io::{Read, Write};
+
+        use sha2::{Digest, Sha256};
         let invalid = || EngineError::Other("Generated image source is invalid or changed".into());
         if !source.is_absolute() {
             return Err(invalid());

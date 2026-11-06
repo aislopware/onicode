@@ -1767,12 +1767,14 @@ fn default_harness(harnesses: &[HarnessInfo]) -> anyhow::Result<HarnessId> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::onicode::Origin;
+    use std::sync::Mutex;
+
     use async_trait::async_trait;
     use futures::StreamExt;
     use onicode_rpc::{RpcError, RpcReply, RpcService, memory_client, methods};
-    use std::sync::Mutex;
+
+    use super::*;
+    use crate::onicode::Origin;
 
     /// Two devices with distinct catalogs and repeated project paths, plus
     /// two chats with a two-message transcript. Writes are recorded for assertions.

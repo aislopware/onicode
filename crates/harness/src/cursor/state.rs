@@ -1,12 +1,12 @@
 //! Exclusive ownership of a Cursor store while its shim is alive. The OS
 //! releases the lock on crashes; recovery only runs after acquiring it.
-use crate::HarnessError;
+use std::fs::{File, OpenOptions};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
 use sha2::{Digest, Sha256};
-use std::{
-    fs::{File, OpenOptions},
-    path::{Path, PathBuf},
-    time::Duration,
-};
+
+use crate::HarnessError;
 
 pub(super) struct Lease {
     _file: File,

@@ -6,21 +6,21 @@ mod rpc;
 mod sessions;
 mod ui;
 
-use crate::{
-    Harness, HarnessError, RunControls,
-    process::{Command, Stdio, owned::Child},
-};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
 use async_trait::async_trait;
-use futures::{StreamExt, stream::BoxStream};
+use futures::StreamExt;
+use futures::stream::BoxStream;
 use normalize::{Normalizer, string};
 use onicode_proto::{AgentEvent, HarnessId, Model, ReasoningLevel, RunRequest, SteeringMode};
 use serde_json::{Value, json};
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    path::{Path, PathBuf},
-    time::Duration,
-};
 use tokio::sync::mpsc;
+
+use crate::process::owned::Child;
+use crate::process::{Command, Stdio};
+use crate::{Harness, HarnessError, RunControls};
 
 /// Bound on a state query (`get_state`, `get_entries`) a turn's end waits on.
 /// Pi answers them at once even mid-run; silence past this is a wedged
@@ -63,31 +63,37 @@ impl PiHarness {
     pub fn new() -> Self {
         Self::default()
     }
+
     pub fn with_executable(mut self, path: impl Into<PathBuf>) -> Self {
         self.executable = Some(path.into());
         self
     }
+
     pub fn with_session_store(mut self, path: impl Into<PathBuf>) -> Self {
         self.session_store = Some(path.into());
         self
     }
+
     /// Pi's settings/credentials directory (`PI_CODING_AGENT_DIR`) for the
     /// child and for Onicode's own reads of it; defaults to the inherited one.
     pub fn with_agent_dir(mut self, path: impl Into<PathBuf>) -> Self {
         self.agent_dir = Some(path.into());
         self
     }
+
     pub fn with_graces(mut self, interrupt: Duration, kill: Duration) -> Self {
         self.interrupt_grace = interrupt;
         self.kill_grace = kill;
         self
     }
+
     /// Tune the idle-with-queued-input bound (tests shrink it; default 15s).
     #[doc(hidden)]
     pub fn with_idle_queue_timeout(mut self, timeout: Duration) -> Self {
         self.idle_queue_timeout = timeout;
         self
     }
+
     pub fn resolve_executable(&self) -> Result<PathBuf, HarnessError> {
         if let Some(path) = self
             .executable
@@ -112,6 +118,7 @@ impl PiHarness {
             )
         })
     }
+
     async fn probe(&self, cwd: &Path, models: bool) -> Result<Value, HarnessError> {
         let mut process = self.spawn(cwd, &["--no-session".into()], None, &Default::default())?;
         let (mut tx, rx) = tokio::sync::oneshot::channel();
@@ -130,6 +137,7 @@ impl PiHarness {
         rx.await
             .map_err(|_| HarnessError::Protocol("Pi discovery task failed".into()))?
     }
+
     fn spawn(
         &self,
         cwd: &Path,
@@ -227,6 +235,7 @@ impl Process {
             }
         }
     }
+
     async fn query(
         &mut self,
         command: Value,
@@ -245,6 +254,7 @@ impl Process {
             }
         }
     }
+
     async fn shutdown(&mut self, grace: Duration) {
         self.dialogs.cancel(&self.transport.client);
         self.child.shutdown(grace).await;
@@ -274,27 +284,35 @@ impl Harness for PiHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Pi
     }
+
     fn display_name(&self) -> &str {
         "Pi"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     fn installed(&self) -> bool {
         self.resolve_executable().is_ok()
     }
+
     fn executable_path(&self) -> Option<PathBuf> {
         self.resolve_executable().ok()
     }
+
     fn deterministic_turn_end(&self) -> bool {
         true
     }
+
     /// `set_model` and `set_thinking_level` change the live process. Clearing
     /// either back to the default cannot be expressed that way.
     fn reconfigures_in_place(&self, live: &RunRequest, next: &RunRequest) -> bool {
@@ -303,9 +321,11 @@ impl Harness for PiHarness {
             && (model(next) || !model(live))
             && (thinking_selected(next) || !thinking_selected(live))
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(self.model_catalog(false).await?.models)
     }
+
     fn model_context(&self) -> Result<Option<crate::ModelContext>, HarnessError> {
         let root = sessions::agent_dir(self.agent_dir.clone());
         crate::model_context::context(
@@ -315,6 +335,7 @@ impl Harness for PiHarness {
         )
         .map(Some)
     }
+
     async fn model_catalog(&self, force: bool) -> Result<crate::ModelCatalog, HarnessError> {
         self.models_cache
             .get_with_timeout(
@@ -328,9 +349,11 @@ impl Harness for PiHarness {
             )
             .await
     }
+
     async fn commands(&self) -> Result<Vec<onicode_proto::SlashCommand>, HarnessError> {
         self.commands_for(&std::env::current_dir()?).await
     }
+
     async fn commands_for(
         &self,
         cwd: &Path,
@@ -341,6 +364,7 @@ impl Harness for PiHarness {
             })
             .await
     }
+
     async fn skills(
         &self,
         cwd: &Path,
@@ -350,6 +374,7 @@ impl Harness for PiHarness {
         crate::skills::attach_advertised_commands(HarnessId::Pi, &mut skills, &commands);
         Ok(Some(skills))
     }
+
     fn fallback_models(&self) -> Vec<Model> {
         vec![Model {
             id: "default".into(),
@@ -359,6 +384,7 @@ impl Harness for PiHarness {
             options: vec![],
         }]
     }
+
     async fn run(
         &self,
         request: RunRequest,
@@ -518,6 +544,7 @@ impl Runner {
             .await
             .map_err(|_| HarnessError::Protocol("Pi event consumer closed".into()))
     }
+
     async fn started(&self, model: String) -> Result<(), HarnessError> {
         self.emit(AgentEvent::SessionStarted {
             harness: HarnessId::Pi,
@@ -529,6 +556,7 @@ impl Runner {
         })
         .await
     }
+
     async fn finish(&mut self) -> Result<(), HarnessError> {
         if !self.active {
             return Ok(());
@@ -549,6 +577,7 @@ impl Runner {
         })
         .await
     }
+
     fn control_command(&self, text: &str) -> Option<Value> {
         let name = text
             .split_whitespace()
@@ -561,6 +590,7 @@ impl Runner {
             catalog::builtin(text, self.auto_compaction)
         }
     }
+
     fn submit(&mut self, text: String, images: Value, steer: bool) -> Result<(), HarnessError> {
         self.store.mark_submitted(&self.session)?;
         let control = self.control_command(&text);
@@ -576,12 +606,14 @@ impl Runner {
         );
         Ok(())
     }
+
     fn prompt(&mut self, text: String, images: Value) -> Result<(), HarnessError> {
         self.epoch += 1;
         self.active = true;
         self.norm.reset();
         self.submit(text, images, false)
     }
+
     async fn bootstrap(&mut self, backlog: &mut Vec<Value>) -> Result<Value, HarnessError> {
         // Pi defaults to one-at-a-time. Onicode's pending steers belong together
         // at the next model step. Pi persists this in its global settings, so
@@ -616,6 +648,7 @@ impl Runner {
             .query(json!({"type":"get_state"}), backlog)
             .await
     }
+
     /// Select `request`'s model and thinking level on the live process.
     async fn configure(
         &mut self,
@@ -688,6 +721,7 @@ impl Runner {
         }
         Ok(())
     }
+
     async fn run(
         &mut self,
         steering: &mut mpsc::Receiver<crate::SteerMessage>,
@@ -822,6 +856,7 @@ impl Runner {
             }
         }
     }
+
     async fn confirm_delivery(&mut self) -> Result<(), HarnessError> {
         if self.deliveries.pop_front().is_some() {
             let old = std::mem::replace(&mut self.assistant, uuid::Uuid::new_v4().to_string());
@@ -833,6 +868,7 @@ impl Runner {
         }
         Ok(())
     }
+
     async fn interrupt(&mut self, grace: Duration) {
         self.interrupted = true;
         self.process.dialogs.cancel(&self.process.transport.client);
@@ -866,6 +902,7 @@ impl Runner {
         })
         .await;
     }
+
     /// Send a state query the turn's end depends on, under STATE_QUERY_TIMEOUT.
     fn query_state(&mut self, command: Value, pending: Pending) -> Result<(), HarnessError> {
         let id = self.process.transport.client.request(command)?;
@@ -874,6 +911,7 @@ impl Runner {
         self.idle_poll = None;
         Ok(())
     }
+
     /// Pi refused a submission: a steer it would not take, a failed command.
     /// That fails the input, not the run. A turn the input joined goes on; a
     /// turn it opened settles Errored through the usual state barrier.
@@ -901,6 +939,7 @@ impl Runner {
         }
         Ok(())
     }
+
     async fn state(&mut self, data: Value, empty_proof: Option<bool>) -> Result<(), HarnessError> {
         let session = data["sessionId"]
             .as_str()
@@ -993,6 +1032,7 @@ impl Runner {
         }
         self.finish().await
     }
+
     async fn frame(&mut self, frame: Value) -> Result<(), HarnessError> {
         if frame["type"] == "queue_update" {
             let queue: Vec<String> = frame["steering"]

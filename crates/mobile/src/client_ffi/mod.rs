@@ -23,7 +23,6 @@ mod types;
 use std::sync::Arc;
 
 use onicode_client as zc;
-
 pub use session::*;
 pub use types::*;
 

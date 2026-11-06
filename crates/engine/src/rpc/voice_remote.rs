@@ -1,5 +1,6 @@
-use super::*;
 use onicode_proto::voice::{VoiceRejection, remote as wire};
+
+use super::*;
 
 pub(super) fn handles(method: &str) -> bool {
     matches!(
@@ -132,6 +133,7 @@ impl EngineRpc {
             _ => Err(RpcError::UnknownMethod(method.into())),
         }
     }
+
     async fn prepare_remote_voice(
         &self,
         p: wire::Prepare,

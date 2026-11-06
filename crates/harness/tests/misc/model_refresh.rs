@@ -1,8 +1,10 @@
 //! Catalog refresh must survive large responses, account changes, and failed
 //! probes without pinning a stale catalog for the lifetime of the engine.
 #![cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+
 use onicode_harness::{AcpHarness, Harness};
-use std::{os::unix::fs::PermissionsExt, path::Path};
 
 fn fixture(dir: &Path) -> std::path::PathBuf {
     let script = dir.join("agent.py");

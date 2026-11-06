@@ -264,8 +264,9 @@ async fn follow(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_doc::{MessageRole, MessageStatus};
+
+    use super::*;
 
     fn spawn(id: &str, name: &str, status: Option<SubagentStatus>, resolved: bool) -> MessagePart {
         MessagePart::Tool {

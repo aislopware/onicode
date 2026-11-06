@@ -1,8 +1,9 @@
 #![cfg(feature = "native-fixture")]
+use std::time::Duration;
+
 use futures::StreamExt;
 use onicode_harness::{CancellationToken, Harness, PiHarness, RunControls, SteerMessage};
 use onicode_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
-use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 fn harness() -> PiHarness {
     PiHarness::new()

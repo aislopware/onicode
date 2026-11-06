@@ -1,16 +1,13 @@
 //! Byte progress below WebSocket framing. A slow frame is healthy while its
 //! bytes move, even though Stream::next or Sink::send has not completed.
-use std::{
-    future::Future,
-    io,
-    pin::Pin,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-    },
-    task::{Context, Poll},
-    time::Duration,
-};
+use std::future::Future;
+use std::io;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::task::{Context, Poll};
+use std::time::Duration;
+
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::time::Instant;
 use tokio_tungstenite::WebSocketStream;
@@ -50,6 +47,7 @@ impl Progress {
         let ms = self.0.origin.elapsed().as_millis() as u64;
         clock.store(ms, Ordering::Relaxed);
     }
+
     fn latest(&self, write_only: bool) -> Instant {
         let write = self.0.write_ms.load(Ordering::Relaxed);
         let ms = if write_only {
@@ -67,6 +65,7 @@ impl Progress {
         };
         self.0.origin + Duration::from_millis(ms)
     }
+
     pub(crate) fn writing(&self) -> impl Drop + '_ {
         self.0.blocked_write.store(false, Ordering::Relaxed);
         self.0.writing.store(true, Ordering::Relaxed);
@@ -85,6 +84,7 @@ impl Progress {
         }
         Guard(&self.0)
     }
+
     pub(crate) async fn while_progressing<F: Future>(
         &self,
         lease: Duration,
@@ -166,9 +166,11 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ProgressIo<S> {
         }
         result
     }
+
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.get_mut().inner).poll_flush(cx)
     }
+
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
     }

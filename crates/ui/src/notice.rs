@@ -2,7 +2,8 @@
 //! transcript converged on (onicode composer.tsx `Notice` / chat-view.tsx
 //! `ErrorChip`).
 
-use gpui::{AnyElement, Div, FontWeight, SharedString, div, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{AnyElement, Div, FontWeight, SharedString, div, px};
 
 use crate::theme::Theme;
 
@@ -21,11 +22,11 @@ pub enum NoticeChipIcon {
 /// The failure notice both surfaces render (onicode composer.tsx `Notice`,
 /// chat-view.tsx `ErrorChip`): a tinted rounded chip — `border
 /// <accent>/[0.16]` over a `<accent>/[0.05]` wash (the transcript's tile:
-/// a borderless 0.1 wash), never a bare stroke — with a header row (DangerTriangle + medium label, a
-/// tiny copy button pinned to its top-right corner — failure payloads are
-/// meant to be pasted, not screenshotted) and the message below. The message WRAPS instead of truncating: failure payloads carry
-/// exit statuses and stderr, and a one-line ellipsis was exactly what made
-/// zeronsh/comet#95 undiagnosable from the screenshot. `warning` picks the
+/// a borderless 0.1 wash), never a bare stroke — with a header row (DangerTriangle + medium label,
+/// a tiny copy button pinned to its top-right corner — failure payloads are
+/// meant to be pasted, not screenshotted) and the message below. The message WRAPS instead of
+/// truncating: failure payloads carry exit statuses and stderr, and a one-line ellipsis was exactly
+/// what made zeronsh/comet#95 undiagnosable from the screenshot. `warning` picks the
 /// amber palette (amber-400/amber-200) over the default red
 /// (red-400/red-300). Callers chain their own chrome: the composer its
 /// id/dismiss click, the transcript `w_full().overflow_hidden()`.

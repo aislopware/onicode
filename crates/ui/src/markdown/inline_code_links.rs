@@ -691,13 +691,14 @@ mod tests {
     /// does: a left click activates it, a right click opens the file menu.
     #[cfg(target_os = "linux")]
     mod rendered {
+        use std::rc::Rc;
+
+        use gpui::prelude::*;
+        use gpui::{Context, MouseButton, Render, TestAppContext, Window, div, point, px};
+
         use super::*;
         use crate::markdown::render::{self, LinkActivation, LinkOutcome, LinkUi};
         use crate::theme::Theme;
-        use gpui::{
-            Context, MouseButton, Render, TestAppContext, Window, div, point, prelude::*, px,
-        };
-        use std::rc::Rc;
 
         struct Scene {
             tree: Arc<BlockTree>,

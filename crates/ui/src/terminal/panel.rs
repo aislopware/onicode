@@ -19,20 +19,14 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
+use gpui::prelude::*;
 use gpui::{
     App, Context, Entity, FocusHandle, IntoElement, KeyBinding, KeyDownEvent, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Render, ScrollDelta, SharedString,
-    Subscription, Task, Window, actions, div, prelude::*, px,
+    Subscription, Task, Window, actions, div, px,
 };
-
 use onicode_proto::{TerminalEvent, TerminalSession};
 use onicode_rpc::methods;
-
-use crate::motion::{self, AnimationExt as _, TAB_SLIDE};
-use crate::popover::{MenuScrollbarMetrics, MenuScrollbarState, ScrollRailHost};
-use crate::settings::{TERMINAL_MAX_VH, TERMINAL_MIN_HEIGHT};
-use crate::state::{AppState, CANVAS_PANEL_PREFIX, EngineHandle};
-use crate::theme::Theme;
 
 use super::emulator::{
     CellSnapshot, CursorShape, CursorSnapshot, Emulator, GridPoint, MouseTracking, SelectionType,
@@ -45,6 +39,11 @@ use super::view::{
     TerminalElement, cell_at, focus_report, mouse_report, paste_bytes, route_key,
     terminal_panel_bg, wheel_arrows,
 };
+use crate::motion::{self, AnimationExt as _, TAB_SLIDE};
+use crate::popover::{MenuScrollbarMetrics, MenuScrollbarState, ScrollRailHost};
+use crate::settings::{TERMINAL_MAX_VH, TERMINAL_MIN_HEIGHT};
+use crate::state::{AppState, CANVAS_PANEL_PREFIX, EngineHandle};
+use crate::theme::Theme;
 
 /// Fixed tab width — drag-reorder math stays analytic.
 pub const TAB_WIDTH: f32 = 118.0;

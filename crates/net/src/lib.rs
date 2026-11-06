@@ -9,8 +9,8 @@
 //! * [`crypto`]: the null QUIC crypto provider, QUIC version `ONI1`.
 //! * [`transport`]: the transport config every connection runs, and binding an endpoint.
 //! * [`congestion`]: BBR3 held to twice the measured bandwidth-delay product.
-//! * [`link`]: one connection as onicode's link: kinded streams, datagram channels and the
-//!   send window fitted to the congestion window.
+//! * [`link`]: one connection as onicode's link: kinded streams, datagram channels and the send
+//!   window fitted to the congestion window.
 //! * [`stream`]: the head every stream opens with, and the frames after it.
 //! * [`hello`]: the first frame each way on the control stream, and the build-skew check.
 //! * [`admission`]: who may connect, by Tailscale's whois, failing closed.

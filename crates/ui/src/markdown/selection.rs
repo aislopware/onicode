@@ -439,8 +439,12 @@ mod tests {
         assert!(update_drag(&first, (0, 2)));
         let shifted = [("p2", "second"), ("p3", "third"), ("p4", "fourth")];
         assert!(update_drag(&shifted, (0, 3)));
+        // spellchecker:off
         assert_eq!(selected_text().as_deref(), Some("ond\nthird\nfourth\nfift"));
+        // spellchecker:on
+        // spellchecker:off
         assert_eq!(end_drag("p5").as_deref(), Some("ond\nthird\nfourth\nfift"));
+        // spellchecker:on
     }
 
     #[test]

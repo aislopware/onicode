@@ -484,7 +484,7 @@ pub fn check_for_updates(cx: &mut App) {
     }
 }
 
-/// See [`AppUpdate::install_on_quit`].
+/// See `AppUpdate::install_on_quit`.
 pub fn install_on_quit(cx: &mut App) {
     if let Some(update) = AppUpdate::global(cx) {
         update.update(cx, |update, _| update.install_on_quit());

@@ -496,9 +496,9 @@ pub(crate) async fn install_into(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::collections::HashMap;
+
+    use super::*;
 
     fn env(values: &[(&str, OsString)]) -> impl Fn(&str) -> Option<OsString> + use<> {
         let values: HashMap<String, OsString> = values

@@ -1,10 +1,13 @@
 //! Production Shell screenshots driven by real OSC reports in isolated PTYs.
 //! All profiles, reports, and PNGs live outside the repository. No agent runs.
 fn main() -> anyhow::Result<()> {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::time::Duration;
+
     use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
     use onicode_proto::{ChatIndicator, Session};
     use onicode_ui::*;
-    use std::{path::PathBuf, sync::Arc, time::Duration};
 
     fn summary(core: &onicode_engine::EngineCore) -> (Vec<Session>, String) {
         let sessions = core.sessions.watch_sessions().borrow().clone();

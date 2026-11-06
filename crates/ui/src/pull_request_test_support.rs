@@ -1,10 +1,11 @@
 //! Shared PR fixtures. Real wire transport, scripted service responses, and
 //! progress driven by RPC notifications rather than iteration counts or sleeps.
+use std::sync::Arc;
+
 use futures::future::BoxFuture;
 use gpui::{Entity, TestAppContext};
 use onicode_rpc::{RpcClient, RpcError, RpcReply, RpcService};
 use serde_json::Value;
-use std::sync::Arc;
 
 type Reply = Result<RpcReply, RpcError>;
 

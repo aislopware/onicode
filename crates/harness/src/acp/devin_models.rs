@@ -13,12 +13,11 @@
 use std::path::Path;
 use std::time::Duration;
 
+use onicode_proto::{Model, ModelOption, ModelOptionChoice, ReasoningLevel};
 use serde::Deserialize;
 use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
-
-use onicode_proto::{Model, ModelOption, ModelOptionChoice, ReasoningLevel};
 
 use crate::HarnessError;
 use crate::jsonrpc::{Incoming, RpcClient};

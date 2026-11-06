@@ -1,10 +1,12 @@
 //! Effects remain cached source-space images; a separate alpha mask follows layout.
-use crate::settings::{NewThreadBackgroundAdjustment, NewThreadBackgroundEffect};
-use crate::theme::Theme;
-use gpui::{Pixels, px};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
+
+use gpui::{Pixels, px};
+
+use crate::settings::{NewThreadBackgroundAdjustment, NewThreadBackgroundEffect};
+use crate::theme::Theme;
 
 /// Hold the displayed artwork during loading, then crossfade to the ready image.
 /// Finish each blend before adopting another image to keep rapid changes smooth.
@@ -144,6 +146,7 @@ impl BackgroundLuminance {
         .detach();
         None
     }
+
     fn render_image(
         &self,
         effect: NewThreadBackgroundEffect,
@@ -165,6 +168,7 @@ impl BackgroundLuminance {
         };
         Arc::new(gpui::RenderImage::new([image::Frame::new(pixels)]))
     }
+
     fn scanline_pixels(&self, light: bool) -> image::RgbaImage {
         image::RgbaImage::from_fn(self.width, self.height, |x, y| {
             let [r, g, b, a] = self.colors[(y * self.width + x) as usize];
@@ -179,6 +183,7 @@ impl BackgroundLuminance {
             image::Rgba([channel(b), channel(g), channel(r), a])
         })
     }
+
     fn ascii_pixels(&self, light: bool) -> image::RgbaImage {
         // Five-column bitmap glyphs, one column/row of spacing. These are
         // artwork pixels rather than thousands of shaped UI text runs.
@@ -221,6 +226,7 @@ impl BackgroundLuminance {
             image::Rgba([mix(b, cb), mix(g, cg), mix(r, cr), a])
         })
     }
+
     fn halftone_pixels(&self, width: u32, height: u32, light: bool) -> image::RgbaImage {
         let bounds = gpui::size(px(width as f32), px(height as f32));
         let paper = if light { 255 } else { 0 };

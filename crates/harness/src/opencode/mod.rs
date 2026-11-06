@@ -10,64 +10,58 @@
 //! desktop app doesn't use ACP; neither do we.
 //!
 //! Two server generations are spoken, detected at boot from version-bearing
-//! endpoints ([`Protocol`]): the 1.18 "v1" wire (verified against 1.18.31)
+//! endpoints (`Protocol`): the 1.18 "v1" wire (verified against 1.18.31)
 //! and the 2.x `/api/*` wire (2.0.3 turns; 2.0.11 discovery and schema,
 //! with scripted coverage for the 2.0.4+ command and agent routes):
 //! - spawn `opencode serve --port <free> --hostname 127.0.0.1` with
-//!   `OPENCODE_SERVER_PASSWORD=<uuid>` (HTTP Basic, username `opencode`);
-//!   readiness probes `/api/info`, `/api/status`, `/api/health` (2.x),
-//!   then `/global/health` (1.x), accepting version-bearing JSON.
-//! - 2.x discovery uses `GET /api/model` (with a plugin-settle poll),
-//!   `/api/agent` (Agent model option), and `/api/command`.
-//! - 2.x creates via `POST /api/session` with `location.directory` and
-//!   optional `agent`; resumed selection uses `/api/session/{id}/agent`.
-//!   Session model selection uses `/api/session/{id}/model`; cancellation
-//!   uses `/api/session/{id}/interrupt`; recovery uses `GET /api/session/active`.
-//! - slash commands use `POST /api/session/{id}/command`: `command` through
-//!   2.0.3, `name` from 2.0.4, with `text` arguments. 2.x directory scoping
-//!   uses the `x-opencode-directory` header.
-//! - one global SSE bus (`GET /api/event` on 2.x, `GET /global/event` on
-//!   1.x) carries every session's traffic, child (subagent) sessions
-//!   included, token-level. 2.x frames are rewritten into the 1.x payload
-//!   shapes ([`normalize_v2_frame`]) so the turn engine is wire-agnostic.
-//! - a turn is `POST /api/session/{id}/prompt` (2.x; model set once on the
-//!   session) or `POST /session/{id}/prompt_async` (1.x, fire-and-forget
-//!   204); the END of the turn is the terminal execution/status frame for
-//!   THAT session — exactly what the desktop's working-predicate keys on.
-//!   Busy is re-asserted at the top of every agent-loop iteration, so idle
-//!   after busy is authoritative, not a lull.
-//! - reasoning streams as reasoning parts on both wires →
-//!   [`AgentEvent::ReasoningDelta`], the thinking feed.
-//! - the agent's `question` tool reaches the engine's input bridge on both
-//!   wires: 1.x emits `question.asked` (reply `POST /question/{id}/reply`),
-//!   while 2.x (2.0.24+) creates a session FORM titled "Questions"
-//!   (`form.created`, reply `POST /api/session/{id}/form/{formID}/reply`
-//!   with `{answer:{q0:..}}`; verified live against 2.0.24), folded into
-//!   the same question flow.
-//! - permission requests (`permission.asked`; `permission` + `patterns` on
-//!   1.x, `action` + `resources` on 2.x) are answered `once` in full access.
-//!   Auto-accept edits and supervised add `ask` rules to the server's
-//!   inline config ([`access_config`]), since opencode's defaults allow
-//!   everything, and put each request they do not cover to the person:
-//!   yes is `once`, anything else `reject` (verified live, 1.19.4).
-//! - plan mode is opencode's read-only `plan` agent: 1.x names it on each
-//!   prompt (`agent`; a prompt without one runs the default agent, verified
-//!   live, 1.19.4), 2.x sets it on the session (`/api/session/{id}/agent`).
+//!   `OPENCODE_SERVER_PASSWORD=<uuid>` (HTTP Basic, username `opencode`); readiness probes
+//!   `/api/info`, `/api/status`, `/api/health` (2.x), then `/global/health` (1.x), accepting
+//!   version-bearing JSON.
+//! - 2.x discovery uses `GET /api/model` (with a plugin-settle poll), `/api/agent` (Agent model
+//!   option), and `/api/command`.
+//! - 2.x creates via `POST /api/session` with `location.directory` and optional `agent`; resumed
+//!   selection uses `/api/session/{id}/agent`. Session model selection uses
+//!   `/api/session/{id}/model`; cancellation uses `/api/session/{id}/interrupt`; recovery uses `GET
+//!   /api/session/active`.
+//! - slash commands use `POST /api/session/{id}/command`: `command` through 2.0.3, `name` from
+//!   2.0.4, with `text` arguments. 2.x directory scoping uses the `x-opencode-directory` header.
+//! - one global SSE bus (`GET /api/event` on 2.x, `GET /global/event` on 1.x) carries every
+//!   session's traffic, child (subagent) sessions included, token-level. 2.x frames are rewritten
+//!   into the 1.x payload shapes (`normalize_v2_frame`) so the turn engine is wire-agnostic.
+//! - a turn is `POST /api/session/{id}/prompt` (2.x; model set once on the session) or `POST
+//!   /session/{id}/prompt_async` (1.x, fire-and-forget 204); the END of the turn is the terminal
+//!   execution/status frame for THAT session — exactly what the desktop's working-predicate keys
+//!   on. Busy is re-asserted at the top of every agent-loop iteration, so idle after busy is
+//!   authoritative, not a lull.
+//! - reasoning streams as reasoning parts on both wires → [`AgentEvent::ReasoningDelta`], the
+//!   thinking feed.
+//! - the agent's `question` tool reaches the engine's input bridge on both wires: 1.x emits
+//!   `question.asked` (reply `POST /question/{id}/reply`), while 2.x (2.0.24+) creates a session
+//!   FORM titled "Questions" (`form.created`, reply `POST /api/session/{id}/form/{formID}/reply`
+//!   with `{answer:{q0:..}}`; verified live against 2.0.24), folded into the same question flow.
+//! - permission requests (`permission.asked`; `permission` + `patterns` on 1.x, `action` +
+//!   `resources` on 2.x) are answered `once` in full access. Auto-accept edits and supervised add
+//!   `ask` rules to the server's inline config (`access_config`), since opencode's defaults allow
+//!   everything, and put each request they do not cover to the person: yes is `once`, anything else
+//!   `reject` (verified live, 1.19.4).
+//! - plan mode is opencode's read-only `plan` agent: 1.x names it on each prompt (`agent`; a prompt
+//!   without one runs the default agent, verified live, 1.19.4), 2.x sets it on the session
+//!   (`/api/session/{id}/agent`).
 //!
 //! Failure surfacing (the #169 class): a dying provider is VISIBLE here —
 //! `session.status{type:"retry", attempt, message}` streams per attempt.
-//! Attempt ≥ [`RETRY_REPORT_ATTEMPT`] surfaces an error chip; attempt ≥
-//! [`RETRY_ABORT_ATTEMPT`] aborts the turn instead of retrying forever.
+//! Attempt ≥ `RETRY_REPORT_ATTEMPT` surfaces an error chip; attempt ≥
+//! `RETRY_ABORT_ATTEMPT` aborts the turn instead of retrying forever.
 //! A prompt that produces NO session-scoped event within
-//! [`default_stall_bound`] (`ONICODE_OPENCODE_STALL_MS`, 0 disables) of the
+//! `default_stall_bound` (`ONICODE_OPENCODE_STALL_MS`, 0 disables) of the
 //! server accepting it errors out instead of spinning "Working" forever.
 //! Both wires report busy within milliseconds of accepting a prompt, before
 //! any provider bootstrap, so a slow first turn never trips it (verified
 //! live, 1.18.31 and 2.1.2). A server process that dies is noticed within
-//! [`SERVER_POLL`], and a bus silent past [`BUS_SILENCE`] is reconnected —
+//! `SERVER_POLL`, and a bus silent past `BUS_SILENCE` is reconnected —
 //! unless the server, still alive, fails a health check there
-//! ([`BUS_PROBE_TIMEOUT`]) or the bus stays frameless past
-//! [`BUS_WEDGE_BUDGET`]: then the run errors and the server is shut down.
+//! (`BUS_PROBE_TIMEOUT`) or the bus stays frameless past
+//! `BUS_WEDGE_BUDGET`: then the run errors and the server is shut down.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -77,14 +71,13 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-use serde_json::{Value, json};
-use tokio::sync::mpsc;
-
 use onicode_proto::{
     AccessMode, AgentEvent, DoneStatus, HarnessId, Model, ModelOption, ModelOptionChoice,
     ReasoningLevel, RunRequest, SlashCommand, SteeringMode, TodoItem, TodoStatus, ToolCall,
     UserInputAnswer, UserInputQuestion,
 };
+use serde_json::{Value, json};
+use tokio::sync::mpsc;
 
 use crate::process::{Child, Command, Stdio};
 use crate::{Harness, HarnessError, RunControls};
@@ -511,13 +504,16 @@ impl Harness for OpencodeHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Opencode
     }
+
     fn display_name(&self) -> &str {
         // Must match the registry's lazy descriptor.
         "OpenCode"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     /// Steers queue and deliver as the next prompt when the live turn goes
     /// idle — opencode has no mid-turn injection on this wire.
     fn steering_mode(&self) -> SteeringMode {
@@ -525,27 +521,33 @@ impl Harness for OpencodeHarness {
         // the turn immediately; see `maybe_preempt!`.
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         REASONING_LEVELS
     }
+
     fn installed(&self) -> bool {
         self.executable.is_some()
             || self.base_url.is_some()
             || resolve_opencode_executable().is_some()
     }
+
     fn executable_path(&self) -> Option<PathBuf> {
         self.resolve_executable().ok()
     }
+
     /// `session.status{idle}` is a real terminal frame per turn: the engine
     /// can retire its quiesce watchdogs.
     fn deterministic_turn_end(&self) -> bool {
         true
     }
+
     /// Aborting the session ends the turn; the server and the session take
     /// the next prompt.
     fn stops_turn_in_place(&self) -> bool {
         true
     }
+
     /// The model and effort ride each prompt (1.x) or are set on the
     /// session (2.x), so a change applies from the next prompt without a new
     /// server. Clearing one back to the default cannot be expressed that way.
@@ -558,6 +560,7 @@ impl Harness for OpencodeHarness {
             && (next.reasoning.is_some() || live.reasoning.is_none())
             && access(live) == access(next)
     }
+
     /// Full access approves every permission request, as every run did
     /// before modes; the others add `ask` rules to the server's config so
     /// opencode raises what they ask about (its defaults allow everything),
@@ -565,6 +568,7 @@ impl Harness for OpencodeHarness {
     fn access_modes(&self) -> &[AccessMode] {
         &AccessMode::ALL
     }
+
     fn supports_plan(&self) -> bool {
         true
     }
@@ -580,6 +584,7 @@ impl Harness for OpencodeHarness {
         };
         crate::model_context::context(self.id(), &binary, &[]).map(Some)
     }
+
     async fn model_catalog(&self, force: bool) -> Result<crate::ModelCatalog, HarnessError> {
         self.model_context()?.unwrap().log();
         self.models_cache
@@ -591,6 +596,7 @@ impl Harness for OpencodeHarness {
             )
             .await
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         self.model_catalog(true).await.map(|c| c.models)
     }
@@ -1909,8 +1915,8 @@ struct TurnState {
     /// Deadline for the first session-scoped event after the prompt.
     stall_deadline: Option<tokio::time::Instant>,
     /// The prompt POST has not been answered yet. The stall clock waits for
-    /// it: a server slow to admit a prompt (a contended database) has not yet had the chance to make progress, and the POST is bounded
-    /// on its own.
+    /// it: a server slow to admit a prompt (a contended database) has not yet had the chance to
+    /// make progress, and the POST is bounded on its own.
     prompt_in_flight: bool,
     /// Main-session tool calls started and not yet finished.
     open_tools: std::collections::HashSet<String>,
@@ -3517,7 +3523,7 @@ fn prompt_message_id() -> String {
         clock.1 += 1;
         clock.1
     };
-    let stamp = now.wrapping_mul(0x1000).wrapping_add(counter) & 0xFFFF_FFFF_FFFF;
+    let stamp = now.wrapping_mul(0x1000).wrapping_add(counter) & 0xffff_ffff_ffff;
     const BASE62: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     let random: String = uuid::Uuid::new_v4().as_bytes()[..14]
         .iter()
@@ -4827,18 +4833,16 @@ fn oc_tool_call(name: &str, input: &Value) -> ToolCall {
 /// 2.x frame is `{id, type, data: {sessionID, assistantMessageID, ..}}`
 /// (all shapes captured live from a 2.0.3 server); the names and shapes
 /// of the 2.x event vocabulary:
-/// - turn lifecycle: `session.execution.started` (busy) and
-///   `.succeeded`/`.interrupted`/`.failed` (idle; failed carries the error).
-/// - per step: `session.step.started` fixes the assistant message id its
-///   items stream under.
+/// - turn lifecycle: `session.execution.started` (busy) and `.succeeded`/`.interrupted`/`.failed`
+///   (idle; failed carries the error).
+/// - per step: `session.step.started` fixes the assistant message id its items stream under.
 /// - streaming items: `session.text.delta` (+ started/ended snapshots) and
-///   `session.reasoning.started/.ended`; `ordinal` numbers the item within
-///   the step — the synthetic part id.
-/// - tools: `session.tool.input.started` (carries the NAME),
-///   `.input.ended` (args as text), `.called` (args as object),
-///   `.success` (content array) / `.error`.
-/// - usage: `session.step.ended` carries the step's own tokens; the
-///   cumulative `session.usage.updated` totals are ignored.
+///   `session.reasoning.started/.ended`; `ordinal` numbers the item within the step — the synthetic
+///   part id.
+/// - tools: `session.tool.input.started` (carries the NAME), `.input.ended` (args as text),
+///   `.called` (args as object), `.success` (content array) / `.error`.
+/// - usage: `session.step.ended` carries the step's own tokens; the cumulative
+///   `session.usage.updated` totals are ignored.
 ///
 /// `tool_names` tracks pending calls by session, message, and provider call id.
 /// `session_models` remembers the latest model for step.ended, which omits it.

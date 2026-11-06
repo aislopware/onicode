@@ -18,11 +18,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
+use onicode_doc::{PendingBatch, RegistryDoc, RegistryRow, StateOutcome};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
-
-use onicode_doc::{PendingBatch, RegistryDoc, RegistryRow, StateOutcome};
 
 use crate::types::{RoomStatsSnapshot, StaticUrl, SyncError, UrlProvider};
 
@@ -900,7 +899,7 @@ impl Actor {
                             let _ = events.send(RegistryEvent::Applied);
                         }
                         Err(err) => {
-                            tracing::warn!(error = %err, "registry: http pull body unparseable");
+                            tracing::warn!(error = %err, "registry: http pull body unparsable");
                         }
                     }
                 }
@@ -933,7 +932,7 @@ impl Actor {
         let frame = match serde_json::from_str::<ServerFrame>(text) {
             Ok(frame) => frame,
             Err(err) => {
-                tracing::warn!(error = %err, "registry: unparseable frame");
+                tracing::warn!(error = %err, "registry: unparsable frame");
                 return false;
             }
         };

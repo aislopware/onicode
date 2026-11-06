@@ -1,10 +1,8 @@
 //! Device-local interface typography: bundled font registration, the persisted
 //! catalog choice, and the effective family installed into [`crate::theme::Theme`].
 
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, BTreeSet},
-};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet};
 
 use gpui::{App, Global, Rems, SharedString, Window, px, rems};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

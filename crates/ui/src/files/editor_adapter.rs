@@ -1,6 +1,8 @@
 //! Onicode-owned styling and highlighting adapters for `gpui-base`.
 
-use std::{ops::Range, rc::Rc, sync::Arc};
+use std::ops::Range;
+use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{Context, HighlightStyle, SharedString, Window};
 use gpui_base::input::{
@@ -214,7 +216,8 @@ fn source_matches_edited_text(source: &str, edit: &InputEdit, text: &str) -> boo
 /// with the text the editor is about to shape.
 #[cfg(test)]
 pub(super) mod probe {
-    use std::{cell::RefCell, ops::Range};
+    use std::cell::RefCell;
+    use std::ops::Range;
 
     use gpui::HighlightStyle;
 
@@ -355,9 +358,10 @@ fn kind_for_name(name: &str) -> Option<HighlightKind> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui_base::input::Point;
     use onicode_syntax::{HighlightSpan, LanguageId};
+
+    use super::*;
 
     fn highlighted(source: &str, spans: Vec<HighlightSpan>) -> HighlightedDocument {
         HighlightedDocument::from_absolute_spans(LanguageId::Rust, source, spans).unwrap()

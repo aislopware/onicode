@@ -110,8 +110,9 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::{AppContext, TestAppContext};
+
+    use super::*;
 
     struct FocusHost {
         root: FocusHandle,

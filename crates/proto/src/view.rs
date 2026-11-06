@@ -900,7 +900,7 @@ pub enum InputOutcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnswerLine {
     /// The question's header — or its text, when headers don't tell the
-    /// questions apart (an MCP form names every field "<server> asks").
+    /// questions apart (an MCP form names every field `"<server>` asks").
     pub label: String,
     /// What the agent received: picked options joined with ", ", typed text
     /// in quotes, "Skipped" when nothing was given.

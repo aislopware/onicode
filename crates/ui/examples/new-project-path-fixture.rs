@@ -16,20 +16,20 @@
 //! created; the Locations step lists the boot volume alone (see
 //! [`BootVolumeOnly`]). The engine has no agent harnesses, so no installed
 //! agent CLI is started.
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::rc::Rc;
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::{Duration, Instant};
+
 use anyhow::Context as _;
+use gpui::prelude::*;
 use gpui::{
     AnyWindowHandle, AppContext, AsyncApp, Bounds, Entity, EntityInputHandler, MouseButton, Pixels,
-    PlatformInput, Point, SharedString, WindowBounds, WindowOptions, prelude::*, px, size,
+    PlatformInput, Point, SharedString, WindowBounds, WindowOptions, px, size,
 };
 use onicode_ui::*;
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
-    process::{Command, Stdio},
-    rc::Rc,
-    sync::{Arc, Mutex, mpsc},
-    time::{Duration, Instant},
-};
 
 const FPS: u32 = 30;
 const HOME: &str = "/tmp/onicode-demo/ana";

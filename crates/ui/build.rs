@@ -1,4 +1,6 @@
-use std::{env, path::PathBuf, process::Command};
+use std::env;
+use std::path::PathBuf;
+use std::process::Command;
 
 fn main() {
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {

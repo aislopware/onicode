@@ -9,12 +9,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::{SinkExt, StreamExt};
+use onicode_doc::{RegistryRow, RowOp, apply_op};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
-
-use onicode_doc::{RegistryRow, RowOp, apply_op};
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)

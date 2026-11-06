@@ -1,8 +1,10 @@
 //! Width-dependent presentation; selection offsets always refer to original text.
-use super::render::FlatText;
-use gpui::{SharedString, TextRun};
 use std::ops::Range;
+
+use gpui::{SharedString, TextRun};
 use unicode_segmentation::UnicodeSegmentation;
+
+use super::render::FlatText;
 
 /// Maps offsets between a stage's input text and its shown text. `omissions`
 /// pairs `(input range, shown range)` in order; the shown span can be SHORTER
@@ -33,6 +35,7 @@ impl OffsetMap {
         }
         displayed.saturating_add_signed(shift)
     }
+
     /// This stage only: shown offset for an input-text offset.
     fn local_displayed(&self, original: usize) -> usize {
         let mut shift: isize = 0;
@@ -47,6 +50,7 @@ impl OffsetMap {
         }
         original.saturating_add_signed(-shift)
     }
+
     /// This stage only: shown range for an input range — an input range that
     /// overlaps a replaced span expands to cover the replacement.
     pub(crate) fn local_displayed_range(&self, range: Range<usize>) -> Range<usize> {
@@ -59,6 +63,7 @@ impl OffsetMap {
         }
         result
     }
+
     /// Shown offset → source-text offset (all stages).
     pub fn original(&self, displayed: usize) -> usize {
         let local = self.local_original(displayed);
@@ -66,6 +71,7 @@ impl OffsetMap {
             .as_ref()
             .map_or(local, |prior| prior.original(local))
     }
+
     /// Source-text offset → shown offset (all stages).
     pub fn displayed(&self, original: usize) -> usize {
         let mid = self
@@ -74,6 +80,7 @@ impl OffsetMap {
             .map_or(original, |prior| prior.displayed(original));
         self.local_displayed(mid)
     }
+
     /// Source-text range → shown range (all stages).
     pub fn displayed_range(&self, range: Range<usize>) -> Range<usize> {
         let mid = match &self.prior {
@@ -234,14 +241,16 @@ fn ellipsis_run(flat: &FlatText, omitted: Range<usize>) -> TextRun {
     run
 }
 
-use super::render::{INLINE_CODE_INSET_Y, RenderOptions, range_rects};
-use crate::theme::Theme;
+use std::rc::Rc;
+
+use gpui::prelude::*;
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, Element, ElementId, GlobalElementId,
-    InspectorElementId, LayoutId, Pixels, Size, TextLayout, Window, div, point, prelude::*, px,
-    size,
+    InspectorElementId, LayoutId, Pixels, Size, TextLayout, Window, div, point, px, size,
 };
-use std::rc::Rc;
+
+use super::render::{INLINE_CODE_INSET_Y, RenderOptions, range_rects};
+use crate::theme::Theme;
 
 pub struct ResponsiveText {
     pub flat: Rc<FlatText>,
@@ -401,19 +410,23 @@ fn paragraph_is_sole_file_link(flat: &FlatText, workspace_root: Option<&str>) ->
 }
 impl IntoElement for ResponsiveText {
     type Element = Self;
+
     fn into_element(self) -> Self {
         self
     }
 }
 impl Element for ResponsiveText {
-    type RequestLayoutState = ();
     type PrepaintState = AnyElement;
+    type RequestLayoutState = ();
+
     fn id(&self) -> Option<ElementId> {
         None
     }
+
     fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
         None
     }
+
     fn request_layout(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -458,6 +471,7 @@ impl Element for ResponsiveText {
         );
         (id, ())
     }
+
     fn prepaint(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -479,6 +493,7 @@ impl Element for ResponsiveText {
         );
         child
     }
+
     fn paint(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -505,14 +520,15 @@ pub(crate) struct FileLinkGlyphs {
 
 impl IntoElement for FileLinkGlyphs {
     type Element = Self;
+
     fn into_element(self) -> Self {
         self
     }
 }
 
 impl Element for FileLinkGlyphs {
-    type RequestLayoutState = ();
     type PrepaintState = Vec<AnyElement>;
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone().into())
@@ -593,10 +609,8 @@ impl Element for FileLinkGlyphs {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        parser::{InlineRun, InlineStyle},
-        render::flatten_runs,
-    };
+    use super::super::parser::{InlineRun, InlineStyle};
+    use super::super::render::flatten_runs;
     use super::*;
     fn link(text: &str) -> InlineRun {
         InlineRun {

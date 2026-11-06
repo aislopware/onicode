@@ -5,10 +5,9 @@
 
 use onicode_visual::{Align, Axis, HandlerId, Justify, Node, NodeKind, TextSize, Weight};
 
-use super::chart;
 use super::paint::{Face, Mark, Paint, Para, TextCtx};
 use super::palette::Palette;
-use super::{ControlKind, SurfaceGesture, VisualControl};
+use super::{ControlKind, SurfaceGesture, VisualControl, chart};
 
 /// Control metrics, in points.
 pub(crate) mod metrics {

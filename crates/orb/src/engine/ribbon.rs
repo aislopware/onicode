@@ -1,11 +1,10 @@
 // Extracted from Bezel 6141af9c16f7353cdf36003f7404e0a94566a163; MIT. See THIRD_PARTY_NOTICES.md.
 //! Ribbon / ring: undulating sash or face-on breathing ring.
 
-use crate::engine::{
-    core::{Dot, Frame, make_proj, radius_scale, with_fib_dirs},
-    profiles::{MAX_GHOST_N, MAX_LANES, MAX_SEGS, ModeOpts, count_usize},
-};
 use std::f32::consts::PI;
+
+use crate::engine::core::{Dot, Frame, make_proj, radius_scale, with_fib_dirs};
+use crate::engine::profiles::{MAX_GHOST_N, MAX_LANES, MAX_SEGS, ModeOpts, count_usize};
 
 pub fn draw_ribbon_into(size: f32, t: f32, o: &ModeOpts, out: &mut Frame) {
     let cx = size / 2.0;

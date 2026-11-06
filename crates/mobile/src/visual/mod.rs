@@ -22,14 +22,14 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use layout::{Action, ActionArg, Laid, SurfaceNode, SurfaceSpec};
 use onicode_text::WidthCache;
 use onicode_visual::{DrawCmd, HandlerArg, HandlerId, Node, Visual};
+use paint::{Face, Paint, TextCtx};
+use palette::Palette;
 
 use crate::layout::style::Typography;
 use crate::layout::{StyleDesc, TextSystem};
-use layout::{Action, ActionArg, Laid, SurfaceNode, SurfaceSpec};
-use paint::{Face, Paint, TextCtx};
-use palette::Palette;
 
 // ---- FFI ----------------------------------------------------------------------
 

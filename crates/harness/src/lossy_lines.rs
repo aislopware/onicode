@@ -2,8 +2,8 @@
 //!
 //! `tokio::io::Lines` fails the whole stream on the first byte sequence that
 //! is not UTF-8. A child's output is not ours to vouch for: localized tools
-//! print in legacy encodings, agents echo raw tool output into log lines, and a multibyte character can be split by
-//! a crash mid-write. With `Lines` one such byte ended a stderr drain — the
+//! print in legacy encodings, agents echo raw tool output into log lines, and a multibyte character
+//! can be split by a crash mid-write. With `Lines` one such byte ended a stderr drain — the
 //! read end then closed, so the child's next write hit a broken pipe — or
 //! ended a protocol reader as though the agent had exited. Here a bad byte
 //! becomes U+FFFD in that one line and reading continues.

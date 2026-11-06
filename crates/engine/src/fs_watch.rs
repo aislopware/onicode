@@ -11,12 +11,12 @@
 //!
 //! Semantics match a private watcher per registration:
 //!
-//! - a [`notify::RecursiveMode::NonRecursive`] registration only sees events for
-//!   its folder and that folder's direct children (notify's own rule);
-//! - pathless events (inotify queue overflow → rescan) reach every registration,
-//!   since an overflow loses events for all of them;
-//! - dropping the [`FsWatch`] handle stops delivery immediately and releases the
-//!   OS watch once no other registration needs it.
+//! - a [`notify::RecursiveMode::NonRecursive`] registration only sees events for its folder and
+//!   that folder's direct children (notify's own rule);
+//! - pathless events (inotify queue overflow → rescan) reach every registration, since an overflow
+//!   loses events for all of them;
+//! - dropping the [`FsWatch`] handle stops delivery immediately and releases the OS watch once no
+//!   other registration needs it.
 //!
 //! Handlers also receive synthetic *rescan* events
 //! ([`notify::Event::need_rescan`]): once when the registration's watch goes
@@ -566,8 +566,9 @@ fn dispatch(routes: &Mutex<Routes>, event: &notify::Event) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+
+    use super::*;
 
     fn reg(path: &str, recursive: bool) -> Registration {
         Registration {

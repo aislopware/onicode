@@ -1,12 +1,11 @@
 //! Real OS process/listener association: only servers a Onicode agent or
 //! terminal started (carrying its origin marker), each under the right checkout.
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use onicode_preview::{PreviewService, Scope};
 use onicode_proto::{ORIGIN_ENV, chat_origin, terminal_origin};
-use std::{
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-    time::Duration,
-};
 /// Every service binds the proxy port (7331, else one the system picks), so
 /// tests in this binary must not run concurrently: one test holding 7331 to
 /// see its proxy move elsewhere would otherwise race another test's service.

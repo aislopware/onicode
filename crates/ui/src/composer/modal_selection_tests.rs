@@ -1,7 +1,8 @@
+use gpui::{StyledText, TestAppContext, VisualTestContext, canvas};
+
 use super::*;
 use crate::markdown::{render, selection};
 use crate::popover;
-use gpui::{StyledText, TestAppContext, VisualTestContext, canvas};
 
 const BACKGROUND_KEY: &str = "modal-selection-background";
 const BACKGROUND_TEXT: &str = "Transcript text behind the modal must never be selected.";

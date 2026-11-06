@@ -7,7 +7,6 @@
 //! to clear it. Once clearing it would narrow the transcript, the card hides,
 //! and opening it floats it over the transcript instead.
 use super::*;
-
 use crate::project_actions::{ProjectActionsStatus, action_icon};
 
 /// The card's width, its inset from the column's right edge, and the

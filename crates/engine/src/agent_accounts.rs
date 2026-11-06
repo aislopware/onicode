@@ -2,9 +2,9 @@
 //! (feature-inventory §3.7 "Agent accounts"; port of onicode's
 //! `agent-accounts.ts`).
 //!
-//! Grok, Devin, OpenCode, Pi and Hermes live in [`stores`] (credential
-//! formats and detection), [`oauth`] (the sign-ins the engine drives itself)
-//! and [`usage`] (their quota probes); each module documents per provider
+//! Grok, Devin, OpenCode, Pi and Hermes live in `stores` (credential
+//! formats and detection), `oauth` (the sign-ins the engine drives itself)
+//! and `usage` (their quota probes); each module documents per provider
 //! what is supported and why. In short:
 //!
 //! | agent    | detect | switch | add account                    | usage |
@@ -21,45 +21,39 @@
 //!
 //! The original four providers each store exactly one live login:
 //!
-//! - **Claude Code** — credentials in `~/.claude/.credentials.json`
-//!   (`$CLAUDE_CONFIG_DIR` relocates the dir) or, on macOS, the Keychain item
-//!   `Claude Code-credentials`; the account identity (`oauthAccount`, `userID`)
-//!   lives in `~/.claude.json`.
-//! - **Codex** — `$CODEX_HOME/auth.json` (default `~/.codex`): a ChatGPT OAuth
-//!   token set (identity inside the `id_token` JWT) or a raw API key.
+//! - **Claude Code** — credentials in `~/.claude/.credentials.json` (`$CLAUDE_CONFIG_DIR` relocates
+//!   the dir) or, on macOS, the Keychain item `Claude Code-credentials`; the account identity
+//!   (`oauthAccount`, `userID`) lives in `~/.claude.json`.
+//! - **Codex** — `$CODEX_HOME/auth.json` (default `~/.codex`): a ChatGPT OAuth token set (identity
+//!   inside the `id_token` JWT) or a raw API key.
 //! - **Cursor** — `~/.cursor/sdk/auth.json`: the Cursor SDK's credential store
-//!   (`StoredSdkCredentials`) holding the named, expiring user API key its
-//!   browser login mints. Deliberately SEPARATE from `cursor-agent login`'s
-//!   whole-account session tokens, which onicode never reads.
-//! - **Antigravity** — its ACP server keeps one Google login per
-//!   `GEMINI_HOME`: a token blob in the macOS Keychain (service `gemini`) or
-//!   `antigravity-acp/acp_token.json`, plus the method in `settings.json`.
-//!   The blob carries no identity and is never read — the login is listed
-//!   from the method and the token's PRESENCE only, active and unswitchable.
+//!   (`StoredSdkCredentials`) holding the named, expiring user API key its browser login mints.
+//!   Deliberately SEPARATE from `cursor-agent login`'s whole-account session tokens, which onicode
+//!   never reads.
+//! - **Antigravity** — its ACP server keeps one Google login per `GEMINI_HOME`: a token blob in the
+//!   macOS Keychain (service `gemini`) or `antigravity-acp/acp_token.json`, plus the method in
+//!   `settings.json`. The blob carries no identity and is never read — the login is listed from the
+//!   method and the token's PRESENCE only, active and unswitchable.
 //!
 //! Claude-swap mechanics:
 //!
-//! 1. **Detect** the live login of each CLI and auto-snapshot it into a slot
-//!    under `{data_dir}/agent-accounts/{harness}/{slotId}.json` — the current
-//!    session is always backed up before any swap, and refreshed tokens stay
-//!    current.
-//! 2. **Swap** (`activate`): overwrite the CLI's credential store (and, for
-//!    Claude, merge the identity back into `~/.claude.json`) with a saved slot.
-//!    Claude's credential blob is overloaded: `claudeAiOauth` is per-account,
-//!    but sibling keys such as `mcpOAuth` are machine-shared MCP/plugin tokens.
-//!    Activate splices those live shared fields onto the target login so a
-//!    switch does not force every MCP server to re-auth.
-//! 3. **Add** (`start_login`…): drive an OAuth flow for a NEW account without
-//!    touching the live one (unless it re-signs the live account in, or there
-//!    is no live login) — the way each CLI signs in itself: the browser
-//!    redirects to a loopback callback that finishes the login unattended.
-//!    Claude runs the CLI's PKCE flow against our own `localhost:<port>/callback`
-//!    (pasting the code is only the fallback when no port can be bound);
-//!    Codex spawns `codex login` against a throwaway `CODEX_HOME` and polls
-//!    until its loopback callback lands; Antigravity runs its server's
-//!    `authenticate`. A login run for ANOTHER device (`requester`) publishes
-//!    its callback port to [`onicode_preview::login`], so the requester can
-//!    forward its own loopback to it over the P2P link.
+//! 1. **Detect** the live login of each CLI and auto-snapshot it into a slot under
+//!    `{data_dir}/agent-accounts/{harness}/{slotId}.json` — the current session is always backed up
+//!    before any swap, and refreshed tokens stay current.
+//! 2. **Swap** (`activate`): overwrite the CLI's credential store (and, for Claude, merge the
+//!    identity back into `~/.claude.json`) with a saved slot. Claude's credential blob is
+//!    overloaded: `claudeAiOauth` is per-account, but sibling keys such as `mcpOAuth` are
+//!    machine-shared MCP/plugin tokens. Activate splices those live shared fields onto the target
+//!    login so a switch does not force every MCP server to re-auth.
+//! 3. **Add** (`start_login`…): drive an OAuth flow for a NEW account without touching the live one
+//!    (unless it re-signs the live account in, or there is no live login) — the way each CLI signs
+//!    in itself: the browser redirects to a loopback callback that finishes the login unattended.
+//!    Claude runs the CLI's PKCE flow against our own `localhost:<port>/callback` (pasting the code
+//!    is only the fallback when no port can be bound); Codex spawns `codex login` against a
+//!    throwaway `CODEX_HOME` and polls until its loopback callback lands; Antigravity runs its
+//!    server's `authenticate`. A login run for ANOTHER device (`requester`) publishes its callback
+//!    port to [`onicode_preview::login`], so the requester can forward its own loopback to it over
+//!    the P2P link.
 //!
 //! Usage probes: all three providers expose the rate-limit view their own CLIs render
 //! (`/usage` in Claude Code, `/status` in Codex; Cursor's key has no quota view,
@@ -80,17 +74,15 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as BASE64;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD as BASE64_URL;
+use base64::engine::general_purpose::{STANDARD as BASE64, URL_SAFE_NO_PAD as BASE64_URL};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-
 use onicode_proto::{
     AgentAccount, AgentAccountWarning, AgentAccountsSnapshot, AgentAuthKind, AgentLoginMode,
     AgentLoginPoll, AgentLoginStart, AgentLoginStatus, AgentUsageWindow, CodexResetCredit,
     CodexResetCredits, CodexResetOutcome, HarnessId,
 };
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::repos::home_dir;
 use crate::{EngineError, new_id, now_ms};
@@ -197,7 +189,7 @@ pub struct AgentAccountsConfig {
     pub cursor_sdk_auth_file: PathBuf,
     /// macOS Keychain service holding Claude Code's credentials, or `None`
     /// to use `.credentials.json` only (tests — a temp config must never
-    /// read or write the real login). See [`claude_keychain_service`].
+    /// read or write the real login). See `claude_keychain_service`.
     pub claude_keychain_service: Option<String>,
     /// Antigravity's `GEMINI_HOME` (`None`: unresolvable — no Antigravity row).
     pub antigravity_home: Option<PathBuf>,
@@ -218,7 +210,7 @@ pub struct AgentAccountsConfig {
     /// Hermes' `HERMES_HOME` (default `~/.hermes`) — holds `auth.json`.
     pub hermes_home: PathBuf,
     /// The user's real config root (`$XDG_CONFIG_HOME` or `~/.config`): what
-    /// each onicode-kept Muse account's root mirrors (see [`muse`]).
+    /// each onicode-kept Muse account's root mirrors (see `muse`).
     pub muse_config_root: PathBuf,
 }
 
@@ -916,7 +908,7 @@ impl AgentAccounts {
     /// good probe (memory, seeded from disk) with its fetch time, so a plain
     /// list is offline-fast. `force_usage` additionally re-probes — all
     /// accounts concurrently — skipping any still inside a Retry-After /
-    /// backoff window or probed in the last [`FORCED_MIN_INTERVAL`].
+    /// backoff window or probed in the last `FORCED_MIN_INTERVAL`.
     pub async fn list(&self, force_usage: bool) -> Result<AgentAccountsSnapshot, EngineError> {
         let _ops = self.inner.ops.lock().await;
         self.list_locked(force_usage).await
@@ -1132,7 +1124,7 @@ impl AgentAccounts {
     /// Refused for Hermes (and by [`Self::forget`]): Hermes owns its
     /// credential pool and rotates through it itself — a running Hermes
     /// would write its own order back over any change — so onicode keeps it
-    /// read-only (see [`stores`]).
+    /// read-only (see `stores`).
     pub async fn activate(
         &self,
         harness: HarnessId,
@@ -1946,7 +1938,7 @@ impl AgentAccounts {
     /// [`Self::poll_login`] (`done` once `capture` succeeded, its message on
     /// failure), a `paste-code` flow is finished with [`Self::complete_login`],
     /// and [`Self::cancel_login`] stops either. Abandoned flows are reaped
-    /// after [`FLOW_TTL`].
+    /// after `FLOW_TTL`.
     pub async fn start_capture_login(
         &self,
         harness: HarnessId,
@@ -2174,7 +2166,7 @@ impl AgentAccounts {
     }
 
     /// Exchange the pasted `code#state` for tokens and save the account as a
-    /// slot (see [`Self::adopt_if_live`] for when it also becomes live).
+    /// slot (see `Self::adopt_if_live` for when it also becomes live).
     pub async fn complete_login(
         &self,
         login_id: &str,
@@ -2844,7 +2836,7 @@ impl AgentAccounts {
         })
     }
 
-    /// One saved slot by id (`None` when missing or unparseable).
+    /// One saved slot by id (`None` when missing or unparsable).
     fn read_slot(&self, harness: HarnessId, id: &str) -> Option<Slot> {
         let file = self.slots_dir(harness).ok()?.join(format!("{id}.json"));
         serde_json::from_str(&std::fs::read_to_string(file).ok()?).ok()
@@ -2895,7 +2887,7 @@ impl AgentAccounts {
             if creds.is_some() {
                 return (creds, None);
             }
-            // Denied/unparseable Keychain: Claude Code falls back to the
+            // Denied/unparsable Keychain: Claude Code falls back to the
             // file too, but keep the warning — the file may be stale.
             return (read_json(&self.inner.config.claude_creds_file()), warning);
         }
@@ -5712,8 +5704,9 @@ mod probe_tests {
 
 #[cfg(test)]
 mod login_tests {
-    use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::*;
 
     /// Temp homes for every provider; never the real logins or Keychain.
     fn config(root: &Path) -> AgentAccountsConfig {

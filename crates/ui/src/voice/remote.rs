@@ -1,9 +1,12 @@
-use crate::state::EngineHandle;
-use onicode_proto::voice::{remote::Sdp, *};
-use onicode_voice_session::VoiceMediaEndpoint;
 use std::sync::Arc;
+
+use onicode_proto::voice::remote::Sdp;
+use onicode_proto::voice::*;
+use onicode_voice_session::VoiceMediaEndpoint;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
+
+use crate::state::EngineHandle;
 
 struct Media(onicode_voice_media::DesktopMedia);
 #[async_trait::async_trait]
@@ -12,18 +15,23 @@ impl VoiceMediaEndpoint for Media {
         super::permissions::microphone().await?;
         self.0.prepare().await
     }
+
     async fn offer(&self) -> Result<Sdp, VoiceRejection> {
         self.0.offer().await
     }
+
     async fn apply_answer(&self, answer: Sdp) -> Result<(), VoiceRejection> {
         self.0.apply_answer(answer).await
     }
+
     async fn set_muted(&self, muted: bool) -> Result<(), VoiceRejection> {
         self.0.set_muted(muted).await
     }
+
     async fn levels(&self) -> Result<(u16, u16), VoiceRejection> {
         self.0.levels().await
     }
+
     fn close(&self) {
         self.0.close();
     }

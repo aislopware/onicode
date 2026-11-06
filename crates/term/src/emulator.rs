@@ -12,18 +12,24 @@
 //! text as output scrolls the grid underneath them.
 //!
 //! API notes for the pinned `alacritty_terminal 0.26` / `vte 0.15`:
-//! - `Processor::advance` consumes a byte slice; `Term` implements the
-//!   `vte::ansi::Handler` trait directly, so no event-loop machinery is needed.
-//! - `Term::new` takes any `grid::Dimensions` impl — [`GridSize`] here (the
-//!   crate's own `TermSize` lives in a `term::test` helper module).
-//! - Query responses (DSR/DA/…) surface as `Event::PtyWrite` on the listener;
-//!   [`Emulator::feed`] returns them so the panel can write them back.
+//! - `Processor::advance` consumes a byte slice; `Term` implements the `vte::ansi::Handler` trait
+//!   directly, so no event-loop machinery is needed.
+//! - `Term::new` takes any `grid::Dimensions` impl — [`GridSize`] here (the crate's own `TermSize`
+//!   lives in a `term::test` helper module).
+//! - Query responses (DSR/DA/…) surface as `Event::PtyWrite` on the listener; [`Emulator::feed`]
+//!   returns them so the panel can write them back.
 
 use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line, Point};
+/// Grid coordinates and selection granularity, re-exported so the panel and
+/// view speak the emulator's vocabulary without depending on
+/// `alacritty_terminal` directly — the same seam [`CellColor`] draws for
+/// colors.
+pub use alacritty_terminal::index::{Point as GridPoint, Side};
+pub use alacritty_terminal::selection::SelectionType;
 use alacritty_terminal::selection::{Selection, SelectionRange};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term, TermMode};
@@ -31,13 +37,6 @@ use alacritty_terminal::vte::ansi::{
     Color as AnsiColor, CursorShape as AnsiCursorShape, CursorStyle as AnsiCursorStyle, NamedColor,
     Processor, Rgb as AnsiRgb,
 };
-
-/// Grid coordinates and selection granularity, re-exported so the panel and
-/// view speak the emulator's vocabulary without depending on
-/// `alacritty_terminal` directly — the same seam [`CellColor`] draws for
-/// colors.
-pub use alacritty_terminal::index::{Point as GridPoint, Side};
-pub use alacritty_terminal::selection::SelectionType;
 
 /// Scrollback history kept client-side (lines). The engine's replay window is
 /// bounded separately (1 MiB); this only caps what stays scrollable in the UI.
@@ -62,9 +61,11 @@ impl Dimensions for GridSize {
     fn total_lines(&self) -> usize {
         self.rows as usize
     }
+
     fn screen_lines(&self) -> usize {
         self.rows as usize
     }
+
     fn columns(&self) -> usize {
         self.cols as usize
     }

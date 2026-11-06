@@ -3,10 +3,10 @@
 //! indicator) and the Subagents header, and the pulsing button with a count
 //! badge on the titlebar's explorer toggle.
 
+use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, AppContext as _, Bounds, Context, Entity, Hsla, IntoElement, Render,
-    RenderOnce, SharedString, Styled as _, TextAlign, TextRun, Window, canvas, div, fill, point,
-    prelude::*, px, size,
+    AnyElement, App, Bounds, Context, Entity, Hsla, IntoElement, Render, RenderOnce, SharedString,
+    TextAlign, TextRun, Window, canvas, div, fill, point, px, size,
 };
 
 use crate::motion::{self, ONICODE_PULSE};
@@ -32,7 +32,7 @@ const BADGE: f32 = 13.0;
 /// Past this the count would outgrow the pill; it reads "99+".
 const COUNT_CAP: u32 = 99;
 
-/// The count as drawn: exact up to [`COUNT_CAP`], then "99+".
+/// The count as drawn: exact up to `COUNT_CAP`, then "99+".
 pub fn count_label(count: u32) -> SharedString {
     if count > COUNT_CAP {
         format!("{COUNT_CAP}+").into()

@@ -5,10 +5,9 @@
 //! CLI, so an update never installs one, and an installed one says so with
 //! the release to go back to. Sources, first match wins:
 //!
-//! 1. `{edge}/releases/harness-compatibility.json` — published on its own,
-//!    so a release that broke this morning is held back today, without a
-//!    onicode release. Fetched at most hourly; the last good copy is kept in
-//!    `{data_dir}/harness-compatibility.json` for offline starts.
+//! 1. `{edge}/releases/harness-compatibility.json` — published on its own, so a release that broke
+//!    this morning is held back today, without a onicode release. Fetched at most hourly; the last
+//!    good copy is kept in `{data_dir}/harness-compatibility.json` for offline starts.
 //! 2. The list built into this onicode (`compatibility.json`).
 //!
 //! ```json

@@ -9,17 +9,15 @@
 //! The steps, each durable before the next, with `update-transaction.json` in
 //! the data directory saying how far things got:
 //!
-//! 1. **Requested.** The running engine checks there's room, stages the release
-//!    and records the update before it answers. Then it restarts as usual.
-//! 2. The old version starts and takes the data directory before anything has
-//!    opened it. It copies the databases ([`take_snapshot`]), records **Trial**,
-//!    leaves a watchdog behind and replaces itself with the new binary: the same
-//!    process, so the service manager sees nothing change.
-//! 3. The new version starts, holds back work it couldn't take back, and proves
-//!    it's ready (the engine's `update_trial`).
-//! 4. It [commits](commit_trial): `current` moves, then **Updated** is recorded.
-//!    A crash between the two is settled by the next start, which finds itself
-//!    running as `current`.
+//! 1. **Requested.** The running engine checks there's room, stages the release and records the
+//!    update before it answers. Then it restarts as usual.
+//! 2. The old version starts and takes the data directory before anything has opened it. It copies
+//!    the databases (`take_snapshot`), records **Trial**, leaves a watchdog behind and replaces
+//!    itself with the new binary: the same process, so the service manager sees nothing change.
+//! 3. The new version starts, holds back work it couldn't take back, and proves it's ready (the
+//!    engine's `update_trial`).
+//! 4. It [commits](commit_trial): `current` moves, then **Updated** is recorded. A crash between
+//!    the two is settled by the next start, which finds itself running as `current`.
 //!
 //! If the new version stops first, or the watchdog stops it at the deadline, the
 //! service manager starts `current`: the old version, which finds **Trial** and

@@ -15,13 +15,13 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use gpui::prelude::*;
 use gpui::{
     Action, AnyElement, App, ClipboardItem, Context, Empty, Entity, FocusHandle, Focusable as _,
     IntoElement, KeyBinding, Keystroke, ModifiersChangedEvent, MouseButton, MouseDownEvent,
     MouseUpEvent, NavigationDirection, Pixels, Point, Render, SharedString, Subscription, Task,
-    Window, WindowControlArea, actions, div, prelude::*, px,
+    Window, WindowControlArea, actions, div, px,
 };
-
 use gpui_tokio::Tokio;
 use onicode_engine::InstanceLock;
 use onicode_proto::{AuthState, ChatConfig, HarnessId, WorkspaceScope};
@@ -33,13 +33,11 @@ use crate::files::{
     FileColumn, FilesCloseDisposition, FilesEvent, FilesSurface, WorkspacePathDrag,
 };
 use crate::icons::{self, icon};
-use crate::loaders;
 use crate::motion::{
     self, AnimationExt as _, MotionSpec, PANEL_RESIZE, RESIZE, SPLASH_OUT, TAB_SLIDE,
 };
 use crate::popover::{self, Loadable};
 use crate::pull_requests::PullRequestsPage;
-use crate::rail;
 use crate::settings::accounts::AccountsPage;
 use crate::settings::appearance::{AppearancePage, AppearanceSettingsEvent};
 use crate::settings::archived::ArchivedPage;
@@ -64,6 +62,7 @@ use crate::state::{
 use crate::terminal::panel::{TerminalPanel, ToggleTerminal, clamp_terminal_height};
 use crate::theme::Theme;
 use crate::transcript::{self, Transcript, TranscriptEvent};
+use crate::{loaders, rail};
 
 mod actions_ui;
 mod chat_dropzone;
@@ -101,9 +100,8 @@ use side_chats::SideChatTab;
 mod tabs;
 use tabs::NewSessionTarget;
 mod voice_stage;
-use voice_stage::VOICE_STAGE_ORB_SCALE;
-
 use spaces::{AddSpaceFlow, RenameSpaceDialog};
+use voice_stage::VOICE_STAGE_ORB_SCALE;
 
 /// The sidebar line speaks for the whole connection, and whether its glyph
 /// is the amber dot (else the reconnect spinner). One chat's sync reads in
@@ -339,7 +337,7 @@ pub const CLUSTER_BUTTONS_WIDTH: f32 = 24.0 * 3.0 + TITLEBAR_GROUP_GAP + TITLEBA
 /// the left controls as its own group.
 pub const TITLEBAR_ACTION_SLOT_WIDTH: f32 = TITLEBAR_GROUP_GAP + 24.0;
 /// Horizontal inset owned by the titlebar control row itself. Keep this value
-/// paired with [`Self::titlebar_spacer`]: using a different number for the
+/// paired with `Self::titlebar_spacer`: using a different number for the
 /// spacer shifts every control while leaving the declared cluster geometry
 /// unchanged.
 const TITLEBAR_CLUSTER_PAD: f32 = 10.0;
@@ -384,7 +382,7 @@ pub fn cluster_clearance(
 /// map, then binds the customizable shortcuts from `keymap` (feature-inventory
 /// §1.4). Invalid persisted combos fall back to that shortcut's default.
 /// Everything is written in US keys and bound where the active keyboard layout
-/// types them (see [`localize_key_bindings`]); re-run on a layout switch.
+/// types them (see `localize_key_bindings`); re-run on a layout switch.
 pub fn apply_keymap(
     cx: &mut App,
     keymap: &KeymapConfig,
@@ -395,7 +393,7 @@ pub fn apply_keymap(
         if Keystroke::parse(&candidate).is_ok() {
             candidate
         } else {
-            tracing::warn!(%combo, "unparseable shortcut combo; using default");
+            tracing::warn!(%combo, "unparsable shortcut combo; using default");
             platform_combo(fallback)
         }
     }
@@ -815,10 +813,10 @@ pub enum RightSurface {
     Diff(u64),
     Terminal(u64),
     /// A subagent's transcript, read-only (per-subagent viz) — the handle
-    /// keys [`Shell::subagent_tabs`].
+    /// keys `Shell::subagent_tabs`.
     Subagent(u64),
     SideChat(u64),
-    /// A pull request opened from the chat — keys [`Shell::chat_pull_requests`].
+    /// A pull request opened from the chat — keys `Shell::chat_pull_requests`.
     PullRequest(u64),
 }
 
@@ -14812,7 +14810,7 @@ mod tests {
 
     #[test]
     fn every_default_shortcut_binds_on_this_platform() {
-        // `apply_keymap` silently falls back on an unparseable combo, so a
+        // `apply_keymap` silently falls back on an unparsable combo, so a
         // default gpui cannot parse would ship as a dead shortcut.
         for id in crate::settings::ShortcutId::ALL {
             let combo = platform_combo(id.default_combo());
@@ -16065,8 +16063,9 @@ mod tests {
 
 #[cfg(test)]
 mod exit_regressions {
-    use super::*;
     use gpui::{AppContext, TestAppContext};
+
+    use super::*;
 
     #[gpui::test]
     fn new_shell_only_shows_boot_splash_while_connecting(cx: &mut TestAppContext) {
@@ -18120,7 +18119,7 @@ mod exit_regressions {
         .unwrap();
         let outside = dir.path().join("outside/INFORME.md");
         std::fs::create_dir_all(outside.parent().unwrap()).unwrap();
-        std::fs::write(&outside, "# Informe\n").unwrap();
+        std::fs::write(&outside, "# Informe\n").unwrap(); // spellchecker:disable-line
         cx.update(|cx| {
             crate::history::init(
                 Default::default(),
@@ -18688,6 +18687,7 @@ impl Shell {
     pub fn fixture_focus_mounted(&self, window: &Window, cx: &App) -> bool {
         self.shortcut_focus.contains_focused(window, cx)
     }
+
     pub fn fixture_active_browser(
         &self,
         cx: &App,
@@ -18697,6 +18697,7 @@ impl Shell {
         };
         self.browsers.get(&id).cloned().map(|browser| (id, browser))
     }
+
     pub fn fixture_open_browser(
         &mut self,
         url: Option<String>,
@@ -18713,12 +18714,15 @@ impl Shell {
         self.add_browser_surface(url, window, cx);
         (self.browser_seq, self.browsers[&self.browser_seq].clone())
     }
+
     pub fn fixture_select_browser(&mut self, id: u64, cx: &mut Context<Self>) {
         self.set_right_active(RightSurface::Browser(id), cx);
     }
+
     pub fn fixture_close_browser(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         self.close_right_surface(RightSurface::Browser(id), window, cx);
     }
+
     pub fn fixture_browser_menu(&mut self, open: bool, cx: &mut Context<Self>) {
         if open {
             self.right_plus.open(());
@@ -18727,17 +18731,21 @@ impl Shell {
             self.close_right_plus(cx);
         }
     }
+
     pub fn fixture_browser_menu_mounted(&self) -> bool {
         self.right_plus.get().is_some()
     }
+
     pub fn fixture_expand_browser(&mut self, cx: &mut Context<Self>) {
         self.toggle_right_pane_expand(cx);
     }
+
     pub fn fixture_blur_browser(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.route = Route::Settings(SettingsSection::Devices);
         window.blur();
         cx.notify();
     }
+
     pub fn fixture_toggle_sidebar(&mut self, right: bool, cx: &mut Context<Self>) {
         if right {
             // The fixtures drive the surface host only; the explorer stays put.
@@ -18746,6 +18754,7 @@ impl Shell {
             self.toggle_sidebar(cx);
         }
     }
+
     pub fn fixture_resize_browser(&mut self, width: f32, cx: &mut Context<Self>) {
         self.settings.right_pane_width = width;
         cx.notify();
@@ -18754,8 +18763,9 @@ impl Shell {
 
 #[cfg(test)]
 mod right_tab_mouse_regressions {
-    use super::*;
     use gpui::{AppContext, TestAppContext, VisualTestContext};
+
+    use super::*;
 
     // Render the production strip and use its real Shell callbacks, without
     // starting an engine or rendering the rest of the desktop application.
@@ -18998,8 +19008,9 @@ mod right_tab_mouse_regressions {
 
 #[cfg(test)]
 mod shortcut_focus_regressions {
-    use super::*;
     use gpui::{AppContext, TestAppContext};
+
+    use super::*;
 
     struct ShortcutHost {
         root: FocusHandle,
@@ -19170,32 +19181,40 @@ impl Shell {
             self.close_settings(cx);
         }
     }
+
     pub fn fixture_appshots_composer(&self) -> Entity<Composer> {
         self.composer.clone()
     }
+
     pub fn fixture_appshots_sidebar(&mut self, collapsed: bool, cx: &mut Context<Self>) {
         self.settings.sidebar_collapsed = collapsed;
         cx.notify();
     }
+
     pub fn fixture_appshots_transcript_start(&self, cx: &mut Context<Self>) {
         self.transcript
             .update(cx, |t, cx| t.fixture_appshots_start(cx));
     }
+
     pub fn fixture_transcript(&self) -> Entity<crate::transcript::Transcript> {
         self.transcript.clone()
     }
+
     /// A session row's click in the sidebar.
     pub fn fixture_open_chat(&mut self, chat_id: &str, cx: &mut Context<Self>) {
         self.open_chat(chat_id.to_owned(), cx);
     }
+
     /// A side chat's row under its parent.
     pub fn fixture_open_side_chat(&mut self, chat_id: &str, cx: &mut Context<Self>) {
         self.open_child_chat_tab(chat_id, cx);
     }
+
     /// The session card's "Fork chat".
     pub fn fixture_fork_chat(&mut self, cx: &mut Context<Self>) {
         self.create_side_chat(cx);
     }
+
     pub fn fixture_open_browser(
         &mut self,
         url: String,
@@ -19209,8 +19228,9 @@ impl Shell {
 
 #[cfg(test)]
 mod settings_modal_regressions {
-    use super::*;
     use gpui::{AppContext, TestAppContext};
+
+    use super::*;
 
     struct FocusHost {
         background: FocusHandle,

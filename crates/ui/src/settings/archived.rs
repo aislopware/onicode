@@ -2,10 +2,8 @@
 //! devices, with Unarchive (Mutate setChatArchived false) and a confirmed
 //! Delete all (Mutate deleteChat per archived chat).
 
-use gpui::{
-    AnyElement, Context, Entity, SharedString, Subscription, Task, Window, div, prelude::*, px,
-};
-
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, Entity, SharedString, Subscription, Task, Window, div, px};
 use onicode_proto::Chat;
 use onicode_rpc::methods;
 
@@ -606,8 +604,9 @@ fn delete_all_failure(failed: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::Utc;
+
+    use super::*;
 
     fn chat(id: &str, archived: bool) -> Chat {
         Chat {

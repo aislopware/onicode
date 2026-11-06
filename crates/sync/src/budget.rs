@@ -1,12 +1,14 @@
 //! Process-wide admission for chat data traffic. Registry/device control links
 //! deliberately remain outside this small budget. Permits cover the resource's
 //! entire lifetime, including response bodies and socket teardown.
-use crate::SyncError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
+
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
+
+use crate::SyncError;
 
 #[derive(Clone, Copy)]
 pub enum Priority {
@@ -107,6 +109,7 @@ impl Budget {
         let _waiting = Waiting(&self.socket_waiters);
         self.acquire(&self.sockets, false).await
     }
+
     pub async fn dial(&self) -> Result<Permit, SyncError> {
         let permit = self.acquire(&self.dials, false).await?;
         let at = {
@@ -119,10 +122,12 @@ impl Budget {
         self.wait_for_resources().await;
         Ok(permit)
     }
+
     pub async fn http(&self, priority: Priority) -> Result<Permit, SyncError> {
         self.acquire(&self.http, matches!(priority, Priority::Background))
             .await
     }
+
     /// Preserve OS error identity before transport layers stringify it.
     pub fn observe_error(&self, error: &(dyn std::error::Error + 'static)) {
         let mut current = Some(error);

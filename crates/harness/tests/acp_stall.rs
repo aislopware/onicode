@@ -10,10 +10,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use futures::StreamExt;
-use tokio::sync::{mpsc, oneshot};
-
 use onicode_harness::{AcpHarness, CancellationToken, Harness, RunControls};
 use onicode_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
+use tokio::sync::{mpsc, oneshot};
 
 fn fixture_path() -> PathBuf {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

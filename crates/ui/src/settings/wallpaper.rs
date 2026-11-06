@@ -1,8 +1,8 @@
 //! Folder-backed wallpaper rotation. Scan and decode away from the UI thread.
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 use gpui::{App, Global, Task};
-use std::collections::VecDeque;
 
 const HISTORY_LIMIT: usize = 8;
 

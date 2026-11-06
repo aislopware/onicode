@@ -11,7 +11,7 @@
 //! version. An added agent lives in `<agents root>/<registry id>/`:
 //!
 //!   agent.json            what it is and how it launches ([`Record`])
-//!   <version>/            the install (staged in `.tmp-*`, renamed into
+//!   `<version>/`            the install (staged in `.tmp-*`, renamed into
 //!                         place once its entry resolves and the marker is
 //!                         written: a killed install never passes for one)
 //!
@@ -1465,7 +1465,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn icons_come_only_from_the_registrys_cdn_and_small() {
+    async fn icons_come_only_from_the_registry_cdn_and_small() {
         // (Refused before any request: another host, plain http.)
         if std::env::var("ONICODE_ACP_REGISTRY_LOOPBACK").is_err() {
             assert!(fetch_icon("https://example.com/gemini.svg").await.is_none());

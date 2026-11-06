@@ -70,8 +70,9 @@ impl PanelHandoff {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::time::Duration;
+
+    use super::*;
 
     #[test]
     fn geometry_switch_is_hidden_in_both_directions() {

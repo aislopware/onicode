@@ -1,11 +1,11 @@
 //! Live mode: the edge transports behind [`crate::Client`].
 //!
-//! - registry: `RegistryClient` over the shared [`onicode_doc::RegistryDoc`]
-//!   (WS + HTTPS pull/push), persisted in the docs store, presence beats,
-//!   sidebar-pin reconciliation once synced;
+//! - registry: `RegistryClient` over the shared [`onicode_doc::RegistryDoc`] (WS + HTTPS
+//!   pull/push), persisted in the docs store, presence beats, sidebar-pin reconciliation once
+//!   synced;
 //! - rooms ([`room`]): one chat2 `ChatClient` per open session;
-//! - relay ([`relay`]): host RPCs over the device room (`LinkCache`),
-//!   chunked uploads / attachment reads, PR-status watches;
+//! - relay ([`relay`]): host RPCs over the device room (`LinkCache`), chunked uploads / attachment
+//!   reads, PR-status watches;
 //! - escorts ([`escort`]): `pending://` attachment bytes pushed to the host.
 //!
 //! Every loop here retries forever with bounded backoff that event wakes

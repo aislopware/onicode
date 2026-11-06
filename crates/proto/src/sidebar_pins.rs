@@ -98,6 +98,7 @@ impl SidebarPinChange {
             | Self::Unpin { session_id } => session_id,
         }
     }
+
     /// Rebase a pending intent on the latest confirmed projection. A stale
     /// move never resurrects an unpinned item. A surviving right anchor wins;
     /// otherwise use the left anchor, or append when both disappeared.

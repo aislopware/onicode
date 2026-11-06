@@ -9,16 +9,17 @@
 //! login, expire with the login, and are removed the moment it ends; A's
 //! forwarder is dropped at the same points. A port already taken on A fails
 //! the login up front with a clear message rather than racing the browser.
-use crate::mux::BoxIo;
+use std::collections::HashMap;
+use std::net::{Ipv4Addr, Ipv6Addr};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
 use futures::future::BoxFuture;
-use std::{
-    collections::HashMap,
-    net::{Ipv4Addr, Ipv6Addr},
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
-use tokio::{net::TcpListener, sync::Notify};
+use tokio::net::TcpListener;
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
+
+use crate::mux::BoxIo;
 
 /// Mux service ids of sign-in callbacks: the prefix, then the login id.
 pub const SERVICE_PREFIX: &str = "agent-login:";
@@ -250,9 +251,10 @@ impl CallbackTunnels {
 
 #[cfg(test)]
 mod tests {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
     use super::*;
     use crate::mux::{Connector, Mux, PeerScoped, SocketTransport};
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     /// The running device's connector, reduced to its sign-in routes.
     struct Routes(CallbackRoutes);
@@ -261,6 +263,7 @@ mod tests {
         async fn connect(&self, service: &str) -> anyhow::Result<BoxIo> {
             self.connect_from(None, service).await
         }
+
         async fn connect_from(&self, peer: Option<&str>, service: &str) -> anyhow::Result<BoxIo> {
             let port = self
                 .0

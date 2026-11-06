@@ -1,23 +1,20 @@
 //! Native, virtualized preview of a file's current Markdown buffer.
-use crate::image_media::release_media;
-use crate::{
-    markdown::{
-        parser::{self, Block, BlockTree, InlineRun},
-        render::{self, LinkUi, RenderCache, RenderOptions},
-    },
-    theme::Theme,
-};
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+use std::sync::Arc;
+use std::time::Duration;
+
+use gpui::prelude::*;
 use gpui::{
     AnyElement, Context, FocusHandle, ListAlignment, ListOffset, ListSizingBehavior, ListState,
-    Render, SharedString, Task, Window, div, list, prelude::*, px,
+    Render, SharedString, Task, Window, div, list, px,
 };
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    rc::Rc,
-    sync::Arc,
-    time::Duration,
-};
+
+use crate::image_media::release_media;
+use crate::markdown::parser::{self, Block, BlockTree, InlineRun};
+use crate::markdown::render::{self, LinkUi, RenderCache, RenderOptions};
+use crate::theme::Theme;
 
 const MAX_MEDIA_BYTES: usize = 64 * 1024 * 1024;
 const MAX_MEDIA_ENTRIES: usize = 32;
@@ -296,6 +293,7 @@ impl MarkdownPreview {
             self.zoom_render = Some(next);
         }
     }
+
     pub(super) fn set_comments(
         &mut self,
         owner: gpui::WeakEntity<super::FilesSurface>,
@@ -1532,8 +1530,9 @@ mod tests {
 
 #[cfg(all(test, target_os = "linux"))]
 mod layout_tests {
-    use super::*;
     use gpui::{AppContext, Bounds, Point};
+
+    use super::*;
 
     struct TaskDocument {
         preview: gpui::Entity<MarkdownPreview>,
@@ -2009,8 +2008,9 @@ mod layout_tests {
 
 #[cfg(test)]
 mod async_tests {
-    use super::*;
     use gpui::{AppContext, TestAppContext};
+
+    use super::*;
 
     #[gpui::test]
     fn edits_and_suspension_cancel_obsolete_preview_work(cx: &mut TestAppContext) {

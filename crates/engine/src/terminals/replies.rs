@@ -27,9 +27,11 @@ impl Dimensions for Size {
     fn total_lines(&self) -> usize {
         self.rows
     }
+
     fn screen_lines(&self) -> usize {
         self.rows
     }
+
     fn columns(&self) -> usize {
         self.cols
     }
@@ -120,8 +122,9 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn the_host_answers_in_the_pty_unless_a_self_answering_viewer_is_attached() {
-        use base64::Engine as _;
         use std::time::Duration;
+
+        use base64::Engine as _;
         if !std::path::Path::new("/bin/bash").exists() {
             return;
         }

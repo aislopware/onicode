@@ -1,17 +1,18 @@
 //! Shared metadata-only Git subscription. Views hold leases; the last lease
 //! dropping cancels the RPC. Cached sources never own their consuming views.
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
+use std::time::Duration;
 
-use gpui::{App, Context, Entity, Global, Task, WeakEntity, prelude::*};
+use gpui::prelude::*;
+use gpui::{App, Context, Entity, Global, Task, WeakEntity};
 use onicode_proto::{CheckoutGitStatus, GitFileState, GitFileStatus, WatchWorkspaceFilesRequest};
 use onicode_rpc::{RpcError, methods};
 
-use super::{
-    FilesSurface,
-    client::{FilesRequestContext, request_params},
-    model::parent_path,
-};
-use crate::{state::EngineHandle, theme::Theme};
+use super::FilesSurface;
+use super::client::{FilesRequestContext, request_params};
+use super::model::parent_path;
+use crate::state::EngineHandle;
+use crate::theme::Theme;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum DecorationKind {
@@ -268,6 +269,7 @@ impl FilesSurface {
     pub(crate) fn test_git_source(&self) -> Option<gpui::EntityId> {
         self.git_status.as_ref().map(Entity::entity_id)
     }
+
     pub(super) fn git_status_notice(&self, cx: &App) -> Option<&'static str> {
         self.git_status.as_ref()?.read(cx).notice
     }
@@ -282,6 +284,7 @@ impl FilesSurface {
         self.git_decoration(path, directory, cx)
             .map(|decoration| decoration.color(Theme::of(cx)))
     }
+
     pub(crate) fn release_git_status(&mut self) {
         self.git_status_subscription = None;
         self.git_status = None;
@@ -360,8 +363,9 @@ fn accepts(context: &FilesRequestContext, device: &str, snapshot: &CheckoutGitSt
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_proto::GitFileState::*;
+
+    use super::*;
 
     fn file(path: &str, index: GitFileState, worktree: GitFileState) -> GitFileStatus {
         GitFileStatus {

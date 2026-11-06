@@ -115,6 +115,7 @@ impl Child {
 
 impl Deref for Child {
     type Target = ProcessChild;
+
     fn deref(&self) -> &Self::Target {
         &self.inner
     }

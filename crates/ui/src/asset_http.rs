@@ -2,13 +2,13 @@
 //! GPUI requests an asset from its own executor; no GitHub credentials are sent.
 //! Images come from untrusted PR text, so only public HTTPS hosts are reached,
 //! redirects included: never plain HTTP, this machine, or the local network.
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
+use std::time::Duration;
+
 use futures::{FutureExt, StreamExt};
-use gpui::http_client::{AsyncBody, HttpClient, Request, Response, http::HeaderValue};
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
-    time::Duration,
-};
+use gpui::http_client::http::HeaderValue;
+use gpui::http_client::{AsyncBody, HttpClient, Request, Response};
 
 const MAX_ASSET_BYTES: usize = 16 * 1024 * 1024;
 const MAX_REDIRECTS: usize = 5;
@@ -213,6 +213,7 @@ impl HttpClient for AssetHttpClient {
     fn user_agent(&self) -> Option<&HeaderValue> {
         None
     }
+
     fn proxy(&self) -> Option<&url::Url> {
         None
     }
@@ -220,9 +221,10 @@ impl HttpClient for AssetHttpClient {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use futures::AsyncReadExt;
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt};
+
+    use super::*;
 
     #[test]
     fn public_ip_refuses_every_local_reserved_and_embedded_private_range() {

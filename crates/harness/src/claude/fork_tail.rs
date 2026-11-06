@@ -3,7 +3,7 @@
 //! The CLI replays a typed fork's transcript only once the fork is over. Where
 //! the transcript lives is documented: "`agent_transcript_path` is the
 //! subagent's own transcript stored in a nested `subagents/` folder"
-//! (https://code.claude.com/docs/en/hooks.md#subagentstop-input), here
+//! (<https://code.claude.com/docs/en/hooks.md#subagentstop-input>), here
 //! `<project>/<session>/subagents/agent-<task>.jsonl`. Live-verified 2.1.310:
 //! the file appears with the fork's start and grows as the fork works, while
 //! stdout is silent. The normalizer shows each record once

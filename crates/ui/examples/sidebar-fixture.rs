@@ -1,7 +1,7 @@
-//! Isolated native sidebar review fixture. ONICODE_SIDEBAR_COMPACT / ONICODE_SIDEBAR_HIDE_LABEL select layout;
-//! ONICODE_SIDEBAR_BY_PROJECT groups by project, with a remote clone of the local repository.
-//! ONICODE_SIDEBAR_CAPTURE=<dir> saves the window as sidebar.png there and quits (needs the
-//! appshots-fixture feature for render_to_image); its rows' pull requests are open, merged
+//! Isolated native sidebar review fixture. ONICODE_SIDEBAR_COMPACT / ONICODE_SIDEBAR_HIDE_LABEL
+//! select layout; ONICODE_SIDEBAR_BY_PROJECT groups by project, with a remote clone of the local
+//! repository. ONICODE_SIDEBAR_CAPTURE=<dir> saves the window as sidebar.png there and quits (needs
+//! the appshots-fixture feature for render_to_image); its rows' pull requests are open, merged
 //! and closed, for comparing badges.
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 use onicode_ui::*;

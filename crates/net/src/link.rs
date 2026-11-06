@@ -15,7 +15,7 @@
 //! arrives a round trip or two before the retransmission would. The receiver keeps whichever
 //! comes first (it deduplicates by sequence number).
 //!
-//! QUIC's send buffer is held to twice the congestion window ([`SendWindow`]): what a flood
+//! QUIC's send buffer is held to twice the congestion window (`SendWindow`): what a flood
 //! queues past that waits in the stream's queue, where [`StreamTx::pending`] counts it, so the
 //! app sees a terminal fall behind and skips ahead (a snapshot) rather than streaming seconds of
 //! stale output after Ctrl-C.

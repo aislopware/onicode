@@ -8,8 +8,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::StreamExt;
-use tokio::sync::{mpsc, oneshot};
-
 use onicode_harness::{
     CancellationToken, CodexHarness, Harness, HarnessError, RunControls, SteerMessage,
 };
@@ -17,6 +15,7 @@ use onicode_proto::{
     AccessMode, AgentEvent, DoneStatus, HarnessId, ReasoningLevel, RunRequest, SandboxLevel,
     TodoItem, TodoStatus, ToolCall, UserInputAnswer, UserInputQuestion,
 };
+use tokio::sync::{mpsc, oneshot};
 
 fn fixture_path() -> PathBuf {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -2434,9 +2433,11 @@ async fn a_side_chats_only_thread_starts_without_agent_tools() {
 #[cfg(unix)]
 #[tokio::test]
 async fn external_voice_keeps_canonical_events_without_any_local_helper() {
-    use onicode_harness::codex::realtime::{VoiceCommand, channel};
-    use onicode_proto::voice::{VoiceEvent, remote::Sdp};
     use std::os::unix::fs::PermissionsExt;
+
+    use onicode_harness::codex::realtime::{VoiceCommand, channel};
+    use onicode_proto::voice::VoiceEvent;
+    use onicode_proto::voice::remote::Sdp;
     let dir = tempfile::tempdir().unwrap();
     let binary = dir.path().join("bin/codex");
     std::fs::create_dir_all(binary.parent().unwrap()).unwrap();

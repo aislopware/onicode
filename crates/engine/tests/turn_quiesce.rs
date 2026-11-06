@@ -3,14 +3,12 @@
 //! claude-agent-acp — but the failure shape is harness-agnostic):
 //!
 //! 1. A turn completes (Done) → the session parks Idle.
-//! 2. The agent re-invokes ITSELF on a background-task notification and
-//!    streams real output with no prompt behind it. The old parked gate
-//!    dropped that output on the floor ("Build finished successfully…"
-//!    existed in the agent's session data, was absent from onicode's doc).
-//! 3. A steer ("what about now") becomes the next turn — the agent answers,
-//!    and the turn-end reply is LOST upstream. No Done ever arrives; the
-//!    session read Working forever (the live heartbeat defeats the 45s
-//!    staleness gate by design, and there is no per-turn timeout).
+//! 2. The agent re-invokes ITSELF on a background-task notification and streams real output with no
+//!    prompt behind it. The old parked gate dropped that output on the floor ("Build finished
+//!    successfully…" existed in the agent's session data, was absent from onicode's doc).
+//! 3. A steer ("what about now") becomes the next turn — the agent answers, and the turn-end reply
+//!    is LOST upstream. No Done ever arrives; the session read Working forever (the live heartbeat
+//!    defeats the 45s staleness gate by design, and there is no per-turn timeout).
 //!
 //! The fixes under test: parked sessions RESUME on self-continued output
 //! (fold it, show Working), and the quiesce watchdog settles any turn whose
@@ -23,8 +21,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-use tokio::sync::{Mutex, mpsc};
-
 use onicode_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
 use onicode_engine::{EngineCore, HarnessRegistry, SteerOutcome};
 use onicode_harness::{Harness, HarnessError, RunControls};
@@ -32,6 +28,7 @@ use onicode_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SessionStatus, SteeringMode, ToolCall,
 };
+use tokio::sync::{Mutex, mpsc};
 
 const CHAT: &str = "chat-quiesce";
 /// Watchdog window for every test in this file (the process-global env knob
@@ -107,21 +104,27 @@ impl Harness for FeedHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Feed"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,

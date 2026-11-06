@@ -29,8 +29,9 @@ impl Rng {
         self.0 ^= self.0 >> 12;
         self.0 ^= self.0 << 25;
         self.0 ^= self.0 >> 27;
-        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
     }
+
     fn below(&mut self, n: usize) -> usize {
         (self.next() % n as u64) as usize
     }
@@ -177,7 +178,7 @@ fn setup() -> (FontBook, Vec<(String, Vec<Span>)>, Styles) {
         ),
     };
     book.set_fallback(Arc::new(Fallback));
-    let mut rng = Rng(0xC0FFEE);
+    let mut rng = Rng(0xc0ffee);
     let corpus = (0..1000).map(|_| paragraph(&mut rng, &st)).collect();
     (book, corpus, st)
 }

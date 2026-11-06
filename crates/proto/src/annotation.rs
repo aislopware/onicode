@@ -8,8 +8,9 @@
 //! box, styles and a fenced HTML excerpt), so models without vision get the
 //! whole context. Page content is untrusted and is labelled as data.
 
-use serde::{Deserialize, Serialize};
 use std::ops::Range;
+
+use serde::{Deserialize, Serialize};
 
 pub const ANNOTATION_SCHEME: &str = "onicode-annotation:";
 

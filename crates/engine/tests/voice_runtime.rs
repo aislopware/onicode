@@ -365,9 +365,11 @@ mod voice_relay;
 #[cfg(unix)]
 #[tokio::test]
 async fn remote_voice_crosses_two_engines_and_owner_drop_releases_host() {
+    use std::sync::Arc;
+    use std::time::Duration;
+
     use onicode_proto::voice::{VoiceEvent, remote as wire};
     use onicode_rpc::{HostRelay, HostRelayConfig, LinkCache, LinkCacheConfig, StaticToken};
-    use std::{sync::Arc, time::Duration};
     let temp = tempfile::tempdir().unwrap();
     let host = native_core(&temp).await;
     std::fs::remove_file(

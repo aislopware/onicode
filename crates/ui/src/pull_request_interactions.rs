@@ -1,6 +1,7 @@
+use gpui::Focusable;
+
 use super::*;
 use crate::composer::ComposerInputEvent;
-use gpui::Focusable;
 
 impl PullRequestDetailPage {
     pub(super) fn comment_event(&mut self, event: &ComposerInputEvent, cx: &mut Context<Self>) {
@@ -534,9 +535,10 @@ impl PullRequestDetailPage {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
     use crate::pull_request_test_support::{self as fixture, ScriptedRpc};
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn comment_rpc(calls: Arc<AtomicUsize>) -> Arc<ScriptedRpc> {
         ScriptedRpc::new(move |method, params| {

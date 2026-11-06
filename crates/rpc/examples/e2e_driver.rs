@@ -6,10 +6,10 @@
 //! 1. `LocalDevice` on both — distinct device ids;
 //! 2. `Mutate createChat` on A (A hosts the chat, mock harness config);
 //! 3. waits until the chat row syncs A → edge → B (`WatchChats` on B);
-//! 4. `QueueCommand` a Run on **B** — the doc path: B commits the command into its
-//!    replica, nudges A's device room, A's host executor drains and runs it;
-//! 5. waits on **B** until the assistant entry lands `complete` with the mock
-//!    transcript (A → edge → B), and the session-status row round-trips.
+//! 4. `QueueCommand` a Run on **B** — the doc path: B commits the command into its replica, nudges
+//!    A's device room, A's host executor drains and runs it;
+//! 5. waits on **B** until the assistant entry lands `complete` with the mock transcript (A → edge
+//!    → B), and the session-status row round-trips.
 //!
 //! Prints `PASS`/`FAIL` lines; exits nonzero on failure.
 
@@ -138,8 +138,8 @@ async fn main() {
     }
     pass(&format!("devices distinct (A={a_dev} B={b_dev})"));
 
-    // 2. Create a space + chat on A, hosted by A, with the mock harness (the
-    //    space fixes device + cwd — the chat row derives both from it).
+    // 2. Create a space + chat on A, hosted by A, with the mock harness (the space fixes device +
+    //    cwd — the chat row derives both from it).
     let space_id = uuid::Uuid::new_v4().to_string();
     a.call(
         methods::MUTATE,
@@ -213,8 +213,8 @@ async fn main() {
     }
     pass("chat row synced A -> edge -> B (host = A)");
 
-    // 4. Queue the run from B THROUGH THE DOC (no targetDeviceId): B commits the
-    //    command into its replica; the nudge + room sync hand it to A's executor.
+    // 4. Queue the run from B THROUGH THE DOC (no targetDeviceId): B commits the command into its
+    //    replica; the nudge + room sync hand it to A's executor.
     let message_id = uuid::Uuid::new_v4().to_string();
     b.call(
         methods::QUEUE_COMMAND,

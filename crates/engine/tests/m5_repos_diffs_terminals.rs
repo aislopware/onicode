@@ -1,16 +1,14 @@
 //! M5a integration: repos/worktrees, folder listing, checkout-diff capture + sync,
 //! terminals, and the RPC dispatch for each new method over the memory transport.
 
+#[cfg(target_os = "linux")]
+use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(target_os = "linux")]
-use std::os::unix::ffi::OsStringExt;
-
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-
 use onicode_engine::{
     EngineCore, HarnessRegistry, Repos, Terminals, capture_commit_diff, capture_diff,
     capture_diff_against, capture_turn_diff, discard_working_tree, merge_base, read_diff_file_text,

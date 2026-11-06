@@ -1,5 +1,7 @@
 //! Load the existing Onicode delegation tools into this Pi process only.
-use crate::{HarnessError, process::Command, scratch::ScratchDir};
+use crate::HarnessError;
+use crate::process::Command;
+use crate::scratch::ScratchDir;
 
 /// The bridge extension reads its server from this variable.
 const CONFIG_ENV: &str = "ONICODE_PI_MCP";

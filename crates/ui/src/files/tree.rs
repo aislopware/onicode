@@ -1,19 +1,15 @@
+use gpui::prelude::*;
 use gpui::{
-    AnyElement, Context, KeyDownEvent, ListSizingBehavior, MouseButton, Window, div, list,
-    prelude::*, px,
+    AnyElement, Context, KeyDownEvent, ListSizingBehavior, MouseButton, Window, div, list, px,
 };
 use onicode_proto::WorkspaceEntryKind;
 
-use super::{
-    FilesSurface, WorkspacePathDrag, model::DirectoryLoadState, model::VisibleRowKind,
-    workspace_path_drag_ghost,
-};
-use crate::{
-    file_icons::{self, FileIconIdentity},
-    icons::{self, icon},
-    popover,
-    theme::Theme,
-};
+use super::model::{DirectoryLoadState, VisibleRowKind};
+use super::{FilesSurface, WorkspacePathDrag, workspace_path_drag_ghost};
+use crate::file_icons::{self, FileIconIdentity};
+use crate::icons::{self, icon};
+use crate::popover;
+use crate::theme::Theme;
 
 /// Fade band under the tree's edges (the sidebar's 24px).
 const TREE_FADE_BAND: f32 = 24.0;
@@ -687,9 +683,10 @@ fn status_row(
 
 #[cfg(test)]
 mod tests {
+    use gpui::{AppContext, ListAlignment, ListOffset, ListState};
+
     use super::super::model::VisibleTreeRow;
     use super::*;
-    use gpui::{AppContext, ListAlignment, ListOffset, ListState};
 
     fn rows(paths: &[&str]) -> Vec<VisibleTreeRow> {
         paths

@@ -1,8 +1,10 @@
+use std::sync::Arc;
+use std::time::Duration;
+
 use futures::StreamExt;
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_proto::{HarnessId, PreviewService};
 use onicode_rpc::{RpcReply, RpcService, methods};
-use std::{sync::Arc, time::Duration};
 
 fn service(device: &str, cwd: &std::path::Path, id: &str) -> PreviewService {
     PreviewService {

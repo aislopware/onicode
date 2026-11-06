@@ -21,11 +21,10 @@ use onicode_proto::{
 };
 use tokio::io::AsyncWriteExt as _;
 
-use crate::Client;
 use crate::catalog::HarnessInfo;
 use crate::client::Backend;
 use crate::error::{ClientError, Result};
-use crate::lock;
+use crate::{Client, lock};
 
 /// How long the phone's callback listener waits for the browser.
 const LOGIN_WAIT: std::time::Duration = std::time::Duration::from_secs(10 * 60);

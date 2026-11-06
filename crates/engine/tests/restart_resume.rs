@@ -2,16 +2,15 @@
 //! after an app restart" regression): the EMBED assembly (`EngineCore::assemble`)
 //! is run twice over one data dir, asserting
 //! - chats + transcripts survive a graceful shutdown → relaunch;
-//! - the next run in an existing chat carries the chat's stored harness-native
-//!   session id as `RunRequest.resume` (engine-owned, onicode sessions.ts:736);
-//! - a kill -9 style crash recovers the session id from the run journal
-//!   (onicode recoverDraft, sessions.ts:538-552) and stamps streaming entries
-//!   `aborted`;
+//! - the next run in an existing chat carries the chat's stored harness-native session id as
+//!   `RunRequest.resume` (engine-owned, onicode sessions.ts:736);
+//! - a kill -9 style crash recovers the session id from the run journal (onicode recoverDraft,
+//!   sessions.ts:538-552) and stamps streaming entries `aborted`;
 //! - resume is cwd-scoped (harness session stores are keyed by cwd);
-//! - a startup crash retries once with the resume kept, and a helper that is
-//!   down hard never tombstones the stored session id;
-//! - a steer with no live run after a restart dispatches as a new turn that
-//!   still resumes the prior conversation.
+//! - a startup crash retries once with the resume kept, and a helper that is down hard never
+//!   tombstones the stored session id;
+//! - a steer with no live run after a restart dispatches as a new turn that still resumes the prior
+//!   conversation.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -19,7 +18,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-
 use onicode_doc::{
     MessagePart, MessageRole, MessageStatus, SessionCommandPayload, SessionDoc, SessionMessageEntry,
 };
@@ -72,21 +70,27 @@ impl Harness for RecordingHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Recording"
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,
@@ -331,9 +335,8 @@ async fn kill_crash_recovers_resume_from_journal_and_stamps_aborted() {
 
     // Manufacture the on-disk state a kill -9 mid-run leaves behind:
     // - a chat doc snapshot whose assistant entry is still `streaming`;
-    // - a journal whose last event is NOT `Done` (run died mid-stream), holding
-    //   the only copy of the harness session id (the debounced workspace-row
-    //   write never landed).
+    // - a journal whose last event is NOT `Done` (run died mid-stream), holding the only copy of
+    //   the harness session id (the debounced workspace-row write never landed).
     {
         let store = DocsStore::open(dir.join("orgs/dev-org/dev-user")).unwrap();
         let doc = SessionDoc::init(CHAT).unwrap();
@@ -448,21 +451,27 @@ impl Harness for PersistentHarness {
     fn id(&self) -> HarnessId {
         self.id
     }
+
     fn display_name(&self) -> &str {
         "Persistent"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,
@@ -589,6 +598,7 @@ impl onicode_engine::registry::RunEnvironment for SwitchableCredential {
     async fn prepare(&self, _harness: HarnessId, _request: &mut RunRequest) -> Result<(), String> {
         Ok(())
     }
+
     async fn credential(&self, _harness: HarnessId) -> Option<String> {
         Some(self.0.lock().unwrap().clone())
     }

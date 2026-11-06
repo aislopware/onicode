@@ -1,9 +1,11 @@
-use super::{BrowserEvent, BrowserSurface};
-use crate::{icons, surface_chrome, theme::Theme};
+use gpui::prelude::*;
 use gpui::{
-    AnyElement, Context, Focusable, IntoElement, KeyDownEvent, MouseButton, Render, Window, div,
-    prelude::*, px,
+    AnyElement, Context, Focusable, IntoElement, KeyDownEvent, MouseButton, Render, Window, div, px,
 };
+
+use super::{BrowserEvent, BrowserSurface};
+use crate::theme::Theme;
+use crate::{icons, surface_chrome};
 
 fn button(
     id: &'static str,

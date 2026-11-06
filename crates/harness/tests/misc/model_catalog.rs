@@ -1,6 +1,8 @@
 #![cfg(unix)]
+use std::path::Path;
+use std::sync::Arc;
+
 use onicode_harness::{AcpHarness, CodexHarness, Harness};
-use std::{path::Path, sync::Arc};
 
 fn harnesses(binary: &Path) -> Vec<Arc<dyn Harness>> {
     vec![

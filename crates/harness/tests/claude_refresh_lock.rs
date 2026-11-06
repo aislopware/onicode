@@ -2,11 +2,12 @@
 //! A Claude child is never torn down while Claude Code is saving a refreshed
 //! login: neither signalled nor sent EOF until the refresh lock is released.
 //! Its own test binary — it points the process at a temp config dir.
+use std::os::unix::fs::PermissionsExt;
+use std::time::Duration;
+
 use onicode_harness::claude::refresh_lock;
 use onicode_harness::{CancellationToken, ClaudeHarness, Harness, RunControls};
 use onicode_proto::{RunRequest, SandboxLevel};
-use std::os::unix::fs::PermissionsExt;
-use std::time::Duration;
 
 const FAKE_CLAUDE: &str = r#"#!/bin/sh
 dir="$(dirname "$0")"

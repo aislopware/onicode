@@ -13,7 +13,8 @@ final class MainTabController: UIViewController, AppRouter {
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder _: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private lazy var sessionsList = SessionsViewController(app: app)
     private lazy var nav = sessionsNav()
@@ -45,7 +46,8 @@ final class MainTabController: UIViewController, AppRouter {
     }
 
     private lazy var settingsItem: UIBarButtonItem = {
-        let item = UIBarButtonItem(image: UIImage(systemName: "gearshape"), primaryAction: UIAction { [weak self] _ in self?.showSettings() })
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: "gearshape"), primaryAction: UIAction { [weak self] _ in self?.showSettings() })
         item.accessibilityLabel = "Settings"
         item.accessibilityIdentifier = "bottom-settings"
         return item
@@ -54,14 +56,18 @@ final class MainTabController: UIViewController, AppRouter {
     /// Voice: a tap calls (or opens the live call); a long press picks the
     /// host and style.
     private lazy var voiceItem: UIBarButtonItem = {
-        return UIBarButtonItem(title: nil, image: UIImage(systemName: "waveform"), primaryAction: UIAction { [weak self] _ in
-            guard let self else { return }
-            self.openVoice(app: self.app, source: nil)
-        }, menu: voiceMenu(app: app))
+        UIBarButtonItem(
+            title: nil, image: UIImage(systemName: "waveform"),
+            primaryAction: UIAction { [weak self] _ in
+                guard let self else { return }
+                self.openVoice(app: self.app, source: nil)
+            }, menu: voiceMenu(app: app))
     }()
 
     private lazy var composeItem: UIBarButtonItem = {
-        let item = UIBarButtonItem(image: UIImage(systemName: "square.and.pencil"), primaryAction: UIAction { [weak self] _ in self?.presentNewSession() })
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: "square.and.pencil"),
+            primaryAction: UIAction { [weak self] _ in self?.presentNewSession() })
         item.style = .prominent
         item.tintColor = Palette.text
         item.accessibilityLabel = "New session"
@@ -85,7 +91,9 @@ final class MainTabController: UIViewController, AppRouter {
         // Holding the live call must not offer to change its host.
         voiceItem.menu = state.live ? nil : voiceMenu(app: app)
         // Fixed spaces split the glass: each control its own shape.
-        var items: [UIBarButtonItem] = [settingsItem, .fixedSpace(0), sessionsList.navigationItem.searchBarPlacementBarButtonItem, .fixedSpace(0)]
+        var items: [UIBarButtonItem] = [
+            settingsItem, .fixedSpace(0), sessionsList.navigationItem.searchBarPlacementBarButtonItem, .fixedSpace(0),
+        ]
         if state.voice { items += [voiceItem, .fixedSpace(0)] }
         items.append(composeItem)
         // `viewIfLoaded`: loading the list outside its nav controller lays it
@@ -105,7 +113,9 @@ final class MainTabController: UIViewController, AppRouter {
         nav.navigationBar.prefersLargeTitles = true
         // Setting an appearance object drops the bar's scroll-edge effect;
         // style titles through the bar's own attributes instead.
-        nav.navigationBar.largeTitleTextAttributes = [.font: Fonts.ui(.sansSemibold, 30), .foregroundColor: Palette.text]
+        nav.navigationBar.largeTitleTextAttributes = [
+            .font: Fonts.ui(.sansSemibold, 30), .foregroundColor: Palette.text,
+        ]
         nav.navigationBar.titleTextAttributes = [.font: Fonts.ui(.sansSemibold, 17), .foregroundColor: Palette.text]
         nav.navigationBar.tintColor = Palette.text
         return nav
@@ -144,8 +154,10 @@ final class MainTabController: UIViewController, AppRouter {
     /// the sheet leaves without its slide, and the handoff animation carries
     /// the draft (page, composer, message) into the chat.
     func openSession(_ chatId: String, handoff: DraftHandoff?) {
-        guard let handoff, let window = view.window else { openSession(chatId)
-return }
+        guard let handoff, let window = view.window else {
+            openSession(chatId)
+            return
+        }
         guard let session = SessionViewController(app: app, chatId: chatId) else {
             showSessionOpenError()
             return
@@ -190,7 +202,10 @@ return }
     /// `relocating`, for the split to clear once it's placed.
     func releaseSession() -> SessionViewController? {
         // The session itself, not a side chat pushed above it.
-        guard let session = nav.viewControllers.first(where: { ($0 as? SessionViewController)?.isCompanion == false }) as? SessionViewController else {
+        guard
+            let session = nav.viewControllers.first(where: { ($0 as? SessionViewController)?.isCompanion == false })
+                as? SessionViewController
+        else {
             return nil
         }
         session.relocating = true

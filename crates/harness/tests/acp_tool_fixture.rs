@@ -8,10 +8,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use futures::StreamExt;
-use tokio::sync::{mpsc, oneshot};
-
 use onicode_harness::{AcpHarness, CancellationToken, Harness, RunControls, SteerMessage};
 use onicode_proto::{AgentEvent, DoneStatus, McpServer, RunRequest, SandboxLevel};
+use tokio::sync::{mpsc, oneshot};
 
 /// A stdio MCP server offering the one tool named by `$STUB_TOOL`. Its call
 /// result echoes the arguments and the server's `$STUB_LABEL`; a call with

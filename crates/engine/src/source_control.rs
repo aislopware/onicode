@@ -14,13 +14,12 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
-
 use onicode_proto::{
     ChangeRequestListItem, ChangeRequestMergeability, ChangeRequestReviewDecision,
     ChangeRequestState, ChangeRequestSummary,
 };
+use serde::Deserialize;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 const GIT_TIMEOUT: Duration = Duration::from_secs(10);
 const GITHUB_TIMEOUT: Duration = Duration::from_secs(20);

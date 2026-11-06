@@ -3,13 +3,13 @@
 //! and a Rename dialog (Mutate renameDevice). A Cloud device reads "Cloud"
 //! and, while its sandbox sleeps, "Asleep" rather than a last-seen time.
 
-use chrono::{DateTime, Utc};
-use gpui::{
-    AnyElement, ClipboardItem, Context, Entity, SharedString, Subscription, Task, Window, div,
-    prelude::*, px,
-};
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
+use gpui::prelude::*;
+use gpui::{
+    AnyElement, ClipboardItem, Context, Entity, SharedString, Subscription, Task, Window, div, px,
+};
 use onicode_proto::WorkspaceScope;
 use onicode_rpc::methods;
 
@@ -482,8 +482,9 @@ impl Render for DevicesPage {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::TimeDelta;
+
+    use super::*;
 
     #[test]
     fn presence_window() {

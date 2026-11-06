@@ -1215,6 +1215,66 @@
     }
   },
   {
+    "violation": {
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 747 lines",
+      "location": {
+        "line": 5,
+        "file": "apps/ios/Onicode/Session/SessionViewController.swift",
+        "character": 7
+      },
+      "severity": "error",
+      "ruleIdentifier": "type_body_length",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleName": "Type Body Length"
+    },
+    "text": "final class SessionViewController: UIViewController, UIGestureRecognizerDelegate {"
+  },
+  {
+    "violation": {
+      "reason": "Function should have complexity 10 or less; currently complexity is 26",
+      "location": {
+        "line": 44,
+        "file": "apps/ios/Onicode/Session/SessionViewController.swift",
+        "character": 14
+      },
+      "severity": "error",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleName": "Cyclomatic Complexity"
+    },
+    "text": "    override func viewDidLoad() {"
+  },
+  {
+    "violation": {
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 188 lines",
+      "location": {
+        "line": 44,
+        "file": "apps/ios/Onicode/Session/SessionViewController.swift",
+        "character": 14
+      },
+      "severity": "error",
+      "ruleIdentifier": "function_body_length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length"
+    },
+    "text": "    override func viewDidLoad() {"
+  },
+  {
+    "violation": {
+      "reason": "File should contain 1000 lines or less: currently contains 1145",
+      "location": {
+        "line": 1145,
+        "file": "apps/ios/Onicode/Session/SessionViewController.swift",
+        "character": 1
+      },
+      "severity": "error",
+      "ruleIdentifier": "file_length",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleName": "File Length"
+    },
+    "text": "}"
+  },
+  {
     "text": "final class MoreViewController: UIViewController, UICollectionViewDelegate {",
     "violation": {
       "ruleDescription": "Type bodies should not span too many lines",
@@ -1303,6 +1363,51 @@
       "reason": "File should contain 400 lines or less: currently contains 403",
       "ruleDescription": "Files should not span too many lines."
     }
+  },
+  {
+    "violation": {
+      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 283 lines",
+      "location": {
+        "line": 18,
+        "file": "apps/ios/Onicode/Shell/SplitRootController.swift",
+        "character": 7
+      },
+      "severity": "error",
+      "ruleIdentifier": "type_body_length",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleName": "Type Body Length"
+    },
+    "text": "final class SplitRootController: UISplitViewController, UISplitViewControllerDelegate, AppRouter {"
+  },
+  {
+    "violation": {
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 67 lines",
+      "location": {
+        "line": 419,
+        "file": "apps/ios/Onicode/Shell/SplitRootController.swift",
+        "character": 14
+      },
+      "severity": "error",
+      "ruleIdentifier": "function_body_length",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length"
+    },
+    "text": "    override func viewDidLoad() {"
+  },
+  {
+    "violation": {
+      "reason": "File should contain 400 lines or less: currently contains 520",
+      "location": {
+        "line": 520,
+        "file": "apps/ios/Onicode/Shell/SplitRootController.swift",
+        "character": 1
+      },
+      "severity": "error",
+      "ruleIdentifier": "file_length",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleName": "File Length"
+    },
+    "text": "}"
   },
   {
     "text": "    override func viewDidLoad() {",

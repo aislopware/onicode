@@ -1,19 +1,20 @@
 //! The WPE engine's protocol pieces, and the real helper this build embeds:
 //! `cargo test -p onicode-ui wpe -- --include-ignored` with WPE WebKit
 //! installed. The helper renders offscreen, so no display is needed.
+use std::io::Read as _;
+use std::net::TcpListener;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+
+use gpui::px;
+
 use super::super::{
     BrowserData, Engine, Link, NativePage, Presentation, Route, Startup, Worker, extract_helper,
     spawn_helper, spawn_wpe,
 };
 use super::*;
-use gpui::px;
-use std::{
-    io::Read as _,
-    net::TcpListener,
-    path::PathBuf,
-    sync::{Mutex, atomic::Ordering},
-    time::Duration,
-};
 
 fn memfd(bytes: &[u8], seal: bool) -> OwnedFd {
     // SAFETY: plain memfd_create/fcntl on descriptors this test owns.

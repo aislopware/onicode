@@ -6,12 +6,10 @@
 //! atlas tiles are released. Rapid toggling inside the grace reuses the
 //! texture instead of re-reading and re-decoding the file.
 
-use std::{
-    collections::HashMap,
-    io::Cursor,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::collections::HashMap;
+use std::io::Cursor;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use gpui::{Context, RenderImage, SharedString, Task};
 use onicode_proto::ToolCall;
@@ -599,8 +597,9 @@ fn decode_thumbnail(mime: &str, bytes: Vec<u8>) -> Option<(Arc<RenderImage>, f32
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::AppContext as _;
+
+    use super::*;
 
     fn paths(call: ToolCall, output: Option<&str>) -> Vec<String> {
         image_paths(&call, output)

@@ -97,8 +97,9 @@ fn pretty(id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn meta_rows_map_with_their_tiers_default_first() {

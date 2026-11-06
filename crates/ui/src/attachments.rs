@@ -19,13 +19,12 @@ use std::time::{Duration, Instant};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use futures::TryStreamExt as _;
-use gpui::{
-    AnyElement, BackgroundExecutor, Image, ImageFormat, SharedString, Size, div, prelude::*, px,
-};
+use gpui::prelude::*;
+use gpui::{AnyElement, BackgroundExecutor, Image, ImageFormat, SharedString, Size, div, px};
+use onicode_rpc::methods;
 
 use crate::state::EngineHandle;
 use crate::theme::ink;
-use onicode_rpc::methods;
 
 /// use-attachments.ts `MAX_ATTACHMENT_BYTES`.
 pub const MAX_ATTACHMENT_BYTES: u64 = 24 * 1024 * 1024;
@@ -1022,7 +1021,7 @@ fn protected() -> &'static Mutex<std::collections::HashSet<(String, String)>> {
     PROTECTED.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
 }
 
-/// Replace the eviction shield with the given keys (see [`protected`]).
+/// Replace the eviction shield with the given keys (see `protected`).
 pub fn protect_attachments(keys: std::collections::HashSet<(String, String)>) {
     *protected().lock().unwrap() = keys;
 }

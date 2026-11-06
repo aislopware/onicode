@@ -1,8 +1,9 @@
 //! Durable work discovery uses metadata only; no document/network is opened
 //! until the engine admits a bounded page. Conditional completion cannot erase
 //! a newer wakeup that arrived during a catch-up.
-use crate::store::{DocsStore, StoreError, store_blocking};
 use rusqlite::{OptionalExtension, params};
+
+use crate::store::{DocsStore, StoreError, store_blocking};
 
 impl DocsStore {
     /// Counts only; diagnostics must not materialize queued payloads.

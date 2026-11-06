@@ -8,17 +8,19 @@
 //! management (add via the palette; rename/delete via row context menus).
 //! Child module of `shell` so it renders straight off `Shell`'s private state.
 
-use super::*;
-use crate::pickers::{
-    breadcrumbs, browser_rows, completion_prefix_len, escape_typed_path, parent_path,
-    resolve_typed_path, split_typed_leaf, unescape_typed_path,
-};
+use std::collections::HashSet;
+
 use gpui::{FocusHandle, Window};
 use onicode_proto::{
     ChatIndicator, Device, DriveEntry, DriveListing, FolderListing, HomeFolderMatch,
     HomeFolderSearchResult, SearchHomeFoldersRequest, Space,
 };
-use std::collections::HashSet;
+
+use super::*;
+use crate::pickers::{
+    breadcrumbs, browser_rows, completion_prefix_len, escape_typed_path, parent_path,
+    resolve_typed_path, split_typed_leaf, unescape_typed_path,
+};
 
 /// Promote the user's ordered pins above the untouched activity projection.
 /// Every unpinned id keeps exactly the relative order supplied by recency.
@@ -205,12 +207,13 @@ mod pinned_session_tests {
             before: None,
         }
     }
+    use std::collections::HashSet;
+
     use super::{
         pinned_drag_scroll_delta, pinned_drag_scroll_step, pinned_drag_snapshot_is_valid,
         pinned_session_clamped_index, pinned_session_drop_index, project_pinned_first,
         reorder_visible_pins, retain_known_pins,
     };
-    use std::collections::HashSet;
 
     fn ids(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_string()).collect()
@@ -3032,7 +3035,7 @@ fn tilde_path(path: &str, home: Option<&str>) -> String {
         .map_or_else(|| path.to_owned(), |rest| format!("~{rest}"))
 }
 
-/// The space-row Rename dialog (same shape as [`RenameChatDialog`]).
+/// The space-row Rename dialog (same shape as `RenameChatDialog`).
 pub(super) struct RenameSpaceDialog {
     pub space_id: String,
     pub input: Entity<ComposerInput>,
@@ -3171,6 +3174,7 @@ impl Shell {
                 .into_any_element()
         }
     }
+
     // ---- space filter ----
 
     /// Set the sidebar's session filter (`None` = All spaces). On the
@@ -9545,8 +9549,9 @@ mod project_flow_tests {
 
 #[cfg(test)]
 mod home_folder_search_tests {
-    use super::*;
     use gpui::TestAppContext;
+
+    use super::*;
 
     /// The engine side of a shell under test. ListFolders answers with
     /// `listing`; methods not being awaited answer `{}`.

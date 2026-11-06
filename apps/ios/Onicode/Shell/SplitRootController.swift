@@ -34,7 +34,8 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
         super.init(style: .doubleColumn)
     }
 
-    required init?(coder _: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -53,7 +54,9 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
         detail.navigationBar.titleTextAttributes = [.font: Fonts.ui(.sansSemibold, 17), .foregroundColor: Palette.text]
         detail.navigationBar.tintColor = Palette.text
         setViewController(detail, for: .secondary)
-        inspector.navigationBar.titleTextAttributes = [.font: Fonts.ui(.sansSemibold, 17), .foregroundColor: Palette.text]
+        inspector.navigationBar.titleTextAttributes = [
+            .font: Fonts.ui(.sansSemibold, 17), .foregroundColor: Palette.text,
+        ]
         inspector.navigationBar.tintColor = Palette.text
         inspector.view.backgroundColor = Palette.background
         preferredInspectorColumnWidth = 400
@@ -98,9 +101,12 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
 
     override var keyCommands: [UIKeyCommand]? {
         [
-            UIKeyCommand(title: "New Session", action: #selector(newSessionCommand), input: "n", modifierFlags: .command),
-            UIKeyCommand(title: "Search", action: #selector(searchCommand), input: "f", modifierFlags: [.command, .shift]),
-            UIKeyCommand(title: "Toggle Sidebar", action: #selector(toggleSidebarCommand), input: "b", modifierFlags: .command),
+            UIKeyCommand(
+                title: "New Session", action: #selector(newSessionCommand), input: "n", modifierFlags: .command),
+            UIKeyCommand(
+                title: "Search", action: #selector(searchCommand), input: "f", modifierFlags: [.command, .shift]),
+            UIKeyCommand(
+                title: "Toggle Sidebar", action: #selector(toggleSidebarCommand), input: "b", modifierFlags: .command),
         ]
     }
 
@@ -116,8 +122,10 @@ final class SplitRootController: UISplitViewController, UISplitViewControllerDel
 
     func openSession(_ chatId: String) {
         if presentedViewController != nil { dismiss(animated: true) }
-        guard !isCollapsed else { tabs.openSession(chatId)
-return }
+        guard !isCollapsed else {
+            tabs.openSession(chatId)
+            return
+        }
         if currentChatId == chatId, detail.viewControllers.first is SessionViewController { return }
         followInspector(to: chatId)
         guard let session = SessionViewController(app: app, chatId: chatId) else {
@@ -139,8 +147,10 @@ return }
     }
 
     func presentNewSession(prompt: String?) {
-        guard !isCollapsed else { tabs.presentNewSession(prompt: prompt)
-return }
+        guard !isCollapsed else {
+            tabs.presentNewSession(prompt: prompt)
+            return
+        }
         showDraft(prompt: prompt, focus: true)
     }
 
@@ -173,19 +183,25 @@ return }
     }
 
     func showSettings() {
-        guard !isCollapsed else { tabs.showSettings()
-return }
+        guard !isCollapsed else {
+            tabs.showSettings()
+            return
+        }
         let nav = MainTabController.nav(MoreViewController(app: app))
         nav.modalPresentationStyle = .formSheet
-        nav.topViewController?.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak nav] _ in
-            nav?.dismiss(animated: true)
-        })
+        nav.topViewController?.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            systemItem: .done,
+            primaryAction: UIAction { [weak nav] _ in
+                nav?.dismiss(animated: true)
+            })
         present(nav, animated: true)
     }
 
     func showSearch() {
-        guard !isCollapsed else { tabs.showSearch()
-return }
+        guard !isCollapsed else {
+            tabs.showSearch()
+            return
+        }
         if displayMode == .secondaryOnly { show(.primary) }
         sidebar.focusSearch()
     }
@@ -253,7 +269,9 @@ return }
     }
 
     private func companionsRoot(for chatId: String) -> CompanionsViewController {
-        if inspectorChatId == chatId, let root = inspector.viewControllers.first as? CompanionsViewController { return root }
+        if inspectorChatId == chatId, let root = inspector.viewControllers.first as? CompanionsViewController {
+            return root
+        }
         inspectorChatId = chatId
         let root = CompanionsViewController(app: app, chatId: chatId, inSheet: false)
         root.close = { [weak self] in self?.hideCompanions() }
@@ -297,7 +315,9 @@ return }
     /// column lets go of its copy (one live view per session). The page
     /// itself moves, at once: rebuilding it showed the list, then a loading
     /// page, under iPhone Duo's fold animation.
-    func splitViewController(_: UISplitViewController, topColumnForCollapsingToProposedTopColumn _: UISplitViewController.Column) -> UISplitViewController.Column {
+    func splitViewController(
+        _: UISplitViewController, topColumnForCollapsingToProposedTopColumn _: UISplitViewController.Column
+    ) -> UISplitViewController.Column {
         // The companions panel rides along: folded, UIKit shows the
         // inspector as a sheet over the tab shell (with a Close button).
         // The sidebar comes back with the width (it stepped aside for the
@@ -324,7 +344,10 @@ return }
 
     /// Widening back brings the session last open in the tab shell into the
     /// main column (or the new-session page when none was).
-    func splitViewController(_: UISplitViewController, displayModeForExpandingToProposedDisplayMode proposed: UISplitViewController.DisplayMode) -> UISplitViewController.DisplayMode {
+    func splitViewController(
+        _: UISplitViewController,
+        displayModeForExpandingToProposedDisplayMode proposed: UISplitViewController.DisplayMode
+    ) -> UISplitViewController.DisplayMode {
         (inspector.viewControllers.first as? CompanionsViewController)?.showsClose = false
         // The session page moves back as it is (see collapsing above).
         if let session = tabs.releaseSession() {
@@ -390,7 +413,8 @@ final class SidebarViewController: UIViewController, UISearchResultsUpdating {
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder _: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -410,16 +434,20 @@ final class SidebarViewController: UIViewController, UISearchResultsUpdating {
         list.navigationItem.searchController = search
         list.navigationItem.hidesSearchBarWhenScrolling = false
         list.navigationItem.preferredSearchBarPlacement = .stacked
-        let settings = UIBarButtonItem(image: UIImage(systemName: "gearshape"), primaryAction: UIAction { [weak self] _ in
-            self?.router?.showSettings()
-        })
+        let settings = UIBarButtonItem(
+            image: UIImage(systemName: "gearshape"),
+            primaryAction: UIAction { [weak self] _ in
+                self?.router?.showSettings()
+            })
         settings.accessibilityLabel = "Settings"
         settings.accessibilityIdentifier = "sidebar-settings"
         let options = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: list.optionsMenu())
         options.accessibilityLabel = "Options"
-        let compose = UIBarButtonItem(image: UIImage(systemName: "plus"), primaryAction: UIAction { [weak self] _ in
-            self?.router?.presentNewSession(prompt: nil)
-        })
+        let compose = UIBarButtonItem(
+            image: UIImage(systemName: "plus"),
+            primaryAction: UIAction { [weak self] _ in
+                self?.router?.presentNewSession(prompt: nil)
+            })
         compose.style = .prominent
         compose.tintColor = Palette.accent
         compose.accessibilityLabel = "New session"
@@ -437,7 +465,10 @@ final class SidebarViewController: UIViewController, UISearchResultsUpdating {
         self.voiceBar = voiceBar
         let syncVoice = { [weak self, weak voiceBar] in
             guard let self, let voiceBar else { return }
-            let items = voiceBar.visible ? [settings, options, .flexibleSpace(), probe, voiceBar.item, compose] : [settings, options, .flexibleSpace(), probe, compose]
+            let items =
+                voiceBar.visible
+                ? [settings, options, .flexibleSpace(), probe, voiceBar.item, compose]
+                : [settings, options, .flexibleSpace(), probe, compose]
             if self.list.toolbarItems?.count != items.count {
                 self.list.setToolbarItems(items, animated: self.view.window != nil)
             }

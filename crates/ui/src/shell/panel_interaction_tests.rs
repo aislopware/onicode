@@ -1,6 +1,7 @@
 //! The panel lifecycle through Shell's actions and actual GPUI layout.
-use super::*;
 use gpui::{AppContext, Bounds, TestAppContext, VisualTestContext};
+
+use super::*;
 
 fn setup(cx: &mut TestAppContext) -> (tempfile::TempDir, Entity<Shell>, &mut VisualTestContext) {
     let dir = tempfile::tempdir().unwrap();

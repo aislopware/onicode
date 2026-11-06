@@ -9,7 +9,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use gpui::{Context, IntoElement, Render, SharedString, Window, div, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{Context, IntoElement, Render, SharedString, Window, div, px};
 
 use crate::theme::Theme;
 

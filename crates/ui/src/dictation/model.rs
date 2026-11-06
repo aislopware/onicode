@@ -1,21 +1,15 @@
-use crate::{
-    popover,
-    settings::{
-        self,
-        search::{SearchAnchor, SettingId},
-        widgets,
-    },
-    theme::Theme,
-};
-use gpui::{App, Context, Entity, Global, Task, Window, div, prelude::*, px};
-use std::{
-    path::PathBuf,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-    },
-    time::{Duration, Instant},
-};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+use gpui::prelude::*;
+use gpui::{App, Context, Entity, Global, Task, Window, div, px};
+
+use crate::popover;
+use crate::settings::search::{SearchAnchor, SettingId};
+use crate::settings::{self, widgets};
+use crate::theme::Theme;
 struct VoiceGlobal {
     card: Entity<VoiceCard>,
     directory: PathBuf,
@@ -119,6 +113,7 @@ impl VoiceCard {
         cx.refresh_windows();
         cx.notify();
     }
+
     fn primary(&mut self, cx: &mut Context<Self>) {
         if let Some(cancel) = &self.cancel {
             cancel.store(true, Ordering::Release);
@@ -129,6 +124,7 @@ impl VoiceCard {
         }
         cx.notify();
     }
+
     fn download(&mut self, cx: &mut Context<Self>) {
         if self.cancel.is_some() {
             return;
@@ -193,6 +189,7 @@ impl VoiceCard {
         }));
         cx.notify();
     }
+
     fn remove(&mut self, cx: &mut Context<Self>) {
         if onicode_voice::busy() {
             self.error = Some("Stop dictation before removing the model.".into());
@@ -226,6 +223,7 @@ impl popover::ScrollRailHost for VoiceCard {
     fn rail_bar(&mut self) -> &mut popover::MenuScrollbarState {
         self.scroll.rail_bar()
     }
+
     fn rail_scroll(&self) -> Option<gpui::ScrollHandle> {
         self.scroll.rail_scroll()
     }

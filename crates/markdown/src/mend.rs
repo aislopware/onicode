@@ -13,26 +13,22 @@
 //!
 //! Repairs, in the spirit of remend's handler set (its html/comparison
 //! handlers don't apply here — onicode renders raw HTML literally):
-//! - emphasis parity: `**a`→`**a**`, `*a`→`*a*`, `_a`/`__a`, `~~a`, nested
-//!   closers innermost-first (`**a *b` → `**a *b***`), half-streamed closers
-//!   completed (`**a*` → `**a**`);
-//! - inline code backtick parity (fence-shaped tails never reach here — the
-//!   parser gates mending on the last block not being a code block);
-//! - math (`$…$`, `$$…$$`, `\(…\)`, `\[…\]`) shields its TeX like a code
-//!   span — `a_1` or `x^*` inside never opens emphasis — but an unclosed
-//!   formula is *not* closed: half a formula would render broken, so it stays
-//!   literal until its own closer streams in. Only a half-streamed display
-//!   closer (`$$x$`) is completed. A display formula also ends any emphasis
-//!   or link text opened before it (closing across it would fold the formula
-//!   inline). A lone `$` before a digit is a price and one before a shell
-//!   variable (`$HOME/bin`) is prose, not openers, and an unclosed inline
-//!   formula with no closer ahead shields only its own line;
-//! - links/images: the URL never renders — `[text](partial` and a bare
-//!   `[text` both mend to `[text](`[`PENDING_LINK_URL`]`)`, so the link text
-//!   shows styled immediately and the settling URL can't collapse the line;
-//! - a last line of just `-`/`--`/`=`/`==` after text gets a zero-width space
-//!   so a streaming list item is never misread as a setext underline (the
-//!   paragraph-flashes-to-heading flicker).
+//! - emphasis parity: `**a`→`**a**`, `*a`→`*a*`, `_a`/`__a`, `~~a`, nested closers innermost-first
+//!   (`**a *b` → `**a *b***`), half-streamed closers completed (`**a*` → `**a**`);
+//! - inline code backtick parity (fence-shaped tails never reach here — the parser gates mending on
+//!   the last block not being a code block);
+//! - math (`$…$`, `$$…$$`, `\(…\)`, `\[…\]`) shields its TeX like a code span — `a_1` or `x^*`
+//!   inside never opens emphasis — but an unclosed formula is *not* closed: half a formula would
+//!   render broken, so it stays literal until its own closer streams in. Only a half-streamed
+//!   display closer (`$$x$`) is completed. A display formula also ends any emphasis or link text
+//!   opened before it (closing across it would fold the formula inline). A lone `$` before a digit
+//!   is a price and one before a shell variable (`$HOME/bin`) is prose, not openers, and an
+//!   unclosed inline formula with no closer ahead shields only its own line;
+//! - links/images: the URL never renders — `[text](partial` and a bare `[text` both mend to
+//!   `[text](`[`PENDING_LINK_URL`]`)`, so the link text shows styled immediately and the settling
+//!   URL can't collapse the line;
+//! - a last line of just `-`/`--`/`=`/`==` after text gets a zero-width space so a streaming list
+//!   item is never misread as a setext underline (the paragraph-flashes-to-heading flicker).
 //!
 //! The scanner is deliberately approximate (streamdown ships the same
 //! trade-off): it prefers "stable and close to the final parse" over exact

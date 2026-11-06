@@ -24,8 +24,8 @@ pub struct RoundedClip {
 }
 
 impl Element for RoundedClip {
-    type RequestLayoutState = ();
     type PrepaintState = ();
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<gpui::ElementId> {
         None

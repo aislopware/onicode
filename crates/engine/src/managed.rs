@@ -20,16 +20,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use onicode_rpc::{RpcError, RpcReply, RpcService, methods};
-
-use crate::{Engine, EngineConfig, InstanceLock, WorkspaceScope, deferred, desktop_notify};
-
 // Starting the engine helper is shared with the command line and the zgx
 // app, which don't link the engine (crates/launch).
 pub use onicode_launch::{
     APP_ENV, ENGINE_EXECUTABLES, ENGINE_SUBCOMMAND, MANAGED_ENV, app_path, engine_command, reap,
     spawn_detached,
 };
+use onicode_rpc::{RpcError, RpcReply, RpcService, methods};
+
+use crate::{Engine, EngineConfig, InstanceLock, WorkspaceScope, deferred, desktop_notify};
 
 /// How long a restarting engine waits for its predecessor to let go of the
 /// data directory.

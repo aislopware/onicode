@@ -193,8 +193,8 @@ impl RollText {
 }
 
 impl Element for RollText {
-    type RequestLayoutState = Shaped;
     type PrepaintState = ();
+    type RequestLayoutState = Shaped;
 
     fn id(&self) -> Option<ElementId> {
         None

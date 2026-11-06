@@ -8,8 +8,8 @@
 //!
 //!   ```jsonc
 //!   "grants": [{ "src": ["tag:onicode"], "dst": ["autogroup:member"], "ip": ["*"],
-//!                "app": { "github.com/aislopware/onicode": [{ "roles": ["engine", "viewer"] }] } }]
-//!   ```
+//!                "app": { "github.com/aislopware/onicode": [{ "roles": ["engine", "viewer"] }] }
+//! }]   ```
 //!
 //!   Tailscale's control plane, Headscale from 0.29 and slopscale hand such grants to the
 //!   destination verbatim. The name is a domain onicode controls, since `tailscale.com/…` is

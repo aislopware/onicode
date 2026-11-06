@@ -1115,10 +1115,11 @@ unsafe fn nsstring(value: *mut AnyObject) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use core_graphics::geometry::{CGPoint, CGRect, CGSize};
+
     use super::{
         capture_dimensions, is_secure_ax_element, same_window_bounds, visible_capture_window,
     };
-    use core_graphics::geometry::{CGPoint, CGRect, CGSize};
 
     #[test]
     fn expired_ax_budget_never_calls_the_native_element() {

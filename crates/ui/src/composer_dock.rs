@@ -1,7 +1,9 @@
 //! One retargetable clock for the main composer's route choreography. Geometry
 //! is measured in prepaint, so a resize never substitutes a guessed endpoint.
 
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Instant;
 
 mod panel_handoff;
 #[cfg(test)]
@@ -79,12 +81,15 @@ impl DockFrame {
     pub fn transcript(self) -> f32 {
         self.visuals.transcript
     }
+
     pub fn selectors(self) -> f32 {
         self.visuals.selectors
     }
+
     pub fn footer(self) -> f32 {
         self.visuals.footer
     }
+
     pub fn dissolve(self) -> f32 {
         self.visuals.dissolve
     }
@@ -555,14 +560,17 @@ impl DockedComposer {
 }
 
 impl Element for DockedComposer {
-    type RequestLayoutState = bool;
     type PrepaintState = ();
+    type RequestLayoutState = bool;
+
     fn id(&self) -> Option<gpui::ElementId> {
         None
     }
+
     fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
         None
     }
+
     fn request_layout(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -635,6 +643,7 @@ impl Element for DockedComposer {
         }
         (layout, false)
     }
+
     fn prepaint(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -681,6 +690,7 @@ impl Element for DockedComposer {
             window.with_element_offset(offset, |window| self.child.prepaint(window, cx));
         }
     }
+
     fn paint(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -697,6 +707,7 @@ impl Element for DockedComposer {
 
 impl IntoElement for DockedComposer {
     type Element = Self;
+
     fn into_element(self) -> Self {
         self
     }
@@ -704,8 +715,10 @@ impl IntoElement for DockedComposer {
 
 #[cfg(test)]
 mod tests {
+    use gpui::prelude::*;
+    use gpui::{Context, Render, canvas, div};
+
     use super::*;
-    use gpui::{Context, Render, canvas, div, prelude::*};
 
     fn attachment_layout(outer_width: f32) -> DockLayout {
         DockLayout {

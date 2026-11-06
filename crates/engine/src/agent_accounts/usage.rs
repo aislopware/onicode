@@ -2,19 +2,18 @@
 //! agent's own CLI renders, with the same stale-while-revalidate cache,
 //! [`ProbeError`] classification and backoff as the original providers.
 //!
-//! - **Grok**: `GET cli-chat-proxy.grok.com/v1/billing?format=credits`
-//!   (`/usage` in the CLI) — the Grok Build share of the current period.
-//!   Only a 401/403 refreshes, and only a SAVED slot (OIDC `refresh_token`
-//!   grant against the entry's own issuer, single-flight); the live token is
-//!   the CLI's to rotate.
-//! - **Devin**: Connect-JSON `SeatManagementService/GetUserStatus` (what
-//!   `devin auth status` calls) — daily/weekly quota, plus the identity the
-//!   key file lacks, written back into the slot. Keys don't refresh.
-//! - **ChatGPT logins** (OpenCode `openai`, Pi `openai-codex`, Hermes
-//!   `openai-codex`): the Codex usage endpoint — the same token kind.
+//! - **Grok**: `GET cli-chat-proxy.grok.com/v1/billing?format=credits` (`/usage` in the CLI) — the
+//!   Grok Build share of the current period. Only a 401/403 refreshes, and only a SAVED slot (OIDC
+//!   `refresh_token` grant against the entry's own issuer, single-flight); the live token is the
+//!   CLI's to rotate.
+//! - **Devin**: Connect-JSON `SeatManagementService/GetUserStatus` (what `devin auth status` calls)
+//!   — daily/weekly quota, plus the identity the key file lacks, written back into the slot. Keys
+//!   don't refresh.
+//! - **ChatGPT logins** (OpenCode `openai`, Pi `openai-codex`, Hermes `openai-codex`): the Codex
+//!   usage endpoint — the same token kind.
 //! - **Claude logins** (Pi `anthropic`): Claude's `/api/oauth/usage`.
-//! - **Copilot** (OpenCode / Pi `github-copilot`):
-//!   `api.github.com/copilot_internal/user` — premium-request quota.
+//! - **Copilot** (OpenCode / Pi `github-copilot`): `api.github.com/copilot_internal/user` —
+//!   premium-request quota.
 //! - **Nous** (Hermes `nous`): the portal's `/api/oauth/account` credits.
 //!
 //! None of these refresh a per-provider store's tokens: those rotate, and

@@ -1,5 +1,6 @@
-use super::*;
 use onicode_proto::{CheckoutGitStatus, GitFileState, GitFileStatus};
+
+use super::*;
 
 fn state(code: u8) -> Option<GitFileState> {
     Some(match code {

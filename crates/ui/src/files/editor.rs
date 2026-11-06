@@ -209,8 +209,9 @@ mod tests {
 
 #[cfg(test)]
 mod lifetime_tests {
-    use super::*;
     use gpui::{AppContext, TestAppContext};
+
+    use super::*;
 
     #[gpui::test]
     fn dropping_file_editor_releases_entity_with_context_menu(cx: &mut TestAppContext) {

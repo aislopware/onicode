@@ -11,17 +11,16 @@
 //! macOS: captures read the window back with `render_to_image`, which leaves
 //! out WebKit's native page. Options are picked by label, so the same run
 //! captures a build without *In-app browser* and skips that step.
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
 use gpui::{
     AnyWindowHandle, AppContext, AsyncApp, Bounds, MouseButton, PlatformInput, WindowBounds,
     WindowHandle, WindowOptions, px, size,
 };
 use onicode_ui::settings::PullRequestDestination;
 use onicode_ui::*;
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
 
 const WIDTH: f32 = 1200.;
 const HEIGHT: f32 = 760.;

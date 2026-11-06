@@ -1,18 +1,16 @@
 //! Terminals on a chat's host: the engine's PTY sessions, carried by the hub
 //! every viewer runs (`onicode_term_link::remote`, the desktop engine's too):
 //!
-//! - **Direct when it can be.** A terminal starts on a direct WebRTC link to
-//!   its host when one is up, else on the relay while pairing runs beside it,
-//!   then moves onto the direct link mid-stream — and back to the relay if
-//!   the link dies — resuming after the last output it showed: no gap, no
-//!   repeat. A network change or the app coming back to the foreground
-//!   re-pairs at once ([`Client::network_path_changed`], [`Client::on_foreground`]).
-//! - **No keystroke lost or doubled.** Input is numbered and held until the
-//!   host acknowledges it; whichever path takes over replays what's pending
-//!   and the host applies each number once. Writes never wait on the network.
-//! - **The stream outlives the network.** When every path drops, it resumes
-//!   from the last sequence seen (the host keeps a replay window and the
-//!   shell outlives its viewers).
+//! - **Direct when it can be.** A terminal starts on a direct WebRTC link to its host when one is
+//!   up, else on the relay while pairing runs beside it, then moves onto the direct link mid-stream
+//!   — and back to the relay if the link dies — resuming after the last output it showed: no gap,
+//!   no repeat. A network change or the app coming back to the foreground re-pairs at once
+//!   ([`Client::network_path_changed`], [`Client::on_foreground`]).
+//! - **No keystroke lost or doubled.** Input is numbered and held until the host acknowledges it;
+//!   whichever path takes over replays what's pending and the host applies each number once. Writes
+//!   never wait on the network.
+//! - **The stream outlives the network.** When every path drops, it resumes from the last sequence
+//!   seen (the host keeps a replay window and the shell outlives its viewers).
 
 use std::sync::{Arc, Weak};
 use std::time::Duration;

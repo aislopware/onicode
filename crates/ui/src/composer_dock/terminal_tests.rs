@@ -1,8 +1,12 @@
 //! Exercise actual layout against an unmodified dock, frame by frame.
-use super::*;
-use crate::{terminal::dock, theme::Theme};
-use gpui::{Context, Render, canvas, div, prelude::*};
 use std::cell::Cell;
+
+use gpui::prelude::*;
+use gpui::{Context, Render, canvas, div};
+
+use super::*;
+use crate::terminal::dock;
+use crate::theme::Theme;
 
 type Measurement = Rc<Cell<Option<Bounds<Pixels>>>>;
 

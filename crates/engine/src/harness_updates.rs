@@ -10,16 +10,15 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use onicode_harness::process::{Command, Stdio};
+use onicode_proto::{
+    HarnessId, HarnessInstallSource, HarnessUpdateFailure, HarnessUpdateFailureKind,
+    HarnessUpdatePhase, HarnessUpdatePolicy, HarnessUpdateProgress, HarnessUpdateStatus,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use tokio::io::AsyncWriteExt as _;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
-
-use onicode_proto::{
-    HarnessId, HarnessInstallSource, HarnessUpdateFailure, HarnessUpdateFailureKind,
-    HarnessUpdatePhase, HarnessUpdatePolicy, HarnessUpdateProgress, HarnessUpdateStatus,
-};
 
 use crate::now_ms;
 use crate::registry::HarnessRegistry;
@@ -920,7 +919,7 @@ impl HarnessUpdateCoordinator {
     }
 
     /// Re-check every monitored CLI whose binary changed since its last
-    /// check (see [`BinaryFingerprint`]). Unchanged ones cost two stats and
+    /// check (see `BinaryFingerprint`). Unchanged ones cost two stats and
     /// no subprocess or network request.
     pub async fn recheck_changed_binaries(&self) {
         let coordinator = self.clone();
@@ -1040,7 +1039,7 @@ impl HarnessUpdateCoordinator {
         self.snapshot()
     }
 
-    /// Where the published compatibility policy lives (see [`compatibility`]).
+    /// Where the published compatibility policy lives (see `compatibility`).
     pub fn set_compatibility_feed(&self, url: String) {
         let mut state = lock(&self.inner.compatibility);
         if state.url.as_deref() != Some(url.as_str()) {
@@ -3370,11 +3369,6 @@ fn prerelease_is_newer(latest: Option<&str>, installed: Option<&str>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        LatestSource, activate_codex_release, codex_standalone_install, extract_latest_version,
-        extract_version, installed_version, opencode_release_package, provider,
-        validate_codex_package, version_is_newer,
-    };
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::time::Duration;
@@ -3386,6 +3380,11 @@ mod tests {
         AgentEvent, HarnessId, HarnessUpdatePhase, Model, ReasoningLevel, RunRequest, SteeringMode,
     };
 
+    use super::{
+        LatestSource, activate_codex_release, codex_standalone_install, extract_latest_version,
+        extract_version, installed_version, opencode_release_package, provider,
+        validate_codex_package, version_is_newer,
+    };
     use crate::registry::HarnessRegistry;
 
     struct ExecutableHarness(PathBuf, HarnessId);
@@ -3702,8 +3701,9 @@ esac
     #[cfg(unix)]
     #[tokio::test]
     async fn hermes_commit_updates_can_install_without_changing_the_cli_version() {
-        use onicode_proto::HarnessUpdatePolicy;
         use std::os::unix::fs::PermissionsExt;
+
+        use onicode_proto::HarnessUpdatePolicy;
 
         let temp = tempfile::tempdir().unwrap();
         let executable = temp.path().join("hermes");
@@ -4090,11 +4090,12 @@ esac
 
     #[tokio::test]
     async fn stalled_download_cancels_before_headers_or_mid_body_and_releases_gate() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
         use super::{
             CancellationToken, CodexStageCleanup, HarnessUpdateCoordinator, ReleaseAsset,
             cancellable,
         };
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         for send_headers in [false, true] {
             let temp = tempfile::tempdir().unwrap();
             let registry = Arc::new(HarnessRegistry::new());
@@ -4616,8 +4617,9 @@ esac
     #[cfg(unix)]
     #[tokio::test]
     async fn unknown_claude_channel_clears_stale_release_and_never_auto_installs() {
-        use onicode_proto::HarnessUpdatePolicy;
         use std::os::unix::fs::PermissionsExt;
+
+        use onicode_proto::HarnessUpdatePolicy;
         let temp = tempfile::tempdir().unwrap();
         let executable = temp.path().join("claude");
         std::fs::write(&executable, "#!/bin/sh\ncase $1 in\n --version) echo '2.1.100 (Claude Code)' ;;\n doctor) echo 'Old diagnostic with no channel' ;;\n update) exit 42 ;;\nesac\n").unwrap();

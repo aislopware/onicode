@@ -1,6 +1,7 @@
 //! Shared identity and reconciliation for tree mutations and workspace references.
-use super::*;
 use onicode_proto::{WorkspaceEntry, WorkspaceEntryKind, WorkspaceMutationOutcome};
+
+use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceInteractionOrigin {
@@ -114,6 +115,7 @@ impl FilesSurface {
             }
         }
     }
+
     pub(super) fn mutation_blocks_path(&self, path: &str) -> bool {
         if self
             .mutation_hold
@@ -348,9 +350,10 @@ impl FilesSurface {
 
 #[cfg(test)]
 mod tests {
+    use gpui::{AppContext, TestAppContext};
+
     use super::super::document::{DocumentKey, DocumentPhase, FileDocument};
     use super::*;
-    use gpui::{AppContext, TestAppContext};
 
     #[gpui::test]
     fn watch_before_lost_reply_still_remaps_the_dirty_buffer(cx: &mut TestAppContext) {

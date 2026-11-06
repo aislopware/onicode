@@ -6,11 +6,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
-
 use onicode_engine::{Auth, AuthConfig, AuthState};
 use onicode_rpc::{TokenError, TokenSource};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 // ---------------------------------------------------------------------------
 // Fake JWTs

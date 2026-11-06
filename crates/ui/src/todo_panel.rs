@@ -15,11 +15,8 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::time::Duration;
 
-use gpui::{
-    AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
-    StatefulInteractiveElement as _, Styled, Window, div, prelude::*, px,
-};
-
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, IntoElement, SharedString, Styled, Window, div, px};
 use onicode_doc::{MessagePart, MessageRole, SessionMessageEntry};
 use onicode_proto::{TodoItem, TodoStatus, ToolCall};
 

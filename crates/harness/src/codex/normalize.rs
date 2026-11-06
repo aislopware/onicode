@@ -864,14 +864,13 @@ pub(crate) fn notification_thread_id(method: &str, params: &Value) -> Option<Str
 /// a child's `error` vanished (the agent card stayed running forever) and a
 /// swallowed `serverRequest/resolved` left the parent's approvals stuck.
 ///
-/// - `Subagent`: content/lifecycle attributed to the child (item lifecycles,
-///   errors, closure) — mapped to tagged [`AgentEvent::Subagent`] events.
-/// - `Consumed`: child bookkeeping with no parent or subagent-doc meaning,
-///   plus child thread-lifecycle methods that would rewrite PARENT state if
-///   let through (`thread/started` repeats, status/name/usage updates).
-/// - `Parent`: pass through to the parent path — unknown methods land here BY
-///   DESIGN, so a codex update that adds a notification degrades to "the
-///   parent sees it", never to silent loss.
+/// - `Subagent`: content/lifecycle attributed to the child (item lifecycles, errors, closure) —
+///   mapped to tagged [`AgentEvent::Subagent`] events.
+/// - `Consumed`: child bookkeeping with no parent or subagent-doc meaning, plus child
+///   thread-lifecycle methods that would rewrite PARENT state if let through (`thread/started`
+///   repeats, status/name/usage updates).
+/// - `Parent`: pass through to the parent path — unknown methods land here BY DESIGN, so a codex
+///   update that adds a notification degrades to "the parent sees it", never to silent loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ChildRoute {
     Subagent,
@@ -928,8 +927,9 @@ pub(crate) fn route_child_notification(method: &str) -> ChildRoute {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn reasoning_parts_preserve_chunking_and_existing_paragraph_breaks() {
@@ -1568,8 +1568,9 @@ mod tests {
 
 #[cfg(test)]
 mod context_tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
     #[test]
     fn context_uses_latest_call_not_thread_total() {
         assert_eq!(
@@ -1599,8 +1600,9 @@ mod context_tests {
 
 #[cfg(test)]
 mod generated_image_tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn image_generation_lifecycle_ignores_inline_result_and_preserves_ids() {

@@ -3,10 +3,8 @@
 //! per-row Reset and Restore defaults. Changes emit [`ShortcutsEvent`]; the
 //! shell persists them and re-applies the app keymap.
 
-use gpui::{
-    Context, Entity, EventEmitter, FocusHandle, Keystroke, SharedString, Window, div, prelude::*,
-    px,
-};
+use gpui::prelude::*;
+use gpui::{Context, Entity, EventEmitter, FocusHandle, Keystroke, SharedString, Window, div, px};
 
 use crate::appshots::{AppshotCapabilities, AppshotDestination};
 use crate::popover::{self, ScrollRailHost};
@@ -14,10 +12,9 @@ use crate::popover::{self, ScrollRailHost};
 #[path = "appshots.rs"]
 mod appshots_page;
 use crate::settings::search::{SearchAnchor, SettingId};
-use crate::settings::widgets;
 use crate::settings::{
     ComposerSendBehavior, KeyEquivalents, KeymapConfig, PullRequestDestination, SavePolicy,
-    ShortcutId, canonical_key, combo_from_keystroke, display_combo, key_equivalents,
+    ShortcutId, canonical_key, combo_from_keystroke, display_combo, key_equivalents, widgets,
 };
 use crate::state::AppState;
 use crate::theme::Theme;
@@ -1448,7 +1445,8 @@ mod tests {
 
     #[gpui::test]
     fn recorder_refuses_bound_actions_before_they_can_run(cx: &mut gpui::TestAppContext) {
-        use std::{cell::Cell, rc::Rc};
+        use std::cell::Cell;
+        use std::rc::Rc;
         let fired = Rc::new(Cell::new(false));
         let observed = fired.clone();
         cx.update(|cx| {

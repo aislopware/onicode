@@ -4,12 +4,11 @@
 //! The same flows the desktop engine drives itself
 //! (`crates/engine/src/agent_accounts.rs`, `agent_accounts/oauth.rs`):
 //!
-//! - **Claude**: Claude Code's automatic login — PKCE against claude.com with
-//!   a loopback redirect on a free port, redeemed at platform.claude.com, the
-//!   account read from Anthropic's profile endpoint.
-//! - **ChatGPT** (Codex): OpenAI's PKCE flow with the Codex CLI's public
-//!   client, whose registered redirect is fixed at `localhost:1455`; the
-//!   result is written in Codex's own `auth.json` shape.
+//! - **Claude**: Claude Code's automatic login — PKCE against claude.com with a loopback redirect
+//!   on a free port, redeemed at platform.claude.com, the account read from Anthropic's profile
+//!   endpoint.
+//! - **ChatGPT** (Codex): OpenAI's PKCE flow with the Codex CLI's public client, whose registered
+//!   redirect is fixed at `localhost:1455`; the result is written in Codex's own `auth.json` shape.
 //!
 //! The browser lands on our loopback listener; we answer it with a redirect
 //! to the platform's `done_url` (a custom scheme its auth sheet waits for, so

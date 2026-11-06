@@ -1,7 +1,8 @@
 //! Inline feedback is a separate, doubly paginated GitHub connection.
-use super::*;
 use onicode_proto::{ChangeRequestComment, ChangeRequestReviewThread};
 use serde_json::{Value, json};
+
+use super::*;
 
 const COMMENT_FIELDS: &str =
     "id url body createdAt author { login } viewerDidAuthor replyTo { id }";

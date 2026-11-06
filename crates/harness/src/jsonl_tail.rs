@@ -52,9 +52,11 @@ impl TailReader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde_json::json;
     use std::io::Write as _;
+
+    use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn a_tail_reads_each_record_once_when_its_line_is_whole() {

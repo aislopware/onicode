@@ -15,7 +15,8 @@ final class ImageViewer: UIViewController, UIScrollViewDelegate {
         modalPresentationStyle = .fullScreen
     }
 
-    required init?(coder _: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -32,9 +33,12 @@ final class ImageViewer: UIViewController, UIScrollViewDelegate {
         imageView.contentMode = .scaleAspectFit
         scroll.addSubview(imageView)
 
-        let close = Glass.circleButton(symbol: "xmark", size: 44, pointSize: 15, action: UIAction { [weak self] _ in self?.dismiss(animated: true) })
+        let close = Glass.circleButton(
+            symbol: "xmark", size: 44, pointSize: 15,
+            action: UIAction { [weak self] _ in self?.dismiss(animated: true) })
         close.accessibilityLabel = "Close image preview"
-        let share = Glass.circleButton(symbol: "square.and.arrow.up", size: 44, pointSize: 15, action: UIAction { [weak self] _ in self?.share() })
+        let share = Glass.circleButton(
+            symbol: "square.and.arrow.up", size: 44, pointSize: 15, action: UIAction { [weak self] _ in self?.share() })
         share.accessibilityLabel = "Share image"
         for b in [close, share] { view.addSubview(b) }
         NSLayoutConstraint.activate([
@@ -63,7 +67,9 @@ final class ImageViewer: UIViewController, UIScrollViewDelegate {
         } else {
             let p = tap.location(in: imageView)
             let size = CGSize(width: scroll.bounds.width / 2.5, height: scroll.bounds.height / 2.5)
-            scroll.zoom(to: CGRect(x: p.x - size.width / 2, y: p.y - size.height / 2, width: size.width, height: size.height), animated: true)
+            scroll.zoom(
+                to: CGRect(x: p.x - size.width / 2, y: p.y - size.height / 2, width: size.width, height: size.height),
+                animated: true)
         }
     }
 

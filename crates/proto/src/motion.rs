@@ -29,7 +29,7 @@ pub const PULSE_STAGGER: f32 = 0.15 / 2.4;
 
 /// Per-row tints of the gradient matrix spinner — onicode's "sunrise" gradient
 /// sampled at each row: cool blue at the top, through amber, to pink.
-pub const GSPIN_ROW_TINTS: [u32; MATRIX_SIDE] = [0xB6D3EF, 0xEDB185, 0xF888A0];
+pub const GSPIN_ROW_TINTS: [u32; MATRIX_SIDE] = [0xb6d3ef, 0xedb185, 0xf888a0];
 /// Opacity a gradient-spinner cell rests at between pulses.
 pub const GSPIN_DIM: f32 = 0.1;
 

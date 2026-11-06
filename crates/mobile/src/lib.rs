@@ -1,8 +1,8 @@
 //! Onicode mobile core — the UniFFI surface shared by the iOS and Android apps.
 //!
-//! - [`client_ffi`]: account, workspace and session state (wraps `onicode-client`).
-//! - [`layout`]: analytic transcript layout — markdown → measured display lists
-//!   (wraps `onicode-markdown` + `onicode-text`).
+//! - `client_ffi`: account, workspace and session state (wraps `onicode-client`).
+//! - [`layout`]: analytic transcript layout — markdown → measured display lists (wraps
+//!   `onicode-markdown` + `onicode-text`).
 //! - [`orb`]: the desktop's voice orb as paintable frames (wraps `onicode-orb`).
 //! - [`caption`]: the voice caption's streaming veil (wraps `onicode-veil`).
 

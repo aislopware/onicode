@@ -2,10 +2,10 @@
 //! bottom-right corner.
 //!
 //! The behaviour follows sonner's defaults:
-//! - Toasts last four seconds. The countdown pauses while the pointer is over
-//!   the stack and while the window is inactive.
-//! - Collapsed, the newest toast sits in front and up to two older ones peek
-//!   above it, each a step narrower (sonner's 5% scale).
+//! - Toasts last four seconds. The countdown pauses while the pointer is over the stack and while
+//!   the window is inactive.
+//! - Collapsed, the newest toast sits in front and up to two older ones peek above it, each a step
+//!   narrower (sonner's 5% scale).
 //! - Hovering the stack fans the toasts out into a list.
 //! - New toasts rise in from below; dismissed ones fade away.
 //! - A toast is dismissed by swiping it off to the right.

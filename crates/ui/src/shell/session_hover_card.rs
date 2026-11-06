@@ -9,7 +9,6 @@
 use std::time::Instant;
 
 use super::*;
-
 use crate::change_requests::ChangeRequestBadgeModel;
 
 /// How long the pointer rests on a row before its card shows.
@@ -448,8 +447,9 @@ impl Render for SessionCardView {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::{AppContext, TestAppContext, VisualTestContext};
+
+    use super::*;
 
     fn test_chat(id: &str) -> onicode_proto::Chat {
         serde_json::from_value(serde_json::json!({

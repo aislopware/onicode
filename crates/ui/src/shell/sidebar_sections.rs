@@ -1,7 +1,8 @@
 //! Account-synced sections; local workspaces keep their settings on this device.
+use onicode_proto::{SidebarPinChange, SidebarSectionChange};
+
 use super::*;
 use crate::settings::SidebarSection;
-use onicode_proto::{SidebarPinChange, SidebarSectionChange};
 
 /// The air above each custom section's header.
 const SIDEBAR_SECTION_TOP_PAD: f32 = 12.0;

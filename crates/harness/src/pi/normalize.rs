@@ -1,6 +1,7 @@
+use std::collections::HashMap;
+
 use onicode_proto::{AgentEvent, DoneStatus, ToolCall, ToolDiff};
 use serde_json::Value;
-use std::collections::HashMap;
 
 #[derive(Default)]
 pub(super) struct Normalizer {
@@ -18,6 +19,7 @@ impl Normalizer {
         self.text.clear();
         self.thinking.clear();
     }
+
     pub fn status(&self) -> DoneStatus {
         if self.aborted {
             DoneStatus::Interrupted
@@ -27,6 +29,7 @@ impl Normalizer {
             DoneStatus::Completed
         }
     }
+
     pub fn map(&mut self, frame: &Value) -> Vec<AgentEvent> {
         let mut events = Vec::new();
         match string(frame, "type") {
@@ -217,12 +220,15 @@ fn tool(name: &str, args: &Value) -> ToolCall {
 }
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
     #[test]
     fn final_message_reconciles_without_duplicate_text_and_retry_clears_error() {
         let mut n = Normalizer::default();
+        // spellchecker:off
         n.map(&json!({"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"hel"}}));
+        // spellchecker:on
         let events = n.map(&json!({"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"temporary","content":[{"type":"text","text":"hello"}]}}));
         assert!(matches!(&events[0], AgentEvent::TextDelta {text} if text == "lo"));
         assert_eq!(n.status(), DoneStatus::Errored);

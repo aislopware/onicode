@@ -8,9 +8,11 @@
 //! an evicted diagram simply renders again when its row returns. Diagrams
 //! painted in the latest two passes are never evicted, so the budget is soft
 //! only when more diagrams than it admits are on screen at once.
-use crate::image_media::MediaImage;
-use gpui::SharedString;
 use std::collections::{HashMap, HashSet};
+
+use gpui::SharedString;
+
+use crate::image_media::MediaImage;
 
 pub(crate) const MAX_RETAINED_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ENTRIES: usize = 64;

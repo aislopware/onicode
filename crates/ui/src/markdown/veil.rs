@@ -62,8 +62,9 @@ pub fn apply_veil(runs: Vec<TextRun>, spans: &[VeilSpan]) -> Vec<TextRun> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::{font, px};
+
+    use super::*;
 
     fn run(len: usize, color: gpui::Hsla) -> TextRun {
         TextRun {

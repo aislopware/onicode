@@ -69,7 +69,7 @@ pub(crate) struct Scratch {
 }
 
 /// Width cache keyed by `(StyleId, &str)`. Owned by one layout thread and passed to
-/// [`crate::prepare`]; hits hash the key and compare bytes, with no allocation.
+/// [`crate::prepare`](fn@crate::prepare); hits hash the key and compare bytes, with no allocation.
 ///
 /// Entries are only valid for the [`FontBook`] they were measured with; handing the cache a
 /// different book (or one whose fallback changed) clears it automatically. The cache grows
@@ -83,8 +83,8 @@ pub struct WidthCache {
     space: Vec<f32>,
     hyphen: Vec<f32>,
     plans: Vec<Plan>,
-    /// Pair context `(Δa, Δb)` between printable-ASCII graphemes, per style: `[(a - 0x20) * 96 + (b - 0x20)]`,
-    /// NaN until computed.
+    /// Pair context `(Δa, Δb)` between printable-ASCII graphemes, per style: `[(a - 0x20) * 96 +
+    /// (b - 0x20)]`, NaN until computed.
     kern_ascii: Vec<Option<Box<[PairContext]>>>,
     /// Pair context between other single-char graphemes.
     kern_chars: HashMap<(u16, char, char), PairContext, FxBuildHasher>,
@@ -777,13 +777,13 @@ pub(crate) struct PairContext {
 }
 
 impl PairContext {
-    const UNKNOWN: Self = Self {
-        left: f32::NAN,
+    pub(crate) const NONE: Self = Self {
+        left: 0.0,
         right: 0.0,
         substituted: false,
     };
-    pub(crate) const NONE: Self = Self {
-        left: 0.0,
+    const UNKNOWN: Self = Self {
+        left: f32::NAN,
         right: 0.0,
         substituted: false,
     };

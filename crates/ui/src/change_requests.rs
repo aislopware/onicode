@@ -6,7 +6,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use gpui::{AnyElement, Context, Render, SharedString, Window, div, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, Render, SharedString, Window, div, px};
 use onicode_proto::{
     ChangeRequestListItem, ChangeRequestState, ChangeRequestSummary, Chat,
     CheckoutChangeRequestStatus, Space,

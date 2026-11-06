@@ -135,10 +135,11 @@ fn strip_part(chat_id: &str, part: &mut MessagePart) -> Option<SidecarPayload> {
 
 #[cfg(test)]
 mod tests {
+    use onicode_proto::{ToolCall, ToolDiff};
+
     use super::*;
     use crate::schema::{MessageRole, SessionMessageEntry};
     use crate::{MessageStatus, SessionCommandEntry, SessionCommandPayload};
-    use onicode_proto::{ToolCall, ToolDiff};
 
     /// ~4KB of varied output — repeated text would compress away inside the
     /// Loro snapshot and hide the size win the assertion checks.

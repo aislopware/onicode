@@ -92,7 +92,6 @@ use std::path::PathBuf;
 
 use futures::{FutureExt as _, StreamExt as _};
 use gpui::{App, AppContext as _, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
-
 pub use onicode_proto::HarnessId;
 pub use state::EngineBootConfig;
 

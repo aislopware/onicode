@@ -1,16 +1,15 @@
 //! Bounded WebSocket pump for document sync and device relay sessions.
 
-use futures::{SinkExt, StreamExt};
 use std::time::Duration;
+
+use futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 #[cfg(test)]
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
-use tokio_tungstenite::tungstenite::protocol::frame::{
-    Frame,
-    coding::{Data, OpCode},
-};
+use tokio_tungstenite::tungstenite::protocol::frame::Frame;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::{Data, OpCode};
 
 mod progress;
 pub use progress::{Connection, Progress, ProgressIo};
@@ -155,10 +154,11 @@ pub async fn pump_with_timing<S, T>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tokio::io::DuplexStream;
     use tokio::task::JoinHandle;
     use tokio_tungstenite::tungstenite::protocol::Role;
+
+    use super::*;
 
     struct Harness {
         server: WebSocketStream<DuplexStream>,

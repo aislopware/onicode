@@ -263,11 +263,11 @@ fn error_response(id: Value, code: i64, message: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use crate::onicode::{Onicode, Origin};
     use async_trait::async_trait;
     use onicode_rpc::{RpcError, RpcReply, RpcService, memory_client};
+
+    use super::*;
+    use crate::onicode::{Onicode, Origin};
 
     /// An engine that answers nothing: the listing needs none.
     struct Silent;

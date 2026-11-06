@@ -1,10 +1,13 @@
 //! Isolated visual and keyboard evidence for the compact model picker.
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use gpui::prelude::*;
 use gpui::{
     AppContext, AsyncApp, Bounds, Context, Entity, Render, Window, WindowBounds, WindowOptions,
-    div, prelude::*, px, size,
+    div, px, size,
 };
 use onicode_ui::*;
-use std::{path::Path, path::PathBuf, time::Duration};
 
 struct Fixture {
     pickers: Entity<pickers::Pickers>,

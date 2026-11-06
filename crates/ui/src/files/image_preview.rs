@@ -1,11 +1,13 @@
 //! A read-only workspace image. The client resolves bytes on the owning device.
+use std::sync::Arc;
+use std::time::Duration;
+
+use gpui::prelude::*;
+use gpui::{Bounds, Context, FocusHandle, Pixels, Render, Task, Window, div, px};
+
 use super::client::{FilesRequestContext, WorkspaceFilesClient};
-use crate::{
-    image_media::{MediaImage, decode_image, release_media},
-    theme::Theme,
-};
-use gpui::{Bounds, Context, FocusHandle, Pixels, Render, Task, Window, div, prelude::*, px};
-use std::{sync::Arc, time::Duration};
+use crate::image_media::{MediaImage, decode_image, release_media};
+use crate::theme::Theme;
 
 const MAX_MEDIA_BYTES: usize = 64 * 1024 * 1024;
 
@@ -264,6 +266,7 @@ mod tests {
         ) -> Result<serde_json::Value, onicode_rpc::RpcError> {
             std::future::pending().await
         }
+
         async fn subscribe(
             &self,
             _: &str,
@@ -378,6 +381,7 @@ mod tests {
                 serde_json::json!({ "checkoutId": "checkout", "contentHash": "version", "mimeType": "image/svg+xml", "data": base64::engine::general_purpose::STANDARD.encode(bytes), "nextOffset": bytes.len(), "size": bytes.len(), "done": true }),
             )
         }
+
         async fn subscribe(
             &self,
             _: &str,

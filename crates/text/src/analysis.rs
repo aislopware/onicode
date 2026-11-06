@@ -72,7 +72,7 @@ pub(crate) fn repair_spans(text: &str, spans: &[Span]) -> Option<Vec<Span>> {
 fn needs_normalization(text: &str, mode: WhiteSpace) -> bool {
     let b = text.as_bytes();
     match mode {
-        WhiteSpace::PreWrap | WhiteSpace::Pre => b.iter().any(|&c| c == b'\r' || c == 0x0C),
+        WhiteSpace::PreWrap | WhiteSpace::Pre => b.iter().any(|&c| c == b'\r' || c == 0x0c),
         WhiteSpace::Normal | WhiteSpace::PreLine => {
             if b.first() == Some(&b' ') || b.last() == Some(&b' ') {
                 return true;
@@ -81,7 +81,7 @@ fn needs_normalization(text: &str, mode: WhiteSpace) -> bool {
             let mut prev = 0u8;
             for &c in b {
                 match c {
-                    b'\t' | b'\r' | 0x0C => return true,
+                    b'\t' | b'\r' | 0x0c => return true,
                     b'\n' if !pre_line => return true,
                     b'\n' if prev == b' ' => return true,
                     b' ' if prev == b' ' || prev == b'\n' => return true,
@@ -229,8 +229,8 @@ fn is_sa(c: char) -> bool {
 ///   reports a break at every run end; dictionary breaks *inside* runs are added separately.
 /// - Apple's ICU breaks curly quotes like brackets rather than as ambiguous QU: `‘` and `“`
 ///   (U+2018, U+201C) as OP and `”` (U+201D) as CL. `’` (U+2019) stays QU: it is also the
-///   apostrophe. (Established by differential testing against CFStringTokenizer and
-///   CTFramesetter; see tests/coretext.rs.)
+///   apostrophe. (Established by differential testing against CFStringTokenizer and CTFramesetter;
+///   see tests/coretext.rs.)
 #[inline]
 fn stand_in(c: char) -> Option<char> {
     match c {
@@ -258,9 +258,9 @@ fn stand_in(c: char) -> Option<char> {
 /// not break where one SA script meets another).
 fn sa_script(c: char) -> u32 {
     match c as u32 {
-        u @ 0x0E00..=0x0EFF => u >> 7,                            // Thai, Lao
-        0x1000..=0x109F | 0xA9E0..=0xA9FF | 0xAA60..=0xAA7F => 1, // Myanmar
-        0x1780..=0x17FF | 0x19E0..=0x19FF => 2,                   // Khmer
+        u @ 0x0e00..=0x0eff => u >> 7,                            // Thai, Lao
+        0x1000..=0x109f | 0xa9e0..=0xa9ff | 0xaa60..=0xaa7f => 1, // Myanmar
+        0x1780..=0x17ff | 0x19e0..=0x19ff => 2,                   // Khmer
         u => u >> 5,
     }
 }

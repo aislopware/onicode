@@ -34,13 +34,12 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+pub use gpui::AnimationExt;
 use gpui::{
     Animation, AnimationElement, App, ElementId, EntityId, Global, Hsla, IntoElement, Rgba,
     SharedString, Styled, Window, px,
 };
 use serde::{Deserialize, Serialize};
-
-pub use gpui::AnimationExt;
 
 // ---------------------------------------------------------------------------
 // Pulse clock — throttled drive for the repeating loaders
@@ -105,7 +104,7 @@ impl Default for PulseClock {
 }
 
 /// Current phase `[0,1)` of a repeating spec, plus a lease that keeps the
-/// calling view re-rendering at [`PULSE_TICK`] while its spinner stays
+/// calling view re-rendering at `PULSE_TICK` while its spinner stays
 /// mounted. All cells across all views share one epoch, so multi-instance
 /// loaders stay phase-locked. Reduced motion returns a static 0 and schedules
 /// nothing.

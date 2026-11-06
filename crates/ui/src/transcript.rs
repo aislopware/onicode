@@ -2,16 +2,15 @@
 //! stick-to-bottom, tool-group folding, and streaming markdown.
 //!
 //! Row model (docs/research/mugen-pretext.md §3):
-//! - one row per BLOCK: user message = one bubble row; assistant messages split
-//!   into one row per markdown top-level block, plus consecutive-tool groups
-//!   (agent/spawn chips split out so they never collapse) and input/error chips;
-//! - stable row ids `{msgId}#{partId}.{blockIx}` / `{msgId}#g{groupIx}` — LIVE
-//!   (streaming) entries split per block exactly like completed ones (the list
-//!   virtualizes them, so a fading live reply re-renders only its visible tail
-//!   each frame — flat cost in the reply length); on completion each block row
-//!   keeps its id, so row identity is continuous and nothing flickers;
-//! - rows are cached per entry keyed by a content fingerprint — only changed
-//!   messages rebuild (the anti-"streaming stutter" trick);
+//! - one row per BLOCK: user message = one bubble row; assistant messages split into one row per
+//!   markdown top-level block, plus consecutive-tool groups (agent/spawn chips split out so they
+//!   never collapse) and input/error chips;
+//! - stable row ids `{msgId}#{partId}.{blockIx}` / `{msgId}#g{groupIx}` — LIVE (streaming) entries
+//!   split per block exactly like completed ones (the list virtualizes them, so a fading live reply
+//!   re-renders only its visible tail each frame — flat cost in the reply length); on completion
+//!   each block row keeps its id, so row identity is continuous and nothing flickers;
+//! - rows are cached per entry keyed by a content fingerprint — only changed messages rebuild (the
+//!   anti-"streaming stutter" trick);
 //! - row-set changes diff by (id, version) into one minimal `splice`.
 //!
 //! Stick-to-bottom is a velocity spring (mugen §1e, the same shape as
@@ -32,17 +31,17 @@ use std::rc::Rc;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
+use gpui::prelude::*;
 use gpui::{
     AnyElement, Bounds, ClipboardItem, ContentMask, Context, Entity, ListAlignment, ListOffset,
     ListScrollEvent, ListState, MouseButton, MouseMoveEvent, MouseUpEvent, ObjectFit, PathBuilder,
-    Pixels, Point, ScrollDelta, ScrollWheelEvent, SharedString, StyledImage as _, StyledText,
-    Subscription, Task, TextAlign, TextRun, Window, canvas, div, img, list, point, prelude::*, px,
-    size,
+    Pixels, Point, ScrollDelta, ScrollWheelEvent, SharedString, StyledText, Subscription, Task,
+    TextAlign, TextRun, Window, canvas, div, img, list, point, px, size,
 };
-
 use onicode_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry, SubagentStatus};
 use onicode_proto::view::{AnswerLine, InputOutcome};
 use onicode_proto::{HarnessId, ToolCall};
+use onicode_syntax::LanguageId as Lang;
 
 use crate::markdown::mermaid_cache::{self, MermaidCache};
 use crate::markdown::parser::{
@@ -51,11 +50,11 @@ use crate::markdown::parser::{
 use crate::markdown::render::{self, RenderCache, RenderOptions};
 use crate::markdown::veil::RowVeil;
 use crate::motion::{self, AnimationExt as _};
-use crate::notice::{NoticeChipIcon::Tile, notice_chip_with_action};
+use crate::notice::NoticeChipIcon::Tile;
+use crate::notice::notice_chip_with_action;
 use crate::state::AppState;
 use crate::syntax_cache::{DocumentHighlightKey, SyntaxHighlightCache};
 use crate::theme::Theme;
-use onicode_syntax::LanguageId as Lang;
 
 // ---------------------------------------------------------------------------
 // Constants (mugen ports)
@@ -795,7 +794,7 @@ pub enum ToolDetail {
     },
     /// A thought's markdown, pre-flattened into wrapped STYLED lines — one
     /// fixed-height row each, so the height stays analytic like `Output`
-    /// while inline markers render as real styling ([`thought_lines`]).
+    /// while inline markers render as real styling (`thought_lines`).
     Thought {
         lines: Vec<Vec<InlineRun>>,
         truncated_by: usize,
@@ -4452,7 +4451,7 @@ impl Transcript {
     /// Reserve the reply's space below a locally-sent prompt — EVERY send,
     /// not just the first (a steer or a post-turn send used to collapse the
     /// previous reservation and drop the messages back down — user report).
-    /// [`Self::step_own_turn`] sizes the reservation and eases the prompt to
+    /// `Self::step_own_turn` sizes the reservation and eases the prompt to
     /// its top inset. Replacing a previous anchor starts a new glide.
     pub fn on_own_send(&mut self, chat_id: String, message_id: String, cx: &mut Context<Self>) {
         self.user_collapse_scroll = None;
@@ -8624,6 +8623,7 @@ impl Transcript {
             |transcript| &mut transcript.code_fences,
         )
     }
+
     fn code_uis_for(
         &mut self,
         row_id: &SharedString,
@@ -9845,14 +9845,15 @@ struct ChipOverlays {
 
 impl IntoElement for ChipOverlays {
     type Element = Self;
+
     fn into_element(self) -> Self {
         self
     }
 }
 
 impl gpui::Element for ChipOverlays {
-    type RequestLayoutState = ();
     type PrepaintState = Vec<AnyElement>;
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<gpui::ElementId> {
         Some(self.id.clone().into())
@@ -15144,7 +15145,9 @@ mod tests {
                 let history = vec![assistant(
                     "reply",
                     MessageStatus::Streaming,
+                    // spellchecker:off
                     vec![text_part("body", "historial fuera de pantalla")],
+                    // spellchecker:on
                 )];
                 transcript.update(cx, |this, cx| {
                     this.state.update(cx, |state, cx| {
@@ -15201,7 +15204,9 @@ mod tests {
                         let old = &this.veils[&SharedString::from("reply#body.0")];
                         assert!(
                             old.borrow_mut()
+                                // spellchecker:off
                                 .advance(0, "historial fuera de pantalla", Instant::now())
+                                // spellchecker:on
                                 .is_empty()
                         );
                         let fresh = &this.veils[&SharedString::from("reply#fresh.0")];
@@ -17178,8 +17183,9 @@ mod tests {
     /// the strip above.
     #[test]
     fn user_bubbles_project_attachment_chips_in_place_of_the_strip() {
-        use crate::composer::ChipKind;
         use onicode_proto::attachment_mentions::attachment_mention_link;
+
+        use crate::composer::ChipKind;
         let body = format!(
             "compare {} with {} and {}",
             attachment_mention_link(1, None),

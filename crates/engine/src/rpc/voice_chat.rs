@@ -4,9 +4,10 @@
 //! [`ROTATE_AFTER`] entries, the next call moves to a fresh chat that inherits
 //! the Codex thread: memory continues, the transcript starts small again. The
 //! old segment is removed only once its successor holds a message.
-use super::*;
 use onicode_proto::voice::{ORCHESTRATOR_CHAT_PREFIX, ORCHESTRATOR_CHAT_TITLE, VoiceRejection};
 use onicode_proto::{Chat, SessionStatus};
+
+use super::*;
 
 /// Transcript entries after which the next call starts a new segment.
 pub(super) const ROTATE_AFTER: usize = 1000;

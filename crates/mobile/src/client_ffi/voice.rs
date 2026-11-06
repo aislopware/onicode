@@ -1,17 +1,18 @@
 //! Bounded platform callbacks; no PCM or provider credentials cross UniFFI.
 //! The call state is reduced here (`onicode_voice_session::VoiceView`), so the
 //! platform renders typed snapshots exactly as the desktop reads them.
-use super::*;
-use crate::orb::VoiceOrb;
-use onicode_proto::voice::{VoicePhase, VoiceRejection, VoiceRole, VoiceWork, remote::Sdp};
-use onicode_voice_session::{VoiceMediaEndpoint, VoiceView};
 use std::collections::HashMap;
-use std::sync::{
-    Mutex,
-    atomic::{AtomicBool, AtomicU64, Ordering},
-};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+use onicode_proto::voice::remote::Sdp;
+use onicode_proto::voice::{VoicePhase, VoiceRejection, VoiceRole, VoiceWork};
+use onicode_voice_session::{VoiceMediaEndpoint, VoiceView};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
+
+use super::*;
+use crate::orb::VoiceOrb;
 
 #[derive(Clone, Copy, uniffi::Enum)]
 pub enum VoiceMediaOperation {
@@ -227,6 +228,7 @@ impl VoiceMediaEndpoint for PlatformMedia {
             .await
             .map(|_| ())
     }
+
     async fn offer(&self) -> Result<Sdp, VoiceRejection> {
         Sdp::new(
             self.request(VoiceMediaOperation::Offer, None, true)
@@ -235,6 +237,7 @@ impl VoiceMediaEndpoint for PlatformMedia {
                 .ok_or(VoiceRejection::Protocol)?,
         )
     }
+
     async fn apply_answer(&self, answer: Sdp) -> Result<(), VoiceRejection> {
         self.request(
             VoiceMediaOperation::ApplyAnswer,
@@ -244,17 +247,20 @@ impl VoiceMediaEndpoint for PlatformMedia {
         .await
         .map(|_| ())
     }
+
     async fn set_muted(&self, muted: bool) -> Result<(), VoiceRejection> {
         self.request(VoiceMediaOperation::SetMuted, None, muted)
             .await
             .map(|_| ())
     }
+
     async fn levels(&self) -> Result<(u16, u16), VoiceRejection> {
         let r = self
             .request(VoiceMediaOperation::Levels, None, true)
             .await?;
         Ok((r.microphone, r.speaker))
     }
+
     fn close(&self) {
         if self.closed.swap(true, Ordering::AcqRel) {
             return;
@@ -291,10 +297,12 @@ impl VoiceCall {
             self.muted.send_replace(muted);
         }
     }
+
     pub fn stop(&self) {
         self.media.close();
         self.cancel.cancel();
     }
+
     /// Late native callbacks simply miss the retired request. No resume is possible.
     pub fn complete_media(
         &self,
@@ -428,8 +436,9 @@ impl CoreClient {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_proto::voice::{VoiceEvent, VoiceSnapshot};
+
+    use super::*;
     struct Listener(Mutex<Vec<u64>>);
     impl VoiceMediaListener for Listener {
         fn on_request(&self, r: VoiceMediaRequest) {
@@ -502,6 +511,7 @@ mod tests {
         fn on_voice_state(&self, state: VoiceCallState) {
             self.0.lock().unwrap().push(state);
         }
+
         fn on_voice_closed(&self, _: Option<VoiceEndReason>) {}
     }
 

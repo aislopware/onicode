@@ -734,8 +734,9 @@ pub fn short(id: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::Utc;
+
+    use super::*;
 
     #[tokio::test]
     async fn coalesced_repeated_interrupts_need_fresh_native_outcome_evidence() {

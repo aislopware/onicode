@@ -1,12 +1,14 @@
 //! Shared call lifecycle. Platforms own media; the execution host owns Codex.
 mod view;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use async_trait::async_trait;
-use futures::{StreamExt, stream::BoxStream};
+use futures::StreamExt;
+use futures::stream::BoxStream;
 use onicode_proto::voice::{remote as wire, *};
 use onicode_rpc::{RpcClient, methods};
 use serde_json::{Value, json};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 pub use view::{Caption, SpeakerActivity, VoiceView, orb_state};
@@ -60,6 +62,7 @@ impl VoiceControlTransport for RpcTransport {
         .map_err(|_| VoiceRejection::Protocol)?
         .map_err(rejection)
     }
+
     async fn own(
         &self,
         lease: &wire::Lease,
@@ -406,8 +409,9 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    use super::*;
     struct Media {
         prepared: AtomicBool,
         closed: AtomicBool,
@@ -419,22 +423,27 @@ mod tests {
             self.prepared.store(true, Ordering::SeqCst);
             Ok(())
         }
+
         async fn offer(&self) -> Result<wire::Sdp, VoiceRejection> {
             if self.block {
                 futures::future::pending::<()>().await;
             }
             wire::Sdp::new("offer".into())
         }
+
         async fn apply_answer(&self, _: wire::Sdp) -> Result<(), VoiceRejection> {
             Ok(())
         }
+
         async fn set_muted(&self, _: bool) -> Result<(), VoiceRejection> {
             assert!(!self.closed.load(Ordering::SeqCst));
             Ok(())
         }
+
         async fn levels(&self) -> Result<(u16, u16), VoiceRejection> {
             Ok((100, 200))
         }
+
         fn close(&self) {
             self.closed.store(true, Ordering::SeqCst);
         }
@@ -486,6 +495,7 @@ mod tests {
                 _ => json!({}),
             })
         }
+
         async fn own(
             &self,
             _: &wire::Lease,

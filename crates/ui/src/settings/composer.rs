@@ -13,9 +13,8 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
-
 use onicode_proto::{HarnessId, ReasoningLevel};
+use serde::{Deserialize, Serialize};
 
 const FILE_NAME: &str = "composer-defaults.json";
 

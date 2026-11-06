@@ -7,13 +7,12 @@ mod storage;
 mod transcript_links;
 // Real shell + native WebKit smoke test and screenshot fixture. Synthetic
 // chat data, isolated temp storage, loopback-only website, no engine services.
+use std::io::{Read, Write};
+use std::path::PathBuf;
+use std::time::Duration;
+
 use gpui::{AppContext, AsyncApp, Bounds, WindowBounds, WindowOptions, px, size};
 use onicode_ui::*;
-use std::{
-    io::{Read, Write},
-    path::PathBuf,
-    time::Duration,
-};
 
 async fn pause(cx: &mut AsyncApp, ms: u64) {
     cx.background_executor()

@@ -1,24 +1,19 @@
 //! Engine-owned discovery/proxy lifecycle, independent of headed UI lifetimes.
-use crate::{
-    catalog::Catalog,
-    discovery,
-    login::{self, CallbackForwarder, CallbackRoutes, CallbackTunnels},
-    mux::{self, BoxIo, Connector},
-    peer::Peers,
-    proxy, signaling,
-};
+use std::collections::{HashMap, HashSet};
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
 use futures::{StreamExt, stream};
-use std::{
-    collections::{HashMap, HashSet},
-    net::SocketAddr,
-    path::PathBuf,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::{Duration, Instant},
-};
 use tokio_util::sync::CancellationToken;
+
+use crate::catalog::Catalog;
+use crate::login::{self, CallbackForwarder, CallbackRoutes, CallbackTunnels};
+use crate::mux::{self, BoxIo, Connector};
+use crate::peer::Peers;
+use crate::{discovery, proxy, signaling};
 
 /// Discovery must not turn into HTTP traffic against the user's dev servers.
 /// A listening socket is probed until it answers HTTP once; that verdict then
@@ -70,6 +65,7 @@ impl ProbeMemory {
         }
         (known, probe)
     }
+
     pub(crate) fn record(&mut self, listener: &discovery::Listener, http: bool, now: Instant) {
         let key = probe_key(listener);
         let verdict = if http {
@@ -204,6 +200,7 @@ impl PreviewService {
             streams: StreamServices::default(),
         })))
     }
+
     /// Serve stream ids starting with `prefix` from `handler` — to peers and
     /// to this device alike. Registering a prefix again replaces its handler.
     pub fn serve_streams(&self, prefix: &str, handler: Arc<dyn Connector>) {
@@ -211,6 +208,7 @@ impl PreviewService {
         streams.retain(|(existing, _)| existing != prefix);
         streams.push((prefix.to_owned(), handler));
     }
+
     /// The open direct connection to `device`, if there is one right now.
     pub async fn peer_ready(&self, device: &str) -> bool {
         match self.0.peers.get() {
@@ -218,6 +216,7 @@ impl PreviewService {
             None => false,
         }
     }
+
     /// Start pairing with `device` in the background, so a stream opened
     /// shortly after finds the direct connection already up.
     pub fn warm_peer(&self, device: &str) {
@@ -231,6 +230,7 @@ impl PreviewService {
             }
         });
     }
+
     /// Open stream `service` on `device` directly, pairing first if needed
     /// (bounded: pairing gives up after 30s).
     pub async fn open_peer_stream(
@@ -243,13 +243,16 @@ impl PreviewService {
         })?;
         peers.open(device, service, false).await
     }
+
     pub fn catalog(&self) -> &Catalog {
         &self.0.catalog
     }
+
     /// The registry the agent-login flows publish their callback ports to.
     pub fn callback_routes(&self) -> CallbackRoutes {
         self.0.callback_routes.clone()
     }
+
     /// Forward loopback `port` on this device to login `login_id`'s callback
     /// on `device` until [`Self::close_login_tunnel`] or `lifetime` passes.
     /// Idempotent per login; a port taken here is an error.
@@ -281,9 +284,11 @@ impl PreviewService {
         self.0.signaling_wake.notify_one();
         Ok(())
     }
+
     pub fn close_login_tunnel(&self, login_id: &str) {
         self.0.callback_tunnels.close(login_id);
     }
+
     /// A provider sign-in's callback rides the direct connection on either
     /// end — the device running the login, or the one forwarding to it — so
     /// signaling joins as a sign-in, past the coordinator's device limit.
@@ -294,6 +299,7 @@ impl PreviewService {
         );
         Arc::new(move || routes.any_live() || tunnels.any_live())
     }
+
     pub async fn start(&self, projects: Projects, signaling: Option<signaling::Config>) {
         if self.0.started.swap(true, Ordering::SeqCst) {
             return;
@@ -416,10 +422,12 @@ impl PreviewService {
             )));
         }
     }
+
     pub fn stop(&self) {
         self.0.stop.cancel();
         self.0.catalog.clear_remote();
     }
+
     pub async fn shutdown(&self) {
         self.stop();
         let tasks = std::mem::take(&mut *self.0.tasks.lock().unwrap());
@@ -434,6 +442,7 @@ impl Connector for LocalConnector {
     async fn connect(&self, id: &str) -> anyhow::Result<BoxIo> {
         self.connect_from(None, id).await
     }
+
     async fn connect_from(&self, peer: Option<&str>, id: &str) -> anyhow::Result<BoxIo> {
         let handler = self
             .2

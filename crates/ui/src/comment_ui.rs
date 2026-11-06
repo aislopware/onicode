@@ -1,12 +1,12 @@
 //! Shared inline review cards for diffs and Markdown file previews.
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, Entity, SharedString, div, px};
+
 use crate::changes::ACCENT_BAR_WIDTH;
-use crate::{
-    comments::{self, ReviewComment},
-    composer::ComposerInput,
-    motion,
-    theme::Theme,
-};
-use gpui::{AnyElement, Context, Entity, SharedString, div, prelude::*, px};
+use crate::comments::{self, ReviewComment};
+use crate::composer::ComposerInput;
+use crate::motion;
+use crate::theme::Theme;
 
 /// Align review controls with a centered document column while keeping the card full width.
 #[derive(Clone, Copy)]

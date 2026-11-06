@@ -7,17 +7,15 @@
 //! `model/list`) carry no `commandId`. The host also sends requests of its
 //! own (`approval/request`, `userInput/request`), answered on the same
 //! stream.
-use crate::HarnessError;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use serde_json::{Value, json};
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
-    sync::mpsc,
-    task::JoinHandle,
-};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+
+use crate::HarnessError;
 
 /// The host's own inbound frame limit (10 MiB).
 const MAX_FRAME: usize = 10 * 1024 * 1024;

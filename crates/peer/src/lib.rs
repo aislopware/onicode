@@ -4,8 +4,8 @@
 //! * [`PeerEndpoint`]: the QUIC endpoints on this node's tailnet addresses, each socket bound to
 //!   the tailnet's interface, and the check of every caller by Tailscale's whois before its
 //!   handshake (failing closed).
-//! * [`PeerDirectory`]: which engines the tailnet has, from its status, kept current by its
-//!   change notifications and confirmed by a probe of each.
+//! * [`PeerDirectory`]: which engines the tailnet has, from its status, kept current by its change
+//!   notifications and confirmed by a probe of each.
 //! * [`PeerLinks`]: one link per device: dials deduplicated (both ends keep the link the smaller
 //!   device-id dialled), redialled with backoff, kept alive on the control stream, with the path
 //!   each takes; RPC calls, streams and datagrams to a device by its id.
@@ -27,7 +27,6 @@ pub use carrier::PeerCarrier;
 pub use directory::{Peer, PeerDirectory};
 pub use endpoint::{PeerConfig, PeerEndpoint, PeerSession, Sockets, SystemSockets};
 pub use links::{LinkInfo, LinkState, LinksConfig, PathReport, PeerLinks, StreamHandler};
-
 use onicode_net::NetError;
 use onicode_tailnet::LocalApiError;
 

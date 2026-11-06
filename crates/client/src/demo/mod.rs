@@ -2,7 +2,7 @@
 //! simulated host.
 //!
 //! Nothing here short-circuits the client: the dataset lives in a real
-//! [`RegistryDoc`] (local-only, like an edge-less engine: writes fold straight
+//! `RegistryDoc` (local-only, like an edge-less engine: writes fold straight
 //! into its rows, with no room to ack them) and real [`SessionDoc`]s. The viewer side writes
 //! commands and queue rows exactly as in live mode; [`DemoHost`] plays the
 //! engine — adopting commands (writing the user entry under the client-minted
@@ -27,6 +27,7 @@ use onicode_doc::{
 };
 use onicode_proto::{FolderEntry, FolderListing, RepoRef, Session, SessionStatus};
 use tokio_util::sync::CancellationToken;
+use transcripts::Step;
 
 use crate::catalog::{self, HarnessInfo, ModelInfo};
 use crate::client::ClientInner;
@@ -35,8 +36,6 @@ use crate::error::{ClientError, Result};
 use crate::rpc::ProgressFn;
 use crate::session::SessionCore;
 use crate::{lock, now_ms};
-
-use transcripts::Step;
 
 /// Pretend network latency before the host adopts a command.
 const ADOPT_DELAY: Duration = Duration::from_millis(180);

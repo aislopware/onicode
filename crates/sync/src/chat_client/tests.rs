@@ -68,6 +68,7 @@ impl ChatDocSink for RecordingSink {
         lock(&self.replay_rows).push(cursor);
         self.apply_row(bytes, cursor)
     }
+
     fn apply_row(&self, bytes: &[u8], cursor: u64) -> RowImportOutcome {
         if self
             .pending_until_checkpoint
@@ -79,6 +80,7 @@ impl ChatDocSink for RecordingSink {
         lock(&self.ops).push(format!("row@{cursor}"));
         RowImportOutcome::Applied
     }
+
     fn apply_checkpoint(&self, bytes: &[u8], cursor: u64) -> Result<(), String> {
         self.pending_until_checkpoint
             .store(false, std::sync::atomic::Ordering::Relaxed);
@@ -86,10 +88,12 @@ impl ChatDocSink for RecordingSink {
         lock(&self.ops).push(format!("ckpt@{cursor}"));
         Ok(())
     }
+
     fn contains_frontier(&self, _frontier: &[u8]) -> bool {
         self.frontier_contained
             .load(std::sync::atomic::Ordering::Relaxed)
     }
+
     fn advance_cursor(&self, cursor: u64) {
         lock(&self.cursor_advances).push(cursor);
     }
@@ -993,6 +997,7 @@ impl FlakyConnector {
             times: Mutex::new(Vec::new()),
         })
     }
+
     fn dial_times(&self) -> Vec<tokio::time::Instant> {
         lock(&self.times).clone()
     }
@@ -1048,7 +1053,7 @@ async fn drops_and_refused_dials_deliver_the_push_exactly_once() {
     .expect("first join succeeds");
     let mut events = client.events();
 
-    client.enqueue_update(vec![0xEE]);
+    client.enqueue_update(vec![0xee]);
     let first_batch = s1.await.unwrap();
 
     // The outage narrates: a Disconnected event reaches subscribers.
@@ -1496,7 +1501,8 @@ struct FixedHttpRows {
 
 #[tokio::test(start_paused = true)]
 async fn http_polling_returns_to_live_after_replay_and_rearms_on_revisit_or_failure() {
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
+    use std::sync::atomic::Ordering::Relaxed;
+    use std::sync::atomic::{AtomicBool, AtomicU64};
     struct HttpRows {
         head: AtomicU64,
         fail_next: AtomicBool,
@@ -1539,6 +1545,7 @@ async fn http_polling_returns_to_live_after_replay_and_rearms_on_revisit_or_fail
                 Ok(body)
             })
         }
+
         fn push(&self, _: String, _: Vec<u8>) -> BoxFuture<'static, Result<String, SyncError>> {
             Box::pin(async { panic!("read-only test") })
         }
@@ -1591,6 +1598,7 @@ impl ChatTransport for FixedHttpRows {
         let body = self.body.clone();
         Box::pin(async move { Ok(body) })
     }
+
     fn push(&self, _: String, _: Vec<u8>) -> BoxFuture<'static, Result<String, SyncError>> {
         Box::pin(async { panic!("read-only recovery must not push") })
     }
@@ -1678,25 +1686,31 @@ impl ChatDocSink for JournalSink {
             .pending_chat_updates("impaired")
             .map_err(|e| e.to_string())
     }
+
     fn persist_update(&self, id: &str, bytes: &[u8]) -> Result<(), String> {
         self.0
             .enqueue_chat_update("impaired", id, bytes)
             .map_err(|e| e.to_string())
     }
+
     fn acknowledge_update(&self, id: &str) -> Result<(), String> {
         self.0
             .acknowledge_chat_update("impaired", id)
             .map_err(|e| e.to_string())
     }
+
     fn apply_row(&self, bytes: &[u8], cursor: u64) -> RowImportOutcome {
         self.1.apply_row(bytes, cursor)
     }
+
     fn apply_checkpoint(&self, bytes: &[u8], cursor: u64) -> Result<(), String> {
         self.1.apply_checkpoint(bytes, cursor)
     }
+
     fn contains_frontier(&self, bytes: &[u8]) -> bool {
         self.1.contains_frontier(bytes)
     }
+
     fn advance_cursor(&self, cursor: u64) {
         self.1.advance_cursor(cursor);
     }
@@ -1725,6 +1739,7 @@ impl ChatTransport for LostAckHttp {
             Ok(serde_json::json!({"batchId": id, "seq": 2, "dup": true}).to_string())
         })
     }
+
     fn fetch_rows(&self, after: u64) -> BoxFuture<'static, Result<Vec<u8>, SyncError>> {
         let committed = self.committed.clone();
         Box::pin(async move {
@@ -1920,7 +1935,8 @@ async fn verified_snapshot_does_not_replay_thirteen_thousand_checkpoint_rows() {
 
 #[tokio::test]
 async fn shutdown_cancels_dial_and_joins_http_fallback() {
-    use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::Ordering::SeqCst;
     struct HungConnector;
     impl BinConnector for HungConnector {
         fn connect(&self) -> BoxFuture<'static, Result<BinPipe, SyncError>> {
@@ -1943,6 +1959,7 @@ async fn shutdown_cancels_dial_and_joins_http_fallback() {
                 std::future::pending().await
             })
         }
+
         fn push(&self, _: String, _: Vec<u8>) -> BoxFuture<'static, Result<String, SyncError>> {
             Box::pin(std::future::pending())
         }
@@ -2001,6 +2018,7 @@ impl ChatTransport for PendingTransport {
     fn fetch_rows(&self, _: u64) -> BoxFuture<'static, Result<Vec<u8>, SyncError>> {
         Box::pin(std::future::pending())
     }
+
     fn push(&self, _: String, _: Vec<u8>) -> BoxFuture<'static, Result<String, SyncError>> {
         Box::pin(std::future::pending())
     }
@@ -2247,6 +2265,7 @@ async fn http_wake_confirmation_ignores_a_pull_started_before_the_wake() {
             self.0.send(tx).unwrap();
             Box::pin(async move { rx.await.map_err(|_| SyncError::Closed) })
         }
+
         fn push(&self, _: String, _: Vec<u8>) -> BoxFuture<'static, Result<String, SyncError>> {
             Box::pin(async { panic!("no outgoing updates") })
         }
@@ -2373,6 +2392,7 @@ async fn http_repairs_socket_gap_without_clearing_a_newer_gap() {
             self.0.send(tx).unwrap();
             Box::pin(async move { rx.await.map_err(|_| SyncError::Closed) })
         }
+
         fn push(&self, _: String, _: Vec<u8>) -> BoxFuture<'static, Result<String, SyncError>> {
             Box::pin(async { panic!("no outgoing updates") })
         }

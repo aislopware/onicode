@@ -1,6 +1,7 @@
 //! Native transcript → Browser coverage, using only the fixture's loopback server.
-use super::*;
 use gpui::{Entity, MouseButton, PlatformInput, WindowHandle};
+
+use super::*;
 
 fn dispatch(
     window: WindowHandle<shell::Shell>,

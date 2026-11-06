@@ -1,21 +1,19 @@
-use std::{
-    collections::{HashMap, HashSet},
-    rc::Rc,
-    time::Instant,
-};
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
+use gpui::prelude::*;
 use gpui::{
     AnyElement, Context, Entity, Focusable, IntoElement, ListOffset, ListState, Render,
-    ScrollHandle, SharedString, Subscription, Task, Window, div, list, prelude::*, px,
+    ScrollHandle, SharedString, Subscription, Task, Window, div, list, px,
 };
+use onicode_proto::change_request_assessment::{Blocker, CiState, Facts};
 use onicode_proto::{
     ChangeRequestFilter, ChangeRequestListItem, ChangeRequestMergeability, ChangeRequestPage,
     ChangeRequestReviewDecision, Device,
 };
 use onicode_rpc::{RpcError, capability_errors, methods};
-
-use onicode_proto::change_request_assessment::{Blocker, CiState, Facts};
 
 use crate::composer::{ComposerInput, ComposerInputEvent};
 use crate::icons::{self, icon};
@@ -137,6 +135,7 @@ enum PullRequestGroup {
 
 impl PullRequestGroup {
     const ALL: [Self; 4] = [Self::Attention, Self::Review, Self::Approved, Self::Drafts];
+
     fn label(self) -> &'static str {
         match self {
             Self::Attention => "Needs attention",
@@ -145,6 +144,7 @@ impl PullRequestGroup {
             Self::Drafts => "Drafts",
         }
     }
+
     fn key(self) -> &'static str {
         match self {
             Self::Attention => "attention",
@@ -375,6 +375,7 @@ impl PullRequestsPage {
         self.selected_url = url;
         cx.notify();
     }
+
     pub(crate) fn target_device(&self) -> Option<String> {
         self.target_device.clone()
     }
@@ -519,6 +520,7 @@ impl PullRequestsPage {
         }
         board
     }
+
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         // The transcript's pattern: a virtualized list that tells the view
         // when it scrolls, so the floating rail can follow.
@@ -2230,9 +2232,11 @@ impl popover::ScrollRailHost for PullRequestsPage {
     fn rail_bar(&mut self) -> &mut popover::MenuScrollbarState {
         self.scroll.rail_bar()
     }
+
     fn rail_scroll(&self) -> Option<ScrollHandle> {
         self.scroll.rail_scroll()
     }
+
     fn rail_metrics(&mut self) -> Option<popover::MenuScrollbarMetrics> {
         if !self.board_list_active {
             let scroll = self.scroll.rail_scroll()?;
@@ -2244,6 +2248,7 @@ impl popover::ScrollRailHost for PullRequestsPage {
         self.rail_bar().note_scroll_offset(offset);
         Some(metrics)
     }
+
     fn rail_press(&mut self, pointer_y: gpui::Pixels) -> bool {
         if !self.board_list_active {
             let Some(scroll) = self.scroll.rail_scroll() else {
@@ -2258,6 +2263,7 @@ impl popover::ScrollRailHost for PullRequestsPage {
             .begin_press_in(&metrics, track_top, pointer_y);
         self.apply_board_rail_target(&metrics, track_top, pointer_y)
     }
+
     fn rail_drag_to(&mut self, pointer_y: gpui::Pixels) -> bool {
         if !self.board_list_active {
             let Some(scroll) = self.scroll.rail_scroll() else {
@@ -3643,9 +3649,10 @@ fn settle_snapshot<T>(
 
 #[cfg(test)]
 mod tests {
+    use chrono::{TimeDelta, TimeZone};
+
     use super::*;
     use crate::pull_request_test_support::{self as fixture, ScriptedRpc};
-    use chrono::{TimeDelta, TimeZone};
 
     fn device(id: &str, platform: &str) -> Device {
         Device {

@@ -601,8 +601,9 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::{AppContext, TestAppContext};
+
+    use super::*;
 
     #[test]
     fn files_layout_shrinks_the_tree_before_the_chat_or_editor() {

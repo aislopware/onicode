@@ -15,15 +15,15 @@ pub(super) async fn microphone() -> Result<(), VoiceRejection> {
 
 #[cfg(target_os = "macos")]
 mod macos {
-    use super::*;
-    use block2::RcBlock;
-    use objc2::{
-        msg_send,
-        runtime::{AnyClass, AnyObject, Bool},
-    };
-    use objc2_foundation::{NSBundle, ns_string};
     use std::sync::Mutex;
+
+    use block2::RcBlock;
+    use objc2::msg_send;
+    use objc2::runtime::{AnyClass, AnyObject, Bool};
+    use objc2_foundation::{NSBundle, ns_string};
     use tokio::sync::oneshot;
+
+    use super::*;
 
     #[link(name = "AVFoundation", kind = "framework")]
     unsafe extern "C" {

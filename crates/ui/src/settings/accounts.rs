@@ -14,13 +14,13 @@
 //! every call here surfaces failures as inline UI states rather than assuming
 //! the methods exist.
 
-use chrono::{DateTime, Utc};
-use gpui::{
-    AnyElement, Context, Entity, Focusable, Hsla, SharedString, Subscription, Task, Window, div,
-    prelude::*, px,
-};
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
+use gpui::prelude::*;
+use gpui::{
+    AnyElement, Context, Entity, Focusable, Hsla, SharedString, Subscription, Task, Window, div, px,
+};
 use onicode_proto::{
     AgentAccount, AgentAccountsSnapshot, AgentLoginMode, AgentLoginPoll, AgentLoginStart,
     AgentLoginStatus, CLOUD_ACCOUNTS_DEVICE, HarnessId, VaultProvider,
@@ -2367,8 +2367,9 @@ mod tests {
         assert!(!is_openable_login_url("vscode://extension/x"));
     }
 
-    use super::*;
     use chrono::TimeDelta;
+
+    use super::*;
 
     #[test]
     fn first_load_of_a_visit_forces_the_usage_probe() {

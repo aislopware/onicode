@@ -1,9 +1,11 @@
 //! Coordinate structural changes across every editor of the affected workspace.
-use super::*;
-use crate::files::{client::WorkspaceFilesClient, mutations::MutationIntent};
 use onicode_proto::{
     DeleteWorkspaceEntryRequest, MoveWorkspaceEntryRequest, WorkspaceMutationOutcome,
 };
+
+use super::*;
+use crate::files::client::WorkspaceFilesClient;
+use crate::files::mutations::MutationIntent;
 
 impl Shell {
     pub(super) fn start_file_mutation(
@@ -211,9 +213,12 @@ fn batch_failure_message(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     use gpui::{AppContext, TestAppContext, VisualTestContext};
-    use std::{cell::RefCell, rc::Rc};
+
+    use super::*;
 
     struct DragHost {
         shell: Entity<Shell>,

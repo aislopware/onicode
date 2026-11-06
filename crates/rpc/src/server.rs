@@ -209,15 +209,14 @@ impl RpcService for AgentGuard {
 async fn serve_ws_socket(stream: TcpStream, service: Arc<dyn RpcService>, tokens: Arc<IpcTokens>) {
     // Two independent gates, both required:
     //
-    // 1. Origin. Native viewports dial this socket without an `Origin`
-    //    header. A browser always attaches `Origin` to a WebSocket handshake
-    //    and cannot forge or suppress it from script, and WebSockets are
-    //    exempt from the Same-Origin Policy — so only rejecting any handshake
-    //    that carries `Origin` keeps a page the user happens to visit from
-    //    reaching this local socket. Keep this check.
-    // 2. Bearer. Any local process can still dial without `Origin`; only one
-    //    that can read the owner-only `{data_dir}/ipc-token` knows the token.
-    //    Compared in constant time; the presented value is never logged.
+    // 1. Origin. Native viewports dial this socket without an `Origin` header. A browser always
+    //    attaches `Origin` to a WebSocket handshake and cannot forge or suppress it from script,
+    //    and WebSockets are exempt from the Same-Origin Policy — so only rejecting any handshake
+    //    that carries `Origin` keeps a page the user happens to visit from reaching this local
+    //    socket. Keep this check.
+    // 2. Bearer. Any local process can still dial without `Origin`; only one that can read the
+    //    owner-only `{data_dir}/ipc-token` knows the token. Compared in constant time; the
+    //    presented value is never logged.
     //
     // The large `Err` (ErrorResponse) is the shape tungstenite's Callback
     // trait requires; it can't be boxed away here.

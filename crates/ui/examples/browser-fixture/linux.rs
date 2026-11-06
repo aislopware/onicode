@@ -1,8 +1,9 @@
-use super::*;
 use gpui::{
     AnyWindowHandle, Entity, MouseButton, Pixels, PlatformInput, Point, WindowHandle, point,
 };
 use onicode_ui::browser::BrowserSurface;
+
+use super::*;
 
 /// The first software-rendered frame can take longer than the fixture's
 /// initial pause on a loaded runner. Yield to GPUI until X11 maps the window;

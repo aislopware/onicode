@@ -1,12 +1,14 @@
 //! One owned `muse serve` host: spawn, the `initialize` handshake, calls,
 //! and the host's own requests.
-use super::rpc::{Client, Failure, Inbound, Transport};
-use crate::{
-    HarnessError,
-    process::{Command, Stdio, owned::Child},
-};
+use std::path::Path;
+use std::time::Duration;
+
 use serde_json::{Value, json};
-use std::{path::Path, time::Duration};
+
+use super::rpc::{Client, Failure, Inbound, Transport};
+use crate::HarnessError;
+use crate::process::owned::Child;
+use crate::process::{Command, Stdio};
 
 /// The protocol envelope this driver speaks.
 const SCHEMA_VERSION: u64 = 1;

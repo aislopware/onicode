@@ -1,11 +1,12 @@
 //! Host-side discovery for providers without a typed skills catalog. Only
 //! configured skill roots are traversed; bodies stay on the host until invoked.
+use std::collections::{BTreeMap, HashSet};
+use std::path::{Path, PathBuf};
+
+use onicode_proto::HarnessId;
+use onicode_proto::invocation::Skill;
+
 use crate::HarnessError;
-use onicode_proto::{HarnessId, invocation::Skill};
-use std::{
-    collections::{BTreeMap, HashSet},
-    path::{Path, PathBuf},
-};
 
 const MAX_DISCOVERY_ENTRIES: usize = 4096;
 
@@ -507,7 +508,8 @@ mod tests {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
-        use std::os::unix::{fs::symlink, net::UnixListener};
+        use std::os::unix::fs::symlink;
+        use std::os::unix::net::UnixListener;
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         let valid = write(root, "valid.md", "Body");

@@ -16,8 +16,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-use tokio::sync::mpsc;
-
 use onicode_doc::{MessageStatus, SessionCommandPayload};
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::{Harness, HarnessError, RunControls, TurnControl};
@@ -25,6 +23,7 @@ use onicode_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SessionStatus, SteeringMode,
 };
+use tokio::sync::mpsc;
 
 const CHAT: &str = "chat-runtime-survival";
 
@@ -71,12 +70,15 @@ impl Harness for ProcessHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Process"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         if self.turn_boundary {
             SteeringMode::TurnBoundary
@@ -84,21 +86,27 @@ impl Harness for ProcessHarness {
             SteeringMode::StepBoundary
         }
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium, ReasoningLevel::High]
     }
+
     fn deterministic_turn_end(&self) -> bool {
         true
     }
+
     fn stops_turn_in_place(&self) -> bool {
         true
     }
+
     fn reconfigures_in_place(&self, live: &RunRequest, next: &RunRequest) -> bool {
         self.adopts_config && live.cwd == next.cwd
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,

@@ -3,9 +3,8 @@
 //! * [`shape`]: the link model (delay, jitter, loss, rate, queue), every draw from a seed.
 //! * [`sim`]: an in-memory network noq's endpoints sit on directly, on tokio's clock, with
 //!   blackouts, NAT rebinding, reordering, per-pair paths and hosts taken off the network.
-//! * [`tailnet`]: a simulated tailnet on that network: nodes, users, tags, grants, `Online`
-//!   flaps, DERP-latency paths, and a fake `LocalAPI` per node behind
-//!   [`onicode_tailnet::Tailnet`].
+//! * [`tailnet`]: a simulated tailnet on that network: nodes, users, tags, grants, `Online` flaps,
+//!   DERP-latency paths, and a fake `LocalAPI` per node behind [`onicode_tailnet::Tailnet`].
 //!
 //! Under `#[tokio::test(start_paused = true)]` a whole QUIC connection runs in virtual time: a
 //! minute's outage passes in milliseconds, and a seed repeats its run to the packet. Nothing here

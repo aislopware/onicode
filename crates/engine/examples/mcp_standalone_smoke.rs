@@ -7,7 +7,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use onicode_engine::{EngineCore, HarnessRegistry};
-use onicode_harness::{Harness, HarnessError, RunControls, mock::MockHarness};
+use onicode_harness::mock::MockHarness;
+use onicode_harness::{Harness, HarnessError, RunControls};
 use onicode_mcp::{Onicode, Origin, Tools};
 use onicode_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SteeringMode,
@@ -51,18 +52,23 @@ impl Harness for SmokeHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Codex
     }
+
     fn display_name(&self) -> &str {
         "Scripted Codex (smoke only)"
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![Model {
             id: "smoke-1".into(),
@@ -72,6 +78,7 @@ impl Harness for SmokeHarness {
             options: vec![],
         }])
     }
+
     async fn run(
         &self,
         request: RunRequest,

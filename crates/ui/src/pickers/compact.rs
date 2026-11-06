@@ -122,6 +122,7 @@ impl ScalarTransition {
         );
         motion::lerp(self.from, self.to, progress)
     }
+
     pub(super) fn sample(
         state: &mut Option<Self>,
         target: f32,

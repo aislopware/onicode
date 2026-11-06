@@ -1,13 +1,12 @@
 //! Explicit, user-requested CLI installation. Catalog probes never call this module's executor.
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
+use std::time::Duration;
 
 use onicode_proto::HarnessId;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-use crate::{
-    CancellationToken, Harness, HarnessError, StderrTail,
-    process::{Command, Stdio},
-};
+use crate::process::{Command, Stdio};
+use crate::{CancellationToken, Harness, HarnessError, StderrTail};
 
 const DEADLINE: Duration = Duration::from_secs(15 * 60);
 

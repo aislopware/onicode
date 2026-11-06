@@ -18,13 +18,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use futures::{SinkExt, StreamExt};
-use tokio::net::TcpListener;
-use tokio::sync::mpsc;
-use tokio_tungstenite::tungstenite::Message as WsMessage;
-use tokio_tungstenite::tungstenite::handshake::server::{
-    Request as WsRequest, Response as WsResponse,
-};
-
 use onicode_doc::{MessageRole, MessageStatus, SessionCommandPayload};
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::{Harness, HarnessError, RunControls};
@@ -35,6 +28,12 @@ use onicode_proto::{
 use onicode_rpc::{
     DeviceFrameHeader, LinkCache, LinkCacheConfig, StaticToken, decode_device_frame,
     encode_device_frame, methods,
+};
+use tokio::net::TcpListener;
+use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::Message as WsMessage;
+use tokio_tungstenite::tungstenite::handshake::server::{
+    Request as WsRequest, Response as WsResponse,
 };
 
 const CHAT: &str = "chat-relay-fallback";
@@ -132,21 +131,27 @@ impl Harness for InstantHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Instant"
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         _request: RunRequest,

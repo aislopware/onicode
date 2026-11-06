@@ -2,7 +2,8 @@
 //!
 //! Usage:
 //!   cargo run -p onicode-rpc --example rpc_probe -- ws://127.0.0.1:27801 LocalDevice '{}'
-//!   cargo run -p onicode-rpc --example rpc_probe -- ws://127.0.0.1:27801 WatchSessions '{}' --stream 3
+//!   cargo run -p onicode-rpc --example rpc_probe -- ws://127.0.0.1:27801 WatchSessions '{}'
+//! --stream 3
 //!
 //! A stream gives up after 30 s without an item (`RPC_PROBE_TIMEOUT_SECS`
 //! overrides — a watcher meant to keep a chat viewed needs longer).

@@ -1,12 +1,14 @@
 //! Interactive tool-image preview session with isolated data and mock images.
 //! Images load through the real engine RPC (ReadAttachmentChunk) from a temp
 //! workspace. Close the window to exit. No agent runs.
+use std::path::Path;
+use std::sync::Arc;
+
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 use image::{ImageEncoder, Rgba, RgbaImage};
 use onicode_proto::ToolCall;
 use onicode_ui::*;
 use serde_json::json;
-use std::{path::Path, sync::Arc};
 
 fn port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")

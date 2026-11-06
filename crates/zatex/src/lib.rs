@@ -1,6 +1,6 @@
 //! zatex — fast, low-memory LaTeX math layout for Onicode.
 //!
-//! [`layout`] turns a TeX math string into a [`Formula`]: a width, ascent and
+//! [`layout`](fn@layout) turns a TeX math string into a [`Formula`]: a width, ascent and
 //! descent plus a flat list of [`Item`]s (glyph ids and rules) in points.
 //! Hosts paint it however they like — [`Formula::paint`] streams every glyph
 //! outline and rule as paths, so a painter needs no font registration at all.
@@ -118,7 +118,7 @@ impl Options {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Item {
     /// Glyph `glyph` of font `font` in the [`MathFont::chain`] (0 is the
-    /// font passed to [`layout`]), its origin at (`x`, `y`), drawn at `size`
+    /// font passed to [`layout`](fn@layout)), its origin at (`x`, `y`), drawn at `size`
     /// points.
     Glyph {
         font: u8,
@@ -235,16 +235,20 @@ impl Formula {
             fn move_to(&mut self, x: f32, y: f32) {
                 self.0.push_str(&format!("M{x:.2} {y:.2}"));
             }
+
             fn line_to(&mut self, x: f32, y: f32) {
                 self.0.push_str(&format!("L{x:.2} {y:.2}"));
             }
+
             fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
                 self.0.push_str(&format!("Q{x1:.2} {y1:.2} {x:.2} {y:.2}"));
             }
+
             fn cubic_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
                 self.0
                     .push_str(&format!("C{x1:.2} {y1:.2} {x2:.2} {y2:.2} {x:.2} {y:.2}"));
             }
+
             fn close(&mut self) {
                 self.0.push('Z');
             }

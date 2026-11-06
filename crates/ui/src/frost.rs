@@ -36,8 +36,8 @@ pub struct Frosted {
 }
 
 impl Element for Frosted {
-    type RequestLayoutState = ();
     type PrepaintState = ();
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<gpui::ElementId> {
         None
@@ -121,8 +121,8 @@ pub struct Layered {
 }
 
 impl Element for Layered {
-    type RequestLayoutState = ();
     type PrepaintState = ();
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<gpui::ElementId> {
         None

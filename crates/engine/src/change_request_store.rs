@@ -313,9 +313,10 @@ fn filter_key(filter: ChangeRequestFilter) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::DateTime;
     use onicode_proto::{ChangeRequestMergeability, ChangeRequestState};
+
+    use super::*;
 
     fn item(number: u64, title: &str) -> ChangeRequestListItem {
         ChangeRequestListItem {

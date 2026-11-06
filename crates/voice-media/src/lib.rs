@@ -1,17 +1,14 @@
 //! Codex's packaged WebRTC helper protocol (Apache-2.0, OpenAI rust-v0.159.0).
 //! Audio, AEC, interruption and encrypted media stay inside that native process.
 //! Only bounded SDP signaling, controls and level meters cross this pipe.
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::Duration;
+
 use onicode_proto::voice::VoiceRejection;
 use serde_json::{Value, json};
-use std::{
-    path::{Path, PathBuf},
-    process::Stdio,
-    time::Duration,
-};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    process::{ChildStdin, ChildStdout, Command},
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::process::{ChildStdin, ChildStdout, Command};
 const MAX_FRAME: usize = 128 * 1024;
 
 pub struct NativeHost {
@@ -82,6 +79,7 @@ impl NativeHost {
             .kill_on_drop(true);
         cmd
     }
+
     pub async fn open(
         path: &Path,
         stop: tokio_util::sync::CancellationToken,
@@ -138,6 +136,7 @@ impl NativeHost {
             .map_err(unavailable)?;
         Ok(host)
     }
+
     pub async fn exchange(
         &mut self,
         message: Value,
@@ -196,6 +195,7 @@ impl NativeHost {
         }
         result
     }
+
     pub async fn expect(
         &mut self,
         message: Value,
@@ -208,9 +208,11 @@ impl NativeHost {
         }
         Ok(())
     }
+
     pub async fn controls(&mut self, muted: bool) -> Result<(), VoiceRejection> {
         self.expect(json!({"type":"setAudioControls","controls":{"microphoneMuted":muted,"speakerSuppressed":false}}),"audioControlsApplied",5).await
     }
+
     pub async fn open_devices(&mut self) -> Result<(), VoiceRejection> {
         let mut message = json!({"type":"openDevices"});
         // Codex 0.161 requires selection even for the default devices. Older
@@ -220,10 +222,12 @@ impl NativeHost {
         }
         self.expect(message, "devicesOpened", 5).await
     }
+
     /// Synchronous local shutdown, independent of pending RPC or helper I/O.
     pub fn close(&self) {
         self.stop.cancel();
     }
+
     pub async fn levels(&mut self) -> Result<(u16, u16), VoiceRejection> {
         let v = self.exchange(json!({"type":"inspectAudio"}), 5).await?;
         if v["type"] != "audioState" {
@@ -386,6 +390,7 @@ impl onicode_voice_session::VoiceMediaEndpoint for DesktopMedia {
         *self.host.lock().await = Some(host);
         Ok(())
     }
+
     async fn offer(&self) -> Result<onicode_proto::voice::remote::Sdp, VoiceRejection> {
         let mut state = self.host.lock().await;
         let host = state.as_mut().ok_or(VoiceRejection::InvalidLease)?;
@@ -400,6 +405,7 @@ impl onicode_voice_session::VoiceMediaEndpoint for DesktopMedia {
                 .into(),
         )
     }
+
     async fn apply_answer(
         &self,
         answer: onicode_proto::voice::remote::Sdp,
@@ -415,6 +421,7 @@ impl onicode_voice_session::VoiceMediaEndpoint for DesktopMedia {
         host.open_devices().await?;
         host.expect(json!({"type":"setAudioControls","controls":{"microphoneMuted":true,"speakerSuppressed":true}}),"audioControlsApplied",5).await
     }
+
     async fn set_muted(&self, muted: bool) -> Result<(), VoiceRejection> {
         self.host
             .lock()
@@ -424,6 +431,7 @@ impl onicode_voice_session::VoiceMediaEndpoint for DesktopMedia {
             .controls(muted)
             .await
     }
+
     async fn levels(&self) -> Result<(u16, u16), VoiceRejection> {
         self.host
             .lock()
@@ -433,6 +441,7 @@ impl onicode_voice_session::VoiceMediaEndpoint for DesktopMedia {
             .levels()
             .await
     }
+
     fn close(&self) {
         self.stop.cancel();
     }
@@ -445,8 +454,9 @@ impl Drop for DesktopMedia {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use sha2::{Digest, Sha256};
+
+    use super::*;
 
     fn codex_package(root: &Path, version: &str, helper: bool) -> PathBuf {
         let codex = root.join("bin/codex");
@@ -561,8 +571,9 @@ mod tests {
 
     #[tokio::test]
     async fn desktop_media_opens_default_devices_with_old_and_new_helpers() {
-        use onicode_voice_session::VoiceMediaEndpoint;
         use std::os::unix::fs::PermissionsExt;
+
+        use onicode_voice_session::VoiceMediaEndpoint;
 
         for version in [None, Some("0.159.0"), Some("0.160.0"), Some("0.161.0")] {
             let dir = tempfile::tempdir().unwrap();

@@ -1,8 +1,9 @@
 //! A live voice caption: the tail of the current utterance, its streamed words
 //! veiled in exactly like transcript text, and the previous utterance fading
 //! out when the speaker turn changes.
-use crate::{ElemVeil, VeilSpan, slice_spans, veil_opacity};
 use std::time::Instant;
+
+use crate::{ElemVeil, VeilSpan, slice_spans, veil_opacity};
 
 /// The previous utterance fades out over this long when the turn changes.
 pub const CAPTION_EXIT_MS: f32 = 180.0;
@@ -119,8 +120,9 @@ impl CaptionVeil {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::time::Duration;
+
+    use super::*;
 
     fn at(base: Instant, ms: u64) -> Instant {
         base + Duration::from_millis(ms)

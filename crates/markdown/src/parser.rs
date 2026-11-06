@@ -1791,16 +1791,15 @@ fn parse_inline_event(cur: &mut Cursor, runs: &mut Vec<InlineRun>, style: &Inlin
 /// Whether a `$…$` span (`tex` between the dollars, `next` the byte after
 /// the closer) is really prose that happens to hold two dollar signs:
 /// - Pandoc's currency rule: a closer glued to a digit is a price (`$5-$10`);
-/// - a span ending in `/`, `:` or `@` joins shell variables
-///   (`$HOME/$USER`, `PATH=$PATH:$HOME`, `$USER@$HOST`) — no formula ends so;
-/// - an all-caps identifier whose closer runs into another identifier is a
-///   shell variable (`$FOO$BAR`), while `$AB$` or `$n$th` stay math;
-/// - TeX has no use for a backtick: one inside belongs to a code span the
-///   dollars straddle (`$HOME and `$PATH``); nor for a `"` (`"$HOME" and
-///   "$USER"`);
-/// - shell and regex shapes: a trailing `,`/`;` (`array($a,$b)`), a bracket
-///   closed before opened (`($foo) or ($bar)`), a braced name (`${A}${B}`),
-///   an anchor (`/x$/i`, `'a$|b$'`), an amount then words (`$10k, or 5$`).
+/// - a span ending in `/`, `:` or `@` joins shell variables (`$HOME/$USER`, `PATH=$PATH:$HOME`,
+///   `$USER@$HOST`) — no formula ends so;
+/// - an all-caps identifier whose closer runs into another identifier is a shell variable
+///   (`$FOO$BAR`), while `$AB$` or `$n$th` stay math;
+/// - TeX has no use for a backtick: one inside belongs to a code span the dollars straddle (`$HOME
+///   and `$PATH``); nor for a `"` (`"$HOME" and "$USER"`);
+/// - shell and regex shapes: a trailing `,`/`;` (`array($a,$b)`), a bracket closed before opened
+///   (`($foo) or ($bar)`), a braced name (`${A}${B}`), an anchor (`/x$/i`, `'a$|b$'`), an amount
+///   then words (`$10k, or 5$`).
 fn not_math(tex: &str, next: Option<u8>) -> bool {
     let shell_name = tex.len() > 1
         && tex

@@ -2,6 +2,10 @@
 //! The Muse driver against a stand-in `muse serve` replaying MSP sessions
 //! (recorded from a real Muse Code 1.4.x host, plus hand-written error
 //! shapes): see fixtures/muse/fake-muse.py.
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
 use futures::StreamExt;
 use onicode_harness::{
     CancellationToken, Harness, MuseHarness, RunControls, SteerMessage, TurnControl,
@@ -11,9 +15,6 @@ use onicode_proto::{
     UserInputAnswer, UserInputQuestion,
 };
 use serde_json::Value;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 fn fixtures() -> PathBuf {

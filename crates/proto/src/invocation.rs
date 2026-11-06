@@ -1,7 +1,8 @@
 //! Durable composer references. Only canonical links created by completion are
 //! decoded; ordinary slash/dollar text remains ordinary prompt text.
-use serde::{Deserialize, Serialize};
 use std::ops::Range;
+
+use serde::{Deserialize, Serialize};
 
 pub const INVOCATION_SCHEME: &str = "onicode-invoke:";
 
@@ -75,24 +76,28 @@ impl Invocation {
             Self::Command { name } | Self::Skill { name, .. } => name,
         }
     }
+
     pub fn prefix(&self) -> char {
         match self {
             Self::Command { .. } => '/',
             Self::Skill { .. } => '$',
         }
     }
+
     pub fn detail(&self) -> String {
         match self {
             Self::Command { name } => format!("/{name}"),
             Self::Skill { path, .. } => path.clone(),
         }
     }
+
     pub fn link(&self) -> String {
         let json = serde_json::to_vec(self).expect("invocation serializes");
         let payload: String = json.iter().map(|b| format!("{b:02x}")).collect();
         let label = escape_label(self.name());
         format!("[{}{label}]({INVOCATION_SCHEME}{payload})", self.prefix())
     }
+
     /// Skills retain their selected identity as an ordinary Markdown file
     /// reference. Commands stay in place so provider prefix semantics survive.
     pub fn prompt_text(&self) -> String {

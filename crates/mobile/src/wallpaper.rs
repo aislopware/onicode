@@ -267,8 +267,8 @@ pub fn wallpaper_safe_opacity(
     // Composite like the screen does (gamma-encoded sRGB), then measure.
     let over = |alpha: f32| {
         let ch = |shift: u32| {
-            let a = (worst >> shift & 0xFF) as f32;
-            let b = (background_rgb >> shift & 0xFF) as f32;
+            let a = (worst >> shift & 0xff) as f32;
+            let b = (background_rgb >> shift & 0xff) as f32;
             (alpha * a + (1.0 - alpha) * b).round().clamp(0.0, 255.0) as u32
         };
         ch(16) << 16 | ch(8) << 8 | ch(0)
@@ -345,7 +345,7 @@ mod tests {
     fn safe_opacity_keeps_text_readable() {
         // Dark theme (light text on near-black): a white image must be faded
         // hard; a black image can show fully.
-        let text = 0xE8E8EA;
+        let text = 0xe8e8ea;
         let bg = 0x060606;
         let white = wallpaper_safe_opacity(solid(8, 8, [255, 255, 255]), 8, 8, goal(text, bg));
         assert!(white < 0.5, "{white}");
@@ -356,7 +356,7 @@ mod tests {
         assert!((black - 1.0).abs() < 1e-6);
         // Light theme (dark text on white): a dark image is the threat.
         let dark =
-            wallpaper_safe_opacity(solid(8, 8, [20, 20, 40]), 8, 8, goal(0x303035, 0xF3F3F5));
+            wallpaper_safe_opacity(solid(8, 8, [20, 20, 40]), 8, 8, goal(0x303035, 0xf3f3f5));
         assert!(dark < 0.75, "{dark}");
         assert!(dark > 0.2, "{dark}");
     }

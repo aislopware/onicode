@@ -567,6 +567,7 @@ impl Client {
         })?;
         live.relay.voice_transport(device_id).await
     }
+
     /// Sign-out/shutdown closes every call created by this client.
     pub fn voice_cancellation(&self) -> CancellationToken {
         self.inner.cancel.child_token()

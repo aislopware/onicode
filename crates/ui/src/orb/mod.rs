@@ -10,7 +10,7 @@
 //! ```
 //!
 //! Style flows through the environment like the rest of bezel: [`OrbTheme::Auto`]
-//! resolves ink against the installed [`theme::Appearance`] at paint time.
+//! resolves ink against the installed `theme::Appearance` at paint time.
 
 mod paint;
 mod widget;

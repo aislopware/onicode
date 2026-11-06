@@ -2,19 +2,17 @@
 //! into dma-bufs on GPUI's GPU, GPUI copies only their damage into a persistent
 //! atlas tile, and GPUI's frame callbacks are the pages' vblank. Shared-memory
 //! mirrors stand in when the helper cannot render on GPUI's GPU.
-use super::{NativeEvent, Route};
+use std::collections::{HashMap, VecDeque};
+use std::io::{self, Write as _};
+use std::os::fd::{AsFd as _, AsRawFd as _, FromRawFd as _, OwnedFd, RawFd};
+use std::os::unix::net::UnixStream;
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
+use std::time::Instant;
+
 use gpui::{AtlasTileUpdate, Bounds, DevicePixels, RenderImage, Window, point, size};
 use serde_json::{Value, json};
-use std::{
-    collections::{HashMap, VecDeque},
-    io::{self, Write as _},
-    os::{
-        fd::{AsFd as _, AsRawFd as _, FromRawFd as _, OwnedFd, RawFd},
-        unix::net::UnixStream,
-    },
-    sync::{Arc, Mutex, OnceLock, mpsc},
-    time::Instant,
-};
+
+use super::{NativeEvent, Route};
 
 pub(super) const HELPER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/onicode-wpe"));
 /// Largest packet either side sends (page script results, copied text, the
@@ -46,6 +44,7 @@ impl Outbox {
             .send(framed)
             .map_err(|_| "Browser helper is shutting down".into())
     }
+
     /// Closes the helper's input even while completions still hold clones.
     pub(super) fn close(&self) {
         let _ = self.0.send(Vec::new());
@@ -278,6 +277,7 @@ impl Mapping {
             (map != libc::MAP_FAILED).then_some(Self(map, len))
         }
     }
+
     fn bytes(&self) -> &[u8] {
         // SAFETY: the mapping is `self.1` readable bytes until dropped.
         unsafe { std::slice::from_raw_parts(self.0.cast(), self.1) }
@@ -337,10 +337,12 @@ impl Surface {
     pub(super) fn add_buffer(&mut self, id: u32, buffer: Buffer) {
         self.buffers.insert(id, Arc::new(buffer));
     }
+
     pub(super) fn forget_buffer(&mut self, id: u32) {
         self.buffers.remove(&id);
         self.forgotten.push(id);
     }
+
     /// Keeps only the latest frame. One GPUI never painted adds its damage to
     /// the next, whose buffer holds the whole page anyway; its buffer goes
     /// back to WebKit unread, unless it is a mirror the helper never lent.

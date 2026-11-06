@@ -6,7 +6,6 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
-
 use onicode_harness::{CancellationToken, RunControls, SteerMessage};
 use onicode_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
@@ -337,8 +336,9 @@ async fn collect_text(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_proto::Model;
+
+    use super::*;
 
     fn model(id: &str, label: &str) -> Model {
         Model {
@@ -412,21 +412,27 @@ mod tests {
         fn id(&self) -> HarnessId {
             HarnessId::ClaudeCode
         }
+
         fn display_name(&self) -> &str {
             "Title test"
         }
+
         fn supports_steering(&self) -> bool {
             false
         }
+
         fn steering_mode(&self) -> onicode_proto::SteeringMode {
             onicode_proto::SteeringMode::TurnBoundary
         }
+
         fn reasoning_levels(&self) -> &[ReasoningLevel] {
             &[]
         }
+
         async fn models(&self) -> Result<Vec<Model>, onicode_harness::HarnessError> {
             panic!("an explicit title model should bypass catalog discovery")
         }
+
         async fn run(
             &self,
             _: RunRequest,
@@ -437,6 +443,7 @@ mod tests {
         > {
             panic!("title generation must never call the coding entry point")
         }
+
         async fn run_title(
             &self,
             request: RunRequest,

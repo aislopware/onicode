@@ -23,15 +23,15 @@ pub(crate) enum Variant {
 /// Starts of the Latin capital / small runs, per alphabet.
 fn latin(v: Variant) -> Option<(u32, u32)> {
     Some(match v {
-        Variant::Bold => (0x1D400, 0x1D41A),
-        Variant::Italic | Variant::Normal => (0x1D434, 0x1D44E),
-        Variant::BoldItalic => (0x1D468, 0x1D482),
-        Variant::Script => (0x1D49C, 0x1D4B6),
-        Variant::Fraktur => (0x1D504, 0x1D51E),
-        Variant::DoubleStruck => (0x1D538, 0x1D552),
-        Variant::Sans => (0x1D5A0, 0x1D5BA),
-        Variant::SansBold => (0x1D5D4, 0x1D5EE),
-        Variant::Mono => (0x1D670, 0x1D68A),
+        Variant::Bold => (0x1d400, 0x1d41a),
+        Variant::Italic | Variant::Normal => (0x1d434, 0x1d44e),
+        Variant::BoldItalic => (0x1d468, 0x1d482),
+        Variant::Script => (0x1d49c, 0x1d4b6),
+        Variant::Fraktur => (0x1d504, 0x1d51e),
+        Variant::DoubleStruck => (0x1d538, 0x1d552),
+        Variant::Sans => (0x1d5a0, 0x1d5ba),
+        Variant::SansBold => (0x1d5d4, 0x1d5ee),
+        Variant::Mono => (0x1d670, 0x1d68a),
         Variant::Upright => return None,
     })
 }
@@ -69,11 +69,11 @@ fn hole(ch: char, v: Variant) -> Option<char> {
 
 fn digits(v: Variant) -> Option<u32> {
     Some(match v {
-        Variant::Bold | Variant::BoldItalic => 0x1D7CE,
-        Variant::DoubleStruck => 0x1D7D8,
-        Variant::Sans => 0x1D7E2,
-        Variant::SansBold => 0x1D7EC,
-        Variant::Mono => 0x1D7F6,
+        Variant::Bold | Variant::BoldItalic => 0x1d7ce,
+        Variant::DoubleStruck => 0x1d7d8,
+        Variant::Sans => 0x1d7e2,
+        Variant::SansBold => 0x1d7ec,
+        Variant::Mono => 0x1d7f6,
         _ => return None,
     })
 }
@@ -82,10 +82,10 @@ fn digits(v: Variant) -> Option<u32> {
 /// ∇, then 25 smalls (with ς), ∂ ϵ ϑ ϰ ϕ ϱ ϖ.
 fn greek(v: Variant) -> Option<u32> {
     Some(match v {
-        Variant::Bold => 0x1D6A8,
-        Variant::Italic => 0x1D6E2,
-        Variant::BoldItalic => 0x1D71C,
-        Variant::SansBold => 0x1D756,
+        Variant::Bold => 0x1d6a8,
+        Variant::Italic => 0x1d6e2,
+        Variant::BoldItalic => 0x1d71c,
+        Variant::SansBold => 0x1d756,
         _ => return None,
     })
 }
@@ -96,7 +96,7 @@ fn greek_slot(ch: char) -> Option<(bool, u32)> {
         'Α'..='Ω' => (true, c - 0x391),
         'ϴ' => (true, 17),
         '∇' => (true, 25),
-        'α'..='ω' => (false, c - 0x3B1),
+        'α'..='ω' => (false, c - 0x3b1),
         '∂' => (false, 25),
         'ϵ' => (false, 26),
         'ϑ' => (false, 27),

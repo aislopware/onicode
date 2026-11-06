@@ -1,6 +1,7 @@
 //! Synthetic ACP peer. Exercises real native stdio/spawn without an agent account.
-use serde_json::{Value, json};
 use std::io::{BufRead, Write};
+
+use serde_json::{Value, json};
 
 fn emit(message: Value) {
     let mut out = std::io::stdout().lock();

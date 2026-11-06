@@ -2,10 +2,10 @@
 
 use std::ops::Range;
 
-use crate::analysis::{self, BRK_SOFT_HYPHEN, RawSeg};
-use crate::cache::{PairContext, UnitsRef, WidthCache, char_needs_fallback, needs_fallback};
 use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
 
+use crate::analysis::{self, BRK_SOFT_HYPHEN, RawSeg};
+use crate::cache::{PairContext, UnitsRef, WidthCache, char_needs_fallback, needs_fallback};
 use crate::chars::{is_hard_break, is_strong_rtl};
 use crate::font::{FontBook, StyleId};
 
@@ -431,7 +431,7 @@ fn is_hard_break_str(g: &str) -> bool {
 pub(crate) fn utf16_len(bytes: &[u8]) -> usize {
     bytes
         .iter()
-        .map(|&b| ((b & 0xC0) != 0x80) as usize + (b >= 0xF0) as usize)
+        .map(|&b| ((b & 0xc0) != 0x80) as usize + (b >= 0xf0) as usize)
         .sum()
 }
 
@@ -880,7 +880,7 @@ impl Builder<'_> {
             return PairContext::NONE;
         }
         let (l, r) = (bytes[pos - 1], bytes[pos]);
-        if l < 0x20 || r < 0x20 || l == 0x7F || r == 0x7F {
+        if l < 0x20 || r < 0x20 || l == 0x7f || r == 0x7f {
             return PairContext::NONE;
         }
         let a0 = if l < 0x80 && r < 0x80 {

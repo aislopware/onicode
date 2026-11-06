@@ -1,19 +1,19 @@
 //! Per-range hit targets share the text's shaped geometry, including wrapped links.
-use super::{
-    links::*,
-    render::{LinkUi, activate_link, range_rects},
-};
-use crate::{icons, popover, theme::Theme};
+use std::cell::{Cell, RefCell};
+use std::ops::Range;
+use std::rc::Rc;
+
+use gpui::prelude::*;
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, ClickEvent, DispatchPhase, Element, ElementId,
     FocusHandle, GlobalElementId, InspectorElementId, LayoutId, MouseButton, Pixels, Point, Role,
-    ScrollWheelEvent, SharedString, TextLayout, Window, div, prelude::*, px,
+    ScrollWheelEvent, SharedString, TextLayout, Window, div, px,
 };
-use std::{
-    cell::{Cell, RefCell},
-    ops::Range,
-    rc::Rc,
-};
+
+use super::links::*;
+use super::render::{LinkUi, activate_link, range_rects};
+use crate::theme::Theme;
+use crate::{icons, popover};
 
 #[cfg(feature = "browser-fixture")]
 thread_local! {
@@ -47,12 +47,12 @@ struct Interaction {
 }
 impl IntoElement for LinkRanges {
     type Element = Self;
+
     fn into_element(self) -> Self {
         self
     }
 }
 impl Element for LinkRanges {
-    type RequestLayoutState = ();
     type PrepaintState = (
         Vec<AnyElement>,
         OpenMenu,
@@ -60,12 +60,16 @@ impl Element for LinkRanges {
         Rc<Cell<bool>>,
         Rc<Cell<Option<Bounds<Pixels>>>>,
     );
+    type RequestLayoutState = ();
+
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone().into())
     }
+
     fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
         None
     }
+
     fn request_layout(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -75,6 +79,7 @@ impl Element for LinkRanges {
     ) -> (LayoutId, ()) {
         (self.child.request_layout(window, cx), ())
     }
+
     fn prepaint(
         &mut self,
         id: Option<&GlobalElementId>,
@@ -553,6 +558,7 @@ impl Element for LinkRanges {
             )
         })
     }
+
     fn paint(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -598,8 +604,9 @@ fn click_is_activation(event: &ClickEvent) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::{MouseClickEvent, MouseDownEvent, MouseUpEvent, TestAppContext, point};
+
+    use super::*;
     #[test]
     fn selection_drags_and_secondary_clicks_do_not_navigate() {
         let mut event = MouseClickEvent {
@@ -660,9 +667,10 @@ mod tests {
 
 #[cfg(all(test, target_os = "linux"))]
 mod rendered_tests {
-    use super::*;
     use gpui::{Context, Render};
     use gpui_platform::headless as test_application;
+
+    use super::*;
     thread_local! {
         pub(super) static TOOLTIP_BOUNDS: RefCell<Option<Rc<Cell<Option<Bounds<Pixels>>>>>> = RefCell::default();
     }

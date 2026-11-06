@@ -346,9 +346,9 @@ impl AnchoredElement {
 }
 
 impl Element for AnchoredElement {
-    type RequestLayoutState = ();
     /// The wash strength to paint under the row this frame.
     type PrepaintState = Option<f32>;
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<ElementId> {
         None
@@ -442,8 +442,8 @@ pub struct PageReveal {
 }
 
 impl Element for PageReveal {
-    type RequestLayoutState = ();
     type PrepaintState = ();
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<ElementId> {
         None
@@ -515,7 +515,8 @@ impl IntoElement for PageReveal {
 
 #[cfg(test)]
 mod tests {
-    use gpui::{Context, Entity, Render, TestAppContext, VisualTestContext, div, prelude::*};
+    use gpui::prelude::*;
+    use gpui::{Context, Entity, Render, TestAppContext, VisualTestContext, div};
 
     use super::*;
     use crate::settings::ShortcutId;

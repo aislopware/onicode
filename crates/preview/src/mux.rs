@@ -1,20 +1,15 @@
 //! Bounded, bidirectional streams over either a socket or an ordered DataChannel.
 //! Each stream has an independent receive window, so a stalled response does
 //! not stall other requests. END is a half-close; CANCEL aborts both directions.
-use std::{
-    collections::HashMap,
-    io,
-    pin::Pin,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU32, AtomicUsize, Ordering},
-    },
-    task::{Context, Poll},
-};
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf},
-    sync::{Semaphore, mpsc, oneshot},
-};
+use std::collections::HashMap;
+use std::io;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
+
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
+use tokio::sync::{Semaphore, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 const CHUNK: usize = 8192;
@@ -92,6 +87,7 @@ impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'stat
         writer.write_all(bytes).await?;
         Ok(())
     }
+
     async fn receive(&self) -> anyhow::Result<Vec<u8>> {
         let mut reader = self.read.lock().await;
         let size = reader.read_u32().await? as usize;
@@ -113,6 +109,7 @@ impl Frame {
     fn new(kind: u8, id: u32, data: Vec<u8>) -> Self {
         Self { kind, id, data }
     }
+
     fn encode(self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(5 + self.data.len());
         bytes.push(self.kind);
@@ -120,6 +117,7 @@ impl Frame {
         bytes.extend(self.data);
         bytes
     }
+
     fn decode(bytes: Vec<u8>) -> anyhow::Result<Self> {
         anyhow::ensure!(
             (5..=CHUNK + 5).contains(&bytes.len()),
@@ -184,21 +182,26 @@ impl Mux {
         });
         mux
     }
+
     pub fn close(&self) {
         self.0.stop.cancel();
         for (_, slot) in self.0.slots.lock().unwrap().drain() {
             slot.cancel.cancel();
         }
     }
+
     pub async fn closed(&self) {
         self.0.stop.cancelled().await;
     }
+
     pub fn is_closed(&self) -> bool {
         self.0.stop.is_cancelled()
     }
+
     async fn send(&self, frame: Frame) -> anyhow::Result<()> {
         tokio::select! { _ = self.0.stop.cancelled() => anyhow::bail!("preview connection closed"), result = self.0.outgoing.send(frame) => { result?; Ok(()) } }
     }
+
     fn stream(
         &self,
         id: u32,
@@ -285,6 +288,7 @@ impl Mux {
             result,
         ))
     }
+
     pub async fn open(&self, service: &str, websocket: bool) -> anyhow::Result<Stream> {
         anyhow::ensure!(
             !service.is_empty() && service.len() <= 128,
@@ -305,6 +309,7 @@ impl Mux {
         );
         Ok(stream)
     }
+
     async fn dispatch(&self, frame: Frame, connector: &Arc<dyn Connector>) -> anyhow::Result<()> {
         if matches!(frame.kind, OPEN | WS_OPEN) {
             anyhow::ensure!(
@@ -416,9 +421,11 @@ impl AsyncWrite for Stream {
     ) -> Poll<io::Result<usize>> {
         Pin::new(&mut self.io).poll_write(cx, buf)
     }
+
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.io).poll_flush(cx)
     }
+
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let result = Pin::new(&mut self.io).poll_shutdown(cx);
         if matches!(result, Poll::Ready(Ok(()))) {

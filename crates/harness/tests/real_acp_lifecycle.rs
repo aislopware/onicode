@@ -3,10 +3,11 @@
 //! PI_EXECUTABLE can select an isolated Pi installation.
 //! cargo test -p onicode-harness --test real_acp_lifecycle -- --ignored --nocapture
 
+use std::time::{Duration, Instant};
+
 use futures::StreamExt;
 use onicode_harness::{CancellationToken, Harness, RunControls, SteerMessage};
 use onicode_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
-use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 
 async fn live_run(cancel: bool) {

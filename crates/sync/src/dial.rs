@@ -7,7 +7,7 @@
 //! socket never comes up at all. Browsers (and this codebase's reqwest stack
 //! via hyper-util) race address families and connect fine on the same network;
 //! every WebSocket dial goes through here so they behave the same way:
-//! resolve, interleave v6/v4, start one TCP attempt every [`STAGGER`] (or
+//! resolve, interleave v6/v4, start one TCP attempt every `STAGGER` (or
 //! immediately when the previous attempt fails), first connected stream wins
 //! and the losers are dropped mid-flight.
 //!

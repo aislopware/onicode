@@ -5,10 +5,10 @@
 //! `SystemAppearance` + `reload_theme` + `cx.refresh_windows`):
 //!
 //! 1. [`AppearanceMode`] — the persisted user choice: follow the OS, or pin one.
-//! 2. [`AppearanceState`] — a gpui global holding that choice alongside the last
-//!    appearance the OS reported, so [`resolve`] can combine them.
-//! 3. [`observe_window`] — subscribes to the platform's appearance notification
-//!    (macOS `viewDidChangeEffectiveAppearance`) and re-applies.
+//! 2. [`AppearanceState`] — a gpui global holding that choice alongside the last appearance the OS
+//!    reported, so [`resolve`] can combine them.
+//! 3. [`observe_window`] — subscribes to the platform's appearance notification (macOS
+//!    `viewDidChangeEffectiveAppearance`) and re-applies.
 //!
 //! # Why `refresh_windows` and not `notify`
 //!
@@ -39,6 +39,8 @@ pub enum AppearanceMode {
 }
 
 impl AppearanceMode {
+    pub const ALL: [Self; 3] = [Self::System, Self::Light, Self::Dark];
+
     /// Menu/label text.
     pub fn label(self) -> &'static str {
         match self {
@@ -56,8 +58,6 @@ impl AppearanceMode {
             Self::Dark => crate::icons::MOON,
         }
     }
-
-    pub const ALL: [Self; 3] = [Self::System, Self::Light, Self::Dark];
 }
 
 /// Global state behind the current theme: what the user chose, and what the OS

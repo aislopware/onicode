@@ -113,6 +113,7 @@ impl SessionFixture {
         std::fs::write(dir.path().join("shim.mjs"), source).unwrap();
         Self { dir }
     }
+
     async fn start(
         &self,
         prompt: &str,
@@ -121,6 +122,7 @@ impl SessionFixture {
         self.start_with_mcp(prompt, resume, serde_json::Value::Null)
             .await
     }
+
     async fn start_with_mcp(
         &self,
         prompt: &str,
@@ -129,6 +131,7 @@ impl SessionFixture {
     ) -> (tokio::process::Child, tokio::process::ChildStdin, Frames) {
         self.spawn(prompt, resume, mcp, false).await
     }
+
     /// The SDK's native steering path alone, without text preemption.
     async fn start_native(
         &self,
@@ -137,6 +140,7 @@ impl SessionFixture {
         self.spawn(prompt, false, serde_json::Value::Null, true)
             .await
     }
+
     async fn spawn(
         &self,
         prompt: &str,
@@ -147,6 +151,7 @@ impl SessionFixture {
         let frame = serde_json::json!({"op":"run","prompt":prompt,"cwd":self.dir.path(),"resume":resume.then_some("agent-fixture"),"mcp":mcp});
         self.spawn_frame(frame, native_only).await
     }
+
     async fn spawn_frame(
         &self,
         frame: serde_json::Value,
@@ -188,6 +193,7 @@ impl Frames {
             started: false,
         }
     }
+
     async fn next_line(&mut self) -> std::io::Result<Option<String>> {
         self.lines.next_line().await
     }
@@ -886,6 +892,7 @@ impl SessionFixture {
             .unwrap();
         (child, stdin, lines)
     }
+
     fn prompts(&self) -> Vec<String> {
         let Ok(store) =
             std::fs::read_to_string(self.dir.path().join("state/by-agent/agent-fixture"))

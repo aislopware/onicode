@@ -2,15 +2,14 @@
 //!
 //! Rules (verbatim from onicode's design):
 //! 1. Each device inserts only its own entries; entries are append-only and immutable.
-//! 2. The chat's HOST is the sole writer of command outcomes; a composer may only set
-//!    `cancelled` on its own still-pending entries.
-//! 3. Evaluation (`evaluate_command`, pure): processed-id dedupe → Skip; expired TTL → Expired;
-//!    a newer interrupt supersedes an older interrupt; user prompts never supersede each other; an interrupt whose
-//!    `based_on.turn_id` is already past → Superseded; otherwise Execute.
-
-use serde::{Deserialize, Serialize};
+//! 2. The chat's HOST is the sole writer of command outcomes; a composer may only set `cancelled`
+//!    on its own still-pending entries.
+//! 3. Evaluation (`evaluate_command`, pure): processed-id dedupe → Skip; expired TTL → Expired; a
+//!    newer interrupt supersedes an older interrupt; user prompts never supersede each other; an
+//!    interrupt whose `based_on.turn_id` is already past → Superseded; otherwise Execute.
 
 use onicode_proto::{RunRequest, UserInputAnswer};
+use serde::{Deserialize, Serialize};
 
 use crate::constants::COMMAND_DEFAULT_TTL_MS;
 

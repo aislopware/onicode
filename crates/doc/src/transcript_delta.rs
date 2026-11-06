@@ -9,8 +9,9 @@
 //! Both viewports share this module (the `onicode_proto::view` rule: derivations
 //! that must not diverge per surface live in one place).
 
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
 
 use crate::parts::MessagePart;
 use crate::schema::SessionMessageEntry;

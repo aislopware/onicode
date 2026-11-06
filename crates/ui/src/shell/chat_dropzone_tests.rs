@@ -1,5 +1,6 @@
-use super::*;
 use gpui::{AppContext, TestAppContext, VisualTestContext};
+
+use super::*;
 
 struct DropHost {
     shell: Entity<Shell>,

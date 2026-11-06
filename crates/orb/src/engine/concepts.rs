@@ -4,11 +4,10 @@
 //! These modes deliberately reuse the engine's existing count/radius knobs and
 //! emit dots only, keeping them on the cheapest GPUI paint path.
 
-use crate::engine::{
-    core::{Dot, Frame, frac, make_proj, radius_scale, with_unit_circle},
-    profiles::{MAX_LANES, MAX_PARTICLES, MAX_SEGS, ModeOpts, count_usize},
-};
 use std::f32::consts::PI;
+
+use crate::engine::core::{Dot, Frame, frac, make_proj, radius_scale, with_unit_circle};
+use crate::engine::profiles::{MAX_LANES, MAX_PARTICLES, MAX_SEGS, ModeOpts, count_usize};
 
 /// Iris-like streams converge on a small, steady focal core.
 pub fn draw_focus_into(size: f32, t: f32, o: &ModeOpts, out: &mut Frame) {

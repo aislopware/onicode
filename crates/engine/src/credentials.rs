@@ -6,17 +6,16 @@
 //! [`RunRequest::env`] (serde-skipped, so nothing here can reach the session
 //! doc, the journal, or the wire):
 //!
-//! - **Codex**: a `codex` vault grant (ChatGPT tokens) becomes a managed
-//!   `CODEX_HOME` at `{data_dir}/cloud/codex-home` whose `auth.json` holds the
-//!   access token with an EMPTY refresh token (the vault is the only
-//!   refresher; deleting the field instead makes codex reject the file).
-//!   Else an `openai-key` grant becomes `{"OPENAI_API_KEY": key}` there.
-//!   Else nothing — codex runs on whatever native login the sandbox has.
+//! - **Codex**: a `codex` vault grant (ChatGPT tokens) becomes a managed `CODEX_HOME` at
+//!   `{data_dir}/cloud/codex-home` whose `auth.json` holds the access token with an EMPTY refresh
+//!   token (the vault is the only refresher; deleting the field instead makes codex reject the
+//!   file). Else an `openai-key` grant becomes `{"OPENAI_API_KEY": key}` there. Else nothing —
+//!   codex runs on whatever native login the sandbox has.
 //!
 //!   Why a file and not the app-server's `chatgptAuthTokens` login: codex
 //!   0.159 does expose `account/login/start {type: "chatgptAuthTokens"}` and
 //!   the `account/chatgptAuthTokens/refresh` server request, but both are
-//!   marked "[UNSTABLE] FOR OPENAI INTERNAL USE ONLY - DO NOT USE" in its own
+//!   marked "`UNSTABLE` FOR OPENAI INTERNAL USE ONLY - DO NOT USE" in its own
 //!   schema. The file path needs no private API and is sufficient: ChatGPT
 //!   access tokens live for days, every spawn re-grants (rewriting the file
 //!   when the grant changed), the background refresher rewrites it ~10 min
@@ -24,19 +23,16 @@
 //!   hits a 401 reloads `auth.json` from disk before attempting its own
 //!   refresh ("Reloading auth for account …" in codex's auth recovery), so it
 //!   picks up the rewritten token.
-//! - **Claude Code** (only ever the unmodified CLI, only on the user's own
-//!   Cloud device): (1) a `claude` vault grant (the user's subscription
-//!   sign-in) is written as `claudeAiOauth` into the CLI's own
-//!   `.credentials.json` (`$CLAUDE_CONFIG_DIR` or `~/.claude`; 0600, atomic,
-//!   sibling keys such as `mcpOAuth` preserved) with an EMPTY refresh token —
-//!   the vault owns the refresh token and this engine never sees one — and
-//!   rewritten by the background refresher ~10 min before `expiresAt`;
-//!   (2) else a native sandbox login (`claude auth login` wrote a real refresh
-//!   token) is left alone; (3) else an `anthropic-key` grant (the user's own
-//!   API key) becomes `ANTHROPIC_API_KEY`; else the run fails with Claude's
-//!   own not-logged-in error. A native login the grant displaces is backed up
-//!   (`{data_dir}/cloud/claude-native-credentials.json`) and restored when the
-//!   grant goes away.
+//! - **Claude Code** (only ever the unmodified CLI, only on the user's own Cloud device): (1) a
+//!   `claude` vault grant (the user's subscription sign-in) is written as `claudeAiOauth` into the
+//!   CLI's own `.credentials.json` (`$CLAUDE_CONFIG_DIR` or `~/.claude`; 0600, atomic, sibling keys
+//!   such as `mcpOAuth` preserved) with an EMPTY refresh token — the vault owns the refresh token
+//!   and this engine never sees one — and rewritten by the background refresher ~10 min before
+//!   `expiresAt`; (2) else a native sandbox login (`claude auth login` wrote a real refresh token)
+//!   is left alone; (3) else an `anthropic-key` grant (the user's own API key) becomes
+//!   `ANTHROPIC_API_KEY`; else the run fails with Claude's own not-logged-in error. A native login
+//!   the grant displaces is backed up (`{data_dir}/cloud/claude-native-credentials.json`) and
+//!   restored when the grant goes away.
 //! - **GitHub**: a `github` grant — a one-hour GitHub App installation token
 //!   for the installation on the session repository's owner (the user's own
 //!   GitHub token never leaves the vault) — becomes a git credential store at
@@ -61,10 +57,9 @@ use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
+use onicode_proto::{GithubRepo, HarnessId, RunRequest, VaultProvider};
 use serde::Deserialize;
 use serde_json::{Value, json};
-
-use onicode_proto::{GithubRepo, HarnessId, RunRequest, VaultProvider};
 
 use crate::http_error::describe_http_error;
 use crate::runner::{EdgeErrorBody, RunnerIdentity, write_private_atomic};

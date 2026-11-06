@@ -13,7 +13,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-
 use onicode_doc::{
     CommandBasedOn, SessionCommandEntry, SessionCommandPayload, SessionCommandStatus,
 };
@@ -40,21 +39,27 @@ impl Harness for ScriptedHarness {
     fn id(&self) -> HarnessId {
         self.id
     }
+
     fn display_name(&self) -> &str {
         "Scripted"
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         _request: RunRequest,

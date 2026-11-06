@@ -6,21 +6,21 @@
 //! (`/auth/exchange`, `/auth/refresh` — the WorkOS API key lives only there).
 //!
 //! Three modes:
-//! - **Runner** (a Cloud device — `{data_dir}/runner.json`, see [`crate::runner`]): always
-//!   signed in as the enrolled `{userId}` in `{orgId}`; bearers are runner JWTs minted by a
-//!   signed `POST /runner/token`, cached + refreshed with the same single-flight, cooldown
-//!   and background loop as WorkOS. Never touches `session.json` or WorkOS.
-//! - **Dev** (no WorkOS client id configured, or the edge reports `auth: "dev"`): always
-//!   signed in; the bearer IS the configured user id (current M2/M3 behavior).
-//! - **WorkOS**: authorization-code flow. Headed devices use a loopback callback server
-//!   on an ephemeral port; headless devices use the paste-code flow (the redirect is the
-//!   edge's hosted `/auth/cli/callback` page, which shows `state.code` to paste back via
-//!   stdin or the `CompleteSignIn` RPC). The refresh token is persisted 0600 in the data
-//!   dir; access tokens are cached with dual-clock expiry (monotonic AND wall, whichever
-//!   aged more — see [`AccessEntry`]) and refreshed on demand plus by a background loop,
-//!   so the device-room relay and room clients always dial with a live `?token=`, even
-//!   on the first redial after a laptop wakes from sleep. Org onboarding: an org-less session is `NeedsOrganization`; `SelectOrg`
-//!   runs an org-scoped refresh and the state follows the returned token's `org_id`.
+//! - **Runner** (a Cloud device — `{data_dir}/runner.json`, see [`crate::runner`]): always signed
+//!   in as the enrolled `{userId}` in `{orgId}`; bearers are runner JWTs minted by a signed `POST
+//!   /runner/token`, cached + refreshed with the same single-flight, cooldown and background loop
+//!   as WorkOS. Never touches `session.json` or WorkOS.
+//! - **Dev** (no WorkOS client id configured, or the edge reports `auth: "dev"`): always signed in;
+//!   the bearer IS the configured user id (current M2/M3 behavior).
+//! - **WorkOS**: authorization-code flow. Headed devices use a loopback callback server on an
+//!   ephemeral port; headless devices use the paste-code flow (the redirect is the edge's hosted
+//!   `/auth/cli/callback` page, which shows `state.code` to paste back via stdin or the
+//!   `CompleteSignIn` RPC). The refresh token is persisted 0600 in the data dir; access tokens are
+//!   cached with dual-clock expiry (monotonic AND wall, whichever aged more — see `AccessEntry`)
+//!   and refreshed on demand plus by a background loop, so the device-room relay and room clients
+//!   always dial with a live `?token=`, even on the first redial after a laptop wakes from sleep.
+//!   Org onboarding: an org-less session is `NeedsOrganization`; `SelectOrg` runs an org-scoped
+//!   refresh and the state follows the returned token's `org_id`.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -28,13 +28,13 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
 use futures::FutureExt;
+use onicode_rpc::TokenError;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::watch;
 
 use crate::EngineError;
 use crate::http_error::describe_http_error;
-use onicode_rpc::TokenError;
 
 const SIGN_IN_TTL: Duration = Duration::from_secs(15 * 60);
 /// Refresh when the cached token has less than this much life left.
@@ -1859,8 +1859,9 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_dns_failure_is_shared_with_http_and_room_consumers() {
-        use crate::http_error::test_support::FailingDns;
         use std::sync::atomic::Ordering;
+
+        use crate::http_error::test_support::FailingDns;
 
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(

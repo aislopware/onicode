@@ -15,8 +15,7 @@
 use gpui::{App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType, Window, actions};
 
 use crate::appearance::{self, AppearanceMode};
-use crate::composer;
-use crate::shell;
+use crate::{composer, shell};
 
 actions!(
     onicode,
@@ -230,8 +229,9 @@ pub fn app_menus() -> Vec<Menu> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::{Action as _, Keystroke};
+
+    use super::*;
 
     fn action_names(menu: &Menu) -> Vec<&'static str> {
         menu.items
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn app_bindings_use_platform_settings_convention() {
-        // `KeyBinding::new` panics on unparseable combos, so constructing the
+        // `KeyBinding::new` panics on unparsable combos, so constructing the
         // table is itself the parse check.
         let find = |bindings: &[KeyBinding], name: &str| {
             bindings
@@ -440,13 +440,15 @@ mod native_quit {
 
     #[cfg(not(test))]
     mod delegate {
-        use super::super::request_quit;
-        use super::ALLOWED;
+        use std::cell::RefCell;
+
         use gpui::App;
         use objc2::ffi::class_addMethod;
         use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
         use objc2::{class, msg_send, sel};
-        use std::cell::RefCell;
+
+        use super::super::request_quit;
+        use super::ALLOWED;
 
         thread_local! {
             static REQUEST: RefCell<Option<Box<dyn Fn()>>> = const { RefCell::new(None) };

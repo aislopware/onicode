@@ -2,11 +2,12 @@
 //! projectless Codex chat, resumed across calls, and survives navigation
 //! between threads; only an explicit end, an engine change or a provider
 //! failure closes it. No automatic reconnect or microphone resume.
-use crate::orb::OrbState;
-use crate::state::EngineHandle;
 use gpui::{Context, Task};
 use gpui_tokio::Tokio;
 use onicode_proto::voice::*;
+
+use crate::orb::OrbState;
+use crate::state::EngineHandle;
 mod permissions;
 mod remote;
 
@@ -258,9 +259,11 @@ impl VoiceController {
             .as_ref()
             .is_some_and(|e| e.same_connection(engine))
     }
+
     pub fn muted(&self) -> bool {
         self.snapshot.as_ref().is_some_and(|s| s.muted)
     }
+
     pub fn toggle_mute(&mut self, cx: &mut Context<Self>) {
         let muted = self.muted();
         if let Some(snapshot) = &mut self.snapshot {
@@ -388,6 +391,7 @@ impl VoiceController {
         }
         cx.notify();
     }
+
     pub fn reason_text(&self) -> &'static str {
         match self.reason {
             Some(VoiceRejection::CreditExclusionUnverified) => {
@@ -443,8 +447,9 @@ impl Drop for VoiceController {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::AppContext;
+
+    use super::*;
 
     fn snapshot() -> VoiceSnapshot {
         VoiceSnapshot {

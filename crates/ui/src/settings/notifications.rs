@@ -5,13 +5,13 @@
 //! emits [`NotificationsEvent::Changed`], and the shell persists it. Nothing
 //! here talks RPC — all preferences are device-local UI settings.
 
-use gpui::{Context, EventEmitter, SharedString, Window, div, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{Context, EventEmitter, SharedString, Window, div, px};
 
-use crate::icons;
-use crate::popover;
 use crate::settings::search::{SearchAnchor, SettingId};
 use crate::settings::widgets;
 use crate::theme::Theme;
+use crate::{icons, popover};
 
 #[derive(Debug, Clone)]
 pub enum NotificationsEvent {

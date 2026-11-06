@@ -6,61 +6,51 @@
 //! experimentalApi`); this driver is validated against codex-cli 0.153.4 —
 //! imageGeneration additionally follows the 0.154.0 schema (savedPath only).
 //! Revalidate the method/notification surface when bumping past it. A CLI
-//! older than [`MIN_CODEX_VERSION`] is refused up front.
+//! older than `MIN_CODEX_VERSION` is refused up front.
 //!
-//! - `initialize` handshake (clientInfo + `capabilities.experimentalApi`,
-//!   opting out of the high-volume notifications nothing consumes) then the
-//!   `initialized` notification; unknown notification methods tolerated.
-//! - `thread/start` (or `thread/resume`, unarchiving an archived thread; only
-//!   a conversation that is gone falls back to a fresh thread, with a visible
-//!   notice) → `SessionStarted`; `turn/start` carries the prompt, model,
-//!   effort, `sandboxPolicy`, approval policy and (plan mode) the
+//! - `initialize` handshake (clientInfo + `capabilities.experimentalApi`, opting out of the
+//!   high-volume notifications nothing consumes) then the `initialized` notification; unknown
+//!   notification methods tolerated.
+//! - `thread/start` (or `thread/resume`, unarchiving an archived thread; only a conversation that
+//!   is gone falls back to a fresh thread, with a visible notice) → `SessionStarted`; `turn/start`
+//!   carries the prompt, model, effort, `sandboxPolicy`, approval policy and (plan mode) the
 //!   `collaborationMode`.
-//! - Notifications map to [`AgentEvent`]s: agentMessage/reasoning deltas (both
-//!   `delta`/`textDelta` spellings), item lifecycles → typed ToolCall/ToolResult,
-//!   `thread/tokenUsage/updated` → Usage, turn/completed|failed|aborted → Done.
-//!   An `error` Codex will retry is progress, not an error; a final one is
-//!   reported once, by the turn's Done.
-//! - Approvals + sandbox follow the run's [`AccessMode`], on every
-//!   `turn/start` (so a change applies from the next turn in place): full
-//!   access is `"never"` + `danger-full-access`, as every run was before
-//!   modes; auto-accept edits is `"untrusted"` + `workspace-write` (every
-//!   command but codex's known-safe reads is asked, even inside the
-//!   sandbox; file changes are accepted); supervised is `"untrusted"` +
-//!   `read-only`. A title run stays `"never"` +
-//!   `read-only`. `item/commandExecution/requestApproval`,
-//!   `item/fileChange/requestApproval` and `item/permissions/requestApproval`
-//!   the mode does not cover round-trip through
-//!   [`RunControls::request_input`] as a yes/no question (a refusal
-//!   declines); auto-accept edits accepts file changes outright. MCP
-//!   elicitations (sent whatever the policy) are asked when they are a flat
-//!   form and declined otherwise.
-//! - Plan mode is Codex's `plan` collaboration mode. It sticks to the thread
-//!   (across a resume too), so once a thread has planned every turn names
-//!   its mode. The proposed plan arrives as its own `plan` item, rendered
-//!   as reply text.
-//! - Subagents are full child app-server threads. Parent spawn items establish
-//!   their stable ownership; content arriving before the spawn is buffered.
-//!   A registered child's notifications route through an EXPLICIT table
-//!   ([`normalize::route_child_notification`]) — content, errors and child turns
-//!   become tagged [`AgentEvent::Subagent`] events; unrelated child bookkeeping is
-//!   consumed so it can never settle the parent turn, and unknown methods
-//!   fall through to the parent path (fail open, never silent loss).
-//! - Steering: `turn/steer { expectedTurnId, clientUserMessageId }` into the
-//!   live turn, confirmed when its userMessage item (carrying that id) joins
-//!   the turn; a rejected steer (the turn-completed race) is queued and
-//!   delivered as the next `turn/start` on the same thread. The session is
-//!   persistent across turns while the steering mailbox lives; a steer's
-//!   changed model/effort/tier rides the next `turn/start`.
-//! - Only the turn in flight settles: a stale or duplicate completion is
-//!   ignored. Commands still running past their turn report as background
-//!   work, so the host never reaps the app-server from under them.
-//! - Turn stop ([`crate::TurnControl::stop_turn`]): `turn/interrupt` ends the
-//!   turn `Interrupted`; the app-server and its threads (child agents
-//!   included) stay up for the next `turn/start`.
-//! - Interrupt: cancelling [`RunControls::interrupt`] tears the runtime down —
-//!   `turn/interrupt`, escalating to SIGTERM → SIGKILL if the child is
-//!   unresponsive; the stream always ends with `Done { status: Interrupted }`.
+//! - Notifications map to [`AgentEvent`]s: agentMessage/reasoning deltas (both `delta`/`textDelta`
+//!   spellings), item lifecycles → typed ToolCall/ToolResult, `thread/tokenUsage/updated` → Usage,
+//!   turn/completed|failed|aborted → Done. An `error` Codex will retry is progress, not an error; a
+//!   final one is reported once, by the turn's Done.
+//! - Approvals + sandbox follow the run's [`AccessMode`], on every `turn/start` (so a change
+//!   applies from the next turn in place): full access is `"never"` + `danger-full-access`, as
+//!   every run was before modes; auto-accept edits is `"untrusted"` + `workspace-write` (every
+//!   command but codex's known-safe reads is asked, even inside the sandbox; file changes are
+//!   accepted); supervised is `"untrusted"` + `read-only`. A title run stays `"never"` +
+//!   `read-only`. `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` and
+//!   `item/permissions/requestApproval` the mode does not cover round-trip through
+//!   [`RunControls::request_input`] as a yes/no question (a refusal declines); auto-accept edits
+//!   accepts file changes outright. MCP elicitations (sent whatever the policy) are asked when they
+//!   are a flat form and declined otherwise.
+//! - Plan mode is Codex's `plan` collaboration mode. It sticks to the thread (across a resume too),
+//!   so once a thread has planned every turn names its mode. The proposed plan arrives as its own
+//!   `plan` item, rendered as reply text.
+//! - Subagents are full child app-server threads. Parent spawn items establish their stable
+//!   ownership; content arriving before the spawn is buffered. A registered child's notifications
+//!   route through an EXPLICIT table (`normalize::route_child_notification`) — content, errors and
+//!   child turns become tagged [`AgentEvent::Subagent`] events; unrelated child bookkeeping is
+//!   consumed so it can never settle the parent turn, and unknown methods fall through to the
+//!   parent path (fail open, never silent loss).
+//! - Steering: `turn/steer { expectedTurnId, clientUserMessageId }` into the live turn, confirmed
+//!   when its userMessage item (carrying that id) joins the turn; a rejected steer (the
+//!   turn-completed race) is queued and delivered as the next `turn/start` on the same thread. The
+//!   session is persistent across turns while the steering mailbox lives; a steer's changed
+//!   model/effort/tier rides the next `turn/start`.
+//! - Only the turn in flight settles: a stale or duplicate completion is ignored. Commands still
+//!   running past their turn report as background work, so the host never reaps the app-server from
+//!   under them.
+//! - Turn stop ([`crate::TurnControl::stop_turn`]): `turn/interrupt` ends the turn `Interrupted`;
+//!   the app-server and its threads (child agents included) stay up for the next `turn/start`.
+//! - Interrupt: cancelling [`RunControls::interrupt`] tears the runtime down — `turn/interrupt`,
+//!   escalating to SIGTERM → SIGKILL if the child is unresponsive; the stream always ends with
+//!   `Done { status: Interrupted }`.
 
 pub(crate) mod catalog;
 pub(crate) mod elicitation;
@@ -75,25 +65,24 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use catalog::{REASONING_LEVELS, sandbox_mode, sandbox_policy_value, static_models, to_effort};
 use futures::StreamExt;
 use futures::stream::BoxStream;
-use serde_json::{Value, json};
-use tokio::sync::mpsc;
-
+use normalize::{
+    ChildRoute, Phase, ReasoningStream, delta_text, item_id, item_type, notification_thread_id,
+    route_child_notification, settle_turn_error, turn_error_message, turn_id, usage_event,
+};
 use onicode_proto::{
     AccessMode, AgentEvent, DoneStatus, HarnessId, Model, ModelOption, ModelOptionChoice,
     ReasoningLevel, RunRequest, SandboxLevel, SlashCommand, SteeringMode, UserInputAnswer,
     UserInputQuestion,
 };
+use serde_json::{Value, json};
+use tokio::sync::mpsc;
 
 use crate::jsonrpc::{Incoming, RpcClient, transport_lost};
 use crate::process::{Child, Command, Stdio};
 use crate::{Harness, HarnessError, RunControls};
-use catalog::{REASONING_LEVELS, sandbox_mode, sandbox_policy_value, static_models, to_effort};
-use normalize::{
-    ChildRoute, Phase, ReasoningStream, delta_text, item_id, item_type, notification_thread_id,
-    route_child_notification, settle_turn_error, turn_error_message, turn_id, usage_event,
-};
 
 /// Locate the device's installed Codex CLI: `CODEX_EXECUTABLE`, then our own
 /// PATH, then the login-shell PATH snapshot (the user's shell init shapes
@@ -655,47 +644,58 @@ impl Harness for CodexHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Codex
     }
+
     fn display_name(&self) -> &str {
         // "Codex" (not "Codex CLI") — comet composer/defaults.ts
         // HARNESS_LABEL; must also match the registry's lazy descriptor so
         // the catalog entry doesn't change after the first resolve.
         "Codex"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     /// Native `turn/steer` injects into the active turn; a steer that misses
     /// the turn falls back to a follow-up `turn/start` on the same thread.
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         REASONING_LEVELS
     }
+
     fn installed(&self) -> bool {
         self.resolve_executable().is_ok()
     }
+
     fn executable_path(&self) -> Option<PathBuf> {
         self.resolve_executable().ok()
     }
+
     /// Done is the CLI's own terminal frame, for wake turns too.
     fn deterministic_turn_end(&self) -> bool {
         true
     }
+
     /// `turn/interrupt` ends the turn; the app-server and its thread — child
     /// agent threads included — stay up for the next `turn/start`.
     fn stops_turn_in_place(&self) -> bool {
         true
     }
+
     /// Supervised asks before what codex does not know to be safe, and
     /// auto-accept edits before stepping outside the workspace sandbox.
     fn access_modes(&self) -> &[AccessMode] {
         &AccessMode::ALL
     }
+
     /// Codex's own `plan` collaboration mode.
     fn supports_plan(&self) -> bool {
         true
     }
+
     /// What the app-server launch and its turns read: the sandbox follows
     /// the access mode, and `serviceTier` is the only model option used.
     fn same_runtime(&self, live: &RunRequest, next: &RunRequest) -> bool {
@@ -706,6 +706,7 @@ impl Harness for CodexHarness {
             && run_access(live) == run_access(next)
             && live.plan == next.plan
     }
+
     /// `turn/start` carries model, effort, service tier, approval policy,
     /// sandbox and collaboration mode, and each sticks for later turns — so
     /// a change applies from the next turn without a new app-server.
@@ -725,9 +726,11 @@ impl Harness for CodexHarness {
     fn model_context(&self) -> Result<Option<crate::ModelContext>, HarnessError> {
         crate::model_context::context(self.id(), &self.resolve_executable()?, &[]).map(Some)
     }
+
     fn fallback_models(&self) -> Vec<Model> {
         static_models()
     }
+
     async fn model_catalog(&self, force: bool) -> Result<crate::ModelCatalog, HarnessError> {
         self.model_context()?.unwrap().log();
         self.models_cache
@@ -738,6 +741,7 @@ impl Harness for CodexHarness {
             )
             .await
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         self.resolve_executable()?;
         match self.model_catalog(false).await {
@@ -1017,7 +1021,7 @@ async fn crash_report(child: &mut Child, stderr_tail: &crate::StderrTail) -> Str
 
 /// Why a `thread/resume` failure means the conversation is gone for good,
 /// in words for the restore notice: no rollout on this machine, one Codex
-/// can't read (empty, not UTF-8, unparseable — live, 0.164.0: "failed to
+/// can't read (empty, not UTF-8, unparsable — live, 0.164.0: "failed to
 /// read thread: thread-store internal error: …"), a thread id Codex never
 /// issued. A fresh thread is the only way forward then. `None` for anything
 /// else — a dead process, a config error — which would fail a fresh start

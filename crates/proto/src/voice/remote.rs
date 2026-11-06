@@ -1,7 +1,9 @@
 //! Ephemeral client-media control. Never persist these payloads in sync/queues.
-use super::{VoiceLease, VoiceRejection};
-use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
+
+use serde::{Deserialize, Deserializer, Serialize};
+
+use super::{VoiceLease, VoiceRejection};
 
 pub const CAPABILITY: &str = "voice-client-media-v1";
 pub const MAX_SDP_BYTES: usize = 64 * 1024;
@@ -18,6 +20,7 @@ impl AttemptKey {
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4().to_string())
     }
+
     pub fn expose(&self) -> &str {
         &self.0
     }
@@ -56,6 +59,7 @@ impl Sdp {
         }
         Ok(Self(value))
     }
+
     pub fn expose(&self) -> &str {
         &self.0
     }

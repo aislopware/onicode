@@ -1,5 +1,6 @@
-use crate::{ErrorKind, Formula, Item, MathFont, Options, layout};
 use std::sync::{Arc, OnceLock};
+
+use crate::{ErrorKind, Formula, Item, MathFont, Options, layout};
 
 const STIX: &[u8] = include_bytes!("../fonts/STIXTwoMath-Regular.otf");
 const LIBERTINUS: &[u8] = include_bytes!("../fonts/LibertinusMath-Regular.otf");
@@ -339,7 +340,7 @@ fn random_input_never_panics() {
         r"\{}^_&'[]()|.x1 +=-\frac\sqrt\left\right\begin{matrix}\end{matrix}\\%$~αβ∑"
             .chars()
             .collect();
-    let mut s: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut s: u64 = 0x9e37_79b9_7f4a_7c15;
     for _ in 0..20_000 {
         let len = (s % 40) as usize;
         let mut src = String::new();

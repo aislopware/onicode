@@ -2,7 +2,7 @@
 //! "Copy link", a link opened from elsewhere), for every interface: the
 //! GPUI app (crates/ui/src/links.rs) and the zgx app.
 //!
-//!   onicode://open/chat/<chat id>?workspace=<locator>
+//!   `onicode://open/chat/<chat id>?workspace=<locator>`
 //!
 //! The locator is opaque: enough to reject a link for another local or
 //! synced workspace without putting device, user or organization ids in the

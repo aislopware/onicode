@@ -18,13 +18,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::{SinkExt, StreamExt};
-use tokio::net::TcpListener;
-use tokio::sync::mpsc;
-use tokio_tungstenite::tungstenite::Message as WsMessage;
-use tokio_tungstenite::tungstenite::handshake::server::{
-    Request as WsRequest, Response as WsResponse,
-};
-
 use onicode_rpc::device_room::{
     CLIENT_CLOSED, CLIENT_GONE, HOST_CLOSED, HOST_OFFLINE, NUDGE_KIND, RELAY_KIND,
 };
@@ -32,6 +25,12 @@ use onicode_rpc::{
     DeviceFrameHeader, DeviceLink, HostRelay, HostRelayConfig, LinkCache, LinkCacheConfig,
     RpcError, RpcReply, RpcService, StaticToken, TokenError, TokenSource, decode_device_frame,
     device_room_ws_url, encode_device_frame, methods,
+};
+use tokio::net::TcpListener;
+use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::Message as WsMessage;
+use tokio_tungstenite::tungstenite::handshake::server::{
+    Request as WsRequest, Response as WsResponse,
 };
 
 // ---------------------------------------------------------------------------

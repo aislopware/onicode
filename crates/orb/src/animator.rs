@@ -2,13 +2,11 @@
 //! and state crossfades. Hosts decide when to tick and paint the frames.
 use std::time::{Duration, Instant};
 
-use crate::{
-    REDUCED_MOTION_T,
-    engine::{Frame, draw_mode_into_resolved},
-    motion::{AnimationClock, AudioResponse},
-    presets::{Resolved, resolve_preset},
-    types::{OrbSize, OrbState},
-};
+use crate::REDUCED_MOTION_T;
+use crate::engine::{Frame, draw_mode_into_resolved};
+use crate::motion::{AnimationClock, AudioResponse};
+use crate::presets::{Resolved, resolve_preset};
+use crate::types::{OrbSize, OrbState};
 
 struct StateTransition {
     from: Frame,

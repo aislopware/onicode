@@ -3,11 +3,10 @@
 //! Ports of `packages/control/src/parts.ts` (fold) and
 //! `packages/session-doc/src/{render-parts,messages}.ts`.
 
-use serde::{Deserialize, Serialize};
-
 use onicode_proto::{
     AgentEvent, SUBAGENT_INPUT_KEEP, ToolCall, ToolDiff, UserInputAnswer, UserInputQuestion,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::constants::MSG_INLINE_MAX;
 
@@ -23,13 +22,12 @@ pub const TOOL_OUTPUT_SUMMARY_MAX: usize = 160;
 /// sidecar is PARKED as of 2026-08-10, so this IS the whole record in the
 /// doc — the full text survives only in the host's local run journal):
 ///
-/// - Markdown code fences are stripped first — ACP harnesses fence every
-///   output, so the fence is transport wrapping, never content (pre-fix,
-///   every summary read "```console…").
-/// - Outputs that fit [`TOOL_OUTPUT_SUMMARY_MAX`] chars ride whole — a
-///   summary of a two-line output is more UI than the output.
-/// - Bigger outputs keep the first non-empty line, capped, with a `…`
-///   marker meaning "there was more".
+/// - Markdown code fences are stripped first — ACP harnesses fence every output, so the fence is
+///   transport wrapping, never content (pre-fix, every summary read "```console…").
+/// - Outputs that fit [`TOOL_OUTPUT_SUMMARY_MAX`] chars ride whole — a summary of a two-line output
+///   is more UI than the output.
+/// - Bigger outputs keep the first non-empty line, capped, with a `…` marker meaning "there was
+///   more".
 ///
 /// `None` for blank output.
 pub fn summarize_tool_output(text: &str) -> Option<String> {
@@ -86,14 +84,12 @@ pub struct CommandTail {
 /// The tail of `command`'s output that rides its tool part into the doc —
 /// the one tool output the doc keeps (see the `ToolResult` fold), and the
 /// doc syncs to the person's other devices and the cloud. So:
-/// - a command that prints secrets by nature (`env`, `cat .env`, `gh auth
-///   token`, … — [`onicode_proto::redact::command_prints_secrets`]) keeps
-///   none of it, only a note saying so;
-/// - any other output is redacted
-///   ([`onicode_proto::redact::redact_command_output`]: private key blocks,
-///   env-style assignments, secret-named keys, url credentials and webhook
-///   paths, tokens, terminal escapes) BEFORE it is cut, so a secret the cut
-///   would split can't survive as an unrecognisable half.
+/// - a command that prints secrets by nature (`env`, `cat .env`, `gh auth token`, … —
+///   [`onicode_proto::redact::command_prints_secrets`]) keeps none of it, only a note saying so;
+/// - any other output is redacted ([`onicode_proto::redact::redact_command_output`]: private key
+///   blocks, env-style assignments, secret-named keys, url credentials and webhook paths, tokens,
+///   terminal escapes) BEFORE it is cut, so a secret the cut would split can't survive as an
+///   unrecognisable half.
 ///
 /// The cut starts on a line where it can: a single line longer than the
 /// byte budget keeps its end. `None` when nothing but whitespace is left.
@@ -439,8 +435,8 @@ impl MessagePart {
 ///
 /// Semantics from onicode `foldEventIntoParts`:
 /// - `SessionStarted` / `Steered` reset the accumulator (turn boundary — makes replay safe).
-/// - `TextDelta` appends to the trailing text part, or starts a new one if the trail is not text
-///   (a tool call in between breaks the text block).
+/// - `TextDelta` appends to the trailing text part, or starts a new one if the trail is not text (a
+///   tool call in between breaks the text block).
 /// - `ToolCall` appends, or refreshes in place when the id already exists (SDK retry idempotence).
 /// - `ToolResult` marks the matching tool part resolved / errored in place.
 /// - `InputRequested` appends an input part; `InputResolved` marks it resolved and records the
@@ -789,7 +785,7 @@ pub fn sidecar_payload(event: &AgentEvent) -> Option<SidecarPayload> {
 /// Render-only privacy policy — strip heavy/sensitive tool inputs before a call enters the doc.
 ///
 /// Keeps: command / path / pattern / url / query / todo items / server+tool names,
-/// and a subagent spawn's model/type (see [`spawn_badge`] — a couple of short
+/// and a subagent spawn's model/type (see `spawn_badge` — a couple of short
 /// identifiers the chip names the child by).
 /// Drops: WriteFile content, EditFile old/new strings, WebFetch prompt, Mcp/Unknown input.
 /// Full inputs remain only in the host's local run journal. Idempotent.

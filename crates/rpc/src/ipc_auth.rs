@@ -133,8 +133,8 @@ pub fn read_token(path: &Path) -> io::Result<Option<String>> {
 
 /// Every token a client should try, best first, deduplicated: the
 /// `$ONICODE_IPC_TOKEN_FILE` file alone when it's set (an agent's MCP server),
-/// else the `$ONICODE_IPC_TOKEN` value, then `{data_dir}/ipc-token`. Read at call time — after an engine restart the
-/// file already holds the new token. Empty when nothing is configured (an
+/// else the `$ONICODE_IPC_TOKEN` value, then `{data_dir}/ipc-token`. Read at call time — after an
+/// engine restart the file already holds the new token. Empty when nothing is configured (an
 /// older engine that predates IPC auth still accepts a bare dial).
 pub fn client_tokens(data_dir: Option<&Path>) -> Vec<String> {
     let mut tokens: Vec<String> = Vec::new();

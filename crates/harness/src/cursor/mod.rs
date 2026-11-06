@@ -10,29 +10,26 @@
 //! stdio wire to drive from Rust, so the shim IS the wire. The print surface
 //! (`cursor-agent -p --trust`) is permission-free and is never used.
 //!
-//! VERSION PIN: [`CURSOR_SDK_PIN`]. The SDK is PUBLIC BETA with ~weekly
+//! VERSION PIN: `CURSOR_SDK_PIN`. The SDK is PUBLIC BETA with ~weekly
 //! releases; the shim maps only the update kinds this pin ships and ignores
 //! unknown ones, so churn degrades output rather than erroring the chat.
 //! Revalidate the shim against the typings on every bump.
 //!
-//! - The shim is materialized into the SDK's managed npm install
-//!   (`~/.onicode/adapters/…`, [`crate::adapter_install::ensure_installed_shim`])
-//!   and spawned as `node <shim>`.
-//! - Done = the SDK run's terminal result (`turn` frame off `run.wait()` /
-//!   `turn-ended`) — a crisp turn end by construction.
-//! - Subagents: the SDK streams the FULL nested transcript as
-//!   `tool-call-delta { callId, taskUpdate }`; the shim tags those frames
-//!   with the spawning task's call id and they surface here as
+//! - The shim is materialized into the SDK's managed npm install (`~/.onicode/adapters/…`,
+//!   `crate::adapter_install::ensure_installed_shim`) and spawned as `node <shim>`.
+//! - Done = the SDK run's terminal result (`turn` frame off `run.wait()` / `turn-ended`) — a crisp
+//!   turn end by construction.
+//! - Subagents: the SDK streams the FULL nested transcript as `tool-call-delta { callId, taskUpdate
+//!   }`; the shim tags those frames with the spawning task's call id and they surface here as
 //!   [`AgentEvent::Subagent`].
-//! - Questions: the SDK has no public answer channel for `askQuestion`
-//!   (its `request` stream message carries only an id), so the tool is
-//!   disallowed at agent creation — a question would otherwise block the
-//!   run forever with no way to answer it. Known gap vs the ACP surface.
-//! - AUTH: the SDK's credentials are SEPARATE from `cursor-agent login`
-//!   (verified live). Runs need `CURSOR_API_KEY` (or a prior SDK browser
-//!   login); the shim surfaces the exact fix as an error chip otherwise.
-//! - Steering: native SDK input at the next model step, acknowledged only
-//!   when consumed. Inputs that race turn completion become a coalesced follow-up.
+//! - Questions: the SDK has no public answer channel for `askQuestion` (its `request` stream
+//!   message carries only an id), so the tool is disallowed at agent creation — a question would
+//!   otherwise block the run forever with no way to answer it. Known gap vs the ACP surface.
+//! - AUTH: the SDK's credentials are SEPARATE from `cursor-agent login` (verified live). Runs need
+//!   `CURSOR_API_KEY` (or a prior SDK browser login); the shim surfaces the exact fix as an error
+//!   chip otherwise.
+//! - Steering: native SDK input at the next model step, acknowledged only when consumed. Inputs
+//!   that race turn completion become a coalesced follow-up.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -43,14 +40,13 @@ mod state;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-use serde_json::{Value, json};
-use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc;
-
 use onicode_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ModelOption, ModelOptionChoice, ReasoningLevel,
     RunRequest, SteeringMode, TodoItem, TodoStatus, ToolCall,
 };
+use serde_json::{Value, json};
+use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc;
 
 use crate::process::{Child, ChildStdin, Command, Stdio};
 use crate::{Harness, HarnessError, RunControls, Signal, send_signal, shutdown_child};
@@ -274,19 +270,24 @@ impl Harness for CursorHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Cursor
     }
+
     fn display_name(&self) -> &str {
         "Cursor"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     /// Native SDK steering appends input to the active turn.
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     /// "Installed" means the user evidently uses Cursor: their own
     /// cursor-agent CLI, or credentials the SDK itself runs on —
     /// `CURSOR_API_KEY`, or its saved login (which Onicode's own Cursor sign-in
@@ -299,20 +300,24 @@ impl Harness for CursorHarness {
             || std::env::var_os("CURSOR_API_KEY").is_some_and(|key| !key.is_empty())
             || catalog::sdk_auth_file().is_file()
     }
+
     fn executable_path(&self) -> Option<PathBuf> {
         self.executable
             .clone()
             .or_else(|| crate::acp::find_on_paths("cursor-agent", cursor_cli_paths()))
     }
+
     /// Done is the SDK run's terminal result, for every turn shape.
     fn deterministic_turn_end(&self) -> bool {
         true
     }
+
     /// The shim's `stop` cancels the turn's SDK run; the agent (and the
     /// shim holding it) take the next prompt.
     fn stops_turn_in_place(&self) -> bool {
         true
     }
+
     /// Each SDK send names its model, so a change runs from the next turn on
     /// the same agent; no model is Cursor's `auto`.
     fn reconfigures_in_place(&self, live: &RunRequest, next: &RunRequest) -> bool {
@@ -342,6 +347,7 @@ impl Harness for CursorHarness {
             binary_version: Some(Self::sdk_version().into()),
         }))
     }
+
     async fn model_catalog(&self, force: bool) -> Result<crate::ModelCatalog, HarnessError> {
         self.model_context()?.unwrap().log();
         self.models_cache
@@ -352,6 +358,7 @@ impl Harness for CursorHarness {
             )
             .await
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         self.model_catalog(false).await.map(|c| c.models)
     }
@@ -749,7 +756,7 @@ async fn run_session(session: Session) {
                         continue;
                     }
                     let Ok(frame) = serde_json::from_str::<Value>(line) else {
-                        tracing::debug!(target: "onicode_harness::cursor", "unparseable shim frame (skipped)");
+                        tracing::debug!(target: "onicode_harness::cursor", "unparsable shim frame (skipped)");
                         continue;
                     };
                     match frame.get("ev").and_then(Value::as_str).unwrap_or("") {

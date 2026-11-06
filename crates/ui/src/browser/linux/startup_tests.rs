@@ -1,11 +1,11 @@
 //! A gated helper exercises the actual navigation path without a GTK display.
+use std::path::Path;
+use std::time::{Duration, Instant};
+
+use gpui::TestAppContext;
+
 use super::*;
 use crate::browser::{BrowserContext, BrowserSurface};
-use gpui::TestAppContext;
-use std::{
-    path::Path,
-    time::{Duration, Instant},
-};
 
 struct DelayedHelper(tempfile::TempDir);
 

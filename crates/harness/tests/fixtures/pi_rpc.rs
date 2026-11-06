@@ -1,13 +1,10 @@
 //! Stateful cross-platform Pi RPC peer; never built into the application.
+use std::io::{BufRead, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use serde_json::{Value, json};
-use std::{
-    io::{BufRead, Write},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
 fn emit(v: Value) {
     let mut out = std::io::stdout().lock();
     writeln!(out, "{v}").unwrap();

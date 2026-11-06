@@ -15,17 +15,17 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 
+use gpui::prelude::*;
 use gpui::{
     AnyElement, BorderStyle, Bounds, Context, CursorStyle, Div, FontStyle, FontWeight, Hsla,
     Render, SharedString, StyledText, TextRun, UnderlineStyle, Window, canvas, div, font, point,
-    prelude::*, px, quad, size,
+    px, quad, size,
 };
 use onicode_syntax::{HighlightKind, HighlightSpan, HighlightedDocument};
 
-use crate::theme::Theme;
-
 use super::parser::{Block, BlockTree, InlineRun, TableAlign};
 use super::veil::{RowVeil, apply_veil, slice_spans};
+use crate::theme::Theme;
 
 /// Gap between markdown blocks inside one message (onicode mdBlockGap).
 pub const MD_BLOCK_GAP: f32 = 12.0;
@@ -1220,7 +1220,7 @@ pub const INLINE_CODE_PAD_X: f32 = 2.0;
 pub const INLINE_CODE_INSET_Y: f32 = 2.0;
 
 /// Flatten inline runs into shaped-text inputs. Pure given a theme.
-/// Math sets in the default [`super::math::MathStyle`].
+/// Math sets in the default `super::math::MathStyle`.
 pub fn flatten_runs(runs: &[InlineRun], theme: &Theme, bold_default: bool) -> FlatText {
     flatten_runs_weighted(
         runs,
@@ -2978,9 +2978,10 @@ pub fn runs_for_syntax_line_with_plain(
 
 #[cfg(test)]
 mod tests {
+    use gpui::TestAppContext;
+
     use super::*;
     use crate::markdown::parser::{InlineStyle, parse_full};
-    use gpui::TestAppContext;
 
     #[derive(Default)]
     struct CodeSelectionHarness {
@@ -3739,7 +3740,7 @@ mod tests {
         );
 
         let outside = vec![InlineRun {
-            text: "INFORME.md".into(),
+            text: "INFORME.md".into(), // spellchecker:disable-line
             style: InlineStyle {
                 link: Some("/tmp/elsewhere/INFORME.md".into()),
                 ..Default::default()
@@ -4303,8 +4304,9 @@ mod tests {
 
     #[test]
     fn math_style_sets_the_face_and_turns_math_off() {
-        use super::super::math::MathStyle;
         use zatex::bundled::Face;
+
+        use super::super::math::MathStyle;
         let runs = [math_run("so ", false), math_run(r"\mathcal{L}^2", true)];
         let theme = Theme::dark();
         let stix = MathStyle {
@@ -4334,8 +4336,9 @@ mod tests {
 
     #[test]
     fn math_style_change_invalidates_cached_runs() {
-        use super::super::math::MathStyle;
         use zatex::bundled::Face;
+
+        use super::super::math::MathStyle;
         let runs = [math_run(r"\alpha + \mathcal{B}", true)];
         let theme = Theme::dark();
         let mut opts = RenderOptions::settled("math-style-cache".into());

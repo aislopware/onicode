@@ -1,25 +1,21 @@
 //! Terminals on other devices: their I/O takes a direct peer-to-peer link
-//! ([`crate::terminals::link`]) whenever the two devices can reach each other,
+//! (`crate::terminals::link`) whenever the two devices can reach each other,
 //! and the device-room relay only when they cannot.
 //!
-//! - Subscribe opens the direct link when one is already up; otherwise it
-//!   starts on the relay and keeps trying to pair, then moves the live stream
-//!   onto the direct link mid-session by re-attaching after the last seq it
-//!   delivered (no gap, no repeat). A direct link that dies falls back to the
-//!   relay the same way, without ending the viewer's stream.
-//! - Writes and resizes return at once and stay in typed order: an attached
-//!   direct link carries them; otherwise a per-terminal queue forwards them over
-//!   the relay one at a time. Writes only move onto a fresh direct link once the
-//!   relay queue has drained.
-//! - Input is numbered and held until the host acknowledges it. Whichever path
-//!   takes over after another dies replays what is unacknowledged, and the host
-//!   applies each number once, so a network change neither drops nor repeats
-//!   a keystroke. A relayed write that fails is retried in place (in order)
-//!   before it waits for the next path to replay it.
-//! - The direct side can wake a relayed terminal's upgrade at once
-//!   ([`Direct::changed`]: a network change, the app back in front) instead of
-//!   it sitting out its retry pacing; the path each subscription is on is
-//!   reported ([`TerminalPath`]).
+//! - Subscribe opens the direct link when one is already up; otherwise it starts on the relay and
+//!   keeps trying to pair, then moves the live stream onto the direct link mid-session by
+//!   re-attaching after the last seq it delivered (no gap, no repeat). A direct link that dies
+//!   falls back to the relay the same way, without ending the viewer's stream.
+//! - Writes and resizes return at once and stay in typed order: an attached direct link carries
+//!   them; otherwise a per-terminal queue forwards them over the relay one at a time. Writes only
+//!   move onto a fresh direct link once the relay queue has drained.
+//! - Input is numbered and held until the host acknowledges it. Whichever path takes over after
+//!   another dies replays what is unacknowledged, and the host applies each number once, so a
+//!   network change neither drops nor repeats a keystroke. A relayed write that fails is retried in
+//!   place (in order) before it waits for the next path to replay it.
+//! - The direct side can wake a relayed terminal's upgrade at once ([`Direct::changed`]: a network
+//!   change, the app back in front) instead of it sitting out its retry pacing; the path each
+//!   subscription is on is reported ([`TerminalPath`]).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -88,11 +84,13 @@ impl Direct for onicode_preview::viewer::ViewerPeers {
     async fn ready(&self, device: &str) -> bool {
         onicode_preview::viewer::ViewerPeers::ready(self, device).await
     }
+
     async fn open(&self, device: &str, service: &str) -> anyhow::Result<BoxIo> {
         Ok(Box::new(
             onicode_preview::viewer::ViewerPeers::open(self, device, service).await?,
         ))
     }
+
     async fn changed(&self) {
         onicode_preview::viewer::ViewerPeers::changed(self).await
     }
@@ -112,6 +110,7 @@ impl Direct for onicode_preview::PreviewService {
     async fn ready(&self, device: &str) -> bool {
         self.peer_ready(device).await
     }
+
     async fn open(&self, device: &str, service: &str) -> anyhow::Result<BoxIo> {
         Ok(Box::new(self.open_peer_stream(device, service).await?))
     }

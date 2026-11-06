@@ -1,7 +1,8 @@
 //! Settings → General → Thread naming: which agent and model title new
 //! threads, chosen with the composer's own model picker (title-bound mode).
 
-use gpui::{AnyElement, Context, Entity, Subscription, Task, div, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, Entity, Subscription, Task, div, px};
 use onicode_engine::registry::TitleSettings;
 use onicode_rpc::methods;
 

@@ -1,9 +1,10 @@
 //! The voice call caption's streaming veil (`onicode-veil`), exactly as the
 //! desktop stage runs it. Offsets are UTF-16 so the platform can apply them to
 //! its attributed strings directly.
-use onicode_veil::CaptionVeil;
 use std::sync::Mutex;
 use std::time::Instant;
+
+use onicode_veil::CaptionVeil;
 
 /// A veiled UTF-16 range of the caption and its opacity (0..1).
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]

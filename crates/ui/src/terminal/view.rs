@@ -1,14 +1,13 @@
 //! Terminal paint + input encoding.
 //!
 //! - theme-owned background/ANSI16 plus the xterm 256-color cube/grayscale;
-//! - keystroke → PTY byte encoding (printables, control keys, arrows/nav
-//!   escape sequences, Ctrl- combos, Alt prefixing);
-//! - the ordered input queue and the 80 ms resize debounce constant (the
-//!   panel drives the writes and timers; the buffer logic here is pure);
-//! - [`TerminalElement`] — a custom gpui element that measures cell metrics
-//!   from the real mono font (the "font probe"), reports the resulting
-//!   cols×rows back to the panel, and paints the grid: background quads for
-//!   non-default cells, one `ShapedLine` per row (same font whatever the
+//! - keystroke → PTY byte encoding (printables, control keys, arrows/nav escape sequences, Ctrl-
+//!   combos, Alt prefixing);
+//! - the ordered input queue and the 80 ms resize debounce constant (the panel drives the writes
+//!   and timers; the buffer logic here is pure);
+//! - [`TerminalElement`] — a custom gpui element that measures cell metrics from the real mono font
+//!   (the "font probe"), reports the resulting cols×rows back to the panel, and paints the grid:
+//!   background quads for non-default cells, one `ShapedLine` per row (same font whatever the
 //!   colors — paint never changes layout), and the cursor block.
 
 use gpui::{
@@ -16,10 +15,9 @@ use gpui::{
     SharedString, Style, TextRun, Window, fill, font, outline, point, px, relative, size,
 };
 
-use crate::theme::{Appearance, Theme, rgb_to_hsl};
-
 use super::emulator::{CellColor, CellSnapshot, CursorShape, Side};
 use super::panel::TerminalPanel;
+use crate::theme::{Appearance, Theme, rgb_to_hsl};
 
 /// Default terminal font metrics; the rendered values come from the theme.
 pub const TERM_FONT_SIZE: f32 = 13.0;
@@ -63,16 +61,14 @@ const CUBE_LEVELS: [u8; 6] = [0, 95, 135, 175, 215, 255];
 /// Three ranges, treated differently on purpose:
 ///
 /// - **0-15** are named slots and are resolved directly from `Theme::terminal`.
-/// - **16-231** is the 6×6×6 cube: a program asking for index 196 is asking for
-///   `#ff0000` by arithmetic, and remapping it would be inventing colors the
-///   caller did not pick. Left alone in both appearances, same as iTerm/Apple
-///   Terminal light themes.
-/// - **232-255** is the grayscale ramp, which tools use for *de-emphasis*
-///   rather than for a specific grey. Its dark→light direction only reads as
-///   "dim" on a dark background, so light mode mirrors the ramp: index 232
-///   stays the faintest and 255 the strongest in both. Without this the ramp is
-///   the single biggest legibility hole on white, because its bright end —
-///   where most "dim hint" text lands — is the end that vanishes.
+/// - **16-231** is the 6×6×6 cube: a program asking for index 196 is asking for `#ff0000` by
+///   arithmetic, and remapping it would be inventing colors the caller did not pick. Left alone in
+///   both appearances, same as iTerm/Apple Terminal light themes.
+/// - **232-255** is the grayscale ramp, which tools use for *de-emphasis* rather than for a
+///   specific grey. Its dark→light direction only reads as "dim" on a dark background, so light
+///   mode mirrors the ramp: index 232 stays the faintest and 255 the strongest in both. Without
+///   this the ramp is the single biggest legibility hole on white, because its bright end — where
+///   most "dim hint" text lands — is the end that vanishes.
 fn extended_indexed_rgb(appearance: Appearance, index: u8) -> (u8, u8, u8) {
     match index {
         0..=15 => unreachable!("ANSI16 is resolved from the active theme"),
@@ -613,14 +609,15 @@ const COPY_FLASH_ALPHA: f32 = 0.3;
 
 impl gpui::IntoElement for TerminalElement {
     type Element = Self;
+
     fn into_element(self) -> Self {
         self
     }
 }
 
 impl gpui::Element for TerminalElement {
-    type RequestLayoutState = ();
     type PrepaintState = TerminalPrepaint;
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<gpui::ElementId> {
         None

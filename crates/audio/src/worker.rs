@@ -1,14 +1,14 @@
 //! Poll on an audio worker, never GPUI or a hardware callback. Exact 10 ms
 //! DSP windows retain partial frames between polls; network frames are 20 ms.
-use crate::{
-    AudioError,
-    aec::{DSP_SAMPLES, EchoProcessor},
-    dsp::Resampler,
-    native::AudioIo,
-};
-use onicode_proto::voice::VoiceFrame;
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
+
+use onicode_proto::voice::VoiceFrame;
+
+use crate::AudioError;
+use crate::aec::{DSP_SAMPLES, EchoProcessor};
+use crate::dsp::Resampler;
+use crate::native::AudioIo;
 
 pub struct AudioWorker {
     pub io: AudioIo,
@@ -39,6 +39,7 @@ impl AudioWorker {
             sequence: 0,
         })
     }
+
     pub fn poll(&mut self) -> Result<Vec<VoiceFrame>, AudioError> {
         if self.io.failed.load(Ordering::Acquire) {
             return Err(AudioError::Device);
@@ -89,6 +90,7 @@ impl AudioWorker {
         }
         Ok(frames)
     }
+
     pub fn invalidate_playout(&mut self, next_generation: u64) -> Result<(), AudioError> {
         self.io.flush(next_generation);
         self.echo.reset()?;

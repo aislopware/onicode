@@ -6,11 +6,12 @@
 //! same geometry as primitives. One routine for both means a row's measured
 //! height and its painted content can never disagree.
 
+use std::sync::Arc;
+
 use onicode_markdown::parser::{Block, InlineRun, InlineStyle, TableAlign};
 use onicode_text::{
     InlineBox, OverflowWrap, PrepareOptions, Prepared, Span, WhiteSpace, WidthCache, line_growth,
 };
-use std::sync::Arc;
 
 use super::display::{ColorRole, Decoration, DisplayBuilder, TextRun, WidgetKind};
 use super::style::{Family, Resolved, TYPE, Typography, Weight, baseline};
@@ -58,8 +59,8 @@ pub(crate) struct MathFailures {
 
 impl MathFailures {
     pub const CAP: usize = 256;
-    const LAID_CAP: usize = 4096;
     const LAID_BYTES: usize = 8 << 20;
+    const LAID_CAP: usize = 4096;
 
     fn bytes(formula: &zatex::Formula) -> usize {
         formula.items.len() * std::mem::size_of::<zatex::Item>()

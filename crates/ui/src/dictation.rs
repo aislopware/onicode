@@ -114,9 +114,11 @@ impl Transcriber for Native {
             onicode_voice::Event::Failed(e) => Event::Failed(e),
         })
     }
+
     fn level(&mut self) -> f32 {
         self.session.as_ref().map_or(0.0, |s| s.take_level())
     }
+
     fn finish(&mut self) {
         if let Some(s) = &mut self.session {
             s.finish();

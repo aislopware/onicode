@@ -1,6 +1,7 @@
 //! Settings → Files: local preferences for workspace-file editing.
 
-use gpui::{Context, EventEmitter, Window, div, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{Context, EventEmitter, Window, div, px};
 
 use super::search::{SearchAnchor, SettingId};
 use super::widgets;

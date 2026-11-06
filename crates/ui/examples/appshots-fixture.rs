@@ -1,7 +1,10 @@
 //! Native Appshots layout evidence with isolated data. No agent messages are sent.
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
 use gpui::{AppContext, AsyncApp, Bounds, WindowBounds, WindowOptions, px, size};
 use onicode_ui::*;
-use std::{path::PathBuf, sync::Arc, time::Duration};
 async fn pause(cx: &mut AsyncApp, ms: u64) {
     cx.background_executor()
         .timer(Duration::from_millis(ms))

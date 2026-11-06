@@ -32,7 +32,7 @@ static ONLINE: OnceLock<broadcast::Sender<()>> = OnceLock::new();
 /// OS-reported network path status. `false` (the default, and the permanent
 /// value on platforms without a path monitor) means "assume a path exists" —
 /// backoff loops behave exactly as before. Only an explicit
-/// [`set_path_online(false)`] from a platform monitor flips this true.
+/// `set_path_online(false)` from a platform monitor flips this true.
 static PATH_OFFLINE: AtomicBool = AtomicBool::new(false);
 
 /// Subscribe to system-wake events (the detector spawns on first call).
@@ -94,10 +94,10 @@ pub fn notify_online() {
 /// Report the OS network-path status (macOS `NWPathMonitor`; other platforms
 /// simply never call this). Two effects:
 ///
-/// - offline → online broadcasts an online event, so every parked backoff
-///   redials the instant the path returns instead of waiting out its timer;
-/// - while offline, [`path_is_offline`] tells backoff waiters to park on the
-///   event buses rather than burn dial attempts the OS says cannot succeed.
+/// - offline → online broadcasts an online event, so every parked backoff redials the instant the
+///   path returns instead of waiting out its timer;
+/// - while offline, [`path_is_offline`] tells backoff waiters to park on the event buses rather
+///   than burn dial attempts the OS says cannot succeed.
 pub fn set_path_online(online: bool) {
     let was_offline = PATH_OFFLINE.swap(!online, Ordering::Relaxed);
     if online && was_offline {

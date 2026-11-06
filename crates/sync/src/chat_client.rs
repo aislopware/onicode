@@ -1191,7 +1191,7 @@ impl Actor {
                         Some(raw) => match wire::decode(&raw) {
                             Some(frame) => buffered.push(frame),
                             None => {
-                                tracing::warn!("chat2: unparseable frame during checkpoint fetch");
+                                tracing::warn!("chat2: unparsable frame during checkpoint fetch");
                                 return SessionEnd::Reconnect;
                             }
                         },
@@ -1338,7 +1338,7 @@ impl Actor {
                     last_frame = tokio::time::Instant::now();
                     probe_deadline = None;
                     let Some(frame) = wire::decode(&bytes) else {
-                        tracing::warn!("chat2: unparseable frame");
+                        tracing::warn!("chat2: unparsable frame");
                         return SessionEnd::Reconnect;
                     };
                     let refreshed_head = if frame.kind == frame_type::ROWS_DONE {

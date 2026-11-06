@@ -1,32 +1,26 @@
+use std::convert::Infallible;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
-use http_body_util::{BodyExt, Full, StreamBody, combinators::UnsyncBoxBody};
-use hyper::{
-    Request, Response,
-    body::{Frame, Incoming},
-};
+use http_body_util::combinators::UnsyncBoxBody;
+use http_body_util::{BodyExt, Full, StreamBody};
+use hyper::body::{Frame, Incoming};
+use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
-use onicode_preview::{
-    catalog::Catalog,
-    discovery::Listener,
-    mux::{self, BoxIo, Connector},
-    peer::Peers,
-    proxy::{self, Router},
-};
-use std::{
-    convert::Infallible,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-    time::Duration,
-};
+use onicode_preview::catalog::Catalog;
+use onicode_preview::discovery::Listener;
+use onicode_preview::mux::{self, BoxIo, Connector};
+use onicode_preview::peer::Peers;
+use onicode_preview::proxy::{self, Router};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio_tungstenite::{
-    WebSocketStream,
-    tungstenite::{Message, client::IntoClientRequest, protocol::Role},
-};
+use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::protocol::Role;
 use tokio_util::sync::CancellationToken;
 type Body = UnsyncBoxBody<Bytes, hyper::Error>;
 fn full(value: impl Into<Bytes>) -> Body {

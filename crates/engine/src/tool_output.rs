@@ -6,15 +6,15 @@
 //! (docs/chat2-sync.md A1). A reader who expands a command asks its host for
 //! the rest, and the host answers from its own journal:
 //!
-//! - only a command's (`ToolCall::Exec`) output, never another tool's (file
-//!   reads, searches, fetches and MCP results stay on the host);
+//! - only a command's (`ToolCall::Exec`) output, never another tool's (file reads, searches,
+//!   fetches and MCP results stay on the host);
 //! - made safe to leave the host exactly as the doc's tail is
-//!   ([`onicode_doc::command_output_end`]): redacted before it is cut, and a
-//!   command that prints secrets by nature answers only the withheld note;
-//! - its last [`TOOL_OUTPUT_MAX_BYTES`], from a line's start, `trimmed` when
-//!   earlier output was let go;
-//! - in [`TOOL_OUTPUT_CHUNK_BYTES`] pieces, each ending on a character,
-//!   asked for again from `nextOffset` until `done`.
+//!   ([`onicode_doc::command_output_end`]): redacted before it is cut, and a command that prints
+//!   secrets by nature answers only the withheld note;
+//! - its last [`TOOL_OUTPUT_MAX_BYTES`], from a line's start, `trimmed` when earlier output was let
+//!   go;
+//! - in [`TOOL_OUTPUT_CHUNK_BYTES`] pieces, each ending on a character, asked for again from
+//!   `nextOffset` until `done`.
 //!
 //! A subagent's doc (`{chat}--sub--{id}`) reads its root chat's journal,
 //! where the subagent's tools are recorded. A chat whose journal is gone (an
@@ -90,8 +90,9 @@ pub fn read(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_proto::{AgentEvent, DoneStatus};
+
+    use super::*;
 
     fn call(id: &str, call: ToolCall) -> AgentEvent {
         AgentEvent::ToolCall {

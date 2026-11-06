@@ -1,7 +1,8 @@
 //! Client-owned media: host state contains signaling and canonical text only.
-use super::*;
 use onicode_proto::voice::remote as wire;
 use tokio::sync::watch;
+
+use super::*;
 
 type PreparedResult = Option<Result<wire::Prepared, VoiceRejection>>;
 pub(crate) struct Attempt {
@@ -65,6 +66,7 @@ impl VoiceManager {
         );
         Ok((rx, Some(cancel)))
     }
+
     pub(crate) fn complete_attempt(
         &self,
         key: &wire::AttemptKey,
@@ -80,6 +82,7 @@ impl VoiceManager {
             a.result.send_replace(Some(result));
         }
     }
+
     pub(crate) fn cancel_attempt(&self, key: &wire::AttemptKey) -> Result<(), VoiceRejection> {
         let lease = {
             let mut attempts = self.inner.attempts.lock().unwrap();
@@ -123,15 +126,18 @@ impl VoiceManager {
         }
         Ok(())
     }
+
     pub(crate) fn busy(&self) -> bool {
         self.inner.slot.lock().unwrap().is_some()
     }
+
     fn remote_matches(s: &Slot, lease: &wire::Lease) -> bool {
         Self::matches(s, &lease.voice)
             && s.remote
                 .as_ref()
                 .is_some_and(|r| r.host == lease.host_device_id)
     }
+
     pub(crate) fn validate_remote(&self, lease: &wire::Lease) -> Result<(), VoiceRejection> {
         self.inner
             .slot
@@ -142,10 +148,12 @@ impl VoiceManager {
             .map(|_| ())
             .ok_or(VoiceRejection::InvalidLease)
     }
+
     pub(crate) fn own_remote(&self, lease: wire::Lease) -> Result<VoiceOwner, VoiceRejection> {
         self.validate_remote(&lease)?;
         self.own(lease.voice)
     }
+
     pub(crate) fn stop_remote(&self, lease: &wire::Lease) -> Result<(), VoiceRejection> {
         // An old authenticated lease is harmless once retired; never stop a successor.
         if self.validate_remote(lease).is_ok() {
@@ -153,6 +161,7 @@ impl VoiceManager {
         }
         Ok(())
     }
+
     pub(crate) fn report_remote(&self, p: &wire::Report) -> Result<wire::Ack, VoiceRejection> {
         let mut state = self.inner.slot.lock().unwrap();
         let s = state
@@ -177,6 +186,7 @@ impl VoiceManager {
         }
         Ok(ack)
     }
+
     pub(crate) fn confirm_remote(
         &self,
         p: &wire::Confirm,
@@ -215,6 +225,7 @@ impl VoiceManager {
         )?;
         Ok(snapshot)
     }
+
     pub(crate) async fn negotiate_remote(
         &self,
         p: wire::Negotiate,
@@ -294,6 +305,7 @@ impl VoiceManager {
             rx.changed().await.map_err(|_| VoiceRejection::Protocol)?;
         }
     }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn connect_remote(
         &self,

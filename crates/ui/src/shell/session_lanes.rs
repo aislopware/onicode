@@ -704,9 +704,10 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_doc::{MessageRole, MessageStatus, SessionMessageEntry};
     use onicode_proto::ToolCall;
+
+    use super::*;
 
     fn chat(id: &str, parent: Option<&str>, minutes_ago: i64) -> Chat {
         serde_json::from_value(serde_json::json!({

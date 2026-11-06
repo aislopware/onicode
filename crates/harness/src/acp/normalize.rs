@@ -504,8 +504,9 @@ pub(crate) fn preferred_allow_option(options: &[Value]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn message_and_thought_chunks_map_to_deltas() {

@@ -14,7 +14,6 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use onicode_doc::{RegistryDoc, WorkspaceState};
 use onicode_proto::{CheckoutChangeRequestStatus, SidebarPreferences};
-
 pub(crate) use view::{DeriveContext, device_online};
 pub use view::{
     DeviceView, FrontPage, PROJECT_COLOR_COUNT, ProjectRef, ProjectView, PullRequestGroups,

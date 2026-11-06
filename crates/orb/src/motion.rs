@@ -106,8 +106,9 @@ impl AudioResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::time::Duration;
+
+    use super::*;
 
     #[test]
     fn changing_speed_after_long_uptime_preserves_position() {

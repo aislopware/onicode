@@ -1,9 +1,8 @@
 //! Bounded media decoding. SVG resources are resolved in memory, never on the UI host.
+use std::io::Cursor;
+use std::sync::{Arc, OnceLock};
+
 use gpui::{Image, ImageFormat};
-use std::{
-    io::Cursor,
-    sync::{Arc, OnceLock},
-};
 
 pub(crate) fn release_media(images: impl IntoIterator<Item = MediaImage>, cx: &mut gpui::App) {
     let images: Vec<_> = images.into_iter().map(|media| media.image).collect();
@@ -141,7 +140,7 @@ pub(crate) fn preview_element(
     id: gpui::SharedString,
     on_click: impl Fn(&mut gpui::Window, &mut gpui::App) + 'static,
 ) -> gpui::AnyElement {
-    use gpui::{InteractiveElement as _, IntoElement as _, StyledImage as _, prelude::*};
+    use gpui::prelude::*;
     gpui::div()
         .id(id)
         .w_full()

@@ -5,8 +5,8 @@
 //! byte transports), matching the shape of onicode's Effect RPC without the Effect runtime:
 //!
 //! - client → server: `{id, method, params}` to invoke, `{id, cancel: true}` to stop a stream;
-//! - server → client: `{id, ok}` / `{id, err}` for unary calls,
-//!   `{id, item}`* then `{id, done: true}` (or `{id, err}`) for streams.
+//! - server → client: `{id, ok}` / `{id, err}` for unary calls, `{id, item}`* then `{id, done:
+//!   true}` (or `{id, err}`) for streams.
 //!
 //! The server dispatches into an [`RpcService`]; the [`RpcClient`] offers `call` and
 //! `subscribe`. Both ends run over any pair of string channels, so the in-memory transport
@@ -583,9 +583,11 @@ pub fn memory_client(service: Arc<dyn RpcService>) -> RpcClient {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use futures::StreamExt;
     use std::sync::Mutex;
+
+    use futures::StreamExt;
+
+    use super::*;
 
     struct TestService;
 
@@ -878,7 +880,8 @@ mod tests {
         // A peer still on tungstenite's default limits (an older app build)
         // reassembles the fragmented reply too.
         use futures::{SinkExt, StreamExt};
-        use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
+        use tokio_tungstenite::tungstenite::Message;
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
         let mut req = format!("ws://127.0.0.1:{port}")
             .into_client_request()
             .unwrap();

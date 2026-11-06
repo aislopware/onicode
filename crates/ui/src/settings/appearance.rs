@@ -7,10 +7,11 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
+use gpui::prelude::*;
 use gpui::{
     AnyElement, Bounds, Context, Entity, EventEmitter, FocusHandle, Focusable, Hsla, IntoElement,
-    KeyDownEvent, ObjectFit, Pixels, Point, Render, ScrollDelta, SharedString, StyledImage as _,
-    Subscription, Window, div, img, point, prelude::*, px,
+    KeyDownEvent, ObjectFit, Pixels, Point, Render, ScrollDelta, SharedString, Subscription,
+    Window, div, img, point, px,
 };
 use onicode_theme::vscode::{ImportReport, SourceCompilation};
 use onicode_theme::{
@@ -20,14 +21,13 @@ use onicode_theme::{
 
 use crate::appearance::{self, AppearanceMode};
 use crate::composer::{ComposerInput, ComposerInputEvent};
-use crate::icons;
 use crate::motion::ReduceMotion;
 use crate::popover::{self, Popup};
 use crate::settings::search::{SearchAnchor, SettingId};
 use crate::settings::widgets;
 use crate::theme::{Appearance, Theme};
-use crate::theme_library;
 use crate::typography::{self, FontAvailability, UiFontFamily, UiFontSize};
+use crate::{icons, theme_library};
 
 struct ImportDialog {
     input: Entity<ComposerInput>,

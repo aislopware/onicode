@@ -8,12 +8,14 @@
 //!
 //! `ONICODE_PALETTE_LIGHT` selects the light palette, `ONICODE_FIXTURE_FROSTED`
 //! the frosted surface, and `ONICODE_FIXTURE_SIZE=<w>x<h>` the window size.
+use std::path::PathBuf;
+use std::time::Duration;
+
 use gpui::{
     AppContext, AsyncApp, Bounds, KeyDownEvent, Keystroke, PlatformInput, WindowBounds,
     WindowOptions, point, px, size,
 };
 use onicode_ui::*;
-use std::{path::PathBuf, time::Duration};
 
 async fn pause(cx: &mut AsyncApp, ms: u64) {
     cx.background_executor()
@@ -197,7 +199,7 @@ fn main() -> anyhow::Result<()> {
                     shot(cx, "2-focused")?;
                     for (step, text) in [
                         ("3-theme", "theme"),
-                        ("4-typo", "notifcations"),
+                        ("4-typo", "notifcations"), // spellchecker:disable-line
                         ("5-shortcuts", "sidebar"),
                         ("6-empty", "teleport"),
                     ] {

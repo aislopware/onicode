@@ -3,14 +3,12 @@
 //! The engine serves three kinds of caller over the same [`crate::RpcService`]:
 //!
 //! - [`Caller::Local`]: this device's app or CLI, holding the full IPC token
-//!   (`{data_dir}/ipc-token`), or an in-process client. The default when
-//!   nothing set one.
-//! - [`Caller::Agent`]: a `onicode mcp` server the engine injected into an
-//!   agent's run, holding the agent-scoped token
-//!   (`{data_dir}/ipc-token-agent`). It reaches only what the MCP tools need
+//!   (`{data_dir}/ipc-token`), or an in-process client. The default when nothing set one.
+//! - [`Caller::Agent`]: a `onicode mcp` server the engine injected into an agent's run, holding the
+//!   agent-scoped token (`{data_dir}/ipc-token-agent`). It reaches only what the MCP tools need
 //!   ([`crate::agent_allowed`]); nothing that grants power.
-//! - [`Caller::Peer`]: another device, through the device-room relay
-//!   ([`crate::local_only`] keeps credentials local).
+//! - [`Caller::Peer`]: another device, through the device-room relay ([`crate::local_only`] keeps
+//!   credentials local).
 //!
 //! The gates that matter are enforced by method at the transport guards
 //! themselves (the WS server's agent guard, the relay's guard), so they

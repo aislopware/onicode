@@ -3,7 +3,7 @@
 //!
 //! Shown in place of the Ready shell until it's finished
 //! (`onboardingCompleted` in `ui-settings.json`); only a fresh install starts
-//! it. Each step is a full-window [`render_page`]: the Settings column, type
+//! it. Each step is a full-window `render_page`: the Settings column, type
 //! and blocks straight on the window's surface. The shell owns what the steps
 //! can't do from here — the sign-in flow and the add-project dialog — and
 //! hears about them through [`OnboardingEvent`]. Its sign-in steps render
@@ -13,11 +13,11 @@
 
 use std::path::{Path, PathBuf};
 
+use gpui::prelude::*;
 use gpui::{
-    AnyElement, Context, Entity, EventEmitter, IntoElement, ObjectFit, SharedString,
-    StyledImage as _, Subscription, Window, div, img, prelude::*, px,
+    AnyElement, Context, Entity, EventEmitter, IntoElement, ObjectFit, SharedString, Subscription,
+    Window, div, img, px,
 };
-
 use onicode_engine::registry::HarnessDescriptor;
 use onicode_proto::HarnessId;
 

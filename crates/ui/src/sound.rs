@@ -1,15 +1,13 @@
 //! Session notification sounds — the herdr approach (state-transition chimes
 //! played through the platform's own audio CLI, zero Rust audio deps):
 //!
-//! - embedded completion, input-request, attention and Appshot chimes, and
-//!   the start and end of a voice call;
-//! - macOS Appshots use a preloaded native player; other cues write to a
-//!   temp file and use the system player on a background thread: `afplay`
-//!   (macOS), first of `paplay`/`pw-play`/`aplay`/`ffplay`/`mpv` (Linux —
-//!   WAV, so even bare ALSA `aplay` decodes it);
+//! - embedded completion, input-request, attention and Appshot chimes, and the start and end of a
+//!   voice call;
+//! - macOS Appshots use a preloaded native player; other cues write to a temp file and use the
+//!   system player on a background thread: `afplay` (macOS), first of
+//!   `paplay`/`pw-play`/`aplay`/`ffplay`/`mpv` (Linux — WAV, so even bare ALSA `aplay` decodes it);
 //! - `ONICODE_DISABLE_SOUND` env kill-switch + the `soundEnabled` ui-setting;
-//! - failures are logged and swallowed — a missing player must never bother
-//!   the session flow.
+//! - failures are logged and swallowed — a missing player must never bother the session flow.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -84,10 +82,11 @@ pub fn prepare_appshot() {
 
 #[cfg(target_os = "macos")]
 mod macos_appshot {
+    use std::sync::{OnceLock, mpsc};
+
     use objc2::rc::{Retained, autoreleasepool};
     use objc2::runtime::AnyObject;
     use objc2::{class, msg_send};
-    use std::sync::{OnceLock, mpsc};
 
     #[link(name = "AVFoundation", kind = "framework")]
     unsafe extern "C" {}
@@ -110,7 +109,8 @@ mod macos_appshot {
                             let started = std::time::Instant::now();
                             let played = player.as_ref().is_some_and(|player| {
                                 autoreleasepool(|_| unsafe {
-                                    // Pause preserves prepared audio resources; stop would discard them.
+                                    // Pause preserves prepared audio resources; stop would discard
+                                    // them.
                                     let _: () = msg_send![&**player, pause];
                                     let _: () = msg_send![&**player, setCurrentTime: 0.0_f64];
                                     let played: bool = msg_send![&**player, play];

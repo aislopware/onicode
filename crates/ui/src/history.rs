@@ -11,11 +11,11 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use chrono::DateTime;
+use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClipboardItem, Context, Entity, EventEmitter, Focusable as _, Image,
     ImageFormat, ListAlignment, ListOffset, ListState, ObjectFit, PathBuilder, Pixels, Render,
-    SharedString, Subscription, Task, Window, canvas, container_query, div, img, list, point,
-    prelude::*, px,
+    SharedString, Subscription, Task, Window, canvas, container_query, div, img, list, point, px,
 };
 use onicode_engine::repos::git_history_matches;
 use onicode_proto::{

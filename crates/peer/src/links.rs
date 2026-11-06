@@ -1,18 +1,18 @@
 //! One link per device, kept up.
 //!
-//! * Dials are deduplicated: callers that want the same device while it is being dialled wait
-//!   for the one dial. When both ends dial each other at once, both keep the link the smaller
-//!   device-id dialled and close the other with [`close::DUPLICATE`]; each end decides alone,
-//!   by the same rule, so they agree without a round trip.
+//! * Dials are deduplicated: callers that want the same device while it is being dialled wait for
+//!   the one dial. When both ends dial each other at once, both keep the link the smaller device-id
+//!   dialled and close the other with [`close::DUPLICATE`]; each end decides alone, by the same
+//!   rule, so they agree without a round trip.
 //! * A link that drops is redialled by the end that dialled it, after slopty's backoff
 //!   ([`onicode_net::redial`]), spread by a seeded draw so a simulated run repeats; a peer on
 //!   another build is tried again only after [`redial::WRONG_BUILD`].
-//! * Each link is kept alive on its control stream: a ping every [`PING_INTERACTIVE`] while
-//!   the person is using the device, every [`PING_IDLE`] otherwise, each answered at once; a
-//!   link that hears nothing for [`SILENT_AFTER`] intervals is closed with [`close::SILENT`].
-//!   Nothing else drops a link: not the control plane's `Online` flag, not a status read.
-//! * Each ping carries the path this end's daemon takes to the other, so both ends can show
-//!   how the link travels (direct, peer relay, DERP).
+//! * Each link is kept alive on its control stream: a ping every [`PING_INTERACTIVE`] while the
+//!   person is using the device, every [`PING_IDLE`] otherwise, each answered at once; a link that
+//!   hears nothing for [`SILENT_AFTER`] intervals is closed with [`close::SILENT`]. Nothing else
+//!   drops a link: not the control plane's `Online` flag, not a status read.
+//! * Each ping carries the path this end's daemon takes to the other, so both ends can show how the
+//!   link travels (direct, peer relay, DERP).
 //! * The streams the peer opens are served: RPC streams by the RPC service
 //!   ([`onicode_rpc::serve_carried`]), every other kind by the [`StreamHandler`], as are the
 //!   datagrams.

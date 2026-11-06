@@ -6,11 +6,11 @@
 //! map-of-maps means concurrent writers to *different* rows never conflict while writes
 //! to the *same* row settle field-by-field LWW (exactly right for renames/archives):
 //! - `devices`: LoroMap keyed by deviceId → row map {id, name, platform, lastSeenAt}
-//! - `spaces`: LoroMap keyed by spaceId → row map {id, deviceId, path, name?,
-//!   gitDetected, gitCheckedAt?, checkoutId?, repositoryId?, createdAt}
-//! - `chats`: LoroMap keyed by chatId → row map {id, deviceId, title?, archived, cwd?,
-//!   branch?, checkoutId?, config?(json), lastMessagePreview?, lastMessageAt?, createdAt,
-//!   harnessSessionId?, harnessSessionCwd?, spaceId?, lastSeenAt?}
+//! - `spaces`: LoroMap keyed by spaceId → row map {id, deviceId, path, name?, gitDetected,
+//!   gitCheckedAt?, checkoutId?, repositoryId?, createdAt}
+//! - `chats`: LoroMap keyed by chatId → row map {id, deviceId, title?, archived, cwd?, branch?,
+//!   checkoutId?, config?(json), lastMessagePreview?, lastMessageAt?, createdAt, harnessSessionId?,
+//!   harnessSessionCwd?, spaceId?, lastSeenAt?}
 //! - `sessions`: LoroMap keyed by chatId → row map {chatId, deviceId, status, startedAt?,
 //!   updatedAt}
 //! - `meta`: LoroMap {schemaVersion} — in-band detection for future destructive changes
@@ -26,9 +26,8 @@
 
 use chrono::{DateTime, Utc};
 use loro::{ExportMode, LoroDoc, LoroMap, LoroValue, ToJson};
-use serde::{Deserialize, Serialize};
-
 use onicode_proto::{Chat, ChatConfig, Device, Session, SessionStatus, Space};
+use serde::{Deserialize, Serialize};
 
 use crate::schema::DocError;
 
@@ -855,8 +854,9 @@ impl From<RawSession> for Session {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_proto::{HarnessId, SandboxLevel};
+
+    use super::*;
 
     fn ts(ms: i64) -> DateTime<Utc> {
         dt(ms)

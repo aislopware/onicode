@@ -6,9 +6,9 @@
 //! either shows up in the other.
 use std::time::{Duration, Instant};
 
+use gpui::prelude::*;
 use gpui::{
-    Context, Entity, IntoElement, Render, SharedString, Subscription, Task, Window, div,
-    prelude::*, px,
+    Context, Entity, IntoElement, Render, SharedString, Subscription, Task, Window, div, px,
 };
 use onicode_proto::{AgentAccount, AgentAccountsSnapshot, HarnessId};
 use onicode_rpc::methods;
@@ -519,8 +519,9 @@ impl Render for AccountUsage {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_proto::AgentUsageWindow;
+
+    use super::*;
 
     fn account(harness: HarnessId, active: bool, used: &[f32]) -> AgentAccount {
         serde_json::from_value(serde_json::json!({

@@ -1,11 +1,12 @@
 // Extracted from Bezel 6141af9c16f7353cdf36003f7404e0a94566a163; MIT. See THIRD_PARTY_NOTICES.md.
 //! Web: a constellation wires itself — the "connecting" state.
 
-use crate::engine::{
-    core::{Dot, Frame, Line, frac, hash_d, lerp, make_proj, radius_scale, vnoise, with_fib_dirs},
-    profiles::{MAX_NODE_N, MAX_SIGNALS, ModeOpts, count_usize},
-};
 use std::cell::RefCell;
+
+use crate::engine::core::{
+    Dot, Frame, Line, frac, hash_d, lerp, make_proj, radius_scale, vnoise, with_fib_dirs,
+};
+use crate::engine::profiles::{MAX_NODE_N, MAX_SIGNALS, ModeOpts, count_usize};
 
 thread_local! {
     /// Reused between frames so the steady-state animation loop never

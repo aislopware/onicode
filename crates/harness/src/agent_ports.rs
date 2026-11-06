@@ -1,10 +1,8 @@
 //! Loopback ports agent CLIs serve their own protocol on (`opencode serve`).
 //! Such a server carries its run's origin marker like everything the agent
 //! starts, but it is the agent itself, never a dev server to preview.
-use std::{
-    collections::{BTreeMap, HashSet},
-    sync::Mutex,
-};
+use std::collections::{BTreeMap, HashSet};
+use std::sync::Mutex;
 
 static PORTS: Mutex<BTreeMap<u16, usize>> = Mutex::new(BTreeMap::new());
 

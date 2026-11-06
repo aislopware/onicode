@@ -2,11 +2,11 @@
 //! engine and a scratch git checkout, driven by the clicks and shortcuts a
 //! person uses. Writes, into the output directory:
 //!
-//! - `right-empty.png` / `right-empty-660.png`: the right pane open on its
-//!   empty (new tab) page, at the even split and dragged to 660px
+//! - `right-empty.png` / `right-empty-660.png`: the right pane open on its empty (new tab) page, at
+//!   the even split and dragged to 660px
 //! - `right-file-explorer.png`: a file tab active with the explorer docked
-//! - `right-tabs.png` / `right-tabs-660.png`: terminal + file tabs, explorer
-//!   undocked; `right-tabs-hover-{inactive,active,plus}.png` hover states
+//! - `right-tabs.png` / `right-tabs-660.png`: terminal + file tabs, explorer undocked;
+//!   `right-tabs-hover-{inactive,active,plus}.png` hover states
 //! - `result.txt`: window size, scale factor and the run's notes
 //!
 //!     cargo build -p onicode-ui --example right-panel-fixture --features appshots-fixture
@@ -15,14 +15,13 @@
 //! ONICODE_PALETTE_LIGHT=1 renders the light theme. Clicks land at computed
 //! logical positions; override with ONICODE_RIGHT_TERMINAL=x,y and
 //! ONICODE_RIGHT_TREE=x,y0 (the explorer's first row) when a layout moves.
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
 use anyhow::Context as _;
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 use onicode_ui::*;
 use serde_json::json;
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
 
 const WINDOW: (f32, f32) = (1440.0, 900.0);
 const SIDEBAR: f32 = 256.0;

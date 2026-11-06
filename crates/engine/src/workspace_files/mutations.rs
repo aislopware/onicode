@@ -1,9 +1,10 @@
 //! Structural mutations execute on the workspace host, serialized against saves.
-use super::*;
 use onicode_proto::{
     CreateWorkspaceEntryRequest, MoveWorkspaceEntryRequest, WorkspaceMutationOutcome,
     WorkspaceMutationRejection as Reason,
 };
+
+use super::*;
 
 type MutationResult<T> = Result<T, (Reason, String)>;
 
@@ -241,7 +242,8 @@ fn create_blocking(
 /// followed), failing if anything already has its name.
 #[cfg(unix)]
 fn create_no_replace(root: &Path, relative: &Path, dir: bool) -> std::io::Result<()> {
-    use std::os::{fd::AsRawFd, unix::ffi::OsStrExt};
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStrExt;
     let parent = open_parent(root, relative)?;
     let name = std::ffi::CString::new(
         relative
@@ -372,9 +374,7 @@ pub(super) fn revision(metadata: &std::fs::Metadata) -> String {
 }
 
 pub(super) fn is_link(metadata: &std::fs::Metadata) -> bool {
-    {
-        metadata.file_type().is_symlink()
-    }
+    metadata.file_type().is_symlink()
 }
 
 fn source(
@@ -540,11 +540,9 @@ fn is_case_alias(root: &Path, source: &Path, destination: &Path) -> bool {
 /// Open every ancestor without following links, and anchor the native rename to those handles.
 #[cfg(unix)]
 fn open_parent(root: &Path, relative: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::ffi::OsStrExt;
     use std::os::unix::fs::OpenOptionsExt;
-    use std::os::{
-        fd::{AsRawFd, FromRawFd},
-        unix::ffi::OsStrExt,
-    };
     let mut directory = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
@@ -573,7 +571,8 @@ fn open_parent(root: &Path, relative: &Path) -> std::io::Result<std::fs::File> {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn move_no_replace(root: &Path, source: &Path, destination: &Path) -> std::io::Result<()> {
-    use std::os::{fd::AsRawFd, unix::ffi::OsStrExt};
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStrExt;
     let from = open_parent(root, source)?;
     let to = open_parent(root, destination)?;
     let source = std::ffi::CString::new(

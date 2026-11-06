@@ -1,8 +1,10 @@
 //! Inline single-line rename and permanent-delete confirmation.
-use super::*;
-use crate::{popover, theme::Theme};
 use gpui::{AnyElement, Focusable, KeyDownEvent, MouseButton};
 use gpui_base::input::{Input, InputEvent, InputState};
+
+use super::*;
+use crate::popover;
+use crate::theme::Theme;
 
 pub(super) struct TreeRename {
     pub path: String,
@@ -80,6 +82,7 @@ impl FilesSurface {
                     && n.entry.kind != onicode_proto::WorkspaceEntryKind::Symlink
             })
     }
+
     pub(super) fn begin_tree_rename(
         &mut self,
         path: String,
@@ -131,6 +134,7 @@ impl FilesSurface {
         window.focus(&focus, cx);
         cx.notify();
     }
+
     fn submit_tree_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(rename) = &self.tree_rename else {
             return;
@@ -170,6 +174,7 @@ impl FilesSurface {
         self.tree_rename.as_mut().unwrap().submitted = true;
         self.request_mutation(&path, Some(destination), cx);
     }
+
     pub(super) fn render_tree_rename(
         &self,
         path: &str,
@@ -221,6 +226,7 @@ impl FilesSurface {
                 .into_any_element(),
         )
     }
+
     pub(super) fn begin_tree_delete(
         &mut self,
         paths: Vec<String>,
@@ -260,6 +266,7 @@ impl FilesSurface {
         });
         cx.notify();
     }
+
     pub(super) fn dismiss_tree_delete(
         &mut self,
         confirm: bool,
@@ -297,6 +304,7 @@ impl FilesSurface {
         self.tree_focus.focus(window, cx);
         cx.notify();
     }
+
     pub(super) fn render_tree_delete(
         &self,
         theme: &Theme,

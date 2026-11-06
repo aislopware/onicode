@@ -3,14 +3,13 @@
 //! The set mirrors the original onicode's icon usage exactly:
 //! - Most glyphs come from the **Solar Icons** set (Linear weight) by 480 Design,
 //!   the same set the Electron app used via `@solar-icons/react`. Solar Icons is
-//!   licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/);
+//!   licensed under CC BY 4.0 (<https://creativecommons.org/licenses/by/4.0/>);
 //!   attribution: "Solar Icons by 480 Design".
-//! - The terminal tab glyphs (`terminal`, `plus`, `close`) and the stop square
-//!   are ports of the hand-drawn inline SVGs in onicode's `terminal-panel.tsx` /
-//!   `composer-actions.tsx`.
-//! - The harness brand marks (`claude-mark`, `openai-mark`, `cursor-mark`) are
-//!   ports of onicode's `icons.tsx`. gpui tints SVGs with the text color, so the
-//!   Claude mark's brand orange is applied at the call site ([`CLAUDE_BRAND`]).
+//! - The terminal tab glyphs (`terminal`, `plus`, `close`) and the stop square are ports of the
+//!   hand-drawn inline SVGs in onicode's `terminal-panel.tsx` / `composer-actions.tsx`.
+//! - The harness brand marks (`claude-mark`, `openai-mark`, `cursor-mark`) are ports of onicode's
+//!   `icons.tsx`. gpui tints SVGs with the text color, so the Claude mark's brand orange is applied
+//!   at the call site (`CLAUDE_BRAND`).
 //!
 //! Icons render via [`icon`]: `icon(icons::PAPERCLIP).size(px(16.)).text_color(…)`.
 
@@ -264,12 +263,12 @@ impl AssetSource for Assets {
 /// The Claude mark's brand orange (`#D97757`) — onicode keeps it even on the
 /// monochrome surface.
 pub fn claude_brand() -> Hsla {
-    gpui::rgb(0xD97757).into()
+    gpui::rgb(0xd97757).into()
 }
 
 /// The Muse Code mark's brand blue (`#0081FB`), kept like Claude's orange.
 pub fn muse_brand() -> Hsla {
-    gpui::rgb(0x0081FB).into()
+    gpui::rgb(0x0081fb).into()
 }
 
 /// An icon element for an embedded asset path. Size and colour are set by the

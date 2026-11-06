@@ -366,11 +366,13 @@ impl Rng {
         self.0 ^= self.0 >> 12;
         self.0 ^= self.0 << 25;
         self.0 ^= self.0 >> 27;
-        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
     }
+
     fn below(&mut self, n: usize) -> usize {
         (self.next() % n as u64) as usize
     }
+
     fn pick<'a>(&mut self, xs: &[&'a str]) -> &'a str {
         xs[self.below(xs.len())]
     }
@@ -525,7 +527,7 @@ fn styled_runs_match_coretext() {
         .unwrap_or(3);
     let corpus = random_corpus(seed, 150);
     let styles = [h.styles[1].1, h.styles[4].1, h.styles[7].1];
-    let mut rng = Rng(seed ^ 0x9E37);
+    let mut rng = Rng(seed ^ 0x9e37);
     let (mut cases, mut exact, mut count_diff) = (0usize, 0usize, 0usize);
     let mut shown = 0;
     for text in &corpus {

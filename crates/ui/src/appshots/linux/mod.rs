@@ -5,11 +5,10 @@ mod atspi;
 mod portal;
 mod x11;
 
-use std::fs;
 use std::os::unix::net::UnixDatagram;
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
-use std::thread;
+use std::{fs, thread};
 
 use futures::channel::mpsc;
 

@@ -17,8 +17,8 @@
 //!
 //! Sign-in, identity, usage and sign-out all go through Muse's own account
 //! surface (verified live against Muse 1.4.12; usage stays empty from a
-//! fresh host, see [`AgentAccounts::muse_usage`]) ([`onicode_harness::muse::account`]): Muse mints, refreshes and
-//! locks its tokens itself; onicode never reads one. With no onicode account
+//! fresh host, see `AgentAccounts::muse_usage`) ([`onicode_harness::muse::account`]): Muse mints,
+//! refreshes and locks its tokens itself; onicode never reads one. With no onicode account
 //! selected, Muse runs on its own login (`muse login`), untouched.
 
 use std::collections::BTreeMap;
@@ -577,8 +577,9 @@ for line in sys.stdin:
 
     #[tokio::test]
     async fn kept_muse_accounts_sign_in_switch_report_usage_and_go() {
-        use crate::registry::RunEnvironment;
         use std::os::unix::fs::PermissionsExt;
+
+        use crate::registry::RunEnvironment;
         let tmp = tempfile::tempdir().unwrap();
         let fake = tmp.path().join("fake");
         std::fs::create_dir_all(&fake).unwrap();

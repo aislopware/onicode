@@ -6,11 +6,10 @@
 //! [`Repos::checkout_identity`]), computes one bounded atomic snapshot per checkout,
 //! and publishes it three ways:
 //!
-//! - the local `WatchCheckoutDiffs` stream (a watch channel of every checkout's
-//!   latest [`CheckoutDiff`]);
-//! - a [`DiffSidecar`] JSON `POST {edge}/diff/{chatId}` for every syncing chat of
-//!   the checkout (bearer = engine edge token), so "review pending changes while
-//!   the host sleeps" works;
+//! - the local `WatchCheckoutDiffs` stream (a watch channel of every checkout's latest
+//!   [`CheckoutDiff`]);
+//! - a [`DiffSidecar`] JSON `POST {edge}/diff/{chatId}` for every syncing chat of the checkout
+//!   (bearer = engine edge token), so "review pending changes while the host sleeps" works;
 //!
 //! Checkout snapshots remain live checkout state. Conversation branch identity
 //! is captured by the command host and is never rewritten from this watcher;
@@ -20,8 +19,8 @@
 //! (an entry whose every chat was archived is dropped on the next reconcile;
 //! unarchiving re-adds it).
 //!
-//! Fast recursive watches on the process-wide [`FsWatchHub`] (one watcher thread
-//! for every checkout; debounced [`WATCH_DEBOUNCE`]) are backed by a slow
+//! Fast recursive watches on the process-wide `FsWatchHub` (one watcher thread
+//! for every checkout; debounced `WATCH_DEBOUNCE`) are backed by a slow
 //! 2-minute repair tick because native watchers may coalesce or drop events.
 //! Snapshots carry a sha256 checksum; an unchanged checksum publishes nothing.
 //!
@@ -29,8 +28,8 @@
 //! row change — including the `checkoutId` writes reconcile itself makes.
 //! Checkout identities are memoized per cwd (chat-watch reconciles spawn
 //! no git; the repair tick revalidates), and an entry whose chats vanish is torn
-//! down only after [`REPAIR_INTERVAL`] of continuous absence rather than on the
-//! first pass that misses it. See [`resolve_identity`] for the incident this
+//! down only after `REPAIR_INTERVAL` of continuous absence rather than on the
+//! first pass that misses it. See `resolve_identity` for the incident this
 //! guards against.
 //!
 //! Beyond the working-tree watch, the service also answers one-shot
@@ -39,7 +38,7 @@
 //! and *latest turn* (vs a temp-index `write-tree` snapshot taken when a turn
 //! dispatches — see [`CheckoutDiffSync::note_turn_start`]). Those snapshots
 //! live in Onicode's own object store, never the checkout's — see
-//! [`turn_snapshot`].
+//! `turn_snapshot`.
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
@@ -48,13 +47,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
+use onicode_proto::{Chat, CheckoutDiff, DiffFileSummary};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
 use tokio::sync::{Notify, mpsc, watch};
 use tokio_util::sync::CancellationToken;
-
-use onicode_proto::{Chat, CheckoutDiff, DiffFileSummary};
 
 use crate::EngineError;
 use crate::doc_host::EdgeConfig;
@@ -477,7 +475,7 @@ impl CheckoutDiffSync {
     /// watch, capture or sidecar), but an archived chat someone has open must
     /// still show its checkout's live diff, accept a discard, and get its
     /// `checkoutId` stamped. The engine holds one guard per open transcript
-    /// stream; released interest lingers [`INTEREST_LINGER`].
+    /// stream; released interest lingers `INTEREST_LINGER`.
     pub fn retain_chat(&self, chat_id: &str) -> ChatInterest {
         let first = {
             let mut interest = lock(&self.inner.interest);
@@ -606,10 +604,9 @@ impl CheckoutDiffSync {
 /// whose captures cost seconds of CPU:
 ///
 /// 1. every publish fanned out into a storm of `git` spawns (fd pressure);
-/// 2. one transient spawn failure (e.g. EMFILE) made the chat ungroupable, so
-///    reconcile tore its entry down and re-added it on the next pass — and
-///    every re-add kicks a full capture, whose row writes trigger the next
-///    reconcile. Back-to-back `git diff` forever, on an idle tree.
+/// 2. one transient spawn failure (e.g. EMFILE) made the chat ungroupable, so reconcile tore its
+///    entry down and re-added it on the next pass — and every re-add kicks a full capture, whose
+///    row writes trigger the next reconcile. Back-to-back `git diff` forever, on an idle tree.
 ///
 /// So: chat-watch reconciles reuse the memo (no git at all), the repair tick
 /// revalidates (`fresh`), and a failed fresh resolve keeps the memo unless the
@@ -2354,6 +2351,7 @@ mod turn_base_tests {
                 self.0 ^= self.0 >> 27;
                 self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
             }
+
             fn below(&mut self, n: usize) -> usize {
                 (self.next() % n as u64) as usize
             }

@@ -18,6 +18,7 @@ path = "src/main.rs"
 [[bin]]
 name = "onicode-engine"
 path = "src/bin/onicode-engine.rs"
+doc = false
 
 [dependencies]
 onicode-engine.workspace = true

@@ -1,8 +1,7 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
+use std::{fs, thread};
 
 use futures::channel::mpsc;
 use gpui::{Image, ImageFormat as GpuiImageFormat};

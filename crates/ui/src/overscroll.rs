@@ -21,7 +21,7 @@
 //! not momentum and never bounce. A touch that never scrolls arrives as
 //! `Started` then a zero `Moved` (NSEventPhaseCancelled is unmapped) and is
 //! treated as a cancel. A touch cancelled after it scrolled looks the same as
-//! one resting still, so a touch that goes quiet for [`TOUCH_TIMEOUT`] is let
+//! one resting still, so a touch that goes quiet for `TOUCH_TIMEOUT` is let
 //! go: otherwise the band would think it held forever, and every later wheel
 //! event — momentum, a plain mouse wheel — would stretch it further, past
 //! where scrolling back could unwind it.
@@ -391,8 +391,8 @@ pub struct OverscrollPrepaint {
 }
 
 impl Element for Overscroll {
-    type RequestLayoutState = ();
     type PrepaintState = OverscrollPrepaint;
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())
@@ -514,8 +514,10 @@ impl IntoElement for Overscroll {
 
 #[cfg(test)]
 mod tests {
+    use gpui::prelude::*;
+    use gpui::{Context, Modifiers, Render, Styled, canvas, div};
+
     use super::*;
-    use gpui::{Context, Modifiers, Render, Styled, canvas, div, prelude::*};
 
     const AT_TOP: Room = Room {
         top: 0.0,

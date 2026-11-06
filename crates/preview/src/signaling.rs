@@ -1,16 +1,18 @@
 //! The coordinator receives presence, catalogs and SDP only. Reconnects obtain
 //! fresh credentials and clear the previous connection's remote routes/peers.
-use crate::{
-    catalog::Catalog,
-    peer::{OutgoingSignal, Peers, Signal},
-};
+use std::sync::Arc;
+use std::time::Duration;
+
 use futures::{SinkExt, StreamExt};
 use onicode_proto::PreviewService;
 use serde::Deserialize;
-use std::{sync::Arc, time::Duration};
 use tokio::sync::{Notify, mpsc};
-use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_util::sync::CancellationToken;
+
+use crate::catalog::Catalog;
+use crate::peer::{OutgoingSignal, Peers, Signal};
 #[async_trait::async_trait]
 pub trait TokenSource: Send + Sync {
     async fn token(&self) -> anyhow::Result<String>;
@@ -56,7 +58,7 @@ pub async fn run(
 /// [`run`], wakeable: a device whose network changed or that comes back
 /// from suspension (a phone) notifies `wake`. Waiting to reconnect, it
 /// redials at once; connected, it proves the socket with a ping and redials
-/// if nothing answers within [`WAKE_PROBE`] — rather than leaning on the
+/// if nothing answers within `WAKE_PROBE` — rather than leaning on the
 /// 40s lease while the socket may be dead.
 pub async fn run_with_wake(
     config: Config,

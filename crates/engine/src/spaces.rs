@@ -6,9 +6,8 @@
 //! and keeps their `gitDetected`/`checkoutId`/`repositoryId` stamps truthful:
 //!
 //! - recheck on boot / when a space row is first observed;
-//! - a non-recursive watch on the space folder (on the process-wide
-//!   [`FsWatchHub`], so spaces add no watcher threads) — `.git` appearing or
-//!   vanishing (git init / de-git) kicks a recheck;
+//! - a non-recursive watch on the space folder (on the process-wide `FsWatchHub`, so spaces add no
+//!   watcher threads) — `.git` appearing or vanishing (git init / de-git) kicks a recheck;
 //! - a slow 2-minute repair tick (native watchers coalesce/drop events).
 //!
 //! Stamps are written ONLY on change, so steady state never grows the oplog.
@@ -28,10 +27,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
+use onicode_proto::Space;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
-
-use onicode_proto::Space;
 
 use crate::fs_watch::{FsWatch, FsWatchHub};
 use crate::repos::Repos;

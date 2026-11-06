@@ -1,10 +1,9 @@
 //! WebRTC AEC3 at 48 kHz / 10 ms. Feed audio actually rendered by the
 //! hardware, including underrun silence; never use received network packets.
+use webrtc_audio_processing::config::{EchoCanceller, HighPassFilter};
+use webrtc_audio_processing::{Config, Processor};
+
 use crate::AudioError;
-use webrtc_audio_processing::{
-    Config, Processor,
-    config::{EchoCanceller, HighPassFilter},
-};
 
 pub const DSP_SAMPLES: usize = 480;
 pub struct EchoProcessor {
@@ -22,16 +21,19 @@ impl EchoProcessor {
         });
         Ok(Self { processor })
     }
+
     pub fn render(&self, actually_played: &[f32; DSP_SAMPLES]) -> Result<(), AudioError> {
         self.processor
             .analyze_render_frame([actually_played.as_slice()])
             .map_err(|_| AudioError::Frame)
     }
+
     pub fn capture(&self, microphone: &mut [f32; DSP_SAMPLES]) -> Result<(), AudioError> {
         self.processor
             .process_capture_frame([microphone.as_mut_slice()])
             .map_err(|_| AudioError::Frame)
     }
+
     /// Device/session changes discard adaptive history as well as samples.
     pub fn reset(&mut self) -> Result<(), AudioError> {
         *self = Self::new()?;

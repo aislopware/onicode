@@ -16,17 +16,15 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use futures::{StreamExt, stream};
-use sha2::{Digest, Sha256};
-
 use onicode_proto::{
     DriveEntry, FileSearchMatch, FolderEntry, FolderListing, GitHistoryCommit,
     GitHistoryComparison, GitHistoryPage, GitHistoryRef, GitHistoryRefKind, HomeFolderMatch,
     HomeFolderSearchResult, Repo, RepoRef, Worktree,
 };
+use sha2::{Digest, Sha256};
 
-use crate::EngineError;
-use crate::WorkspaceSearch;
 use crate::workspace_search::{NameKinds, normalize_name_query};
+use crate::{EngineError, WorkspaceSearch};
 
 /// Existence probe timeout for user-chosen / remembered paths, which can point at
 /// dead network mounts where a bare `stat` hangs for minutes.
@@ -1411,7 +1409,7 @@ impl Repos {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.subsec_nanos() as u64)
                 .unwrap_or(attempt)
-                .wrapping_add(attempt.wrapping_mul(0x9E37_79B9));
+                .wrapping_add(attempt.wrapping_mul(0x9e37_79b9));
             let candidate = format!(
                 "{}-{}",
                 ADJECTIVES[(seed % ADJECTIVES.len() as u64) as usize],
@@ -1467,10 +1465,10 @@ impl Repos {
 
     /// Rename a onicode-created worktree branch after its chat's generated title
     /// (port of onicode's `renameWorktreeBranch`). Guards:
-    /// - respect an external checkout/rename: only act while the worktree is still
-    ///   on `expected_branch` AND that branch is the original `onicode/<folderName>`;
-    /// - a title-slug collision gets a stable 6-hex suffix (hash of the worktree
-    ///   path); a collision on THAT too fails.
+    /// - respect an external checkout/rename: only act while the worktree is still on
+    ///   `expected_branch` AND that branch is the original `onicode/<folderName>`;
+    /// - a title-slug collision gets a stable 6-hex suffix (hash of the worktree path); a collision
+    ///   on THAT too fails.
     ///
     /// Returns the branch the worktree ends up on (re-read after the rename so a
     /// concurrent external checkout always wins the metadata race).
@@ -1553,7 +1551,7 @@ impl Repos {
     // ── ListFolders ─────────────────────────────────────────────────────────
 
     /// One directory level (home by default): dotfiles hidden, directories first,
-    /// capped at [`FOLDER_LIST_MAX_ENTRIES`] with a `truncated` flag. The walk runs
+    /// capped at `FOLDER_LIST_MAX_ENTRIES` with a `truncated` flag. The walk runs
     /// in a spawned blocking task under a 6s wall-clock ceiling — a wedged path
     /// (dead mount, permission-gated folder) fails this listing without blocking
     /// anything else; the abandoned task unwinds on its own thread.

@@ -3,18 +3,16 @@
 //!
 //! Passes, per frame:
 //! 1. shadow: the key light's depth over the geometry (orthographic);
-//! 2. main: the environment map behind everything, when the scene asks for
-//!    it; opaque surfaces (textured or not) into a multisampled HDR target
-//!    with depth (GGX specular, sky/ground ambient, key light with PCF
-//!    shadows, a fill light, glow); other see-through surfaces blended over
-//!    them unbent, far to near; sprites (flares, glints) adding their light
-//!    behind nearer surfaces; then lines and points unlit; resolved;
-//! 3. glass: transmissive surfaces over that, refracting the resolved image
-//!    (see-through surfaces and sprites behind it included) per color
-//!    channel (dispersion) under a Fresnel reflection;
+//! 2. main: the environment map behind everything, when the scene asks for it; opaque surfaces
+//!    (textured or not) into a multisampled HDR target with depth (GGX specular, sky/ground
+//!    ambient, key light with PCF shadows, a fill light, glow); other see-through surfaces blended
+//!    over them unbent, far to near; sprites (flares, glints) adding their light behind nearer
+//!    surfaces; then lines and points unlit; resolved;
+//! 3. glass: transmissive surfaces over that, refracting the resolved image (see-through surfaces
+//!    and sprites behind it included) per color channel (dispersion) under a Fresnel reflection;
 //! 4. bloom: bright parts downsampled and blurred;
-//! 5. composite: bloom added, a fine depth-edge outline, tonemapped to sRGB
-//!    straight alpha, transparent wherever nothing was drawn.
+//! 5. composite: bloom added, a fine depth-edge outline, tonemapped to sRGB straight alpha,
+//!    transparent wherever nothing was drawn.
 
 use onicode_visual::{Camera, CameraFrame, Color, Scene, V3};
 use wgpu::util::DeviceExt;
@@ -1622,8 +1620,9 @@ fn lit_dummy_depth(device: &wgpu::Device) -> wgpu::Texture {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_visual::Token;
+
+    use super::*;
 
     fn palette(color: Color) -> [f32; 4] {
         let [r, g, b] = match color.token {

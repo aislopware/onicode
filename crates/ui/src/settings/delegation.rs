@@ -2,19 +2,17 @@
 //! lives on the target device's engine, where the agents launch, and is read
 //! and written over `GetNativeSubagents` / `SetNativeSubagents`.
 
-use super::HarnessesPage;
-use crate::{
-    popover::Loadable,
-    settings::{
-        search::{SearchAnchor, SettingId},
-        widgets,
-    },
-    theme::Theme,
-};
-use gpui::{AnyElement, Context, div, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, div, px};
 use onicode_engine::registry::NativeSubagentSettings;
 use onicode_proto::HarnessId;
 use onicode_rpc::methods;
+
+use super::HarnessesPage;
+use crate::popover::Loadable;
+use crate::settings::search::{SearchAnchor, SettingId};
+use crate::settings::widgets;
+use crate::theme::Theme;
 
 /// The Delegation row's line while the device can switch it.
 const NATIVE_SUBAGENTS_HINT: &str = "Off: delegate through side chats, from each chat's next turn.";

@@ -2,15 +2,14 @@
 //! replaces the Loro workspace doc (docs/registry-sync.md).
 //!
 //! [`RegistryDoc`] is a local replica of the per-user registry room:
-//! - `authoritative` rows — the server's truth, replaced wholesale by `state`/
-//!   `rows` frames (the server merges; clients never re-merge server rows);
-//! - `pending` op batches — local writes not yet acked, replayed over the
-//!   authoritative rows for every read (optimistic overlay), re-pushed on
-//!   reconnect (idempotent by strict-`>` clock compare). Repeated writes to
-//!   one row in the unsent tail coalesce ([`coalesce_ops`]) wherever the
-//!   room's outcome — rows AND push notifications — stays identical, so an
-//!   offline queue grows with rows touched and status transitions, not with
-//!   writes made (see `RegistryDoc::coalesce_unsent`);
+//! - `authoritative` rows — the server's truth, replaced wholesale by `state`/ `rows` frames (the
+//!   server merges; clients never re-merge server rows);
+//! - `pending` op batches — local writes not yet acked, replayed over the authoritative rows for
+//!   every read (optimistic overlay), re-pushed on reconnect (idempotent by strict-`>` clock
+//!   compare). Repeated writes to one row in the unsent tail coalesce ([`coalesce_ops`]) wherever
+//!   the room's outcome — rows AND push notifications — stays identical, so an offline queue grows
+//!   with rows touched and status transitions, not with writes made (see
+//!   `RegistryDoc::coalesce_unsent`);
 //! - an HLC clock stamping every local write.
 //!
 //! A local-only replica ([`RegistryDoc::set_local_only`]) has no server to
@@ -25,12 +24,11 @@
 use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-
 use onicode_proto::{
     Chat, ChatConfig, Device, MAX_SIDEBAR_PINS, Session, SidebarPreferences, Space,
 };
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use crate::schema::DocError;
 use crate::workspace::{DeletedSpace, WorkspaceState};
@@ -307,9 +305,9 @@ pub fn row_to_seed_op(row: &RegistryRow) -> RowOp {
 /// existence: an update never creates/revives, and an upsert revives a
 /// tombstone on its own `hlc` with ALL its fields. So:
 /// - `b` update: `a` alone decides existence → `a`'s kind and revival clock;
-/// - `b` upsert: exact when `a` (an upsert) can never revive where `b` would
-///   not (`b.hlc <= a.hlc`), or when `b` overwrites every field `a` wrote
-///   with a newer clock — whatever `a` revived or created, `b` replaces;
+/// - `b` upsert: exact when `a` (an upsert) can never revive where `b` would not (`b.hlc <=
+///   a.hlc`), or when `b` overwrites every field `a` wrote with a newer clock — whatever `a`
+///   revived or created, `b` replaces;
 /// - deletes compare against the row's clocks at apply time and never fold.
 ///
 /// The steady-state writers (full-row session/chat/device upserts, field
@@ -837,21 +835,18 @@ impl RegistryDoc {
     /// one seq and one rows broadcast, and push notifications derived from
     /// each `sessions` row before vs after the WHOLE batch, labelled from the
     /// chat row after it. So:
-    /// - only single-op batches (one local write each) take part. Multi-op
-    ///   batches — cascade deletes, re-seeds, migration seeds — are written
-    ///   as units and keep every op, in place;
-    /// - a merged op lands at the LATER op's position and the earlier one is
-    ///   removed. Moving an op later only reorders it against other rows,
-    ///   which merge independently — except a session notification reads
-    ///   its chat row, so a session op never moves past a chat op that
-    ///   gates notifications, nor such a chat op past a session op;
-    /// - session ops merge only when status and completed turn match, and
-    ///   the first op of each such run (a potential notification) never
-    ///   absorbs later ones: working→needs-input→working stays three ops,
-    ///   while a run of keepalive touches folds into the run head plus one.
-    ///   Then every batch the room applies yields the same notifications as
-    ///   the unmerged queue (the merged follower can only re-cross the
-    ///   staleness window once, exactly as the touches it replaces would).
+    /// - only single-op batches (one local write each) take part. Multi-op batches — cascade
+    ///   deletes, re-seeds, migration seeds — are written as units and keep every op, in place;
+    /// - a merged op lands at the LATER op's position and the earlier one is removed. Moving an op
+    ///   later only reorders it against other rows, which merge independently — except a session
+    ///   notification reads its chat row, so a session op never moves past a chat op that gates
+    ///   notifications, nor such a chat op past a session op;
+    /// - session ops merge only when status and completed turn match, and the first op of each such
+    ///   run (a potential notification) never absorbs later ones: working→needs-input→working stays
+    ///   three ops, while a run of keepalive touches folds into the run head plus one. Then every
+    ///   batch the room applies yields the same notifications as the unmerged queue (the merged
+    ///   follower can only re-cross the staleness window once, exactly as the touches it replaces
+    ///   would).
     ///
     /// Ack safety: in-flight batches are never touched, so an ack always
     /// retires exactly what was pushed. A tail batch may still have been

@@ -2,26 +2,21 @@
 //! (tests/fixtures/fake-registry-signin.py, one shape each, from the wire on
 //! Nov 2 2026), each added as the registry adds an agent:
 //!
-//! - one that starts its sign-in in a session's auth_required answer, its
-//!   device code there, and whose `authenticate` then opens the page with
-//!   the system's `open` and waits for the pairing (Factory Droid): asked in
-//!   ACP's order (a session first), its code and page reported, signed in;
-//! - one whose `authenticate` never signs anything in: not taken for signed
-//!   in; handed to a terminal, its own CLI run bare (no ACP arguments);
-//! - one whose sign-in is its own `command` in the older `_meta` form
-//!   (Kimi's `kimi login`): that command, not the ACP launch with `login`
-//!   after it; its device page reported;
-//! - one signed in already (what the user hit on Nov 3: the sign-in found a
-//!   session and ended at once, no page): said signed in when asked, without
-//!   signing in, and signed out by its `logout`;
-//! - one that says who it's signed in as (an email in its session's
-//!   `_meta`);
-//! - one that asks for its page to be opened (ACP's `elicitation/create`,
-//!   `url` mode), which only a client that says it can is asked: the page
-//!   reported, accepted, signed in;
-//! - one that opens its page with the system's `open`, never `$BROWSER`
-//!   (Gemini CLI): the page recorded for the app to open (no browser here),
-//!   and the callback it waits for finishes it.
+//! - one that starts its sign-in in a session's auth_required answer, its device code there, and
+//!   whose `authenticate` then opens the page with the system's `open` and waits for the pairing
+//!   (Factory Droid): asked in ACP's order (a session first), its code and page reported, signed
+//!   in;
+//! - one whose `authenticate` never signs anything in: not taken for signed in; handed to a
+//!   terminal, its own CLI run bare (no ACP arguments);
+//! - one whose sign-in is its own `command` in the older `_meta` form (Kimi's `kimi login`): that
+//!   command, not the ACP launch with `login` after it; its device page reported;
+//! - one signed in already (what the user hit on Nov 3: the sign-in found a session and ended at
+//!   once, no page): said signed in when asked, without signing in, and signed out by its `logout`;
+//! - one that says who it's signed in as (an email in its session's `_meta`);
+//! - one that asks for its page to be opened (ACP's `elicitation/create`, `url` mode), which only a
+//!   client that says it can is asked: the page reported, accepted, signed in;
+//! - one that opens its page with the system's `open`, never `$BROWSER` (Gemini CLI): the page
+//!   recorded for the app to open (no browser here), and the callback it waits for finishes it.
 
 #![cfg(unix)]
 

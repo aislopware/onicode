@@ -2,20 +2,17 @@
 //! model provider (OpenCode, Pi) — the same flows those agents run in their
 //! own `/login`, with the result written in their own entry format.
 //!
-//! - **ChatGPT** (OpenCode `openai`, Pi `openai-codex`): OpenAI's PKCE
-//!   authorization-code flow with the Codex CLI's public client, redirecting
-//!   to `http://localhost:1455/auth/callback` — the port is FIXED by the
-//!   client registration, so this flow, `codex login` and the agents' own
-//!   logins can't overlap (a new one supersedes any of ours holding it).
-//!   Each login is a fresh grant: a refresh token is never shared with the
-//!   Codex slots (OpenAI rotates them, so sharing one logs the other out).
-//!   The callback port is reported, so a remote login tunnels it.
-//! - **GitHub Copilot** (OpenCode `github-copilot`): GitHub's device flow
-//!   with OpenCode's OAuth app (scope `read:user`) — the dialog shows the
-//!   code; no loopback, so a remote login needs no tunnel. OpenCode stores
-//!   the GitHub token as both `access` and `refresh` with `expires: 0`.
-//!   Pi's Copilot login exchanges the token for an internal Copilot session
-//!   and is left to pi's own `/login`.
+//! - **ChatGPT** (OpenCode `openai`, Pi `openai-codex`): OpenAI's PKCE authorization-code flow with
+//!   the Codex CLI's public client, redirecting to `http://localhost:1455/auth/callback` — the port
+//!   is FIXED by the client registration, so this flow, `codex login` and the agents' own logins
+//!   can't overlap (a new one supersedes any of ours holding it). Each login is a fresh grant: a
+//!   refresh token is never shared with the Codex slots (OpenAI rotates them, so sharing one logs
+//!   the other out). The callback port is reported, so a remote login tunnels it.
+//! - **GitHub Copilot** (OpenCode `github-copilot`): GitHub's device flow with OpenCode's OAuth app
+//!   (scope `read:user`) — the dialog shows the code; no loopback, so a remote login needs no
+//!   tunnel. OpenCode stores the GitHub token as both `access` and `refresh` with `expires: 0`.
+//!   Pi's Copilot login exchanges the token for an internal Copilot session and is left to pi's own
+//!   `/login`.
 
 use super::stores::{Upstream, openai_detected, upstream_of};
 use super::*;

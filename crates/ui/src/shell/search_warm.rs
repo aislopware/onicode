@@ -58,10 +58,11 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
+    use gpui::AppContext as _;
+
     use super::*;
     use crate::state::AppState;
     use crate::theme::Theme;
-    use gpui::AppContext as _;
 
     fn test_shell(
         cx: &mut gpui::TestAppContext,

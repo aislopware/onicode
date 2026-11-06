@@ -2,8 +2,9 @@
 //! keeps its place in the stream under a foldable header (the Changes pane's
 //! convention), the current file's header stays pinned while its body
 //! scrolls, and the tree follows the scroll position.
-use super::*;
 use std::ops::Range;
+
+use super::*;
 
 const FILES_WIDTH: f32 = 260.0;
 const WORKSPACE_GAP: f32 = 16.0;

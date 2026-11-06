@@ -1,9 +1,12 @@
-use std::{collections::HashSet, time::Duration};
+use std::collections::HashSet;
+use std::time::Duration;
 
 use gpui::Context;
 use onicode_proto::{WorkspaceFileChangeKind, WorkspaceFileChanges};
 
-use super::{FilesEvent, FilesSurface, client::WorkspaceFilesClient, model::parent_path};
+use super::client::WorkspaceFilesClient;
+use super::model::parent_path;
+use super::{FilesEvent, FilesSurface};
 
 impl FilesSurface {
     /// Stop following a host that won't answer (a sleeping Cloud machine);
@@ -210,8 +213,9 @@ pub(super) fn sequence_needs_resync(previous: Option<u64>, next: u64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::AppContext;
+
+    use super::*;
 
     #[gpui::test]
     fn completed_save_refreshes_revision_before_the_next_mutation(cx: &mut gpui::TestAppContext) {

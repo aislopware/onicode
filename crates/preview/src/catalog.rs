@@ -1,16 +1,16 @@
 //! Persisted names are independent of ephemeral process/listener observations.
-use crate::discovery::{Listener, command_identity, framework};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
 use anyhow::Context;
 use onicode_preview_label::process_label;
 use onicode_proto::{PREVIEW_PROXY_PORT, PreviewService, PreviewSnapshot};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-};
 use tokio::sync::watch;
+
+use crate::discovery::{Listener, command_identity, framework};
 
 #[derive(Clone)]
 pub struct Catalog(Arc<Inner>);
@@ -133,15 +133,19 @@ impl Catalog {
             changes,
         })))
     }
+
     pub fn device_id(&self) -> &str {
         &self.0.device_id
     }
+
     pub fn subscribe(&self) -> watch::Receiver<PreviewSnapshot> {
         self.0.changes.subscribe()
     }
+
     pub fn snapshot(&self) -> PreviewSnapshot {
         self.0.changes.borrow().clone()
     }
+
     pub fn local_services(&self) -> Vec<PreviewService> {
         {
             let mut services: Vec<_> = self
@@ -157,9 +161,11 @@ impl Catalog {
             services
         }
     }
+
     pub fn local_route(&self, id: &str) -> Option<LocalRoute> {
         self.0.state.lock().unwrap().routes.get(id).cloned()
     }
+
     pub fn by_hostname(&self, hostname: &str) -> Option<PreviewService> {
         // Ambiguous remote aliases never pick an arbitrary machine. Local
         // aliases retain their established meaning when a peer has the same name.
@@ -179,12 +185,14 @@ impl Catalog {
         let result = matches.next()?.clone();
         matches.next().is_none().then_some(result)
     }
+
     pub fn set_proxy_status(&self, port: u16, error: Option<String>) {
         let mut state = self.0.state.lock().unwrap();
         state.proxy_port = port;
         state.error = error;
         self.publish(&state);
     }
+
     pub fn set_remote(
         &self,
         device: &str,
@@ -235,16 +243,19 @@ impl Catalog {
         self.publish(&state);
         Ok(())
     }
+
     pub fn remove_remote(&self, device: &str) {
         let mut state = self.0.state.lock().unwrap();
         state.remote.remove(device);
         self.publish(&state);
     }
+
     pub fn clear_remote(&self) {
         let mut state = self.0.state.lock().unwrap();
         state.remote.clear();
         self.publish(&state);
     }
+
     fn persist(&self, names: &Names) -> anyhow::Result<()> {
         let parent = self
             .0
@@ -260,6 +271,7 @@ impl Catalog {
         std::fs::rename(temporary, &self.0.file)?;
         Ok(())
     }
+
     fn publish(&self, state: &State) {
         let mut services: Vec<_> = state
             .routes
@@ -299,6 +311,7 @@ impl Catalog {
             }
         });
     }
+
     /// Input has already passed origin attribution and an HTTP handshake probe.
     pub fn replace_local(&self, mut observations: Vec<(PathBuf, Listener)>) -> anyhow::Result<()> {
         observations.sort_by_key(|(root, l)| {

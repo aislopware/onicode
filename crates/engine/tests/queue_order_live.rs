@@ -3,16 +3,18 @@
 //! its busy state lands, or any remote client), the composer queue, and
 //! explicit steering (queue-row Steer / Send next, MCP `send_message` steer).
 //!
-//! ONICODE_TEST_HARNESS=pi cargo test -p onicode-engine --test queue_order_live -- --ignored --nocapture
-//! ONICODE_TEST_MODEL optionally pins the model; ONICODE_TEST_SCENARIO runs one of
+//! ONICODE_TEST_HARNESS=pi cargo test -p onicode-engine --test queue_order_live -- --ignored
+//! --nocapture ONICODE_TEST_MODEL optionally pins the model; ONICODE_TEST_SCENARIO runs one of
 //! `sends`, `queue`, `steer`.
+use std::sync::Arc;
+use std::time::Duration;
+
 use onicode_doc::{MessagePart, MessageRole, SessionCommandPayload, SessionMessageEntry};
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::{
     AcpHarness, ClaudeHarness, CodexHarness, CursorHarness, Harness, OpencodeHarness,
 };
 use onicode_proto::{ChatConfig, HarnessId, RunRequest, SandboxLevel, SessionStatus};
-use std::{sync::Arc, time::Duration};
 
 const CHAT: &str = "order";
 

@@ -38,26 +38,34 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
         hidesBottomBarWhenPushed = true
     }
 
-    required init?(coder _: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Palette.background
         // The app can be killed in the background: the draft goes to disk first.
-        backgroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
             self?.saveDraft()
         }
         navigationItem.largeTitleDisplayMode = .never
         // The title and "project @ device" head the ⋯ menu instead of
         // crowding the bar.
         navigationItem.titleView = UIView()
-        navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: sessionMenu(title: "", subtitle: ""))
-        navigationItem.rightBarButtonItem?.accessibilityIdentifier = "session-menu"
-        companionsItem = UIBarButtonItem(image: UIImage(systemName: "square.stack.3d.up"), primaryAction: UIAction { [weak self] _ in
-            self?.showCompanions(section: nil)
-        })
-        companionsItem.accessibilityLabel = "Agents, side chats and terminals"
-        companionsItem.accessibilityIdentifier = "session-companions"
+        let menu = UIBarButtonItem(
+            image: UIImage(systemName: "ellipsis"), menu: sessionMenu(title: "", subtitle: ""))
+        navigationItem.rightBarButtonItem = menu
+        menu.accessibilityIdentifier = "session-menu"
+        let companions = UIBarButtonItem(
+            image: UIImage(systemName: "square.stack.3d.up"),
+            primaryAction: UIAction { [weak self] _ in
+                self?.showCompanions(section: nil)
+            })
+        companionsItem = companions
+        companions.accessibilityLabel = "Agents, side chats and terminals"
+        companions.accessibilityIdentifier = "session-companions"
         // The session has its own composer, so the tab bar's voice control
         // steps aside with the accessory; the call stays a tap away up here.
         let voiceBar = VoiceBarItem(app: app, host: self)
@@ -65,8 +73,6 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
         // A custom view reads as horizontal-only; on iPhone Duo it joins ⋯ in
         // the vertical bar.
         voiceBar.item.axisBehavior = .verticalPreferred
-        let menu = navigationItem.rightBarButtonItem!
-        let companions = companionsItem!
         let syncVoice = { [weak self, weak voiceBar] in
             guard let self, let voiceBar else { return }
             let items = voiceBar.visible ? [menu, companions, voiceBar.item] : [menu, companions]
@@ -97,7 +103,9 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
         }
         list.onSubagent = { [weak self] doc, title, running in
             guard let self else { return }
-            self.presentCompanion(SubagentViewController(app: self.app, parentId: self.chatId, docId: doc, title: title, running: running))
+            self.presentCompanion(
+                SubagentViewController(app: self.app, parentId: self.chatId, docId: doc, title: title, running: running)
+            )
         }
         list.onOpenChat = { [weak self] id in
             guard let self, id != self.chatId else { return }
@@ -126,7 +134,9 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
 
         composer.attachMenu = { [weak self] in
             guard let self else { return UIMenu() }
-            return AttachmentPicker.menu(host: self, limit: 8 - self.composer.images.count) { [weak self] in self?.composer.addImages($0) }
+            return AttachmentPicker.menu(host: self, limit: 8 - self.composer.images.count) { [weak self] in
+                self?.composer.addImages($0)
+            }
         }
         // The model chip opens the picker sheet (tabs per provider).
         composer.onChipTap = { [weak self] id, _ in
@@ -308,12 +318,14 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
             if wasEmpty != state.isEmpty { render(animated: animated) }
         }
         // Violet like the working glyphs: a running agent isn't an alert.
-        companionsItem.badge = state.runningAgents > 0 ? {
-            var badge = UIBarButtonItem.Badge.count(state.runningAgents)
-            badge.backgroundColor = Palette.accent
-            badge.foregroundColor = .white
-            return badge
-        }() : nil
+        companionsItem.badge =
+            state.runningAgents > 0
+            ? {
+                var badge = UIBarButtonItem.Badge.count(state.runningAgents)
+                badge.backgroundColor = Palette.accent
+                badge.foregroundColor = .white
+                return badge
+            }() : nil
         if parentId != nil, navigationItem.subtitle == nil {
             let parent = parentId.flatMap { app.row($0)?.title } ?? ""
             navigationItem.titleView = nil
@@ -377,7 +389,9 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
     override var keyCommands: [UIKeyCommand]? {
         [
             UIKeyCommand(title: "Terminal", action: #selector(terminalCommand), input: "j", modifierFlags: .command),
-            UIKeyCommand(title: "Agents, Side Chats & Terminals", action: #selector(companionsCommand), input: "0", modifierFlags: [.command, .alternate]),
+            UIKeyCommand(
+                title: "Agents, Side Chats & Terminals", action: #selector(companionsCommand), input: "0",
+                modifierFlags: [.command, .alternate]),
         ]
     }
 
@@ -447,9 +461,12 @@ final class SessionViewController: UIViewController, UIGestureRecognizerDelegate
             self.list.alpha = 1
             self.loader.alpha = 0
         }
-        if UIAccessibility.isReduceMotionEnabled { reveal()
-return }
-        UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut, .allowUserInteraction], animations: reveal)
+        if UIAccessibility.isReduceMotionEnabled {
+            reveal()
+            return
+        }
+        UIView.animate(
+            withDuration: 0.18, delay: 0, options: [.curveEaseOut, .allowUserInteraction], animations: reveal)
     }
 
     #if DEBUG
@@ -467,8 +484,13 @@ return }
             let vc = TerminalViewController(app: app, chatId: chatId, tab: nil)
             vc.script = args.contains("-terminal-demo") ? ["git log --oneline -5", "cargo test -p onicode-veil"] : []
             presentCompanion(vc)
-        } else if let tool = value("-subagent"), let row = app.sessionSubagents(chatId).first(where: { $0.id == tool || $0.docId?.hasSuffix(tool) == true }), let doc = row.docId {
-            presentCompanion(SubagentViewController(app: app, parentId: chatId, docId: doc, title: row.title, running: row.state == .running))
+        } else if let tool = value("-subagent"),
+            let row = app.sessionSubagents(chatId).first(where: { $0.id == tool || $0.docId?.hasSuffix(tool) == true }),
+            let doc = row.docId
+        {
+            presentCompanion(
+                SubagentViewController(
+                    app: app, parentId: chatId, docId: doc, title: row.title, running: row.state == .running))
         } else if let side = value("-side-chat") {
             openSideChat(side)
         }
@@ -483,9 +505,13 @@ return }
         list.settleEdgeEffect()
         #if DEBUG
         // Screenshots: `-model-picker` opens the picker once.
-        if ProcessInfo.processInfo.arguments.contains("-model-picker"), !Self.debugPickerShown, let picker = source.modelPicker() {
+        if ProcessInfo.processInfo.arguments.contains("-model-picker"), !Self.debugPickerShown,
+            let picker = source.modelPicker()
+        {
             Self.debugPickerShown = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.present(picker, animated: true) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                self?.present(picker, animated: true)
+            }
         }
         #endif
         #if DEBUG
@@ -544,7 +570,9 @@ return }
         tornDown = true
         if Self.liveSessions[chatId]?.session === self { Self.liveSessions[chatId] = nil }
         // A side chat started here and left without a word: gone.
-        if app.freshSideChats.contains(chatId), source.isUnused, Drafts.load(chatId).isEmpty, app.row(chatId)?.preview == nil {
+        if app.freshSideChats.contains(chatId), source.isUnused, Drafts.load(chatId).isEmpty,
+            app.row(chatId)?.preview == nil
+        {
             app.forgetFreshSideChat(chatId)
             app.delete(chatId)
         }
@@ -600,7 +628,9 @@ return }
     /// Putting the composer away rides along with the transcript's own taps
     /// (links, images). Tap recognizers are exclusive by default: this one
     /// won and every link tap was dropped.
-    func gestureRecognizer(_: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+    func gestureRecognizer(
+        _: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool {
         other.view.map { $0 === list || $0.isDescendant(of: list) } ?? false
     }
 
@@ -655,7 +685,9 @@ return }
             defer { editPending = false }
             if switching { await source.finishEdit(text: nil) }
             guard let text = await source.beginEdit(id) else {
-                let alert = UIAlertController(title: "Can't edit right now", message: "Another device is editing this message, or it was just sent.", preferredStyle: .alert)
+                let alert = UIAlertController(
+                    title: "Can't edit right now",
+                    message: "Another device is editing this message, or it was just sent.", preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: "OK", style: .default))
                 present(alert, animated: true)
                 return
@@ -704,7 +736,9 @@ return }
             showTranscriptIfReady()
             // Open latency: push → first measured frame on screen.
             let ms = (CACurrentMediaTime() - openedAt) * 1_000
-            let json = String(format: "{\"openMs\":%.1f,\"rows\":%d,\"layoutPassMs\":%.2f}", ms, frame.rowCount(), Double(frame.buildMicros()) / 1_000)
+            let json = String(
+                format: "{\"openMs\":%.1f,\"rows\":%d,\"layoutPassMs\":%.2f}", ms, frame.rowCount(),
+                Double(frame.buildMicros()) / 1_000)
             NSLog("OPEN %@", json)
             if ProcessInfo.processInfo.arguments.contains("-measureopen") {
                 let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -715,7 +749,10 @@ return }
 
     private func setJumpVisible(_ visible: Bool) {
         guard (jump.alpha > 0.5) != visible else { return }
-        UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState]) {
+        UIView.animate(
+            withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0,
+            options: [.allowUserInteraction, .beginFromCurrentState]
+        ) {
             self.jump.alpha = visible ? 1 : 0
             self.jump.transform = visible ? .identity : CGAffineTransform(scaleX: 0.6, y: 0.6)
         }
@@ -757,9 +794,10 @@ return }
         composer.canSteer = c.canSteer
         composer.placeholder = c.placeholder
         composer.chips = c.chips
-        composer.chipMenus = Dictionary(uniqueKeysWithValues: c.chips.map { chip in
-            (chip.id, { [weak self] in self?.source.chipMenu(chip.id) })
-        })
+        composer.chipMenus = Dictionary(
+            uniqueKeysWithValues: c.chips.map { chip in
+                (chip.id, { [weak self] in self?.source.chipMenu(chip.id) })
+            })
         // One banner for both the row's animation and its contents (the
         // Cloud reading may turn a "not delivered" into nothing).
         let banner: SessionChrome.Banner = editingQueueId != nil ? .editing : cloudBanner(c.banner)
@@ -779,7 +817,9 @@ return }
         }
         let stripShown = !(pill.superview?.isHidden ?? true)
         let stripWanted = banner != .none || !strip.state.isEmpty
-        let structural = (old.questions == nil) != (c.questions == nil) || old.queue.count != c.queue.count || (old.banner == .none) != (c.banner == .none) || stripShown != stripWanted
+        let structural =
+            (old.questions == nil) != (c.questions == nil) || old.queue.count != c.queue.count
+            || (old.banner == .none) != (c.banner == .none) || stripShown != stripWanted
         // Panels materialize when their content appears; a first render (the
         // session reopened with a queue or an open question) shows them at
         // once — they used to stay dematerialized, so the queue "vanished"
@@ -791,7 +831,9 @@ return }
             queue.setGlassVisible(!c.queue.isEmpty, animated: animated)
         }
         if animated, structural {
-            UIView.animate(withDuration: 0.38, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState], animations: changes)
+            UIView.animate(
+                withDuration: 0.38, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0,
+                options: [.allowUserInteraction, .beginFromCurrentState], animations: changes)
         } else {
             changes()
         }
@@ -802,34 +844,50 @@ return }
         // The header wraps: title, then where it runs, on its own line (a
         // menu's subtitle isn't drawn in the header).
         let header = subtitle.isEmpty ? title : "\(title)\n\(subtitle)"
-        return UIMenu(title: header, children: [UIDeferredMenuElement.uncached { [weak self] done in
-            guard let self else { return done([]) }
-            let vm = self.app.session(self.chatId)
-            let pinned = vm?.pinned ?? false
-            let isSide = self.parentId != nil
-            let companions = UIMenu(options: .displayInline, children: [
-                UIAction(title: "New Side Chat", image: UIImage(systemName: "bubble.left.and.text.bubble.right")) { _ in
-                    guard let root = isSide ? self.parentId : self.chatId, let id = self.app.createSideChat(parentId: root) else { return }
-                    self.openSideChat(id)
-                },
-                UIAction(title: "Fork Into Side Chat", image: UIImage(systemName: "arrow.triangle.branch")) { _ in self.fork() },
-                UIAction(title: "Terminal", image: UIImage(systemName: "apple.terminal")) { _ in self.openTerminal() },
+        return UIMenu(
+            title: header,
+            children: [
+                UIDeferredMenuElement.uncached { [weak self] done in
+                    guard let self else { return done([]) }
+                    let vm = self.app.session(self.chatId)
+                    let pinned = vm?.pinned ?? false
+                    let isSide = self.parentId != nil
+                    let companions = UIMenu(
+                        options: .displayInline,
+                        children: [
+                            UIAction(
+                                title: "New Side Chat", image: UIImage(systemName: "bubble.left.and.text.bubble.right")
+                            ) { _ in
+                                guard let root = isSide ? self.parentId : self.chatId,
+                                    let id = self.app.createSideChat(parentId: root)
+                                else { return }
+                                self.openSideChat(id)
+                            },
+                            UIAction(
+                                title: "Fork Into Side Chat", image: UIImage(systemName: "arrow.triangle.branch")
+                            ) { _ in self.fork() },
+                            UIAction(title: "Terminal", image: UIImage(systemName: "apple.terminal")) { _ in
+                                self.openTerminal()
+                            },
+                        ])
+                    done([
+                        companions,
+                        UIAction(
+                            title: pinned ? "Unpin" : "Pin", image: UIImage(systemName: pinned ? "pin.slash" : "pin")
+                        ) { _ in self.app.setPinned(self.chatId, !pinned) },
+                        UIAction(title: "Copy Transcript", image: UIImage(systemName: "doc.on.doc")) { _ in
+                            UIPasteboard.general.string = self.engine.frame().plainText()
+                        },
+                        UIAction(title: "Archive", image: UIImage(systemName: "archivebox")) { _ in
+                            self.app.archive(self.chatId)
+                            self.leave()
+                        },
+                        UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
+                            self.confirmDelete(app: self.app, self.chatId) { self.leave() }
+                        },
+                    ])
+                }
             ])
-            done([
-                companions,
-                UIAction(title: pinned ? "Unpin" : "Pin", image: UIImage(systemName: pinned ? "pin.slash" : "pin")) { _ in self.app.setPinned(self.chatId, !pinned) },
-                UIAction(title: "Copy Transcript", image: UIImage(systemName: "doc.on.doc")) { _ in
-                    UIPasteboard.general.string = self.engine.frame().plainText()
-                },
-                UIAction(title: "Archive", image: UIImage(systemName: "archivebox")) { _ in
-                    self.app.archive(self.chatId)
-                    self.leave()
-                },
-                UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
-                    self.confirmDelete(app: self.app, self.chatId) { self.leave() }
-                },
-            ])
-        }])
     }
 
     private func fork() {
@@ -871,15 +929,20 @@ extension UIViewController {
         guard let app else { return }
         let row = app.row(id)
         let title = row.map { $0.hasTitle ? $0.title : "New session" } ?? "This session"
-        let message = row?.isCloud == true
-            ? "\u{201C}\(title)\u{201D} and its Cloud machine will be permanently deleted, with anything not pushed from it. This can\u{2019}t be undone."
-            : "\u{201C}\(title)\u{201D} will be permanently deleted. This can\u{2019}t be undone."
+        let message: String
+        if row?.isCloud == true {
+            message =
+                "\u{201C}\(title)\u{201D} and its Cloud machine will be permanently deleted, with anything not pushed from it. This can\u{2019}t be undone."
+        } else {
+            message = "\u{201C}\(title)\u{201D} will be permanently deleted. This can\u{2019}t be undone."
+        }
         let alert = UIAlertController(title: "Delete session?", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { _ in
-            app.delete(id)
-            then()
-        })
+        alert.addAction(
+            UIAlertAction(title: "Delete", style: .destructive) { _ in
+                app.delete(id)
+                then()
+            })
         present(alert, animated: true)
     }
 
@@ -887,7 +950,8 @@ extension UIViewController {
     /// area, `composerRestGap` up. Returns the rest constraint.
     func pinAboveKeyboard(_ bar: UIView) -> NSLayoutConstraint {
         view.keyboardLayoutGuide.usesBottomSafeArea = false
-        let rest = bar.bottomAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -composerRestGap)
+        let rest = bar.bottomAnchor.constraint(
+            lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -composerRestGap)
         let down = bar.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         down.priority = .defaultLow
         NSLayoutConstraint.activate([
@@ -906,7 +970,7 @@ extension UIViewController {
     /// toolbar is. On its own (tab shell, sheet, sidebar hidden) 8pt up.
     var composerRestGap: CGFloat {
         guard mainShell == nil, let split = splitViewController as? SplitRootController,
-              let window = view.window, let middle = split.sidebarToolbarMidY(in: window)
+            let window = view.window, let middle = split.sidebarToolbarMidY(in: window)
         else { return 8 }
         let y = view.convert(CGPoint(x: 0, y: middle), from: window).y
         let safeBottom = view.bounds.maxY - view.safeAreaInsets.bottom
@@ -965,7 +1029,8 @@ final class CloudCreditsNotice: UIView {
         accessibilityIdentifier = "cloud-credits-notice"
     }
 
-    required init?(coder _: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     /// A send was refused: a short shake and a warning tap point at it.
     func nudge() {
@@ -1015,7 +1080,8 @@ final class StatusPill: UIControl {
         addAction(UIAction { [weak self] _ in self?.onTap?() }, for: .touchUpInside)
     }
 
-    required init?(coder _: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private func update() {
         timer?.invalidate()

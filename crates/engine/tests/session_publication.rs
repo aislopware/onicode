@@ -1,23 +1,21 @@
 //! Real Codex adapter + engine persistence + ChatClient over a loopback relay.
 //! Faults are injected only in temporary profiles and the test relay.
-use futures::{SinkExt, StreamExt, future::BoxFuture};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use futures::future::BoxFuture;
+use futures::{SinkExt, StreamExt};
 use loro::{ExportMode, LoroDoc};
 use onicode_doc::{MessageRole, MessageStatus, SessionDoc};
-use onicode_engine::{
-    EdgeConfig, EngineCore, EngineProfile, HarnessRegistry, chat2_host::EngineChatSink,
-};
+use onicode_engine::chat2_host::EngineChatSink;
+use onicode_engine::{EdgeConfig, EngineCore, EngineProfile, HarnessRegistry};
 use onicode_harness::CodexHarness;
 use onicode_proto::{HarnessId, ReasoningLevel, RunRequest, SandboxLevel, SessionStatus};
+use onicode_sync::chat_client::RowImportOutcome;
 use onicode_sync::chat_frames::{decode, encode, frame_type};
-use onicode_sync::{
-    ChatClient, ChatDocSink, CheckpointFetcher, DocsStore, SyncError, chat_client::RowImportOutcome,
-};
-use std::collections::HashMap;
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
-};
-use std::time::Duration;
+use onicode_sync::{ChatClient, ChatDocSink, CheckpointFetcher, DocsStore, SyncError};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 const CHAT: &str = "publication-regression";

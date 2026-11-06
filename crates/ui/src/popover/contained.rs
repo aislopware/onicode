@@ -1,10 +1,12 @@
 //! Dropdown placement within a dialog, measured after layout.
 
+use std::time::Instant;
+
+use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Bounds, Element, GlobalElementId, InspectorElementId, IntoElement, LayoutId,
-    Pixels, Point, Position, SharedString, Size, Style, Window, div, point, prelude::*, px,
+    Pixels, Point, Position, SharedString, Size, Style, Window, div, point, px,
 };
-use std::time::Instant;
 
 /// Which trigger edge the menu lines up with: `End` grows leftward from the
 /// trigger's right edge, `Start` rightward from its left edge.
@@ -105,18 +107,20 @@ struct ContainedMenu {
 
 impl IntoElement for ContainedMenu {
     type Element = Self;
+
     fn into_element(self) -> Self {
         self
     }
 }
 
 impl Element for ContainedMenu {
-    type RequestLayoutState = LayoutId;
     type PrepaintState = ();
+    type RequestLayoutState = LayoutId;
 
     fn id(&self) -> Option<gpui::ElementId> {
         None
     }
+
     fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
         None
     }
@@ -178,8 +182,9 @@ impl Element for ContainedMenu {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::size;
+
+    use super::*;
 
     #[test]
     fn dropdown_stays_in_dialog_without_covering_trigger() {

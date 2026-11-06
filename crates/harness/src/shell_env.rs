@@ -11,24 +11,23 @@
 //! it resolves here too. A few other variables the rc files commonly own
 //! (corporate CA bundles, the SSH agent socket, the locale, the proxy
 //! configuration) are kept as well and handed to agent children that lack
-//! them ([`child_env_defaults`]). The proxy variables travel as one
+//! them (`child_env_defaults`). The proxy variables travel as one
 //! all-or-nothing group, both spellings together: they are only supplied
 //! when neither this process nor the driver has any proxy of its own, and
 //! their values (which may embed credentials) are never logged.
 //!
 //! The snapshot is captured once per process (cached, including a negative
 //! result) and is defensive about hostile shell init:
-//! - `-lic` first (interactive login — nvm and friends load in rc files),
-//!   falling back to `-lc` if that produces nothing (some rc files hang or
-//!   `exec` a multiplexer when interactive).
-//! - The shell runs in its own session, without a controlling terminal: an
-//!   interactive shell cannot take over the terminal onicode was started from.
-//! - Output is read on a side thread into a shared buffer; the poll loop
-//!   returns as soon as the end marker appears, so init that blocks *after*
-//!   printing (or grandchildren inheriting the pipe) can't wedge us.
-//! - A hard per-attempt timeout kills the shell, and the candidate shells
-//!   ($SHELL, the passwd entry, the platform default) share one overall
-//!   budget. macOS falls back to launchd's PATH when no shell answers.
+//! - `-lic` first (interactive login — nvm and friends load in rc files), falling back to `-lc` if
+//!   that produces nothing (some rc files hang or `exec` a multiplexer when interactive).
+//! - The shell runs in its own session, without a controlling terminal: an interactive shell cannot
+//!   take over the terminal onicode was started from.
+//! - Output is read on a side thread into a shared buffer; the poll loop returns as soon as the end
+//!   marker appears, so init that blocks *after* printing (or grandchildren inheriting the pipe)
+//!   can't wedge us.
+//! - A hard per-attempt timeout kills the shell, and the candidate shells ($SHELL, the passwd
+//!   entry, the platform default) share one overall budget. macOS falls back to launchd's PATH when
+//!   no shell answers.
 //!
 //! Set `ONICODE_NO_LOGIN_SHELL=1` to disable the snapshot entirely.
 
@@ -152,7 +151,6 @@ pub fn prewarm() {
 }
 
 mod unix {
-    use super::{CAPTURED_VARS, PROXY_VARS, Snapshot};
     use std::ffi::OsString;
     use std::io::Read;
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
@@ -161,6 +159,8 @@ mod unix {
     use std::process::Stdio;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
+
+    use super::{CAPTURED_VARS, PROXY_VARS, Snapshot};
 
     const BEGIN_MARKER: &str = "__ONICODE_SHELL_ENV_BEGIN__";
     const END_MARKER: &str = "__ONICODE_SHELL_ENV_END__";
@@ -467,8 +467,9 @@ mod unix {
 
     #[cfg(test)]
     mod tests {
-        use super::*;
         use std::os::unix::fs::PermissionsExt;
+
+        use super::*;
 
         fn fake_shell(dir: &Path, body: &str) -> PathBuf {
             let path = dir.join("fake-shell");

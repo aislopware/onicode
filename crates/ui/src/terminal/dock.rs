@@ -4,11 +4,13 @@
 //! requests its layout. The underlay consumes it in prepaint, so neither uses
 //! last frame's composer size when a draft wraps or gains attachments.
 
-use std::{cell::Cell, rc::Rc};
+use std::cell::Cell;
+use std::rc::Rc;
 
+use gpui::prelude::*;
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, Element, GlobalElementId, InspectorElementId,
-    IntoElement, LayoutId, Pixels, Window, div, prelude::*, px,
+    IntoElement, LayoutId, Pixels, Window, div, px,
 };
 
 #[derive(Clone, Copy, Default, Debug)]
@@ -55,20 +57,24 @@ struct Terminal {
 
 impl IntoElement for Terminal {
     type Element = Self;
+
     fn into_element(self) -> Self {
         self
     }
 }
 
 impl Element for Terminal {
-    type RequestLayoutState = AnyElement;
     type PrepaintState = ();
+    type RequestLayoutState = AnyElement;
+
     fn id(&self) -> Option<gpui::ElementId> {
         None
     }
+
     fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
         None
     }
+
     fn request_layout(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -94,6 +100,7 @@ impl Element for Terminal {
             .into_any_element();
         (child.request_layout(window, cx), child)
     }
+
     fn prepaint(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -105,6 +112,7 @@ impl Element for Terminal {
     ) {
         child.prepaint(window, cx);
     }
+
     fn paint(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -137,20 +145,24 @@ struct AboveTerminal {
 
 impl IntoElement for AboveTerminal {
     type Element = Self;
+
     fn into_element(self) -> Self {
         self
     }
 }
 
 impl Element for AboveTerminal {
-    type RequestLayoutState = ();
     type PrepaintState = AnyElement;
+    type RequestLayoutState = ();
+
     fn id(&self) -> Option<gpui::ElementId> {
         None
     }
+
     fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
         None
     }
+
     fn request_layout(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -166,6 +178,7 @@ impl Element for AboveTerminal {
             (),
         )
     }
+
     fn prepaint(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -189,6 +202,7 @@ impl Element for AboveTerminal {
         );
         child
     }
+
     fn paint(
         &mut self,
         _: Option<&GlobalElementId>,

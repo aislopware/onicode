@@ -3,32 +3,28 @@
 //! A Cloud device is an ordinary headless engine whose identity is not a
 //! WorkOS session but an Ed25519 key it enrolled with the edge once:
 //!
-//! - **Detection** at boot: `ONICODE_RUNNER_ENROLL={orgId}.{userId}.{deviceId}.{code}`
-//!   naming the device `{data_dir}/runner.json` already holds (or no env) →
-//!   runner as persisted; the env naming a DIFFERENT device (or no
-//!   runner.json) → enroll as that device. A sandbox forked or restored from
-//!   a template carries the old disk — runner.json, runner-key, device-id and
-//!   the broker's managed credential files — so a mismatched enrollment first
-//!   discards that copied identity (never a native Claude login, never user
-//!   files or repos). Neither → an ordinary laptop/server engine.
-//! - **Enrollment**: generate (or reuse) the key at `{data_dir}/runner-key`
-//!   (PKCS#8, 0600 — always a NEW key: the vault never re-admits a revoked one),
-//!   `POST {edge}/runner/enroll`, then persist `runner.json`
-//!   (0600) and `{data_dir}/device-id` = the edge-minted device id. Network
-//!   failures retry with backoff; a 4xx is fatal (the one-time code is spent).
+//! - **Detection** at boot: `ONICODE_RUNNER_ENROLL={orgId}.{userId}.{deviceId}.{code}` naming the
+//!   device `{data_dir}/runner.json` already holds (or no env) → runner as persisted; the env
+//!   naming a DIFFERENT device (or no runner.json) → enroll as that device. A sandbox forked or
+//!   restored from a template carries the old disk — runner.json, runner-key, device-id and the
+//!   broker's managed credential files — so a mismatched enrollment first discards that copied
+//!   identity (never a native Claude login, never user files or repos). Neither → an ordinary
+//!   laptop/server engine.
+//! - **Enrollment**: generate (or reuse) the key at `{data_dir}/runner-key` (PKCS#8, 0600 — always
+//!   a NEW key: the vault never re-admits a revoked one), `POST {edge}/runner/enroll`, then persist
+//!   `runner.json` (0600) and `{data_dir}/device-id` = the edge-minted device id. Network failures
+//!   retry with backoff; a 4xx is fatal (the one-time code is spent).
 //! - **Tokens**: `POST {edge}/runner/token` signed over
-//!   `onicode-runner-token\n{orgId}\n{userId}\n{deviceId}\n{ts}` — driven by
-//!   [`crate::Auth`]'s runner mode, so every room/relay/RPC bearer consumer
-//!   works unchanged.
-//! - **Heartbeat**: `POST {edge}/runner/heartbeat {activeRuns, clients}` every
-//!   60 s, feeding the CloudAccount DO's per-session idle sleep.
+//!   `onicode-runner-token\n{orgId}\n{userId}\n{deviceId}\n{ts}` — driven by [`crate::Auth`]'s
+//!   runner mode, so every room/relay/RPC bearer consumer works unchanged.
+//! - **Heartbeat**: `POST {edge}/runner/heartbeat {activeRuns, clients}` every 60 s, feeding the
+//!   CloudAccount DO's per-session idle sleep.
 //! - **Session**: every Cloud session runs in its own sandbox, provisioned with
-//!   `ONICODE_CLOUD_{ACCOUNT,CHAT,REPO,PATH,BRANCH}` (persisted to
-//!   `cloud-session.json` for restarts). At boot it clones the project's
-//!   repository and checks out the session's branch ([`prepare_checkout`]);
-//!   runs wait for that, showing its steps live ([`setup_snapshot`]); its
-//!   device row carries the `cloud-session`
-//!   capability so device lists show the account's one Cloud device instead.
+//!   `ONICODE_CLOUD_{ACCOUNT,CHAT,REPO,PATH,BRANCH}` (persisted to `cloud-session.json` for
+//!   restarts). At boot it clones the project's repository and checks out the session's branch
+//!   ([`prepare_checkout`]); runs wait for that, showing its steps live ([`setup_snapshot`]); its
+//!   device row carries the `cloud-session` capability so device lists show the account's one Cloud
+//!   device instead.
 //!
 //! The device's platform string comes from `ONICODE_DEVICE_PLATFORM` (`cloud`
 //! on a Cloud device); a `cloud` platform restricts the harness catalog to
@@ -1069,12 +1065,11 @@ pub fn passive(method: &str) -> bool {
 /// (first beat immediately).
 ///
 /// - `activeRuns`: chats with a turn in flight right now.
-/// - `clients`: relay RPC REQUESTS served to remote devices since the
-///   previous delivered heartbeat (see [`RelayActivity`]) — not open links or
-///   sockets. A laptop that merely keeps a link or a watch stream open must
-///   not keep the Cloud device awake (and billed) forever; the edge treats
-///   `clients > 0` as activity that postpones idle sleep. A heartbeat that
-///   fails to deliver carries its count over to the next one.
+/// - `clients`: relay RPC REQUESTS served to remote devices since the previous delivered heartbeat
+///   (see [`RelayActivity`]) — not open links or sockets. A laptop that merely keeps a link or a
+///   watch stream open must not keep the Cloud device awake (and billed) forever; the edge treats
+///   `clients > 0` as activity that postpones idle sleep. A heartbeat that fails to deliver carries
+///   its count over to the next one.
 pub fn spawn_heartbeat(
     edge_url: &str,
     tokens: Arc<dyn onicode_rpc::TokenSource>,

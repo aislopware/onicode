@@ -5,18 +5,17 @@
 //! the synced profile — through the same write paths every live mutation
 //! uses, so nothing here invents a second persistence or sync mechanism:
 //!
-//!  - chat docs land via `save_snapshot_with_cursor(chat_id, bytes, 0, CHAT2_DOC_EPOCH)`,
-//!    which is exactly the "born chat2" shape: cursor 0 makes the first room
-//!    join push the doc's full update log from VV zero (doc_host first-contact
-//!    push), and epoch 2 keeps `DocHost::open` off the s2 discard-and-adopt
-//!    branch that would drop the transcript.
-//!  - registry rows go through `WorkspaceHost::import_chat_row` /
-//!    `import_space_row` (live upserts: persisted, pushed, watched).
-//!  - attachments are NOT copied or rewritten. Transcripts embed absolute
-//!    paths under the local profile's uploads root, so that root becomes a
-//!    read-only jail root of the synced profile — the exact mechanism the
-//!    legacy-uploads adoption already uses (`EngineProfile::claim_legacy_uploads_root`).
-//!    The marker file re-arms the root on every later synced boot.
+//!  - chat docs land via `save_snapshot_with_cursor(chat_id, bytes, 0, CHAT2_DOC_EPOCH)`, which is
+//!    exactly the "born chat2" shape: cursor 0 makes the first room join push the doc's full update
+//!    log from VV zero (doc_host first-contact push), and epoch 2 keeps `DocHost::open` off the s2
+//!    discard-and-adopt branch that would drop the transcript.
+//!  - registry rows go through `WorkspaceHost::import_chat_row` / `import_space_row` (live upserts:
+//!    persisted, pushed, watched).
+//!  - attachments are NOT copied or rewritten. Transcripts embed absolute paths under the local
+//!    profile's uploads root, so that root becomes a read-only jail root of the synced profile —
+//!    the exact mechanism the legacy-uploads adoption already uses
+//!    (`EngineProfile::claim_legacy_uploads_root`). The marker file re-arms the root on every later
+//!    synced boot.
 //!
 //! Idempotence is structural: a chat/space whose row already exists in the
 //! target is skipped, so re-running after a partial import (or after new

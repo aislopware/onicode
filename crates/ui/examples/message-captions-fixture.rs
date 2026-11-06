@@ -3,10 +3,11 @@
 //! With `--capture <dir>` it saves the transcript at rest and with the
 //! sender caption hovered, then quits; ONICODE_PALETTE_LIGHT=1 renders the
 //! light theme.
+use std::path::{Path, PathBuf};
+
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 use onicode_ui::*;
 use serde_json::json;
-use std::path::{Path, PathBuf};
 
 const SENDER_ID: &str = "cd27c5c2-6f1e-4d1a-9a52-3b0c8e7d4f10";
 

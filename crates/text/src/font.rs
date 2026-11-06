@@ -220,7 +220,7 @@ impl FontBook {
         let hb = rustybuzz::Face::from_slice(data, 0).ok_or(FontError::Parse)?;
         let upem = hb.units_per_em() as f32;
         let mut ascii = 0u128;
-        for u in 0x20u32..0x7F {
+        for u in 0x20u32..0x7f {
             if let Some(c) = char::from_u32(u)
                 && hb.glyph_index(c).is_some()
             {

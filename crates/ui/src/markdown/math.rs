@@ -695,12 +695,15 @@ impl zatex::PathSink for OutlineSink {
     fn move_to(&mut self, x: f32, y: f32) {
         self.0.move_to(point(px(x), px(y)));
     }
+
     fn line_to(&mut self, x: f32, y: f32) {
         self.0.line_to(point(px(x), px(y)));
     }
+
     fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
         self.0.curve_to(point(px(x), px(y)), point(px(x1), px(y1)));
     }
+
     fn cubic_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
         self.0.cubic_bezier_to(
             point(px(x), px(y)),
@@ -708,6 +711,7 @@ impl zatex::PathSink for OutlineSink {
             point(px(x2), px(y2)),
         );
     }
+
     fn close(&mut self) {
         self.0.close();
     }
@@ -726,6 +730,7 @@ pub(crate) struct MathGlyphs {
 
 impl gpui::IntoElement for MathGlyphs {
     type Element = Self;
+
     fn into_element(self) -> Self {
         self
     }
@@ -735,8 +740,8 @@ impl gpui::IntoElement for MathGlyphs {
 type Placed = (Arc<Formula>, Point<Pixels>, Pixels, Hsla);
 
 impl Element for MathGlyphs {
-    type RequestLayoutState = ();
     type PrepaintState = Vec<Placed>;
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone().into())
@@ -930,15 +935,19 @@ mod tests {
         fn move_to(&mut self, _: f32, _: f32) {
             self.0 += 1;
         }
+
         fn line_to(&mut self, _: f32, _: f32) {
             self.0 += 1;
         }
+
         fn quad_to(&mut self, _: f32, _: f32, _: f32, _: f32) {
             self.0 += 1;
         }
+
         fn cubic_to(&mut self, _: f32, _: f32, _: f32, _: f32, _: f32, _: f32) {
             self.0 += 1;
         }
+
         fn close(&mut self) {}
     }
 

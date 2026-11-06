@@ -1,12 +1,13 @@
 //! Exercise the actual manual/setup runner with commands at the supported limit.
 #![cfg(unix)]
 
+use std::time::Duration;
+
 use onicode_engine::project_actions::{
     MAX_PROJECT_ACTION_COMMAND_BYTES, launch_project_action, launch_project_setup_action,
 };
 use onicode_engine::{ProjectActionsStore, Terminals};
 use onicode_proto::{ProjectActionDraft, ProjectActionIcon};
-use std::time::Duration;
 
 #[tokio::test]
 async fn manual_and_setup_actions_preserve_long_multiline_commands() {

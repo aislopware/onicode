@@ -17,11 +17,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use gpui::{
-    AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
-    StatefulInteractiveElement as _, Styled, Window, div, prelude::*, px,
-};
-
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, IntoElement, SharedString, Styled, Window, div, px};
 use onicode_proto::{BackgroundTask, BackgroundTaskOutput};
 use onicode_rpc::methods;
 

@@ -8,12 +8,11 @@ use std::sync::Once;
 use std::time::Duration;
 
 use futures::StreamExt;
-use tokio::sync::{mpsc, oneshot};
-
 use onicode_harness::{AcpHarness, CancellationToken, Harness, RunControls, SteerMessage};
 use onicode_proto::{
     AgentEvent, DoneStatus, RunRequest, SandboxLevel, UserInputAnswer, UserInputQuestion,
 };
+use tokio::sync::{mpsc, oneshot};
 
 const QUIET_MS: u64 = 1200;
 

@@ -9,19 +9,19 @@
 //! in free functions with unit tests; rendering is an `impl Transcript`
 //! extension since the rail shares the transcript's rows and `ListState`.
 
-use gpui::{
-    AnyElement, ClickEvent, Context, ListOffset, MouseMoveEvent, Pixels, SharedString, StyledText,
-    canvas, div, prelude::*, px,
-};
 use std::time::{Duration, Instant};
 
+use gpui::prelude::*;
+use gpui::{
+    AnyElement, ClickEvent, Context, ListOffset, MouseMoveEvent, Pixels, SharedString, StyledText,
+    canvas, div, px,
+};
 use onicode_doc::{MessagePart, MessageRole, SessionMessageEntry};
 
 use crate::markdown::{Block, InlineRun, InlineStyle};
-use crate::motion;
-use crate::popover;
 use crate::theme::Theme;
 use crate::transcript::{AgentSender, ChatIdentity, Transcript};
+use crate::{motion, popover};
 
 /// 48rem — the container width below which the rail (and wide gutters) collapse.
 pub const RAIL_MIN_CONTAINER_WIDTH: f32 = 768.0;
@@ -466,14 +466,13 @@ impl Transcript {
     /// frame's position; per-frame movement comes from the timeline, never
     /// from a percent of the remaining distance:
     ///
-    /// - a glued bottom anchor (`item_ix == len`, one viewport BELOW the
-    ///   visible top) is first materialized as the true viewport-top anchor —
-    ///   stepping straight from the glued anchor lands inside the re-glue band
-    ///   and layout undoes it every frame (the old stall→double-jump path);
-    /// - rows above the viewport are unmeasured, so the anchor glides in item
-    ///   space along the same timeline, estimating sub-row offsets from a
-    ///   local row-height EMA; the position is read back each frame, so a
-    ///   measurement correcting the estimate just re-enters the timeline;
+    /// - a glued bottom anchor (`item_ix == len`, one viewport BELOW the visible top) is first
+    ///   materialized as the true viewport-top anchor — stepping straight from the glued anchor
+    ///   lands inside the re-glue band and layout undoes it every frame (the old stall→double-jump
+    ///   path);
+    /// - rows above the viewport are unmeasured, so the anchor glides in item space along the same
+    ///   timeline, estimating sub-row offsets from a local row-height EMA; the position is read
+    ///   back each frame, so a measurement correcting the estimate just re-enters the timeline;
     /// - once the target row is measured the glide is pixel-exact.
     pub fn scroll_to_row(&mut self, target: usize, cx: &mut Context<Self>) {
         self.begin_scroll_navigation();
@@ -1024,8 +1023,9 @@ impl Transcript {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use onicode_doc::MessageStatus;
+
+    use super::*;
 
     fn entry(id: &str, role: MessageRole, text: &str) -> SessionMessageEntry {
         SessionMessageEntry {

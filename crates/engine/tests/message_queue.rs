@@ -3,8 +3,8 @@
 //!
 //! The policy under test (`DocHost::drain_queue`):
 //! - idle agent → the queue drains immediately, in order;
-//! - busy agent that only takes input at a turn boundary → the queue HOLDS,
-//!   and flushes when the turn ends;
+//! - busy agent that only takes input at a turn boundary → the queue HOLDS, and flushes when the
+//!   turn ends;
 //! - busy agent, including one that takes input mid-turn → held until turn end;
 //! - "send now" → interrupts whatever is running.
 
@@ -14,7 +14,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-
 use onicode_doc::{
     MessagePart, MessageRole, QueueDeliveryGate, SessionCommandPayload, SessionMessageEntry,
 };
@@ -84,21 +83,27 @@ impl Harness for HeldHarness {
     fn id(&self) -> HarnessId {
         self.id
     }
+
     fn display_name(&self) -> &str {
         "Held"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         self.steering
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,

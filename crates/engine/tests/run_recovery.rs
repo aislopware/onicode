@@ -1,14 +1,13 @@
 //! Engine-side run recovery that applies to every provider:
-//! - boot recovery revives a turn the engine cut off with a continuation when
-//!   the provider already worked on it, and leaves alone what it must not
-//!   revive (native commands, open questions, an exhausted revival budget);
-//! - a graceful shutdown marks the turns it cuts off and the next boot picks
-//!   them back up, while a user's Stop is never undone;
-//! - a transient start failure retries with backoff, a deterministic one
-//!   surfaces at once;
-//! - a resume id the provider says is gone is retried once in a fresh
-//!   session (never the dead id again, whichever record still names it, and
-//!   the reply says so), which then replaces the stored id.
+//! - boot recovery revives a turn the engine cut off with a continuation when the provider already
+//!   worked on it, and leaves alone what it must not revive (native commands, open questions, an
+//!   exhausted revival budget);
+//! - a graceful shutdown marks the turns it cuts off and the next boot picks them back up, while a
+//!   user's Stop is never undone;
+//! - a transient start failure retries with backoff, a deterministic one surfaces at once;
+//! - a resume id the provider says is gone is retried once in a fresh session (never the dead id
+//!   again, whichever record still names it, and the reply says so), which then replaces the stored
+//!   id.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -16,7 +15,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-
 use onicode_doc::{
     MessagePart, MessageRole, MessageStatus, SessionCommandPayload, SessionDoc, SessionMessageEntry,
 };
@@ -110,21 +108,27 @@ impl Harness for ScriptedHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Scripted"
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,
@@ -152,24 +156,31 @@ impl Harness for AsProvider {
     fn id(&self) -> HarnessId {
         self.id
     }
+
     fn display_name(&self) -> &str {
         self.id.as_str()
     }
+
     fn executable_path(&self) -> Option<std::path::PathBuf> {
         self.cli.clone()
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,
@@ -204,21 +215,27 @@ impl Harness for HoldingHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Holding"
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         _request: RunRequest,
@@ -1124,13 +1141,16 @@ impl DispatchGate {
     fn arm(&self) {
         self.armed.store(true, std::sync::atomic::Ordering::SeqCst);
     }
+
     fn entered(&self) -> bool {
         self.entered.load(std::sync::atomic::Ordering::SeqCst)
     }
+
     fn release(&self) {
         self.released
             .store(true, std::sync::atomic::Ordering::SeqCst);
     }
+
     fn pass(&self) {
         if self.armed.swap(false, std::sync::atomic::Ordering::SeqCst) {
             self.entered
@@ -1153,25 +1173,32 @@ impl Harness for GatedHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Gated"
     }
+
     fn executable_path(&self) -> Option<std::path::PathBuf> {
         self.gate.pass();
         None
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,

@@ -1,14 +1,13 @@
 //! Interactive embedded-browser + annotation session with isolated data. A
 //! local mock web app is served on 127.0.0.1; the chat's browser tab opens
 //! it. Close the window to exit. No agent runs.
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
+use std::sync::Arc;
+
 use gpui::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 use onicode_ui::*;
 use serde_json::json;
-use std::{
-    io::{BufRead, BufReader, Write},
-    net::TcpListener,
-    sync::Arc,
-};
 
 const SITE: &str = include_str!("browser-annotation-site.html");
 

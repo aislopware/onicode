@@ -5,8 +5,8 @@
 //! The UI talks the same typed RPC whether the engine is in-process or a separate
 //! daemon (ARCHITECTURE §1). [`EngineHandle::bootstrap`] probes the localhost IPC
 //! port, mirroring onicode: if an engine is listening it connects over WebSocket
-//! ([`RemoteEngine`]); otherwise it embeds one via [`EngineCore::assemble`] and an
-//! in-memory RPC transport ([`InProcessEngine`]) — same envelopes, same dispatch.
+//! (`RemoteEngine`); otherwise it embeds one via `EngineCore::assemble` and an
+//! in-memory RPC transport (`InProcessEngine`) — same envelopes, same dispatch.
 //!
 //! ## Async bridging
 //! `bootstrap` runs on tokio via `gpui_tokio::Tokio::spawn`. Once an [`RpcClient`]
@@ -25,9 +25,6 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use gpui::{App, Context, Entity, Task};
 use gpui_tokio::Tokio;
-use serde::de::DeserializeOwned;
-
-use crate::comments::ReviewComment;
 use onicode_doc::{SessionMessageEntry, TranscriptDesync, TranscriptFrame};
 use onicode_engine::{EngineConfig, EngineRuntime, InstanceLock};
 use onicode_proto::{
@@ -35,10 +32,12 @@ use onicode_proto::{
     EngineInfo, HarnessId, Session, SidebarPreferencesState, Space, WorkspaceScope,
 };
 use onicode_rpc::{RpcClient, RpcError, RpcService, memory_client, methods};
+use serde::de::DeserializeOwned;
 
 use crate::change_requests::{
     ChangeRequestClientState, ChangeRequestWatchKey, desired_watch_targets, watch_params,
 };
+use crate::comments::ReviewComment;
 
 // Recently viewed transcripts stay renderable while a fresh watch opens. Move
 // ownership on navigation; never clone whale payloads or retain live watches.
@@ -66,6 +65,7 @@ impl WatchPreparation {
             executor,
         }
     }
+
     fn prepare(
         &mut self,
         update: &onicode_doc::TranscriptUpdate,
@@ -135,7 +135,7 @@ trait EngineBackend: Send + Sync {
     }
 }
 
-/// Embedded engine: owns the [`EngineCore`] and an in-memory RPC loop.
+/// Embedded engine: owns the `EngineCore` and an in-memory RPC loop.
 struct InProcessEngine {
     service: Arc<dyn RpcService>,
     runtime: Arc<tokio::sync::Mutex<Option<EngineRuntime>>>,
@@ -152,12 +152,15 @@ impl EngineBackend for InProcessEngine {
     async fn media_client(&self) -> Result<RpcClient, RpcError> {
         Ok(memory_client(self.service.clone()))
     }
+
     fn client(&self) -> &RpcClient {
         &self.client
     }
+
     fn mode(&self) -> EngineMode {
         EngineMode::InProcess
     }
+
     async fn shutdown(&self) {
         // Cancel the boot and observe it finish: an aborted task is only
         // dropped at its next poll, so what it opened (stores, the instance
@@ -246,17 +249,21 @@ impl EngineBackend for RemoteEngine {
     async fn media_client(&self) -> Result<RpcClient, RpcError> {
         onicode_rpc::connect_ipc(self.ipc_port, Some(&self.data_dir)).await
     }
+
     fn client(&self) -> &RpcClient {
         &self.client
     }
+
     fn mode(&self) -> EngineMode {
         EngineMode::Remote {
             url: self.url.clone(),
         }
     }
+
     async fn closed(&self) {
         self.client.closed().await;
     }
+
     async fn shutdown(&self) {
         // The daemon outlives this viewport; only stop our readiness probe.
         if let Some(task) = self.lifecycle_task.lock().await.take() {
@@ -265,7 +272,7 @@ impl EngineBackend for RemoteEngine {
     }
 }
 
-/// Cheaply clonable handle to whichever backend won the probe.
+/// Cheaply cloneable handle to whichever backend won the probe.
 #[derive(Clone)]
 pub struct EngineHandle {
     inner: Arc<dyn EngineBackend>,
@@ -864,7 +871,7 @@ thread_local! {
 }
 
 /// Wall-clock time for clock-driven state derivations. Tests pin it to the
-/// simulated executor's timeline with [`TestClock`].
+/// simulated executor's timeline with `TestClock`.
 pub(crate) fn clock_now() -> DateTime<Utc> {
     #[cfg(test)]
     if let Some(now) = TEST_CLOCK.with(std::cell::Cell::get) {
@@ -922,9 +929,9 @@ pub(crate) struct CanvasTarget {
     device: Option<String>,
 }
 
-/// Root application state. Reducer methods (`apply_*`, [`Self::session_for`], …)
+/// Root application state. Reducer methods (`apply_*`, `Self::session_for`, …)
 /// are plain `&mut self` functions so tests construct the struct directly; gpui
-/// glue ([`Self::bootstrap`], [`Self::select_chat`]) layers subscriptions on top.
+/// glue (`Self::bootstrap`, `Self::select_chat`) layers subscriptions on top.
 /// How long a requested wake reads as waking before the machine has to
 /// answer for itself: a cold start is well under this.
 const CLOUD_WAKE_GRACE: std::time::Duration = std::time::Duration::from_secs(180);
@@ -2251,7 +2258,7 @@ impl AppState {
 
     /// Composer send fired: overlay the chat as Working until the host writes
     /// the user message back into the transcript or its session row shows the
-    /// turn that runs it ([`PendingSend::adopted_by`]). A remote send has no
+    /// turn that runs it (`PendingSend::adopted_by`). A remote send has no
     /// live session row until the host drains the queued command — that gap
     /// read as "no live run" and flashed the Completed dot, and any phantom
     /// Working→Idle edge in it rang the done-chime on send (user report
@@ -4994,14 +5001,15 @@ impl AppState {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::TimeDelta;
     use gpui::AppContext;
     use onicode_engine::{EngineCore, default_registry};
-    use onicode_rpc::RpcReply;
     // `SessionStatus` is only needed to build the fixtures below — the module
     // itself derives everything through `onicode_proto::view`.
     use onicode_proto::{DoneStatus, SessionStatus, UserProfile};
+    use onicode_rpc::RpcReply;
+
+    use super::*;
 
     /// A localhost port that was just free (bind :0, read, drop).
     async fn free_port() -> u16 {
@@ -5018,7 +5026,10 @@ mod tests {
         let start = 20_000 + (std::process::id() % 10_000) as u16;
         for offset in 0..2_000u16 {
             let port = start + offset;
-            if tokio::net::TcpListener::bind(("127.0.0.1", port)).await.is_ok() {
+            if tokio::net::TcpListener::bind(("127.0.0.1", port))
+                .await
+                .is_ok()
+            {
                 return port;
             }
         }

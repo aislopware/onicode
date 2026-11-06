@@ -6,7 +6,8 @@ pub mod dsp;
 pub mod native;
 #[cfg(all(feature = "aec", feature = "native"))]
 pub mod worker;
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use onicode_proto::voice::*;
 
 #[derive(Debug, thiserror::Error)]

@@ -1,8 +1,12 @@
 //! Paint-time source-alpha feather. Resizing changes only GPU parameters, not
 //! the image identity, pixels, atlas entry, or an asynchronous raster job.
-use crate::settings::NewThreadBackgroundAdjustment;
+use std::cell::Cell;
+use std::rc::Rc;
+use std::sync::Arc;
+
 use gpui::{Bounds, Corners, ImageAlphaMask, Pixels, Point, RenderImage, Window, point, px, size};
-use std::{cell::Cell, rc::Rc, sync::Arc};
+
+use crate::settings::NewThreadBackgroundAdjustment;
 
 // Reveal half-strength artwork through the cutout's darkest area. The main
 // masked pass preserves its contour, while this underlay softens its contrast.
@@ -224,8 +228,10 @@ pub(crate) fn paint(
 
 #[cfg(test)]
 mod tests {
+    use gpui::prelude::*;
+    use gpui::{Context, Render, canvas, div};
+
     use super::*;
-    use gpui::{Context, Render, canvas, div, prelude::*};
 
     fn hero(width: f32, height: f32) -> Bounds<Pixels> {
         Bounds::new(point(px(40.0), px(24.0)), size(px(width), px(height)))

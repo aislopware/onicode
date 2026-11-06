@@ -14,15 +14,14 @@ use gpui::{
     AnyElement, App, AppContext, Context, Entity, EntityId, IntoElement, ParentElement,
     PathBuilder, Render, RenderOnce, SharedString, Styled, Window, canvas, div, point, px,
 };
-
-use crate::motion::{self, GRADIENT_SPIN, ONICODE_PULSE, PULSE_STAGGER, SPLASH_OUT};
-use crate::theme::{GlyphPalette, Theme};
-
 // Shared with the terminal viewport (`onicode_proto::motion`) so both animate the
 // same loaders from the same numbers.
 pub use onicode_proto::motion::{
     MARK_CELLS, MARK_SPREAD, MATRIX_SIDE, ONICODE_CELLS, mark_cell_stagger,
 };
+
+use crate::motion::{self, GRADIENT_SPIN, ONICODE_PULSE, PULSE_STAGGER, SPLASH_OUT};
+use crate::theme::{GlyphPalette, Theme};
 
 /// The animated onicode mark (onicode-loader.tsx `OnicodeLoader`): the full logo
 /// pixel grid with a light wave sweeping tail→head. Each cell rests dim
@@ -271,8 +270,8 @@ fn mini_spinner_cells(
 }
 
 /// A rounded fill that breathes on the onicode pulse clock between `floor` and
-/// `peak` opacity, filling whatever positioned box it is placed in. Like [`pulse_dot`] it repaints from its own cached
-/// view, so the surrounding chrome stays still.
+/// `peak` opacity, filling whatever positioned box it is placed in. Like `pulse_dot` it repaints
+/// from its own cached view, so the surrounding chrome stays still.
 pub fn pulse_glow(
     key: impl Into<SharedString>,
     radius: f32,

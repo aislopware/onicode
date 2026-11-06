@@ -11,7 +11,8 @@
 //! `ONICODE_TEST_HARNESS`: claude | codex | cursor | opencode | devin | hermes |
 //! pi | antigravity | grok. Harnesses whose agents can hold background work
 //! across turns (claude, codex) must also finish that work after the cancel.
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 use onicode_doc::SessionCommandPayload;
 use onicode_engine::{EngineCore, HarnessRegistry};
@@ -220,11 +221,11 @@ async fn agent_process_survives_sends_and_cancel() {
     std::fs::write(
         &image,
         [
-            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
             0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00,
-            0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08,
-            0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D,
-            0xB0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+            0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08,
+            0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xdd, 0x8d,
+            0xb0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
         ],
     )
     .unwrap();
@@ -408,7 +409,8 @@ async fn agent_process_survives_sends_and_cancel() {
 /// reply.
 ///
 /// ONICODE_TEST_HARNESS=claude ONICODE_TEST_MODEL=claude-sonnet-5-5 \
-///   cargo test -p onicode-engine --test runtime_survival_live resume_after -- --ignored --nocapture
+///   cargo test -p onicode-engine --test runtime_survival_live resume_after -- --ignored
+/// --nocapture
 #[tokio::test]
 #[ignore = "uses real model quota; select harness and inexpensive model explicitly"]
 async fn resume_after_killed_background_work_is_not_done_early() {
@@ -725,7 +727,8 @@ async fn stop_tears_down_all_agent_work() {
 /// in the same process, and its completion wakes the agent.
 ///
 /// ONICODE_TEST_MODEL=claude-haiku-5-5 \
-///   cargo test -p onicode-engine --test runtime_survival_live idle_reaper_ -- --ignored --nocapture
+///   cargo test -p onicode-engine --test runtime_survival_live idle_reaper_ -- --ignored
+/// --nocapture
 #[tokio::test]
 #[ignore = "uses real model quota; select an inexpensive model explicitly"]
 async fn idle_reaper_spares_a_background_shell_until_it_wakes_the_agent() {

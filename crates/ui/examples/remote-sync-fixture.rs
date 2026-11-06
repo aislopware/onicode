@@ -15,13 +15,17 @@
 //!
 //! Scenes: `cold-open`, `revisit`, `outage`, `outage-draft`, `side-chat`,
 //! `fork` (two captures: `fork-waiting`, `fork-failed`).
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+
 use futures::{StreamExt, stream};
 use gpui::{AppContext, AsyncApp, Bounds, WindowBounds, WindowOptions, px, size};
 use onicode_proto::{ChatConnectivity, ChatSyncState, Connectivity, ConnectivityState};
 use onicode_rpc::{RpcError, RpcReply, RpcService, methods};
 use onicode_ui::*;
 use serde_json::{Value, json};
-use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
 
 const HOST: &str = "omarchy";
 const CHAT: &str = "remote-chat";

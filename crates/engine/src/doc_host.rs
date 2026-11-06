@@ -3,13 +3,13 @@
 //!
 //! Pragmatic port of onicode's `session-docs.ts` + the `main.ts` executor (spec:
 //! feature-inventory §3.3, ARCHITECTURE §2 "command plane"):
-//! - the doc IS the outbox: commands and user entries commit locally and sync whenever a
-//!   room connection exists; the engine is fully functional with sync disabled;
-//! - on every doc change (local commit or remote import) the handle re-emits the joined
-//!   transcript to watchers, drains pending commands, and schedules a snapshot save;
-//! - command drain: evaluate via `evaluate_command` (with the DocsStore processed
-//!   ledger), mark processed BEFORE execute, execute through the sessions engine, then
-//!   write the outcome status back into the doc as the sole outcome writer.
+//! - the doc IS the outbox: commands and user entries commit locally and sync whenever a room
+//!   connection exists; the engine is fully functional with sync disabled;
+//! - on every doc change (local commit or remote import) the handle re-emits the joined transcript
+//!   to watchers, drains pending commands, and schedules a snapshot save;
+//! - command drain: evaluate via `evaluate_command` (with the DocsStore processed ledger), mark
+//!   processed BEFORE execute, execute through the sessions engine, then write the outcome status
+//!   back into the doc as the sole outcome writer.
 //!
 //! Chat ownership is gated on the workspace doc (`chats[chat_id].deviceId`), with
 //! claim-on-first-command for unknown chats. Queueing a command for a chat hosted on
@@ -22,12 +22,6 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering}
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 
 use base64::Engine as _;
-use serde::Serialize;
-use sha2::{Digest as _, Sha256};
-use tokio::sync::watch;
-use tokio_util::sync::CancellationToken;
-use tokio_util::task::TaskTracker;
-
 use onicode_doc::{
     COMMAND_DEFAULT_TTL_MS, CommandBasedOn, CommandDisposition, DocError, EvaluationContext,
     MessagePart, MessageRole, MessageStatus, QueueDeliveryGate, QueuedMessage, SessionCommandEntry,
@@ -36,6 +30,11 @@ use onicode_doc::{
 };
 use onicode_proto::{ConversationSourceContext, HarnessId, UserInputAnswer, UserInputQuestion};
 use onicode_sync::DocsStore;
+use serde::Serialize;
+use sha2::{Digest as _, Sha256};
+use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 
 use crate::http_error::describe_http_error;
 use crate::project_actions::{
@@ -686,6 +685,7 @@ pub struct DocWriter {
 }
 impl std::ops::Deref for DocWriter {
     type Target = SessionDoc;
+
     fn deref(&self) -> &Self::Target {
         &self.doc
     }
@@ -1163,7 +1163,7 @@ impl DocHost {
     /// room and run on the woken machine (its boot reconcile finds them).
     /// `Err(why)` when a turn is in flight or a command is already waiting:
     /// the sleep is declined and work resumes at once. A quiesce the stop
-    /// never follows lifts itself after [`QUIESCE_LEASE`].
+    /// never follows lifts itself after `QUIESCE_LEASE`.
     pub async fn quiesce_for_sleep(&self) -> Result<(), String> {
         let generation = self.inner.quiesce_generation.fetch_add(1, Ordering::SeqCst) + 1;
         self.inner.quiesced.store(true, Ordering::SeqCst);
@@ -3019,11 +3019,11 @@ impl DocHost {
     }
 
     /// chat2 host duties on the doc-quiesce tick (docs/chat2-sync.md C3):
-    /// - threshold checkpoint: when the room's row log passes 512KB or 200
-    ///   rows, post a full checkpoint so cold readers load one compact blob
-    ///   instead of replaying the log (the alert-shaped growth bound);
-    /// - tail sidecar: publish the last-64 transcript JSON for thin/instant
-    ///   readers (the iOS fallback path).
+    /// - threshold checkpoint: when the room's row log passes 512KB or 200 rows, post a full
+    ///   checkpoint so cold readers load one compact blob instead of replaying the log (the
+    ///   alert-shaped growth bound);
+    /// - tail sidecar: publish the last-64 transcript JSON for thin/instant readers (the iOS
+    ///   fallback path).
     async fn chat2_maintenance(&self, handle: &Arc<ChatDocHandle>) {
         if handle.retired.load(Ordering::Relaxed) {
             return;
@@ -3190,8 +3190,8 @@ impl DocHost {
     /// resident estimate exceeds `DOC_LRU_BYTE_BUDGET`, close the
     /// least-recently-touched unpinned docs. Pinned (never evicted):
     /// - watched docs (`messages_tx` has receivers — a UI transcript);
-    /// - docs with a live writer (`Arc<SessionDoc>` held outside the handle —
-    ///   a run streaming into it);
+    /// - docs with a live writer (`Arc<SessionDoc>` held outside the handle — a run streaming into
+    ///   it);
     /// - host-side docs with pending commands (the executor owes them work).
     ///
     /// Eviction flushes a final snapshot, so reopen loses nothing; missed
@@ -4562,16 +4562,14 @@ impl DocHost {
 
     /// Durable-delivery escort for one queued command aimed at a REMOTE host:
     ///
-    /// 1. push any queued attachment bytes over the peer link (retry until
-    ///    they land — the relayed command must never outrun its bytes);
-    /// 2. give the normal path (chat2 rows → edge → host's room) a short
-    ///    grace to ack;
-    /// 3. rows still not at the edge but the peer link alive → relay-forward
-    ///    the entry itself ([`onicode_rpc::methods::RELAY_COMMAND`]). The
-    ///    host's processed ledger claims the client-minted id, so the doc
-    ///    row arriving later dedupes to a no-op — exactly-once by
-    ///    construction (the 2026-08-18 03:45 incident shape: nudges flowed,
-    ///    rows didn't; there was no second road for the command).
+    /// 1. push any queued attachment bytes over the peer link (retry until they land — the relayed
+    ///    command must never outrun its bytes);
+    /// 2. give the normal path (chat2 rows → edge → host's room) a short grace to ack;
+    /// 3. rows still not at the edge but the peer link alive → relay-forward the entry itself
+    ///    ([`onicode_rpc::methods::RELAY_COMMAND`]). The host's processed ledger claims the
+    ///    client-minted id, so the doc row arriving later dedupes to a no-op — exactly-once by
+    ///    construction (the 2026-08-18 03:45 incident shape: nudges flowed, rows didn't; there was
+    ///    no second road for the command).
     ///
     /// Stops the moment any path lands. No-op for locally-hosted chats.
     fn spawn_command_delivery(
@@ -6266,8 +6264,9 @@ fn encode_part_segment(part_id: &str) -> String {
 
 #[cfg(test)]
 mod transfer_progress_tests {
-    use super::{DocHost, DocHostConfig, TransferProgressGuard};
     use std::sync::Arc;
+
+    use super::{DocHost, DocHostConfig, TransferProgressGuard};
 
     fn host() -> (tempfile::TempDir, DocHost) {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -6418,9 +6417,10 @@ mod transfer_progress_tests {
 
 #[cfg(test)]
 mod source_context_tests {
-    use super::{DocHost, DocHostConfig};
     use std::process::Command;
     use std::sync::Arc;
+
+    use super::{DocHost, DocHostConfig};
 
     fn git(repo: &std::path::Path, args: &[&str]) {
         let status = Command::new("git")
@@ -6475,8 +6475,9 @@ mod source_context_tests {
 
 #[cfg(test)]
 mod degrade_grace_tests {
-    use super::{DEGRADE_GRACE, DegradeGrace, GraceKey};
     use std::time::{Duration, Instant};
+
+    use super::{DEGRADE_GRACE, DegradeGrace, GraceKey};
 
     #[test]
     fn blips_shorter_than_the_grace_never_report() {
@@ -6517,10 +6518,12 @@ mod degrade_grace_tests {
 
     #[tokio::test]
     async fn dormant_chat_clears_old_degradation_before_reconnection() {
-        use super::{DocHost, DocHostConfig, EdgeConfig, lock};
-        use onicode_proto::{ChatSyncState, HarnessId};
         use std::sync::Arc;
         use std::sync::atomic::Ordering;
+
+        use onicode_proto::{ChatSyncState, HarnessId};
+
+        use super::{DocHost, DocHostConfig, EdgeConfig, lock};
 
         let dir = tempfile::tempdir().unwrap();
         let host = DocHost::new(

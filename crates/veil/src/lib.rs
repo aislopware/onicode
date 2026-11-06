@@ -6,14 +6,12 @@
 //! transcript (`onicode-ui`, which recolors GPUI text runs) and the voice call
 //! captions on desktop and mobile:
 //!
-//! - [`ElemVeil`] tracks, per rendered text element, the previously rendered
-//!   flat text. Each append registers the new byte range as a chunk with its
-//!   arrival time; a fast stream keeps several chunks fading concurrently (a
-//!   rolling veil). A chunk fades exactly once — already-faded text never
-//!   re-animates, and a fully settled element returns no spans at all.
-//! - [`CaptionVeil`] veils a live caption shown as the tail of a long
-//!   utterance, and fades the previous utterance out when the speaker turn
-//!   changes.
+//! - [`ElemVeil`] tracks, per rendered text element, the previously rendered flat text. Each append
+//!   registers the new byte range as a chunk with its arrival time; a fast stream keeps several
+//!   chunks fading concurrently (a rolling veil). A chunk fades exactly once — already-faded text
+//!   never re-animates, and a fully settled element returns no spans at all.
+//! - [`CaptionVeil`] veils a live caption shown as the tail of a long utterance, and fades the
+//!   previous utterance out when the speaker turn changes.
 //!
 //! Constants and curve match mugen-markdown's web `FadePainter` (the engine the
 //! desktop app ships): per-chunk duration adapts to the stream's cadence — an
@@ -24,11 +22,11 @@
 //! content" rule.
 
 mod caption;
-pub use caption::{CAPTION_EXIT_MS, CaptionFrame, CaptionVeil, caption_tail};
-
 use std::collections::HashMap;
 use std::ops::Range;
 use std::time::Instant;
+
+pub use caption::{CAPTION_EXIT_MS, CaptionFrame, CaptionVeil, caption_tail};
 
 /// EMA seed for the inter-append gap (mugen `EMA_SEED_MS`).
 pub const VEIL_EMA_SEED_MS: f32 = 160.0;
@@ -235,8 +233,9 @@ pub fn slice_spans(spans: &[VeilSpan], start: usize, end: usize) -> Vec<VeilSpan
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::time::Duration;
+
+    use super::*;
 
     fn at(base: Instant, ms: u64) -> Instant {
         base + Duration::from_millis(ms)

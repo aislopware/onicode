@@ -7,9 +7,10 @@
 //! re-send after deltas never duplicates. Items Onicode does not show:
 //! `userMessage` (the prompt itself), `reminderChild` (Muse's per-step
 //! housekeeping agents) and `compaction`.
+use std::collections::{HashMap, HashSet};
+
 use onicode_proto::{AgentEvent, DoneStatus, TodoItem, TodoStatus, ToolCall, ToolDiff};
 use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet};
 
 /// Tools whose own item carries the work (subagents, the todo list, a
 /// question): their tool row would only duplicate it.
@@ -415,8 +416,12 @@ mod tests {
             ))
             .is_empty()
         );
+        // spellchecker:off
         let events = n.delta(&json!({"itemId":"m","field":"text","delta":"Hel"}));
+        // spellchecker:on
+        // spellchecker:off
         assert!(matches!(&events[..], [AgentEvent::TextDelta { text }] if text == "Hel"));
+        // spellchecker:on
         n.delta(&json!({"itemId":"m","field":"text","delta":"lo"}));
         // The completed re-send adds only what deltas did not carry.
         let events = n.item(&item(

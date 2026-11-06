@@ -2,47 +2,38 @@
 //! Antigravity: where each CLI keeps its login, how onicode reads (and, where
 //! it's safe, swaps) it, and the sign-ins that run through the CLI itself.
 //!
-//! - **Grok** — `$GROK_HOME/auth.json` (default `~/.grok`, 0600, guarded by
-//!   an `auth.json.lock` flock): a map of `"{issuer}::{client_id}"` → OIDC
-//!   token set (`key` = access token, `refresh_token`, `expires_at`, and
-//!   identity: `user_id`, `email`, names, `subscription_tier`). One live
-//!   login; the CLI re-reads the file on every call, so a swap is live at
-//!   once. Swap = rewrite the file (under grok's lock). Add account = `grok
-//!   login --device-auth` against a throwaway `GROK_HOME`: a device code
-//!   needs no loopback, so a remote login works without a tunnel.
-//! - **Devin** — `$XDG_DATA_HOME/devin/credentials.toml` (default
-//!   `~/.local/share/devin/`; older CLIs used `~/Library/Application
-//!   Support/devin/`): a long-lived `windsurf_api_key`
-//!   plus server urls, no identity and no refresh token. Swap = rewrite the
-//!   file (running `devin acp` processes keep the key they started with).
-//!   Add account = the ACP `authenticate` `devin-browser` method with a
-//!   throwaway `XDG_DATA_HOME`: Devin's own PKCE loopback, whose
-//!   `redirect_uri` port is reported for remote tunnelling. The identity is
-//!   learned from the usage probe and written back into the slot.
-//! - **OpenCode** — `$XDG_DATA_HOME/opencode/auth.json` (default
-//!   `~/.local/share/opencode/`): one entry PER model provider (`{type:
-//!   "oauth", access, refresh, expires, accountId?}` or `{type: "api",
-//!   key}`), re-read on every request. onicode manages the OAuth entries of
-//!   `openai` (ChatGPT) and `github-copilot`; a swap rewrites that one entry
-//!   and leaves every other provider byte-for-byte. OpenCode has no lock of
-//!   its own. API-key entries aren't accounts and are left alone.
-//!   Anthropic OAuth was removed from OpenCode upstream and is not offered.
-//! - **Pi** — `$PI_CODING_AGENT_DIR/auth.json` (default `~/.pi/agent`,
-//!   0600, guarded by proper-lockfile's `auth.json.lock` DIRECTORY): the
-//!   same per-provider shape (`openai-codex`, `anthropic`, `github-copilot`),
-//!   hot-reloaded by running agents. Swap = rewrite one entry under that
-//!   lock. Add account = ChatGPT only (onicode's own loopback, see
-//!   [`super::oauth`]); Claude and Copilot logins stay with pi's `/login` —
-//!   minting Claude Code OAuth for a third-party agent is not something
-//!   onicode should do, and pi's Copilot login is an internal token exchange.
-//! - **Hermes** — `$HERMES_HOME/auth.json` (default `~/.hermes`): Hermes
-//!   keeps EVERY account itself, in `credential_pool[provider]`, and picks
-//!   (fill-first by `priority`, or round-robin) and refreshes them on its
-//!   own. A running Hermes writes its in-memory pool back over the file, so
-//!   a onicode reorder would be silently undone — onicode lists the pool (the
-//!   active provider's first entry is "in use"), probes usage, and adds
-//!   accounts through `hermes auth add` (device code; Hermes appends to its
-//!   own pool under its own lock). It never rewrites the pool.
+//! - **Grok** — `$GROK_HOME/auth.json` (default `~/.grok`, 0600, guarded by an `auth.json.lock`
+//!   flock): a map of `"{issuer}::{client_id}"` → OIDC token set (`key` = access token,
+//!   `refresh_token`, `expires_at`, and identity: `user_id`, `email`, names, `subscription_tier`).
+//!   One live login; the CLI re-reads the file on every call, so a swap is live at once. Swap =
+//!   rewrite the file (under grok's lock). Add account = `grok login --device-auth` against a
+//!   throwaway `GROK_HOME`: a device code needs no loopback, so a remote login works without a
+//!   tunnel.
+//! - **Devin** — `$XDG_DATA_HOME/devin/credentials.toml` (default `~/.local/share/devin/`; older
+//!   CLIs used `~/Library/Application Support/devin/`): a long-lived `windsurf_api_key` plus server
+//!   urls, no identity and no refresh token. Swap = rewrite the file (running `devin acp` processes
+//!   keep the key they started with). Add account = the ACP `authenticate` `devin-browser` method
+//!   with a throwaway `XDG_DATA_HOME`: Devin's own PKCE loopback, whose `redirect_uri` port is
+//!   reported for remote tunnelling. The identity is learned from the usage probe and written back
+//!   into the slot.
+//! - **OpenCode** — `$XDG_DATA_HOME/opencode/auth.json` (default `~/.local/share/opencode/`): one
+//!   entry PER model provider (`{type: "oauth", access, refresh, expires, accountId?}` or `{type:
+//!   "api", key}`), re-read on every request. onicode manages the OAuth entries of `openai`
+//!   (ChatGPT) and `github-copilot`; a swap rewrites that one entry and leaves every other provider
+//!   byte-for-byte. OpenCode has no lock of its own. API-key entries aren't accounts and are left
+//!   alone. Anthropic OAuth was removed from OpenCode upstream and is not offered.
+//! - **Pi** — `$PI_CODING_AGENT_DIR/auth.json` (default `~/.pi/agent`, 0600, guarded by
+//!   proper-lockfile's `auth.json.lock` DIRECTORY): the same per-provider shape (`openai-codex`,
+//!   `anthropic`, `github-copilot`), hot-reloaded by running agents. Swap = rewrite one entry under
+//!   that lock. Add account = ChatGPT only (onicode's own loopback, see [`super::oauth`]); Claude
+//!   and Copilot logins stay with pi's `/login` — minting Claude Code OAuth for a third-party agent
+//!   is not something onicode should do, and pi's Copilot login is an internal token exchange.
+//! - **Hermes** — `$HERMES_HOME/auth.json` (default `~/.hermes`): Hermes keeps EVERY account
+//!   itself, in `credential_pool[provider]`, and picks (fill-first by `priority`, or round-robin)
+//!   and refreshes them on its own. A running Hermes writes its in-memory pool back over the file,
+//!   so a onicode reorder would be silently undone — onicode lists the pool (the active provider's
+//!   first entry is "in use"), probes usage, and adds accounts through `hermes auth add` (device
+//!   code; Hermes appends to its own pool under its own lock). It never rewrites the pool.
 //!
 //! Opaque tokens (Pi's Claude login, Copilot tokens) carry no identity: a
 //! live entry is matched to its slot by token, else identified ONCE per token
@@ -451,8 +442,8 @@ fn unresolved(store_key: &str, upstream: Upstream) -> Detected {
 const LOCK_WAIT: Duration = Duration::from_secs(5);
 
 /// An exclusive lock on a sidecar lock file — `flock` (std's
-/// `File::try_lock`), the primitive the Rust CLIs' own lock crates use. Grok's `auth.json.lock` is the CLI's
-/// convention; OpenCode has none, so it gets a onicode-side one. Released
+/// `File::try_lock`), the primitive the Rust CLIs' own lock crates use. Grok's `auth.json.lock` is
+/// the CLI's convention; OpenCode has none, so it gets a onicode-side one. Released
 /// when dropped (the handle closes).
 pub(super) struct FileLock(#[allow(dead_code)] std::fs::File);
 
@@ -550,8 +541,8 @@ pub(super) enum StoreLock {
 const MERGE_ATTEMPTS: usize = 3;
 
 /// Replace (or, with `entry` = `None`, remove) ONE entry of a JSON-object
-/// credential store, keeping every other key as it is, under `lock` — then compare-before-write: the file is read
-/// again right before the rename, and a change since the first read (an
+/// credential store, keeping every other key as it is, under `lock` — then compare-before-write:
+/// the file is read again right before the rename, and a change since the first read (an
 /// agent that writes without taking the lock — OpenCode takes none — or a
 /// CLI mid-refresh) restarts the cycle from the new contents instead of
 /// clobbering it. The replacement is staged (written and synced to its temp

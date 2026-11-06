@@ -1,5 +1,6 @@
-use super::*;
 use onicode_proto::{SidebarPinChange, pin_order_key_between, valid_pin_order_key};
+
+use super::*;
 
 impl RegistryDoc {
     pub fn sidebar_pins_initialized(&self) -> bool {

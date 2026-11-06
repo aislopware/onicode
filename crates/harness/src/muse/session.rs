@@ -1,44 +1,37 @@
 //! One Muse session over one host: open (or resume) it, run its turns, and
 //! carry Onicode's steering, stops and answers in.
 //!
-//! - TURNS. A fresh turn's id is its `turn/start` command id, so the run
-//!   knows it before the ack and owns every frame naming it. Its end is the
-//!   host's `turn/completed` — authoritative, also for the wake turns Muse
-//!   starts on its own when background work finishes (`turn/started` for a
+//! - TURNS. A fresh turn's id is its `turn/start` command id, so the run knows it before the ack
+//!   and owns every frame naming it. Its end is the host's `turn/completed` — authoritative, also
+//!   for the wake turns Muse starts on its own when background work finishes (`turn/started` for a
 //!   turn nobody submitted).
-//! - STEERING. Every later prompt is `turn/start` with `ifBusy: "steer"`:
-//!   one atomic command that steers the running turn or starts one when
-//!   idle, so a prompt can never fall between the two. Each is confirmed
-//!   (`Steered`) when its user-message item enters the conversation.
-//! - STOP. `turn/interrupt` ends the turn in place (`cancelled`), leaving
-//!   the host and its background subagents running.
-//! - APPROVALS are answered from the choices the host offers, one stage at
-//!   a time: a staged approval (`cd app && make` is two) moves to its next
-//!   requirement with `approval/updated`, and each waits for its own
-//!   decision. Full access allows each once, supervised asks the person
-//!   (yes allows once, no rejects), a read-only title run denies.
-//!   QUESTIONS go to the user through [`RunControls::request_input`].
-use super::{
-    catalog,
-    host::{Host, failed},
-    normalize::{Normalizer, string, terminal},
-    rpc::{Client, Inbound, command_id},
-};
-use crate::{HarnessError, SteerMessage, TurnControl};
+//! - STEERING. Every later prompt is `turn/start` with `ifBusy: "steer"`: one atomic command that
+//!   steers the running turn or starts one when idle, so a prompt can never fall between the two.
+//!   Each is confirmed (`Steered`) when its user-message item enters the conversation.
+//! - STOP. `turn/interrupt` ends the turn in place (`cancelled`), leaving the host and its
+//!   background subagents running.
+//! - APPROVALS are answered from the choices the host offers, one stage at a time: a staged
+//!   approval (`cd app && make` is two) moves to its next requirement with `approval/updated`, and
+//!   each waits for its own decision. Full access allows each once, supervised asks the person (yes
+//!   allows once, no rejects), a read-only title run denies. QUESTIONS go to the user through
+//!   `RunControls::request_input`.
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+
 use onicode_proto::{
     AgentEvent, DoneStatus, HarnessId, RunRequest, UserInputAnswer, UserInputQuestion,
 };
 use serde_json::{Value, json};
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    path::Path,
-    sync::Arc,
-    time::Duration,
-};
-use tokio::{
-    sync::{mpsc, oneshot},
-    task::{AbortHandle, JoinSet},
-};
+use tokio::sync::{mpsc, oneshot};
+use tokio::task::{AbortHandle, JoinSet};
+
+use super::catalog;
+use super::host::{Host, failed};
+use super::normalize::{Normalizer, string, terminal};
+use super::rpc::{Client, Inbound, command_id};
+use crate::{HarnessError, SteerMessage, TurnControl};
 
 pub(super) type Input =
     dyn Fn(Vec<UserInputQuestion>) -> oneshot::Receiver<Vec<UserInputAnswer>> + Send + Sync;
@@ -949,7 +942,7 @@ fn media_type(path: &Path, bytes: &[u8]) -> Option<&'static str> {
     };
     by_extension.or(match bytes {
         [0x89, b'P', b'N', b'G', ..] => Some("image/png"),
-        [0xFF, 0xD8, 0xFF, ..] => Some("image/jpeg"),
+        [0xff, 0xd8, 0xff, ..] => Some("image/jpeg"),
         [b'G', b'I', b'F', b'8', ..] => Some("image/gif"),
         [
             b'R',
@@ -1015,7 +1008,7 @@ mod tests {
     fn images_are_typed_by_extension_or_magic() {
         assert_eq!(media_type(Path::new("a.PNG"), b""), Some("image/png"));
         assert_eq!(
-            media_type(Path::new("paste"), &[0xFF, 0xD8, 0xFF, 0]),
+            media_type(Path::new("paste"), &[0xff, 0xd8, 0xff, 0]),
             Some("image/jpeg")
         );
         assert_eq!(media_type(Path::new("a.svg"), b"<svg"), None);

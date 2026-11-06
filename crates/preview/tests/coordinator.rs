@@ -1,19 +1,17 @@
 //! Full authenticated Worker → catalog → SDP/ICE → P2P → HTTP integration.
 //! Run against `wrangler dev --local --var AUTH_MODE:dev --port 27641`:
 //! ONICODE_PREVIEW_TEST_EDGE=http://127.0.0.1:27641 cargo test -p onicode-preview --test coordinator -- --ignored
-use onicode_preview::{
-    catalog::Catalog,
-    discovery::Listener,
-    mux::{self, BoxIo, Connector},
-    peer::Peers,
-    proxy::{self, Router},
-    signaling::{self, Config, TokenSource},
-};
-use std::{sync::Arc, time::Duration};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
-};
+use std::sync::Arc;
+use std::time::Duration;
+
+use onicode_preview::catalog::Catalog;
+use onicode_preview::discovery::Listener;
+use onicode_preview::mux::{self, BoxIo, Connector};
+use onicode_preview::peer::Peers;
+use onicode_preview::proxy::{self, Router};
+use onicode_preview::signaling::{self, Config, TokenSource};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio_util::sync::CancellationToken;
 struct Token(String);
 #[async_trait::async_trait]

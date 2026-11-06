@@ -1,6 +1,8 @@
 //! Destination disclosure is local text only. Never fetch link previews.
+use gpui::prelude::*;
+use gpui::{AnyElement, App, Context, Render, SharedString, Window, div, px};
+
 use crate::theme::Theme;
-use gpui::{AnyElement, App, Context, Render, SharedString, Window, div, prelude::*, px};
 
 pub struct Destination(
     pub String,

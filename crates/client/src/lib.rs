@@ -8,18 +8,17 @@
 //!
 //! # Shape
 //!
-//! - [`Client`] — one signed-in account (or the offline Demo mode). Owns the
-//!   registry mirror, open sessions, and background tasks on the crate's
-//!   shared tokio runtime ([`runtime::shared`]). Every snapshot read is an
-//!   `Arc` clone — never a network wait, never a whole-doc decode.
-//! - [`WorkspaceSnapshot`] — the derived view models (front page with pins and
-//!   sections, projects, PRs, archived, devices, search), rebuilt only when
-//!   the registry, presence, or time-dependent status actually changes.
-//! - [`SessionHandle`] — one chat: an incrementally maintained transcript
-//!   ([`SessionSnapshot`], per-entry `Arc`s that stay pointer-equal while
-//!   unchanged) plus the composer-facing [`ComposerState`] and every command.
-//! - [`ClientListener`] — coalesced change notifications; platforms pull the
-//!   new snapshot after an event.
+//! - [`Client`] — one signed-in account (or the offline Demo mode). Owns the registry mirror, open
+//!   sessions, and background tasks on the crate's shared tokio runtime ([`runtime::shared`]).
+//!   Every snapshot read is an `Arc` clone — never a network wait, never a whole-doc decode.
+//! - [`WorkspaceSnapshot`] — the derived view models (front page with pins and sections, projects,
+//!   PRs, archived, devices, search), rebuilt only when the registry, presence, or time-dependent
+//!   status actually changes.
+//! - [`SessionHandle`] — one chat: an incrementally maintained transcript ([`SessionSnapshot`],
+//!   per-entry `Arc`s that stay pointer-equal while unchanged) plus the composer-facing
+//!   [`ComposerState`] and every command.
+//! - [`ClientListener`] — coalesced change notifications; platforms pull the new snapshot after an
+//!   event.
 //!
 //! Demo mode ([`Credentials::Demo`]) runs the *same* registry/session code
 //! against an in-process simulated host, so it exercises the real pipeline.
@@ -53,6 +52,13 @@ pub use config::{
 pub use connectivity::{Connectivity, ConnectivityState, SendState};
 pub use error::ClientError;
 pub use events::{ClientEvent, ClientListener};
+/// Re-exported so consumers (the layout engine) name the exact doc types the
+/// transcript carries without a direct `onicode-doc` dependency.
+pub use onicode_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
+pub use onicode_proto::{
+    ChangeRequestState, ChangeRequestSummary, ChatConfig, ChatIndicator, ContextUsage,
+    UserInputAnswer, UserInputQuestion, WorktreeSpec,
+};
 pub use onicode_term_link::remote::TerminalPath;
 pub use provider_login::{LoginProvider, ProviderLoginStart};
 pub use session::{
@@ -66,14 +72,6 @@ pub use terminal::{TerminalInfo, TerminalLink, TerminalReplies, TerminalSink, Te
 pub use workspace::{
     DeviceView, FrontPage, ProjectRef, ProjectView, PullRequestGroups, SearchField, SearchHit,
     SectionView, SessionRow, WorkspaceSnapshot, project_color_index, relative_time_label,
-};
-
-/// Re-exported so consumers (the layout engine) name the exact doc types the
-/// transcript carries without a direct `onicode-doc` dependency.
-pub use onicode_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
-pub use onicode_proto::{
-    ChangeRequestState, ChangeRequestSummary, ChatConfig, ChatIndicator, ContextUsage,
-    UserInputAnswer, UserInputQuestion, WorktreeSpec,
 };
 
 /// Wall clock in epoch millis.

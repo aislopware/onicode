@@ -9,10 +9,9 @@
 //!
 //! - `task_started` pairs the task id with the `tool_use_id` that spawned it;
 //! - that tool_use's `input.command` is what it runs;
-//! - the tool_result says where its output goes ("Output is being written
-//!   to: <path>"), a file in the session's `tasks/` folder named after the
-//!   task id — so a task whose result never said it (one backgrounded later)
-//!   is found in the same folder.
+//! - the tool_result says where its output goes ("Output is being written to: `<path>"),` a file in
+//!   the session's `tasks/` folder named after the task id — so a task whose result never said it
+//!   (one backgrounded later) is found in the same folder.
 //!
 //! Background agents are subagents: their chips show them, not this list.
 

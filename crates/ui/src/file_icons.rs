@@ -6,11 +6,9 @@
 //! authored SVG colors are preserved in light mode; dark mode lifts the
 //! palette's darker accents without replacing polychrome artwork with a tint.
 
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    sync::{Arc, LazyLock, Mutex},
-};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use gpui::{App, AssetSource, Img, RenderImage, Result, SharedString, Styled as _, img};
 use onicode_syntax::LanguageId;

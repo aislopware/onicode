@@ -622,7 +622,7 @@ pub(crate) enum Transcript {
 /// tool call announces it: its `task_started` has no tool id, and the CLI
 /// holds its transcript back, then replays it tagged `forked-command-<name>`
 /// after its `task_notification`, "together and in order after the forked
-/// skill finishes" (https://code.claude.com/docs/en/headless.md#follow-subagent-messages;
+/// skill finishes" (<https://code.claude.com/docs/en/headless.md#follow-subagent-messages>;
 /// live-verified 2.1.310).
 struct TypedFork {
     /// Its chip, `forked-command-<name>-<task>`: the CLI reuses its own id
@@ -1723,8 +1723,9 @@ impl Normalizer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn decodes_typed_tools() {

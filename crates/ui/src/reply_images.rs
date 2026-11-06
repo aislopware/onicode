@@ -15,7 +15,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use gpui::{SharedString, div, prelude::*, px};
+use gpui::prelude::*;
+use gpui::{SharedString, div, px};
 
 use crate::attachments::{
     AttachmentKey, AttachmentSnapshot, CachedAttachmentImage, attachment_snapshot_for,

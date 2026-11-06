@@ -3,7 +3,6 @@
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-
 use onicode_proto::{
     AccessMode, AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SteeringMode,
     UserInputQuestion,
@@ -170,24 +169,31 @@ impl Harness for MockHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Mock"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     fn access_modes(&self) -> &[AccessMode] {
         &AccessMode::ALL
     }
+
     fn supports_plan(&self) -> bool {
         true
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![
             Model {
@@ -213,6 +219,7 @@ impl Harness for MockHarness {
             },
         ])
     }
+
     async fn run_title(
         &self,
         request: RunRequest,

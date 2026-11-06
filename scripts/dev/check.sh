@@ -80,7 +80,7 @@ lint() {
   run cargo lint
 }
 doc() {
-  RUSTDOCFLAGS="-D warnings" run cargo doc --locked --no-deps --workspace --features onicode-harness/native-fixture
+  RUSTDOCFLAGS="-D warnings" run cargo doc --locked --no-deps --document-private-items --workspace --features onicode-harness/native-fixture
 }
 tests() { run cargo t --locked --config-file scripts/ci/nextest.toml ${1:+-E "$1"}; }
 

@@ -2,20 +2,18 @@
 //! frames, so browser content uses the same clipping and blur as other UI. WPE
 //! WebKit renders on GPUI's GPU at the display's refresh rate (`wpe.rs`); the
 //! WebKitGTK helper remains for systems without WPE WebKit.
-use super::model::{PageState, Presentation};
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, Weak};
+
 use gpui::{Bounds, Pixels, RenderImage};
 use serde_json::{Value, json};
-use std::{
-    collections::HashMap,
-    io::{Read, Write},
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
-    process::{Child, ChildStdin, Command, Stdio},
-    sync::{
-        Arc, Mutex, Weak,
-        atomic::{AtomicBool, AtomicU32, Ordering},
-    },
-};
 use tokio::sync::mpsc::Sender;
+
+use super::model::{PageState, Presentation};
 
 mod wpe;
 
@@ -318,6 +316,7 @@ impl BrowserData {
             engine_override: None,
         }
     }
+
     /// Blocking initialization, called only by the dedicated startup thread.
     /// `gpu` is the GPU GPUI draws with, and the dma-bufs it imports.
     fn worker(&self, gpu: Option<gpui::DmabufTarget>) -> Result<Arc<Worker>, String> {
@@ -510,7 +509,8 @@ fn spawn_wpe(
     profile: Option<&std::path::Path>,
     gpu: Option<gpui::DmabufTarget>,
 ) -> Result<Worker, Startup> {
-    use std::os::{fd::OwnedFd, unix::net::UnixStream};
+    use std::os::fd::OwnedFd;
+    use std::os::unix::net::UnixStream;
     let (socket, theirs) = UnixStream::pair().map_err(|e| e.to_string())?;
     let mut command = Command::new(executable);
     if let Some(profile) = profile {
@@ -766,21 +766,27 @@ impl NativePage {
             log: FrameLog::default(),
         })
     }
+
     pub(super) fn engine(&self) -> Engine {
         self.worker.engine
     }
+
     pub fn load(&self, url: &str) -> Result<(), String> {
         self.worker.send(self.id, json!({"cmd":"load","url":url}))
     }
+
     pub fn reload(&self) {
         self.command(json!({"cmd":"reload"}));
     }
+
     pub fn history(&self, forward: bool) {
         self.command(json!({"cmd":if forward {"forward"} else {"back"}}));
     }
+
     pub fn state(&self) -> PageState {
         self.route.state.lock().unwrap().clone()
     }
+
     pub fn present(&mut self, presentation: Presentation) {
         if (self.presentation == Presentation::Hidden) != (presentation == Presentation::Hidden) {
             let visible = presentation != Presentation::Hidden;
@@ -796,6 +802,7 @@ impl NativePage {
         }
         self.presentation = presentation;
     }
+
     pub fn update_frame(&mut self, window: &mut gpui::Window) {
         if let Some((frame, scale)) = self.route.frame.lock().unwrap().take() {
             self.image_scale = scale;
@@ -804,6 +811,7 @@ impl NativePage {
             }
         }
     }
+
     /// Paints the page's latest frame at `bounds`, the page's layout box.
     pub fn paint(&mut self, bounds: Bounds<Pixels>, focused: bool, window: &mut gpui::Window) {
         let Some(presenter) = &mut self.presenter else {
@@ -838,6 +846,7 @@ impl NativePage {
         presenter.sync_focus(focused, window.is_window_active());
         presenter.paint(&self.route, &mut self.image, bounds, window);
     }
+
     /// Whether WebKit gets vblanks: it wants them, and Onicode shows the page
     /// rather than hiding it or showing its error instead.
     fn needs_vblank(&self) -> bool {
@@ -845,6 +854,7 @@ impl NativePage {
             && self.presentation != Presentation::Hidden
             && self.route.state.lock().unwrap().error.is_none()
     }
+
     /// Whether GPUI should start feeding WebKit vblanks: it needs them and no
     /// frame callback chain is running yet.
     fn wants_vblank(&mut self) -> bool {
@@ -856,6 +866,7 @@ impl NativePage {
         presenter.ticking |= start;
         start
     }
+
     /// One GPUI frame callback. Returns whether to keep ticking.
     fn vblank(&mut self) -> bool {
         let needed = self.needs_vblank();
@@ -869,6 +880,7 @@ impl NativePage {
         presenter.vblank();
         true
     }
+
     fn cursor(&self) -> gpui::CursorStyle {
         self.route
             .surface
@@ -878,6 +890,7 @@ impl NativePage {
             .as_deref()
             .map_or(gpui::CursorStyle::Arrow, wpe::cursor_style)
     }
+
     pub fn sync(&mut self, bounds: Bounds<Pixels>, scale: f32) {
         self.bounds = bounds;
         self.scale = scale;
@@ -897,23 +910,28 @@ impl NativePage {
             self.geometry = Some(geometry);
         }
     }
+
     pub fn command(&self, value: Value) {
         let _ = self.worker.send(self.id, value);
     }
+
     /// Run `script` in the page; a string result arrives as
     /// [`NativeEvent::Evaluated`].
     pub fn run_script(&self, script: &str) {
         self.command(json!({"cmd":"eval","script":script}));
     }
+
     #[cfg(feature = "browser-fixture")]
     pub fn evaluate(&self, script: &str) {
         *self.route.evaluation.lock().unwrap() = None;
         self.command(json!({"cmd":"eval","script":script}));
     }
+
     #[cfg(feature = "browser-fixture")]
     pub fn evaluation(&self) -> Option<Value> {
         self.route.evaluation.lock().unwrap().take()
     }
+
     #[cfg(feature = "browser-fixture")]
     fn log(&mut self) -> &mut FrameLog {
         match &mut self.presenter {
@@ -1049,6 +1067,7 @@ impl super::BrowserSurface {
         }
         cx.notify();
     }
+
     pub(super) fn linux_pointer(
         &self,
         kind: &str,
@@ -1072,6 +1091,7 @@ impl super::BrowserSurface {
         let position = position - native.bounds.origin;
         native.command(json!({"cmd":kind,"x":f32::from(position.x),"y":f32::from(position.y),"button":button.map(mouse_button).unwrap_or(0),"count":clicks,"mods":modifiers_mask(modifiers) | if kind == "move" { button.map(|b| 1 << (mouse_button(b)+7)).unwrap_or(0) } else { 0 }}));
     }
+
     pub(super) fn linux_scroll(&self, event: &gpui::ScrollWheelEvent) -> bool {
         let Some(native) = &self.native else {
             return false;
@@ -1086,6 +1106,7 @@ impl super::BrowserSurface {
         });
         true
     }
+
     /// WebKit reads the system clipboard only through Onicode: refresh its copy
     /// before anything that pastes. No text clears it, so a paste never
     /// inserts what an earlier one shared.
@@ -1095,6 +1116,7 @@ impl super::BrowserSurface {
             native.command(json!({"cmd":"clipboard","text":text.unwrap_or_default()}));
         }
     }
+
     pub(super) fn linux_key(&self, stroke: &gpui::Keystroke, down: bool) {
         let Some(native) = &self.native else {
             return;
@@ -1163,12 +1185,15 @@ impl super::BrowserSurface {
     pub fn fixture_linux_menu_open(&self) -> bool {
         self.native.as_ref().is_some_and(|n| n.menu.is_some())
     }
+
     pub fn fixture_linux_bounds(&self) -> Bounds<Pixels> {
         self.native.as_ref().unwrap().bounds
     }
+
     pub fn fixture_linux_evaluation(&self) -> Option<Value> {
         self.native.as_ref().unwrap().evaluation()
     }
+
     /// The frames GPUI painted for the page so far, the bytes copied into its
     /// tile from CPU memory and between GPU buffers, and when the latest was
     /// painted.
@@ -1176,12 +1201,14 @@ impl super::BrowserSurface {
         let log = self.native.as_mut().unwrap().log();
         (log.painted, log.uploaded, log.copied, log.last)
     }
+
     /// Starts listing when each frame is painted; `false` stops and returns
     /// the list.
     pub fn fixture_linux_record(&mut self, on: bool) -> Vec<std::time::Instant> {
         let log = self.native.as_mut().unwrap().log();
         std::mem::replace(&mut log.times, on.then(Vec::new)).unwrap_or_default()
     }
+
     /// How WPE WebKit frames reach GPUI; `null` with WebKitGTK.
     pub fn fixture_linux_frames(&self) -> Value {
         let Some(native) = self.native.as_ref() else {
@@ -1218,6 +1245,7 @@ impl gpui::EntityInputHandler for super::BrowserSurface {
         *actual = Some(range.clone());
         Some(String::from_utf16_lossy(units.get(range)?))
     }
+
     fn selected_text_range(
         &mut self,
         _: bool,
@@ -1238,6 +1266,7 @@ impl gpui::EntityInputHandler for super::BrowserSurface {
             reversed: cursor < selection,
         })
     }
+
     fn marked_text_range(
         &self,
         _: &mut gpui::Window,
@@ -1246,12 +1275,14 @@ impl gpui::EntityInputHandler for super::BrowserSurface {
         let native = self.native.as_ref()?;
         (!native.preedit.is_empty()).then(|| 0..native.preedit.encode_utf16().count())
     }
+
     fn unmark_text(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) {
         if let Some(native) = &mut self.native {
             native.command(json!({"cmd":"unmark"}));
             native.preedit.clear();
         }
     }
+
     fn replace_text_in_range(
         &mut self,
         _: Option<std::ops::Range<usize>>,
@@ -1264,6 +1295,7 @@ impl gpui::EntityInputHandler for super::BrowserSurface {
             native.preedit.clear();
         }
     }
+
     fn replace_and_mark_text_in_range(
         &mut self,
         _: Option<std::ops::Range<usize>>,
@@ -1277,6 +1309,7 @@ impl gpui::EntityInputHandler for super::BrowserSurface {
             native.preedit = text.to_owned();
         }
     }
+
     fn bounds_for_range(
         &mut self,
         _: std::ops::Range<usize>,
@@ -1299,6 +1332,7 @@ impl gpui::EntityInputHandler for super::BrowserSurface {
             ),
         ))
     }
+
     fn character_index_for_point(
         &mut self,
         _: gpui::Point<Pixels>,
@@ -1307,6 +1341,7 @@ impl gpui::EntityInputHandler for super::BrowserSurface {
     ) -> Option<usize> {
         None
     }
+
     fn accepts_text_input(&self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> bool {
         self.native.as_ref().is_some_and(|n| {
             n.route.input.lock().unwrap()["focused"]
@@ -1324,6 +1359,7 @@ impl super::BrowserSurface {
         }
         cx.notify();
     }
+
     pub(super) fn linux_choose_menu(&mut self, index: usize, cx: &mut gpui::Context<Self>) {
         let action = self.native.as_ref().and_then(|native| {
             let item = native.menu.as_ref()?["items"].get(index)?;
@@ -1344,6 +1380,7 @@ impl super::BrowserSurface {
         }
         self.linux_dismiss_menu(cx);
     }
+
     pub(super) fn linux_menu_key(&mut self, key: &str, cx: &mut gpui::Context<Self>) -> bool {
         let Some(native) = self.native.as_mut().filter(|n| n.menu.is_some()) else {
             return false;
@@ -1379,13 +1416,15 @@ impl super::BrowserSurface {
         }
         true
     }
+
     pub(super) fn linux_menu(
         &self,
         theme: &crate::theme::Theme,
         cx: &mut gpui::Context<Self>,
     ) -> Option<gpui::AnyElement> {
         let theme = &theme.for_popup();
-        use gpui::{IntoElement, div, prelude::*, px};
+        use gpui::prelude::*;
+        use gpui::{IntoElement, div, px};
         let native = self.native.as_ref()?;
         let menu = native.menu.as_ref()?;
         let items = menu["items"].as_array()?;

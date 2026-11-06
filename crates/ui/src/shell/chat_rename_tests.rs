@@ -1,6 +1,7 @@
 //! Inline chat renames on the sidebar row, without booting an engine.
-use super::*;
 use gpui::{AppContext, Modifiers, TestAppContext, VisualTestContext};
+
+use super::*;
 
 struct SidebarHost(Entity<Shell>);
 

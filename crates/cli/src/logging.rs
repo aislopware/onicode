@@ -223,8 +223,9 @@ fn open_log_file_in(
 
 #[cfg(test)]
 mod rotating_log_tests {
-    use super::RotatingLog;
     use std::io::Write as _;
+
+    use super::RotatingLog;
 
     #[test]
     fn a_log_past_its_limit_moves_to_old_and_starts_over() {

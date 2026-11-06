@@ -1,8 +1,11 @@
 //! Workspace drag targets are scoped to the tree viewport; the chat keeps its own receiver.
-use super::*;
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use gpui::{AnyElement, Bounds, CursorStyle, DragMoveEvent};
 use onicode_proto::WorkspaceEntryKind;
-use std::{cell::RefCell, rc::Rc};
+
+use super::*;
 
 /// Each painted tree row's bounds and drop target, keyed by row path.
 type DropRows = Rc<RefCell<HashMap<String, (Bounds<Pixels>, Option<String>)>>>;

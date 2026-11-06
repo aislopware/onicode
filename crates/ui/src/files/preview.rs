@@ -1,14 +1,13 @@
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    rc::Rc,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::rc::Rc;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Entity, Focusable as _, HighlightStyle, ListAlignment, ListOffset,
     ListSizingBehavior, ListState, Render, ScrollHandle, SharedString, Subscription, Window, div,
-    font, list, point, prelude::*, px,
+    font, list, point, px,
 };
 use gpui_base::input::{RopeExt as _, TextDecoration, TextDecorationCollection};
 use onicode_proto::{
@@ -16,19 +15,14 @@ use onicode_proto::{
     WriteWorkspaceFileRequest,
 };
 
-use super::{
-    FileColumn, FilesCloseDisposition, FilesEvent, FilesSurface,
-    client::{FilesRequestContext, WorkspaceFilesClient},
-    document::{DocumentKey, DocumentPhase, FileDocument},
-    toolbar, toolbar_button,
-};
-use crate::{
-    comments::{self, ReviewComment},
-    composer::{ComposerInput, ComposerInputEvent},
-    icons::{self, icon},
-    syntax_cache::{DocumentHighlightKey, SyntaxHighlightCache},
-    theme::Theme,
-};
+use super::client::{FilesRequestContext, WorkspaceFilesClient};
+use super::document::{DocumentKey, DocumentPhase, FileDocument};
+use super::{FileColumn, FilesCloseDisposition, FilesEvent, FilesSurface, toolbar, toolbar_button};
+use crate::comments::{self, ReviewComment};
+use crate::composer::{ComposerInput, ComposerInputEvent};
+use crate::icons::{self, icon};
+use crate::syntax_cache::{DocumentHighlightKey, SyntaxHighlightCache};
+use crate::theme::Theme;
 
 const PREVIEW_LINE_HEIGHT: f32 = 20.0;
 /// One shared `code_font_size` setting drives two surfaces in this file that
@@ -3398,8 +3392,9 @@ fn read_only_message(reason: Option<WorkspaceReadOnlyReason>) -> SharedString {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::TestAppContext;
+
+    use super::*;
 
     #[gpui::test]
     fn renaming_markdown_to_text_keeps_dirty_editor_and_undo(cx: &mut TestAppContext) {
@@ -4017,8 +4012,9 @@ impl FilesSurface {
 
 #[cfg(test)]
 mod markdown_buffer_tests {
-    use super::*;
     use gpui::{AppContext, TestAppContext};
+
+    use super::*;
 
     #[gpui::test]
     fn content_search_byte_columns_place_cursor_at_match_after_unicode(cx: &mut TestAppContext) {
@@ -4998,8 +4994,9 @@ mod markdown_buffer_tests {
 
     #[gpui::test]
     fn markdown_preview_web_links_keep_the_file_session_and_full_target(cx: &mut TestAppContext) {
-        use crate::markdown::render::{self, LinkAction, LinkTarget};
         use std::cell::RefCell;
+
+        use crate::markdown::render::{self, LinkAction, LinkTarget};
 
         cx.update(|cx| {
             gpui_base::init(cx);
@@ -5231,10 +5228,12 @@ mod markdown_buffer_tests {
 /// the frame that applies the reload has been drawn.
 #[cfg(test)]
 mod reload_highlight_tests {
+    use std::ops::Range;
+
+    use gpui::{AppContext, TestAppContext};
+
     use super::super::editor_adapter::probe;
     use super::*;
-    use gpui::{AppContext, TestAppContext};
-    use std::ops::Range;
 
     const RELOAD_PATH: &str = "repro-unicode.json";
     const RELOAD_BEFORE: &str = r#"{"": 1}"#;

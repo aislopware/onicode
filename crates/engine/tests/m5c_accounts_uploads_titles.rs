@@ -10,10 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as BASE64;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD as BASE64_URL;
-use sha2::{Digest as _, Sha256};
-
+use base64::engine::general_purpose::{STANDARD as BASE64, URL_SAFE_NO_PAD as BASE64_URL};
 use onicode_engine::{
     AgentAccounts, AgentAccountsConfig, EngineCore, HarnessRegistry, Repos, Uploads,
     worktree_branch_from_title,
@@ -24,6 +21,7 @@ use onicode_proto::{
     SandboxLevel,
 };
 use onicode_rpc::methods;
+use sha2::{Digest as _, Sha256};
 
 // ---------------------------------------------------------------------------
 // Fixtures

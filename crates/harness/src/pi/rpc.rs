@@ -1,16 +1,14 @@
 //! Pi RPC is JSONL, not JSON-RPC 2.0. Responses and events share one ordered
 //! channel: a get_state response is a barrier after preceding lifecycle events.
-use crate::HarnessError;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use serde_json::Value;
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
-    sync::mpsc,
-    task::JoinHandle,
-};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+
+use crate::HarnessError;
 
 const MAX_FRAME: usize = 32 * 1024 * 1024;
 
@@ -25,6 +23,7 @@ impl Client {
             .send(frame)
             .map_err(|_| HarnessError::Protocol("Pi stdin closed".into()))
     }
+
     pub fn request(&self, mut frame: Value) -> Result<String, HarnessError> {
         let id = format!("onicode-{}", self.next_id.fetch_add(1, Ordering::Relaxed));
         frame["id"] = Value::String(id.clone());
@@ -139,7 +138,7 @@ impl Transport {
                         // reason to end the run.
                         None => tracing::warn!(
                             target: "onicode_harness::pi",
-                            "unparseable Pi RPC line skipped"
+                            "unparsable Pi RPC line skipped"
                         ),
                     }
                 }
@@ -191,11 +190,11 @@ fn replace_lone_surrogates(bytes: &[u8]) -> Option<Vec<u8>> {
             continue;
         }
         match unit(bytes, at) {
-            Some(0xD800..=0xDBFF) if matches!(unit(bytes, at + 6), Some(0xDC00..=0xDFFF)) => {
+            Some(0xd800..=0xdbff) if matches!(unit(bytes, at + 6), Some(0xdc00..=0xdfff)) => {
                 out.extend_from_slice(&bytes[at..at + 12]);
                 at += 12;
             }
-            Some(0xD800..=0xDFFF) => {
+            Some(0xd800..=0xdfff) => {
                 out.extend_from_slice(b"\\ufffd");
                 changed = true;
                 at += 6;
@@ -217,8 +216,9 @@ fn replace_lone_surrogates(bytes: &[u8]) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
     #[tokio::test]
     async fn fragmented_utf8_and_responses_preserve_wire_order() {
         let (host, peer) = tokio::io::duplex(8192);

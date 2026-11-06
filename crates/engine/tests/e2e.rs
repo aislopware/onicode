@@ -8,7 +8,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
-
 use onicode_doc::{
     MessagePart, MessageRole, MessageStatus, SegmentWriter, SessionCommandEntry,
     SessionCommandPayload, SessionCommandStatus, SessionDoc, SessionMessageEntry, SubagentStatus,
@@ -64,7 +63,7 @@ fn mock_script() -> Vec<AgentEvent> {
             session_id: "hs-1".into(),
             assistant_message_id: "a-1".into(),
         },
-        AgentEvent::TextDelta { text: "Hel".into() },
+        AgentEvent::TextDelta { text: "Hel".into() }, // spellchecker:disable-line
         AgentEvent::TextDelta { text: "lo".into() },
         AgentEvent::ToolCall {
             id: "tool-1".into(),
@@ -97,21 +96,27 @@ impl Harness for ScriptedHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Scripted"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         _request: RunRequest,
@@ -154,21 +159,27 @@ impl Harness for InterruptIsolationHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Interrupt isolation"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,
@@ -235,21 +246,27 @@ async fn update_deferred_steering_preserves_the_active_turn_and_queued_prompt() 
         fn id(&self) -> HarnessId {
             HarnessId::Mock
         }
+
         fn display_name(&self) -> &str {
             "Step-boundary fixture"
         }
+
         fn supports_steering(&self) -> bool {
             true
         }
+
         fn steering_mode(&self) -> SteeringMode {
             SteeringMode::StepBoundary
         }
+
         fn reasoning_levels(&self) -> &[ReasoningLevel] {
             &[]
         }
+
         async fn models(&self) -> Result<Vec<Model>, HarnessError> {
             Ok(vec![])
         }
+
         async fn run(
             &self,
             request: RunRequest,
@@ -376,21 +393,27 @@ async fn pending_update_does_not_block_dispatch_or_other_harnesses() {
         fn id(&self) -> HarnessId {
             self.0
         }
+
         fn display_name(&self) -> &str {
             "Recording"
         }
+
         fn supports_steering(&self) -> bool {
             false
         }
+
         fn steering_mode(&self) -> SteeringMode {
             SteeringMode::TurnBoundary
         }
+
         fn reasoning_levels(&self) -> &[ReasoningLevel] {
             &[]
         }
+
         async fn models(&self) -> Result<Vec<Model>, HarnessError> {
             Ok(vec![])
         }
+
         async fn run(
             &self,
             request: RunRequest,
@@ -987,21 +1010,27 @@ impl Harness for UnsteerableHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Unsteerable"
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         _request: RunRequest,
@@ -1660,21 +1689,27 @@ impl Harness for EchoAnswerHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Asking"
     }
+
     fn supports_steering(&self) -> bool {
         false
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::TurnBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         _request: RunRequest,
@@ -1979,21 +2014,27 @@ async fn wrong_id_respond_is_rejected_and_correct_answer_still_resumes() {
         fn id(&self) -> HarnessId {
             HarnessId::Mock
         }
+
         fn display_name(&self) -> &str {
             "Asking"
         }
+
         fn supports_steering(&self) -> bool {
             false
         }
+
         fn steering_mode(&self) -> SteeringMode {
             SteeringMode::TurnBoundary
         }
+
         fn reasoning_levels(&self) -> &[ReasoningLevel] {
             &[]
         }
+
         async fn models(&self) -> Result<Vec<Model>, HarnessError> {
             Ok(vec![])
         }
+
         async fn run(
             &self,
             _request: RunRequest,
@@ -2158,21 +2199,27 @@ async fn interrupt_unblocks_a_run_awaiting_input() {
         fn id(&self) -> HarnessId {
             HarnessId::Mock
         }
+
         fn display_name(&self) -> &str {
             "Blocking"
         }
+
         fn supports_steering(&self) -> bool {
             false
         }
+
         fn steering_mode(&self) -> SteeringMode {
             SteeringMode::TurnBoundary
         }
+
         fn reasoning_levels(&self) -> &[ReasoningLevel] {
             &[]
         }
+
         async fn models(&self) -> Result<Vec<Model>, HarnessError> {
             Ok(vec![])
         }
+
         async fn run(
             &self,
             request: RunRequest,
@@ -2323,21 +2370,27 @@ async fn harness_emitted_input_twin_is_dropped_and_answer_resumes() {
         fn id(&self) -> HarnessId {
             HarnessId::Mock
         }
+
         fn display_name(&self) -> &str {
             "DoubleEmit"
         }
+
         fn supports_steering(&self) -> bool {
             false
         }
+
         fn steering_mode(&self) -> SteeringMode {
             SteeringMode::TurnBoundary
         }
+
         fn reasoning_levels(&self) -> &[ReasoningLevel] {
             &[]
         }
+
         async fn models(&self) -> Result<Vec<Model>, HarnessError> {
             Ok(vec![])
         }
+
         async fn run(
             &self,
             _request: RunRequest,
@@ -2511,21 +2564,27 @@ impl Harness for CapturingHarness {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Capturing"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[ReasoningLevel::Medium]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,
@@ -3011,21 +3070,27 @@ async fn parked_steer_restamps_started_at_and_idle_clears_it() {
         fn id(&self) -> HarnessId {
             HarnessId::Mock
         }
+
         fn display_name(&self) -> &str {
             "Parking"
         }
+
         fn supports_steering(&self) -> bool {
             true
         }
+
         fn steering_mode(&self) -> SteeringMode {
             SteeringMode::StepBoundary
         }
+
         fn reasoning_levels(&self) -> &[ReasoningLevel] {
             &[]
         }
+
         async fn models(&self) -> Result<Vec<Model>, HarnessError> {
             Ok(vec![])
         }
+
         async fn run(
             &self,
             _request: RunRequest,
@@ -3196,21 +3261,27 @@ async fn pending_steer_handoff_does_not_publish_a_completion() {
         fn id(&self) -> HarnessId {
             HarnessId::Mock
         }
+
         fn display_name(&self) -> &str {
             "Controlled"
         }
+
         fn supports_steering(&self) -> bool {
             true
         }
+
         fn steering_mode(&self) -> SteeringMode {
             SteeringMode::StepBoundary
         }
+
         fn reasoning_levels(&self) -> &[ReasoningLevel] {
             &[ReasoningLevel::Medium]
         }
+
         async fn models(&self) -> Result<Vec<Model>, HarnessError> {
             Ok(vec![])
         }
+
         async fn run(
             &self,
             _: RunRequest,
@@ -3530,21 +3601,27 @@ async fn start_failure_lands_in_the_transcript() {
         fn id(&self) -> HarnessId {
             HarnessId::Mock
         }
+
         fn display_name(&self) -> &str {
             "FailsToStart"
         }
+
         fn supports_steering(&self) -> bool {
             false
         }
+
         fn steering_mode(&self) -> SteeringMode {
             SteeringMode::TurnBoundary
         }
+
         fn reasoning_levels(&self) -> &[ReasoningLevel] {
             &[]
         }
+
         async fn models(&self) -> Result<Vec<Model>, HarnessError> {
             Ok(vec![])
         }
+
         async fn run(
             &self,
             _request: RunRequest,
@@ -3668,21 +3745,27 @@ impl Harness for HoldsTurn {
     fn id(&self) -> HarnessId {
         HarnessId::Mock
     }
+
     fn display_name(&self) -> &str {
         "Held turn"
     }
+
     fn supports_steering(&self) -> bool {
         true
     }
+
     fn steering_mode(&self) -> SteeringMode {
         SteeringMode::StepBoundary
     }
+
     fn reasoning_levels(&self) -> &[ReasoningLevel] {
         &[]
     }
+
     async fn models(&self) -> Result<Vec<Model>, HarnessError> {
         Ok(vec![])
     }
+
     async fn run(
         &self,
         request: RunRequest,

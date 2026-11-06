@@ -540,8 +540,9 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use gpui::{AppContext, TestAppContext};
+
+    use super::*;
 
     #[gpui::test]
     fn deleted_side_chat_removes_tab_and_closes_empty_pane(cx: &mut TestAppContext) {

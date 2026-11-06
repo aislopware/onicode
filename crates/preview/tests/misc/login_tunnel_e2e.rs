@@ -3,14 +3,14 @@
 //! its loopback port to the login's callback on the running device. The room
 //! is full: it admits only devices joining for a sign-in, as the edge does
 //! past its device limit.
+use std::sync::Arc;
+use std::time::Duration;
+
 use futures::{SinkExt, StreamExt};
 use onicode_preview::{PreviewService, Scope, signaling};
-use std::{sync::Arc, time::Duration};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
-    sync::{Mutex, mpsc},
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{Mutex, mpsc};
 use tokio_tungstenite::tungstenite::Message;
 
 struct Token;

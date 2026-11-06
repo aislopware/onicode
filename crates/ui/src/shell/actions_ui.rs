@@ -1,9 +1,8 @@
-use super::*;
-
 use onicode_proto::{
     ProjectAction, ProjectActionDraft, ProjectActionIcon, ProjectActionRun, ProjectActionsSnapshot,
 };
 
+use super::*;
 use crate::project_actions::{
     ACTION_ICONS, ProjectActionEditor, ProjectActionsKey, ProjectActionsStatus, action_icon,
     draft_from_action,

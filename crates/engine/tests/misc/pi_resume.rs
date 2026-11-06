@@ -1,9 +1,11 @@
 //! Pi's native session id survives an idle process crash through dispatch.
 #![cfg(unix)]
+use std::sync::Arc;
+use std::time::Duration;
+
 use onicode_engine::{EngineCore, HarnessRegistry};
 use onicode_harness::PiHarness;
 use onicode_proto::{HarnessId, RunRequest, SandboxLevel};
-use std::{sync::Arc, time::Duration};
 
 #[tokio::test]
 async fn pi_idle_crash_next_dispatch_loads_stored_session() {

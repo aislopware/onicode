@@ -1,7 +1,6 @@
-use std::fs;
 use std::io::Read as _;
 use std::sync::RwLock;
-use std::thread;
+use std::{fs, thread};
 
 use ashpd::desktop::CreateSessionOptions;
 use ashpd::desktop::global_shortcuts::{

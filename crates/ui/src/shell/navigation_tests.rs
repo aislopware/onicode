@@ -1,6 +1,7 @@
 //! Real pane rendering and key dispatch without booting an engine.
-use super::*;
 use gpui::{AppContext, TestAppContext, VisualTestContext};
+
+use super::*;
 
 struct NavigationHost {
     shell: Entity<Shell>,

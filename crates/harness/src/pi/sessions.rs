@@ -1,11 +1,11 @@
 //! Host-local UUID -> native file lookup. Never rewrite Pi's conversation files.
-use crate::HarnessError;
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
+
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{
-    io::{BufRead, BufReader},
-    path::{Path, PathBuf},
-};
+
+use crate::HarnessError;
 
 #[derive(Clone)]
 pub(super) struct Store {
@@ -33,6 +33,7 @@ impl Store {
             legacy: home.join(".pi/pi-acp/session-map.json"),
         }
     }
+
     /// Whether a steering mode is already set in the settings Pi loads for
     /// `cwd` (global, then project).
     pub fn steering_mode_configured(&self, cwd: &Path) -> bool {
@@ -43,10 +44,12 @@ impl Store {
         .iter()
         .any(|settings| json_file(settings).get("steeringMode").is_some())
     }
+
     fn key(&self, id: &str) -> PathBuf {
         self.root
             .join(format!("{:x}.json", Sha256::digest(id.as_bytes())))
     }
+
     pub fn remember(&self, id: &str, file: &Path) -> Result<(), HarnessError> {
         if !file.is_absolute() {
             return Err(HarnessError::Protocol(
@@ -55,6 +58,7 @@ impl Store {
         }
         self.write(id, &json!({"sessionId":id,"sessionFile":file}))
     }
+
     fn write(&self, id: &str, value: &Value) -> Result<(), HarnessError> {
         std::fs::create_dir_all(&self.root)?;
         let path = self.key(id);
@@ -69,6 +73,7 @@ impl Store {
         }
         result.map_err(Into::into)
     }
+
     pub fn mark_submitted(&self, id: &str) -> Result<(), HarnessError> {
         let mut record = json_file(&self.key(id));
         if let Some(map) = record.as_object_mut()
@@ -78,6 +83,7 @@ impl Store {
         }
         Ok(())
     }
+
     pub fn remember_empty(&self, state: &Value, cwd: &Path) -> Result<(), HarnessError> {
         let id = state["sessionId"]
             .as_str()
@@ -90,6 +96,7 @@ impl Store {
         }
         Ok(())
     }
+
     pub fn resume_args(&self, id: &str, cwd: &Path) -> Result<Vec<String>, HarnessError> {
         match self.resolve(id, cwd) {
             Ok(file) => Ok(vec!["--session".into(), file.display().to_string()]),
@@ -129,6 +136,7 @@ impl Store {
             }
         }
     }
+
     pub fn resolve(&self, id: &str, cwd: &Path) -> Result<PathBuf, HarnessError> {
         let mut candidates = vec![];
         if let Some(file) = json_file(&self.key(id))["sessionFile"].as_str() {
