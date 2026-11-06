@@ -165,8 +165,8 @@ every_minutes = 0
 [rune]
 upstream = "anomalyco/rune"
 branch = "dev"
-base = "ddf14140253bd1b963993895e3fa025d1ec58537"
-base_date = "2026-11-06"
+base = "cbaf637dfe5fcf3ec8b3f1c3ad27246b69742fbf"
+base_date = "2026-11-07"
 every_minutes = 0
 pulls = true
 releases = false
@@ -175,8 +175,8 @@ releases = false
 [t3code]
 upstream = "pingdotgg/t3code"
 branch = "main"
-base = "6577c6b6185167c0e502fa01f9e8e8f2dee6ff25"
-base_date = "2026-11-06"
+base = "c76f94e16a5a6ba22d9f60680efe9b78fd6c64b7"
+base_date = "2026-11-07"
 every_minutes = 0
 pulls = false
 releases = true
@@ -210,8 +210,8 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "4e688da4372888da372596948786ca00f421c979"
-base_date = "2026-11-06"
+base = "2889d8e1bf564af2ed3a72dc929b583551561363"
+base_date = "2026-11-07"
 every_minutes = 60
 pulls = false
 releases = true
