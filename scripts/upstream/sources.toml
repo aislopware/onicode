@@ -131,7 +131,7 @@ paths = ["askama_derive/src/generator.rs", "askama_derive/src/generator/helpers/
 [claude-code]
 upstream = "anthropics/claude-code"
 branch = "main"
-base = "90380efca7f9d73e206fac453f841b6acd664f4d"
+base = "0ed94698aa0aeee471465fc9c867c2e8434c4d68"
 base_date = "2026-11-06"
 every_minutes = 0
 pulls = false
@@ -141,7 +141,7 @@ paths = ["CHANGELOG.md"]
 [claude-agent-sdk-ts]
 upstream = "anthropics/claude-agent-sdk-typescript"
 branch = "main"
-base = "040a7f855da8261c795d975e116f40bb042334f7"
+base = "49dd8ef10dd5cb012dc9fe10703376489850c36c"
 base_date = "2026-11-06"
 every_minutes = 0
 pulls = false
@@ -150,7 +150,7 @@ releases = true
 [claude-agent-sdk-py]
 upstream = "anthropics/claude-agent-sdk-python"
 branch = "main"
-base = "3be907edb9c86269d30d1427a77937dd788d6419"
+base = "407dadbe6578af173bee7330beea5a6809a76884"
 base_date = "2026-11-06"
 every_minutes = 0
 pulls = false
@@ -165,7 +165,7 @@ every_minutes = 0
 [rune]
 upstream = "anomalyco/rune"
 branch = "dev"
-base = "7ead7d63fcf6f9dd9669385a8b90e2ae80015d7b"
+base = "4ca683561a100e16b1ce32f3576f4ade61bd2924"
 base_date = "2026-11-06"
 every_minutes = 0
 pulls = true
