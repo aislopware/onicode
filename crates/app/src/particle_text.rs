@@ -30,7 +30,7 @@ thread_local! {
 
 /// Holds every reveal's clock at `now`, or releases it with `None`. Golden images step it frame by
 /// frame; while held, particles scatter from a fixed seed.
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 pub(crate) fn hold_clock(now: Option<Instant>) {
     HELD_NOW.set(now);
 }

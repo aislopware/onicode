@@ -68,7 +68,7 @@ impl SidebarPeek {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 impl SidebarPeek {
     /// An opening peek held `t` of the way through its curve, for golden images: its start lies an
     /// hour ahead, so every frame reads the same progress.
