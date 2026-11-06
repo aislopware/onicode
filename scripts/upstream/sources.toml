@@ -42,7 +42,7 @@ every_minutes = 0
 upstream = "zed-industries/zed"
 branch = "main"
 checkout = "../slopty/.research/zed-main"
-base = "1478fb5e60f8b7852a2b0da32aa3da5cd9bb6954"
+base = "145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 base_date = "2026-11-06"
 every_minutes = 240
 pulls = false
@@ -167,7 +167,7 @@ releases = false
 [t3code]
 upstream = "pingdotgg/t3code"
 branch = "main"
-base = "6dcaf6cbe727e520f5ff9d854d3be30c89b42bda"
+base = "6577c6b6185167c0e502fa01f9e8e8f2dee6ff25"
 base_date = "2026-11-06"
 every_minutes = 0
 pulls = false
@@ -182,7 +182,7 @@ every_minutes = 0
 [claude-code-acp]
 upstream = "zed-industries/claude-code-acp"
 branch = "main"
-base = "85aec26ef984a421fe8064ce43f60138a3372384"
+base = "ba162346c9ccb4be51f13a3271198351d7822e78"
 base_date = "2026-11-06"
 every_minutes = 0
 pulls = false
