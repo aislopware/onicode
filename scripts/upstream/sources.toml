@@ -12,8 +12,8 @@ upstream = "zeronsh/zeron"
 branch = "main"
 remote = "upstream"
 checkout = "onicode"
-base = "e55b9f52f156c5c3d48c2f47262d04b698f8a468"
-base_date = "2026-11-05"
+base = "1b86c41c8fe3a4314fa1035aae4bfe099c0a1f3b"
+base_date = "2026-11-06"
 every_minutes = 0
 # zeron's own release, CI and edge plumbing is not onicode's; the app, engine and agent code is.
 paths = ["crates/", "apps/zeron/", "apps/ios/", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml"]

@@ -1747,7 +1747,15 @@ impl HarnessUpdateCoordinator {
         let applied = match plan {
             UpdatePlan::Command { executable, args } => {
                 match self.begin_install(harness, &cancel) {
-                    Ok(()) => run_command(&executable, args, UPDATE_TIMEOUT).await,
+                    Ok(()) => run_command_output_watched(
+                        &executable,
+                        args,
+                        UPDATE_TIMEOUT,
+                        &[],
+                        updater_refusals(harness),
+                    )
+                    .await
+                    .map(drop),
                     Err(error) => Err(error),
                 }
             }
@@ -3093,6 +3101,59 @@ async fn run_command_output_env(
     timeout: Duration,
     env: &[(&str, &str)],
 ) -> Result<String, String> {
+    run_command_output_watched(executable, args, timeout, env, &[]).await
+}
+
+/// Output that means an updater stopped to ask something nobody will answer
+/// (its stdin is closed): it is stopped at once with `message` rather than
+/// waited out to its timeout.
+struct Refusal {
+    needle: &'static str,
+    message: &'static str,
+}
+
+/// OpenCode's `upgrade` notices a copy a package manager owns (Homebrew,
+/// npm…), prints this and asks "Install anyways?", defaulting to No; a closed
+/// stdin never answers it.
+const OPENCODE_REFUSALS: &[Refusal] = &[
+    Refusal {
+        needle: "may be managed by a package manager",
+        message: "OpenCode's updater stopped to ask about installing over a copy a package \
+                  manager manages. Update OpenCode with the package manager that installed it.",
+    },
+    Refusal {
+        needle: "Install anyways?",
+        message: "OpenCode's updater stopped to ask whether to install anyway. Update OpenCode \
+                  with the package manager that installed it.",
+    },
+];
+
+fn updater_refusals(harness: HarnessId) -> &'static [Refusal] {
+    match harness {
+        HarnessId::Opencode => OPENCODE_REFUSALS,
+        _ => &[],
+    }
+}
+
+/// An updater's output held a [`Refusal`]'s needle; carries its message.
+#[derive(Debug)]
+struct Refused(&'static str);
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for Refused {}
+
+async fn run_command_output_watched(
+    executable: &Path,
+    args: &[&str],
+    timeout: Duration,
+    env: &[(&str, &str)],
+    refusals: &[Refusal],
+) -> Result<String, String> {
     let mut command = Command::new(executable);
     command
         .args(args)
@@ -3121,8 +3182,8 @@ async fn run_command_output_env(
     let result = tokio::time::timeout(timeout, async {
         tokio::try_join!(
             child.wait(),
-            read_tail(&mut stdout, &mut stdout_bytes),
-            read_tail(&mut stderr, &mut stderr_bytes),
+            read_tail(&mut stdout, &mut stdout_bytes, refusals),
+            read_tail(&mut stderr, &mut stderr_bytes, refusals),
         )
     })
     .await;
@@ -3137,6 +3198,17 @@ async fn run_command_output_env(
             let _ = child.wait().await;
             return Err(match error {
                 Err(_) => format!("{} timed out", executable.display()),
+                Ok(Err(error)) if error.get_ref().is_some_and(|inner| inner.is::<Refused>()) => {
+                    tracing::warn!(
+                        executable = %executable.display(),
+                        output = %last_chars(
+                            &String::from_utf8_lossy(&[stdout_bytes, stderr_bytes].concat()),
+                            4000
+                        ),
+                        "agent CLI updater stopped to ask a question; stopped it"
+                    );
+                    error.to_string()
+                }
                 Ok(Err(error)) => format!("could not run {}: {error}", executable.display()),
                 Ok(Ok(_)) => unreachable!(),
             });
@@ -3175,9 +3247,12 @@ async fn run_command_output_env(
 /// last [`OUTPUT_CAP`] bytes of a stream.
 const OUTPUT_CAP: usize = 1024 * 1024;
 
+/// Reads `pipe` to its end into `tail`, failing with [`Refused`] as soon as
+/// the output holds one of `refusals`' needles.
 async fn read_tail(
     pipe: &mut (impl tokio::io::AsyncRead + Unpin),
     tail: &mut Vec<u8>,
+    refusals: &[Refusal],
 ) -> std::io::Result<()> {
     use tokio::io::AsyncReadExt as _;
     let mut chunk = [0_u8; 16 * 1024];
@@ -3187,6 +3262,16 @@ async fn read_tail(
             break;
         }
         tail.extend_from_slice(&chunk[..read]);
+        // Only what is new, plus enough before it for a needle split across reads.
+        for refusal in refusals {
+            let start = tail.len().saturating_sub(read + refusal.needle.len());
+            if tail[start..]
+                .windows(refusal.needle.len())
+                .any(|window| window == refusal.needle.as_bytes())
+            {
+                return Err(std::io::Error::other(Refused(refusal.message)));
+            }
+        }
         // Drain in batches so a chatty updater isn't memmoved per chunk.
         if tail.len() > 2 * OUTPUT_CAP {
             tail.drain(..tail.len() - OUTPUT_CAP);
@@ -3240,11 +3325,25 @@ fn extract_version(text: &str) -> Option<String> {
 }
 
 fn installed_version(harness: HarnessId, output: &str) -> Option<String> {
+    if harness == HarnessId::Muse {
+        return muse_build_version(output).or_else(|| extract_version(output));
+    }
     if harness == HarnessId::Antigravity {
         return onicode_harness::acp::antigravity_build_version(output)
             .or_else(|| output.lines().next().and_then(extract_version));
     }
     extract_version(output)
+}
+
+/// The build Muse says it is on (`Muse Code 1.4.14 (1.4.14-R7309.1)`): what its
+/// release feed names, where the first version alone would read as older than
+/// the build it is.
+fn muse_build_version(output: &str) -> Option<String> {
+    version_tokens(output).find(|version| {
+        version
+            .split_once("-R")
+            .is_some_and(|(_, build)| build.starts_with(|c: char| c.is_ascii_digit()))
+    })
 }
 
 /// Update checks name the installed release before the candidate
@@ -5408,5 +5507,56 @@ esac
             UpdatePlan::MuseLauncher(plain.clone()),
             HarnessId::Muse
         ));
+    }
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::*;
+
+    #[test]
+    fn muse_is_on_the_build_it_names_not_only_its_release() {
+        let installed =
+            installed_version(HarnessId::Muse, "Muse Code 1.4.14 (1.4.14-R7309.1)").unwrap();
+        assert_eq!(installed, "1.4.14-R7309.1");
+        assert!(!version_is_newer("1.4.14-R7309.1", &installed));
+        assert!(version_is_newer("1.4.14-R7310", &installed));
+        assert!(version_is_newer("1.4.15", &installed));
+        assert_eq!(
+            installed_version(HarnessId::Muse, "Muse Code 1.4.14").as_deref(),
+            Some("1.4.14")
+        );
+        assert_eq!(
+            installed_version(HarnessId::Codex, "codex 0.155.1 (x 1.0.0-R2)").as_deref(),
+            Some("0.155.1")
+        );
+    }
+
+    /// A question split across two reads still stops the updater.
+    #[tokio::test]
+    async fn an_updater_that_asks_is_stopped_at_once() {
+        let (mut writer, mut reader) = tokio::io::duplex(64);
+        let feed = tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt as _;
+            writer
+                .write_all(b"opencode may be managed by a pack")
+                .await
+                .unwrap();
+            writer.flush().await.unwrap();
+            tokio::task::yield_now().await;
+            writer
+                .write_all(b"age manager\nInstall anyways? (y/N)")
+                .await
+                .unwrap();
+            // Never closes: the updater waits for an answer.
+            std::future::pending::<()>().await;
+        });
+        let mut tail = Vec::new();
+        let error = read_tail(&mut reader, &mut tail, OPENCODE_REFUSALS)
+            .await
+            .unwrap_err();
+        assert!(error.get_ref().is_some_and(|inner| inner.is::<Refused>()));
+        assert!(error.to_string().contains("package manager"));
+        feed.abort();
     }
 }
