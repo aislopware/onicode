@@ -200,7 +200,7 @@ releases = true
 upstream = "sst/opencode"
 branch = "dev"
 paths = ["packages/"]
-base = "fc4793cede11924ee452f953aa2b783784ec2492"
+base = "188eee33956e358d57871c59ad1a0834873968b8"
 base_date = "2026-11-06"
 every_minutes = 60
 pulls = false
@@ -210,7 +210,7 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "c1c07853fe6e8e712f264030a30758cfa80eedfe"
+base = "4980f9585a0a2dea0cdc4bb0cee4e631b75fcf5c"
 base_date = "2026-11-06"
 every_minutes = 60
 pulls = false
