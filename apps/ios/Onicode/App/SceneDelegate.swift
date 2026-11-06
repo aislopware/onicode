@@ -2,7 +2,7 @@ import UIKit
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
-    private let app = AppModel()
+    private let app = AppModel.shared
 
     func scene(
         _ scene: UIScene,
@@ -28,6 +28,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         window.makeKeyAndVisible()
         presentPermissionsOnFirstLaunch(args)
+        // A notification's tap lands on its chat.
+        AgentAlerts.shared.open = { [weak window] chatId in
+            (window?.rootViewController as? AppRouter)?.openSession(chatId)
+        }
 
         #if DEBUG
         if args.contains("-voice-preview") {

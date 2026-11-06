@@ -91,6 +91,8 @@ pub(crate) struct ClientInner {
     pub(crate) links_wake: Arc<tokio::sync::Notify>,
     /// When the app last went to the background.
     backgrounded_at: Mutex<Option<std::time::Instant>>,
+    /// The agent alerts this device shows (`crate::alerts`).
+    pub(crate) alerts: crate::alerts::Alerts,
 }
 
 impl Drop for ClientInner {
@@ -160,6 +162,7 @@ impl ClientInner {
                 .recompute(&self.config.device_id, &send_states, synced)
         {
             self.events.workspace(revision);
+            self.alerts.wake();
             // Host presence / live status feed every open session's snapshot
             // (working flag) and composer; `refresh` is O(1) when no doc
             // event is pending.
@@ -316,6 +319,8 @@ impl ClientInner {
         };
         if changed {
             self.events.ordered(ClientEvent::ConnectivityChanged(next));
+            // A stale row means its engine went away only while this device is linked.
+            self.alerts.wake();
             for core in self.cores() {
                 core.refresh();
             }
@@ -653,6 +658,7 @@ impl Client {
             node: Mutex::new(None),
             links_wake: Arc::new(tokio::sync::Notify::new()),
             backgrounded_at: Mutex::new(None),
+            alerts: crate::alerts::Alerts::default(),
             config,
         });
         let backend = match &mode {
@@ -672,6 +678,7 @@ impl Client {
         };
         let _ = inner.backend.set(backend);
         events.start(inner.cancel.clone());
+        crate::alerts::start(&inner);
         inner.recompute_workspace();
         match inner.backend() {
             Backend::Demo(demo) => demo.start(&inner, inner.cancel.clone()),

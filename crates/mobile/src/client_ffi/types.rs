@@ -226,6 +226,8 @@ pub enum ClientEvent {
     Connectivity {
         connectivity: Connectivity,
     },
+    /// `alerts()` changed.
+    Alerts,
 }
 
 impl From<zc::ClientEvent> for ClientEvent {
@@ -241,8 +243,56 @@ impl From<zc::ClientEvent> for ClientEvent {
             zc::ClientEvent::ConnectivityChanged(c) => ClientEvent::Connectivity {
                 connectivity: c.into(),
             },
+            zc::ClientEvent::AlertsChanged => ClientEvent::Alerts,
         }
     }
+}
+
+// ── agent alerts ──────────────────────────────────────────────────────────
+
+/// An agent alert to post as a local notification.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct AgentAlert {
+    /// The notification's id and thread: a newer alert for a chat replaces the older.
+    pub chat_id: String,
+    pub title: String,
+    pub body: String,
+    /// One of `alert_categories()`.
+    pub category: String,
+    /// Breaks through a Focus (a question waiting on the owner).
+    pub urgent: bool,
+    /// Kept in the notification's `userInfo` and handed back to `act_on_alert`.
+    pub payload: String,
+}
+
+impl AgentAlert {
+    pub(crate) fn from_core(alert: &onicode_proto::alerts::AgentAlert) -> Option<Self> {
+        Some(Self {
+            chat_id: alert.chat_id.clone(),
+            title: alert.title.clone(),
+            body: alert.body.clone(),
+            category: alert.category(),
+            urgent: alert.urgent(),
+            payload: serde_json::to_string(alert).ok()?,
+        })
+    }
+}
+
+/// A notification category: the buttons an alert offers.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct AlertCategory {
+    pub id: String,
+    pub actions: Vec<AlertButton>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct AlertButton {
+    pub id: String,
+    pub title: String,
+    /// Shown in red: it stops the run.
+    pub destructive: bool,
+    /// Opens a text field (Reply).
+    pub text_input: bool,
 }
 
 // ── workspace ─────────────────────────────────────────────────────────────

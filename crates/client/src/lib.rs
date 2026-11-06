@@ -25,6 +25,7 @@
 //! Demo mode ([`Mode::Demo`]) runs the *same* registry/session code
 //! against an in-process simulated host, so it exercises the real pipeline.
 
+mod alerts;
 pub mod attachments;
 pub mod catalog;
 mod client;

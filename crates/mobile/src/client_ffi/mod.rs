@@ -529,9 +529,59 @@ impl CoreClient {
     pub fn on_background(&self) {
         self.client.on_background();
     }
+
+    // ── agent alerts ───────────────────────────────────────────────────────
+
+    /// The agent alerts to show now, oldest first. Pull after `ClientEvent::Alerts`; post each
+    /// as a local notification with `chat_id` as its id, and take down the ones that left.
+    pub fn alerts(&self) -> Vec<AgentAlert> {
+        self.client
+            .alerts()
+            .iter()
+            .filter_map(AgentAlert::from_core)
+            .collect()
+    }
+
+    /// The chat on screen (if any) and whether the app is in front: no alert is raised for what
+    /// the owner is looking at.
+    pub fn set_alert_focus(&self, chat_id: Option<String>, in_front: bool) {
+        self.client.set_alert_focus(chat_id, in_front);
+    }
+
+    /// Run a notification's button: `payload` as `AgentAlert::payload` gave it, `action` the
+    /// button's id, `text` what was typed for Reply.
+    pub fn act_on_alert(
+        &self,
+        payload: String,
+        action: String,
+        text: Option<String>,
+    ) -> CoreResult<()> {
+        Ok(self.client.act_on_alert(&payload, &action, text)?)
+    }
 }
 
 // ── static helpers ─────────────────────────────────────────────────────────
+
+/// Every notification category an agent alert posts under, to register at launch.
+#[uniffi::export]
+pub fn alert_categories() -> Vec<AlertCategory> {
+    use onicode_proto::alerts::{self, AlertAction};
+    alerts::ACTION_SETS
+        .iter()
+        .map(|actions| AlertCategory {
+            id: alerts::category(actions),
+            actions: actions
+                .iter()
+                .map(|&action| AlertButton {
+                    id: action.id().to_owned(),
+                    title: action.label().to_owned(),
+                    destructive: action == AlertAction::Stop,
+                    text_input: action == AlertAction::Reply,
+                })
+                .collect(),
+        })
+        .collect()
+}
 
 /// Static harness catalog (the device-unreachable fallback).
 #[uniffi::export]

@@ -29,6 +29,8 @@ pub enum ClientEvent {
     ComposerChanged { chat_id: String, revision: u64 },
     /// Graced connectivity posture changed.
     ConnectivityChanged(Connectivity),
+    /// [`crate::Client::alerts`] changed.
+    AlertsChanged,
 }
 
 pub trait ClientListener: Send + Sync + 'static {
@@ -48,6 +50,7 @@ struct Pending {
     workspace: Option<u64>,
     sessions: BTreeMap<String, u64>,
     composers: BTreeMap<String, u64>,
+    alerts: bool,
 }
 
 impl Pending {
@@ -56,6 +59,7 @@ impl Pending {
             && self.workspace.is_none()
             && self.sessions.is_empty()
             && self.composers.is_empty()
+            && !self.alerts
     }
 
     fn drain(&mut self) -> Vec<ClientEvent> {
@@ -68,6 +72,9 @@ impl Pending {
         }
         for (chat_id, revision) in std::mem::take(&mut self.composers) {
             out.push(ClientEvent::ComposerChanged { chat_id, revision });
+        }
+        if std::mem::take(&mut self.alerts) {
+            out.push(ClientEvent::AlertsChanged);
         }
         out
     }
@@ -135,6 +142,11 @@ impl EventPump {
             let slot = pending.composers.entry(chat_id.to_owned()).or_default();
             *slot = (*slot).max(revision);
         }
+        self.notify.notify_one();
+    }
+
+    pub(crate) fn alerts(&self) {
+        lock(&self.pending).alerts = true;
         self.notify.notify_one();
     }
 

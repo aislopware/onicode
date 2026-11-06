@@ -5,6 +5,9 @@ import UIKit
 /// into view models, and fans change notifications out to screens. All
 /// members are main-thread; core events hop here through `ListenerBridge`.
 final class AppModel {
+    /// The one model: the scene shows it, and a notification's button reaches it with no scene.
+    static let shared = AppModel()
+
     struct FrontPage: Equatable {
         var folders: [FolderRowVM] = []
         var sessions: [SessionRowVM] = []
@@ -53,6 +56,9 @@ final class AppModel {
     private var sessionObservers: [String: [UUID: () -> Void]] = [:]
     private lazy var bridge = ListenerBridge(app: self)
     private var refreshScheduled = false
+    /// The session on screen, and whether the app is in front, for the agent alerts.
+    private var alertChat: String?
+    private var inFront = UIApplication.shared.applicationState != .background
     private var clock: Timer?
     private let path = NWPathMonitor()
     /// The network path's shape last seen (interfaces in order), so only a
@@ -199,6 +205,7 @@ final class AppModel {
         )
         do {
             client = try CoreClient(config: config, mode: mode, listener: bridge)
+            updateAlertFocus()
             joinEngines()
             refreshWorkspace()
             client?.preloadSessions()
@@ -251,12 +258,34 @@ final class AppModel {
             deliveryBackgroundDeadline = deadline
             DispatchQueue.main.asyncAfter(deadline: .now() + 25, execute: deadline)
         }
+        inFront = false
+        updateAlertFocus()
         client?.onBackground()
     }
     func willEnterForeground() {
         endDeliveryBackgroundTask()
+        inFront = true
+        updateAlertFocus()
         client?.onForeground()
         refreshWorkspace()
+    }
+
+    // MARK: Agent alerts
+
+    /// A session came on screen: it raises no alert while it is there.
+    func sessionOnScreen(_ chatId: String) {
+        alertChat = chatId
+        updateAlertFocus()
+    }
+
+    func sessionLeftScreen(_ chatId: String) {
+        guard alertChat == chatId else { return }
+        alertChat = nil
+        updateAlertFocus()
+    }
+
+    private func updateAlertFocus() {
+        client?.setAlertFocus(chatId: inFront ? alertChat : nil, inFront: inFront)
     }
 
     /// Pull to refresh: look the computers up again and redial the registry
@@ -317,6 +346,8 @@ final class AppModel {
         case let .connectivity(c):
             connectivity = c
             for observer in observers.values { observer() }
+        case .alerts:
+            if let client { AgentAlerts.shared.sync(client.alerts()) }
         }
     }
 
