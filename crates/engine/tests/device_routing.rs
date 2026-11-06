@@ -200,7 +200,13 @@ async fn simulated_ios_change_request(
     cwd: &std::path::Path,
 ) -> serde_json::Value {
     let phone = tailnet
-        .join(tailnet.node(), device, onicode_net::Role::Viewer, None)
+        .join(
+            tailnet.node(),
+            device,
+            onicode_net::Role::Viewer,
+            None,
+            None,
+        )
         .await;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     let mut items = loop {
@@ -2061,6 +2067,7 @@ async fn update_status_follows_another_device_through_its_restart() {
             "other-device",
             onicode_net::Role::Engine,
             Some(Arc::new(OneStatus(version))),
+            None,
         )
     };
     let before = host("1.0.0").await;

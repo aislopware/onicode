@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use onicode_engine::EngineCore;
-use onicode_engine::peers::Peers;
+use onicode_engine::peers::{Peers, StreamRouter};
 use onicode_net::Role;
 use onicode_net::transport::endpoint_on;
 use onicode_net_sim::{Faults, Net, NodeId, NodeSpec, SimTailnet};
@@ -52,6 +52,7 @@ impl Tailnet {
         device: &str,
         role: Role,
         service: Option<Arc<dyn RpcService>>,
+        streams: Option<Arc<StreamRouter>>,
     ) -> Peers {
         let seed = self.seed.fetch_add(1, Ordering::Relaxed);
         Peers::start_on(
@@ -59,6 +60,7 @@ impl Tailnet {
             &SimSockets(self.sim.net().clone()),
             PeerConfig::new(device, role).with_seed(seed),
             service,
+            streams,
         )
         .await
         .expect("the device joins the simulated tailnet")
@@ -73,6 +75,7 @@ impl Tailnet {
                 &core.device_id,
                 Role::Engine,
                 Some(core.rpc_service()),
+                Some(core.streams().clone()),
             )
             .await;
         core.set_links(peers.links.clone());

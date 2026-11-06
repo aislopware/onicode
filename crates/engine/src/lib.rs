@@ -191,8 +191,11 @@ pub struct EngineCore {
     workspace_scope: WorkspaceScope,
     /// Auth service (attached by [`Engine::run`]; a lazy dev-mode instance otherwise).
     auth: std::sync::Mutex<Option<Auth>>,
-    /// Peer link cache for `targetDeviceId` routing (attached when edge+auth are ready).
+    /// Links to the user's other engines on the tailnet, once it is up: `targetDeviceId`
+    /// routing and every stream to a peer.
     links: std::sync::Mutex<Option<Arc<onicode_peer::PeerLinks>>>,
+    /// Who serves each kind of stream peers open to this engine (see [`peers::StreamRouter`]).
+    streams: Arc<peers::StreamRouter>,
     /// Release checker (attached by [`Engine::assemble_runtime`]) — the
     /// UpdateStatus stream + ApplyUpdate.
     updater: std::sync::Mutex<Option<onicode_update::Updater>>,
@@ -418,6 +421,7 @@ impl EngineCore {
             workspace_scope: profile.scope(),
             auth: std::sync::Mutex::new(None),
             links: std::sync::Mutex::new(None),
+            streams: Arc::default(),
             updater: std::sync::Mutex::new(None),
             updater_wake: std::sync::Mutex::new(None),
             cloud: std::sync::Mutex::new(None),
@@ -465,6 +469,11 @@ impl EngineCore {
             .links
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(links);
+    }
+
+    /// Where the engine's parts register for the streams peers open to it.
+    pub fn streams(&self) -> &Arc<peers::StreamRouter> {
+        &self.streams
     }
 
     pub fn links(&self) -> Option<Arc<onicode_peer::PeerLinks>> {
@@ -1111,7 +1120,9 @@ impl Engine {
         }
 
         let peers = if config.peers {
-            match peers::Peers::start(&core.device_id, core.rpc_service()).await {
+            match peers::Peers::start(&core.device_id, core.rpc_service(), core.streams().clone())
+                .await
+            {
                 Ok(peers) => {
                     core.set_links(peers.links.clone());
                     Some(peers)

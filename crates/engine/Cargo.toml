@@ -33,6 +33,7 @@ rusqlite.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+bytes.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 notify.workspace = true
