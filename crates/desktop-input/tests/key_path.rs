@@ -295,10 +295,12 @@ mod mac {
 }
 
 fn main() {
-    if std::env::args().any(|arg| arg == "--list") || std::env::var_os("ONICODE_MEASURE").is_none()
-    {
-        return;
-    }
+    let measuring =
+        !std::env::args().any(|arg| arg == "--list") && std::env::var_os("ONICODE_MEASURE").is_some();
     #[cfg(target_os = "macos")]
-    mac::run();
+    if measuring {
+        mac::run();
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = measuring;
 }

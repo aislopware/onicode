@@ -384,10 +384,6 @@ mod imp {
 
         /// Never reached: there is no [`Soc`] off macOS.
         #[must_use]
-        #[expect(
-            clippy::unused_self,
-            reason = "the same call as on macOS, which reads through it"
-        )]
         pub const fn read(&self) -> Option<Reading> {
             None
         }
@@ -396,10 +392,6 @@ mod imp {
     impl Reading {
         /// Never reached: there is no [`Soc`] off macOS.
         #[must_use]
-        #[expect(
-            clippy::unused_self,
-            reason = "the same call as on macOS, which reads through it"
-        )]
         pub const fn since(&self, _before: &Self) -> Option<Span> {
             None
         }

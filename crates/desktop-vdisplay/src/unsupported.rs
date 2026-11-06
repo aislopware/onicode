@@ -42,10 +42,6 @@ impl VirtualDisplay {
     /// # Errors
     ///
     /// None; no value exists.
-    #[expect(
-        clippy::needless_pass_by_ref_mut,
-        reason = "the macOS display's signature"
-    )]
     pub const fn resize(&mut self, _plan: &Plan) -> Result<(), DisplayError> {
         match self.never {}
     }
