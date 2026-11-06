@@ -14369,33 +14369,3 @@ dependencies = [
  "syn 3.0.9",
  "winnow 1.0.5",
 ]
-
-[[patch.unused]]
-name = "gpui-fast"
-version = "0.1.13"
-source = "git+https://github.com/aislopware/gpui-fast.git?rev=bd0a6317936e6f4c8f010cee2a185fdec77de185#bd0a6317936e6f4c8f010cee2a185fdec77de185"
-
-[[patch.unused]]
-name = "gpui-fast-platform"
-version = "0.1.13"
-source = "git+https://github.com/aislopware/gpui-fast.git?rev=bd0a6317936e6f4c8f010cee2a185fdec77de185#bd0a6317936e6f4c8f010cee2a185fdec77de185"
-
-[[patch.unused]]
-name = "gpui-fast-web"
-version = "0.1.13"
-source = "git+https://github.com/aislopware/gpui-fast.git?rev=bd0a6317936e6f4c8f010cee2a185fdec77de185#bd0a6317936e6f4c8f010cee2a185fdec77de185"
-
-[[patch.unused]]
-name = "gpui-pre-platform"
-version = "0.3.11"
-source = "git+https://github.com/aislopware/gpui-fast.git?rev=bd0a6317936e6f4c8f010cee2a185fdec77de185#bd0a6317936e6f4c8f010cee2a185fdec77de185"
-
-[[patch.unused]]
-name = "gpui-pre-reqwest-client"
-version = "0.3.11"
-source = "git+https://github.com/aislopware/gpui-fast.git?rev=bd0a6317936e6f4c8f010cee2a185fdec77de185#bd0a6317936e6f4c8f010cee2a185fdec77de185"
-
-[[patch.unused]]
-name = "gpui-pre-web"
-version = "0.3.11"
-source = "git+https://github.com/aislopware/gpui-fast.git?rev=bd0a6317936e6f4c8f010cee2a185fdec77de185#bd0a6317936e6f4c8f010cee2a185fdec77de185"

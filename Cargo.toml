@@ -102,7 +102,7 @@ http-body-util = "0.1.5"
 loro = "1.17"
 
 # GPUI is aislopware/gpui-fast (retained mode, docs/onicode/decisions/rendering.md), pinned by rev at
-# its onicode/integration branch; every gpui-pre* and gpui-fast* crate is patched to the same rev below,
+# its onicode/integration branch; the gpui-pre crates it reaches are patched to the same rev below,
 # so the graph holds exactly one GPUI. Components are aislopware/gpui-kit's base crate at its
 # onicode/integration branch (upstream longbridge/gpui-kit plus the caret and gutter fixes).
 gpui = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
@@ -238,17 +238,11 @@ askama_derive = { git = "https://github.com/aislopware/askama", rev = "bc3733ad1
 askama_macros = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
 askama_parser = { git = "https://github.com/aislopware/askama", rev = "bc3733ad153cd3e7e7c02d93c025c4efe21c93f9" }
 
-# gpui-kit names GPUI by the gpui-pre snapshots and GPUI Fast's crates.io release; the gpui-fast fork's
-# compat crates stand in for both at this one rev.
+# gpui-kit names GPUI by the gpui-pre snapshots; the gpui-fast fork's compat crates stand in for the ones
+# the graph reaches, at this one rev.
 gpui-pre = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
-gpui-pre-platform = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
-gpui-pre-web = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
 gpui-pre-macros = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
-gpui-pre-reqwest-client = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
 gpui-pre-sum-tree = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
-gpui-fast = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
-gpui-fast-platform = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
-gpui-fast-web = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
 
 # The QUIC stack under onicode-net: n0's noq-proto and noq-udp with slopty's and axolotty's
 # patches (vendor/noq-proto/SLOPTY.md, vendor/noq-udp/SLOPTY.md list each).
