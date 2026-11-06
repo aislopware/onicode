@@ -1,0 +1,75 @@
+[package]
+name = "onicode-grants"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Every privilege Onicode asks for at onboarding: the checklist's model, each read without a prompt and asked on a click, the helper's fresh-process probe, and the drag-into-System-Settings guide"
+
+[dependencies]
+serde.workspace = true
+# The checklist's kept progress (`permissions.json`).
+serde_json.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2.workspace = true
+objc2.workspace = true
+# `AXIsProcessTrusted` (`Grants::current`) and `AXIsProcessTrustedWithOptions` (the helper's
+# request).
+objc2-application-services = { workspace = true, features = ["AXUIElement"] }
+objc2-core-foundation.workspace = true
+# The preflights, and System Settings' window bounds (`CGWindowListCopyWindowInfo`, readable
+# without Screen Recording).
+objc2-core-graphics = { workspace = true, features = ["CGGeometry", "CGWindow", "CGEvent"] }
+# `NSBundle`: the microphone's purpose string and whether the process is an app bundle.
+# `NSFileManager`: whether the app's folder is writable (a disk image's is not).
+objc2-foundation = { workspace = true, features = [
+    "block2",
+    "NSBundle",
+    "NSFileManager",
+    "NSObjCRuntime",
+    "NSProcessInfo",
+    "NSTimer",
+    "NSURL",
+] }
+# The guide's panel: a non-activating NSPanel in glass, the helper's icon as a drag source.
+objc2-app-kit = { workspace = true, features = [
+    "block2",
+    "NSAccessibility",
+    "NSAccessibilityProtocols",
+    "NSApplication",
+    "NSButton",
+    "NSButtonCell",
+    "NSCell",
+    "NSColor",
+    "NSControl",
+    "NSCursor",
+    "NSDragging",
+    "NSDraggingItem",
+    "NSDraggingSession",
+    "NSEvent",
+    "NSFont",
+    "NSGlassEffectView",
+    "NSGraphics",
+    "NSImage",
+    "NSImageView",
+    "NSPanel",
+    "NSPasteboard",
+    "NSProgressIndicator",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSScreen",
+    "NSText",
+    "NSTextField",
+    "NSView",
+    "NSWindow",
+    "NSWorkspace",
+] }
+
+[dev-dependencies]
+# `tests/live.rs` says why it skipped.
+onicode-desktop-testkit.workspace = true
+pretty_assertions.workspace = true
+proptest.workspace = true
+tempfile.workspace = true

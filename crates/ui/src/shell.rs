@@ -69,6 +69,7 @@ mod chat_rename_tests;
 mod command_palette;
 mod file_mutations;
 mod files_panel;
+mod files_route;
 mod harness_updates;
 mod navigation_focus;
 #[cfg(test)]
@@ -779,6 +780,8 @@ fn settings_open_route(route: &str, remembered: SettingsSection) -> Option<Setti
 pub enum Route {
     Chat,
     PullRequests,
+    /// The cross-machine file explorer.
+    Files,
     Settings(SettingsSection),
 }
 
@@ -941,6 +944,7 @@ pub enum NavEntry {
         url: String,
         device: Option<String>,
     },
+    Files,
     Settings(SettingsSection),
 }
 
@@ -1878,6 +1882,8 @@ pub struct Shell {
     /// Route history behind the titlebar back/forward buttons (§ nav history).
     nav: NavHistory,
     pull_requests_page: Option<Entity<PullRequestsPage>>,
+    /// The Files route's explorer, made on its first render.
+    files_page: Option<Entity<crate::explorer::ExplorerPage>>,
     /// Opened pull requests, as tabs in a pane beside the board.
     pull_request_pane: pull_request_pane::PullRequestPane,
     /// A detail view a history step landed on, opened by the next render
@@ -2305,6 +2311,7 @@ impl Shell {
         let open_route = std::env::var("ONICODE_OPEN_ROUTE").ok();
         let route = match open_route.as_deref() {
             Some("pull-requests") => Route::PullRequests,
+            Some("files") => Route::Files,
             Some(route) if route == "settings" || route.starts_with("settings/") => {
                 match settings_open_route(route, settings.settings_section) {
                     Some(section) => {
@@ -2353,6 +2360,7 @@ impl Shell {
         let nav = NavHistory::new(match route {
             Route::Chat => NavEntry::Chat(String::new()),
             Route::PullRequests => NavEntry::PullRequests,
+            Route::Files => NavEntry::Files,
             Route::Settings(section) => NavEntry::Settings(section),
         });
         // Parent notifications carry presentation changes (session status,
@@ -2441,6 +2449,7 @@ impl Shell {
             settings_search: None,
             nav,
             pull_requests_page: None,
+            files_page: None,
             pull_request_pane: Default::default(),
             pending_pull_request: None,
             pull_request_cache: Default::default(),
@@ -5444,6 +5453,7 @@ impl Shell {
                 // The detail view needs the window; the next render opens it.
                 self.pending_pull_request = Some((url, device));
             }
+            NavEntry::Files => self.enter_files_route(cx),
             NavEntry::Settings(section) => {
                 if !matches!(self.route, Route::Settings(_)) {
                     self.settings_return_route = self.route;
@@ -9242,6 +9252,7 @@ impl Shell {
     ) -> AnyElement {
         // Pull requests sits just left of Settings, in the same action group.
         let pull_requests = self.render_pull_requests_button(theme, cx);
+        let files = self.render_files_button(theme, cx);
         let theme = &theme.for_popup();
         let open = self.user_menu.is_open();
         // The profile pill hugs avatar + name (shrinking so long names fade
@@ -9408,6 +9419,7 @@ impl Shell {
                     .items_center()
                     .gap(px(2.0))
                     .children(voice_trigger)
+                    .child(files)
                     .child(pull_requests)
                     .child(
                         div()
@@ -10014,6 +10026,9 @@ impl Shell {
         let theme = &theme_owned;
         let (border, text, faint) = (theme.border, theme.text, theme.text_faint);
 
+        if matches!(self.route, Route::Files) {
+            return self.render_files_route(cx);
+        }
         if matches!(self.route, Route::PullRequests) {
             if self.pull_requests_page.is_none() {
                 self.pull_requests_page =

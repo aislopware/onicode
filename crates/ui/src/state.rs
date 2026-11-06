@@ -913,7 +913,7 @@ pub struct AppState {
     pending_sends: HashMap<String, PendingSend>,
     /// The in-flight send's attachment upload, when it has one.
     upload_progress: Option<UploadProgress>,
-    /// Engine-side queued-attachment transfers by uploadId (`WatchTransfers`
+    /// Engine-side queued-attachment transfers by uploadId (`WatchUploads`
     /// snapshots): real peer-transfer progress for the sending thumbnail's
     /// percent ring, present exactly while bytes are moving.
     transfers: HashMap<String, (u64, u64)>,
@@ -1977,7 +1977,7 @@ impl AppState {
         Some(((done * 100) / progress.total).min(99) as u8)
     }
 
-    /// A `WatchTransfers` snapshot: the engine-side peer leg's in-flight
+    /// A `WatchUploads` snapshot: the engine-side peer leg's in-flight
     /// queued-attachment transfers, replacing the whole set each frame.
     pub fn apply_transfers(&mut self, transfers: Vec<onicode_proto::TransferProgress>) -> bool {
         let transfers: HashMap<_, _> = transfers
@@ -2962,7 +2962,7 @@ impl AppState {
             spawn_watch(
                 cx,
                 handle.clone(),
-                methods::WATCH_TRANSFERS,
+                methods::WATCH_UPLOADS,
                 AppState::apply_transfers,
             ),
             spawn_watch(

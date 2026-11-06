@@ -789,6 +789,10 @@ pub struct EngineRpc {
     /// Viewports' window focus, for desktop banners.
     viewport_focus: crate::desktop_notify::ViewportFocus,
     engine_info: EngineInfo,
+    /// Files between peers (`crate::transfers`).
+    transfers: Option<crate::transfers::EngineTransfers>,
+    /// The shared clipboard (`crate::clipboard`).
+    clipboard: Option<std::sync::Arc<crate::clipboard::ClipboardHost>>,
 }
 
 impl EngineRpc {
@@ -844,7 +848,24 @@ impl EngineRpc {
             harness_updates: None,
             viewport_focus: Default::default(),
             engine_info,
+            transfers: None,
+            clipboard: None,
         }
+    }
+
+    /// Share the core's clipboard (`WatchClipboard` and the rest).
+    pub fn with_clipboard(
+        mut self,
+        clipboard: std::sync::Arc<crate::clipboard::ClipboardHost>,
+    ) -> Self {
+        self.clipboard = Some(clipboard);
+        self
+    }
+
+    /// Share the core's transfers (`StartTransfer` and the rest).
+    pub fn with_transfers(mut self, transfers: crate::transfers::EngineTransfers) -> Self {
+        self.transfers = Some(transfers);
+        self
     }
 
     pub fn with_previews(mut self, previews: onicode_preview::PreviewService) -> Self {
@@ -1970,6 +1991,19 @@ fn forwardable(method: &str) -> bool {
             | methods::CANCEL_HARNESS_UPDATE
             | methods::DISMISS_HARNESS_UPDATE
             | methods::SET_HARNESS_UPDATE_POLICY
+            // One machine: paths, transfers and the clipboard of the device named.
+            | methods::LIST_PATH
+            | methods::PATH_ROOTS
+            | methods::PATH_MUTATE
+            | methods::START_TRANSFER
+            | methods::SERVE_TRANSFER
+            | methods::WATCH_TRANSFERS
+            | methods::CONTROL_TRANSFER
+            | methods::RESOLVE_CONFLICT
+            | methods::CLIPBOARD_FETCH
+            | methods::WATCH_CLIPBOARD
+            | methods::CLIPBOARD_SETTINGS
+            | methods::CLIPBOARD_OFFER
     )
 }
 
@@ -1989,6 +2023,8 @@ fn is_stream_method(method: &str) -> bool {
             | methods::WATCH_WORKSPACE_FILES
             | methods::UPDATE_STATUS
             | methods::WATCH_HARNESS_UPDATES
+            | methods::WATCH_TRANSFERS
+            | methods::WATCH_CLIPBOARD
     )
 }
 
@@ -2177,6 +2213,21 @@ impl RpcService for EngineRpc {
         }
         if voice_remote::handles(method) {
             return self.voice_remote(method, params).await;
+        }
+        // Paths anywhere on this device, and transfers between devices (one-machine.md).
+        if crate::paths::handles(method) {
+            return crate::paths::dispatch(&self.repos, method, params).await;
+        }
+        if crate::clipboard::ClipboardHost::handles(method)
+            && let Some(clipboard) = &self.clipboard
+        {
+            return clipboard.handle(method, params).await;
+        }
+        if crate::transfers::handles(method) {
+            let transfers = self.transfers.as_ref().ok_or_else(|| {
+                RpcError::Failed("transfers are not running on this engine".into())
+            })?;
+            return Box::pin(transfers.dispatch(method, params)).await;
         }
         if crate::acp_registry::handles(method) {
             return Box::pin(crate::acp_registry::dispatch(
@@ -2695,7 +2746,7 @@ impl RpcService for EngineRpc {
             methods::WATCH_CONNECTIVITY => Ok(RpcReply::Stream(watch_stream(
                 self.doc_host.watch_connectivity(),
             ))),
-            methods::WATCH_TRANSFERS => Ok(RpcReply::Stream(watch_stream(
+            methods::WATCH_UPLOADS => Ok(RpcReply::Stream(watch_stream(
                 self.doc_host.watch_transfers(),
             ))),
             methods::WATCH_PREVIEWS => {

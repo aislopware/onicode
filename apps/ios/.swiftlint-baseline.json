@@ -47,36 +47,6 @@
   {
     "violation": {
       "location": {
-        "file": "apps/ios/Onicode/App/SceneDelegate.swift",
-        "line": 7,
-        "character": 5
-      },
-      "reason": "Function should have complexity 10 or less; currently complexity is 14",
-      "severity": "error",
-      "ruleIdentifier": "cyclomatic_complexity",
-      "ruleDescription": "Complexity of function bodies should be limited.",
-      "ruleName": "Cyclomatic Complexity"
-    },
-    "text": "    func scene("
-  },
-  {
-    "violation": {
-      "location": {
-        "file": "apps/ios/Onicode/App/SceneDelegate.swift",
-        "line": 7,
-        "character": 5
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 53 lines",
-      "severity": "error",
-      "ruleIdentifier": "function_body_length",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleName": "Function Body Length"
-    },
-    "text": "    func scene("
-  },
-  {
-    "violation": {
-      "location": {
         "file": "apps/ios/Onicode/Companions/CompanionsViewController.swift",
         "line": 7,
         "character": 7
@@ -933,21 +903,6 @@
     "violation": {
       "location": {
         "file": "apps/ios/Onicode/Shell/MoreViewController.swift",
-        "line": 5,
-        "character": 7
-      },
-      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 275 lines",
-      "severity": "error",
-      "ruleIdentifier": "type_body_length",
-      "ruleDescription": "Type bodies should not span too many lines",
-      "ruleName": "Type Body Length"
-    },
-    "text": "final class MoreViewController: UIViewController, UICollectionViewDelegate {"
-  },
-  {
-    "violation": {
-      "location": {
-        "file": "apps/ios/Onicode/Shell/MoreViewController.swift",
         "line": 38,
         "character": 14
       },
@@ -958,51 +913,6 @@
       "ruleName": "Function Body Length"
     },
     "text": "    override func viewDidLoad() {"
-  },
-  {
-    "violation": {
-      "location": {
-        "file": "apps/ios/Onicode/Shell/MoreViewController.swift",
-        "line": 128,
-        "character": 13
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 80 lines",
-      "severity": "error",
-      "ruleIdentifier": "function_body_length",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleName": "Function Body Length"
-    },
-    "text": "    private func reload() {"
-  },
-  {
-    "violation": {
-      "location": {
-        "file": "apps/ios/Onicode/Shell/MoreViewController.swift",
-        "line": 226,
-        "character": 5
-      },
-      "reason": "Function should have complexity 10 or less; currently complexity is 17",
-      "severity": "error",
-      "ruleIdentifier": "cyclomatic_complexity",
-      "ruleDescription": "Complexity of function bodies should be limited.",
-      "ruleName": "Cyclomatic Complexity"
-    },
-    "text": "    func collectionView(_ collectionView: UICollectionView, didSelectItemAt path: IndexPath) {"
-  },
-  {
-    "violation": {
-      "location": {
-        "file": "apps/ios/Onicode/Shell/MoreViewController.swift",
-        "line": 226,
-        "character": 5
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 68 lines",
-      "severity": "error",
-      "ruleIdentifier": "function_body_length",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleName": "Function Body Length"
-    },
-    "text": "    func collectionView(_ collectionView: UICollectionView, didSelectItemAt path: IndexPath) {"
   },
   {
     "violation": {

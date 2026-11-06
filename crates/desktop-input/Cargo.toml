@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Remote-desktop input and clipboard on the host: CGEvent injection into a whole display, input sources and NSPasteboard on macOS (ported from slopty-input)"
+description = "Remote-desktop input on the host: CGEvent injection into a whole display and input sources on macOS (ported from slopty-input)"
 
 [dependencies]
 onicode-desktop-capture.workspace = true
@@ -24,8 +24,7 @@ objc2.workspace = true
 # own app following a swipe as Safari does (`tests/support/gesture_app.rs`).
 objc2-app-kit = { workspace = true, features = ["block2"] }
 block2.workspace = true
-# A copied file named by reference resolved to its path (`pasteboard`).
-objc2-foundation = { workspace = true, features = ["NSURL"] }
+objc2-foundation.workspace = true
 # The input source's changes, heard from HIToolbox, and the keyboard layout's own data a chord's
 # character is looked up in (`input_source`).
 objc2-core-foundation = { workspace = true, features = ["CFNotificationCenter", "CFData"] }

@@ -1739,7 +1739,7 @@ pub enum TerminalEvent {
     },
 }
 
-/// One in-flight queued-attachment transfer (the `WatchTransfers` stream):
+/// One in-flight queued-attachment transfer (the `WatchUploads` stream):
 /// raw-byte progress of the engine-side relay leg pushing staged bytes to a
 /// remote host. An entry appears when a file's chunks start moving, updates
 /// per landed chunk, and disappears when the host commits it (or the attempt

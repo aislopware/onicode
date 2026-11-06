@@ -4,7 +4,7 @@
 # and engine IPC port.
 # Set ONICODE_DEV_BUILD_ONLY=1 to prepare the signed bundle without launching it.
 #
-# Signing identity (docs/onicode/decisions/desktop-grants.md): TCC keys a grant
+# Signing identity (docs/onicode/decisions/onboarding-grants.md): TCC keys a grant
 # to the designated requirement, which for a real certificate is the fixed
 # identifier plus the certificate, so a grant survives rebuilds only while the
 # identity stays the same. ONICODE_DEV_CODESIGN_IDENTITY when set; else the one

@@ -119,6 +119,9 @@ onicode-proto.workspace = true
 similar.workspace = true
 onicode-doc.workspace = true
 onicode-engine.workspace = true
+# The onboarding checklist's model (`src/onboarding/permissions.rs`); on macOS also each
+# privilege's reads and asks, the drag guide and the microphone.
+onicode-grants.workspace = true
 onicode-harness.workspace = true
 onicode-rpc.workspace = true
 onicode-update.workspace = true
@@ -197,13 +200,12 @@ objc2-web-kit = { version = "0.3.2", features = [
 ] }
 core-foundation = "0.10"
 core-graphics = { version = "0.24", features = ["elcapitan", "highsierra", "link"] }
-# The Desktop view (`src/desktop`): the guide to a Mac's privacy grants, the `VideoLayer` the
-# picture goes up on, and the decoded `CVPixelBuffer`s it takes.
+# The Desktop view (`src/desktop`): the `VideoLayer` the picture goes up on, and the decoded
+# `CVPixelBuffer`s it takes.
 onicode-desktop-client.workspace = true
 onicode-desktop-link.workspace = true
 onicode-desktop-media.workspace = true
 onicode-desktop-proto.workspace = true
-onicode-desktop-grants.workspace = true
 gpui_apple.workspace = true
 objc2-core-foundation.workspace = true
 objc2-core-video.workspace = true

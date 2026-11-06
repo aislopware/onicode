@@ -33,6 +33,7 @@ mod context_usage;
 pub mod desktop;
 mod dictation;
 pub mod edge_fade;
+pub mod explorer;
 pub mod file_icons;
 pub mod files;
 pub mod frost;
@@ -289,7 +290,10 @@ pub fn run_app(config: UiConfig) {
             state: state.clone(),
             boot: config.boot(),
         });
-        open_main_window(state, config.boot(), cx);
+        open_main_window(state.clone(), config.boot(), cx);
+        // Every permission is asked once, in its own window: at the first launch, after a
+        // relaunch it asked for, or when a grant was turned off since.
+        onboarding::permissions::at_launch(state, cx);
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         start_appshot_service(config.boot().data_dir, cx);
         // Native menu bar — macOS gets the standard app menu (About/Services/

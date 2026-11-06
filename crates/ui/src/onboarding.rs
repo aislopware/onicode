@@ -7,6 +7,11 @@
 //! and blocks straight on the window's surface. The shell owns what the steps
 //! can't do from here — the add-project dialog — and hears about it through
 //! [`OnboardingEvent`].
+//!
+//! The permissions checklist ([`permissions`]) is a window of its own beside this flow: it opens
+//! at the first launch too, and again from Settings.
+
+pub mod permissions;
 
 use std::path::{Path, PathBuf};
 

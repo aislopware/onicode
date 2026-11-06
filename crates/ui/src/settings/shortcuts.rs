@@ -97,6 +97,10 @@ pub struct ShortcutsPage {
     semantic_access_prompted: bool,
     /// Settings → General's thread naming card (its own title-bound picker).
     thread_naming: Entity<crate::settings::thread_naming::ThreadNamingCard>,
+    /// Settings → General's clipboard card.
+    clipboard: Entity<crate::settings::clipboard::ClipboardCard>,
+    /// Settings → General's way back to the permissions checklist.
+    permissions: Entity<crate::settings::permissions::PermissionsCard>,
     worktrees: Entity<super::worktrees::WorktreeSettingsCard>,
     _state: Entity<AppState>,
 }
@@ -147,6 +151,14 @@ impl ShortcutsPage {
             thread_naming: {
                 let state = state.clone();
                 cx.new(|cx| crate::settings::thread_naming::ThreadNamingCard::new(state, cx))
+            },
+            clipboard: {
+                let state = state.clone();
+                cx.new(|cx| crate::settings::clipboard::ClipboardCard::new(state, cx))
+            },
+            permissions: {
+                let state = state.clone();
+                cx.new(|cx| crate::settings::permissions::PermissionsCard::new(state, cx))
             },
             worktrees: cx.new(|cx| super::worktrees::WorktreeSettingsCard::new(state.clone(), cx)),
             _state: state,
@@ -990,6 +1002,8 @@ impl Render for ShortcutsPage {
                                             .child(pull_request_destination_row),
                                     ))
                                     .child(self.thread_naming.clone())
+                                    .child(self.clipboard.clone())
+                                    .child(self.permissions.clone())
                                     .child(self.worktrees.clone()),
                             ),
                     )

@@ -60,7 +60,7 @@ pub enum Pane {
     Accessibility,
 }
 
-/// What desktopd may do on its Mac, as `onicode_desktop_grants::Grants` read it (preflight only,
+/// What desktopd may do on its Mac, as `onicode_grants::Grants` read it (preflight only,
 /// never a prompt).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Serialize, Deserialize)]
 pub struct HostGrants {

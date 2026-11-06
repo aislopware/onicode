@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Template for Onicode.app/Contents/Library/LoginItems/Onicode Desktop.app/Contents/Info.plist:
      onicode-desktopd's helper bundle, which owns the Screen Recording and Accessibility grants
-     (docs/onicode/decisions/desktop-grants.md). Replace __VERSION__ before packaging; development
+     (docs/onicode/decisions/onboarding-grants.md). Replace __VERSION__ before packaging; development
      builds (scripts/run-macos-dev.sh) rewrite the bundle id and names. -->
 <plist version="1.0">
 <dict>
@@ -32,7 +32,9 @@
     <key>LSUIElement</key>
     <true/>
     <!-- Purpose strings for the capture prompts that read one (system audio capture). The
-         Screen Recording and Accessibility lists take none: the guide explains those. -->
+         Screen Recording, Accessibility and Post Event alerts take none: the app's permissions
+         checklist starts this helper to raise them (`--request-grant`) and to read them
+         (`--probe-grants`), and its drag panel explains the lists. -->
     <key>NSScreenCaptureUsageDescription</key>
     <string>Onicode Desktop shares this Mac's screen with your own devices on your tailnet when you open a remote desktop.</string>
     <key>NSAudioCaptureUsageDescription</key>

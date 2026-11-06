@@ -131,7 +131,7 @@ pub mod methods {
     /// In-flight queued-attachment transfers (`onicode_proto::TransferProgress`
     /// list): current set first, then a fresh snapshot per landed chunk —
     /// the sending thumbnail's percent-ring feed. No params; IPC-only.
-    pub const WATCH_TRANSFERS: &str = "WatchTransfers";
+    pub const WATCH_UPLOADS: &str = "WatchUploads";
     pub const WATCH_CHATS: &str = "WatchChats";
     pub const WATCH_SIDEBAR_PREFERENCES: &str = "WatchSidebarPreferences";
     pub const WATCH_DEVICES: &str = "WatchDevices";
@@ -297,6 +297,35 @@ pub mod methods {
     pub const CANCEL_HARNESS_UPDATE: &str = "CancelHarnessUpdate";
     pub const DISMISS_HARNESS_UPDATE: &str = "DismissHarnessUpdate";
     pub const SET_HARNESS_UPDATE_POLICY: &str = "SetHarnessUpdatePolicy";
+    // One machine (docs/onicode/decisions/one-machine.md; payloads in
+    // `onicode_proto::files` and `onicode_proto::clipboard`). All forwardable.
+    /// One directory anywhere on the device (`ListPathRequest` → `PathListing`).
+    pub const LIST_PATH: &str = "ListPath";
+    /// Home, volumes and recent folders (`{}` → `PathRoots`).
+    pub const PATH_ROOTS: &str = "PathRoots";
+    /// Mkdir, rename or trash (`PathMutateRequest` → `{}`).
+    pub const PATH_MUTATE: &str = "PathMutate";
+    /// Copy paths between devices; the destination engine owns the job
+    /// (`StartTransferRequest` → `StartTransferReply`).
+    pub const START_TRANSFER: &str = "StartTransfer";
+    /// Destination to source: serve `xfer/<id>/...` streams for these paths
+    /// (`ServeTransferRequest` → `{}`).
+    pub const SERVE_TRANSFER: &str = "ServeTransfer";
+    /// Stream: the whole `TransferUpdate` list, then one update per change.
+    pub const WATCH_TRANSFERS: &str = "WatchTransfers";
+    /// Pause, resume or cancel (`ControlTransferRequest` → `{}`).
+    pub const CONTROL_TRANSFER: &str = "ControlTransfer";
+    /// Answer a conflict (`ResolveConflictRequest` → `{}`).
+    pub const RESOLVE_CONFLICT: &str = "ResolveConflict";
+    /// One type of a clipboard offer from its origin (`ClipboardFetchRequest`).
+    pub const CLIPBOARD_FETCH: &str = "ClipboardFetch";
+    /// Stream: `ClipboardOffer`s as this device's clipboard changes.
+    pub const WATCH_CLIPBOARD: &str = "WatchClipboard";
+    /// Read or set this device's clipboard settings
+    /// (`ClipboardSettingsRequest` → `ClipboardSettings`).
+    pub const CLIPBOARD_SETTINGS: &str = "ClipboardSettings";
+    /// A clipboard offer pushed to a peer (`ClipboardOffer`).
+    pub const CLIPBOARD_OFFER: &str = "ClipboardOffer";
 }
 
 /// The methods an agent's `onicode mcp` server may call with the

@@ -1,8 +1,8 @@
 //! Remote desktop's control types, what the control stream carries between a client and
 //! `onicode-desktopd`: the displays a host lists, opening and shaping a stream, screen input by
-//! key position, the host's events, keys and modifiers, and the clipboard.
+//! key position, the host's events, and keys and modifiers. The clipboard is `onicode-clipboard`'s.
 //!
-//! Ported from slopty's `slopty-proto::{screen, input, transfer}` and `slopty-core`'s display
+//! Ported from slopty's `slopty-proto::{screen, input}` and `slopty-core`'s display
 //! id (MIT, same authors). Whole displays only. Media itself (frames, parity, NACKs, reports,
 //! clock probes) is `onicode_desktop_media::wire`, on datagrams.
 
@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 
 pub mod input;
 pub mod screen;
-pub mod transfer;
 
 pub use onicode_desktop_media::wire::StreamId;
 

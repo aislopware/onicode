@@ -17,7 +17,7 @@
 //! Only the device holding the controls ([`Seat`]) sends input: the seat badge says who holds
 //! them, with a "Take control" button. A Mac whose Screen Recording or Accessibility is off
 //! refuses the session; the view names the pane and the Mac, with a "Turn on" button that opens
-//! the guide on that Mac's screen: here through `onicode_desktop_grants::guide::show`, on
+//! the guide on that Mac's screen: here through `onicode_grants::guide::show`, on
 //! another Mac through its engine (`methods::DESKTOP_OPEN_GUIDE`).
 
 mod glass;
@@ -412,10 +412,13 @@ impl DesktopView {
                 view.focus_changed(false, cx)
             }),
             cx.observe_window_activation(window, |view, window, cx| {
-                if !window.is_window_active() {
+                let active = window.is_window_active();
+                if !active {
                     view.let_go(cx);
                 }
+                view.follow_clipboard(active && view.focused, cx);
             }),
+            cx.on_release(|view, cx| view.follow_clipboard(false, cx)),
         ];
         window.focus(&focus, cx);
         Self {
@@ -567,8 +570,11 @@ impl DesktopView {
                 self.guide_error = None;
             }
         }
-        if self.target.local && onicode_desktop_grants::guide::is_open() {
-            onicode_desktop_grants::guide::report(grants_of(snap.grants));
+        if self.target.local
+            && onicode_grants::guide::is_open()
+            && let Some(pane) = self.guide
+        {
+            onicode_grants::guide::report(!snap.grants.missing().contains(&pane));
         }
         if snap.stage == Stage::Joined && snap.stream.is_none() && self.asked.is_none() {
             self.open_display(&snap.displays);
@@ -789,8 +795,8 @@ impl DesktopView {
         if self.target.local
             && let Some(helper) = local_helper_bundle()
         {
-            match onicode_desktop_grants::guide::show(grants_pane(pane), &helper) {
-                Ok(()) => self.follow_guide(cx),
+            match onicode_grants::guide::show(grants_privilege(pane), &helper) {
+                Ok(()) => self.follow_guide(pane, cx),
                 Err(error) => {
                     tracing::warn!(?error, "the grants guide did not open");
                     self.guide_error = Some("The guide did not open.".into());
@@ -836,9 +842,9 @@ impl DesktopView {
     }
 
     /// While this Mac's guide is open, read desktopd's grants through the engine and hand each
-    /// reading to the guide, which walks to "granted" when the pane comes on. The session's own
-    /// grants go to it too ([`Self::observe`]); this covers a desktopd that is restarting.
-    fn follow_guide(&mut self, cx: &mut Context<Self>) {
+    /// reading of `pane` to the guide, which walks to "granted" when it comes on. The session's
+    /// own grants go to it too ([`Self::observe`]); this covers a desktopd that is restarting.
+    fn follow_guide(&mut self, pane: Pane, cx: &mut Context<Self>) {
         let Some(engine) = self
             .app_state
             .as_ref()
@@ -847,14 +853,14 @@ impl DesktopView {
             return;
         };
         self.guide_task = Some(cx.spawn(async move |this, cx| {
-            while onicode_desktop_grants::guide::is_open() {
+            while onicode_grants::guide::is_open() {
                 if let Ok(reply) = engine
                     .client()
                     .call(methods::DESKTOP_GRANTS, serde_json::json!({}))
                     .await
                     && let Ok(reply) = serde_json::from_value::<GrantsReply>(reply)
                 {
-                    onicode_desktop_grants::guide::report(grants_of(reply.grants));
+                    onicode_grants::guide::report(!reply.grants.missing().contains(&pane));
                 }
                 cx.background_executor().timer(GUIDE_POLL).await;
             }
@@ -909,6 +915,20 @@ impl DesktopView {
         }
         if let (Some(link), Some(screen)) = (&self.link, &self.screen) {
             link.focused(screen.stream, focused);
+        }
+        self.follow_clipboard(focused, cx);
+    }
+
+    /// While this viewer has focus the clipboard follows its Mac both ways; this Mac's own
+    /// desktop needs no following.
+    fn follow_clipboard(&self, focused: bool, cx: &mut App) {
+        if !self.target.local {
+            crate::settings::clipboard::follow(
+                self.app_state.as_ref(),
+                &self.target.device_id,
+                focused,
+                cx,
+            );
         }
     }
 
@@ -1611,31 +1631,22 @@ fn guide_note(pane: Pane, host: &str, local: bool) -> String {
     }
 }
 
-/// The grants crate's name for a pane.
-const fn grants_pane(pane: Pane) -> onicode_desktop_grants::Pane {
+/// The privilege whose list a pane is.
+const fn grants_privilege(pane: Pane) -> onicode_grants::Privilege {
     match pane {
-        Pane::ScreenRecording => onicode_desktop_grants::Pane::ScreenRecording,
-        Pane::Accessibility => onicode_desktop_grants::Pane::Accessibility,
-    }
-}
-
-/// desktopd's grants as the grants crate reads them.
-const fn grants_of(grants: HostGrants) -> onicode_desktop_grants::Grants {
-    onicode_desktop_grants::Grants {
-        screen_recording: grants.screen_recording,
-        accessibility: grants.accessibility,
-        post_event: grants.post_event,
+        Pane::ScreenRecording => onicode_grants::Privilege::ScreenRecording,
+        Pane::Accessibility => onicode_grants::Privilege::Accessibility,
     }
 }
 
 /// The helper bundle inside the running app (`…/Onicode.app/Contents/Library/LoginItems/
 /// Onicode Desktop.app`); `None` for a bare development binary.
-fn local_helper_bundle() -> Option<PathBuf> {
+pub(crate) fn local_helper_bundle() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let app = exe
         .ancestors()
         .find(|dir| dir.extension().is_some_and(|ext| ext == "app"))?;
-    let helper = onicode_desktop_grants::bundle::helper_bundle(app);
+    let helper = onicode_grants::bundle::helper_bundle(app);
     helper.exists().then_some(helper)
 }
 

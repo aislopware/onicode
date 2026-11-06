@@ -1,0 +1,37 @@
+[package]
+name = "onicode-transfer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Files between peers: manifests, block-checked ranges and packs on file streams, resume from disk, conflicts and persisted jobs"
+
+[dependencies]
+async-trait.workspace = true
+base64 = "0.22"
+blake3.workspace = true
+bytes.workspace = true
+libc.workspace = true
+onicode-net.workspace = true
+onicode-peer.workspace = true
+onicode-proto.workspace = true
+onicode-rpc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+zstd.workspace = true
+
+# Trash through NSFileManager (`fsops::trash`).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { workspace = true, features = ["NSFileManager", "NSURL"] }
+
+[dev-dependencies]
+noq.workspace = true
+onicode-net-sim.workspace = true
+proptest.workspace = true
+tempfile.workspace = true
+# `start_paused`: the simulated tailnet runs on tokio's paused clock (`tests/sim.rs`).
+tokio = { workspace = true, features = ["test-util"] }

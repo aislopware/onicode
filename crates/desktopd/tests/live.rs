@@ -52,7 +52,7 @@ async fn the_main_display_streams_from_a_keyframe() {
     if !live::opted_in(live::DESKTOP_LIVE) {
         return;
     }
-    if !onicode_desktop_grants::Grants::current().screen_recording {
+    if !onicode_grants::Grants::current().screen_recording {
         live::skip("no Screen Recording grant for this test binary");
         return;
     }

@@ -23,6 +23,8 @@ pub const DESKTOP_LIVE: &str = "ONICODE_DESKTOP_LIVE";
 pub const INPUT_LIVE: &str = "ONICODE_INPUT_LIVE";
 /// `1` runs the tests that create virtual displays.
 pub const VDISPLAY_LIVE: &str = "ONICODE_VDISPLAY_LIVE";
+/// `1` runs the tests that write named pasteboards (never the general one, never a prompt).
+pub const PASTEBOARD_LIVE: &str = "ONICODE_PASTEBOARD_LIVE";
 
 /// Whether the opt-in tests behind `var` run here (`var` set to `1`). When they do not, says so
 /// once on standard error, naming the variable, and the caller returns.

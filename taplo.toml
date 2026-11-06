@@ -1,6 +1,6 @@
 # taplo formats and checks every TOML file in the repository, Cargo manifests included.
 include = ["**/*.toml"]
-exclude = ["vendor/**", "target/**", ".research/**", "**/node_modules/**"]
+exclude = ["vendor/**", "target/**", ".research/**", ".claude/**", "**/node_modules/**"]
 
 [formatting]
 column_width = 120

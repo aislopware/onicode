@@ -150,7 +150,7 @@ impl InputHighlighter for OnicodeInputHighlighter {
     }
 }
 
-pub(super) fn editor_style(theme: &Theme) -> InputEditorStyle {
+pub(crate) fn editor_style(theme: &Theme) -> InputEditorStyle {
     InputEditorStyle {
         foreground: theme.text.opacity(0.93),
         muted_foreground: theme.text_faint,

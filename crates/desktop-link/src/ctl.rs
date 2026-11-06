@@ -4,7 +4,7 @@
 //! desktopd is a launchd agent of the app's login item (`Onicode Desktop.app`), so it has its
 //! own Screen Recording and Accessibility grants and survives the app quitting. The engine
 //! starts it with `launchctl kickstart` when the socket does not answer, on the label
-//! `onicode_desktop_grants::bundle::helper_id` makes of the app's bundle id (a development
+//! `onicode_grants::bundle::helper_id` makes of the app's bundle id (a development
 //! build's differs).
 
 use std::net::SocketAddr;
@@ -32,7 +32,7 @@ pub enum CtlRequest {
     /// What desktopd is and may do now.
     Status,
     /// The guide to `pane` is open on this Mac's screen: desktopd waits for the grant and
-    /// restarts once it is on (`onicode_desktop_grants::restart_when_granted`), since Screen
+    /// restarts once it is on (`onicode_grants::restart_when_granted`), since Screen
     /// Recording reads stale until the process restarts.
     GuideOpen {
         /// The pane.

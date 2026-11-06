@@ -6,5 +6,21 @@
          their own name, identity, version and runtime environment. -->
     <key>NSMicrophoneUsageDescription</key>
     <string>Onicode uses your microphone for on-device dictation and for voice sessions you start. Voice sessions stream your audio to OpenAI through your ChatGPT-authenticated Codex account.</string>
+    <!-- Purpose strings for what agents Onicode runs may touch: TCC asks on Onicode's behalf
+         for its children, and without a string an agent's osascript is denied silently. The
+         permissions checklist raises these prompts at onboarding
+         (docs/onicode/decisions/onboarding-grants.md). -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Agents you run in Onicode script other apps, such as System Events and Finder, when a task needs it.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>Agents you run in Onicode read and change files on your Desktop when you work there.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>Agents you run in Onicode read and change files in Documents when you work there.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>Agents you run in Onicode read and change files in Downloads when you work there.</string>
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>Agents you run in Onicode read and change files on external drives when you work there.</string>
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>Agents you run in Onicode read and change files on network drives when you work there.</string>
 </dict>
 </plist>

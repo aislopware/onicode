@@ -6045,7 +6045,7 @@ impl Transcript {
     /// flow's `pending://` (bytes ship engine-side after the send; the host
     /// rewrites the ref to an absolute path once they land and the run
     /// starts) and the legacy echo's synthetic `pending/`. Percent sources, in
-    /// order: this attachment's own peer transfer (`WatchTransfers`, by the
+    /// order: this attachment's own peer transfer (`WatchUploads`, by the
     /// uploadId its ref names — the leg that actually takes time), else the
     /// send-wide staging/legacy upload percent. Neither → no number, so a
     /// ring never shows one that isn't a real transfer position (2026-08-20

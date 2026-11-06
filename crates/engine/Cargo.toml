@@ -28,6 +28,10 @@ futures.workspace = true
 onicode-term-link.workspace = true
 # Remote desktop: the broker's types and its line to desktopd (`desktop.rs`).
 onicode-desktop-link.workspace = true
+# The clipboard that follows the owner between machines (`clipboard.rs`).
+onicode-clipboard.workspace = true
+# Files between peers and path browsing (`transfers.rs`, `paths.rs`).
+onicode-transfer.workspace = true
 async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -56,10 +60,10 @@ tempfile.workspace = true
 # tree with these decoders via onicode-ui).
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
-# The host Mac's Screen Recording and Accessibility grants, read without prompting, and the guide
-# that opens their pane (`desktop.rs`).
+# The helper's launchd label and its panes' links (`desktop.rs`), and the paste permission
+# (`clipboard.rs`).
 [target.'cfg(target_os = "macos")'.dependencies]
-onicode-desktop-grants.workspace = true
+onicode-grants.workspace = true
 # The app's bundle id, which names desktopd's launchd label (`desktop.rs`).
 plist.workspace = true
 

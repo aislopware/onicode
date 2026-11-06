@@ -21,7 +21,7 @@
 //! implementation: the stream's `Injector` on an `InputThread`, so no window-server call is
 //! made on the stream's task. The display's bounds come from the stream's geometry probe
 //! ([`InputSink::set_bounds`]), and where the input put the pointer goes back to the stream's
-//! cursor samples ([`PointerWatch`]). [`pasteboard::Board`] is the clipboard seam.
+//! cursor samples ([`PointerWatch`]). The clipboard is `onicode-clipboard`'s.
 //!
 //! The keyboard pieces both ends share live here too: the host's input source by its TIS id
 //! (`input_source`, macOS), and the client's raw keys taken ahead of its text system with
@@ -48,7 +48,6 @@ pub mod input_source;
 pub mod keyboard;
 #[cfg(target_os = "macos")]
 pub mod keymap;
-pub mod pasteboard;
 mod pointer;
 pub mod sources;
 #[cfg(target_os = "macos")]
@@ -67,9 +66,6 @@ pub use injector::{
 };
 use onicode_desktop_capture::Rect;
 use onicode_desktop_proto::screen::{CaptureTarget, ScreenInput};
-#[cfg(target_os = "macos")]
-pub use pasteboard::MacBoard;
-pub use pasteboard::{Board, ClipFormat, board_type, format_of};
 pub use pointer::{Pointer, PointerChanges, PointerWatch};
 #[cfg(target_os = "macos")]
 pub use thread::{CgEvents, InputThread, let_go_everywhere};

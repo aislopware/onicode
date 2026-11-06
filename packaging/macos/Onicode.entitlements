@@ -4,11 +4,10 @@
 <dict>
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
-	<!-- Files the user drops, pastes or picks (and the Downloads folder) stay
-	     readable under the hardened runtime, as in Zed (zed-industries/zed#43609). -->
-	<key>com.apple.security.files.user-selected.read-write</key>
-	<true/>
-	<key>com.apple.security.files.downloads.read-write</key>
+	<!-- The hardened runtime blocks Apple Events without it: agents' osascript calls to System
+	     Events and Finder (docs/onicode/decisions/onboarding-grants.md). The app is not
+	     sandboxed, so no com.apple.security.files.* key applies. -->
+	<key>com.apple.security.automation.apple-events</key>
 	<true/>
 </dict>
 </plist>

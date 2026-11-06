@@ -44,6 +44,20 @@ const INITIAL_WINDOW_PACKETS: u64 = 32;
 /// browser opens six per origin), a file each.
 pub const MAX_STREAMS: u32 = 1024;
 
+/// A stream's receive window. quinn's default (1.25 MB) is 100 Mbit/s at 100 ms; a tailnet path
+/// between Macs is a LAN or a few milliseconds of WAN, often 1 to 10 Gbit/s. 16 MiB covers the
+/// bandwidth-delay product of 10 Gbit/s at 13 ms (or 1 Gbit/s at 130 ms), so one file stream can
+/// fill the path alone. To be measured on the office Macs
+/// (`docs/onicode/decisions/one-machine.md`).
+pub const STREAM_WINDOW: u32 = 16 << 20;
+/// The connection's receive window: four streams' worth, the ranges of a lone big file, so they
+/// never wait on each other's credit. Credit, not memory: nothing is held until bytes arrive
+/// unread.
+pub const CONNECTION_WINDOW: u32 = 64 << 20;
+/// QUIC's send buffer before the link first fits it (`link::SendWindow` then holds it to twice
+/// the congestion window, which past a fast path's BDP already lets every byte BBR would send).
+pub const SEND_WINDOW: u64 = 64 << 20;
+
 /// Lowest send priority that goes ahead of queued datagrams: control, RPC, docs, registry and
 /// terminal streams.
 pub const AHEAD_OF_DATAGRAMS: i32 = 0;
@@ -82,6 +96,9 @@ pub fn transport_config(seed: Option<u64>) -> TransportConfig {
         .keep_alive_interval(Some(KEEP_ALIVE))
         .datagram_receive_buffer_size(Some(DATAGRAM_BUFFER))
         .datagram_send_buffer_size(DATAGRAM_BUFFER)
+        .stream_receive_window(VarInt::from_u32(STREAM_WINDOW))
+        .receive_window(VarInt::from_u32(CONNECTION_WINDOW))
+        .send_window(SEND_WINDOW)
         .max_concurrent_bidi_streams(VarInt::from_u32(MAX_STREAMS))
         .max_concurrent_uni_streams(VarInt::from_u32(MAX_STREAMS))
         .stream_priority_before_datagrams(Some(AHEAD_OF_DATAGRAMS))

@@ -1,7 +1,7 @@
 import UIKit
 
 /// Settings & utilities: the computers this phone reaches, providers,
-/// devices, appearance, archive.
+/// devices, permissions, appearance, archive.
 final class MoreViewController: UIViewController, UICollectionViewDelegate {
     private let app: AppModel
     private var collectionView: UICollectionView!
@@ -136,13 +136,7 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
                 symbol: "cpu")
         ])
         s.appendSections(["Devices"])
-        s.appendItems(
-            app.hostOptions.map {
-                Row(
-                    id: "device:\($0.id)", title: $0.name,
-                    subtitle: $0.online ? "Online · Tap to show its screen" : "Offline",
-                    symbol: "desktopcomputer", accessory: .dot($0.online))
-            })
+        s.appendItems(deviceRows)
         if app.voice.available {
             s.appendSections(["Voice"])
             s.appendItems([
@@ -152,6 +146,12 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
                         ?? "Codex voice device and style", symbol: "waveform")
             ])
         }
+        s.appendSections(["Privacy"])
+        s.appendItems([
+            Row(
+                id: "permissions", title: "Permissions", subtitle: "Notifications and the microphone",
+                symbol: "hand.raised")
+        ])
         s.appendSections(["Appearance"])
         let style = UserDefaults.standard.integer(forKey: "appearance")
         s.appendItems([
@@ -160,6 +160,70 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
             Row(id: "appearance:2", title: "Dark", symbol: "moon", accessory: .check(style == 2)),
         ])
         s.appendSections(["Wallpaper"])
+        s.appendItems(wallpaperRows)
+        s.appendSections(["Math"])
+        s.appendItems(mathRows)
+        s.appendSections(["Sessions"])
+        s.appendItems([
+            Row(
+                id: "groupByProject", title: "Group by Project",
+                subtitle: "Sessions outside your sections, under their project", symbol: "square.stack.3d.up",
+                accessory: .toggle(app.groupByProject)),
+            Row(id: "archived", title: "Archived Sessions", symbol: "archivebox"),
+        ])
+        dataSource.apply(s, animatingDifferences: false)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt path: IndexPath) {
+        collectionView.deselectItem(at: path, animated: true)
+        guard let row = dataSource.itemIdentifier(for: path) else { return }
+        if let page = page(for: row.id) {
+            navigationController?.pushViewController(page, animated: true)
+            return
+        }
+        switch row.id {
+        case let id where id.hasPrefix("appearance:"):
+            let style = Int(id.dropFirst(11)) ?? 0
+            UserDefaults.standard.set(style, forKey: "appearance")
+            view.window?.overrideUserInterfaceStyle = UIUserInterfaceStyle(rawValue: style) ?? .unspecified
+            reload()
+        case "wallpaper:choose":
+            WallpaperPicker.present(from: self)
+        case "wallpaper:effect", "math:font", "math:size":
+            choose(row.id, from: collectionView.cellForItem(at: path))
+        case let id where id.hasPrefix("device:") && !app.isDemo:
+            // A Mac's desktop, full screen (Desktop/DesktopView.swift).
+            guard let client = app.client else { return }
+            let desktop = DesktopViewController(
+                client: client, deviceId: String(id.dropFirst("device:".count)), deviceName: row.title)
+            present(desktop, animated: true)
+        case "wallpaper:remove":
+            WallpaperStore.remove()
+        default:
+            break
+        }
+    }
+}
+
+/// The rows `reload` builds that take more than a line, and the sheets rows open.
+extension MoreViewController {
+    /// The computers this phone reaches, and whether it's on the tailnet.
+    private var computersRow: Row {
+        if app.isDemo {
+            return Row(
+                id: "computers", title: "Computers", subtitle: "The demo's computers are simulated", symbol: "network",
+                accessory: .plain)
+        }
+        let hosts = app.engineHosts
+        let subtitle =
+            hosts.isEmpty
+            ? "Add a computer by its tailnet name"
+            : app.onTailnet ? hosts.joined(separator: ", ") : "Waiting for Tailscale · \(hosts.joined(separator: ", "))"
+        return Row(id: "computers", title: "Computers", subtitle: subtitle, symbol: "network")
+    }
+
+    /// Choose or change the wallpaper, and once one is set, its effect and removal.
+    private var wallpaperRows: [Row] {
         var wall = [
             Row(
                 id: "wallpaper:choose", title: WallpaperStore.isSet ? "Change Wallpaper…" : "Choose Wallpaper…",
@@ -178,8 +242,11 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
                     id: "wallpaper:remove", title: "Remove Wallpaper", symbol: "trash", accessory: .plain,
                     destructive: true))
         }
-        s.appendItems(wall)
-        s.appendSections(["Math"])
+        return wall
+    }
+
+    /// Render Math, and while it's on, the face and size.
+    private var mathRows: [Row] {
         var math = [
             Row(
                 id: "math:render", title: "Render Math", subtitle: "Off shows LaTeX as its source", symbol: "function",
@@ -196,102 +263,70 @@ final class MoreViewController: UIViewController, UICollectionViewDelegate {
                     id: "math:size", title: "Math Size", subtitle: "\(MathSettings.size)% of the text around it",
                     symbol: "textformat.size"))
         }
-        s.appendItems(math)
-        s.appendSections(["Sessions"])
-        s.appendItems([
+        return math
+    }
+
+    /// The computers on the tailnet; a Mac's opens its screen.
+    private var deviceRows: [Row] {
+        app.hostOptions.map {
             Row(
-                id: "groupByProject", title: "Group by Project",
-                subtitle: "Sessions outside your sections, under their project", symbol: "square.stack.3d.up",
-                accessory: .toggle(app.groupByProject)),
-            Row(id: "archived", title: "Archived Sessions", symbol: "archivebox"),
-        ])
-        dataSource.apply(s, animatingDifferences: false)
-    }
-
-    /// The computers this phone reaches, and whether it's on the tailnet.
-    private var computersRow: Row {
-        if app.isDemo {
-            return Row(
-                id: "computers", title: "Computers", subtitle: "The demo's computers are simulated", symbol: "network",
-                accessory: .plain)
+                id: "device:\($0.id)", title: $0.name,
+                subtitle: $0.online ? "Online · Tap to show its screen" : "Offline",
+                symbol: "desktopcomputer", accessory: .dot($0.online))
         }
-        let hosts = app.engineHosts
-        let subtitle =
-            hosts.isEmpty
-            ? "Add a computer by its tailnet name"
-            : app.onTailnet ? hosts.joined(separator: ", ") : "Waiting for Tailscale · \(hosts.joined(separator: ", "))"
-        return Row(id: "computers", title: "Computers", subtitle: subtitle, symbol: "network")
     }
 
-    func collectionView(_ collectionView: UICollectionView, didSelectItemAt path: IndexPath) {
-        collectionView.deselectItem(at: path, animated: true)
-        guard let row = dataSource.itemIdentifier(for: path) else { return }
-        switch row.id {
-        case "voice": navigationController?.pushViewController(VoiceViewController(app: app), animated: true)
-        case "providers":
-            navigationController?.pushViewController(ProvidersViewController(app: app), animated: true)
-        case "computers" where !app.isDemo:
-            navigationController?.pushViewController(EngineHostsViewController(app: app), animated: true)
-        case let id where id.hasPrefix("appearance:"):
-            let style = Int(id.dropFirst(11)) ?? 0
-            UserDefaults.standard.set(style, forKey: "appearance")
-            view.window?.overrideUserInterfaceStyle = UIUserInterfaceStyle(rawValue: style) ?? .unspecified
-            reload()
-        case "wallpaper:choose":
-            WallpaperPicker.present(from: self)
-        case "wallpaper:effect":
-            let sheet = UIAlertController(title: "Wallpaper Effect", message: nil, preferredStyle: .actionSheet)
-            for e in WallpaperStore.allEffects {
-                let action = UIAlertAction(title: WallpaperStore.label(e), style: .default) { _ in
-                    WallpaperStore.effect = e
-                }
-                action.setValue(e == WallpaperStore.effect, forKey: "checked")
-                sheet.addAction(action)
-            }
-            sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-            sheet.popoverPresentationController?.sourceView = collectionView.cellForItem(at: path)
-            present(sheet, animated: true)
-        case "math:font":
-            let sheet = UIAlertController(title: "Math Font", message: nil, preferredStyle: .actionSheet)
-            for f in MathSettings.allFaces {
-                let action = UIAlertAction(title: MathSettings.label(f), style: .default) { [weak self] _ in
-                    MathSettings.face = f
-                    self?.reload()
-                }
-                action.setValue(f == MathSettings.face, forKey: "checked")
-                sheet.addAction(action)
-            }
-            sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-            sheet.popoverPresentationController?.sourceView = collectionView.cellForItem(at: path)
-            present(sheet, animated: true)
-        case "math:size":
-            let sheet = UIAlertController(title: "Math Size", message: nil, preferredStyle: .actionSheet)
-            for size in MathSettings.allSizes {
-                let action = UIAlertAction(title: "\(size)%", style: .default) { [weak self] _ in
-                    MathSettings.size = size
-                    self?.reload()
-                }
-                action.setValue(size == MathSettings.size, forKey: "checked")
-                sheet.addAction(action)
-            }
-            sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-            sheet.popoverPresentationController?.sourceView = collectionView.cellForItem(at: path)
-            present(sheet, animated: true)
-        case let id where id.hasPrefix("device:") && !app.isDemo:
-            // A Mac's desktop, full screen (Desktop/DesktopView.swift).
-            guard let client = app.client else { return }
-            let desktop = DesktopViewController(
-                client: client, deviceId: String(id.dropFirst("device:".count)), deviceName: row.title)
-            present(desktop, animated: true)
-        case "wallpaper:remove":
-            WallpaperStore.remove()
+    /// The page a row pushes, if it pushes one.
+    private func page(for id: String) -> UIViewController? {
+        switch id {
+        case "voice": VoiceViewController(app: app)
+        case "permissions": PermissionsViewController()
+        case "providers": ProvidersViewController(app: app)
+        case "computers" where !app.isDemo: EngineHostsViewController(app: app)
         case "archived":
-            navigationController?.pushViewController(
-                FolderViewController(
-                    app: app, folder: FolderRowVM(id: "archived", name: "Archived", count: 0, symbol: "archivebox")),
-                animated: true)
-        default:
-            break
+            FolderViewController(
+                app: app, folder: FolderRowVM(id: "archived", name: "Archived", count: 0, symbol: "archivebox"))
+        default: nil
         }
+    }
+
+    /// The sheet a choice row opens.
+    private func choose(_ id: String, from source: UIView?) {
+        switch id {
+        case "wallpaper:effect":
+            sheet(
+                "Wallpaper Effect", WallpaperStore.allEffects.map { ($0, WallpaperStore.label($0)) },
+                current: WallpaperStore.effect, from: source
+            ) { WallpaperStore.effect = $0 }
+        case "math:font":
+            sheet(
+                "Math Font", MathSettings.allFaces.map { ($0, MathSettings.label($0)) }, current: MathSettings.face,
+                from: source
+            ) { [weak self] in
+                MathSettings.face = $0
+                self?.reload()
+            }
+        default:
+            sheet("Math Size", MathSettings.allSizes.map { ($0, "\($0)%") }, current: MathSettings.size, from: source) {
+                [weak self] in
+                MathSettings.size = $0
+                self?.reload()
+            }
+        }
+    }
+
+    /// An action sheet of `options`, the current one checked.
+    private func sheet<T: Equatable>(
+        _ title: String, _ options: [(T, String)], current: T, from source: UIView?, _ pick: @escaping (T) -> Void
+    ) {
+        let sheet = UIAlertController(title: title, message: nil, preferredStyle: .actionSheet)
+        for (option, label) in options {
+            let action = UIAlertAction(title: label, style: .default) { _ in pick(option) }
+            action.setValue(option == current, forKey: "checked")
+            sheet.addAction(action)
+        }
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        sheet.popoverPresentationController?.sourceView = source
+        present(sheet, animated: true)
     }
 }

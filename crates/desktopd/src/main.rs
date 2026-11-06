@@ -3,8 +3,10 @@
 //!
 //! - no argument: serve. The main thread parks in the run loop the made displays live on, and the
 //!   runtime runs beside it.
-//! - `--probe-grants`: print the grants a new process reads and exit
-//!   (`onicode_desktop_grants::answer_probe_if_asked`, before anything else).
+//! - `--probe-grants`: print the grants a new process reads and exit, before anything else
+//!   ([`grants::GrantsCommand`]).
+//! - `--request-grant <privilege>`: raise that one alert in this process (the onboarding
+//!   checklist's click), then print the grants and exit.
 //! - `--display-holder <socket> <list>`: be the display holder ([`onicode_desktopd::holder`]).
 //! - `--synthetic`: serve drawn displays; never captures, never needs a grant.
 //! - `doctor`: print the grants as the session tells them, without prompting.
@@ -40,7 +42,9 @@ fn all_granted() -> HostGrants {
 
 fn main() -> ExitCode {
     #[cfg(target_os = "macos")]
-    onicode_desktop_grants::answer_probe_if_asked();
+    if let Some(code) = answer_grants() {
+        return code;
+    }
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -59,6 +63,27 @@ fn main() -> ExitCode {
     let synthetic = args.iter().any(|a| a == "--synthetic");
     let data_dir = onicode_desktopd::data_dir();
     serve(data_dir, synthetic)
+}
+
+/// Answers a probe or a request from the app's checklist, when the arguments ask for one.
+#[cfg(target_os = "macos")]
+fn answer_grants() -> Option<ExitCode> {
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    match grants::GrantsCommand::parse(&args) {
+        Ok(None) => None,
+        Ok(Some(grants::GrantsCommand::Probe)) => {
+            onicode_grants::answer_probe();
+            Some(ExitCode::SUCCESS)
+        }
+        Ok(Some(grants::GrantsCommand::Request(privilege))) => {
+            onicode_grants::answer_request(privilege);
+            Some(ExitCode::SUCCESS)
+        }
+        Err(why) => {
+            let _written = writeln!(std::io::stderr(), "{why}");
+            Some(ExitCode::from(64))
+        }
+    }
 }
 
 /// Print the grants without prompting.

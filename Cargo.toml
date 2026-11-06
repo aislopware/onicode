@@ -39,6 +39,10 @@ members = [
     "crates/net-sim",
     "crates/tailnet",
     "crates/peer",
+    # Files between peers: manifests, ranges, resume (docs/onicode/decisions/one-machine.md).
+    "crates/transfer",
+    # The clipboard that follows the owner between machines (docs/onicode/decisions/one-machine.md).
+    "crates/clipboard",
     # Remote desktop (.research/remote-desktop.md §5).
     "crates/desktop-media",
     "crates/desktop-proto",
@@ -51,8 +55,8 @@ members = [
     "crates/desktop-link",
     "crates/desktopd",
     "crates/desktop-client",
-    # desktopd's privacy grants and the drag-into-System-Settings guide.
-    "crates/desktop-grants",
+    # Every privilege onboarding asks for, and the drag-into-System-Settings guide.
+    "crates/grants",
 ]
 # The vendored QUIC crates are workspace roots of their own, reached only through
 # [patch.crates-io] below.
@@ -102,6 +106,12 @@ onicode-net = { path = "crates/net" }
 onicode-net-sim = { path = "crates/net-sim" }
 onicode-peer = { path = "crates/peer" }
 onicode-tailnet = { path = "crates/tailnet" }
+onicode-transfer = { path = "crates/transfer" }
+onicode-clipboard = { path = "crates/clipboard" }
+# Transfers: BLAKE3 over every block both ends stream, and zstd level 1 for items whose sample
+# shrinks (crates.io newest, 2026-11-06).
+blake3 = "=1.8.7"
+zstd = "=0.14.3"
 # Remote desktop (.research/remote-desktop.md §5): slopty's media, codec, capture, input and
 # virtual-display crates, ported whole.
 onicode-desktop-media = { path = "crates/desktop-media" }
@@ -115,8 +125,8 @@ onicode-desktop-link = { path = "crates/desktop-link" }
 onicode-desktop-client = { path = "crates/desktop-client" }
 # The desktop crates' tests only: live-test skips, percentiles, benches, SoC counters.
 onicode-desktop-testkit = { path = "crates/desktop-testkit" }
-# desktopd's privacy grants, the fresh-process probe and the drag-into-System-Settings guide.
-onicode-desktop-grants = { path = "crates/desktop-grants" }
+# Onboarding's privileges: the checklist, the helper's fresh-process probe, the drag guide.
+onicode-grants = { path = "crates/grants" }
 # Apple frameworks for the desktop crates: the objc2 0.6 family at its newest (crates.io,
 # 2026-11-06), pinned exact as slopty pinned it, the versions gpui-fast already locks so the graph
 # holds one of each. Feature lists are trimmed to the headers the desktop crates call.
@@ -286,17 +296,17 @@ arbitrary = { version = "1.5.0", features = ["derive"] }
 # its main; the gpui-pre crates it reaches are patched to the same rev below, so the graph holds
 # exactly one GPUI. Components are aislopware/gpui-kit's base crate on its main (upstream
 # longbridge/gpui-kit plus the caret and gutter fixes).
-gpui = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
-gpui_platform = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185", features = [
+gpui = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3" }
+gpui_platform = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3", features = [
     "font-kit",
     "runtime_shaders",
 ] }
-gpui_tokio = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
+gpui_tokio = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3" }
 # Tests build a text system and executor without a platform, which only the main thread may create.
-gpui_apple = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185", features = [
+gpui_apple = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3", features = [
     "font-kit",
 ] }
-gpui-base = { git = "https://github.com/aislopware/gpui-kit.git", rev = "489bc829d9c72969da724fca040cf6fde82894c1" }
+gpui-base = { git = "https://github.com/aislopware/gpui-kit.git", rev = "0fb34d8ff5677d20dc0e64f1f27ea1be989a5326" }
 
 # diffs
 similar = "2"
@@ -418,9 +428,9 @@ askama_parser = { git = "https://github.com/aislopware/askama", rev = "bc3733ad1
 
 # gpui-kit names GPUI by the gpui-pre snapshots; the gpui-fast fork's compat crates stand in for the ones
 # the graph reaches, at this one rev.
-gpui-pre = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
-gpui-pre-macros = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
-gpui-pre-sum-tree = { git = "https://github.com/aislopware/gpui-fast.git", rev = "bd0a6317936e6f4c8f010cee2a185fdec77de185" }
+gpui-pre = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3" }
+gpui-pre-macros = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3" }
+gpui-pre-sum-tree = { git = "https://github.com/aislopware/gpui-fast.git", rev = "5241bacd1ed63729f04fede4effa64f1db4785c3" }
 
 # The QUIC stack under onicode-net: n0's noq-proto and noq-udp with slopty's and axolotty's
 # patches (vendor/noq-proto/SLOPTY.md, vendor/noq-udp/SLOPTY.md list each).

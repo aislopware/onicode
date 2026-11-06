@@ -36,6 +36,7 @@ pub fn build_id() -> &'static str {
 mod change_request_store;
 pub mod change_requests;
 mod chat_persistence;
+pub mod clipboard;
 pub mod deferred;
 pub mod desktop;
 pub mod desktop_notify;
@@ -48,6 +49,7 @@ pub(crate) mod home_index;
 pub mod instance_lock;
 pub mod managed;
 mod model_catalogs;
+pub mod paths;
 mod peer_doc_sink;
 pub mod peers;
 pub mod profile;
@@ -65,6 +67,7 @@ pub mod terminals;
 pub mod titles;
 pub mod tool_output;
 mod transcript_history;
+pub mod transfers;
 mod update_trial;
 pub mod uploads;
 pub mod voice;
@@ -175,6 +178,10 @@ pub struct EngineCore {
     links: std::sync::Mutex<Option<Arc<onicode_peer::PeerLinks>>>,
     /// Who serves each kind of stream peers open to this engine (see [`peers::StreamRouter`]).
     streams: Arc<peers::StreamRouter>,
+    /// Files between this engine and its peers, and the `File` stream handler.
+    pub transfers: transfers::EngineTransfers,
+    /// The clipboard shared with this owner's other engines (`one-machine.md`).
+    pub clipboard: Arc<clipboard::ClipboardHost>,
     /// Release checker (attached by [`Engine::assemble_runtime`]) — the
     /// UpdateStatus stream + ApplyUpdate.
     updater: std::sync::Mutex<Option<onicode_update::Updater>>,
@@ -293,6 +300,12 @@ impl EngineCore {
             onicode_net::StreamKind::Registry,
             workspace.registry_server(),
         );
+        // Transfers pull over `File` streams (`xfer/...`); the clipboard's `clip/...` heads
+        // share them through `transfers.set_clip`.
+        let transfers = transfers::EngineTransfers::open(data_dir, &device_id);
+        streams.serve(onicode_net::StreamKind::File, transfers.file_streams());
+        let clipboard = clipboard::ClipboardHost::new(data_dir, &device_id);
+        transfers.set_clip(clipboard.clone());
         let uploads = Uploads::from_root(profile.uploads_root());
         // Queued-attachment support: the doc host resolves `pending://` refs
         // against this store and pushes staged bytes to remote hosts.
@@ -348,6 +361,8 @@ impl EngineCore {
             device_id,
             links: std::sync::Mutex::new(None),
             streams,
+            transfers,
+            clipboard,
             updater: std::sync::Mutex::new(None),
             viewport_focus,
             _instance_lock: lock,
@@ -361,6 +376,8 @@ impl EngineCore {
         self.workspace.set_links(links.clone());
         self.terminal_service.set_links(&links);
         self.previews.set_links(links.clone());
+        self.transfers.set_links(links.clone());
+        self.clipboard.set_links(links.clone());
         *self
             .links
             .lock()
@@ -427,14 +444,20 @@ impl EngineCore {
         .with_previews(self.previews.clone())
         .with_remote_terminals(self.remote_terminals.clone())
         .with_harness_updates(self.harness_updates.clone())
-        .with_viewport_focus(self.viewport_focus.clone());
+        .with_viewport_focus(self.viewport_focus.clone())
+        .with_transfers(self.transfers.clone())
+        .with_clipboard(self.clipboard.clone());
         if let Some(links) = self.links() {
             rpc = rpc.with_links(links);
         }
         if let Some(updater) = self.updater() {
             rpc = rpc.with_updater(updater);
         }
-        Arc::new(rpc)
+        let rpc = Arc::new(rpc);
+        let service: std::sync::Weak<dyn onicode_rpc::RpcService> =
+            Arc::downgrade(&rpc) as std::sync::Weak<dyn onicode_rpc::RpcService>;
+        self.clipboard.set_service(service);
+        rpc
     }
 
     /// Graceful teardown: settle live runs (streaming entries stamped `aborted`),
@@ -454,6 +477,10 @@ impl EngineCore {
         phases.end("sessions");
         self.terminals.shutdown();
         phases.end("terminals");
+        self.transfers.shutdown();
+        phases.end("transfers");
+        self.clipboard.shutdown();
+        phases.end("clipboard");
         self.sessions.stop_activity_projection().await;
         phases.end("activity_projection");
         self.agent_accounts.shutdown();
@@ -711,6 +738,8 @@ impl Engine {
             {
                 Ok(peers) => {
                     core.set_links(peers.links.clone());
+                    // Only a real engine on a tailnet watches this Mac's pasteboard.
+                    core.clipboard.start_general();
                     Some(peers)
                 }
                 Err(error) => {

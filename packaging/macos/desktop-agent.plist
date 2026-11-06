@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Template for Onicode.app/Contents/Library/LaunchAgents/<helper id>.plist, which the app
-     registers with SMAppService.agent(plistName:) (onicode_desktop_grants::agent::register).
+     registers with SMAppService.agent(plistName:) (onicode_grants::agent::register).
      The bundling scripts replace __LABEL__ with the helper's bundle id and __APP_ID__ with the
      app's. BundleProgram is relative to Onicode.app, so desktopd runs from the helper bundle and
      TCC attributes it to "Onicode Desktop"; AssociatedBundleIdentifiers lists it under Onicode in
@@ -19,7 +19,7 @@
     <key>RunAtLoad</key>
     <true/>
     <!-- Started again after a crash or after it leaves to take up a new grant
-         (onicode_desktop_grants::RESTART_EXIT_CODE); a clean exit stays down. -->
+         (onicode_grants::RESTART_EXIT_CODE); a clean exit stays down. -->
     <key>KeepAlive</key>
     <dict>
         <key>SuccessfulExit</key>

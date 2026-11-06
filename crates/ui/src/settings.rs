@@ -20,11 +20,13 @@ use serde::{Deserialize, Serialize};
 pub mod accounts;
 pub mod appearance;
 pub mod archived;
+pub mod clipboard;
 pub mod composer;
 pub mod devices;
 pub mod files;
 pub mod harnesses;
 pub mod notifications;
+pub mod permissions;
 pub mod search;
 pub mod shortcuts;
 pub mod thread_naming;
@@ -551,6 +553,12 @@ pub fn init(settings: UiSettings, data_dir: impl Into<PathBuf>, cx: &mut App) {
         math_generation: 0,
         save_task: None,
     });
+}
+
+/// The data directory `ui-settings.json` lives in; `None` before [`init`].
+pub fn data_dir(cx: &App) -> Option<PathBuf> {
+    cx.try_global::<SettingsStore>()
+        .map(|store| store.data_dir.clone())
 }
 
 /// Latest settings, including mutations still inside the debounce window.

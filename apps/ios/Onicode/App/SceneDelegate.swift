@@ -16,20 +16,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.tintColor = Palette.accent
         self.window = window
         let args = ProcessInfo.processInfo.arguments
-        // `-wallpaper <path> [-wallpaper-effect ascii]`: set the wallpaper at
-        // launch (screenshots, tests); `-wallpaper none` clears it.
-        if let i = args.firstIndex(of: "-wallpaper"), i + 1 < args.count {
-            if args[i + 1] == "none" {
-                WallpaperStore.remove()
-            } else if let image = UIImage(contentsOfFile: args[i + 1]) {
-                WallpaperStore.set(image, name: (args[i + 1] as NSString).lastPathComponent)
-            }
-        }
-        if let i = args.firstIndex(of: "-wallpaper-effect"), i + 1 < args.count,
-            let effect = WallpaperStore.allEffects.first(where: { WallpaperStore.key($0) == args[i + 1] })
-        {
-            WallpaperStore.effect = effect
-        }
+        Self.applyLaunchWallpaper(args)
         if args.contains("-lab") {
             window.rootViewController = MainTabController.nav(TranscriptLabViewController())
         } else {
@@ -40,6 +27,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             window.rootViewController = SplitRootController(app: app)
         }
         window.makeKeyAndVisible()
+        presentPermissionsOnFirstLaunch(args)
 
         #if DEBUG
         if args.contains("-voice-preview") {
@@ -69,6 +57,36 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 #endif
             }
+        }
+    }
+
+    /// `-wallpaper <path> [-wallpaper-effect ascii]`: set the wallpaper at
+    /// launch (screenshots, tests); `-wallpaper none` clears it.
+    private static func applyLaunchWallpaper(_ args: [String]) {
+        if let i = args.firstIndex(of: "-wallpaper"), i + 1 < args.count {
+            if args[i + 1] == "none" {
+                WallpaperStore.remove()
+            } else if let image = UIImage(contentsOfFile: args[i + 1]) {
+                WallpaperStore.set(image, name: (args[i + 1] as NSString).lastPathComponent)
+            }
+        }
+        if let i = args.firstIndex(of: "-wallpaper-effect"), i + 1 < args.count,
+            let effect = WallpaperStore.allEffects.first(where: { WallpaperStore.key($0) == args[i + 1] })
+        {
+            WallpaperStore.effect = effect
+        }
+    }
+
+    /// The permissions page, once, over the shell: Continue (the only way
+    /// out) marks it shown.
+    private func presentPermissionsOnFirstLaunch(_ args: [String]) {
+        guard PermissionsModel.presentsOnLaunch(arguments: args, environment: ProcessInfo.processInfo.environment),
+            let root = window?.rootViewController
+        else { return }
+        DispatchQueue.main.async {
+            let page = PermissionsViewController { [weak root] in root?.dismiss(animated: true) }
+            page.isModalInPresentation = true
+            root.present(page, animated: true)
         }
     }
 

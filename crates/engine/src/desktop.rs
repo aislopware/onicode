@@ -91,7 +91,7 @@ async fn grants(data_dir: &Path) -> Result<GrantsReply, RpcError> {
 /// grant and exits for launchd to restart it (Screen Recording reads stale until it does).
 ///
 /// The guide's drag panel is the app's to show, on its main thread
-/// (`onicode_desktop_grants::guide::show`): the UI does so itself for its own Mac. Asked by
+/// (`onicode_grants::guide::show`): the UI does so itself for its own Mac. Asked by
 /// another device, the engine has no main thread to show it on, so it opens System Settings at
 /// the pane and leaves the panel to the app.
 async fn open_guide(data_dir: &Path, params: OpenGuideParams) -> Result<(), RpcError> {
@@ -189,7 +189,7 @@ async fn kickstart(data_dir: &Path) -> Result<(), RpcError> {
     let uid = std::fs::metadata(data_dir)
         .map_err(|e| RpcError::Failed(format!("{}: {e}", data_dir.display())))?
         .uid();
-    let label = onicode_desktop_grants::bundle::helper_id(&app_bundle_id());
+    let label = onicode_grants::bundle::helper_id(&app_bundle_id());
     let target = format!("gui/{uid}/{label}");
     let out = tokio::process::Command::new("/bin/launchctl")
         .args(["kickstart", &target])
@@ -217,13 +217,13 @@ async fn kickstart(_data_dir: &Path) -> Result<(), RpcError> {
 /// Opens System Settings at `pane` on this Mac.
 #[cfg(target_os = "macos")]
 fn open_pane(pane: onicode_desktop_link::Pane) {
-    use onicode_desktop_grants::Pane as GrantsPane;
-    let pane = match pane {
-        onicode_desktop_link::Pane::ScreenRecording => GrantsPane::ScreenRecording,
-        onicode_desktop_link::Pane::Accessibility => GrantsPane::Accessibility,
+    use onicode_grants::Privilege;
+    let privilege = match pane {
+        onicode_desktop_link::Pane::ScreenRecording => Privilege::ScreenRecording,
+        onicode_desktop_link::Pane::Accessibility => Privilege::Accessibility,
     };
-    if !onicode_desktop_grants::open_pane(pane) {
-        tracing::info!(?pane, "System Settings did not open at the pane");
+    if !onicode_grants::open_settings(privilege) {
+        tracing::info!(?privilege, "System Settings did not open at the pane");
     }
 }
 
@@ -231,7 +231,7 @@ fn open_pane(pane: onicode_desktop_link::Pane) {
 fn open_pane(_pane: onicode_desktop_link::Pane) {}
 
 /// The bundle id of the app this engine runs in, which names desktopd's launchd label
-/// (`onicode_desktop_grants::bundle::helper_id`): `dev.aislopware.onicode` for a release,
+/// (`onicode_grants::bundle::helper_id`): `dev.aislopware.onicode` for a release,
 /// `dev.aislopware.onicode.dev` for a development build (`scripts/run-macos-dev.sh`).
 /// Read from the enclosing app's `Info.plist`; `ONICODE_APP_BUNDLE_ID` overrides it for an
 /// engine run outside a bundle.
