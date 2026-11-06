@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The iOS lane, on an office Mac (scripts/ci/mac.sh hands SUITE ios-pr and ios-nightly here).
+# The iOS lane, on a GitHub-hosted xcode-27 runner (the ios job in .github/workflows/ci.yml).
 #
 #   ios.sh pr       swift format (Xcode's, which the Linux static job lacks), the mobile core for
 #                   aarch64-apple-ios-sim, the committed bindings checked for drift, and the OnicodeTests unit
@@ -18,21 +18,43 @@ if ! git diff --exit-code -- apps/ios/Onicode/Core/Generated apps/ios/CoreFFI; t
   exit 1
 fi
 
-# The first available iPhone simulator on iOS 27.2.
-devices=$(xcrun simctl list --json devices available)
-udid=$(
+# An iPhone simulator on iOS 27.2 or newer. A hosted image may ship the runtime with no device, or only an
+# older runtime: then a device is created, after downloading the iOS platform if no 27.2 runtime exists.
+pick() {
   python3 -I -c '
-import json, sys
-devices = json.load(sys.stdin)["devices"]
-for runtime, entries in sorted(devices.items()):
-    if runtime.endswith("iOS-27-2"):
+import json, subprocess, sys
+def version(identifier):
+    parts = identifier.rsplit(".", 1)[-1].split("-")
+    return tuple(int(p) for p in parts[1:]) if parts[0] == "iOS" else ()
+devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "--json", "devices", "available"]))
+for runtime, entries in sorted(devices["devices"].items(), key=lambda kv: version(kv[0]), reverse=True):
+    if version(runtime) >= (27, 2):
         for entry in entries:
             if entry["name"].startswith("iPhone"):
                 print(entry["udid"])
                 sys.exit(0)
-sys.exit("ios.sh: no iPhone simulator on iOS 27.2")
-' <<<"$devices"
-)
+runtimes = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "--json", "runtimes", "available"]))
+for runtime in sorted(runtimes["runtimes"], key=lambda r: version(r["identifier"]), reverse=True):
+    if version(runtime["identifier"]) >= (27, 2):
+        phones = [t for t in runtime.get("supportedDeviceTypes", []) if t["name"].startswith("iPhone")]
+        if phones:
+            udid = subprocess.check_output(
+                ["xcrun", "simctl", "create", "onicode-ci", phones[-1]["identifier"], runtime["identifier"]]
+            )
+            print(udid.decode().strip())
+            sys.exit(0)
+'
+}
+udid=$(pick)
+if [[ -z "$udid" ]]; then
+  echo "ios.sh: no iOS 27.2 simulator runtime; downloading the iOS platform" >&2
+  xcodebuild -downloadPlatform iOS
+  udid=$(pick)
+fi
+if [[ -z "$udid" ]]; then
+  echo "ios.sh: no iPhone simulator on iOS 27.2 or newer" >&2
+  exit 1
+fi
 
 tests=(-only-testing:OnicodeTests)
 if [[ "$suite" == nightly ]]; then
