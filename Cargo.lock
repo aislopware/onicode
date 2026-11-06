@@ -5677,12 +5677,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "loro-protocol"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9f1697b501f505f286c411c38b062a73f080028157c766cd75f12e243239454"
-
-[[package]]
 name = "loro-rle"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7090,8 +7084,6 @@ name = "onicode"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap",
- "libc",
  "mimalloc",
  "onicode-cli",
  "onicode-engine",
@@ -7099,12 +7091,10 @@ dependencies = [
  "onicode-notify",
  "onicode-rpc",
  "onicode-ui",
- "onicode-update",
  "serde_json",
  "tempfile",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -7449,12 +7439,10 @@ dependencies = [
 name = "onicode-rpc"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "futures",
  "getrandom 0.4.3",
  "onicode-doc",
- "onicode-proto",
  "onicode-sync",
  "serde",
  "serde_json",
@@ -7474,7 +7462,6 @@ dependencies = [
  "chrono",
  "futures",
  "loro",
- "loro-protocol",
  "onicode-doc",
  "onicode-proto",
  "reqwest",
@@ -7603,7 +7590,6 @@ dependencies = [
 name = "onicode-ui"
 version = "0.1.0"
 dependencies = [
- "alacritty_terminal",
  "anyhow",
  "ashpd",
  "async-io",
@@ -7650,7 +7636,6 @@ dependencies = [
  "onicode-voice-session",
  "png 0.18.1",
  "pulldown-cmark",
- "raw-window-handle",
  "reqwest",
  "roxmltree 0.21.2",
  "rust-embed",

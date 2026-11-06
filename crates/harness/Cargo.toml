@@ -35,7 +35,6 @@ serde.workspace = true
 serde_json.workspace = true
 deser-hjson.workspace = true
 serde_yaml_ng = "0.10"
-anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 sha2.workspace = true
@@ -53,3 +52,4 @@ libc.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 onicode-doc.workspace = true
 tempfile.workspace = true
+anyhow.workspace = true

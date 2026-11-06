@@ -145,7 +145,6 @@ pulldown-cmark.workspace = true
 onicode-markdown.workspace = true
 zatex = { workspace = true, features = ["bundled"] }
 html5ever = "0.39"
-alacritty_terminal.workspace = true
 onicode-term.workspace = true
 base64 = "0.22"
 image = { version = "0.25.10", default-features = false, features = [
@@ -175,7 +174,6 @@ rust-embed = "=8.7.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 wry = { version = "0.56", default-features = false, features = ["os-webview"] }
-raw-window-handle = "0.6"
 objc2 = "0.6"
 block2 = "0.6"
 objc2-app-kit = { version = "0.3.2", features = [

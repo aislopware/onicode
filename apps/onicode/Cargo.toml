@@ -24,17 +24,13 @@ doc = false
 onicode-engine.workspace = true
 onicode-rpc.workspace = true
 onicode-ui.workspace = true
-onicode-update.workspace = true
 onicode-cli.workspace = true
 onicode-mcp.workspace = true
 onicode-notify.workspace = true
 tokio.workspace = true
-clap.workspace = true
 anyhow.workspace = true
-libc.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
 
 # The custom allocator is macOS-only (see main.rs): glibc measured flat on the
 # same streaming/scroll workloads, so Linux keeps the system allocator.

@@ -57,7 +57,6 @@ onicode-veil = { path = "crates/veil" }
 onicode-term = { path = "crates/term" }
 onicode-term-link = { path = "crates/term-link" }
 onicode-voice-media = { path = "crates/voice-media" }
-onicode-audio = { path = "crates/audio" }
 onicode-proto = { path = "crates/proto" }
 onicode-preview = { path = "crates/preview" }
 onicode-preview-label = { path = "crates/preview-label" }
@@ -73,7 +72,6 @@ onicode-ui = { path = "crates/ui" }
 onicode-notify = { path = "crates/notify" }
 onicode-syntax = { path = "crates/syntax" }
 onicode-markdown = { path = "crates/markdown" }
-onicode-mobile = { path = "crates/mobile" }
 onicode-client = { path = "crates/client" }
 onicode-theme = { path = "crates/theme" }
 onicode-mcp = { path = "crates/mcp" }
@@ -86,7 +84,6 @@ onicode-visual-gpu = { path = "crates/visual-gpu" }
 onicode-net = { path = "crates/net" }
 onicode-net-sim = { path = "crates/net-sim" }
 onicode-tailnet = { path = "crates/tailnet" }
-onicode-peer = { path = "crates/peer" }
 # n0's QUIC, held to 1.4.x: noq-proto and noq-udp are the vendored, patched copies
 # (vendor/*/SLOPTY.md), and the patches are written against 1.4.0.
 noq = { version = "~1.4.0", default-features = false, features = ["runtime-tokio"] }
@@ -105,7 +102,6 @@ loro = "1.17"
 # Wire protocol for the SessionRoom DO rooms — official Rust twin of the npm
 # `loro-protocol` package the TS edge speaks (same monorepo, byte-identical
 # frames, cross-checked by its js_snapshots tests).
-loro-protocol = "0.3"
 
 # gpui — zeronsh/zui, extracted from wingleeio/zed e2ddcc6 with identical
 # crate sources; adds bounded blur passes and shared Gaussian weights.
