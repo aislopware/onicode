@@ -13,8 +13,11 @@ edge/dist/
 # the card pages' static files, copied in by `npm -C edge run card-assets`
 edge/public/
 .agents
-.claude
-CLAUDE.md
+.claude/settings.local.json
+.claude/worktrees/
 /scripts/**/__pycache__/
 .dev.vars
 .dev.vars.*
+
+# local research notes (never published)
+/.research/
