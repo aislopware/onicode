@@ -11,3 +11,7 @@ serde_json.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 pulldown-cmark.workspace = true
+
+[dev-dependencies]
+# The alert machine's model tests (`alerts`).
+proptest.workspace = true
