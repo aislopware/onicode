@@ -5,7 +5,7 @@
 //!   [`LTR_EVERY`] frames, the bytes a function of the picture), a tone for sound, and an injector
 //!   that records what it is handed ([`Recording`]). The pipeline and session tests run on it over
 //!   the simulated tailnet.
-//! - [`Canvas`], on a Mac: the capture crate's drawn canvas, coded by VideoToolbox, so a real
+//! - `Canvas`, on a Mac: the capture crate's drawn canvas, coded by VideoToolbox, so a real
 //!   client shows a real moving picture with no Screen Recording grant; input is recorded and
 //!   counted on the canvas's strip.
 
