@@ -65,6 +65,29 @@ accessible name. The send button's morph stays in the app: it is a motion piece,
 layers, not a primitive. Next, in order: tooltips, popovers and menus, the text input, pickers, tabs, lists and
 scrollbars, badges, toasts, progress and pulse.
 
+How the kit behaves is held to Base UI (mui/base-ui, watched in `scripts/upstream/sources.toml`), the web's best
+unstyled library, so that a component onicode extends from the kit inherits interaction it would otherwise
+rebuild. monocode decides how a component looks; Base UI decides what it does. That is no UI idea from another
+reference: no pixel moves. What moved in the kit (2026-11-07):
+- The pointer travels to a hoverable popup (tooltip, hover card, submenu) inside a safe triangle. gpui-fast's
+  `fast::hover_intent` judges the triangle; upstream's flat 500 ms closed a tooltip on a slow trip to its button.
+- A popover or dialog that opens hands focus to its first control, and a non-modal popover closes when focus
+  leaves it.
+- A popup flips across its trigger when the other side has more room.
+- Menus: open a submenu after a 100 ms rest, typeahead, Home/End. A checkable item stays open, a keyboard open
+  highlights the first item, and press-drag-release picks the item under the pointer.
+- Lists and menus keep one highlight: hover moves the keyboard cursor instead of painting a second one.
+- Tabs, radio and toggle groups, toolbars and accordions share one roving focus. A toolbar is one Tab stop.
+- Toasts announce at their priority.
+- A focused scroller scrolls from the keyboard (gpui-fast's `fast::scroll_keys`).
+
+Base UI behaviours still to come:
+- popover open-on-hover;
+- a select's list aligned to its trigger;
+- a combobox with its input in the field, and chips;
+- toast swipe and F6;
+- popup exit motion.
+
 ## Retained mode
 gpui-fast redraws a view only when something it read changed: an entity, a global, a list or scroll state, or the
 window's pointer, modifiers or focus. So:

@@ -269,14 +269,14 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # (docs/onicode/golden.md). Since 2026-11-07 it also carries rune's idle ideas: a frame drawn the same as the one
 # shown is not presented, debug churn warnings, and the motion gate for tests (docs/onicode/decisions/rendering.md);
 # and fast::app_init, so gpui-kit sets itself up for every App, test apps included.
-gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "fcf3df54371dce79931653322524881b6dc80121", default-features = false }
-gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "fcf3df54371dce79931653322524881b6dc80121", default-features = false }
+gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "d405ded4ace0c3ff1841177b38abc4ed255de552", default-features = false }
+gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "d405ded4ace0c3ff1841177b38abc4ed255de552", default-features = false }
 # The headless Metal renderer, the CoreText text system and the GPU memory snapshot.
-gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "fcf3df54371dce79931653322524881b6dc80121" }
+gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "d405ded4ace0c3ff1841177b38abc4ed255de552" }
 
 # The component library (docs/onicode/decisions/rendering.md): aislopware's gpui-kit fork on the same
 # gpui-fast rev, wearing monocode's look; monocode's widgets move onto it one primitive at a time.
-gpui-component = { git = "https://github.com/aislopware/gpui-kit", rev = "98152f9d710347105f5e3f4393949efb37c331ea" }
+gpui-component = { git = "https://github.com/aislopware/gpui-kit", rev = "d25528da423e16bd7a93e5059b2a888318cf4b90" }
 
 # storage
 # `bundled`: one SQLite on every platform, not whichever the OS ships. `hooks`: a search a newer
