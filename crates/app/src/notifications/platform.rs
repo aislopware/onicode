@@ -6,13 +6,6 @@ use std::sync::mpsc::{self, Receiver};
 use super::delivery::{Permission, Target};
 
 /// What the owner did with an agent alert's button (`docs/onicode/decisions/alerts.md`).
-#[cfg_attr(
-    not(target_os = "macos"),
-    expect(
-        dead_code,
-        reason = "only the macOS notification center reports buttons"
-    )
-)]
 pub struct AlertResponse {
     /// The alert's identifier.
     pub id: String,

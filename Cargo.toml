@@ -316,7 +316,7 @@ unicode-width = "0.2"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "stream", "system-proxy"] }
 
 [profile.release]
-# Distribution profile (scripts/package-linux.sh): thin LTO buys most of fat
+# Distribution profile (scripts/release/bundle-macos.sh): thin LTO buys most of fat
 # LTO's size/speed win at a fraction of the link time; strip debug symbols.
 lto = "thin"
 strip = "symbols"

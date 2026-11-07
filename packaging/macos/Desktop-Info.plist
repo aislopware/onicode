@@ -2,8 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Template for Onicode.app/Contents/Library/LoginItems/Onicode Desktop.app/Contents/Info.plist:
      onicode-desktopd's helper bundle, which owns the Screen Recording and Accessibility grants
-     (docs/onicode/decisions/onboarding-grants.md). Replace __VERSION__ before packaging; development
-     builds (scripts/run-macos-dev.sh) rewrite the bundle id and names. -->
+     (docs/onicode/decisions/onboarding-grants.md). scripts/macos-desktop-helper.sh replaces __VERSION__
+     as scripts/native/bundle-native-macos.sh assembles the app. -->
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>

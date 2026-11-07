@@ -1,5 +1,5 @@
-//! Where desktopd lives inside `Onicode.app`, as `scripts/bundle-macos.sh`,
-//! `scripts/package-macos.sh` and `scripts/run-macos-dev.sh` lay it out.
+//! Where desktopd lives inside `Onicode.app`, as `scripts/native/bundle-native-macos.sh` lays it
+//! out (for a release, through `scripts/release/bundle-macos.sh`).
 //!
 //! ```text
 //! Onicode.app/Contents/
