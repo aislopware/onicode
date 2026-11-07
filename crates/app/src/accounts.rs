@@ -424,8 +424,8 @@ impl Accounts {
         cx.notify();
     }
 
-    pub(crate) fn suggestion(&self, kind: Kind, selected: &str) -> Option<Account> {
-        let now = usage::now_ms();
+    /// An account to switch to from `selected`, its usage read at `now` (Unix ms).
+    pub(crate) fn suggestion(&self, kind: Kind, selected: &str, now: i64) -> Option<Account> {
         let snapshot = |id: &str| {
             self.usage
                 .get(&Key::new(kind, self.profile(id), None))?
@@ -453,8 +453,9 @@ impl Accounts {
         self.profile(&self.book.selected(kind, project))
     }
 
-    /// React's `accountStatus`: a tone, a word, and an optional detail.
-    pub(crate) fn status(&self, kind: Kind, id: &str) -> Status {
+    /// React's `accountStatus`: a tone, a word, and an optional detail, its
+    /// usage read at `now` (Unix ms).
+    pub(crate) fn status(&self, kind: Kind, id: &str, now: i64) -> Status {
         let key = Key::new(kind, self.profile(id), None);
         // Claude reports nothing until the account's next turn: not known yet, not a failure.
         let checking = Status {
@@ -470,7 +471,6 @@ impl Accounts {
         let Some(state) = self.usage.get(&key) else {
             return checking;
         };
-        let now = usage::now_ms();
         if let Some(standing) = state.snapshot.as_ref().and_then(|s| s.standing(now)) {
             return match standing {
                 usage::Standing::Exhausted(back) => Status {

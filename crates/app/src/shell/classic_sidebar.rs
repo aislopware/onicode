@@ -267,8 +267,12 @@ impl gpui::RenderOnce for ChangeStats {
 }
 
 impl Shell {
-    pub(super) fn classic_sidebar(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        self.refresh_sidebar_structure(cx);
+    pub(super) fn classic_sidebar(
+        &mut self,
+        now: &crate::inbox::RelativeNow,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        self.refresh_sidebar_structure(sidebar_list::heading_now(now), cx);
         if self
             .classic_worktree_picker
             .as_ref()
@@ -280,7 +284,7 @@ impl Shell {
         let live_agents = if self.workspace.project_rail_open {
             None
         } else {
-            self.live_agents_preview(cx)
+            self.live_agents_preview(now, cx)
         };
         div()
             .id("onicode-sidebar")
@@ -378,7 +382,7 @@ impl Shell {
                 d.child(self.app_update_footer(cx))
             })
             .children(self.classic_worktree_popover(cx))
-            .children(self.classic_session_preview(cx))
+            .children(self.classic_session_preview(now, cx))
             .into_any()
     }
 
@@ -914,7 +918,11 @@ impl Shell {
         )
     }
 
-    fn classic_session_preview(&self, cx: &Context<Self>) -> Option<AnyElement> {
+    fn classic_session_preview(
+        &self,
+        now: &crate::inbox::RelativeNow,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
         if self.classic_sidebar_tab != ClassicSidebarTab::Sessions {
             return None;
         }
@@ -953,9 +961,13 @@ impl Shell {
                                     self.session_metadata(id, cx).summary,
                                     preview.data.as_ref(),
                                     self.unseen_finished.contains(&id),
+                                    now,
                                 )
                             },
-                            |view| view.read(cx).preview(self.unseen_finished.contains(&id)),
+                            |view| {
+                                view.read(cx)
+                                    .preview(self.unseen_finished.contains(&id), now)
+                            },
                         )),
                 )
                 .into_any_element(),

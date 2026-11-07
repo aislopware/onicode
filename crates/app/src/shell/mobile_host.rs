@@ -1603,7 +1603,7 @@ impl Shell {
                     .map(|id| {
                         let key = crate::accounts::Key::new(kind, center.profile(id), None);
                         let state = center.usage.get(&key);
-                        let status = center.status(kind, id);
+                        let status = center.status(kind, id, now);
                         let snapshot = state.and_then(|s| s.snapshot.as_ref());
                         let meters: Vec<Value> = snapshot
                             .map(|s| s.windows.as_slice())

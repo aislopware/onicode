@@ -123,6 +123,12 @@ impl SidebarList {
     }
 }
 
+/// The clock the sidebar's index is built against, as the sidebar reads it:
+/// its dated headings and time filters move on within a minute.
+pub(super) fn heading_now(now: &crate::inbox::RelativeNow) -> u64 {
+    u64::try_from(now.ms(60_000)).unwrap_or(0)
+}
+
 fn age_label(updated_at: u64, now: u64) -> &'static str {
     let today = chrono::DateTime::from_timestamp_millis(now.min(i64::MAX as u64) as i64)
         .map(|t| t.with_timezone(&chrono::Local).date_naive());
@@ -223,9 +229,9 @@ impl Shell {
     /// Session membership/order changes independently of scroll position and
     /// hover state. Keep the expensive project index until a data notification
     /// invalidates it; individual cards still read live metadata each render.
-    pub(super) fn refresh_sidebar_structure(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn refresh_sidebar_structure(&mut self, now: u64, cx: &mut Context<Self>) {
         let scope = self.sidebar_scope();
-        let minute = onicode_protocol::time::now_ms() / 60_000;
+        let minute = now / 60_000;
         if self.sidebar_list.structure_dirty.replace(false)
             || self.sidebar_list.scope != scope
             || self.sidebar_list.indexed_minute != minute
@@ -256,7 +262,7 @@ impl Shell {
             for id in folders {
                 self.folder_bounds.entry(id).or_default();
             }
-            self.prepare_sidebar_list(&entries, cx);
+            self.prepare_sidebar_list(&entries, now, cx);
         }
         self.sync_sidebar_list_visibility();
         self.sidebar_list.clear_bounds();
@@ -275,13 +281,12 @@ impl Shell {
         )
     }
 
-    pub(super) fn prepare_sidebar_list(&mut self, entries: &[Entry], cx: &App) {
+    pub(super) fn prepare_sidebar_list(&mut self, entries: &[Entry], now: u64, cx: &App) {
         if self.workspace.classic_layout {
             self.prepare_classic_sidebar_list(entries);
             return;
         }
         let groups = self.project_groups();
-        let now = onicode_protocol::time::now_ms();
         let mut rows = vec![Row::Navigation];
         let mut folders = false;
         for entry in entries {
@@ -450,7 +455,10 @@ impl Shell {
             .child(sidebar_faded(
                 list(
                     self.sidebar_list.state.clone(),
-                    cx.processor(|this, ix, _, cx| this.sidebar_list_row(ix, cx)),
+                    cx.processor(|this, ix, window, cx| {
+                        let now = crate::inbox::RelativeNow::read(window, cx);
+                        this.sidebar_list_row(ix, &now, cx)
+                    }),
                 )
                 .size_full(),
                 self.sidebar_list.state.clone(),
@@ -465,7 +473,12 @@ impl Shell {
         sidebar.into_any()
     }
 
-    fn sidebar_list_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
+    fn sidebar_list_row(
+        &mut self,
+        ix: usize,
+        now: &crate::inbox::RelativeNow,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let Some(row) = self.sidebar_list.rows.get(ix).cloned() else {
             return div().into_any();
         };
@@ -487,7 +500,7 @@ impl Shell {
                 .when(!first, |d| d.mt_3())
                 .when(first, |d| d.child(self.sidebar_filter_button(cx)))
                 .into_any(),
-            Row::Session(id) => self.session_card(id, cx),
+            Row::Session(id) => self.session_card(id, now, cx),
             Row::GroupedSession { id, first, last } => {
                 return div()
                     .px_2()
@@ -495,7 +508,7 @@ impl Shell {
                         div()
                             .ml(px(10.))
                             .when(first, |d| d.pt_1())
-                            .child(rails::step(last, self.nested_session_card(id, cx))),
+                            .child(rails::step(last, self.nested_session_card(id, now, cx))),
                     )
                     .into_any();
             }
@@ -507,7 +520,7 @@ impl Shell {
             } => {
                 return div()
                     .px(px(6.))
-                    .child(self.classic_group_member(&entry, id, first, last, cx))
+                    .child(self.classic_group_member(&entry, id, first, last, now, cx))
                     .into_any();
             }
             Row::ClassicFolderNew(id) => {
@@ -1236,16 +1249,17 @@ mod tests {
         let (window, _, _) = super::super::tests::window(cx);
         window
             .update(cx, |shell, _, cx| {
-                shell.refresh_sidebar_structure(cx);
+                let now = onicode_protocol::time::now_ms();
+                shell.refresh_sidebar_structure(now, cx);
                 let rebuilds = shell.sidebar_list.structural_rebuilds;
                 for _ in 0..100 {
                     // This is the path used by scroll/hover redraws: visible
                     // cards refresh, while membership/order stays cached.
-                    shell.refresh_sidebar_structure(cx);
+                    shell.refresh_sidebar_structure(now, cx);
                 }
                 assert_eq!(shell.sidebar_list.structural_rebuilds, rebuilds);
                 shell.sidebar_list.invalidate_structure();
-                shell.refresh_sidebar_structure(cx);
+                shell.refresh_sidebar_structure(now, cx);
                 assert_eq!(shell.sidebar_list.structural_rebuilds, rebuilds + 1);
                 // Time expiry is a content refresh, not navigation: retain
                 // the user's position instead of snapping back to the active row.
@@ -1255,14 +1269,14 @@ mod tests {
                 });
                 let offset = shell.sidebar_list.state.logical_scroll_top();
                 shell.sidebar_list.indexed_minute = 0;
-                shell.refresh_sidebar_structure(cx);
+                shell.refresh_sidebar_structure(now, cx);
                 let refreshed = shell.sidebar_list.state.logical_scroll_top();
                 assert_eq!(refreshed.item_ix, offset.item_ix);
                 assert_eq!(refreshed.offset_in_item, offset.offset_in_item);
                 assert_eq!(shell.sidebar_list.structural_rebuilds, rebuilds + 2);
                 // Scope changes are also detected without a notification hook.
                 shell.query.push_str("unmatched-session-query");
-                shell.refresh_sidebar_structure(cx);
+                shell.refresh_sidebar_structure(now, cx);
                 assert_eq!(shell.sidebar_list.structural_rebuilds, rebuilds + 3);
                 assert!(shell.sidebar_list.rows.contains(&super::Row::Empty));
             })

@@ -43,7 +43,6 @@ pub(crate) struct QuestionCard {
     turns: u64,
     turn: Option<Turn>,
     _events: Vec<Subscription>,
-    _clock: Option<gpui::Task<()>>,
 }
 impl EventEmitter<Answered> for QuestionCard {}
 impl EventEmitter<KeptOpen> for QuestionCard {}
@@ -89,22 +88,9 @@ impl QuestionCard {
             })
         }));
         let selected = vec![Vec::new(); request.items.len()];
-        let clock = request.auto_resolve_at.map(|_| {
-            cx.spawn(async move |this, cx| {
-                loop {
-                    cx.background_executor().timer(Duration::from_secs(1)).await;
-                    if !this
-                        .update(cx, |this, cx| {
-                            cx.notify();
-                            this.request.auto_resolve_at.is_some()
-                        })
-                        .unwrap_or(false)
-                    {
-                        break;
-                    }
-                }
-            })
-        });
+        // The countdown reads the app's relative clock, which redraws the card
+        // as its seconds tick.
+        crate::inbox::start_relative_clock(cx);
         Self {
             request,
             selected,
@@ -117,7 +103,6 @@ impl QuestionCard {
             turns: 0,
             turn: None,
             _events: events,
-            _clock: clock,
         }
     }
 
@@ -424,11 +409,16 @@ impl QuestionCard {
             .into_any_element()
     }
 
-    fn header_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn header_controls(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let total = self.request.items.len();
         let step = self.step;
         let countdown = self.request.auto_resolve_at.map(|deadline| {
-            let remaining = deadline.saturating_sub(onicode_protocol::time::now_ms());
+            let now = crate::inbox::RelativeNow::read(window, cx);
+            let at = i64::try_from(deadline).unwrap_or(i64::MAX);
+            // Every second from the minute before it starts counting, so
+            // "Optional" turns into "Continues in 60s" on time.
+            now.until(at.saturating_sub(60_000), 1_000);
+            let remaining = now.until(at, 1_000).max(0).unsigned_abs();
             if remaining > 60_000 {
                 "Optional".to_owned()
             } else {
@@ -707,7 +697,7 @@ impl Render for QuestionCard {
                     .children(leaving)
                     .child(page),
             )
-            .child(self.header_controls(cx))
+            .child(self.header_controls(window, cx))
             .child(self.footer(window, cx))
     }
 }

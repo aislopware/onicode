@@ -116,7 +116,7 @@ impl Shell {
                             this.session_summaries.insert(id, summary);
                         }
                         if this.workspace.project == project {
-                            this.refresh_sidebar_structure(cx);
+                            this.refresh_sidebar_structure(onicode_protocol::time::now_ms(), cx);
                             this.invalidate_chrome(cx);
                         }
                     }

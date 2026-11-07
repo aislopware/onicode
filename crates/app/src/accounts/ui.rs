@@ -309,7 +309,7 @@ impl Accounts {
                 let rename_id = id.clone();
                 let key = (kind, id.clone());
                 let identity = self.identities.get(&key);
-                let status = self.status(kind, &id);
+                let status = self.status(kind, &id, now);
                 let subtitle = identity
                     .and_then(|i| i.email.clone().or(i.name.clone()))
                     .unwrap_or_else(|| {
@@ -609,7 +609,7 @@ impl Accounts {
             .flex_col()
             .gap_1();
         for (index, account) in self.book.list(kind).into_iter().enumerate() {
-            let status = self.status(kind, &account.id);
+            let status = self.status(kind, &account.id, now);
             let active = account.id == selected;
             let id = account.id.clone();
             let project = project.to_owned();

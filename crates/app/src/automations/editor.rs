@@ -290,6 +290,7 @@ impl Automations {
         &self,
         trigger: &AutomationTrigger,
         index: usize,
+        now: &crate::inbox::RelativeNow,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let fields = self
@@ -401,9 +402,7 @@ impl Automations {
                     div()
                         .ml(px(4.))
                         .text_color(content(0.35))
-                        .child(next_run_preview(
-                            preview_trigger.next_at(onicode_protocol::time::now_ms() as i64),
-                        )),
+                        .child(next_run_preview(next_run(&preview_trigger, now))),
                 );
         } else {
             sentence = sentence
@@ -487,7 +486,11 @@ impl Automations {
         result.into_any_element()
     }
 
-    pub(super) fn render_editor(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_editor(
+        &self,
+        now: &crate::inbox::RelativeNow,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let editor = self.editor.as_ref().expect("editor");
         let draft = &editor.draft;
         let valid = !editor.name.read(cx).content.trim().is_empty()
@@ -689,9 +692,9 @@ impl Automations {
                     }),
             );
         let panel = if self.history && editor.saved {
-            self.render_history(cx)
+            self.render_history(now, cx)
         } else {
-            self.render_settings(cx)
+            self.render_settings(now, cx)
         };
         div()
             .flex_1()
@@ -703,7 +706,11 @@ impl Automations {
             .into_any_element()
     }
 
-    fn render_settings(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_settings(
+        &self,
+        now: &crate::inbox::RelativeNow,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let editor = self.editor.as_ref().expect("editor");
         let draft = &editor.draft;
         let triggers = draft.triggers.clone().unwrap_or_default();
@@ -719,7 +726,7 @@ impl Automations {
                             triggers
                                 .iter()
                                 .enumerate()
-                                .map(|(i, t)| self.render_trigger(t, i, cx)),
+                                .map(|(i, t)| self.render_trigger(t, i, now, cx)),
                         ),
                     )
                     .child(div().h(px(1.)).bg(content(0.08)))
@@ -1039,7 +1046,11 @@ impl Automations {
             .into_any_element()
     }
 
-    fn render_history(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_history(
+        &self,
+        now: &crate::inbox::RelativeNow,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let mut table = div()
             .mt(px(12.))
             .rounded(px(6.))
@@ -1180,7 +1191,7 @@ impl Automations {
                                 .w(px(56.))
                                 .text_right()
                                 .text_color(content(0.55))
-                                .child(duration(run)),
+                                .child(duration(run, now)),
                         )
                         .on_click(cx.listener(move |_, _, _, cx| {
                             if let Some(id) = &session {
@@ -1281,6 +1292,13 @@ fn gmt_offset() -> String {
         format!("GMT{sign}{}:{:02}", absolute / 60, absolute % 60)
     }
 }
+/// When `trigger` next runs, against the relative clock: at least every five
+/// minutes, and within a second of the run it shows passing.
+fn next_run(trigger: &AutomationTrigger, now: &crate::inbox::RelativeNow) -> i64 {
+    let next = trigger.next_at(now.ms(300_000));
+    now.until(next, 1_000);
+    next
+}
 fn next_run_preview(timestamp: i64) -> String {
     let Some(date) = Local
         .timestamp_millis_opt(timestamp)
@@ -1318,14 +1336,16 @@ fn at(timestamp: i64) -> String {
         .map(|d| d.format("%-d %b, %H:%M").to_string())
         .unwrap_or_else(|| "—".into())
 }
-fn duration(run: &AutomationRun) -> String {
+/// A run's length in minutes; a live run's against the relative clock, which
+/// moves on within 15 seconds of its next minute.
+fn duration(run: &AutomationRun, now: &crate::inbox::RelativeNow) -> String {
     let live = matches!(run.status.as_str(), "pending" | "running");
     let start = run
         .started_at
         .or_else(|| (run.status != "pending").then_some(run.created_at));
     let end = run
         .completed_at
-        .or_else(|| (live && start.is_some()).then(|| onicode_protocol::time::now_ms() as i64));
+        .or_else(|| (live && start.is_some()).then(|| now.ms(15_000)));
     let (Some(start), Some(end)) = (start, end) else {
         return "—".into();
     };

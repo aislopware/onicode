@@ -118,10 +118,21 @@ struct Look {
     link: Option<(GridPoint, GridPoint)>,
 }
 
-/// A row shaped for paint: its filled spans and text runs by column.
+/// A row shaped for paint: its filled spans and text runs by column, under a
+/// key no other shaping has, so its paint is drawn again from the last frame
+/// while it stands, moved as the output scrolls.
 struct ShapedRow {
+    key: u64,
     fills: Vec<(usize, usize, Hsla)>,
     runs: Vec<(usize, ShapedLine)>,
+}
+
+/// A fresh key for a shaped row's paint: the fills under it, the text under
+/// it plus one, so every row's fills are painted before any row's text, as a
+/// descender reaching into the row below lies over its fill.
+fn row_key() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    NEXT.fetch_add(2, std::sync::atomic::Ordering::Relaxed)
 }
 
 pub(crate) struct Terminal {
@@ -823,14 +834,21 @@ impl Render for Terminal {
     }
 }
 
-/// One shaped run at a column, or a filled cell span.
+/// The rows to paint, each from its origin, and the cursor.
 struct Painted {
-    lines: Vec<(gpui::Point<gpui::Pixels>, ShapedLine)>,
-    rects: Vec<(Bounds<gpui::Pixels>, Hsla)>,
+    rows: Vec<PaintedRow>,
     cursor: Option<(Bounds<gpui::Pixels>, Hsla, bool)>,
     line_height: gpui::Pixels,
     /// Set while the pointer is over a link, for the pointing hand.
     link_hitbox: Option<gpui::Hitbox>,
+}
+
+/// A row's filled cell spans and shaped runs where they paint, under its key.
+struct PaintedRow {
+    key: u64,
+    origin: gpui::Point<gpui::Pixels>,
+    rects: Vec<(Bounds<gpui::Pixels>, Hsla)>,
+    lines: Vec<(gpui::Point<gpui::Pixels>, ShapedLine)>,
 }
 
 struct Grid {
@@ -937,8 +955,7 @@ impl Element for Grid {
             .map_or_else(|| content(1.), |color| rgb(color).into());
 
         let mut painted = Painted {
-            lines: Vec::new(),
-            rects: Vec::new(),
+            rows: Vec::with_capacity(frame.rows.len()),
             cursor: None,
             line_height,
             link_hitbox: link
@@ -959,17 +976,25 @@ impl Element for Grid {
                 },
             };
             let y = origin.y + line_height * line as f32;
-            for (start, end, fill) in &shaped.fills {
-                painted
-                    .rects
-                    .push((cell_rect(origin, cell, line, *start, *end), *fill));
-            }
-            for (column, run) in &shaped.runs {
-                painted.lines.push((
-                    point(origin.x + cell_width * *column as f32, y),
-                    run.clone(),
-                ));
-            }
+            painted.rows.push(PaintedRow {
+                key: shaped.key,
+                origin: point(origin.x, y),
+                rects: shaped
+                    .fills
+                    .iter()
+                    .map(|(start, end, fill)| (cell_rect(origin, cell, line, *start, *end), *fill))
+                    .collect(),
+                lines: shaped
+                    .runs
+                    .iter()
+                    .map(|(column, run)| {
+                        (
+                            point(origin.x + cell_width * *column as f32, y),
+                            run.clone(),
+                        )
+                    })
+                    .collect(),
+            });
             rows.insert(row.id, shaped);
         }
         self.terminal.update(cx, |t, _| t.rows = rows);
@@ -1030,18 +1055,28 @@ impl Element for Grid {
             window.set_cursor_style(gpui::CursorStyle::PointingHand, hitbox);
         }
         window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
-            for (rect, fill) in &painted.rects {
-                window.paint_quad(gpui::fill(*rect, *fill));
+            // A row stands for what it paints from its origin, so a row the
+            // last frame painted is drawn again from it, moved as it scrolls.
+            for row in &painted.rows {
+                window.paint_keyed(row.key, row.origin, |window| {
+                    for (rect, fill) in &row.rects {
+                        window.paint_quad(gpui::fill(*rect, *fill));
+                    }
+                });
             }
-            for (origin, line) in &painted.lines {
-                let _ = line.paint(
-                    *origin,
-                    painted.line_height,
-                    TextAlign::Left,
-                    None,
-                    window,
-                    cx,
-                );
+            for row in &painted.rows {
+                window.paint_keyed(row.key + 1, row.origin, |window| {
+                    for (origin, line) in &row.lines {
+                        let _ = line.paint(
+                            *origin,
+                            painted.line_height,
+                            TextAlign::Left,
+                            None,
+                            window,
+                            cx,
+                        );
+                    }
+                });
             }
             if let Some((rect, fill, hollow)) = painted.cursor {
                 if hollow {
@@ -1118,6 +1153,7 @@ fn shape_row(
     cell_width: gpui::Pixels,
 ) -> ShapedRow {
     let mut shaped = ShapedRow {
+        key: row_key(),
         fills: Vec::new(),
         runs: Vec::new(),
     };

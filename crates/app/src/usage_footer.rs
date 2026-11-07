@@ -573,7 +573,7 @@ impl UsageFooter {
                             )
                     }),
             )
-            .children(self.suggestion(cx))
+            .children(self.suggestion(now, cx))
             .children(self.banked_resets(now, cx))
             .into_any()
     }
@@ -729,19 +729,20 @@ impl UsageFooter {
             )
     }
 
-    fn suggestion(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    fn suggestion(&self, now: i64, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let center = crate::accounts::get(cx)?;
         let account = center
             .read(cx)
-            .suggestion(self.kind, &self.key.profile.id)?;
+            .suggestion(self.kind, &self.key.profile.id, now)?;
         let kind = self.kind;
         let project = self.project.clone();
         let session = self.session;
         let (status, exhausted) = {
             let center = center.read(cx);
             (
-                center.status(kind, &account.id),
-                center.status(kind, &self.key.profile.id).tone == crate::accounts::Tone::Exhausted,
+                center.status(kind, &account.id, now),
+                center.status(kind, &self.key.profile.id, now).tone
+                    == crate::accounts::Tone::Exhausted,
             )
         };
         Some(

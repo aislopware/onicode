@@ -287,6 +287,25 @@ impl SettingsView {
         false
     }
 
+    /// The relative clock's Unix ms as the mutes are told against it: it
+    /// moves on within a second of the next timed mute ending.
+    fn mute_now(&self, now: &crate::inbox::RelativeNow) -> u64 {
+        let ms = u64::try_from(now.ms(300_000)).unwrap_or(0);
+        if let Some(next) = self
+            .prefs
+            .project_notifications
+            .as_object()
+            .into_iter()
+            .flat_map(|map| map.values())
+            .filter_map(|p| p["mutedUntil"].as_u64())
+            .filter(|at| *at > ms)
+            .min()
+        {
+            now.until(i64::try_from(next).unwrap_or(i64::MAX), 1_000);
+        }
+        ms
+    }
+
     pub(super) fn notification_deadline(&mut self, cx: &mut Context<Self>) {
         let now = onicode_protocol::time::now_ms();
         let deadline = self
@@ -549,8 +568,13 @@ impl SettingsView {
         cx.notify();
     }
 
-    fn mute_controls(&self, ids: Vec<String>, key: String, cx: &mut Context<Self>) -> AnyElement {
-        let now = onicode_protocol::time::now_ms();
+    fn mute_controls(
+        &self,
+        ids: Vec<String>,
+        key: String,
+        now: u64,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let muted: Vec<_> = ids
             .iter()
             .filter(|id| self.prefs.project_muted(id, now))
@@ -629,7 +653,12 @@ impl SettingsView {
             .into_any_element()
     }
 
-    pub(super) fn project_notification_settings(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn project_notification_settings(
+        &mut self,
+        now: &crate::inbox::RelativeNow,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let now = self.mute_now(now);
         let projects = self.notification_projects();
         let all_ids: Vec<_> = projects.iter().map(|p| p.id.clone()).collect();
         self.notification_state
@@ -679,7 +708,7 @@ impl SettingsView {
                         })),
                     )
                     .when(!selected.is_empty(), |d| {
-                        d.child(self.mute_controls(selected.clone(), "selected".into(), cx))
+                        d.child(self.mute_controls(selected.clone(), "selected".into(), now, cx))
                     })
                     .into_any_element(),
             );
@@ -689,9 +718,7 @@ impl SettingsView {
             let expand_id = id.clone();
             let select_id = id.clone();
             let expanded = self.notification_state.expanded.as_ref() == Some(&id);
-            let muted = self
-                .prefs
-                .project_muted(&id, onicode_protocol::time::now_ms());
+            let muted = self.prefs.project_muted(&id, now);
             let categories: Vec<_> = CATEGORIES
                 .iter()
                 .filter(|(cat, _)| match project.kind.as_str() {
@@ -879,7 +906,7 @@ impl SettingsView {
                                         cx.notify();
                                     })),
                             )
-                            .child(self.mute_controls(vec![id], format!("project-{ix}"), cx)),
+                            .child(self.mute_controls(vec![id], format!("project-{ix}"), now, cx)),
                     )
                     .when(expanded, |d| {
                         d.child(
@@ -901,7 +928,11 @@ impl SettingsView {
                 .on_click(cx.listener(|this,_,_,cx| {this.notification_state.selecting = !this.notification_state.selecting;this.notification_state.selected.clear();cx.notify();})).into_any_element()),rows)
     }
 
-    pub(super) fn notification_overlay(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub(super) fn notification_overlay(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         let mut overlays = Vec::new();
         if let Some(menu) = &self.notification_state.menu {
             overlays.push(
@@ -947,7 +978,11 @@ impl SettingsView {
                                 .text_color(content(0.45))
                                 .child("Mute all notifications until"),
                         )
-                        .child(self.mute_calendar(custom, cx))
+                        .child(self.mute_calendar(
+                            custom,
+                            &crate::inbox::RelativeNow::read(window, cx),
+                            cx,
+                        ))
                         .child(
                             div()
                                 .mt_3()
@@ -1062,8 +1097,16 @@ impl SettingsView {
     }
 }
 impl SettingsView {
-    fn mute_calendar(&self, custom: &CustomMute, cx: &mut Context<Self>) -> AnyElement {
-        let today = Local::now().date_naive();
+    fn mute_calendar(
+        &self,
+        custom: &CustomMute,
+        now: &crate::inbox::RelativeNow,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        // Past days turn off within five minutes of midnight.
+        let today = chrono::DateTime::from_timestamp_millis(now.ms(300_000))
+            .map(|at| at.with_timezone(&Local).date_naive())
+            .unwrap_or_default();
         let month = custom.month;
         let previous_disabled = month <= today.with_day(1).unwrap();
         let shift = |date: NaiveDate, amount: i32| {

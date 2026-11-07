@@ -13,6 +13,7 @@ pub(super) fn render(
     summary: &Session,
     data: Option<&SessionPreviewData>,
     done: bool,
+    now: &crate::inbox::RelativeNow,
 ) -> AnyElement {
     let model = data
         .and_then(|data| data.model.as_deref())
@@ -65,10 +66,7 @@ pub(super) fn render(
                         .child(if done {
                             "Done".to_owned()
                         } else {
-                            onicode_protocol::time::relative(
-                                summary.updated_at,
-                                onicode_protocol::time::now_ms(),
-                            )
+                            now.relative(summary.updated_at)
                         }),
                 ),
         )

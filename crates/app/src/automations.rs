@@ -157,6 +157,7 @@ impl Automations {
         projects: Vec<String>,
         cx: &mut Context<Self>,
     ) -> Self {
+        crate::inbox::start_relative_clock(cx);
         let filter =
             cx.new(|cx| Input::field("Filter automations", "Filter automations", content(0.4), cx));
         let subscription = cx.subscribe(&filter, |_, _, _: &input::Changed, cx| cx.notify());
@@ -900,7 +901,7 @@ fn button(
         .child(label)
 }
 impl Render for Automations {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let query = self.filter.read(cx).content.to_lowercase();
         let visible: Vec<_> = self
             .automations
@@ -1048,7 +1049,7 @@ impl Render for Automations {
         let main_content = if self.gallery || self.editor.is_none() {
             self.render_gallery(cx)
         } else {
-            self.render_editor(cx)
+            self.render_editor(&crate::inbox::RelativeNow::read(window, cx), cx)
         };
         let mut root = div()
             .id("automations-view")

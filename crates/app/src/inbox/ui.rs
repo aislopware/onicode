@@ -100,6 +100,8 @@ pub(crate) struct RelativeClock {
     finest: Rc<Cell<i64>>,
     /// The views that told a time since the clock last moved.
     readers: Rc<RefCell<std::collections::HashSet<EntityId>>>,
+    /// Wakes the clock when a label asks for a finer step than it sleeps for.
+    nudge: Option<async_channel::Sender<()>>,
 }
 impl Global for RelativeClock {}
 
@@ -116,18 +118,26 @@ pub(crate) fn start_relative_clock(cx: &mut App) {
     if cx.has_global::<RelativeClock>() {
         return;
     }
+    let (nudge, nudged) = async_channel::bounded(1);
     cx.set_global(RelativeClock {
         now_ms: wall_now_ms(),
         finest: Rc::new(Cell::new(RELATIVE_CLOCK_COARSE_MS)),
         readers: Rc::default(),
+        nudge: Some(nudge),
     });
     cx.spawn(async move |cx| {
+        // It sleeps until the finest label told is due, and a label asking for
+        // a finer step meanwhile wakes it, so an idle app is not woken each
+        // second.
+        let mut wait = RELATIVE_CLOCK_COARSE_MS;
         loop {
-            cx.background_executor()
-                .timer(std::time::Duration::from_secs(1))
-                .await;
-            if !cx.update(|cx| move_relative_clock(wall_now_ms(), cx)) {
-                break;
+            let timer = cx
+                .background_executor()
+                .timer(std::time::Duration::from_millis(wait.unsigned_abs()));
+            futures::future::select(timer, std::pin::pin!(nudged.recv())).await;
+            match cx.update(|cx| move_relative_clock(wall_now_ms(), cx)) {
+                Some(next) => wait = next,
+                None => break,
             }
         }
     })
@@ -135,14 +145,16 @@ pub(crate) fn start_relative_clock(cx: &mut App) {
 }
 
 /// Moves the [`RelativeClock`] to `now` once a label told since it last
-/// moved is due to change, notifying the views that told one. Returns
-/// whether there is a clock.
-fn move_relative_clock(now: i64, cx: &mut App) -> bool {
-    let Some(clock) = cx.try_global::<RelativeClock>() else {
-        return false;
-    };
-    if now - clock.now_ms < clock.finest.get() || clock.readers.borrow().is_empty() {
-        return true;
+/// moved is due to change, notifying the views that told one. Returns the
+/// milliseconds until it is due again, or `None` without a clock.
+fn move_relative_clock(now: i64, cx: &mut App) -> Option<i64> {
+    let clock = cx.try_global::<RelativeClock>()?;
+    let due = clock.finest.get() - (now - clock.now_ms);
+    if due > 0 {
+        return Some(due);
+    }
+    if clock.readers.borrow().is_empty() {
+        return Some(RELATIVE_CLOCK_COARSE_MS);
     }
     let readers = clock.readers.take();
     cx.update_global(|clock: &mut RelativeClock, _| {
@@ -152,13 +164,14 @@ fn move_relative_clock(now: i64, cx: &mut App) -> bool {
     for view in readers {
         cx.notify(view);
     }
-    true
+    Some(RELATIVE_CLOCK_COARSE_MS)
 }
 
 /// The [`RelativeClock`] as the view being drawn reads it.
 pub(crate) struct RelativeNow {
     ms: i64,
     finest: Option<Rc<Cell<i64>>>,
+    nudge: Option<async_channel::Sender<()>>,
 }
 impl RelativeNow {
     /// Reads the clock for the view being drawn, which is notified when it
@@ -170,11 +183,13 @@ impl RelativeNow {
                 Self {
                     ms: clock.now_ms,
                     finest: Some(clock.finest.clone()),
+                    nudge: clock.nudge.clone(),
                 }
             }
             None => Self {
                 ms: wall_now_ms(),
                 finest: None,
+                nudge: None,
             },
         }
     }
@@ -188,8 +203,14 @@ impl RelativeNow {
     }
 
     fn pace(&self, step: i64) {
-        if let Some(finest) = &self.finest {
-            finest.set(finest.get().min(step));
+        if let Some(finest) = &self.finest
+            && step < finest.get()
+        {
+            finest.set(step);
+            if let Some(nudge) = &self.nudge {
+                // Full means the clock is already woken.
+                let _ = nudge.try_send(());
+            }
         }
     }
 
@@ -205,6 +226,20 @@ impl RelativeNow {
             _ => RELATIVE_CLOCK_COARSE_MS,
         });
         until
+    }
+
+    /// `time::relative` for `at` (a session's last change, "5m", "2h 5m"):
+    /// its labels count minutes for a day and days after, so the clock moves
+    /// on within 15 seconds of a change for a day and within five minutes
+    /// after.
+    pub(crate) fn relative(&self, at: u64) -> String {
+        let age = -self.until(i64::try_from(at).unwrap_or(i64::MAX), 15_000);
+        let now = self.ms(if age < 86_400_000 {
+            15_000
+        } else {
+            RELATIVE_CLOCK_COARSE_MS
+        });
+        onicode_protocol::time::relative(at, u64::try_from(now).unwrap_or(0))
     }
 }
 
@@ -3408,6 +3443,36 @@ mod tests {
         }
     }
 
+    /// The clock sleeps until the finest label told is due: a label asking for
+    /// a finer step wakes it once, and one asking for no finer step does not.
+    #[test]
+    fn a_finer_label_wakes_the_sleeping_clock() {
+        let base = model::timestamp_ms("2026-10-22T08:00:30Z");
+        let (nudge, nudged) = async_channel::bounded(1);
+        let finest = Rc::new(Cell::new(RELATIVE_CLOCK_COARSE_MS));
+        let now = RelativeNow {
+            ms: base,
+            finest: Some(finest.clone()),
+            nudge: Some(nudge),
+        };
+        assert_eq!(relative_time("2026-10-22T07:00:00Z", &now), "1 hour ago");
+        assert!(
+            nudged.try_recv().is_err(),
+            "an hour away asks no finer step"
+        );
+        assert_eq!(
+            relative_time("2026-10-22T08:00:00Z", &now),
+            "30 seconds ago"
+        );
+        assert_eq!(finest.get(), 1_000);
+        assert!(nudged.try_recv().is_ok());
+        assert_eq!(
+            relative_time("2026-10-22T08:00:10Z", &now),
+            "20 seconds ago"
+        );
+        assert!(nudged.try_recv().is_err(), "the same step wakes it once");
+    }
+
     /// A relative time moves on with the clock, not whenever something else
     /// happens to draw it: the stamp is drawn again when the clock moves, never
     /// stale beside a page drawn again around it, and the clock is asked to
@@ -3421,6 +3486,7 @@ mod tests {
                 now_ms: base,
                 finest: finest.clone(),
                 readers: Rc::default(),
+                nudge: None,
             });
         });
         let (page, cx) = cx.add_window_view(|window, cx| {
@@ -3453,10 +3519,10 @@ mod tests {
         };
         count_up(cx);
         // Not yet due: half a second on, a label counting seconds stands.
-        cx.update(|_, cx| assert!(move_relative_clock(base + 500, cx)));
+        cx.update(|_, cx| assert!(move_relative_clock(base + 500, cx).is_some()));
         cx.run_until_parked();
         assert_eq!(shown(cx), "30 seconds ago");
-        cx.update(|_, cx| assert!(move_relative_clock(base + 60_000, cx)));
+        cx.update(|_, cx| assert!(move_relative_clock(base + 60_000, cx).is_some()));
         cx.run_until_parked();
         assert_eq!(shown(cx), "1 minute ago");
         assert_eq!(
@@ -3470,6 +3536,7 @@ mod tests {
         let future = RelativeNow {
             ms: base,
             finest: None,
+            nudge: None,
         };
         assert_eq!(relative_time("2026-10-22T08:00:40Z", &future), "now");
         assert_eq!(

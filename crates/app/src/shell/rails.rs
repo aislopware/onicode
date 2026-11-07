@@ -201,31 +201,47 @@ impl Shell {
     }
 
     /// A session row and, under it, whatever rail it has.
-    pub(super) fn session_card(&self, id: i64, cx: &mut Context<Self>) -> AnyElement {
-        self.session_card_at_depth(id, false, cx)
+    pub(super) fn session_card(
+        &self,
+        id: i64,
+        now: &crate::inbox::RelativeNow,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        self.session_card_at_depth(id, false, now, cx)
     }
 
     /// Folder members use the same compact row as an Operator's children,
     /// while keeping any Operator or Orchestrator rail of their own.
-    pub(super) fn nested_session_card(&self, id: i64, cx: &mut Context<Self>) -> AnyElement {
-        self.session_card_at_depth(id, true, cx)
+    pub(super) fn nested_session_card(
+        &self,
+        id: i64,
+        now: &crate::inbox::RelativeNow,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        self.session_card_at_depth(id, true, now, cx)
     }
 
-    fn session_card_at_depth(&self, id: i64, nested: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn session_card_at_depth(
+        &self,
+        id: i64,
+        nested: bool,
+        clock: &crate::inbox::RelativeNow,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         if self.workspace.classic_layout {
-            return self.classic_session_card_at_depth(id, nested, false, cx);
+            return self.classic_session_card_at_depth(id, nested, false, clock, cx);
         }
         let Some(rail) = self.rail(id, &self.rails.started) else {
             return if nested {
-                self.session_row_with(id, true, None, cx)
+                self.session_row_with(id, true, None, clock, cx)
             } else {
-                self.session_row(id, cx)
+                self.session_row(id, clock, cx)
             };
         };
         let now = cx.frame_time();
         let progress = self.rails.motions.get(&id).map_or(0., |m| m.value(now));
         let open = self.rails.motions.get(&id).is_some_and(|m| m.open);
-        let row = self.session_row_with(id, nested, Some((&rail, open)), cx);
+        let row = self.session_row_with(id, nested, Some((&rail, open)), clock, cx);
         if progress <= 0. {
             return row;
         }
@@ -237,7 +253,7 @@ impl Shell {
                 .children(children.iter().enumerate().map(|(ix, child)| {
                     step(
                         ix + 1 == children.len(),
-                        self.session_row_with(*child, true, None, cx),
+                        self.session_row_with(*child, true, None, clock, cx),
                     )
                 }))
                 .into_any_element(),
@@ -272,6 +288,7 @@ impl Shell {
         id: i64,
         nested: bool,
         compact: bool,
+        now: &crate::inbox::RelativeNow,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let rail = self
@@ -287,6 +304,7 @@ impl Shell {
             nested,
             compact,
             rail.as_ref().map(|rail| (rail, open)),
+            now,
             cx,
         )
     }
@@ -297,6 +315,7 @@ impl Shell {
         nested: bool,
         compact: bool,
         rail: Option<(&Rail, bool)>,
+        now: &crate::inbox::RelativeNow,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if let Some(row) = self.rename_row(&session_groups::RenameTarget::Session(id), cx) {
@@ -369,7 +388,7 @@ impl Shell {
         } else {
             model
         };
-        let status = self.classic_session_status(id, &session, cx);
+        let status = self.classic_session_status(id, &session, now, cx);
         let title = div()
             .debug_selector(move || format!("session-title-{id}"))
             .flex_1()
@@ -428,7 +447,7 @@ impl Shell {
                         d.child(
                             div()
                                 .pl_2()
-                                .child(self.classic_session_status(id, &session, cx)),
+                                .child(self.classic_session_status(id, &session, now, cx)),
                         )
                     }),
             )
@@ -669,6 +688,7 @@ impl Shell {
         &self,
         id: i64,
         session: &session_loading::Metadata<'_>,
+        now: &crate::inbox::RelativeNow,
         _cx: &Context<Self>,
     ) -> AnyElement {
         let status = div()
@@ -709,10 +729,7 @@ impl Shell {
                 .into_any_element()
         } else {
             status
-                .child(onicode_protocol::time::relative(
-                    session.summary.updated_at,
-                    onicode_protocol::time::now_ms(),
-                ))
+                .child(now.relative(session.summary.updated_at))
                 .into_any_element()
         }
     }

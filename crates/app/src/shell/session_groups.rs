@@ -69,11 +69,18 @@ fn local_time(ms: u64) -> Option<NaiveDateTime> {
 pub(super) fn local_reminder_label(ms: u64) -> String {
     local_time(ms).map(format_reminder).unwrap_or_default()
 }
-pub(super) fn reminder_caption(ms: u64) -> String {
+/// A reminder's caption against the relative clock: "Now" once due, its time
+/// on its day, its weekday before. The clock moves on within 15 seconds of
+/// it falling due and within five minutes of midnight.
+pub(super) fn reminder_caption(ms: u64, now: &crate::inbox::RelativeNow) -> String {
     let Some(at) = local_time(ms) else {
         return String::new();
     };
-    let now = Local::now().naive_local();
+    let due = i64::try_from(ms).unwrap_or(i64::MAX);
+    let now = due - now.until(due, 15_000);
+    let Some(now) = local_time(u64::try_from(now).unwrap_or(0)) else {
+        return String::new();
+    };
     if at <= now {
         "Now".into()
     } else if at.date() == now.date() {
@@ -1534,6 +1541,7 @@ impl Shell {
         id: i64,
         first: bool,
         last: bool,
+        now: &crate::inbox::RelativeNow,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let folder = matches!(entry, Entry::Folder { .. });
@@ -1543,7 +1551,7 @@ impl Shell {
             .when(first, |d| d.pt_1())
             .when(last && !folder, |d| d.pb_1().rounded_b_md())
             .when(!last, |d| d.pb_px())
-            .child(self.classic_session_card_at_depth(id, false, true, cx))
+            .child(self.classic_session_card_at_depth(id, false, true, now, cx))
             .into_any_element()
     }
 

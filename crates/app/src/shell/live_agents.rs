@@ -89,7 +89,11 @@ impl Shell {
         agents
     }
 
-    pub(super) fn live_agents_preview(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(super) fn live_agents_preview(
+        &mut self,
+        clock: &crate::inbox::RelativeNow,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let agents = if self.workspace.preferences.working_agents
             && self.workspace.sidebar_activity_visible
         {
@@ -100,38 +104,6 @@ impl Shell {
         let shown = agents.len() >= LIVE_AGENT_MIN;
         self.live_marks
             .retain(|id, _| shown && agents.iter().any(|a| a.id == *id && !a.done));
-        let ticking = shown && agents.iter().any(|a| !a.done && a.started_at.is_some());
-        let now = onicode_protocol::time::now_ms();
-        self.live_next_change = agents
-            .iter()
-            .filter(|a| !a.done)
-            .filter_map(|a| a.started_at)
-            .map(|at| next_label_change(now.saturating_sub(at)))
-            .min()
-            .unwrap_or(1000);
-        if !ticking {
-            self.live_tick = None;
-        } else if self.live_tick.is_none() {
-            self.live_tick = Some(cx.spawn(async move |this, cx| {
-                loop {
-                    let Ok(wait) = this.update(cx, |this, _| this.live_next_change) else {
-                        break;
-                    };
-                    cx.background_executor()
-                        .timer(std::time::Duration::from_millis(wait.max(50)))
-                        .await;
-                    // The card only matters while someone is looking at the app.
-                    let result = this.update(cx, |this, cx| {
-                        if crate::pulse::app_active(cx) {
-                            this.notify_sidebar(cx);
-                        }
-                    });
-                    if result.is_err() {
-                        break;
-                    }
-                }
-            }));
-        }
         if !shown {
             self.live_agents_expanded = false;
             return None;
@@ -139,7 +111,18 @@ impl Shell {
         let count = agents.len();
         let extra = count.saturating_sub(LIVE_AGENT_CAP);
         let expanded = self.live_agents_expanded;
-        let now = onicode_protocol::time::now_ms();
+        // The relative clock moves on, redrawing the card, as soon as the
+        // first elapsed time it shows changes.
+        let now = u64::try_from(clock.ms(300_000)).unwrap_or(0);
+        if let Some(next) = agents
+            .iter()
+            .filter(|a| !a.done)
+            .filter_map(|a| a.started_at)
+            .map(|at| next_label_change(now.saturating_sub(at)))
+            .min()
+        {
+            clock.ms(i64::try_from(next).unwrap_or(i64::MAX));
+        }
         let cards: Vec<_> = agents
             .into_iter()
             .take(if expanded { count } else { LIVE_AGENT_CAP })

@@ -173,14 +173,14 @@ impl Render for Chrome {
                     {
                         window.request_animation_frame();
                     }
-                    shell.sidebar(cx)
+                    shell.sidebar(window, cx)
                 }
                 ChromeKind::Tabs => shell.tabs(window, cx),
                 ChromeKind::Projects => {
                     if shell.project_rail_animating(cx.frame_time()) {
                         window.request_animation_frame();
                     }
-                    shell.project_rail(cx)
+                    shell.project_rail(window, cx)
                 }
             })
             .unwrap_or_else(|_| div().into_any())
@@ -665,10 +665,6 @@ pub(crate) struct Shell {
     /// The live agents card's spinners, apart from the sidebar rows' marks.
     live_marks: HashMap<i64, Entity<SessionMark>>,
     live_agents_expanded: bool,
-    /// Repaints the live agents card when one of its elapsed times changes.
-    live_tick: Option<gpui::Task<()>>,
-    /// Milliseconds until the next elapsed label in the live agents card changes.
-    live_next_change: u64,
     busy_sessions: HashSet<i64>,
     notification_state: notifications::State,
     quick: crate::quick_composer::Controller,
@@ -1034,8 +1030,6 @@ impl Shell {
             tab_marks: HashMap::new(),
             live_marks: HashMap::new(),
             live_agents_expanded: false,
-            live_tick: None,
-            live_next_change: 1000,
             busy_sessions: HashSet::new(),
             notification_state,
             quick: Default::default(),
@@ -5959,8 +5953,13 @@ impl Shell {
         }));
     }
 
-    fn session_row(&self, id: i64, cx: &mut Context<Self>) -> AnyElement {
-        self.session_row_with(id, false, None, cx)
+    fn session_row(
+        &self,
+        id: i64,
+        now: &crate::inbox::RelativeNow,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        self.session_row_with(id, false, None, now, cx)
     }
 
     /// SessionCard, dense: `nested` for a session on another's rail; `rail`
@@ -5970,6 +5969,7 @@ impl Shell {
         id: i64,
         nested: bool,
         rail: Option<(&rails::Rail, bool)>,
+        now: &crate::inbox::RelativeNow,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if let Some(row) = self.rename_row(&session_groups::RenameTarget::Session(id), cx) {
@@ -6167,7 +6167,7 @@ impl Shell {
                         .child(icon(glyph, 12.).text_color(color)),
                 )
             });
-        let suffix = self.session_suffix(id, &session, compact, cx);
+        let suffix = self.session_suffix(id, &session, compact, now, cx);
         let body = if compact {
             div()
                 .w_full()
@@ -6393,6 +6393,7 @@ impl Shell {
         id: i64,
         session: &session_loading::Metadata<'_>,
         compact: bool,
+        now: &crate::inbox::RelativeNow,
         cx: &Context<Self>,
     ) -> AnyElement {
         let detailed = !compact;
@@ -6451,14 +6452,11 @@ impl Shell {
                     .id(("session-reminder", id as usize))
                     .aria_label(local_reminder_label(reminder.due_at))
                     .text_color(rgb(0xf59e0b))
-                    .child(session_groups::reminder_caption(reminder.due_at))
+                    .child(session_groups::reminder_caption(reminder.due_at, now))
                     .into_any()
             } else {
                 div()
-                    .child(onicode_protocol::time::relative(
-                        session.summary.updated_at,
-                        onicode_protocol::time::now_ms(),
-                    ))
+                    .child(now.relative(session.summary.updated_at))
                     .into_any()
             })
             .into_any()
@@ -6612,7 +6610,7 @@ impl Shell {
         }
     }
 
-    fn sidebar(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn sidebar(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         if let Some(settings) = self.settings.clone() {
             let section = settings.read(cx).section;
             let search = settings.update(cx, |v, cx| v.search_field(true, cx));
@@ -6629,11 +6627,12 @@ impl Shell {
                 },
             );
         }
+        let now = crate::inbox::RelativeNow::read(window, cx);
         if self.workspace.classic_layout {
-            return self.classic_sidebar(cx);
+            return self.classic_sidebar(&now, cx);
         }
-        self.refresh_sidebar_structure(cx);
-        let live_agents = self.live_agents_preview(cx);
+        self.refresh_sidebar_structure(sidebar_list::heading_now(&now), cx);
+        let live_agents = self.live_agents_preview(&now, cx);
         div()
             .id("onicode-sidebar")
             .debug_selector(|| "sidebar-content".into())
@@ -6833,11 +6832,14 @@ impl Shell {
                                             self.session_metadata(preview.id, cx).summary,
                                             preview.data.as_ref(),
                                             self.unseen_finished.contains(&preview.id),
+                                            &now,
                                         )
                                     },
                                     |view| {
-                                        view.read(cx)
-                                            .preview(self.unseen_finished.contains(&preview.id))
+                                        view.read(cx).preview(
+                                            self.unseen_finished.contains(&preview.id),
+                                            &now,
+                                        )
                                     },
                                 )),
                         ),

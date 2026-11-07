@@ -258,11 +258,11 @@ impl Shell {
         }
     }
 
-    pub(super) fn project_rail(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn project_rail(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let compact = !self.workspace.project_rail_open && self.settings.is_none();
         let header = titlebar_drag_area().h(px(TITLE_BAR_HEIGHT)).flex_shrink_0();
         if self.settings.is_some() {
-            let nav = self.sidebar(cx);
+            let nav = self.sidebar(window, cx);
             return div()
                 .size_full()
                 .flex()
@@ -304,6 +304,7 @@ impl Shell {
                 .unwrap_or_else(|_| div().into_any())
         })
         .size_full();
+        let now = crate::inbox::RelativeNow::read(window, cx);
         div()
             .id("project-rail")
             .debug_selector(|| "project-rail".into())
@@ -323,7 +324,7 @@ impl Shell {
                     .overflow_hidden()
                     .child(rows),
             )
-            .children(self.live_agents_preview(cx))
+            .children(self.live_agents_preview(&now, cx))
             .child(self.app_update_footer(cx))
             .child(self.project_rail_footer(compact, cx))
             .into_any_element()

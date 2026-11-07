@@ -2,7 +2,7 @@
 //! the phones paired with this desktop, and the one-use code a new one scans.
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
@@ -103,20 +103,15 @@ pub(super) fn short_fingerprint(fingerprint: &str) -> String {
     }
 }
 
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
 impl SettingsView {
-    /// Status and the router change on their own, and the code counts down:
-    /// read them every second while the page is open.
+    /// Status and the router change on their own: read them every second
+    /// while the page is open. The code's countdown reads the relative clock.
     pub(in crate::settings) fn watch_mobile(&mut self, cx: &mut Context<Self>) {
         if self.section != Section::Connections {
             self.mobile.poll = None;
             return;
         }
+        crate::inbox::start_relative_clock(cx);
         cx.emit(SettingsEvent::MobileRefresh);
         self.mobile.poll = Some(cx.spawn(async move |this, cx| {
             loop {
@@ -129,9 +124,6 @@ impl SettingsView {
                     {
                         this.mobile.pairing = None;
                         this.mobile.known = None;
-                        cx.notify();
-                    }
-                    if this.ctx.mobile_invite.is_some() {
                         cx.notify();
                     }
                     cx.emit(SettingsEvent::MobileRefresh);
@@ -817,7 +809,12 @@ impl SettingsView {
             return None;
         }
         let invite = self.ctx.mobile_invite.clone()?;
-        let left = invite.expires.saturating_sub(now());
+        // The code counts down in seconds: the window's view is redrawn as
+        // the relative clock moves on.
+        let now = crate::inbox::RelativeNow::read(window, cx).ms(1_000);
+        let left = invite
+            .expires
+            .saturating_sub(u64::try_from(now).unwrap_or(0) / 1_000);
         let expired = left == 0;
         let busy = self.mobile.pairing.is_some();
         let qr = self.invite_qr(&invite.url);
@@ -1315,7 +1312,7 @@ mod tests {
                                     mobile: Some(Status::default()),
                                     mobile_invite: Some(onicode_core::mobile::Invite {
                                         url: format!("monocode://pair?i={}", "A".repeat(600)),
-                                        expires: now() + 900,
+                                        expires: onicode_protocol::time::now_ms() / 1_000 + 900,
                                     }),
                                     ..Default::default()
                                 },

@@ -1138,7 +1138,7 @@ impl Render for SettingsView {
                 ]
             })
             .children(self.management_overlay(window, cx))
-            .children(self.notification_overlay(cx))
+            .children(self.notification_overlay(window, cx))
     }
 }
 

@@ -65,10 +65,11 @@ impl LinkedActivity {
     }
 }
 impl Render for LinkedActivity {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(card) = self.card.clone() else {
             return div().into_any_element();
         };
+        let now = crate::inbox::RelativeNow::read(window, cx);
         let session = card.session;
         let number = card.item.number;
         let kind = if card.item.kind == "pr" {
@@ -186,7 +187,9 @@ impl Render for LinkedActivity {
             let relative = chrono::DateTime::parse_from_rfc3339(&entry.created_at)
                 .ok()
                 .map(|at| {
-                    let minutes = (chrono::Utc::now().timestamp() - at.timestamp()).max(0) / 60;
+                    // The clock moves on within 15 seconds of a minute
+                    // changing for an hour, and within five minutes after.
+                    let minutes = (-now.until(at.timestamp_millis(), 15_000)).max(0) / 60_000;
                     if minutes < 1 {
                         "just now".into()
                     } else if minutes < 60 {

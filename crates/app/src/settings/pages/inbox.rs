@@ -1,12 +1,17 @@
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, SharedString, div, px};
+use gpui::{AnyElement, Context, SharedString, Window, div, px};
 
 use crate::settings::widgets::secondary_button;
 use crate::settings::{SettingsEvent, SettingsView};
 use crate::theme::*;
 impl SettingsView {
-    pub(super) fn inbox_page(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let mut page = vec![self.project_notification_settings(cx)];
+    pub(super) fn inbox_page(
+        &mut self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let now = crate::inbox::RelativeNow::read(window, cx);
+        let mut page = vec![self.project_notification_settings(&now, cx)];
         for (id, title, description, label, hint) in [
             (
                 "github",

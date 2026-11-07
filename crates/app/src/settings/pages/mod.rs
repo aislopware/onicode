@@ -38,7 +38,7 @@ impl SettingsView {
             Section::Providers => self.providers_page(window, cx),
             Section::Mcp => self.mcp_page(cx),
             Section::Skills => self.skills_page(cx),
-            Section::Inbox => self.inbox_page(cx),
+            Section::Inbox => self.inbox_page(window, cx),
             Section::Archive => self.archive_page(cx),
             Section::Worktrees => self.worktrees_page(cx),
         }

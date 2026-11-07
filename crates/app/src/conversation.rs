@@ -383,7 +383,7 @@ impl Conversation {
             .then(|| (self.model_label(), self.branch.clone()))
     }
 
-    pub(crate) fn preview(&self, done: bool) -> AnyElement {
+    pub(crate) fn preview(&self, done: bool, now: &crate::inbox::RelativeNow) -> AnyElement {
         let kind = Kind::from_id(&self.summary.provider);
         let model = self.resolved_model.as_deref().or(self.model.as_deref());
         let name = self
@@ -473,10 +473,7 @@ impl Conversation {
                             } else if self.loading {
                                 "Loading…".to_owned()
                             } else {
-                                onicode_protocol::time::relative(
-                                    self.summary.updated_at,
-                                    onicode_protocol::time::now_ms(),
-                                )
+                                now.relative(self.summary.updated_at)
                             }),
                     ),
             )
