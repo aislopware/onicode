@@ -34,8 +34,11 @@ objc2-foundation = { workspace = true, features = [
     "NSURL",
 ] }
 # The guide's panel: a non-activating NSPanel in glass, the helper's icon as a drag source.
+# `objc2-core-foundation`: the CGFloat methods (font sizes, alpha, corner radius), which this
+# crate must ask for itself rather than borrow from the app's feature set.
 objc2-app-kit = { workspace = true, features = [
     "block2",
+    "objc2-core-foundation",
     "NSAccessibility",
     "NSAccessibilityProtocols",
     "NSApplication",
