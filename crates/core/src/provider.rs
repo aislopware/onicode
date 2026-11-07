@@ -267,6 +267,9 @@ struct Protocol {
     /// Streaming tool id and its partial input JSON, by content block index.
     claude_tools: HashMap<u64, (String, String)>,
     text_key: Option<String>,
+    /// A background text request's message deltas, held by item until its completion says
+    /// whether the message is commentary (`text_only`).
+    held: Vec<(String, String)>,
     approvals: HashMap<String, (Value, String, Value)>,
     metrics: TurnMetrics,
     usage_total: u64,
@@ -306,6 +309,7 @@ impl Protocol {
             activities: tasks::Activities::default(),
             claude_tools: HashMap::new(),
             text_key: None,
+            held: Vec::new(),
             approvals: HashMap::new(),
             metrics: TurnMetrics::default(),
             usage_total: 0,
@@ -642,6 +646,18 @@ impl Protocol {
                             }
                         }
                     }
+                    // Background text (titles, commit messages) keeps the answer only: a
+                    // message's phase can arrive with its completion, so such a request holds
+                    // each message until it completes and drops the ones marked commentary. A
+                    // message that never completes is kept when the turn ends.
+                    "item/agentMessage/delta" if self.request.settings.text_only => {
+                        let id = p["itemId"].as_str().unwrap_or("assistant");
+                        let delta = p["delta"].as_str().unwrap_or("");
+                        match self.held.iter_mut().find(|(key, _)| key == id) {
+                            Some((_, text)) => text.push_str(delta),
+                            None => self.held.push((id.to_owned(), delta.to_owned())),
+                        }
+                    }
                     "item/agentMessage/delta" => {
                         self.text(
                             p["itemId"].as_str().unwrap_or("assistant"),
@@ -650,9 +666,19 @@ impl Protocol {
                             &mut events,
                         );
                     }
+                    "item/completed"
+                        if p["item"]["type"] == "agentMessage"
+                            && self.request.settings.text_only
+                            && p["item"]["phase"] == "commentary" =>
+                    {
+                        let id = p["item"]["id"].as_str().unwrap_or("assistant");
+                        self.held.retain(|(key, _)| key != id);
+                    }
                     "item/completed" if p["item"]["type"] == "agentMessage" => {
+                        let id = p["item"]["id"].as_str().unwrap_or("assistant");
+                        self.held.retain(|(key, _)| key != id);
                         self.text(
-                            p["item"]["id"].as_str().unwrap_or("assistant"),
+                            id,
                             p["item"]["text"].as_str().unwrap_or(""),
                             true,
                             &mut events,
@@ -679,6 +705,9 @@ impl Protocol {
                         events.push(Event::Tool(tool.clone()));
                     }
                     "turn/completed" | "turn/aborted" => {
+                        for (key, text) in std::mem::take(&mut self.held) {
+                            self.text(&key, &text, false, &mut events);
+                        }
                         let status = p["turn"]["status"].as_str().unwrap_or("completed");
                         if status == "failed" {
                             return Err(codex_error(&p["turn"]["error"], "Codex turn failed"));
@@ -1949,6 +1978,39 @@ mod tests {
         assert!(claude.claude_usage_limit.is_none());
         let error = claude.frame(json!({"type":"result","is_error":true,"num_turns":1,"result":"Something else went wrong"}), &mut Vec::new()).unwrap_err();
         assert_eq!(error, "Something else went wrong");
+    }
+    #[test]
+    fn codex_background_text_keeps_the_answer_without_commentary() {
+        let mut p = protocol(Kind::Codex);
+        p.request.settings.text_only = true;
+        let mut out = Vec::new();
+        let text = |events: Vec<Event>| -> String {
+            events
+                .into_iter()
+                .filter_map(|event| match event {
+                    Event::Text(text) => Some(text),
+                    _ => None,
+                })
+                .collect()
+        };
+        let delta = json!({"method":"item/agentMessage/delta","params":{"itemId":"c","delta":"We need a title only"}});
+        assert_eq!(text(p.frame(delta, &mut out).unwrap()), "");
+        let commentary = json!({"method":"item/completed","params":{"item":{"type":"agentMessage","id":"c","text":"We need a title only","phase":"commentary"}}});
+        assert_eq!(text(p.frame(commentary, &mut out).unwrap()), "");
+        let answer = json!({"method":"item/completed","params":{"item":{"type":"agentMessage","id":"f","text":"Fix the login redirect","phase":"final_answer"}}});
+        assert_eq!(
+            text(p.frame(answer, &mut out).unwrap()),
+            "Fix the login redirect"
+        );
+        // A model that reports no phase keeps the old behaviour.
+        let legacy = json!({"method":"item/completed","params":{"item":{"type":"agentMessage","id":"l","text":" now","phase":null}}});
+        assert_eq!(text(p.frame(legacy, &mut out).unwrap()), " now");
+        // A message that never completes is kept when the turn ends.
+        let delta =
+            json!({"method":"item/agentMessage/delta","params":{"itemId":"u","delta":" later"}});
+        assert_eq!(text(p.frame(delta, &mut out).unwrap()), "");
+        let done = json!({"method":"turn/completed","params":{"turn":{"status":"completed"}}});
+        assert_eq!(text(p.frame(done, &mut out).unwrap()), " later");
     }
     #[test]
     fn codex_handshake_stream_snapshot_and_resume() {
