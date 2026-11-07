@@ -166,7 +166,7 @@ releases = false
 [t3code]
 upstream = "pingdotgg/t3code"
 branch = "main"
-base = "67fdc53823894f96e5946da80fac5b6c34c0487d"
+base = "4c3a9d58184f20bd76833bd599c3544d2c09e3eb"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = false
@@ -191,7 +191,7 @@ releases = true
 upstream = "sst/opencode"
 branch = "dev"
 paths = ["packages/"]
-base = "21bf6b493b76efcf3769ade999f05163760d61af"
+base = "75dbf5b8bc053baa3adb42c5b9f422d80e03b0a9"
 base_date = "2026-11-07"
 every_minutes = 60
 pulls = false
