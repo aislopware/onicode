@@ -62,10 +62,13 @@ reports each fork's lag every round it changes, and `status` prints it.
 ## Studying references
 
 `sources.toml` also lists references: Claude Code, its Agent SDKs, Claude's desktop apps, t3code, Amp, Zed's ACP
-adapter, opencode and Codex. They are studied rather than built on. Each change is read for what it teaches about
+adapter, opencode, Codex, rune and Base UI. They are studied rather than built on. Each change is read for what it teaches about
 driving agents, syncing sessions and recovering from failures. Look and feel is not taken from them: the interface is
-monocode's, and its UI/UX changes come from monocode upstream alone. Where it is better than what onicode
-does, port the idea. A reference's `base` is the commit last studied.
+monocode's, and its UI/UX changes come from monocode upstream alone. Base UI is the behaviour bar for gpui-kit's
+components: a change to how one of its primitives takes the keyboard, moves focus, dismisses, opens on hover,
+positions or reads to assistive technology is ported into the matching gpui-kit component (or gpui-fast when
+it needs GPUI). Where a reference is better than what onicode does, port the idea. A reference's `base` is the
+commit last studied.
 
 Closed or bundled code is studied from what its vendor publishes, with REA (github.com/morluto/rea; the `rea`
 MCP tools):

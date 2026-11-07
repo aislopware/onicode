@@ -74,7 +74,7 @@ upstream = "ghostty-org/ghostty"
 branch = "main"
 fork = "aislopware/ghostty"
 checkout = "forks/ghostty"
-base = "5813c9461d5af78b6307a1254d00b1bc190eaccd"
+base = "8265e74cd3945c56d59aba3917ff01af33ba3e78"
 base_date = "2026-11-07"
 every_minutes = 0
 paths = [
@@ -156,11 +156,23 @@ every_minutes = 0
 [rune]
 upstream = "anomalyco/rune"
 branch = "dev"
-base = "a9da7e3ebf5a8ab9bf19c3015032674b6e042df2"
+base = "06d4f9294cb14ba976cf4421f8f99a7dfd5ce6c2"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = true
 releases = false
+
+# Base UI: MUI's unstyled React primitives, the bar gpui-kit's components are held to for behaviour (keyboard,
+# focus, dismissal, hover intent, positioning, accessibility); never for look, which stays monocode's.
+[base-ui]
+upstream = "mui/base-ui"
+branch = "master"
+paths = ["packages/react/src/", "packages/utils/src/"]
+base = "cf696d6f6e08c699c5bda24d5a033430909f2285"
+base_date = "2026-11-07"
+every_minutes = 0
+pulls = true
+releases = true
 
 # t3code: many clients and many servers driving Claude Code and Codex through their SDKs.
 [t3code]
@@ -191,7 +203,7 @@ releases = true
 upstream = "sst/opencode"
 branch = "dev"
 paths = ["packages/"]
-base = "6a89e9f287ade1e1ceefc0e4d13df97ff7631567"
+base = "fdce6365bcdf2af0fdac65d46dc1806a75d10b02"
 base_date = "2026-11-07"
 every_minutes = 60
 pulls = false
