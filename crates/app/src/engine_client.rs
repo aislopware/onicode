@@ -739,6 +739,25 @@ impl Engine {
         }
     }
 
+    /// Stops the engine's search run under `search` (`SearchPaths`, `SearchContent`,
+    /// `SearchSessions`), as monocode's cancel flag did when its view closed or its query moved
+    /// on. Sent off the main thread and let go: a stop that arrives before its search stops it as
+    /// it starts.
+    pub(crate) fn stop_search(&self, search: String) {
+        let engine = self.0.clone();
+        self.0
+            .executor
+            .spawn(async move {
+                let _ = engine
+                    .call::<onicode_protocol::files::StopSearch>(
+                        None,
+                        onicode_protocol::files::StopSearch { search },
+                    )
+                    .await;
+            })
+            .detach();
+    }
+
     /// Makes a call naming the session stored at `row`, off the main thread, and lets it go:
     /// what it came to reaches the views through the watches.
     pub(crate) fn session_send<C: Call + 'static>(
@@ -783,6 +802,9 @@ pub(crate) fn session_events(
                 return;
             };
             let mut since: Option<Cursor> = None;
+            // The watch a `Resync` ended, held until the next one has joined, so the session
+            // stays live between them instead of reloading from the store.
+            let mut ended = None;
             loop {
                 let watch = WatchSession {
                     session,
@@ -792,6 +814,7 @@ pub(crate) fn session_events(
                 let Ok(mut items) = engine.watch::<WatchSession>(watch).await else {
                     return;
                 };
+                drop(ended.take());
                 let mut resync = false;
                 loop {
                     // The watch holds the session open: let it go soon after the listener does.
@@ -830,6 +853,7 @@ pub(crate) fn session_events(
                 if !resync {
                     return;
                 }
+                ended = Some(items);
             }
         })
         .detach();
@@ -851,10 +875,14 @@ async fn resume<W: Watch>(
     W::Event: Send + 'static,
 {
     let mut cursor: Option<Cursor> = None;
+    // The watch a `Resync` ended, held until the next one has joined, so what it watches stays
+    // live between them instead of reloading.
+    let mut ended = None;
     loop {
         let Ok(mut items) = engine.watch::<W>(params(cursor)).await else {
             return;
         };
+        drop(ended.take());
         let mut resync = false;
         while let Some(item) = items.next().await {
             let update = match item {
@@ -883,6 +911,7 @@ async fn resume<W: Watch>(
         if !resync {
             return;
         }
+        ended = Some(items);
     }
 }
 

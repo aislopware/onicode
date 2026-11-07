@@ -48,6 +48,7 @@ impl Memory {
                 .or_else(|| Some(main.head.chars().take(7).collect()));
             root.detached = main.branch.is_none();
             root.linked = false;
+            root.here = Some(main.path.clone());
             self.put(&main.path, root);
         }
         self.put(cwd, state.clone());
@@ -116,6 +117,11 @@ mod tests {
             Some("main")
         );
         assert!(!memory.get("/repo").unwrap().linked);
+        assert_eq!(
+            memory.get("/repo").unwrap().here.as_deref(),
+            Some("/repo"),
+            "the project root's entry is its own worktree"
+        );
         assert_eq!(
             memory.get("/repo-feature").unwrap().current.as_deref(),
             Some("feature")

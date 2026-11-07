@@ -13,14 +13,14 @@ use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
 use onicode_core::files::DirEntry;
 use onicode_core::store::Store;
-use onicode_protocol::files::{DeletePath, DirEvent, Entries, Listing, WatchDir};
-use onicode_protocol::{Cursor, Item, OpId, Outcome};
+use onicode_protocol::files::{DeletePath, DirEvent, Entries, Listing, Relisted, WatchDir};
+use onicode_protocol::{Cursor, Item, OpId};
 use proptest::prelude::*;
 
 use super::hub::FilesHub;
 use crate::feed::{Feed, Limits};
 use crate::fs_watch::{Change, SETTLE_MS};
-use crate::probe::{DiskProbe, Scripted};
+use crate::probe::{DiskProbe, Probe, Scripted};
 use crate::session::ThreadSpawn;
 use crate::turn::Database;
 
@@ -517,16 +517,22 @@ fn a_repeated_delete_is_one_delete_and_its_listing_comes_first() {
         path: file.to_string_lossy().into_owned(),
     };
     let first = block_on(hub.delete(Some(op), delete.clone())).unwrap();
-    assert_eq!(first, Outcome::Applied);
     assert!(!file.exists());
     let Some(Some(Item::Events { events, .. })) = viewer.next().now_or_never() else {
         panic!("the parent's new listing is out before the reply");
     };
+    let Some(DirEvent::Listing(listing)) = events.last() else {
+        panic!("a listing");
+    };
+    assert_eq!(listing.entries, Entries::Read(Vec::new()));
     assert_eq!(
-        events
-            .last()
-            .map(|DirEvent::Listing(listing)| &listing.entries),
-        Some(&Entries::Read(Vec::new()))
+        first.listed,
+        vec![Relisted {
+            root: root.clone(),
+            path: root.clone(),
+            scan: listing.scan,
+        }],
+        "the reply names the listing that covers it"
     );
 
     // The same op again, after the file came back: the first receipt, and no second delete.
@@ -538,4 +544,114 @@ fn a_repeated_delete_is_one_delete_and_its_listing_comes_first() {
     // A fresh op deletes it.
     block_on(hub.delete(Some(OpId::new()), delete)).unwrap();
     assert!(!file.exists());
+}
+
+#[test]
+fn a_listing_read_before_a_change_never_follows_it() {
+    let harness = Harness::new(Limits::default());
+    let mut viewer = Viewer::join(&harness, "/r/a");
+    viewer.pump(&harness);
+    // A rescan numbers its read and reads the directory as it was...
+    let stale = harness.hub.next_scan();
+    let before = entries_of(harness.disk("/r/a"));
+    // ...a call changes it and relists it before it replies...
+    harness
+        .disk
+        .dirs
+        .lock()
+        .unwrap()
+        .insert("/r/a".into(), Ok(listing("/r/a", 9, 3)));
+    let covered = harness.hub.relist(&["/r/a".to_owned()]);
+    // ...and the rescan's older read lands after the reply.
+    let late = harness.hub.publish(Some(ROOT), "/r/a", stale, before);
+    viewer.pump(&harness);
+    let (_, shown) = viewer.shown.clone().expect("a listing");
+    assert_eq!(shown.entries, Entries::Read(listing("/r/a", 9, 3)));
+    assert_eq!(
+        covered,
+        vec![Relisted {
+            root: ROOT.into(),
+            path: "/r/a".into(),
+            scan: shown.scan,
+        }]
+    );
+    assert_eq!(
+        late, covered,
+        "the older read is dropped, the covering one stays"
+    );
+    let scans: Vec<u64> = viewer.held.iter().map(|(_, held)| held.scan).collect();
+    assert!(
+        scans.windows(2).all(|pair| pair[0] <= pair[1]),
+        "a watch never goes back to an older read: {scans:?}"
+    );
+}
+
+/// A disk whose next read is followed by a change: a call that lands while a directory's first
+/// watcher reads it.
+#[derive(Default)]
+struct Racing {
+    disk: Scripted,
+    after_read: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+}
+
+impl Probe for Racing {
+    fn list_dir(&self, path: &Path) -> Result<Vec<DirEntry>, String> {
+        let read = self.disk.list_dir(path);
+        let change = self.after_read.lock().unwrap().take();
+        if let Some(change) = change {
+            change();
+        }
+        read
+    }
+
+    fn status(&self, checkout: &Path) -> Result<crate::probe::Status, String> {
+        self.disk.status(checkout)
+    }
+}
+
+#[test]
+fn a_change_while_the_first_watcher_reads_is_read_again() {
+    let racing = Arc::new(Racing::default());
+    racing
+        .disk
+        .dirs
+        .lock()
+        .unwrap()
+        .insert("/r/a".into(), Ok(listing("/r/a", 1, 2)));
+    let hub = FilesHub::build(
+        store(),
+        Arc::new(ThreadSpawn),
+        racing.clone(),
+        Limits::default(),
+        false,
+        0,
+    );
+    let (disk, weak) = (racing.clone(), Arc::downgrade(&hub));
+    *racing.after_read.lock().unwrap() = Some(Box::new(move || {
+        disk.disk
+            .dirs
+            .lock()
+            .unwrap()
+            .insert("/r/a".into(), Ok(listing("/r/a", 9, 3)));
+        let hub = weak.upgrade().expect("the hub");
+        assert!(
+            hub.relist(&["/r/a".to_owned()]).is_empty(),
+            "nothing watches it yet, so nothing is relisted"
+        );
+    }));
+    let mut viewer = block_on(hub.watch_dir(WatchDir {
+        root: ROOT.into(),
+        path: "/r/a".into(),
+        since: None,
+    }))
+    .unwrap();
+    let Some(Some(Item::Snapshot { state, .. })) = viewer.next().now_or_never() else {
+        panic!("a snapshot first");
+    };
+    assert_eq!(
+        state.entries,
+        Entries::Read(listing("/r/a", 9, 3)),
+        "the first listing shows the change made while it was read"
+    );
+    assert_eq!(racing.disk.reads.load(Ordering::Relaxed), 2);
 }

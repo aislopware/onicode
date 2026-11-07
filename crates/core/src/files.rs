@@ -549,6 +549,13 @@ fn split_stem_ext(name: &str) -> (&str, &str) {
 }
 
 fn unique_name_in(dir: &Path, name: &str) -> String {
+    unique_name(name, |candidate| dir.join(candidate).exists())
+}
+
+/// The name a copy of `name` takes beside the names `taken` says are in use, as Finder names
+/// one: `name`, then `stem copy.ext`, then `stem copy 2.ext` and on. What [`copy_path`] picks, so
+/// a viewer can show the copy before it is made.
+pub fn unique_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
     let (stem, ext) = split_stem_ext(name);
     let mut n = 0u32;
     loop {
@@ -557,7 +564,7 @@ fn unique_name_in(dir: &Path, name: &str) -> String {
             1 => format!("{stem} copy{ext}"),
             _ => format!("{stem} copy {n}{ext}"),
         };
-        if !dir.join(&candidate).exists() {
+        if !taken(&candidate) {
             return candidate;
         }
         n += 1;

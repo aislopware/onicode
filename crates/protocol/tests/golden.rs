@@ -17,14 +17,15 @@ use onicode_protocol::agent::AccessMode;
 use onicode_protocol::engine::{EngineInfo, Hello, StopEngine, UpdateEngine};
 use onicode_protocol::files::{
     Create, DeletePath, Destination, Entries, ListDir, ListDrives, Move, PathKind, Read,
-    SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths, Stat, WatchDir,
-    Write,
+    SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths, Stat,
+    StopSearch, WatchDir, Write,
 };
 use onicode_protocol::git::{
-    Branches, ChangeSet, Commit, CommitContext, CreateBranch, CreatePr, CreateWorktree, Diff,
-    Discard, FileDiff, HeadMessage, History, NewWorktree, PrContext, PrStatus, Pull, Push,
-    ReadCheckpoint, ReadSessionChanges, ReadStatus, Refs, RemoveWorktree, Restore,
-    RestoreCheckpoint, Stage, StageTarget, Switch, Sync, Unstage, WatchGit, Worktrees,
+    Branches, ChangeSet, Commit, CommitContext, CommitFiles, CreateBranch, CreatePr,
+    CreateWorktree, Diff, Discard, FileDiff, HeadMessage, History, NewWorktree, PrContext,
+    PrStatus, Pull, Push, ReadCheckpoint, ReadDiffStats, ReadSessionChanges, ReadStatus, Refs,
+    RemoveWorktree, Restore, RestoreCheckpoint, Stage, StageTarget, Switch, Sync, Unstage,
+    WatchGit, Worktrees,
 };
 use onicode_protocol::provider::Kind;
 use onicode_protocol::search::Target;
@@ -281,6 +282,7 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<DeletePath>();
     shapes.call::<SearchPaths>();
     shapes.call::<SearchContent>();
+    shapes.call::<StopSearch>();
     shapes.call::<ListDrives>();
     shapes.call::<SearchHomeFolders>();
     shapes.call::<SaveAttachments>();
@@ -293,6 +295,8 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<Branches>();
     shapes.call::<Refs>();
     shapes.call::<History>();
+    shapes.call::<CommitFiles>();
+    shapes.call::<ReadDiffStats>();
     shapes.call::<Switch>();
     shapes.call::<CreateBranch>();
     shapes.call::<Stage>();

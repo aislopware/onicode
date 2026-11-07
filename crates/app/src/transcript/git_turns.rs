@@ -652,10 +652,13 @@ impl TranscriptView {
             return;
         };
         self.commit_files.insert(hash.clone(), None);
-        let work_hash = hash.clone();
-        let work = cx.background_executor().spawn(async move {
-            onicode_core::git::commit_files(std::path::Path::new(&cwd), &work_hash)
-        });
+        let work = crate::engine_client::local(cx).call::<onicode_protocol::git::CommitFiles>(
+            None,
+            onicode_protocol::git::CommitFiles {
+                checkout: cwd,
+                sha: hash.clone(),
+            },
+        );
         cx.spawn(async move |this, cx| {
             let files = work.await.unwrap_or_default();
             let _ = this.update(cx, |this, cx| {

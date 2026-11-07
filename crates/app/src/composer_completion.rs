@@ -96,9 +96,11 @@ pub(crate) struct Completion {
     error: Option<String>,
     generation: usize,
     cancel: Arc<AtomicBool>,
-    /// The engine stops this composer's last file listing when the next one
-    /// starts.
-    search_id: String,
+    /// The engine's file listing still running for this composer, under an id
+    /// of its own: stopped when the next load starts, the folder changes or
+    /// the composer goes, as monocode's cancel flag did.
+    listing: Option<String>,
+    engine: engine_client::Engine,
     anchor: AnchorSlot,
     composer_anchor: AnchorSlot,
     container_anchor: AnchorSlot,
@@ -131,6 +133,7 @@ fn short_mentions(files: &[ProjectFile]) -> std::collections::HashMap<String, St
 impl Drop for Completion {
     fn drop(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
+        self.stop_listing();
     }
 }
 impl Completion {
@@ -177,12 +180,20 @@ impl Completion {
             error: None,
             generation: 0,
             cancel: Arc::new(AtomicBool::new(false)),
-            search_id: onicode_core::new_id(),
+            listing: None,
+            engine: engine_client::local(cx),
             anchor: AnchorSlot::default(),
             composer_anchor: AnchorSlot::default(),
             container_anchor: AnchorSlot::default(),
             inline_field: false,
             _observe: observe,
+        }
+    }
+
+    /// Stops the engine's listing for the load before this one.
+    fn stop_listing(&mut self) {
+        if let Some(listing) = self.listing.take() {
+            self.engine.stop_search(listing);
         }
     }
 
@@ -216,6 +227,7 @@ impl Completion {
             return;
         }
         self.cancel.store(true, Ordering::Relaxed);
+        self.stop_listing();
         self.generation += 1;
         self.cwd = cwd.into();
         self.skills.clear();
@@ -517,11 +529,14 @@ impl Completion {
         let generation = self.generation;
         let disabled = self.disabled_paths.clone();
         let store = self.store.clone();
-        let listing = engine_client::local(cx).call::<SearchPaths>(
+        self.stop_listing();
+        let id = onicode_core::new_id();
+        self.listing = Some(id.clone());
+        let listing = self.engine.call::<SearchPaths>(
             None,
             SearchPaths {
                 root: cwd.clone(),
-                search: self.search_id.clone(),
+                search: id.clone(),
             },
         );
         let work = cx.background_executor().spawn(async move {
@@ -541,6 +556,9 @@ impl Completion {
         cx.spawn(async move |this, cx| {
             let (skills, files, notes, mcp) = work.await;
             let _ = this.update(cx, |this, cx| {
+                if this.listing.as_deref() == Some(id.as_str()) {
+                    this.listing = None;
+                }
                 if generation != this.generation {
                     return;
                 }

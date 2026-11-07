@@ -138,6 +138,7 @@ impl FileEditor {
                 }
                 // A staged hunk leaves the file on both sides: no echo stands
                 // for it, so Changes shows it once the engine's status does.
+                let covering = checkout.clone();
                 let Ok(call) = this.update(cx, |_, cx| {
                     engine_client::local(cx).call::<Stage>(
                         Some(OpId::new()),
@@ -154,11 +155,13 @@ impl FileEditor {
                 };
                 let result = call.await;
                 let _ = this.update(cx, |this, cx| {
-                    if let Err(error) = result {
-                        this.error = Some(error);
-                    } else {
-                        this.git.update(cx, |git, cx| git.changed(cx));
-                        this.refresh_git(cx);
+                    match result {
+                        Err(error) => this.error = Some(error),
+                        Ok(covered) => {
+                            this.git
+                                .update(cx, |git, cx| git.applied(None, &covering, covered, cx));
+                            this.refresh_git(cx);
+                        }
                     }
                     cx.notify();
                 });

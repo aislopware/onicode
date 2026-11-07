@@ -8,8 +8,8 @@ use gpui::{
     div, px,
 };
 use onicode_core::git::{self, Snapshot};
+use onicode_protocol::OpId;
 use onicode_protocol::git::{CreateBranch, Switch};
-use onicode_protocol::{OpId, Outcome};
 
 use crate::theme::*;
 use crate::{input, popover};
@@ -276,14 +276,11 @@ impl GitPicker {
                 self.busy = true;
                 self.error = None;
                 cx.spawn(async move |this, cx| {
-                    let result = work.await.and_then(|outcome| match outcome {
-                        Outcome::Applied => Ok(()),
-                        Outcome::Rejected(rejection) => Err(format!("Not applied: {rejection:?}")),
-                    });
+                    let result = work.await;
                     let _ = this.update(cx, |this, cx| {
                         this.busy = false;
                         match result {
-                            Ok(()) => cx.emit(Picked::Changed),
+                            Ok(_) => cx.emit(Picked::Changed),
                             Err(error) => this.error = Some(error),
                         }
                         cx.notify();
@@ -332,8 +329,10 @@ impl gpui::Render for GitPicker {
                                     == onicode_core::files::path_key(&tree.path)
                             })
                         } else {
-                            onicode_core::files::path_key(&tree.path)
-                                == onicode_core::files::path_key(&self.cwd.to_string_lossy())
+                            // The engine resolved symlinks: a worktree reached through
+                            // one is still the current one, as monocode marked it.
+                            self.state.as_ref().and_then(|s| s.here.as_deref())
+                                == Some(tree.path.as_str())
                         };
                         (
                             tree.branch.unwrap_or_else(|| {

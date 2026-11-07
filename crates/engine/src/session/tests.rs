@@ -31,7 +31,7 @@ use proptest::prelude::*;
 use super::asides::{Aside, Asides, Sink};
 use super::hub::{Limits, Runner, SessionHub, Spawn, TurnJob};
 use super::model::SessionModel;
-use super::queue::WatchQueue;
+use super::queue::SessionFeed;
 use super::reduce::apply;
 use super::split::split;
 use super::{Expect, Viewer};
@@ -283,16 +283,7 @@ impl Client {
     fn pump(&mut self, harness: &Harness) {
         loop {
             if self.stream.is_none() {
-                self.stream = Some(
-                    harness
-                        .hub
-                        .watch(WatchSession {
-                            session: harness.session,
-                            since: self.cursor,
-                            window_turns: self.window,
-                        })
-                        .unwrap(),
-                );
+                self.stream = Some(self.rejoin(harness));
             }
             let Some(stream) = self.stream.as_mut() else {
                 return;
@@ -301,10 +292,22 @@ impl Client {
                 return;
             };
             match item {
-                None | Some(Item::Resync) => self.stream = None,
+                // As the app does: the new watch joins before the ended one lets the session go.
+                None | Some(Item::Resync) => self.stream = Some(self.rejoin(harness)),
                 Some(item) => self.absorb(item),
             }
         }
+    }
+
+    fn rejoin(&self, harness: &Harness) -> Stream {
+        harness
+            .hub
+            .watch(WatchSession {
+                session: harness.session,
+                since: self.cursor,
+                window_turns: self.window,
+            })
+            .unwrap()
     }
 
     fn absorb(&mut self, item: Item<SessionState, SessionEvent>) {
@@ -622,6 +625,9 @@ fn run_script(limits: Limits, steps: &[Step]) {
     }
 }
 
+/// A watcher's queue of a session's events.
+type WatchQueue = crate::feed::Queue<SessionFeed>;
+
 fn drain_into(queue: &mut WatchQueue, mirror: &mut Option<SessionState>, next: &mut u64) {
     while let Some(item) = queue.drain() {
         match item {
@@ -686,7 +692,7 @@ proptest! {
             }
             let first = seq + 1;
             seq += events.len() as u64;
-            queue.push(first, events);
+            queue.push(first, &events);
             if *drain {
                 drain_into(&mut queue, &mut mirror, &mut next);
             }
@@ -715,6 +721,22 @@ proptest! {
             Limits {
                 ring: (ring, usize::MAX),
                 queue: (batches, usize::MAX),
+            },
+            &steps,
+        );
+    }
+
+    /// A ring far bigger than a watcher's queue in bytes: a watcher that comes back with a
+    /// backlog past its queue gets a snapshot, never `Resync` again, and converges.
+    #[test]
+    fn a_rejoin_past_the_queue_size_converges(
+        bytes in 64usize..512,
+        steps in prop::collection::vec(step(), 1..60),
+    ) {
+        run_script(
+            Limits {
+                ring: (2048, usize::MAX),
+                queue: (256, bytes),
             },
             &steps,
         );

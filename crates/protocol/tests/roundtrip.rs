@@ -1157,7 +1157,7 @@ proptest! {
     ) {
         round_trips(&SaveGroups { project: project.clone(), groups })?;
         round_trips(&SaveOrchestration { lead: lead.lead, summary: lead.summary })?;
-        round_trips(&SearchSessions { query: message.clone() })?;
+        round_trips(&SearchSessions { query: message.clone(), search: run.clone() })?;
         round_trips(&PreviewSession { session })?;
         round_trips(&Preview { model: branch.clone(), worktree: Some(project.clone()) })?;
         round_trips(&GenerateTitle {
@@ -1320,8 +1320,12 @@ proptest! {
     }
 
     #[test]
-    fn file_moves(from in text(), to in text(), pick in 0..3_u8) {
-        use onicode_protocol::files::{Destination, Move};
+    fn file_moves(from in text(), to in text(), pick in 0..3_u8, scan in any::<u64>()) {
+        use onicode_protocol::files::{Deleted, Destination, Move, NewPath, Relisted, StopSearch};
+        let listed = vec![Relisted { root: from.clone(), path: to.clone(), scan }];
+        round_trips(&NewPath { path: to.clone(), listed: listed.clone() })?;
+        round_trips(&Deleted { listed })?;
+        round_trips(&StopSearch { search: to.clone() })?;
         let to = match pick {
             0 => Destination::Rename(to),
             1 => Destination::Into(to),
@@ -1351,11 +1355,15 @@ proptest! {
         session in any::<i64>(),
         pick in 0..3_u8,
         existing in any::<bool>(),
+        scan in option::of(any::<u64>()),
     ) {
         use onicode_protocol::git::{
-            ChangeSet, CreateWorktree, Diff, NewWorktree, Restore, RestoreCheckpoint, Stage,
-            StageTarget,
+            ChangeSet, CommitFiles, Covered, CreateWorktree, Diff, NewWorktree, ReadDiffStats,
+            Restore, RestoreCheckpoint, Stage, StageTarget,
         };
+        round_trips(&Covered { scan })?;
+        round_trips(&CommitFiles { checkout: checkout.clone(), sha: sha.clone() })?;
+        round_trips(&ReadDiffStats { checkout: checkout.clone() })?;
         let changes = match pick {
             0 => ChangeSet::WorkingTree,
             1 => ChangeSet::Commit { sha },

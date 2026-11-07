@@ -18,12 +18,12 @@ use gpui::{
 use onicode_core::agent::{AccessMode, Settings};
 use onicode_core::provider::{self, Event, Kind, Request};
 use onicode_core::scm;
+use onicode_protocol::OpId;
 use onicode_protocol::git::{
-    self as git_calls, ChangedFile, Commit, CommitContext, CreatePr, DiffIndex, Discard,
+    self as git_calls, ChangedFile, Commit, CommitContext, Covered, CreatePr, DiffIndex, Discard,
     HeadMessage, Pr, PrContext, PrStatus, Pull, Push, RangeContext, Stage, StageTarget,
     StagedContext, Unstage,
 };
-use onicode_protocol::{OpId, Outcome, Rejection};
 use serde::{Deserialize, Serialize};
 
 use crate::engine_client::{self, Engine};
@@ -487,13 +487,14 @@ impl Changes {
         (engine_client::local(cx), self.cwd.clone())
     }
 
-    /// Runs the engine call `work` with `busy` held, showing `echo` until it
-    /// settles, then rereads. Nothing is sent while another call is busy.
+    /// Runs the engine call `work` with `busy` held, showing `echo` until the
+    /// status that covers it arrives. A failed call drops its echo and
+    /// rereads. Nothing is sent while another call is busy.
     fn run_git(
         &mut self,
         busy: String,
         echo: Option<(OpId, GitEcho)>,
-        work: impl Future<Output = Result<(), String>> + Send + 'static,
+        work: impl Future<Output = Result<Covered, String>> + Send + 'static,
         then: impl FnOnce(&mut Self, &mut Window, &mut Context<Self>) + 'static,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -507,18 +508,25 @@ impl Changes {
             self.git.update(cx, |git, cx| git.echo(op, echo, cx));
         }
         cx.notify();
+        let checkout = self.cwd.clone();
         let task = cx.background_executor().spawn(work);
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.busy = None;
-                if let Some(op) = op {
-                    this.git.update(cx, |git, cx| git.settle(op, cx));
-                }
-                this.mutated(cx);
                 match result {
-                    Ok(()) => then(this, window, cx),
-                    Err(error) => Self::fail(error, window, cx),
+                    Ok(covered) => {
+                        this.git
+                            .update(cx, |git, cx| git.applied(op, &checkout, covered, cx));
+                        then(this, window, cx);
+                    }
+                    Err(error) => {
+                        if let Some(op) = op {
+                            this.git.update(cx, |git, cx| git.settle(op, cx));
+                        }
+                        this.mutated(cx);
+                        Self::fail(error, window, cx);
+                    }
                 }
                 cx.notify();
             });
@@ -548,7 +556,7 @@ impl Changes {
             };
             let target = relative.clone();
             let work = async move {
-                applied(match action {
+                match action {
                     FileAction::Stage => {
                         let target = StageTarget::Path(target);
                         engine
@@ -567,7 +575,7 @@ impl Changes {
                             .call::<Discard>(Some(op), Discard { checkout, path })
                             .await
                     }
-                })
+                }
             };
             this.run_git(relative, Some((op, echo)), work, |_, _, _| {}, window, cx);
         };
@@ -613,7 +621,7 @@ impl Changes {
                 FileAction::Discard => GitEcho::Discard(None),
             };
             let work = async move {
-                applied(match action {
+                match action {
                     FileAction::Stage => {
                         let target = StageTarget::All;
                         engine
@@ -642,7 +650,7 @@ impl Changes {
                             )
                             .await
                     }
-                })
+                }
             };
             this.run_git(key.into(), Some((op, echo)), work, |_, _, _| {}, window, cx);
         };
@@ -698,7 +706,7 @@ impl Changes {
             GitEcho::Unstage(Some(relative.clone()))
         };
         let work = async move {
-            applied(if stage {
+            if stage {
                 let target = StageTarget::Path(relative);
                 engine
                     .call::<Stage>(Some(op), Stage { checkout, target })
@@ -708,7 +716,7 @@ impl Changes {
                 engine
                     .call::<Unstage>(Some(op), Unstage { checkout, path })
                     .await
-            })
+            }
         };
         self.run_git(key, Some((op, echo)), work, |_, _, _| {}, window, cx);
     }
@@ -724,7 +732,7 @@ impl Changes {
         self.run_git(
             "pull".into(),
             None,
-            async move { applied(work.await) },
+            work,
             |this, _, cx| this.set_status("Pull complete", cx),
             window,
             cx,
@@ -900,7 +908,7 @@ impl Changes {
         self.run_git(
             if create_pr { "pr" } else { "commit" }.into(),
             None,
-            async move { applied(work.await) },
+            work,
             move |this, window, cx| {
                 this.amend = None;
                 this.message
@@ -949,7 +957,7 @@ impl Changes {
         self.run_git(
             "sync".into(),
             None,
-            async move { applied(work.await) },
+            work,
             |this, _, cx| this.load_pr(cx),
             window,
             cx,
@@ -987,7 +995,7 @@ impl Changes {
                     this.run_git(
                         "pr".into(),
                         None,
-                        async move { applied(work.await) },
+                        work,
                         move |this, window, cx| this.open_created_pr(harness, window, cx),
                         window,
                         cx,
@@ -1943,16 +1951,6 @@ pub(crate) fn pick_text_harness(
                 .into_iter()
                 .find_map(|kind| provider::resolve(kind).map(|binary| (kind, binary, None)))
         })
-}
-
-/// A mutating call's reply as the panel takes it: applied, or the alert it
-/// shows.
-fn applied(reply: Result<Outcome, String>) -> Result<(), String> {
-    match reply? {
-        Outcome::Applied => Ok(()),
-        Outcome::Rejected(Rejection::Denied(reason)) => Err(reason),
-        Outcome::Rejected(rejection) => Err(format!("Not applied: {rejection:?}")),
-    }
 }
 
 /// generateCommitMessage: a message for the staged changes, written by a

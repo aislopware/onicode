@@ -63,9 +63,19 @@ pub(crate) struct QuickOpen {
     scroll: gpui::ScrollHandle,
     loading: bool,
     error: Option<String>,
+    /// The engine's listing for this Quick Open, stopped if it closes first.
+    listing: Option<String>,
+    engine: engine_client::Engine,
     _changed: Subscription,
 }
 impl EventEmitter<Picked> for QuickOpen {}
+impl Drop for QuickOpen {
+    fn drop(&mut self) {
+        if let Some(listing) = self.listing.take() {
+            self.engine.stop_search(listing);
+        }
+    }
+}
 impl Focusable for QuickOpen {
     fn focus_handle(&self, cx: &gpui::App) -> FocusHandle {
         self.search.focus_handle(cx)
@@ -89,18 +99,21 @@ impl QuickOpen {
             this.rank(cx);
             cx.notify();
         });
-        // One Quick Open at a time: opening it again stops the last listing.
-        let listing = engine_client::local(cx).call::<SearchPaths>(
+        // Closing Quick Open stops its listing.
+        let engine = engine_client::local(cx);
+        let listing_id = onicode_core::new_id();
+        let listing = engine.call::<SearchPaths>(
             None,
             SearchPaths {
                 root: cwd,
-                search: "quick-open".into(),
+                search: listing_id.clone(),
             },
         );
         cx.spawn(async move |this, cx| {
             let result = listing.await;
             let _ = this.update(cx, |this, cx| {
                 this.loading = false;
+                this.listing = None;
                 match result {
                     Ok(listed) => this.files = listed.files,
                     Err(e) => this.error = Some(e),
@@ -118,6 +131,8 @@ impl QuickOpen {
             scroll: gpui::ScrollHandle::new(),
             loading: true,
             error: None,
+            listing: Some(listing_id),
+            engine,
             _changed: changed,
         };
         this.rank(cx);

@@ -1,6 +1,7 @@
 //! ProjectSearch.tsx: content search inside the Explorer, scoped to its
-//! checkout, run by the engine's `SearchContent` under this view's search id,
-//! so each search stops the one before it.
+//! checkout, run by the engine's `SearchContent` under an id of its own: a new
+//! query, or the view closing, stops the one running, as monocode's cancel
+//! flag did.
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
@@ -63,14 +64,23 @@ pub(crate) struct ProjectSearch {
     truncated: bool,
     /// Set once a newer search (or none) replaces the one running.
     cancel: Arc<AtomicBool>,
-    /// The engine stops this view's running search when the next one starts.
-    search_id: String,
+    /// The engine's search still running for this view, stopped when the
+    /// query moves on or the view closes.
+    running: Option<String>,
+    engine: engine_client::Engine,
     debounce: Option<Task<()>>,
     scroll: ScrollHandle,
     _subscriptions: Vec<Subscription>,
 }
 
 impl EventEmitter<SearchEvent> for ProjectSearch {}
+
+impl Drop for ProjectSearch {
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Release);
+        self.stop_running();
+    }
+}
 
 impl Focusable for ProjectSearch {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
@@ -114,7 +124,8 @@ impl ProjectSearch {
             count: 0,
             truncated: false,
             cancel: Arc::new(AtomicBool::new(false)),
-            search_id: onicode_core::new_id(),
+            running: None,
+            engine: engine_client::local(cx),
             debounce: None,
             scroll: ScrollHandle::new(),
             _subscriptions: subscriptions,
@@ -164,13 +175,21 @@ impl ProjectSearch {
             regex: self.regex,
             include: filter(&self.include),
             exclude: filter(&self.exclude),
-            search_id: self.search_id.clone(),
+            search_id: String::new(),
+        }
+    }
+
+    /// Stops the engine's search for the query before this one.
+    fn stop_running(&mut self) {
+        if let Some(search) = self.running.take() {
+            self.engine.stop_search(search);
         }
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.cancel.store(true, Ordering::Release);
         self.cancel = Arc::new(AtomicBool::new(false));
+        self.stop_running();
         self.debounce = None;
         self.loading = false;
         self.error = None;
@@ -197,10 +216,14 @@ impl ProjectSearch {
         cx.notify();
     }
 
-    fn start(&mut self, options: SearchOptions, cx: &mut Context<Self>) {
+    fn start(&mut self, mut options: SearchOptions, cx: &mut Context<Self>) {
         self.loading = true;
+        self.stop_running();
+        let id = onicode_core::new_id();
+        options.search_id.clone_from(&id);
+        self.running = Some(id.clone());
         let check = self.cancel.clone();
-        let search = engine_client::local(cx).call::<SearchContent>(
+        let search = self.engine.call::<SearchContent>(
             None,
             SearchContent {
                 options: options.clone(),
@@ -238,6 +261,9 @@ impl ProjectSearch {
             }
             let _ = this.update(cx, |this, cx| {
                 this.loading = false;
+                if this.running.as_deref() == Some(id.as_str()) {
+                    this.running = None;
+                }
                 match result {
                     Ok((groups, count, truncated)) => {
                         this.groups = groups;

@@ -31,6 +31,9 @@ pub struct Snapshot {
     pub linked: bool,
     pub branches: Vec<Branch>,
     pub worktrees: Vec<Worktree>,
+    /// The listed path of the worktree the snapshot was read in, compared with symlinks resolved
+    /// (a worktree reached through a link is still the current one), as the pickers mark it.
+    pub here: Option<String>,
 }
 pub(crate) fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {
     if crate::files::remote::is_remote(cwd) {
@@ -134,7 +137,7 @@ pub fn unpushed(cwd: &Path, commit: &str) -> bool {
         .is_ok_and(|out| out.trim().is_empty())
 }
 /// One file of a commit, as `git show --numstat` counts it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitFile {
     pub path: String,
     /// `None` for binary files.
@@ -191,7 +194,7 @@ pub fn snapshot(cwd: &Path) -> Result<Snapshot, String> {
     });
     let trees = worktrees(cwd)?;
     let canonical = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_owned());
-    let root = std::fs::canonicalize(root.trim()).unwrap_or(canonical);
+    let root = std::fs::canonicalize(root.trim()).unwrap_or_else(|_| canonical.clone());
     let linked = trees
         .iter()
         .any(|t| !t.main && std::fs::canonicalize(&t.path).ok().as_ref() == Some(&root));
@@ -221,12 +224,17 @@ pub fn snapshot(cwd: &Path) -> Result<Snapshot, String> {
         }
     })
     .collect();
+    let here = trees
+        .iter()
+        .find(|tree| std::fs::canonicalize(&tree.path).ok().as_ref() == Some(&canonical))
+        .map(|tree| tree.path.clone());
     Ok(Snapshot {
         current,
         detached,
         linked,
         branches,
         worktrees: trees,
+        here,
     })
 }
 

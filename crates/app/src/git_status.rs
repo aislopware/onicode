@@ -5,14 +5,17 @@
 //! otherwise a `ReadStatus` call reads it on demand. Reads never overlap; a
 //! read requested meanwhile runs once the current one returns, and only a
 //! changed snapshot notifies. A stage, unstage or discard shows in the frame
-//! it is made, as an echo over the engine's status until its call settles.
+//! it is made, as an echo over the engine's status until a status that
+//! covers it arrives. A call that changed the checkout replies with the scan
+//! of the engine's covering status ([`Covered`]): a watched checkout is never
+//! read again for it, and its echo stays until the watch reaches that scan.
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use gpui::{Context, EventEmitter, Task};
 use onicode_core::scm::{DiffIndex, DiffStats};
 use onicode_protocol::OpId;
-use onicode_protocol::git::{GitEvent, GitStatus, ReadStatus, WatchGit};
+use onicode_protocol::git::{Covered, GitEvent, GitStatus, ReadStatus, WatchGit};
 
 use crate::engine_client::{self, WatchUpdate, Watching};
 
@@ -112,6 +115,23 @@ impl GitEcho {
     }
 }
 
+/// What an echo waits for before the engine's status shows it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Until {
+    /// Its call's reply.
+    Call,
+    /// A status read at or after this scan.
+    Scan(u64),
+    /// The `ReadStatus` sent this many reads in to return.
+    Read(u64),
+}
+
+struct Echo {
+    op: OpId,
+    echo: GitEcho,
+    until: Until,
+}
+
 pub(crate) struct ProjectGit {
     /// The active session's working folder (its worktree, if it has one):
     /// Sidebar.tsx's `gitRoot`.
@@ -127,7 +147,10 @@ pub(crate) struct ProjectGit {
     /// The engine's last status of `project`.
     status: Option<GitStatus>,
     /// Changes made here that the engine has not settled yet, oldest first.
-    echoes: Vec<(OpId, GitEcho)>,
+    echoes: Vec<Echo>,
+    /// `ReadStatus` calls sent, and returned: reads never overlap.
+    reads_sent: u64,
+    reads_done: u64,
     remembered: HashMap<String, (u64, DiffIndex)>,
     clock: u64,
     in_flight: bool,
@@ -150,6 +173,8 @@ impl ProjectGit {
             review_cache: Default::default(),
             status: None,
             echoes: Vec::new(),
+            reads_sent: 0,
+            reads_done: 0,
             remembered: HashMap::new(),
             clock: 0,
             in_flight: false,
@@ -264,20 +289,78 @@ impl ProjectGit {
         self.reload(cx);
     }
 
-    /// Shows `echo` now, until [`Self::settle`] names `op`.
+    /// Shows `echo` now, until [`Self::applied`] brings the status that
+    /// covers `op`, or [`Self::settle`] drops it.
     pub(crate) fn echo(&mut self, op: OpId, echo: GitEcho, cx: &mut Context<Self>) {
-        self.echoes.push((op, echo));
+        self.echoes.push(Echo {
+            op,
+            echo,
+            until: Until::Call,
+        });
         self.show(cx);
     }
 
-    /// The call made under `op` settled: its echo gives way to the engine's
-    /// status, which already covers an applied call.
+    /// The call made under `op` failed: its echo goes now.
     pub(crate) fn settle(&mut self, op: OpId, cx: &mut Context<Self>) {
         let before = self.echoes.len();
-        self.echoes.retain(|(pending, _)| *pending != op);
+        self.echoes.retain(|pending| pending.op != op);
         if self.echoes.len() != before {
             self.show(cx);
         }
+    }
+
+    /// A call on `checkout` made here (under `op`, if it echoed) applied and
+    /// the engine named the status that covers it. A watched checkout takes
+    /// that status from its watch, so nothing is read again; otherwise one
+    /// read brings it. The echo stays until the covering status is held, so
+    /// the view never shows the state from before the call.
+    pub(crate) fn applied(
+        &mut self,
+        op: Option<OpId>,
+        checkout: &str,
+        covered: Covered,
+        cx: &mut Context<Self>,
+    ) {
+        self.epoch += 1;
+        cx.emit(GitChanged);
+        self.warm_choices(cx);
+        // A call on another checkout (or a project that moved on) covers
+        // nothing held here: the project's status is read again, as for any
+        // change.
+        let scan = covered.scan.filter(|_| checkout == self.project);
+        let until = match scan {
+            Some(scan) if self.watch.is_some() => Until::Scan(scan),
+            scan => {
+                // The covering read is the next one sent: now, or once the
+                // read in flight returns.
+                let read = Until::Read(self.reads_sent + 1);
+                self.reload(cx);
+                scan.map_or(read, Until::Scan)
+            }
+        };
+        if let Some(op) = op {
+            for pending in &mut self.echoes {
+                if pending.op == op {
+                    pending.until = until;
+                }
+            }
+        }
+        if self.release() {
+            self.show(cx);
+        }
+    }
+
+    /// Drops the echoes the held status covers; whether any went.
+    fn release(&mut self) -> bool {
+        let scan = self.status.as_ref().map(|status| status.scan);
+        let done = self.reads_done;
+        let before = self.echoes.len();
+        self.echoes.retain(|pending| match pending.until {
+            Until::Call => true,
+            Until::Scan(until) => scan.is_none_or(|scan| scan < until),
+            Until::Read(read) => done < read,
+        });
+        self.echoes.len() != before
     }
 
     /// Project selection warms both menus before the user opens either one.
@@ -297,6 +380,7 @@ impl ProjectGit {
             return;
         }
         self.in_flight = true;
+        self.reads_sent += 1;
         let project = self.project.clone();
         let read = engine_client::local(cx).call::<ReadStatus>(
             None,
@@ -308,12 +392,16 @@ impl ProjectGit {
             let result = read.await;
             let _ = this.update(cx, |this, cx| {
                 this.in_flight = false;
+                this.reads_done += 1;
                 // A slow or unavailable checkout keeps its last snapshot, and
                 // never takes another checkout's.
                 if this.project == project
                     && let Ok(status) = result
                 {
                     this.settle_status(status, cx);
+                }
+                if this.release() {
+                    this.show(cx);
                 }
                 if std::mem::take(&mut this.pending) {
                     this.reload(cx);
@@ -342,7 +430,7 @@ impl ProjectGit {
             .as_ref()
             .is_none_or(|held| held.index != status.index || held.versions != status.versions);
         self.status = Some(status);
-        if changed {
+        if self.release() || changed {
             self.show(cx);
         }
     }
@@ -355,8 +443,8 @@ impl ProjectGit {
         };
         let project = self.project.clone();
         self.remember(&project, &next);
-        for (_, echo) in &self.echoes {
-            echo.apply(&mut next);
+        for pending in &self.echoes {
+            pending.echo.apply(&mut next);
         }
         if self.index.as_ref() == Some(&next) {
             return;
@@ -408,7 +496,15 @@ fn stats_of(index: &DiffIndex) -> DiffStats {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use gpui::{AppContext as _, Entity, TestAppContext};
     use onicode_core::scm::ChangedFile;
+    use onicode_core::store::Store;
+    use onicode_protocol::Call as _;
+    use onicode_protocol::git::{Stage, StageTarget, Unstage};
 
     use super::*;
     fn file(path: &str, status: &str) -> ChangedFile {
@@ -458,5 +554,188 @@ mod tests {
         GitEcho::Discard(None).apply(&mut index);
         let left: Vec<_> = index.files.iter().map(|f| f.relative.as_str()).collect();
         assert_eq!(left, vec!["a/b/new.rs"], "only the staged side stays");
+    }
+
+    /// A checkout of its own with `a.txt` edited since its one commit, gone with the test.
+    struct Repo(std::path::PathBuf);
+
+    impl Repo {
+        fn new() -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let root = std::env::temp_dir().join(format!(
+                "onicode-git-status-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::SeqCst)
+            ));
+            std::fs::create_dir_all(&root).unwrap();
+            let repo = Self(root);
+            repo.git(&["init"]);
+            std::fs::write(repo.0.join("a.txt"), "base\n").unwrap();
+            repo.git(&["add", "."]);
+            repo.git(&["commit", "-m", "base"]);
+            std::fs::write(repo.0.join("a.txt"), "edit\n").unwrap();
+            repo
+        }
+
+        fn git(&self, args: &[&str]) {
+            let result = std::process::Command::new("git")
+                .args([
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.com",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .current_dir(&self.0)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
+
+        fn cwd(&self) -> String {
+            self.0.to_string_lossy().into_owned()
+        }
+    }
+
+    impl Drop for Repo {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn staged(git: &ProjectGit) -> bool {
+        git.index
+            .as_ref()
+            .and_then(|index| index.files.iter().find(|file| file.relative == "a.txt"))
+            .is_some_and(|file| file.staged && !file.unstaged)
+    }
+
+    /// Runs `call` on the engine the way a view does, and hands its reply to `git`.
+    fn run(
+        git: &Entity<ProjectGit>,
+        op: OpId,
+        call: impl Future<Output = Result<Covered, String>> + 'static,
+        checkout: String,
+        cx: &mut TestAppContext,
+    ) {
+        git.update(cx, |_, cx| {
+            cx.spawn(async move |git, cx| {
+                let covered = call.await.unwrap();
+                let _ = git.update(cx, |git, cx| git.applied(Some(op), &checkout, covered, cx));
+            })
+            .detach();
+        });
+    }
+
+    #[gpui::test]
+    fn an_echo_holds_until_its_covering_status_and_a_watched_checkout_is_not_read_again(
+        cx: &mut TestAppContext,
+    ) {
+        let repo = Repo::new();
+        let cwd = repo.cwd();
+        let store = Arc::new(Mutex::new(Store::open(Path::new(":memory:")).unwrap()));
+        cx.update(|cx| engine_client::set_local(&store, cx));
+        let reads = |cx: &mut TestAppContext| {
+            cx.update(|cx| engine_client::calls_for_test(&store, cx))
+                .iter()
+                .filter(|(name, _)| *name == ReadStatus::NAME)
+                .count()
+        };
+        let git = cx.new(|cx| ProjectGit::new(cwd.clone(), cx));
+        git.update(cx, |git, cx| git.set_polling(true, cx));
+        cx.run_until_parked();
+        let before = reads(cx);
+        git.read_with(cx, |git, _| assert!(!staged(git)));
+
+        // Watched: the echo shows in the frame, the watch brings the covering status, and
+        // nothing reads it again.
+        let op = OpId::new();
+        git.update(cx, |git, cx| {
+            git.echo(op, GitEcho::Stage(Some("a.txt".into())), cx);
+            assert!(staged(git), "the same frame");
+        });
+        let stage = cx.update(|cx| {
+            engine_client::local(cx).call::<Stage>(
+                Some(op),
+                Stage {
+                    checkout: cwd.clone(),
+                    target: StageTarget::Path("a.txt".into()),
+                },
+            )
+        });
+        run(&git, op, stage, cwd.clone(), cx);
+        cx.run_until_parked();
+        git.read_with(cx, |git, _| {
+            assert!(staged(git));
+            assert!(git.echoes.is_empty(), "the covering status took over");
+        });
+        assert_eq!(reads(cx), before, "a watched checkout is not read again");
+
+        // Unwatched: one read brings the covering status, and the echo holds until it does.
+        git.update(cx, |git, cx| git.set_polling(false, cx));
+        cx.run_until_parked();
+        let op = OpId::new();
+        git.update(cx, |git, cx| {
+            git.echo(op, GitEcho::Unstage(Some("a.txt".into())), cx);
+            assert!(!staged(git));
+        });
+        let unstage = cx.update(|cx| {
+            engine_client::local(cx).call::<Unstage>(
+                Some(op),
+                Unstage {
+                    checkout: cwd.clone(),
+                    path: Some("a.txt".into()),
+                },
+            )
+        });
+        run(&git, op, unstage, cwd.clone(), cx);
+        cx.run_until_parked();
+        git.read_with(cx, |git, _| {
+            assert!(!staged(git));
+            assert!(git.echoes.is_empty());
+        });
+        assert_eq!(reads(cx), before + 1, "one read covers it");
+
+        // A status read before a call that arrives after its reply never shows the state from
+        // before the call.
+        git.update(cx, |git, cx| git.set_polling(true, cx));
+        cx.run_until_parked();
+        let op = OpId::new();
+        git.update(cx, |git, cx| {
+            let held = git.status.clone().unwrap();
+            git.echo(op, GitEcho::Stage(Some("a.txt".into())), cx);
+            git.applied(
+                Some(op),
+                &cwd,
+                Covered {
+                    scan: Some(held.scan + 5),
+                },
+                cx,
+            );
+            git.settle_status(
+                GitStatus {
+                    scan: held.scan + 1,
+                    ..held.clone()
+                },
+                cx,
+            );
+            assert!(staged(git), "the older status waits under the echo");
+            let mut covering = held;
+            covering.scan += 5;
+            for file in &mut covering.index.as_mut().unwrap().files {
+                file.staged = true;
+                file.unstaged = false;
+            }
+            git.settle_status(covering, cx);
+            assert!(staged(git));
+            assert!(git.echoes.is_empty());
+        });
+        assert_eq!(reads(cx), before + 1);
     }
 }

@@ -145,36 +145,58 @@ receipts) uses the store, until settings move (step 6); the layout and seen mark
 images, attachments, worktree removal and session search are files and search (step 5). `PROTOCOL` is 4; the golden
 file is re-recorded with `ONICODE_GOLDEN=record`.
 
-**Step 5 as built.** The engine's `FilesHub` and `CheckoutHub` serve `WatchDir` and `WatchGit` with the
-session's numbering and backpressure (one generic `Topic`: ring of 2048 events or 4 MiB, a queue of 256 batches
-or 4 MiB, a pending listing or status replaced by the next, `Resync` past that; a watcher that comes back with a
-backlog bigger than its queue gets a snapshot instead). Both events are whole states, so a viewer replaces what it
-holds. Each watched root or checkout has one platform watch (`notify`, FSEvents) and a pump thread: reports are
-renamed from the resolved root (`/private/var`) to the root the viewer named, filtered (build output, Git's object
-store and lock files never move a status), and coalesced in virtual time: a burst settles 300 ms after its first
-change, more than 4096 paths or a dropped report rereads everything, and a repair read runs every 30 s (a poll every
-2 s where no platform watch starts). A rescan never blocks a turn: it runs on the pump thread, listings on the
-hub's spawner, and only a listing or status that changed is published. Calls that change a directory relist it
-before they reply, and Git calls that change a checkout reread its status in the same lane slot, so a viewer
-holds the covering listing or status before the receipt; a status read older than one already offered is
-dropped. Git runs in two lanes the caller picks: a foreground lane of 8 slots for what a person waits on (calls and
-the watch's burst reads) and a background lane of 2 for pull-request discovery and repair reads, so a background
-flood never holds a foreground slot. Mutating calls (`Write`, `Create`, `Move`, `DeletePath`, `SaveAttachments`,
-`SaveNoteImages`, and every Git call that changes a checkout, a branch, a worktree or a checkpoint) run once per
-`OpId` through a ledger over the store's `ops` table; a failure is not recorded, so its retry runs again. Reads
-come back whole in one reply: `Read` carries the file's FNV-1a digest, answers `Unchanged` when the viewer's
-digest still matches (the editor's 2 s poll then moves no bytes), returns images as base64 and refuses files the
-editor cannot show with the reason; `Write` takes the digest it was read at and refuses to overwrite a file that
-changed since. A newer `SearchContent` or `SearchPaths` under the same search id stops the older one.
-The app's `ProjectGit` mirrors `WatchGit` for the current project and shows stage, unstage and discard in the
-frame they are made (`GitEcho`) until their reply; the explorer watches every loaded folder with `WatchDir` and
-echoes create, move and delete the same way. Editor buffers stay in the app until save. `git_cache` holds `Refs`
-replies for the branch and worktree pickers. `fs_watch.rs` left the app, and with it the app's `notify`.
-App-side for now: revealing in Finder and screenshots (they act on the viewer's own Mac); the commit message and
-pull-request text prompts, which run the viewer's provider until accounts move (step 6), and the phone bridge's
-Git, which goes with `mobile/` (step 11); the Settings → Worktrees page data (locked, dirty and unpushed marks)
-and a session's worktree membership, which are store and settings reads (step 6); `.git/HEAD` read for the
-project menu's branch label; session search. `PROTOCOL` is 5.
+**Step 5 as built.** The engine's `FilesHub` and `CheckoutHub` serve `WatchDir` and `WatchGit`, and every hub
+(session, workspace, files, Git) serves its watch through one generic `Topic` (`feed.rs`): the session's numbering
+and backpressure (a ring of 2048 events or 4 MiB, a queue of 256 batches or 4 MiB per watcher whose pending events
+merge as each feed allows, `Resync` past that). A watcher that comes back with a backlog bigger than its queue gets
+a snapshot instead, so a rejoin past the queue size converges rather than resyncing forever (a proptest per hub).
+A watcher sent `Resync` stays one until its stream is dropped, and a viewer resubscribes before dropping it, so an
+idle session is never unloaded and reloaded from the store between the two.
+Listing and status events are whole states, so a viewer replaces what it holds. Each watched root or checkout has
+one platform watch (`notify`, FSEvents) and a pump thread: reports are renamed from the resolved root
+(`/private/var`) to the root the viewer named, filtered (build output, Git's object store and lock files never
+move a status), and coalesced in virtual time: a burst settles 300 ms after its first change, more than 4096 paths
+or a dropped report rereads everything, and a repair read runs every 30 s (a poll every 2 s where no platform watch
+starts). A rescan never blocks a turn: it runs on the pump thread, listings on the hub's spawner, and only a
+listing or status that changed is published.
+
+Every listing and status read takes a scan number, counted from the engine run's start (`started << 20`) so it
+rises across runs, and a read older than one already offered is dropped. A change that lands while a folder's
+first watcher is still reading it rereads it (up to 3 reads), so a new watch never starts on a stale listing. Calls
+that change a directory relist it before they reply and name the covering listings (`NewPath`/`Deleted` carry
+`Relisted {root, path, scan}`); Git calls that change a checkout reread its status in the same lane slot and reply
+`Covered {scan}`, the scan of the status the checkout's watchers then hold (`None` when nothing watches it). The
+viewer keeps its echo until it holds a listing or status at that scan, so a read from before the call that arrives
+after the reply never flashes the old state, and a watched checkout is never read again for a call (an unwatched
+one is read once). Git runs in two lanes the caller picks: a foreground lane of 8 slots for what a person waits on
+(calls and the watch's burst reads) and a background lane of 2 for pull-request discovery and repair reads, so a
+background flood never holds a foreground slot. Mutating calls (`Write`, `Create`, `Move`, `DeletePath`,
+`SaveAttachments`, `SaveNoteImages`, and every Git call that changes a checkout, a branch, a worktree or a
+checkpoint) run once per `OpId` through a ledger over the store's `ops` table; a failure is not recorded, so its
+retry runs again. Reads come back whole in one reply: `Read` carries the file's FNV-1a digest, answers `Unchanged`
+when the viewer's digest still matches (the editor's 2 s poll then moves no bytes), returns images as base64 and
+refuses files the editor cannot show with the reason; `Write` takes the digest it was read at and refuses to
+overwrite a file that changed since. `CommitFiles` (a transcript's commit card) and `ReadDiffStats` (the project
+rail's counts) are Git reads; `Refs` names the worktree the checkout is (`here`, by canonical path, as monocode
+compared them).
+
+Searches (`SearchPaths`, `SearchContent`, `SearchSessions`) run under an id the viewer mints for each one; a newer
+search under the same id stops the older, and `StopSearch` stops one when its query moves on or its view closes,
+as monocode's cancel flag did. A stop that arrives before its search is remembered, so the search stops as it
+starts. Saved conversations are searched by the engine; the rows a live session holds in the app are searched in
+place.
+
+The app's `ProjectGit` mirrors `WatchGit` for the current project and shows stage, unstage and discard in the frame
+they are made (`GitEcho`) until the covering status; a hunk staged from review or the editor shows once the
+engine's status does, as in monocode. The explorer watches every loaded folder with `WatchDir` and echoes create,
+move, delete, paste, duplicate and Finder copies the same way, a copy under the name Finder will give it; Finder
+copies run one at a time and stop at the first failure, as monocode's did. Editor buffers stay in the app until
+save. `git_cache` holds `Refs` replies for the branch and worktree pickers. `fs_watch.rs` left the app, and with it
+the app's `notify`. App-side for now: revealing in Finder and screenshots (they act on the viewer's own Mac); the
+commit message and pull-request text prompts, which run the viewer's provider until accounts move (step 6), and the
+phone bridge's Git, which goes with `mobile/` (step 11); the Settings → Worktrees page data (locked, dirty and
+unpushed marks) and a session's worktree membership, which are store and settings reads (step 6); `.git/HEAD` read
+for the project menu's branch label. `PROTOCOL` is 6.
 
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,

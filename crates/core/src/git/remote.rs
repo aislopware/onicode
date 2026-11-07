@@ -103,7 +103,12 @@ pub(super) fn snapshot(cwd: &Path) -> Result<Snapshot, String> {
     let context = context(cwd)?;
     let branches: Branches = decode(context.request("git.branches", json!({}))?)?;
     let trees = context.trees()?;
+    let here = trees
+        .iter()
+        .find(|tree| key(&tree.path) == key(&cwd.to_string_lossy()))
+        .map(|tree| tree.path.clone());
     Ok(Snapshot {
+        here,
         detached: branches.current.is_none(),
         current: branches.current,
         linked: trees

@@ -5,10 +5,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::StreamExt;
 use onicode_protocol::git::{
-    self, Branches, Commit, CommitContext, CreateBranch, CreatePr, CreateWorktree, Diff, Discard,
-    FileDiff, HeadMessage, History, PrContext, PrStatus, Pull, Push, ReadCheckpoint,
-    ReadSessionChanges, ReadStatus, Refs, RemoveWorktree, RestoreCheckpoint, Stage, Switch,
-    Unstage, WatchGit, Worktrees,
+    self, Branches, Commit, CommitContext, CommitFiles, CreateBranch, CreatePr, CreateWorktree,
+    Diff, Discard, FileDiff, HeadMessage, History, PrContext, PrStatus, Pull, Push, ReadCheckpoint,
+    ReadDiffStats, ReadSessionChanges, ReadStatus, Refs, RemoveWorktree, RestoreCheckpoint, Stage,
+    Switch, Unstage, WatchGit, Worktrees,
 };
 use onicode_protocol::{Call, Watch};
 use onicode_rpc::{RpcError, RpcReply, RpcService};
@@ -28,7 +28,7 @@ impl GitService {
 }
 
 /// Every method this service serves.
-const METHODS: [&str; 27] = [
+const METHODS: [&str; 29] = [
     WatchGit::NAME,
     ReadStatus::NAME,
     Diff::NAME,
@@ -36,6 +36,8 @@ const METHODS: [&str; 27] = [
     Branches::NAME,
     Refs::NAME,
     History::NAME,
+    CommitFiles::NAME,
+    ReadDiffStats::NAME,
     Switch::NAME,
     CreateBranch::NAME,
     Stage::NAME,
@@ -103,6 +105,14 @@ impl RpcService for GitService {
             History::NAME => {
                 let (_, body) = routed(params)?;
                 reply(hub.history(body).await)
+            }
+            CommitFiles::NAME => {
+                let (_, body) = routed(params)?;
+                reply(hub.commit_files(body).await)
+            }
+            ReadDiffStats::NAME => {
+                let (_, ReadDiffStats { checkout }) = routed(params)?;
+                reply(hub.diff_stats(checkout).await)
             }
             Switch::NAME => {
                 let (op, body) = routed(params)?;

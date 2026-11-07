@@ -4,24 +4,24 @@
 //! calls; rescans run on the root's pump thread.
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
 use futures::stream::BoxStream;
 use onicode_core::files::{self, DirEntry, document};
 use onicode_protocol::files::{
-    Bytes, Create, DeletePath, DirEvent, Drive, Entries, FileContents, ImageFile, ListDir, Listing,
-    Move, NewPath, NoteImageAsset, PathKind, PathList, PathStat, Read, SaveAttachments,
-    SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths, SearchResult, Stat,
-    TextEncoding, TextFile, WatchDir, Write, Written,
+    Bytes, Create, DeletePath, Deleted, DirEvent, Drive, Entries, FileContents, ImageFile, ListDir,
+    Listing, Move, NewPath, NoteImageAsset, PathKind, PathList, PathStat, Read, Relisted,
+    SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths, SearchResult,
+    Stat, TextEncoding, TextFile, WatchDir, Write, Written,
 };
-use onicode_protocol::{Item, OpId, Outcome};
+use onicode_protocol::{Cursor, Item, OpId};
 
 use super::digest;
-use crate::feed::{self, Feed, Limits, Topic};
+use crate::feed::{self, Feed, Limits, Pending, Topic};
 use crate::fs_watch::{Batch, Change, FsWatch, Pump, Schedule};
 use crate::ledger::Ledger;
 use crate::probe::{DiskProbe, Probe};
+use crate::searches::Searches;
 use crate::session::Spawn;
 use crate::turn::{Database, locked};
 
@@ -37,11 +37,6 @@ impl Feed for DirFeed {
         state.clone_from(listing);
     }
 
-    fn supersedes(_: &DirEvent, _: &DirEvent) -> bool {
-        // Every event is the whole listing.
-        true
-    }
-
     fn weight(event: &DirEvent) -> usize {
         let DirEvent::Listing(listing) = event;
         match &listing.entries {
@@ -53,6 +48,11 @@ impl Feed for DirFeed {
             }
             Entries::Failed(error) => 32 + error.len(),
         }
+    }
+
+    fn absorb(pending: &mut Pending<Self>, event: DirEvent) -> bool {
+        // Every event is the whole listing.
+        pending.replace_or_append(event, |_, _| true)
     }
 }
 
@@ -66,14 +66,44 @@ struct Root {
     _watch: Option<FsWatch>,
 }
 
+/// A directory whose first watcher is reading it: a change to it meanwhile (a call that relists
+/// it, or a file watch report under it) means that read may be older than the change.
+#[derive(Default)]
+struct Opening {
+    readers: usize,
+    changes: u64,
+}
+
 #[derive(Default)]
 struct Inner {
     roots: HashMap<String, Root>,
     /// Topics made this run: each takes a fresh epoch.
     topics: u64,
-    /// Scans made this run: listings read together share one.
+    /// The last scan numbered: listings read together share one, and every read takes its number
+    /// before it reads, so a higher number was read later. Numbered from the engine's start, so
+    /// a reply the ledger kept from an earlier run never names a scan past this run's.
     scans: u64,
+    /// Directories being read for their first watcher.
+    opening: HashMap<String, Opening>,
 }
+
+impl Inner {
+    fn scan(&mut self) -> u64 {
+        self.scans += 1;
+        self.scans
+    }
+
+    /// Marks a read of `dir` for its first watcher as possibly older than a change to it.
+    fn changed(&mut self, dir: &str) {
+        if let Some(opening) = self.opening.get_mut(dir) {
+            opening.changes += 1;
+        }
+    }
+}
+
+/// How many times a first watcher rereads a directory that kept changing while it was read
+/// before it takes the last read; the file watch's next report covers the rest.
+const OPEN_READS: usize = 3;
 
 pub struct FilesHub {
     store: Database,
@@ -87,8 +117,8 @@ pub struct FilesHub {
     started: u64,
     me: Weak<Self>,
     inner: Mutex<Inner>,
-    /// The flag of the search running under each search id: a newer search stops it.
-    searches: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    /// The searches running, by search id.
+    searches: Searches,
 }
 
 fn entries(listed: Result<Vec<DirEntry>, String>) -> Entries {
@@ -113,6 +143,47 @@ fn touches(batch: &Batch, dir: &str) -> bool {
                 || (path.ends_with("/.gitignore") && files::is_equal_or_inside(dir, at))
                 || path.ends_with("/.git/info/exclude")
         })
+}
+
+/// Publishes `listing` unless the topic holds a listing read after it or one that reads the
+/// same: a read that finishes after a newer one never shows the older state again.
+fn offer(topic: &mut Topic<DirFeed>, listing: Listing) {
+    let held = topic.state();
+    if listing.scan > held.scan && listing.entries != held.entries {
+        topic.publish(vec![DirEvent::Listing(listing)]);
+    }
+}
+
+/// A first watcher's read of a directory, in [`Inner::opening`] until it ends however it ends.
+struct Reading<'a> {
+    hub: &'a FilesHub,
+    path: String,
+}
+
+impl<'a> Reading<'a> {
+    fn start(hub: &'a FilesHub, path: &str) -> Self {
+        hub.lock()
+            .opening
+            .entry(path.to_owned())
+            .or_default()
+            .readers += 1;
+        Self {
+            hub,
+            path: path.to_owned(),
+        }
+    }
+}
+
+impl Drop for Reading<'_> {
+    fn drop(&mut self) {
+        let mut inner = self.hub.lock();
+        if let Some(opening) = inner.opening.get_mut(&self.path) {
+            opening.readers -= 1;
+            if opening.readers == 0 {
+                inner.opening.remove(&self.path);
+            }
+        }
+    }
 }
 
 impl FilesHub {
@@ -158,13 +229,28 @@ impl FilesHub {
             watch_fs,
             started,
             me: me.clone(),
-            inner: Mutex::default(),
-            searches: Mutex::default(),
+            inner: Mutex::new(Inner {
+                scans: started.wrapping_shl(20),
+                ..Inner::default()
+            }),
+            searches: Searches::default(),
         })
+    }
+
+    /// `StopSearch`: stops the path or content search running under `search`, or the one that
+    /// arrives under it next.
+    pub fn stop_search(&self, search: &str) {
+        self.searches.stop(search);
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Numbers a read, as a rescan does before it reads.
+    #[cfg(test)]
+    pub(super) fn next_scan(&self) -> u64 {
+        self.lock().scan()
     }
 
     /// Runs `work` on the hub's spawner and waits for it.
@@ -192,14 +278,7 @@ impl FilesHub {
         let joined = self.join(&root, &path, since);
         let (id, notify) = match joined {
             Some(joined) => joined,
-            None => {
-                let probe = self.probe.clone();
-                let at = PathBuf::from(&path);
-                let listed = self
-                    .blocking(move || Ok(entries(probe.list_dir(&at))))
-                    .await?;
-                self.open(&root, &path, listed, since)
-            }
+            None => self.first_watch(&root, &path, since).await?,
         };
         let (draining, leaving) = (self.clone(), self.clone());
         let (drain_root, drain_path) = (root.clone(), path.clone());
@@ -215,24 +294,68 @@ impl FilesHub {
         &self,
         root: &str,
         path: &str,
-        since: Option<onicode_protocol::Cursor>,
+        since: Option<Cursor>,
     ) -> Option<(u64, Arc<tokio::sync::Notify>)> {
         let mut inner = self.lock();
         let topic = inner.roots.get_mut(root)?.dirs.get_mut(path)?;
         Some(topic.join(since))
     }
 
-    /// Watches `path` under `root`, starting from `listed`, and joins it.
+    /// The first watcher of `path` under `root`: reads it, and reads it again when a call or the
+    /// file watch changed it during the read (a call relists only what is watched, so the change
+    /// would otherwise wait for the next report), then watches it from the last read.
+    async fn first_watch(
+        &self,
+        root: &str,
+        path: &str,
+        since: Option<Cursor>,
+    ) -> Result<(u64, Arc<tokio::sync::Notify>), String> {
+        let _reading = Reading::start(self, path);
+        let mut reads = 0;
+        loop {
+            let (scan, changes) = {
+                let mut inner = self.lock();
+                let changes = inner.opening.get(path).map_or(0, |opening| opening.changes);
+                (inner.scan(), changes)
+            };
+            let probe = self.probe.clone();
+            let at = PathBuf::from(path);
+            let listed = self
+                .blocking(move || Ok(entries(probe.list_dir(&at))))
+                .await?;
+            reads += 1;
+            let listing = Listing {
+                scan,
+                entries: listed,
+            };
+            if let Some(joined) = self.open(root, path, listing, since, changes, reads) {
+                return Ok(joined);
+            }
+        }
+    }
+
+    /// Watches `path` under `root` from `listing` (read while its changes stood at `changes`) and
+    /// joins it; `None` when it changed since and is worth reading again. A watch another first
+    /// watcher opened meanwhile is joined, taking this read if it is the newer.
     fn open(
         &self,
         root: &str,
         path: &str,
-        listed: Entries,
-        since: Option<onicode_protocol::Cursor>,
-    ) -> (u64, Arc<tokio::sync::Notify>) {
+        listing: Listing,
+        since: Option<Cursor>,
+        changes: u64,
+        reads: usize,
+    ) -> Option<(u64, Arc<tokio::sync::Notify>)> {
         let now = onicode_core::time::now_ms();
         let mut inner = self.lock();
         let inner = &mut *inner;
+        let changed = inner
+            .opening
+            .get(path)
+            .is_some_and(|opening| opening.changes != changes);
+        if changed && reads < OPEN_READS {
+            return None;
+        }
         let watch_fs = self.watch_fs;
         let pump: Weak<dyn Pump> = self.me.clone();
         let entry = inner.roots.entry(root.to_owned()).or_insert_with(|| {
@@ -252,23 +375,22 @@ impl FilesHub {
                 _watch: watch,
             }
         });
-        let topics = &mut inner.topics;
-        let scans = &mut inner.scans;
-        let started = self.started;
-        let limits = self.limits;
-        let topic = entry.dirs.entry(path.to_owned()).or_insert_with(|| {
-            *topics += 1;
-            *scans += 1;
-            Topic::new(
-                started.wrapping_shl(20).wrapping_add(*topics),
-                Listing {
-                    scan: *scans,
-                    entries: listed,
-                },
-                limits,
-            )
-        });
-        topic.join(since)
+        let topic = match entry.dirs.entry(path.to_owned()) {
+            std::collections::hash_map::Entry::Occupied(held) => {
+                let topic = held.into_mut();
+                offer(topic, listing);
+                topic
+            }
+            std::collections::hash_map::Entry::Vacant(free) => {
+                inner.topics += 1;
+                free.insert(Topic::new(
+                    self.started.wrapping_shl(20).wrapping_add(inner.topics),
+                    listing,
+                    self.limits,
+                ))
+            }
+        };
+        Some(topic.join(since))
     }
 
     fn drain(&self, root: &str, path: &str, id: u64) -> Option<Option<Item<Listing, DirEvent>>> {
@@ -298,12 +420,17 @@ impl FilesHub {
         }
     }
 
-    /// Reads `dirs` again where they are watched, under any root, and publishes what changed.
-    /// Runs on the calling thread: a mutating call's own work thread, before it replies.
-    fn relist(&self, dirs: &[String]) {
-        let watched: Vec<String> = {
-            let inner = self.lock();
-            dirs.iter()
+    /// Reads `dirs` again where they are watched, under any root, and publishes what changed:
+    /// the listings that cover a change a call just made. Runs on the calling thread: a mutating
+    /// call's own work thread, before it replies.
+    pub(super) fn relist(&self, dirs: &[String]) -> Vec<Relisted> {
+        let (watched, scan) = {
+            let mut inner = self.lock();
+            for dir in dirs {
+                inner.changed(dir);
+            }
+            let mut watched: Vec<String> = dirs
+                .iter()
                 .filter(|dir| {
                     inner
                         .roots
@@ -311,49 +438,69 @@ impl FilesHub {
                         .any(|root| root.dirs.contains_key(*dir))
                 })
                 .cloned()
-                .collect()
+                .collect();
+            if watched.is_empty() {
+                return Vec::new();
+            }
+            watched.sort_unstable();
+            watched.dedup();
+            // Numbered after the change and before the reads: it orders after every read that
+            // could have missed the change.
+            (watched, inner.scan())
         };
-        if watched.is_empty() {
-            return;
-        }
-        let scan = {
-            let mut inner = self.lock();
-            inner.scans += 1;
-            inner.scans
-        };
+        let mut covered = Vec::new();
         for dir in watched {
             let listed = entries(self.probe.list_dir(Path::new(&dir)));
-            self.publish(None, &dir, scan, listed);
+            covered.extend(self.publish(None, &dir, scan, listed));
         }
+        covered
     }
 
-    /// Publishes `listed` as the listing of `dir` (under `root`, or under every root watching
-    /// it), when it differs from the one watchers hold.
-    fn publish(&self, root: Option<&str>, dir: &str, scan: u64, listed: Entries) {
+    /// Offers `listed`, read at `scan`, as the listing of `dir` (under `root`, or under every root
+    /// watching it); the listing each watching root holds after it covers the read.
+    pub(super) fn publish(
+        &self,
+        root: Option<&str>,
+        dir: &str,
+        scan: u64,
+        listed: Entries,
+    ) -> Vec<Relisted> {
         let mut inner = self.lock();
+        let mut covered = Vec::new();
         for (key, watched) in &mut inner.roots {
             if root.is_some_and(|root| root != key) {
                 continue;
             }
-            if let Some(topic) = watched.dirs.get_mut(dir)
-                && topic.state().entries != listed
-            {
-                topic.publish(vec![DirEvent::Listing(Listing {
-                    scan,
-                    entries: listed.clone(),
-                })]);
+            if let Some(topic) = watched.dirs.get_mut(dir) {
+                offer(
+                    topic,
+                    Listing {
+                        scan,
+                        entries: listed.clone(),
+                    },
+                );
+                covered.push(Relisted {
+                    root: key.clone(),
+                    path: dir.to_owned(),
+                    scan: topic.state().scan,
+                });
             }
         }
+        covered
     }
 
     /// A change under `root` at `now`, named as the file watch reports it: paths under the
     /// root's resolved path are renamed under the root as viewers name it.
     pub(crate) fn note(&self, root: &str, change: Change, now: u64) {
         let mut inner = self.lock();
-        let Some(watched) = inner.roots.get_mut(root) else {
+        let Some(canonical) = inner
+            .roots
+            .get(root)
+            .map(|watched| watched.canonical.clone())
+        else {
             return;
         };
-        let change = match (change, &watched.canonical) {
+        let change = match (change, canonical) {
             (Change::Paths(paths), Some(canonical)) if canonical != root => Change::Paths(
                 paths
                     .into_iter()
@@ -365,7 +512,23 @@ impl FilesHub {
             ),
             (change, _) => change,
         };
-        watched.schedule.note(now, change);
+        // A directory being read for its first watcher reads again.
+        match &change {
+            Change::Paths(paths) => {
+                for path in paths {
+                    inner.changed(parent(path));
+                    inner.changed(path);
+                }
+            }
+            Change::Overflow => {
+                for opening in inner.opening.values_mut() {
+                    opening.changes += 1;
+                }
+            }
+        }
+        if let Some(watched) = inner.roots.get_mut(root) {
+            watched.schedule.note(now, change);
+        }
     }
 
     /// Rereads what is due under `root` at `now`: the directories a settled burst touched, or
@@ -386,8 +549,7 @@ impl FilesHub {
                 .filter(|dir| touches(&batch, dir))
                 .cloned()
                 .collect();
-            inner.scans += 1;
-            (dirs, inner.scans)
+            (dirs, inner.scan())
         };
         for dir in dirs {
             let listed = entries(self.probe.list_dir(Path::new(&dir)));
@@ -436,10 +598,10 @@ impl FilesHub {
                 op,
                 self.blocking(move || {
                     let path = files::create_path(Path::new(&body.parent), &body.name, body.dir)?;
-                    if let Some(hub) = hub.upgrade() {
-                        hub.relist(&files::dirs_touched_by_create(&body.parent, &body.name));
-                    }
-                    Ok(NewPath { path })
+                    let listed = hub.upgrade().map_or_else(Vec::new, |hub| {
+                        hub.relist(&files::dirs_touched_by_create(&body.parent, &body.name))
+                    });
+                    Ok(NewPath { path, listed })
                 }),
             )
             .await
@@ -474,69 +636,42 @@ impl FilesHub {
                             (path, vec![folder.clone()])
                         }
                     };
-                    if let Some(hub) = hub.upgrade() {
-                        hub.relist(&touched);
-                    }
-                    Ok(NewPath { path })
+                    let listed = hub
+                        .upgrade()
+                        .map_or_else(Vec::new, |hub| hub.relist(&touched));
+                    Ok(NewPath { path, listed })
                 }),
             )
             .await
     }
 
     /// `DeletePath`.
-    pub async fn delete(&self, op: Option<OpId>, body: DeletePath) -> Result<Outcome, String> {
+    pub async fn delete(&self, op: Option<OpId>, body: DeletePath) -> Result<Deleted, String> {
         let hub = self.me.clone();
         self.ledger
             .once(
                 op,
                 self.blocking(move || {
                     files::delete_path(Path::new(&body.path))?;
-                    if let Some(hub) = hub.upgrade() {
-                        hub.relist(&[files::parent_path(&body.path), body.path.clone()]);
-                    }
-                    Ok(Outcome::Applied)
+                    let listed = hub.upgrade().map_or_else(Vec::new, |hub| {
+                        hub.relist(&[files::parent_path(&body.path), body.path.clone()])
+                    });
+                    Ok(Deleted { listed })
                 }),
             )
             .await
     }
 
-    /// The flag a search under `id` runs with: a newer one under the same id stops it.
-    fn search_flag(&self, id: &str) -> Arc<AtomicBool> {
-        let flag = Arc::new(AtomicBool::new(false));
-        if !id.is_empty()
-            && let Some(older) = self
-                .searches
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .insert(id.to_owned(), flag.clone())
-        {
-            older.store(true, Ordering::Release);
-        }
-        flag
-    }
-
-    /// Lets go of the search under `id` if `flag` is still its.
-    fn search_done(&self, id: &str, flag: &Arc<AtomicBool>) {
-        let mut searches = self.searches.lock().unwrap_or_else(PoisonError::into_inner);
-        if searches
-            .get(id)
-            .is_some_and(|known| Arc::ptr_eq(known, flag))
-        {
-            searches.remove(id);
-        }
-    }
-
     /// `SearchPaths`.
     pub async fn search_paths(&self, body: SearchPaths) -> Result<PathList, String> {
-        let flag = self.search_flag(&body.search);
-        let cancel = flag.clone();
+        let running = self.searches.start(&body.search);
+        let cancel = running.flag();
         let root = body.root;
         let listed = self
             .blocking(move || files::list_project_files_sync_cancellable(&root, Some(&*cancel)))
             .await;
-        self.search_done(&body.search, &flag);
         Ok(PathList {
-            files: if flag.load(Ordering::Acquire) {
+            files: if running.stopped() {
                 Vec::new()
             } else {
                 listed?
@@ -546,9 +681,8 @@ impl FilesHub {
 
     /// `SearchContent`.
     pub async fn search_content(&self, body: SearchContent) -> Result<SearchResult, String> {
-        let id = body.options.search_id.clone();
-        let flag = self.search_flag(&id);
-        let cancel = flag.clone();
+        let running = self.searches.start(&body.options.search_id);
+        let cancel = running.flag();
         let options = body.options;
         let found = self
             .blocking(move || {
@@ -559,8 +693,7 @@ impl FilesHub {
                 )
             })
             .await;
-        self.search_done(&id, &flag);
-        if flag.load(Ordering::Acquire) {
+        if running.stopped() {
             return Ok(SearchResult {
                 matches: Vec::new(),
                 truncated: false,

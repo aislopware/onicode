@@ -237,10 +237,12 @@ pub struct SaveGroups {
 }
 workspace_call!(SaveGroups, agent: true, reply: Outcome);
 
-/// Search every saved message body.
+/// Search every saved message body. A [`StopSearch`](crate::files::StopSearch) naming `search`
+/// (when not empty) stops it, and it then answers no hits.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchSessions {
     pub query: String,
+    pub search: String,
 }
 workspace_call!(SearchSessions, agent: true, reply: SearchResults);
 

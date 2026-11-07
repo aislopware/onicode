@@ -1725,14 +1725,21 @@ impl Shell {
         }
         let paths: Vec<_> = self.project_rail_stats.queued.drain().collect();
         self.project_rail_stats.loading = true;
+        // One read at a time, as the rail always took them.
+        let engine = crate::engine_client::local(cx);
         let work = cx.background_executor().spawn(async move {
-            paths
-                .into_iter()
-                .map(|path| {
-                    let stats = onicode_core::scm::diff_stats(std::path::Path::new(&path)).ok();
-                    (path, stats)
-                })
-                .collect::<Vec<_>>()
+            let mut values = Vec::with_capacity(paths.len());
+            for path in paths {
+                let read = onicode_protocol::git::ReadDiffStats {
+                    checkout: path.clone(),
+                };
+                let stats = engine
+                    .call::<onicode_protocol::git::ReadDiffStats>(None, read)
+                    .await
+                    .ok();
+                values.push((path, stats));
+            }
+            values
         });
         cx.spawn(async move |this, cx| {
             let values = work.await;

@@ -13,7 +13,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use futures::StreamExt;
 use futures::stream::BoxStream;
 use onicode_core::agent::{AccessMode, Settings};
 use onicode_core::automations::{AutomationRun, DueAutomationRun, Service};
@@ -31,12 +30,14 @@ use onicode_protocol::workspace::{
 use onicode_protocol::{Cursor, Item, OpId, Outcome, Rejection, SessionId};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use tokio::sync::{Notify, watch};
+use tokio::sync::watch;
 use uuid::Uuid;
 
 use super::chores::{Chores, ProviderChores};
-use super::queue::{QUEUE_BATCHES, QUEUE_BYTES, RING_BYTES, RING_EVENTS, Ring, WatchQueue};
-use super::reduce::apply;
+use super::queue::WorkspaceFeed;
+pub(crate) use crate::feed::Limits;
+use crate::feed::{self, Topic};
+use crate::searches::Searches;
 use crate::session::Spawn;
 use crate::turn::{Database, locked};
 
@@ -49,28 +50,7 @@ const INBOX_RETRIES: &str = "native-automation-inbox-retries";
 /// At most this many Inbox items wait for a retry; the most recently updated stay.
 const MAX_RETRIES: usize = 500;
 
-/// The hub's bounds: the ring's and each watcher queue's, in events or batches and in bytes.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Limits {
-    pub(crate) ring: (usize, usize),
-    pub(crate) queue: (usize, usize),
-}
-
-impl Default for Limits {
-    fn default() -> Self {
-        Self {
-            ring: (RING_EVENTS, RING_BYTES),
-            queue: (QUEUE_BATCHES, QUEUE_BYTES),
-        }
-    }
-}
-
 type Settled = Option<Result<String, String>>;
-
-struct Watcher {
-    queue: WatchQueue,
-    notify: Arc<Notify>,
-}
 
 /// A title generation running for a session.
 #[derive(Clone, Default)]
@@ -101,12 +81,8 @@ struct Automations {
 
 struct Inner {
     loaded: bool,
-    epoch: u64,
-    seq: u64,
-    state: WorkspaceState,
-    ring: Ring,
-    watchers: HashMap<u64, Watcher>,
-    next_watcher: u64,
+    /// The workspace, its numbering, ring and watchers.
+    topic: Topic<WorkspaceFeed>,
     /// Mutating calls still running, by op: a repeat waits for the first one's reply.
     inflight: HashMap<OpId, watch::Receiver<Settled>>,
     recorded: u64,
@@ -128,11 +104,12 @@ pub struct WorkspaceHub {
     store: Database,
     spawn: Arc<dyn Spawn>,
     chores: Arc<dyn Chores>,
-    limits: Limits,
     /// When this engine run started (Unix ms): automation runs created before it and never
     /// finished are handed out again.
     started: u64,
     inner: Mutex<Inner>,
+    /// The session searches running, by search id.
+    searches: Searches,
 }
 
 /// What a mutating call did: its reply, the outcome its receipt carries, and its events.
@@ -173,17 +150,15 @@ impl WorkspaceHub {
             store,
             spawn,
             chores,
-            limits,
             started,
             inner: Mutex::new(Inner {
                 loaded: false,
                 // This run's epoch: a cursor from an earlier run never matches.
-                epoch: started.wrapping_shl(16) | 1,
-                seq: 0,
-                state: WorkspaceState::default(),
-                ring: Ring::new(limits.ring),
-                watchers: HashMap::new(),
-                next_watcher: 0,
+                topic: Topic::new(
+                    started.wrapping_shl(16) | 1,
+                    WorkspaceState::default(),
+                    limits,
+                ),
                 inflight: HashMap::new(),
                 recorded: 0,
                 busy: HashSet::new(),
@@ -193,6 +168,7 @@ impl WorkspaceHub {
                 automations: Automations::default(),
                 unprompted: HashSet::new(),
             }),
+            searches: Searches::default(),
         })
     }
 
@@ -203,7 +179,8 @@ impl WorkspaceHub {
     /// Reads the workspace from the store the first time anything needs it.
     fn ready(&self, inner: &mut Inner) -> Result<(), String> {
         if !inner.loaded {
-            inner.state = load(&*locked(&self.store)?, &inner.busy, &inner.unread)?;
+            let state = load(&*locked(&self.store)?, &inner.busy, &inner.unread)?;
+            inner.topic.load(state);
             inner.loaded = true;
         }
         Ok(())
@@ -213,13 +190,7 @@ impl WorkspaceHub {
     pub fn snapshot(&self) -> Result<(Cursor, WorkspaceState), String> {
         let mut inner = self.lock();
         self.ready(&mut inner)?;
-        Ok((
-            Cursor {
-                epoch: inner.epoch,
-                seq: inner.seq,
-            },
-            inner.state.clone(),
-        ))
+        Ok((inner.topic.cursor(), inner.topic.state().clone()))
     }
 
     /// Runs a mutating call once per op: a repeat waits for the first one's reply, or gets it
@@ -476,7 +447,7 @@ impl WorkspaceHub {
         }
         let project = new_project(&inner, &store, &summary.session.cwd);
         drop(store);
-        if inner.state.sessions.contains(&summary) {
+        if inner.topic.state().sessions.contains(&summary) {
             return;
         }
         let mut events = vec![WorkspaceEvent::Session(Box::new(summary))];
@@ -620,9 +591,10 @@ impl WorkspaceHub {
     pub async fn search_sessions(&self, body: SearchSessions) -> Result<SearchResults, String> {
         let reader = locked(&self.store)?.search_reader()?;
         let store = self.store.clone();
+        let running = self.searches.start(&body.search);
+        let cancel = running.flag();
         let (reply, answer) = futures::channel::oneshot::channel();
         self.spawn.spawn(Box::pin(async move {
-            let cancel = Arc::new(AtomicBool::new(false));
             let found = match reader {
                 Some(reader) => reader.search_sessions(&body.query, cancel),
                 None => locked(&store).and_then(|store| store.search_sessions(&body.query, cancel)),
@@ -632,7 +604,15 @@ impl WorkspaceHub {
         let (hits, truncated) = answer
             .await
             .map_err(|_| "The search stopped before it finished".to_owned())??;
+        if running.stopped() {
+            return Ok(SearchResults::default());
+        }
         Ok(SearchResults { hits, truncated })
+    }
+
+    /// `StopSearch` for the session search running under `search`.
+    pub fn stop_search(&self, search: &str) {
+        self.searches.stop(search);
     }
 
     /// `GenerateTitle`: the seed stands in now; the generated title and a pasted work item follow
@@ -880,7 +860,8 @@ impl WorkspaceHub {
     ) -> Result<Created, String> {
         self.mutate(op, move |inner, store| {
             let claimed = inner
-                .state
+                .topic
+                .state()
                 .automations
                 .iter()
                 .find(|due| due.run.id == body.due.run.id)
@@ -1085,7 +1066,8 @@ impl WorkspaceHub {
             return;
         }
         let Some(mut summary) = inner
-            .state
+            .topic
+            .state()
             .sessions
             .iter()
             .find(|known| known.session.id == row && known.draft != draft)
@@ -1103,102 +1085,25 @@ impl WorkspaceHub {
         self: &Arc<Self>,
         params: WatchWorkspace,
     ) -> Result<BoxStream<'static, Item<WorkspaceState, WorkspaceEvent>>, String> {
-        let notify = Arc::new(Notify::new());
-        let id = {
+        let (id, notify) = {
             let mut inner = self.lock();
             self.ready(&mut inner)?;
-            let resumed = params
-                .since
-                .filter(|since| since.epoch == inner.epoch)
-                .and_then(|since| {
-                    inner
-                        .ring
-                        .since(since.seq, inner.seq)
-                        .map(|events| (since.seq, events))
-                });
-            let queue = match resumed {
-                Some((since, events)) => {
-                    WatchQueue::resume(since, inner.seq, events, self.limits.queue)
-                }
-                None => WatchQueue::snapshot(
-                    Item::Snapshot {
-                        at: Cursor {
-                            epoch: inner.epoch,
-                            seq: inner.seq,
-                        },
-                        state: inner.state.clone(),
-                    },
-                    inner.seq,
-                    self.limits.queue,
-                ),
-            };
-            inner.next_watcher += 1;
-            let id = inner.next_watcher;
-            inner.watchers.insert(
-                id,
-                Watcher {
-                    queue,
-                    notify: notify.clone(),
-                },
-            );
-            id
+            inner.topic.join(params.since)
         };
-        let guard = WatchGuard {
-            hub: self.clone(),
-            id,
-        };
-        Ok(
-            futures::stream::unfold(Some((guard, notify)), |held| async move {
-                let (guard, notify) = held?;
-                loop {
-                    match guard.hub.drain(guard.id)? {
-                        Some(Item::Resync) => return Some((Item::Resync, None)),
-                        Some(item) => return Some((item, Some((guard, notify)))),
-                        None => notify.notified().await,
-                    }
-                }
-            })
-            .boxed(),
-        )
-    }
-
-    /// The watcher's next item: `None` when it is gone, `Some(None)` when nothing is ready.
-    fn drain(&self, id: u64) -> Option<Option<Item<WorkspaceState, WorkspaceEvent>>> {
-        let mut inner = self.lock();
-        Some(inner.watchers.get_mut(&id)?.queue.drain())
-    }
-
-    fn unwatch(&self, id: u64) {
-        self.lock().watchers.remove(&id);
-    }
-}
-
-struct WatchGuard {
-    hub: Arc<WorkspaceHub>,
-    id: u64,
-}
-
-impl Drop for WatchGuard {
-    fn drop(&mut self) {
-        self.hub.unwatch(self.id);
+        let (draining, leaving) = (self.clone(), self.clone());
+        Ok(feed::stream(
+            notify,
+            move || draining.lock().topic.drain(id),
+            move || {
+                leaving.lock().topic.leave(id);
+            },
+        ))
     }
 }
 
 /// Numbers `events`, applies them to the state and the ring, and queues them for every watcher.
 fn publish(inner: &mut Inner, events: Vec<WorkspaceEvent>) {
-    if events.is_empty() {
-        return;
-    }
-    let first = inner.seq + 1;
-    for event in &events {
-        inner.seq += 1;
-        apply(&mut inner.state, event);
-        inner.ring.push(inner.seq, event.clone());
-    }
-    for watcher in inner.watchers.values_mut() {
-        watcher.queue.push(first, events.clone());
-        watcher.notify.notify_one();
-    }
+    inner.topic.publish(events);
 }
 
 fn applied(summary: SessionSummary) -> Applied<Outcome> {
@@ -1223,7 +1128,8 @@ fn row_uid(row: i64) -> Uuid {
 /// seen it (a session another writer created).
 fn known(inner: &Inner, store: &Store, row: i64) -> Option<SessionSummary> {
     inner
-        .state
+        .topic
+        .state()
         .sessions
         .iter()
         .find(|known| known.session.id == row)
@@ -1239,7 +1145,8 @@ fn read_summary(store: &Store, inner: &Inner, row: i64) -> Option<SessionSummary
         .into_iter()
         .find(|session| session.id == row)?;
     let previous = inner
-        .state
+        .topic
+        .state()
         .sessions
         .iter()
         .find(|known| known.session.id == row);
@@ -1283,7 +1190,8 @@ fn remove(inner: &mut Inner, store: &mut Store, row: i64) -> Result<Vec<Workspac
     }
     let mut events = vec![WorkspaceEvent::Removed(row)];
     if inner
-        .state
+        .topic
+        .state()
         .reminders
         .iter()
         .any(|reminder| reminder.session_id == row)
@@ -1291,7 +1199,7 @@ fn remove(inner: &mut Inner, store: &mut Store, row: i64) -> Result<Vec<Workspac
         events.push(WorkspaceEvent::Reminders(store.reminders()?));
     }
     // Out of its folders; a folder it leaves empty goes too.
-    for project in &inner.state.projects {
+    for project in &inner.topic.state().projects {
         if project.groups.folder_of(row).is_some() {
             let mut groups = project.groups.clone();
             groups.remove_sessions(&[row]);
@@ -1314,7 +1222,13 @@ fn persisted_key(store: &Store, row: i64) -> String {
 
 /// The project at `path`, when the state does not list it yet.
 fn new_project(inner: &Inner, store: &Store, path: &str) -> Option<WorkspaceEvent> {
-    if inner.state.projects.iter().any(|known| known.path == path) {
+    if inner
+        .topic
+        .state()
+        .projects
+        .iter()
+        .any(|known| known.path == path)
+    {
         return None;
     }
     Some(WorkspaceEvent::Project(Project {

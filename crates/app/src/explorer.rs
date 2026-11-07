@@ -3,7 +3,7 @@
 //! dropped files and VS Code-style keyboard navigation. Every folder shown
 //! is fed by the engine's `WatchDir`, and every file operation is an engine
 //! call whose effect shows in the frame it is made, as an echo over the
-//! listings until the listing that follows its reply.
+//! listings until the folder's listing reaches the scan its reply names.
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -18,7 +18,7 @@ use gpui::{
 use onicode_core::files::{self, DirEntry, NameIssueKind, Severity};
 use onicode_protocol::OpId;
 use onicode_protocol::files::{
-    Create, DeletePath, Destination, DirEvent, Entries, Listing, Move, NewPath, WatchDir,
+    Create, DeletePath, Destination, DirEvent, Entries, Listing, Move, NewPath, Relisted, WatchDir,
 };
 
 use crate::engine_client::{self, WatchUpdate, Watching};
@@ -236,6 +236,28 @@ struct Pending {
     echo: Echo,
 }
 
+/// An applied call's echo, until its folder's listing reaches `until`: the
+/// scan of the listing that covers the call.
+struct Settled {
+    echo: Echo,
+    until: u64,
+}
+
+/// How a call the explorer echoed came back.
+enum Landed<'a> {
+    Failed,
+    /// Applied: the listings that cover it, and the path it made, which a
+    /// copy's echo takes when the engine named it otherwise.
+    Applied {
+        listed: &'a [Relisted],
+        created: Option<&'a str>,
+    },
+}
+
+/// What a file operation's call came back with: the path it made, if any,
+/// and the listings that cover it.
+type Ran = (Option<String>, Vec<Relisted>);
+
 pub(crate) struct Explorer {
     git: Entity<ProjectGit>,
     cwd: String,
@@ -250,12 +272,14 @@ pub(crate) struct Explorer {
     dirs: HashMap<String, Result<Vec<DirEntry>, String>>,
     /// The engine's last listing of each folder, kept after its watch goes.
     listed: HashMap<String, Result<Vec<DirEntry>, String>>,
+    /// The scan each folder's listing was read at.
+    scans: HashMap<String, u64>,
     /// The engine's watch of every folder the tree shows, while Files is.
     watches: HashMap<String, (Watching<Listing, DirEvent>, Task<()>)>,
     /// Calls not replied to yet, oldest first.
     echoes: Vec<Pending>,
-    /// Echoes of applied calls, until their folder's next listing.
-    settled: Vec<Echo>,
+    /// Echoes of applied calls, until their folder's covering listing.
+    settled: Vec<Settled>,
     naming: Option<NameMode>,
     name_input: Entity<Input>,
     name_attempted: bool,
@@ -281,6 +305,17 @@ fn parent_of(path: &str) -> String {
 }
 fn basename(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
+}
+
+/// How a create, rename or move came back.
+fn landed(result: &Result<NewPath, String>) -> Landed<'_> {
+    match result {
+        Ok(moved) => Landed::Applied {
+            listed: &moved.listed,
+            created: Some(&moved.path),
+        },
+        Err(_) => Landed::Failed,
+    }
 }
 
 pub(crate) struct OpenFile(pub String);
@@ -348,6 +383,7 @@ impl Explorer {
             saved: HashMap::new(),
             dirs: HashMap::new(),
             listed: HashMap::new(),
+            scans: HashMap::new(),
             watches: HashMap::new(),
             echoes: Vec::new(),
             settled: Vec::new(),
@@ -544,7 +580,7 @@ impl Explorer {
                     },
                 };
                 if this
-                    .update(cx, |this, cx| this.listed(&dir, listing.entries, cx))
+                    .update(cx, |this, cx| this.listed(&dir, listing, cx))
                     .is_err()
                 {
                     return;
@@ -554,14 +590,17 @@ impl Explorer {
         self.watches.insert(path, (watching, task));
     }
 
-    /// The engine's listing of `dir`. It was read after every call that
-    /// replied before it, so their echoes over `dir` give way to it.
-    fn listed(&mut self, dir: &str, entries: Entries, cx: &mut Context<Self>) {
-        let entries = match entries {
+    /// The engine's listing of `dir`. The echoes of applied calls it covers
+    /// (it was read at or after the scan their replies named) give way to it;
+    /// a listing read before a call, arriving after its reply, leaves them.
+    fn listed(&mut self, dir: &str, listing: Listing, cx: &mut Context<Self>) {
+        let entries = match listing.entries {
             Entries::Read(entries) => Ok(entries),
             Entries::Failed(error) => Err(error),
         };
-        self.settled.retain(|echo| echo.folder() != dir);
+        self.settled
+            .retain(|held| held.echo.folder() != dir || listing.scan < held.until);
+        self.scans.insert(dir.to_owned(), listing.scan);
         self.listed.insert(dir.to_owned(), entries);
         self.refold(dir);
         self.rebuild(cx);
@@ -574,7 +613,11 @@ impl Explorer {
         };
         let mut shown = listed.clone();
         if let Ok(entries) = &mut shown {
-            let echoes = self.echoes.iter().map(|p| &p.echo).chain(&self.settled);
+            let echoes = self
+                .echoes
+                .iter()
+                .map(|p| &p.echo)
+                .chain(self.settled.iter().map(|held| &held.echo));
             for echo in echoes.filter(|echo| echo.folder() == dir) {
                 echo.apply(entries);
             }
@@ -594,28 +637,49 @@ impl Explorer {
     }
 
     /// The call made under `op` replied. A failed call's echoes go now. An
-    /// applied call's stay until their folder's next listing, which the
-    /// engine read before replying, unless the folder shows them already or
-    /// is no longer watched.
-    fn settle(&mut self, op: OpId, applied: bool, cx: &mut Context<Self>) {
+    /// applied call's stay until their folder's listing reaches the scan the
+    /// reply names for it (the engine relisted it before replying), so a
+    /// listing read before the call never shows the old state between. A
+    /// folder the engine was not watching yet starts from a listing read after
+    /// the call: its next listing covers it. A copy's echo takes the name the
+    /// engine gave it.
+    fn settle(&mut self, op: OpId, landed: Landed<'_>, cx: &mut Context<Self>) {
         let mut folders = HashSet::new();
         let mut kept = Vec::new();
-        self.echoes.retain(|pending| {
-            if pending.op != op {
-                return true;
+        let pending = std::mem::take(&mut self.echoes);
+        for held in pending {
+            if held.op != op {
+                self.echoes.push(held);
+                continue;
             }
-            let folder = pending.echo.folder();
-            let waiting = self.watches.contains_key(&folder)
-                && self
-                    .listed
-                    .get(&folder)
-                    .is_some_and(|l| l.as_ref().is_ok_and(|e| !pending.echo.shown(e)));
-            if applied && waiting {
-                kept.push(pending.echo.clone());
+            let mut echo = held.echo;
+            folders.insert(echo.folder());
+            let Landed::Applied { listed, created } = &landed else {
+                continue;
+            };
+            if let (Echo::Add(entry), Some(created)) = (&mut echo, created)
+                && entry.path != *created
+                && parent_of(created) == parent_of(&entry.path)
+            {
+                basename(created).clone_into(&mut entry.name);
+                (*created).clone_into(&mut entry.path);
             }
-            folders.insert(folder);
-            false
-        });
+            let folder = echo.folder();
+            if !self.watches.contains_key(&folder) {
+                continue;
+            }
+            let held_scan = self.scans.get(&folder).copied();
+            let until = listed
+                .iter()
+                .find(|relisted| relisted.root == self.cwd && relisted.path == folder)
+                .map_or_else(
+                    || held_scan.map_or(0, |scan| scan + 1),
+                    |relisted| relisted.scan,
+                );
+            if held_scan.is_none_or(|scan| scan < until) {
+                kept.push(Settled { echo, until });
+            }
+        }
         self.settled.extend(kept);
         for folder in &folders {
             self.refold(folder);
@@ -628,6 +692,7 @@ impl Explorer {
         let gone = |k: &String| k == path || k.starts_with(&prefix);
         self.dirs.retain(|k, _| !gone(k));
         self.listed.retain(|k, _| !gone(k));
+        self.scans.retain(|k, _| !gone(k));
         self.watches.retain(|k, _| !gone(k));
     }
 
@@ -945,9 +1010,9 @@ impl Explorer {
                 cx.spawn_in(window, async move |this, cx| {
                     let result = call.await;
                     let _ = this.update_in(cx, |this, window, cx| {
-                        this.settle(op, result.is_ok(), cx);
+                        this.settle(op, landed(&result), cx);
                         match result {
-                            Ok(NewPath { path: next }) => {
+                            Ok(NewPath { path: next, .. }) => {
                                 if is_dir {
                                     this.forget(&path);
                                 }
@@ -993,9 +1058,9 @@ impl Explorer {
                 cx.spawn_in(window, async move |this, cx| {
                     let result = call.await;
                     let _ = this.update_in(cx, |this, window, cx| {
-                        this.settle(op, result.is_ok(), cx);
+                        this.settle(op, landed(&result), cx);
                         match result {
-                            Ok(NewPath { path: created }) => {
+                            Ok(NewPath { path: created, .. }) => {
                                 let touched = files::dirs_touched_by_create(&parent, &name);
                                 if matches!(&this.naming, Some(NameMode::Create { id: i, .. }) if *i == id) {
                                     this.naming = None;
@@ -1052,13 +1117,13 @@ impl Explorer {
         self.rebuild(cx);
     }
 
-    /// `run`: `work` replies with the path it made, if any, while `echo`
-    /// shows its effect. Operation errors route to the shared toast until the
-    /// next action.
+    /// `run`: `work` replies with the path it made, if any, and the listings
+    /// that cover it, while `echo` shows its effect. Operation errors route to
+    /// the shared toast until the next action.
     fn run(
         &mut self,
         echo: Option<(OpId, Vec<Echo>)>,
-        work: impl Future<Output = Result<Option<String>, String>> + 'static,
+        work: impl Future<Output = Result<Ran, String>> + 'static,
         touched: Vec<String>,
         forget: Option<String>,
         window: &mut Window,
@@ -1073,10 +1138,17 @@ impl Explorer {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 if let Some(op) = op {
-                    this.settle(op, result.is_ok(), cx);
+                    let reply = match &result {
+                        Ok((created, listed)) => Landed::Applied {
+                            listed,
+                            created: created.as_deref(),
+                        },
+                        Err(_) => Landed::Failed,
+                    };
+                    this.settle(op, reply, cx);
                 }
                 match result {
-                    Ok(created) => {
+                    Ok((created, _)) => {
                         if let Some(path) = &forget {
                             this.forget(path);
                         }
@@ -1134,7 +1206,7 @@ impl Explorer {
                     .call::<DeletePath>(Some(op), DeletePath { path: path.clone() });
                 this.run(
                     Some((op, vec![Echo::Remove(path.clone())])),
-                    async move { call.await.map(|_| None) },
+                    async move { call.await.map(|deleted| (None, deleted.listed)) },
                     vec![parent],
                     is_dir.then_some(path),
                     window,
@@ -1145,8 +1217,8 @@ impl Explorer {
         .detach();
     }
 
-    /// The entry a copy or move of `from` into `dest` adds, unless its name is
-    /// taken there (a copy is then renamed as Finder does, once it is made).
+    /// The entry a move of `from` into `dest` adds, unless its name is taken
+    /// there (the move then fails).
     fn arriving(&self, from: &str, is_dir: bool, dest: &str) -> Vec<Echo> {
         let name = basename(from).to_owned();
         if self.siblings(dest, None).contains(&name) {
@@ -1158,6 +1230,24 @@ impl Explorer {
             is_dir,
             ignored: false,
         })]
+    }
+
+    /// The entry a copy of `from` into `dest` adds: under its own name, or
+    /// renamed as Finder does when `taken` holds it. The engine picks the
+    /// same name; should it differ, the echo takes the engine's.
+    fn copied(from: &str, is_dir: bool, dest: &str, taken: &HashSet<String>) -> Echo {
+        let name = files::unique_name(basename(from), |name| taken.contains(name));
+        Echo::Add(DirEntry {
+            path: files::join_path(dest, &name),
+            name,
+            is_dir,
+            ignored: false,
+        })
+    }
+
+    /// The names in `dest` as it shows now: what a copy's name steps past.
+    fn taken(&self, dest: &str) -> HashSet<String> {
+        self.siblings(dest, None).into_iter().collect()
     }
 
     fn paste(&mut self, at: String, window: &mut Window, cx: &mut Context<Self>) {
@@ -1203,9 +1293,9 @@ impl Explorer {
             cx.spawn_in(window, async move |this, cx| {
                 let result = call.await;
                 let _ = this.update_in(cx, |this, window, cx| {
-                    this.settle(op, result.is_ok(), cx);
+                    this.settle(op, landed(&result), cx);
                     match result {
-                        Ok(NewPath { path: created }) => {
+                        Ok(NewPath { path: created, .. }) => {
                             if clip.is_dir {
                                 this.forget(&from);
                             }
@@ -1221,7 +1311,7 @@ impl Explorer {
             })
             .detach();
         } else {
-            let echoes = self.arriving(&from, clip.is_dir, &dest);
+            let echo = Self::copied(&from, clip.is_dir, &dest, &self.taken(&dest));
             let call = engine_client::local(cx).call::<Move>(
                 Some(op),
                 Move {
@@ -1230,8 +1320,8 @@ impl Explorer {
                 },
             );
             self.run(
-                Some((op, echoes)),
-                async move { call.await.map(|moved| Some(moved.path)) },
+                Some((op, vec![echo])),
+                async move { call.await.map(|moved| (Some(moved.path), moved.listed)) },
                 vec![dest],
                 None,
                 window,
@@ -1241,7 +1331,9 @@ impl Explorer {
     }
 
     /// Copies files from outside the tree (Finder) into `dest`, one after
-    /// another until one fails.
+    /// another until one fails, as monocode did. Every copy shows in the frame
+    /// it is asked for; one that fails takes its echo, and those after it
+    /// (never made) theirs, with it.
     fn copy_external(
         &mut self,
         paths: Vec<PathBuf>,
@@ -1252,25 +1344,67 @@ impl Explorer {
         if paths.is_empty() {
             return;
         }
+        self.set_operation_error(None, cx);
+        let mut taken = self.taken(&dest);
+        let mut copies = Vec::new();
+        for from in paths {
+            // Finder's paths are on this Mac: what they are is known here.
+            let is_dir = from.is_dir();
+            let from = from.to_string_lossy().into_owned();
+            let echo = Self::copied(&from, is_dir, &dest, &taken);
+            if let Echo::Add(entry) = &echo {
+                taken.insert(entry.name.clone());
+            }
+            let op = OpId::new();
+            self.echo(op, vec![echo], cx);
+            copies.push((op, from));
+        }
         let engine = engine_client::local(cx);
-        let to = dest.clone();
-        let work = async move {
+        cx.spawn_in(window, async move |this, cx| {
             let mut created = None;
-            for from in paths {
-                let moved = engine
+            for (at, (op, from)) in copies.iter().enumerate() {
+                let result = engine
                     .call::<Move>(
-                        Some(OpId::new()),
+                        Some(*op),
                         Move {
-                            from: from.to_string_lossy().into_owned(),
-                            to: Destination::CopyInto(to.clone()),
+                            from: from.clone(),
+                            to: Destination::CopyInto(dest.clone()),
                         },
                     )
-                    .await?;
-                created = Some(moved.path);
+                    .await;
+                let failed = this.update_in(cx, |this, _, cx| {
+                    this.settle(*op, landed(&result), cx);
+                    match result {
+                        Ok(moved) => {
+                            created = Some(moved.path);
+                            None
+                        }
+                        Err(error) => {
+                            for (never, _) in &copies[at + 1..] {
+                                this.settle(*never, Landed::Failed, cx);
+                            }
+                            Some(error)
+                        }
+                    }
+                });
+                match failed {
+                    Ok(None) => {}
+                    Ok(Some(error)) => {
+                        let _ = this.update_in(cx, |this, _, cx| this.fail(error, cx));
+                        return;
+                    }
+                    Err(_) => return,
+                }
             }
-            Ok::<_, String>(created)
-        };
-        self.run(None, work, vec![dest], None, window, cx);
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.expand(std::slice::from_ref(&dest));
+                if let Some(created) = created {
+                    this.selected = Some(created);
+                }
+                this.after_op(window, cx);
+            });
+        })
+        .detach();
     }
 
     fn duplicate(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
@@ -1278,17 +1412,19 @@ impl Explorer {
             return;
         }
         let parent = parent_of(&path);
+        let is_dir = self.is_dir_at(&path);
+        let op = OpId::new();
+        let echo = Self::copied(&path, is_dir, &parent, &self.taken(&parent));
         let call = engine_client::local(cx).call::<Move>(
-            Some(OpId::new()),
+            Some(op),
             Move {
                 from: path,
                 to: Destination::CopyInto(parent.clone()),
             },
         );
-        // The copy's name is only known once it is made: nothing to echo.
         self.run(
-            None,
-            async move { call.await.map(|moved| Some(moved.path)) },
+            Some((op, vec![echo])),
+            async move { call.await.map(|moved| (Some(moved.path), moved.listed)) },
             vec![parent],
             None,
             window,
@@ -1298,9 +1434,9 @@ impl Explorer {
 
     /// Revealing opens Finder on this machine, not on an engine.
     fn reveal(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
-        let work = cx
-            .background_executor()
-            .spawn(async move { files::reveal_path(Path::new(&path)).map(|()| None::<String>) });
+        let work = cx.background_executor().spawn(async move {
+            files::reveal_path(Path::new(&path)).map(|()| (None, Vec::new()))
+        });
         self.run(None, work, Vec::new(), None, window, cx);
     }
 
@@ -2065,5 +2201,228 @@ mod changed_range_tests {
         assert_eq!(changed_range(&old, &new), (1, 4, 2));
         assert_eq!(changed_range(&old, &old), (5, 5, 5));
         assert_eq!(changed_range::<i32>(&[], &[1]), (0, 0, 1));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use gpui::{TestAppContext, VisualTestContext};
+
+    use super::*;
+
+    /// A folder of its own under the temp dir, gone with the test.
+    struct Folder(PathBuf);
+
+    impl Folder {
+        fn new(files: &[&str]) -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let root = std::env::temp_dir().join(format!(
+                "onicode-explorer-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::SeqCst)
+            ));
+            std::fs::create_dir_all(&root).unwrap();
+            for name in files {
+                std::fs::write(root.join(name), "").unwrap();
+            }
+            Self(root)
+        }
+
+        fn path(&self) -> String {
+            self.0.to_string_lossy().into_owned()
+        }
+    }
+
+    impl Drop for Folder {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// An explorer showing `folder`, its listing in.
+    fn open<'a>(
+        folder: &Folder,
+        cx: &'a mut TestAppContext,
+    ) -> (Entity<Explorer>, &'a mut VisualTestContext) {
+        let root = folder.path();
+        let (explorer, cx) = cx.add_window_view(|window, cx| {
+            let git = cx.new(|cx| ProjectGit::new(root.clone(), cx));
+            Explorer::new(git, window, cx)
+        });
+        explorer.update(cx, |explorer, cx| explorer.set_enabled(true, cx));
+        cx.run_until_parked();
+        (explorer, cx)
+    }
+
+    fn names(explorer: &Explorer, dir: &str) -> Vec<String> {
+        match explorer.dirs.get(dir) {
+            Some(Ok(entries)) => entries.iter().map(|entry| entry.name.clone()).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn entry(dir: &str, name: &str) -> DirEntry {
+        DirEntry {
+            name: name.into(),
+            path: files::join_path(dir, name),
+            is_dir: false,
+            ignored: false,
+        }
+    }
+
+    #[gpui::test]
+    fn a_listing_read_before_a_call_never_shows_after_its_reply(cx: &mut TestAppContext) {
+        let folder = Folder::new(&["a.txt"]);
+        let root = folder.path();
+        let (explorer, cx) = open(&folder, cx);
+        let held = explorer.read_with(cx, |explorer, _| {
+            assert_eq!(names(explorer, &root), ["a.txt"]);
+            explorer.scans[&root]
+        });
+        let op = OpId::new();
+        let made = entry(&root, "b.txt");
+        explorer.update(cx, |explorer, cx| {
+            explorer.echo(op, vec![Echo::Add(made.clone())], cx);
+            assert_eq!(names(explorer, &root), ["a.txt", "b.txt"], "the same frame");
+            // The engine relisted the folder at `held + 5` before it replied.
+            let listed = [Relisted {
+                root: root.clone(),
+                path: root.clone(),
+                scan: held + 5,
+            }];
+            explorer.settle(
+                op,
+                Landed::Applied {
+                    listed: &listed,
+                    created: Some(&made.path),
+                },
+                cx,
+            );
+            assert_eq!(names(explorer, &root), ["a.txt", "b.txt"]);
+            // A listing read before the call arrives after its reply.
+            explorer.listed(
+                &root,
+                Listing {
+                    scan: held + 1,
+                    entries: Entries::Read(vec![entry(&root, "a.txt")]),
+                },
+                cx,
+            );
+            assert_eq!(
+                names(explorer, &root),
+                ["a.txt", "b.txt"],
+                "the older listing never shows the old state"
+            );
+            explorer.listed(
+                &root,
+                Listing {
+                    scan: held + 5,
+                    entries: Entries::Read(vec![entry(&root, "a.txt"), made.clone()]),
+                },
+                cx,
+            );
+            assert_eq!(names(explorer, &root), ["a.txt", "b.txt"]);
+            assert!(
+                explorer.settled.is_empty(),
+                "the covering listing takes over"
+            );
+            // Later listings are the engine's alone.
+            explorer.listed(
+                &root,
+                Listing {
+                    scan: held + 6,
+                    entries: Entries::Read(vec![entry(&root, "a.txt")]),
+                },
+                cx,
+            );
+            assert_eq!(names(explorer, &root), ["a.txt"]);
+        });
+    }
+
+    #[gpui::test]
+    fn duplicates_and_finder_copies_show_in_the_frame_they_are_made(cx: &mut TestAppContext) {
+        let folder = Folder::new(&["a.txt", "a copy.txt"]);
+        let outside = Folder::new(&["n.md", "a.txt"]);
+        let root = folder.path();
+        let (explorer, cx) = open(&folder, cx);
+        let original = files::join_path(&root, "a.txt");
+        cx.update(|window, cx| {
+            explorer.update(cx, |explorer, cx| {
+                explorer.duplicate(original.clone(), window, cx);
+                assert_eq!(
+                    names(explorer, &root),
+                    ["a copy 2.txt", "a copy.txt", "a.txt"],
+                    "the copy shows under the name Finder gives it, before the engine answers"
+                );
+            });
+        });
+        cx.run_until_parked();
+        explorer.read_with(cx, |explorer, _| {
+            assert_eq!(
+                names(explorer, &root),
+                ["a copy 2.txt", "a copy.txt", "a.txt"]
+            );
+            assert!(explorer.echoes.is_empty() && explorer.settled.is_empty());
+        });
+
+        let finder = vec![outside.0.join("n.md"), outside.0.join("a.txt")];
+        cx.update(|window, cx| {
+            explorer.update(cx, |explorer, cx| {
+                explorer.copy_external(finder, root.clone(), window, cx);
+                assert_eq!(
+                    names(explorer, &root),
+                    [
+                        "a copy 2.txt",
+                        "a copy 3.txt",
+                        "a copy.txt",
+                        "a.txt",
+                        "n.md"
+                    ],
+                    "every copy shows at once, each under its own name"
+                );
+            });
+        });
+        cx.run_until_parked();
+        explorer.read_with(cx, |explorer, _| {
+            assert_eq!(
+                names(explorer, &root),
+                [
+                    "a copy 2.txt",
+                    "a copy 3.txt",
+                    "a copy.txt",
+                    "a.txt",
+                    "n.md"
+                ]
+            );
+            assert!(explorer.echoes.is_empty() && explorer.settled.is_empty());
+            assert_eq!(
+                explorer.selected.as_deref(),
+                Some(files::join_path(&root, "a copy 3.txt").as_str()),
+                "the last copy is selected, as monocode did"
+            );
+        });
+        assert!(folder.0.join("n.md").exists() && folder.0.join("a copy 3.txt").exists());
+
+        // A copy that fails takes its echo, and the one after it (never made) too.
+        let gone = vec![outside.0.join("missing.md"), outside.0.join("n.md")];
+        cx.update(|window, cx| {
+            explorer.update(cx, |explorer, cx| {
+                explorer.copy_external(gone, root.clone(), window, cx);
+                assert!(names(explorer, &root).contains(&"missing.md".to_owned()));
+            });
+        });
+        cx.run_until_parked();
+        explorer.read_with(cx, |explorer, _| {
+            let shown = names(explorer, &root);
+            assert!(!shown.contains(&"missing.md".to_owned()));
+            assert!(!shown.contains(&"n copy.md".to_owned()));
+            assert!(explorer.op_error.is_some());
+        });
+        assert!(
+            !folder.0.join("n copy.md").exists(),
+            "copies stop at the first failure"
+        );
     }
 }

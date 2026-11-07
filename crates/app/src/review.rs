@@ -14,11 +14,11 @@ use gpui::{
     SharedString, Subscription, Task, Window, div, px, rgb,
 };
 use onicode_core::diff;
+use onicode_protocol::OpId;
 use onicode_protocol::git::{
     self as git_calls, ChangeSet, ChangedFile, Diff, DiffList, DiffSides, Discard, FileDiffVersion,
     Stage, StageTarget,
 };
-use onicode_protocol::{OpId, Outcome};
 use serde::{Deserialize, Serialize};
 
 use crate::diff_view::{DiffEvent, DiffFile, DiffView};
@@ -1433,6 +1433,7 @@ impl ReviewPane {
         };
         let engine = crate::engine_client::local(cx);
         let op = OpId::new();
+        let covering = checkout.clone();
         let work = match change {
             Change::Stage(target) => {
                 Either::Left(engine.call::<Stage>(Some(op), Stage { checkout, target }))
@@ -1451,22 +1452,20 @@ impl ReviewPane {
         }
         let task = cx.background_executor().spawn(work);
         cx.spawn(async move |this, cx| {
-            let result = task.await.and_then(|outcome| match outcome {
-                Outcome::Applied => Ok(()),
-                Outcome::Rejected(rejection) => Err(format!("Not applied: {rejection:?}")),
-            });
+            let result = task.await;
             let _ = this.update(cx, |this, cx| {
                 view.update(cx, |v, cx| {
                     v.busy_id = None;
                     cx.notify();
                 });
-                this.git.update(cx, |git, cx| {
-                    git.settle(op, cx);
-                    git.changed(cx);
+                this.git.update(cx, |git, cx| match result {
+                    Ok(covered) => git.applied(Some(op), &covering, covered, cx),
+                    Err(error) => {
+                        git.settle(op, cx);
+                        git.changed(cx);
+                        log_error(&error);
+                    }
                 });
-                if let Err(error) = result {
-                    log_error(&error);
-                }
             });
         })
         .detach();

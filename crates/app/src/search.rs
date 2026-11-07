@@ -14,8 +14,9 @@ use gpui::{
 use onicode_core::search::{self, Hit, Scope, Target};
 use onicode_core::store::Session;
 use onicode_core::transcript::Row;
-use onicode_engine::turn::{Database, locked};
+use onicode_engine::turn::Database;
 use onicode_protocol::files::{SearchContent, SearchPaths};
+use onicode_protocol::workspace::SearchSessions;
 
 use crate::engine_client;
 use crate::input::{self, Input};
@@ -38,7 +39,6 @@ pub(crate) struct Sources {
 pub(crate) struct SearchView {
     pub(crate) input: Entity<Input>,
     cwd: String,
-    store: Database,
     summaries: Vec<Session>,
     live: HashMap<i64, Arc<Vec<Row>>>,
     projects: Vec<String>,
@@ -65,9 +65,16 @@ pub(crate) struct SearchView {
     truncated: (bool, bool),
     error: Option<String>,
     cancel: Arc<AtomicBool>,
-    /// The engine stops this view's running content search when the next one
-    /// starts.
-    search_id: String,
+    /// The app's own engine, which searches files, and the engine serving
+    /// `store`, which searches its saved conversations.
+    files_engine: engine_client::Engine,
+    sessions_engine: engine_client::Engine,
+    /// The engine searches still running for this view's query, each under an
+    /// id of its own: stopped when the query moves on or the view closes, as
+    /// monocode's cancel flag did.
+    running: Vec<(engine_client::Engine, String)>,
+    /// The project listing still running, stopped if the view closes first.
+    listing: Option<String>,
     debounce: Option<Task<()>>,
     _changed: Subscription,
 }
@@ -80,6 +87,10 @@ impl Focusable for SearchView {
 impl Drop for SearchView {
     fn drop(&mut self) {
         self.cancel.store(true, Ordering::Release);
+        self.stop_running();
+        if let Some(listing) = self.listing.take() {
+            self.files_engine.stop_search(listing);
+        }
     }
 }
 impl SearchView {
@@ -101,16 +112,20 @@ impl SearchView {
             this.active = 0;
             this.refresh(cx);
         });
-        let listing = engine_client::local(cx).call::<SearchPaths>(
+        let files_engine = engine_client::local(cx);
+        let sessions_engine = engine_client::engine(&store, cx);
+        let listing_id = onicode_core::new_id();
+        let listing = files_engine.call::<SearchPaths>(
             None,
             SearchPaths {
                 root: cwd.clone(),
-                search: String::new(),
+                search: listing_id.clone(),
             },
         );
         cx.spawn(async move |this, cx| {
             let result = listing.await;
             let _ = this.update(cx, |this, cx| {
+                this.listing = None;
                 if let Ok(listed) = result {
                     this.files = listed.files;
                     this.rank(cx);
@@ -121,7 +136,6 @@ impl SearchView {
         let mut view = Self {
             input,
             cwd,
-            store,
             summaries: sources.summaries,
             live: sources.live,
             projects: sources.projects,
@@ -147,7 +161,10 @@ impl SearchView {
             truncated: (false, false),
             error: None,
             cancel: Arc::new(AtomicBool::new(false)),
-            search_id: onicode_core::new_id(),
+            files_engine,
+            sessions_engine,
+            running: Vec::new(),
+            listing: Some(listing_id),
             debounce: None,
             _changed: changed,
         };
@@ -279,9 +296,29 @@ impl SearchView {
         cx.notify();
     }
 
+    /// A fresh id for a search `engine` runs for this query.
+    fn search_id(&mut self, engine: &engine_client::Engine) -> String {
+        let id = onicode_core::new_id();
+        self.running.push((engine.clone(), id.clone()));
+        id
+    }
+
+    /// The search under `id` answered: nothing is left to stop.
+    fn finished(&mut self, id: &str) {
+        self.running.retain(|(_, running)| running != id);
+    }
+
+    /// Stops the engine searches for the query before this one.
+    fn stop_running(&mut self) {
+        for (engine, id) in self.running.drain(..) {
+            engine.stop_search(id);
+        }
+    }
+
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.cancel.store(true, Ordering::Release);
         self.cancel = Arc::new(AtomicBool::new(false));
+        self.stop_running();
         self.debounce = None;
         self.live_task = None;
         self.local.clear();
@@ -306,13 +343,23 @@ impl SearchView {
 
     fn start(&mut self, cx: &mut Context<Self>) {
         if self.scope.sessions() {
-            let store = self.store.clone();
             let query = self.query.clone();
             let flag = self.cancel.clone();
             let check = flag.clone();
             let live = self.live.clone();
             let summaries = self.summaries.clone();
             let revision = self.live_revision;
+            // Saved conversations are the engine's to search; the rows a live
+            // session holds here are searched in place.
+            let engine = self.sessions_engine.clone();
+            let id = self.search_id(&engine);
+            let saved = engine.call::<SearchSessions>(
+                None,
+                SearchSessions {
+                    query: query.clone(),
+                    search: id.clone(),
+                },
+            );
             let work = cx.background_executor().spawn(async move {
                 let mut local = vec![];
                 for s in summaries {
@@ -320,15 +367,7 @@ impl SearchView {
                         local.extend(search::messages(&s, rows, &query, &flag));
                     }
                 }
-                let saved = locked(&store)
-                    .and_then(|db| db.search_reader())
-                    .and_then(|reader| match reader {
-                        Some(reader) => reader.search_sessions(&query, flag.clone()),
-                        None => {
-                            locked(&store).and_then(|db| db.search_sessions(&query, flag.clone()))
-                        }
-                    });
-                (local, saved)
+                (local, saved.await)
             });
             cx.spawn(async move |this, cx| {
                 let (local, saved) = work.await;
@@ -336,11 +375,12 @@ impl SearchView {
                     return;
                 }
                 let _ = this.update(cx, |this, cx| {
+                    this.finished(&id);
                     this.sessions_loading = false;
                     match saved {
-                        Ok((hits, truncated)) => {
-                            this.remote = hits;
-                            this.truncated.0 = truncated;
+                        Ok(found) => {
+                            this.remote = found.hits;
+                            this.truncated.0 = found.truncated;
                         }
                         Err(e) => this.error = Some(e),
                     }
@@ -357,7 +397,9 @@ impl SearchView {
         if self.scope.files() {
             let query = self.query.clone();
             let check = self.cancel.clone();
-            let found = engine_client::local(cx).call::<SearchContent>(
+            let engine = self.files_engine.clone();
+            let id = self.search_id(&engine);
+            let found = engine.call::<SearchContent>(
                 None,
                 SearchContent {
                     options: search::project::SearchOptions {
@@ -368,7 +410,7 @@ impl SearchView {
                         regex: false,
                         include: None,
                         exclude: None,
-                        search_id: self.search_id.clone(),
+                        search_id: id.clone(),
                     },
                 },
             );
@@ -383,6 +425,7 @@ impl SearchView {
                     return;
                 }
                 let _ = this.update(cx, |this, cx| {
+                    this.finished(&id);
                     this.files_loading = false;
                     match result {
                         Ok((hits, truncated)) => {
