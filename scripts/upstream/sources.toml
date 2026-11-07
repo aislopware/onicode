@@ -31,8 +31,8 @@ upstream = "longbridge/gpui-fast"
 branch = "main"
 fork = "aislopware/gpui-fast"
 checkout = "forks/gpui-fast"
-base = "146073d52d5e16c0bafacaa82413f81a80a44e50"
-base_date = "2026-11-06"
+base = "61dccec2536ecbb6845a2c0cdf5fb17651b10bc5"
+base_date = "2026-11-07"
 every_minutes = 0
 
 [gpui-kit]
@@ -164,7 +164,7 @@ releases = false
 [t3code]
 upstream = "pingdotgg/t3code"
 branch = "main"
-base = "006d7e38f0485431c314a1afcc39fa823f379092"
+base = "33f85846be8bc4bc592f0e621d6f0313e5abd4a4"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = false
