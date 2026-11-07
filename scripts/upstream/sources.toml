@@ -156,7 +156,7 @@ every_minutes = 0
 [rune]
 upstream = "anomalyco/rune"
 branch = "dev"
-base = "b99c7b04e75c0b7587fe8d09ba6a679e11ede9c9"
+base = "53c7f60f51ce12bd5da53145d9d86ce1552324e4"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = true
@@ -166,7 +166,7 @@ releases = false
 [t3code]
 upstream = "pingdotgg/t3code"
 branch = "main"
-base = "beaeeff40ef108e2cdb37112bfd0dd31b4660eae"
+base = "67fdc53823894f96e5946da80fac5b6c34c0487d"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = false
