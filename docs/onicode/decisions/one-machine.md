@@ -95,9 +95,12 @@ machine the owner is not looking at. So the grants panel walks the owner through
 Apps" for onicode once, like Screen Recording. iOS can't read the pasteboard in the background: the phone
 offers its clipboard when it comes to the foreground and pastes through `UIPasteControl`.
 
-As built (`crates/clipboard`, `crates/engine/src/clipboard.rs`):
+As built, for the remote desktop session (`remote-desktop.md`): the logic is `crates/clipboard`, its wire
+`crates/desktop-proto/src/clipboard.rs`, the host side `crates/desktopd/src/clipboard.rs` and `session.rs`, and the
+viewer side `crates/desktop-client/src/session.rs` and `crates/app/src/desktop/clipboard.rs`. Engines do not follow
+the clipboard between Macs outside a desktop window.
 - Offers order by `(at, origin, seq)`. `seq` breaks a tie inside one millisecond, and `at` is never behind
-  the newest offer the engine has seen, so a Mac whose clock runs behind still wins with a later copy.
+  the newest offer the Mac has seen, so a Mac whose clock runs behind still wins with a later copy.
 - A fetch names the item as well as the type, `clip/<seq>/<item>/<type>`: a copy of several pictures has the
   same type in each item. `clip/<seq>/<type>` means item 0.
 - Until "Paste from Other Apps" is allowed, an offer carries types alone (size 0, nothing inline) and the
@@ -107,5 +110,5 @@ As built (`crates/clipboard`, `crates/engine/src/clipboard.rs`):
 - Files of 16 MiB or less in all, each a regular file, are fetched as soon as the offer lands, so their
   paste is instant. Bigger copies and folders wait for the paste, with a 120 s deadline; other types have
   3 s.
-- Engines assembled in tests and fixtures keep the clipboard in memory. Only the running engine uses the
-  general pasteboard, and the `NSPasteboard` tests are opt-in on uniquely named pasteboards.
+- Tests keep the clipboard in memory. Only the running app and desktopd use the general pasteboard, and the
+  `NSPasteboard` tests are opt-in (`ONICODE_PASTEBOARD_LIVE`) on uniquely named pasteboards.

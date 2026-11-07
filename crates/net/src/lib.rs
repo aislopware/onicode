@@ -31,7 +31,6 @@ pub mod link;
 pub mod redial;
 pub mod stream;
 pub mod transport;
-#[cfg(unix)]
 mod udp;
 
 use std::sync::OnceLock;

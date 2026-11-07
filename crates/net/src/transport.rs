@@ -142,13 +142,7 @@ pub fn endpoint_on_udp(
     seed: Option<u64>,
 ) -> std::io::Result<Endpoint> {
     socket.set_nonblocking(true)?;
-    #[cfg(unix)]
     let socket = crate::udp::wrap(socket, batched_udp())?;
-    #[cfg(not(unix))]
-    let socket = {
-        use noq::Runtime as _;
-        noq::TokioRuntime.wrap_udp_socket(socket)?
-    };
     endpoint_on(socket, server, seed)
 }
 

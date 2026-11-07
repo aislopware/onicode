@@ -1,7 +1,7 @@
 # Development media runtime
 
-Onicode packages do not contain the Codex voice runtime. On macOS and Linux,
-local and remote voice run the `codex-voice-host` helper of the user's
+Onicode packages do not contain the Codex voice runtime. On macOS, local and
+remote voice run the `codex-voice-host` helper of the user's
 own standalone Codex installation (layout 1, version 0.159 or later), resolved
 from the same `codex` executable the harness uses. npm installations do not
 include the runtime and report `nativeRuntimeUnavailable`.
@@ -9,14 +9,8 @@ include the runtime and report `nativeRuntimeUnavailable`.
 `scripts/package-voice-runtime.py` is a development tool only. It projects the
 voice subtree of a checksum-pinned official Codex `0.160.0` package into a
 `codex-resources/voice` directory (the helper refuses to initialize from any
-other directory name), for example to test a machine without Codex:
-
-```sh
-python3 scripts/package-voice-runtime.py --download \
-  --target x86_64-unknown-linux-gnu --destination /tmp/onicode/codex-resources/voice
-```
-
-macOS needs an explicit extracted package (`--package`). The projection keeps
+other directory name), for example to test a Mac without Codex. It takes an
+explicit extracted package (`--package`). The projection keeps
 binaries and libraries byte-for-byte (macOS signatures are verified, not
 replaced), the dependency notices and sources manifest, and adds
 `Codex-LICENSE.txt`, the unmodified OpenAI license at source commit

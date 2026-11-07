@@ -267,7 +267,6 @@ impl LocalApi {
                 stream.set_nodelay(true)?;
                 send(stream, method, uri, Some(token)).await
             }
-            #[cfg(unix)]
             Location::Unix(path) => {
                 send(
                     tokio::net::UnixStream::connect(path).await?,
@@ -277,11 +276,6 @@ impl LocalApi {
                 )
                 .await
             }
-            #[cfg(not(unix))]
-            Location::Unix(_) => Err(LocalApiError::Io(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "unix sockets on this platform",
-            ))),
         }
     }
 
@@ -543,7 +537,6 @@ mod tests {
     }
 
     /// No daemon at all is an I/O error at once.
-    #[cfg(unix)]
     #[tokio::test]
     async fn no_daemon_is_an_error_at_once() {
         let api = LocalApi::at(Location::Unix(

@@ -1849,11 +1849,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
 dependencies = [
  "cfg-if",
- "js-sys",
  "libc",
  "r-efi 6.0.0",
  "rand_core 0.10.1",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -3465,30 +3463,25 @@ dependencies = [
  "bytes",
  "derive_more",
  "enum-assoc",
- "getrandom 0.4.3",
  "identity-hash",
  "lru-slab",
  "rand 0.10.3",
  "rand_pcg",
  "rustc-hash 2.1.3",
- "rustls-pki-types",
  "slab",
  "sorted-index-buffer",
  "thiserror 2.0.21",
  "tinyvec",
  "tracing",
- "web-time",
 ]
 
 [[package]]
 name = "noq-udp"
 version = "1.4.0"
 dependencies = [
- "cfg_aliases",
  "libc",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4105,6 +4098,7 @@ dependencies = [
  "objc2-core-video",
  "objc2-foundation 0.3.2",
  "objc2-user-notifications",
+ "onicode-clipboard",
  "onicode-core",
  "onicode-desktop-client",
  "onicode-desktop-link",
@@ -4150,6 +4144,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "onicode-clipboard"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "libc",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
+ "objc2-foundation 0.3.2",
+ "onicode-desktop-proto",
+ "onicode-desktop-testkit",
+ "onicode-net",
+ "parking_lot",
+ "proptest",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "onicode-core"
 version = "0.1.0"
 dependencies = [
@@ -4187,13 +4204,13 @@ dependencies = [
  "libc",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
- "objc2-application-services",
  "objc2-core-audio-types",
  "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-core-media",
  "objc2-core-video",
  "objc2-foundation 0.3.2",
+ "objc2-io-kit",
  "objc2-screen-capture-kit",
  "onicode-desktop-codec",
  "onicode-desktop-proto",
@@ -4209,6 +4226,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "futures",
+ "onicode-clipboard",
  "onicode-desktop-codec",
  "onicode-desktop-link",
  "onicode-desktop-media",
@@ -4253,7 +4271,6 @@ name = "onicode-desktop-input"
 version = "0.1.0"
 dependencies = [
  "block2 0.6.2",
- "dispatch2",
  "libc",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
@@ -4304,10 +4321,12 @@ dependencies = [
 name = "onicode-desktop-proto"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bitflags",
  "onicode-desktop-media",
  "serde",
  "serde_bytes",
+ "serde_json",
 ]
 
 [[package]]
@@ -4339,6 +4358,7 @@ dependencies = [
  "dispatch2",
  "noq",
  "objc2 0.6.5",
+ "onicode-clipboard",
  "onicode-desktop-capture",
  "onicode-desktop-client",
  "onicode-desktop-codec",
@@ -5670,7 +5690,6 @@ version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96"
 dependencies = [
- "web-time",
  "zeroize",
 ]
 

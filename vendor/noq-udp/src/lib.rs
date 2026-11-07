@@ -1,13 +1,15 @@
 //! Uniform interface to send and receive UDP packets with advanced features useful for QUIC
 //!
-//! This crate exposes kernel UDP stack features available on most modern systems which are required
-//! for an efficient and conformant QUIC implementation. As of this writing, these are not available
-//! in std or major async runtimes, and their niche character and complexity are a barrier to adding
-//! them. Hence, a dedicated crate.
+//! This crate exposes kernel UDP stack features which are required for an efficient and
+//! conformant QUIC implementation. As of this writing, these are not available in std or major
+//! async runtimes, and their niche character and complexity are a barrier to adding them. Hence, a
+//! dedicated crate.
 //!
-//! Exposed features include:
+//! onicode's copy runs on macOS and iOS alone (27.2 and later, Apple silicon). Exposed features
+//! include:
 //!
-//! - Segmentation offload for bulk send and receive operations, reducing CPU load.
+//! - Batched sends and receives through `sendmsg_x`/`recvmsg_x` on macOS (the
+//!   `fast-apple-datapath` feature), reducing system calls per datagram.
 //! - Reporting the exact destination address of received packets and specifying explicit source
 //!   addresses for sent packets, allowing responses to be sent from the address that the peer
 //!   expects when there are multiple possibilities. This is common when bound to a wildcard address
@@ -17,50 +19,25 @@
 //! - Disabled IP-layer fragmentation, which allows the true physical MTU to be detected and reduces
 //!   risk of QUIC packet loss.
 //!
-//! Some features are unavailable in some environments. This can be due to an outdated operating
-//! system or drivers. Some operating systems may not implement desired features at all, or may not
-//! yet be supported by the crate. When support is unavailable, functionality will gracefully
-//! degrade.
-//!
 //! [RFC 8981]: https://www.rfc-editor.org/rfc/rfc8981.html
 //! [Explicit Congestion Notification]: https://www.rfc-editor.org/rfc/rfc3168.html
 #![warn(unreachable_pub)]
 #![warn(clippy::use_self)]
 
-use core::time::Duration;
-#[cfg(any(unix, target_os = "wasi"))]
-use std::os::fd::AsFd;
-#[cfg(windows)]
-use std::os::windows::io::AsSocket;
 use std::{
     io,
     net::{IpAddr, Ipv6Addr, SocketAddr},
+    os::fd::AsFd,
+    sync::Mutex,
+    time::{Duration, Instant},
 };
-#[cfg(not(wasm_browser))]
-use std::{sync::Mutex, time::Instant};
-#[cfg(windows)]
-use windows_sys::Win32::Networking::WinSock;
 
-#[cfg(apple_fast)]
+#[cfg(feature = "fast-apple-datapath")]
 mod apple_fast;
 
-#[cfg(any(all(unix, not(posix_minimal)), windows))]
 mod cmsg;
 
-#[cfg(all(unix, not(posix_minimal)))]
 #[path = "unix.rs"]
-mod imp;
-
-#[cfg(all(any(target_os = "linux", target_os = "android"), not(posix_minimal)))]
-mod linux;
-
-#[cfg(windows)]
-#[path = "windows.rs"]
-mod imp;
-
-// Minimal POSIX UDP for platforms without advanced socket APIs (cmsg, GSO, GRO)
-#[cfg(posix_minimal)]
-#[path = "posix_minimal.rs"]
 mod imp;
 
 #[allow(unused_imports, unused_macros)]
@@ -86,15 +63,10 @@ mod log {
     pub(crate) use no_op::*;
 }
 
-#[cfg(not(wasm_browser))]
 pub use imp::UdpSocketState;
 
 /// Number of UDP packets to send/receive at a time
-#[cfg(not(wasm_browser))]
 pub const BATCH_SIZE: usize = imp::BATCH_SIZE;
-/// Number of UDP packets to send/receive at a time
-#[cfg(wasm_browser)]
-pub const BATCH_SIZE: usize = 1;
 
 /// Metadata for a single buffer filled with bytes received from the network
 ///
@@ -110,27 +82,19 @@ pub struct RecvMeta {
     pub len: usize,
     /// The size of a single datagram in the associated buffer
     ///
-    /// When GRO (Generic Receive Offload) is used this indicates the size of a single
-    /// datagram inside the buffer. If the buffer is larger, that is if [`len`] is greater
-    /// then this value, then the individual datagrams contained have their boundaries at
-    /// `stride` increments from the start. The last datagram could be smaller than
-    /// `stride`.
+    /// Apple platforms have no receive offload, so every buffer holds one datagram and this
+    /// equals [`len`].
     ///
     /// [`len`]: RecvMeta::len
     pub stride: usize,
     /// The Explicit Congestion Notification bits for the datagram(s) in the buffer
     pub ecn: Option<EcnCodepoint>,
     /// The destination IP address which was encoded in this datagram
-    ///
-    /// Populated on platforms: Windows (except under Wine), Linux, Android
-    /// (API level > 25), FreeBSD, OpenBSD, NetBSD, macOS, and iOS.
     pub dst_ip: Option<IpAddr>,
     /// The interface index of the interface on which the datagram was received
-    pub interface_index: Option<u32>,
-    /// Kernel receive timestamp as Unix epoch
     ///
-    /// Populated on platforms: Linux, Android.
-    pub timestamp: Option<Duration>,
+    /// Populated for IPv6 (`IPV6_PKTINFO`); IPv4's `IP_RECVDSTADDR` carries no index.
+    pub interface_index: Option<u32>,
 }
 
 impl Default for RecvMeta {
@@ -143,7 +107,6 @@ impl Default for RecvMeta {
             ecn: None,
             dst_ip: None,
             interface_index: None,
-            timestamp: None,
         }
     }
 }
@@ -189,77 +152,24 @@ impl<'a> Transmit<'a> {
             src_ip: self.src_ip,
         }
     }
-
-    /// The transmit's first `datagrams` datagrams.
-    #[cfg_attr(not(apple_fast), allow(dead_code))]
-    pub(crate) fn first(&self, datagrams: usize) -> Self {
-        let kept = match self.segment_size {
-            Some(size) if size > 0 => datagrams.saturating_mul(size),
-            _ => self.contents.len(),
-        };
-        Self {
-            contents: &self.contents[..kept.min(self.contents.len())],
-            ..self.clone()
-        }
-    }
-}
-
-#[cfg(not(posix_minimal))]
-impl Transmit<'_> {
-    /// Computes the effective segment-size of the packet.
-    ///
-    /// Some (older) network drivers don't like being told to do GSO even if
-    /// there is effectively only a single segment.
-    /// (i.e. `segment_size == contents.len()`)
-    /// Additionally, a `segment_size` that is greater than the content also
-    /// means there is effectively only a single segment.
-    /// This case is actually quite common when splitting up a prepared GSO batch
-    /// again after GSO has been disabled because the last datagram in a GSO
-    /// batch is allowed to be smaller than the segment size.
-    #[cfg_attr(apple_fast, allow(dead_code))] // Used by prepare_msg, which is unused when apple_fast
-    fn effective_segment_size(&self) -> Option<usize> {
-        match self.segment_size? {
-            size if size >= self.contents.len() => None,
-            size => Some(size),
-        }
-    }
 }
 
 /// Returns true if the given I/O error corresponds to a message size error.
 ///
 /// Useful, for example, after invoking `std::io::Error::last_os_error()`
-/// to check if the last OS error was a message size error
-/// (EMSGSIZE on Unix, WSAEMSGSIZE on Windows).
-///
-/// Note: EMSGSIZE's value is not standardized across OSes (90 on Linux,
-/// 40 on macOS/iOS/BSD; on Windows, `io::Error::raw_os_error()` returns
-/// the Winsock error WSAEMSGSIZE (10040) via `GetLastError()`, which is
-/// distinct from the MSVCRT `errno.h` EMSGSIZE value of 115, which is
-/// never actually populated by socket operations).
+/// to check if the last OS error was a message size error (`EMSGSIZE`).
 pub fn is_msg_size_err(err: &io::Error) -> bool {
-    #[cfg(unix)]
-    {
-        err.raw_os_error() == Some(libc::EMSGSIZE)
-    }
-    #[cfg(windows)]
-    {
-        err.raw_os_error() == Some(WinSock::WSAEMSGSIZE)
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        false
-    }
+    err.raw_os_error() == Some(libc::EMSGSIZE)
 }
 
 /// Log at most 1 IO error per minute
-#[cfg(not(wasm_browser))]
 const IO_ERROR_LOG_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Logs a warning message when sendmsg fails
 ///
 /// Logging will only be performed if at least [`IO_ERROR_LOG_INTERVAL`]
 /// has elapsed since the last error was logged.
-#[cfg(all(not(wasm_browser), any(feature = "tracing-log", feature = "log")))]
+#[cfg(any(feature = "tracing-log", feature = "log"))]
 fn log_sendmsg_error(
     last_send_error: &Mutex<Instant>,
     err: impl core::fmt::Debug,
@@ -282,31 +192,16 @@ fn log_sendmsg_error(
 }
 
 // No-op
-#[cfg(not(any(wasm_browser, feature = "tracing-log", feature = "log")))]
+#[cfg(not(any(feature = "tracing-log", feature = "log")))]
 fn log_sendmsg_error(_: &Mutex<Instant>, _: impl core::fmt::Debug, _: &Transmit<'_>) {}
 
-/// A borrowed UDP socket
-///
-/// On Unix and WASI, constructible via `From<T: AsFd>`. On Windows, constructible via `From<T:
-/// AsSocket>`.
+/// A borrowed UDP socket, constructible via `From<T: AsFd>`.
 // Wrapper around socket2 to avoid making it a public dependency and incurring stability risk
-#[cfg(not(wasm_browser))]
 pub struct UdpSockRef<'a>(socket2::SockRef<'a>);
 
-#[cfg(any(unix, target_os = "wasi"))]
 impl<'s, S> From<&'s S> for UdpSockRef<'s>
 where
     S: AsFd,
-{
-    fn from(socket: &'s S) -> Self {
-        Self(socket.into())
-    }
-}
-
-#[cfg(windows)]
-impl<'s, S> From<&'s S> for UdpSockRef<'s>
-where
-    S: AsSocket,
 {
     fn from(socket: &'s S) -> Self {
         Self(socket.into())
@@ -337,46 +232,5 @@ impl EcnCodepoint {
                 return None;
             }
         })
-    }
-}
-
-#[cfg(all(test, not(posix_minimal)))]
-mod tests {
-    use std::net::Ipv4Addr;
-
-    use super::*;
-
-    #[test]
-    fn effective_segment_size() {
-        assert_eq!(
-            make_transmit(&[0u8; 10], Some(15)).effective_segment_size(),
-            None,
-            "segment_size > content_len should yield no effective segment_size"
-        );
-        assert_eq!(
-            make_transmit(&[0u8; 10], Some(10)).effective_segment_size(),
-            None,
-            "segment_size == content_len should yield no effective segment_size"
-        );
-        assert_eq!(
-            make_transmit(&[0u8; 10], None).effective_segment_size(),
-            None,
-            "no segment_size should yield no effective segment_size"
-        );
-        assert_eq!(
-            make_transmit(&[0u8; 10], Some(5)).effective_segment_size(),
-            Some(5),
-            "segment_size < content_len should yield effective segment_size"
-        );
-    }
-
-    fn make_transmit(contents: &[u8], segment_size: Option<usize>) -> Transmit<'_> {
-        Transmit {
-            destination: SocketAddr::from((Ipv4Addr::UNSPECIFIED, 1)),
-            ecn: None,
-            contents,
-            segment_size,
-            src_ip: None,
-        }
     }
 }

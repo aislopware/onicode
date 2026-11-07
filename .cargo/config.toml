@@ -5,3 +5,10 @@
 t = "nextest run --no-tests=fail --workspace --lib --bins --tests"
 lint = "clippy --locked --workspace --all-targets -- -D warnings"
 bins = "build --locked --workspace --bins"
+
+# The platform floor (docs/onicode/decisions/platform.md): every macOS Rust and C build targets 27.2 on Apple
+# silicon, so the linker, cc and rustc assume the 27.2 SDK's APIs and nothing older. IPHONEOS_DEPLOYMENT_TARGET is
+# not set here: with both set, a clang run that names no target builds for iOS, and the Mac kills what it built.
+# The iOS build sets it itself.
+[env]
+MACOSX_DEPLOYMENT_TARGET = "27.2"

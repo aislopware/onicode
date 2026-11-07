@@ -584,7 +584,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, not(target_family = "wasm")))]
+#[cfg(test)]
 mod proptests {
     use super::*;
 

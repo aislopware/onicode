@@ -996,7 +996,7 @@ mod test {
     }
 }
 
-#[cfg(all(test, not(target_family = "wasm")))]
+#[cfg(test)]
 mod proptests {
     use alloc::{vec, vec::Vec};
 

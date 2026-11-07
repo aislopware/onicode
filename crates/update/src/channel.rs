@@ -6,9 +6,8 @@
 //! environment, so it survives the app replacing itself and an engine never
 //! inherits a channel from whoever started it.
 //!
-//! Only macOS app installs follow it. Managed installs (headless daemons, the
-//! Linux desktop) and source builds are always on stable: beta publishes the
-//! macOS app alone.
+//! Only macOS app installs follow it. Source builds are always on stable: beta
+//! publishes the macOS app alone.
 //!
 //!   stable  `{feed}/releases/manifest.json` (and `latest.txt`), unchanged
 //!   beta    `{feed}/releases/beta/manifest.json`

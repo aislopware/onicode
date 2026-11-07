@@ -3,10 +3,10 @@
 //!
 //! Ported from slopty's `slopty-tailnet` (MIT); `watch` and the [`Tailnet`] trait are new.
 //!
-//! onicode rides the system Tailscale client (any macOS variant, Linux `tailscaled`, the
-//! Tailscale app on iOS) against Tailscale's control plane or a compatible one (Headscale,
-//! slopscale). Nothing here joins a tailnet or carries a packet: peers speak plaintext QUIC over
-//! the OS tunnel. What the daemon adds is what the tunnel cannot say:
+//! onicode rides the system Tailscale client (any macOS variant, the Tailscale app on iOS) against
+//! Tailscale's control plane or a compatible one (Headscale, slopscale). Nothing here joins a
+//! tailnet or carries a packet: peers speak plaintext QUIC over the OS tunnel. What the daemon adds
+//! is what the tunnel cannot say:
 //!
 //! * [`locate`]: where this machine's `LocalAPI` listens, for each way Tailscale runs.
 //! * [`LocalApi`]: `status`, `whois`, `ping` and `watch-ipn-bus` over it.

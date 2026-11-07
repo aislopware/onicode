@@ -239,31 +239,6 @@ features = [
 ]
 default-features = false
 
-[dev-dependencies.wasm-bindgen-test]
-version = "0.3.45"
-
-[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies.getrandom]
-version = "0.4"
-features = ["wasm_js"]
-default-features = false
-
-[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies.ring]
-version = "0.17"
-features = ["wasm32_unknown_unknown_js"]
-optional = true
-
-[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies.rustls-pki-types]
-version = "1.7"
-features = ["web"]
-
-[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies.web-time]
-version = "1"
-
-[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dev-dependencies.getrandom_0_3]
-version = "0.3"
-features = ["wasm_js"]
-package = "getrandom"
-
 [lints.clippy]
 manual_let_else = "warn"
 or_fun_call = "warn"

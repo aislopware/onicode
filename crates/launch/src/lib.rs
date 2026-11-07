@@ -9,17 +9,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 /// The engine executable's names beside the app's, best first.
-#[cfg(target_os = "macos")]
 pub const ENGINE_EXECUTABLES: &[&str] = &["Onicode Engine", "onicode-engine"];
-/// The engine executable's names beside the app's, best first.
-#[cfg(not(target_os = "macos"))]
-pub const ENGINE_EXECUTABLES: &[&str] = &["onicode-engine"];
 
 /// The flag that names the engine's data dir.
 pub const DATA_DIR_ARG: &str = "--data-dir";
 /// Set on the engine's environment by the app that started it.
 pub const MANAGED_ENV: &str = "ONICODE_MANAGED_ENGINE";
-/// The app to open for a clicked banner: its bundle on macOS, its executable elsewhere.
+/// The app to open for a clicked banner: its bundle, or its executable outside one.
 pub const APP_ENV: &str = "ONICODE_APP";
 /// The engine's standard error, inside its data dir.
 pub const LOG_FILE: &str = "engine.log";
@@ -36,8 +32,8 @@ pub fn engine_executable(app_exe: &Path) -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
-/// What a clicked banner opens: the app bundle on macOS (the executable's enclosing `.app`),
-/// the executable elsewhere.
+/// What a clicked banner opens: the app bundle (the executable's enclosing `.app`), or the
+/// executable outside one.
 #[must_use]
 pub fn app_path(app_exe: &Path) -> PathBuf {
     app_exe

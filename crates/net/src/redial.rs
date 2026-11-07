@@ -89,7 +89,7 @@ pub fn unit() -> u32 {
 }
 
 /// The wall clock ran this much further than the monotonic one over a wait: the machine
-/// slept through it (the monotonic clock stands still in sleep on macOS and Linux alike).
+/// slept through it (the monotonic clock stands still in sleep on macOS).
 pub const SLEPT_AFTER: Duration = Duration::from_secs(2);
 /// How long a [`wait`] sleeps at a time between looks at the two clocks.
 const WAIT_STEP: Duration = Duration::from_secs(1);

@@ -13,7 +13,6 @@
 //!   bundleIdentifier]` for the main bundle — so its banners carry the app's name and icon.
 //!   Machines without the app installed fall back to `osascript`, attributed to Script Editor
 //!   (cosmetics only).
-//! - Linux: `notify-send` (libnotify's CLI, present on every mainstream desktop).
 //! - `ONICODE_DISABLE_NOTIFICATIONS` env kill-switch (callers also check the `notificationsEnabled`
 //!   setting);
 //! - failures are logged and swallowed — a missing notifier must never bother the session flow.
@@ -75,8 +74,7 @@ pub fn on_click(handler: impl Fn(String) + Send + 'static) {
     on_main(|| unsafe { macos::install_delegate() });
 }
 
-/// Only the macOS delegate reports clicks.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+/// The macOS delegate reports clicks.
 fn clicked(target: String) {
     if let Some(handler) = CLICK
         .lock()
@@ -95,8 +93,6 @@ pub fn set_app_bundle_id(id: &str) {
     {
         let _ = macos::APP_BUNDLE_ID.set(id.replace('\0', ""));
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = id;
 }
 
 /// The bundle identifier in an app bundle's `Contents/Info.plist`, for the
@@ -439,28 +435,6 @@ fn applescript_escape(text: &str) -> String {
         .replace('"', "\\\"")
         .replace(['\n', '\r'], " ")
 }
-
-#[cfg(target_os = "linux")]
-fn post_impl(title: &str, body: &str, _target: Option<&str>) {
-    let (title, body) = (title.to_string(), body.to_string());
-    std::thread::spawn(move || {
-        // `--` ends option parsing: session titles are model-generated, so a
-        // `-`-leading one must land as the summary, not as a flag.
-        let result = std::process::Command::new("notify-send")
-            .args(["--app-name=Onicode", "--", &title, &body])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-        match result {
-            Ok(status) if status.success() => {}
-            Ok(status) => tracing::debug!(?status, "notify-send failed"),
-            Err(err) => tracing::debug!(error = %err, "notify-send unavailable"),
-        }
-    });
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn post_impl(_title: &str, _body: &str, _target: Option<&str>) {}
 
 #[cfg(test)]
 mod tests {

@@ -8,7 +8,7 @@
 //!   (quinn-rs/quinn#2748). Here the rest goes on the next try, even across a wait for the socket
 //!   to have room.
 //! * On macOS the socket takes the batched path ([`crate::transport::BATCHED_UDP_ENV`]), which
-//!   noq's runtime never does. iOS never builds it: the calls are private and reached by `dlsym`.
+//!   noq's runtime never does. iOS never builds it: the calls are private API.
 
 use std::fmt;
 use std::future::Future;
@@ -24,8 +24,7 @@ use noq::udp::{RecvMeta, Transmit, UdpSocketState};
 use noq::{AsyncUdpSocket, UdpSender};
 use tokio::io::Interest;
 
-/// `socket` as an endpoint's socket, on the batched path when `batched` asks for it and the OS
-/// has it.
+/// `socket` as an endpoint's socket, on the batched path when `batched` asks for it on macOS.
 ///
 /// # Errors
 ///
@@ -56,10 +55,11 @@ fn shared(socket: std::net::UdpSocket, batched: bool) -> io::Result<Arc<Shared>>
 
 #[cfg(target_os = "macos")]
 fn enable_batching(state: &UdpSocketState) -> bool {
-    state.try_enable_apple_fast_path()
+    state.set_apple_fast_path();
+    true
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "ios")]
 const fn enable_batching(_state: &UdpSocketState) -> bool {
     false
 }
@@ -265,12 +265,10 @@ mod tests {
         .unwrap();
         let mut sender = socket.create_sender();
         let segments = sender.max_transmit_segments().get();
-        // Linux cuts a transmit into datagrams itself (UDP GSO) on every path; macOS sends
-        // several in a call only on the batched one.
-        let segmented = batched || cfg!(target_os = "linux");
+        // macOS sends several datagrams in a call only on the batched path.
         assert_eq!(
             segments > 1,
-            segmented,
+            batched,
             "a transmit carries {segments} datagrams"
         );
         let datagrams = segments.saturating_mul(2).saturating_add(3);

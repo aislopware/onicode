@@ -35,8 +35,17 @@ and what still differs is at most one level, listed there with its cause. The ch
   pixel between a cached and an uncached frame, again as monocode's could.
 - **Text.** CoreText shapes a line's first run at `next_up(size)`, as zed and monocode do.
 
-gpui-kit is deferred. monocode's own widgets are kept as they are; a gpui-kit widget replaces one only where it draws
-the same pixels.
+monocode's widget layer moves into aislopware's gpui-kit fork (ruled 2026-11-07 by the owner, whole and not as a
+pilot): gpui-kit becomes onicode's component library and wears monocode's look exactly, through a monocode theme
+(colours, radii, spacing, fonts, shadows, blur and vibrancy materials, motion curves and durations) and, where a
+token cannot say it, the component's own styling in the fork. Each monocode primitive (buttons, text input, popovers
+and menus, dialogs, tooltips, pickers, tabs, lists, scrollbars, toggles, badges, toasts, progress and pulse, icons)
+is replaced by the gpui-kit component only when onicode's golden images show no pixel moved; one gpui-kit lacks
+moves into the fork as a new component. App views (composer, transcript, sidebar, terminal, diff, settings pages)
+stay in the app and are rebuilt on those components. gpui-kit and onicode share one gpui: the fork depends on
+aislopware/gpui-fast by the same rev, and follows the same platform ruling (macOS on Apple silicon and iOS, 27.2).
+What onicode gains is one library with gpui-kit's input (IME), virtual lists and tables, keyboard navigation and
+accessibility, and Longbridge's fixes upstream, under monocode's pixels.
 
 ## Retained mode
 gpui-fast redraws a view only when something it read changed: an entity, a global, a list or scroll state, or the

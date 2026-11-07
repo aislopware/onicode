@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # The main test lane, on GitHub's hosted xcode-27 runner (the mac job in .github/workflows/ci.yml, set up by
-# .github/actions/mac-ci). macOS and iOS are the platforms tested thoroughly; Linux gets only the static and
-# clippy jobs.
+# .github/actions/mac-ci). Onicode is built for macOS and iOS alone.
 #
-#   mac.sh pr           clippy for macOS, the app binaries, every test under the ci nextest profile, and
+#   mac.sh pr           clippy and rustdoc for macOS, the app binaries, every test under the ci nextest profile, and
 #                       cargo-mutants on the lines the branch changed
 #   mac.sh nightly      the same build and tests under the default profile, then coverage (the number that
 #                       counts), Miri, a mutants shard, cargo-hack and the fuzz targets (scripts/ci/gates.sh)
@@ -36,6 +35,7 @@ export CARGO_PROFILE_DEV_DEBUG=0
 # warm target (a `-p` or another feature set re-resolves features and rebuilds dependencies). Tests are
 # picked with filters, never with `-p`.
 cargo lint
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --document-private-items --workspace
 cargo bins
 
 if [[ "$suite" = pr ]]; then

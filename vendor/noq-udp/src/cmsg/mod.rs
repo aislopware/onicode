@@ -3,12 +3,7 @@ use std::{
     ptr,
 };
 
-#[cfg(unix)]
 #[path = "unix.rs"]
-mod imp;
-
-#[cfg(windows)]
-#[path = "windows.rs"]
 mod imp;
 
 pub(crate) use imp::Aligned;
@@ -80,8 +75,8 @@ impl<M: MsgHdr> Drop for Encoder<'_, M> {
 /// `cmsg` must refer to a native cmsg containing a payload of type `T`
 pub(crate) unsafe fn decode<T: Copy, C: CMsgHdr>(cmsg: &impl CMsgHdr) -> T {
     debug_assert_eq!(cmsg.len(), C::cmsg_len(size_of::<T>()));
-    // The payload is only aligned for `C`, which on musl is less strict than payloads such as
-    // `libc::timespec`, so it cannot be read through an aligned `ptr::read`.
+    // The payload is only aligned for `C`, which may be less strict than the payload's own
+    // alignment, so it cannot be read through an aligned `ptr::read`.
     unsafe { ptr::read_unaligned(cmsg.cmsg_data() as *const T) }
 }
 
@@ -111,11 +106,12 @@ impl<'a, M: MsgHdr> Iterator for Iter<'a, M> {
         let current = self.cmsg.take()?;
         self.cmsg = unsafe { self.hdr.cmsg_nxt_hdr(current).as_ref() };
 
-        #[cfg(apple_fast)]
+        #[cfg(feature = "fast-apple-datapath")]
         {
-            // On MacOS < 14 CMSG_NXTHDR might continuously return a zeroed cmsg. In
-            // such case, return `None` instead, thus indicating the end of
-            // the cmsghdr chain.
+            // `recvmsg_x` may leave `msg_controllen` as given (see `recv_via_recvmsg_x`), so the
+            // chain can run on into the zeroed rest of the buffer, where CMSG_NXTHDR steps by a
+            // zero `cmsg_len` and returns the same zeroed cmsg over and over (first seen on macOS
+            // before 14). Such a cmsg ends the chain.
             if current.len() < size_of::<M::ControlMessage>() {
                 return None;
             }
@@ -154,5 +150,4 @@ pub(crate) trait CMsgHdr {
     fn len(&self) -> usize;
 }
 
-#[cfg(unix)]
 pub(crate) const LEN: usize = 96;

@@ -30,6 +30,8 @@ members = [
     "crates/desktop-link",
     "crates/desktopd",
     "crates/desktop-client",
+    # The clipboard that follows a desktop window: the pasteboard, offers and lazy fetches.
+    "crates/clipboard",
     # Every privilege onboarding asks for, and the drag-into-System-Settings guide.
     "crates/grants",
 ]
@@ -70,6 +72,8 @@ onicode-desktop-vdisplay = { path = "crates/desktop-vdisplay" }
 # Remote desktop's session envelope and its client.
 onicode-desktop-link = { path = "crates/desktop-link" }
 onicode-desktop-client = { path = "crates/desktop-client" }
+# The clipboard that follows a desktop window, on both ends of the desktop link.
+onicode-clipboard = { path = "crates/clipboard" }
 # The desktop crates' tests only: live-test skips, percentiles, benches, SoC counters.
 onicode-desktop-testkit = { path = "crates/desktop-testkit" }
 # Onboarding's privileges: the checklist, the helper's fresh-process probe, the drag guide.
@@ -276,13 +280,11 @@ gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "1fcc79a52
 rusqlite = { version = "0.41.1", features = ["bundled", "hooks"], default-features = false }
 
 # misc
-# Global allocator on macOS only: libmalloc retains the churn high-water mark
-# as permanent RSS - measured as the top residency cause in
-# docs/memory-plan.md. Pinned to mimalloc v2: the crate's default (v3.3.2)
-# has the same watermark pathology itself - transient streaming/render churn
-# became permanent RSS (~6x glibc growth, daemon at 908MB for 7.3MB of docs,
-# no idle recovery). Linux stays on glibc, which measured flat on the same
-# workloads.
+# Global allocator: libmalloc retains the churn high-water mark as permanent
+# RSS - measured as the top residency cause in docs/memory-plan.md. Pinned to
+# mimalloc v2: the crate's default (v3.3.2) has the same watermark pathology
+# itself - transient streaming/render churn became permanent RSS (~6x glibc
+# growth, daemon at 908MB for 7.3MB of docs, no idle recovery).
 mimalloc = { version = "0.1", features = ["v2"] }
 anyhow = "1"
 tempfile = "3"

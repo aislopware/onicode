@@ -14,7 +14,7 @@ edition = "2024"
 rust-version = "1.88"
 name = "noq-udp"
 version = "1.4.0"
-build = "build.rs"
+build = false
 autolib = false
 autobins = false
 autoexamples = false
@@ -70,6 +70,9 @@ version = "0.2.175"
 version = "0.4"
 optional = true
 
+[dependencies.socket2]
+version = ">=0.5, <0.7"
+
 [dependencies.tracing]
 version = "0.1.10"
 features = ["std"]
@@ -88,31 +91,6 @@ features = [
     "rt",
     "rt-multi-thread",
     "net",
-]
-
-[build-dependencies.cfg_aliases]
-version = "0.2.2"
-
-[target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies.socket2]
-version = ">=0.5, <0.7"
-
-[target."cfg(windows)".dependencies.windows-sys]
-version = "0.61"
-features = [
-    "Win32_Foundation",
-    "Win32_System_IO",
-    "Win32_Networking_WinSock",
-    "Win32_System_LibraryLoader",
-]
-
-[target."cfg(windows)".dev-dependencies.windows-sys]
-version = "0.61"
-features = [
-    "Win32_Foundation",
-    "Win32_System_IO",
-    "Win32_Networking_WinSock",
-    "Win32_System_LibraryLoader",
-    "Win32_System_LibraryLoader",
 ]
 
 [lints.clippy]

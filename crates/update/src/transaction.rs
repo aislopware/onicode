@@ -1,9 +1,9 @@
-//! Linux updates that can't strand a box.
+//! Updates that can't strand a Mac.
 //!
-//! `app/current` is the only thing that decides which version boots, and it
-//! moves exactly once: when the new version has proved it's ready. Until then
-//! every start of the service runs the old version, so whatever goes wrong (the
-//! new binary exits, hangs, the power goes) the next start lands on a binary
+//! The installed app bundle is the only thing that decides which version boots,
+//! and it changes exactly once: when the new version has proved it's ready. Until
+//! then every start of the engine runs the old version, so whatever goes wrong
+//! (the new binary exits, hangs, the power goes) the next start lands on a binary
 //! that works and knows how to put things back.
 //!
 //! The steps, each durable before the next, with `update-transaction.json` in
@@ -13,14 +13,15 @@
 //!    update before it answers. Then it restarts as usual.
 //! 2. The old version starts and takes the data directory before anything has opened it. It copies
 //!    the databases (`take_snapshot`), records **Trial**, leaves a watchdog behind and replaces
-//!    itself with the new binary: the same process, so the service manager sees nothing change.
+//!    itself with the new binary: the same process, in the same session, with the same access.
 //! 3. The new version starts, holds back work it couldn't take back, and proves it's ready (the
 //!    engine's `update_trial`).
-//! 4. It [commits](commit_trial): `current` moves, then **Updated** is recorded. A crash between
-//!    the two is settled by the next start, which finds itself running as `current`.
+//! 4. It [commits](commit_trial): the new bundle swaps in, then **Updated** is recorded. A crash
+//!    between the two is settled by the next start, which finds itself running as the installed
+//!    version.
 //!
 //! If the new version stops first, or the watchdog stops it at the deadline, the
-//! service manager starts `current`: the old version, which finds **Trial** and
+//! installed engine starts again: the old version, which finds **Trial** and
 //! knows the trial failed. It records **Restoring**, puts the databases back,
 //! records **RolledBack** and carries on. An interrupted restore is finished
 //! before anything opens the databases.
@@ -28,11 +29,8 @@
 //! A reconnect can't tell an update from a rollback, so clients match the update
 //! id from `ApplyUpdate` with [`UpdateReport`] in `UpdateStatus`.
 //!
-//! The other platforms keep the same rule with their own idea of `current`
-//! ([`Layout`]). A macOS app's new bundle waits beside the installed one and
-//! becomes it in one atomic swap; the engine replaces itself in place, so it is
-//! the same process, in the same session, with the same access. Neither needs
-//! the app to be open.
+//! The new bundle waits beside the installed one and becomes it in one atomic
+//! swap ([`Layout`]). None of it needs the app to be open.
 //!
 //! Only the SQLite stores roll back. Files outside them (journals, settings,
 //! attachments, the saved session) aren't copied, which is why the trial doesn't
@@ -111,7 +109,7 @@ pub enum RestartMode {
     /// A service manager restarts this unit.
     Service { unit: String },
     /// Nothing does (the desktop app's engine when the app is closed): the
-    /// watchdog starts `current` itself.
+    /// watchdog starts the installed version itself.
     Relaunch,
 }
 
@@ -119,8 +117,6 @@ pub enum RestartMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Layout {
-    /// `app_root/<version>` and a `current` symlink.
-    Versioned { app_root: PathBuf },
     /// `bundle` is the installed app; `incoming` is the new one beside it.
     MacBundle { bundle: PathBuf, incoming: PathBuf },
 }
@@ -129,15 +125,13 @@ impl Layout {
     /// Where a release has to fit.
     fn root(&self) -> PathBuf {
         match self {
-            Self::Versioned { app_root } => app_root.clone(),
             Self::MacBundle { bundle, .. } => bundle.parent().unwrap_or(bundle).to_path_buf(),
         }
     }
 
     /// The new version's executable called `name`.
-    fn new_binary(&self, target: &str, name: &std::ffi::OsStr) -> PathBuf {
+    fn new_binary(&self, name: &std::ffi::OsStr) -> PathBuf {
         match self {
-            Self::Versioned { app_root } => app_root.join(target).join(name),
             Self::MacBundle { incoming, .. } => incoming.join("Contents/MacOS").join(name),
         }
     }
@@ -145,7 +139,6 @@ impl Layout {
     /// The installed executable called `name`.
     fn installed_binary(&self, name: &std::ffi::OsStr) -> PathBuf {
         match self {
-            Self::Versioned { app_root } => app_root.join("current").join(name),
             Self::MacBundle { bundle, .. } => bundle.join("Contents/MacOS").join(name),
         }
     }
@@ -154,7 +147,6 @@ impl Layout {
     /// installation rather than from it.
     fn installed_at(&self) -> Option<&Path> {
         match self {
-            Self::Versioned { .. } => None,
             Self::MacBundle { bundle, .. } => Some(bundle),
         }
     }
@@ -166,13 +158,6 @@ impl Layout {
         let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
         let inside = |dir: &Path| std::fs::canonicalize(dir).is_ok_and(|dir| exe.starts_with(dir));
         match self {
-            Self::Versioned { app_root } => {
-                let current = std::fs::read_link(app_root.join("current")).ok()?;
-                Some(Whoami {
-                    me: version_dir(&exe)?,
-                    current: current.file_name()?.to_str()?.to_owned(),
-                })
-            }
             Self::MacBundle { bundle, incoming } => {
                 let current = crate::bundle_app_version(bundle)?;
                 let me = if inside(incoming) {
@@ -189,12 +174,8 @@ impl Layout {
 
     /// Make the new version the installed one, in one step that can't be half
     /// done. This is the commit.
-    fn commit(&self, target: &str) -> anyhow::Result<()> {
+    fn commit(&self) -> anyhow::Result<()> {
         match self {
-            Self::Versioned { app_root } => {
-                crate::apply_headless(app_root, target)?;
-                sync_dir(app_root).context("saving the new version as current")
-            }
             Self::MacBundle { bundle, incoming } => crate::swap_mac_bundles(incoming, bundle),
         }
     }
@@ -204,7 +185,6 @@ impl Layout {
     /// (#1037).
     fn tidy(&self) {
         match self {
-            Self::Versioned { .. } => {}
             Self::MacBundle { bundle, .. } => crate::prune_retired_mac_bundles(bundle),
         }
     }
@@ -325,8 +305,8 @@ fn write_durably(path: &Path, contents: &[u8]) -> std::io::Result<()> {
 }
 
 /// The record. An unreadable one can't say what happened, so it's set aside and
-/// the device boots what `current` says: stopping here would strand the box over
-/// a file. Any snapshot stays put for someone to look at.
+/// the device boots the installed version: stopping here would strand the Mac
+/// over a file. Any snapshot stays put for someone to look at.
 pub fn read(data_dir: &Path) -> Option<Transaction> {
     let path = data_dir.join(FILE);
     let bytes = match std::fs::read(&path) {
@@ -671,15 +651,11 @@ pub fn request(
 // Boot: what this start of the engine has to do first
 // ---------------------------------------------------------------------------
 
-/// The version folder this executable runs from, and the one `current` names.
+/// The version this executable is, and the one that's installed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Whoami {
     me: String,
     current: String,
-}
-
-fn version_dir(path: &Path) -> Option<String> {
-    Some(path.parent()?.file_name()?.to_str()?.to_owned())
 }
 
 /// What to do about a record, given who's starting.
@@ -693,7 +669,7 @@ enum Step {
     RunTrial,
     /// The old version with a trial behind it: put things back.
     Rollback,
-    /// The new version as `current`: the commit happened.
+    /// The new version as the installed one: the commit happened.
     SettleCommitted,
     /// Some third version was installed by other means. Its data is its own
     /// business now, and restoring could lose what it wrote.
@@ -759,14 +735,14 @@ pub fn note_trial_failure(data_dir: &Path, why: &str) {
     let _ = write_durably(&data_dir.join(NOTE_FILE), why.as_bytes());
 }
 
-/// The new version has proved itself: move `current`, which is the commit, then
+/// The new version has proved itself: swap it in, which is the commit, then
 /// record it. A crash in between is settled by the next start.
 pub fn commit_trial() -> anyhow::Result<()> {
     let Some(trial) = current_trial() else {
         return Ok(());
     };
     crash_point("trial-before-commit");
-    trial.layout.commit(&trial.target)?;
+    trial.layout.commit()?;
     crash_point("commit-flipped");
     settle_committed(&trial.data_dir, &trial.id)?;
     *lock_trial() = None;
@@ -944,9 +920,7 @@ fn start_trial<G>(
         .file_name()
         .context("this executable has no name")?
         .to_owned();
-    let new_binary = transaction
-        .layout
-        .new_binary(&transaction.target, &exe_name);
+    let new_binary = transaction.layout.new_binary(&exe_name);
     if !new_binary.is_file() {
         let why = format!(
             "Onicode {}'s files are missing, so it stayed on {}.",
@@ -1197,15 +1171,6 @@ fn process_running(pid: u32) -> bool {
         return false;
     }
     // A zombie has stopped; only its parent hasn't noticed yet.
-    #[cfg(target_os = "linux")]
-    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat"))
-        && let Some(state) = stat
-            .rsplit(") ")
-            .next()
-            .and_then(|rest| rest.chars().next())
-    {
-        return state != 'Z';
-    }
     #[cfg(target_os = "macos")]
     {
         const SZOMB: u32 = 5;
@@ -1290,8 +1255,9 @@ mod tests {
             id: "abc".into(),
             from: "1.0.0".into(),
             target: "2.0.0".into(),
-            layout: Layout::Versioned {
-                app_root: PathBuf::from("/nowhere"),
+            layout: Layout::MacBundle {
+                bundle: PathBuf::from("/nowhere/Onicode.app"),
+                incoming: PathBuf::from("/nowhere/.Onicode.app.new"),
             },
             phase,
             restart: RestartMode::Relaunch,
@@ -1304,7 +1270,7 @@ mod tests {
         }
     }
 
-    /// `current` only moves at the commit, so who's starting says what happened.
+    /// The installed version only changes at the commit, so who's starting says what happened.
     #[test]
     fn who_is_starting_says_what_happened() {
         use Phase::*;
@@ -1485,8 +1451,9 @@ mod tests {
         std::fs::create_dir_all(&app_root).unwrap();
         let first = request(
             dir.path(),
-            Layout::Versioned {
-                app_root: app_root.clone(),
+            Layout::MacBundle {
+                bundle: app_root.join("Onicode.app"),
+                incoming: app_root.join(".Onicode.app.new"),
             },
             "1.0.0",
             "2.0.0",
@@ -1495,8 +1462,9 @@ mod tests {
         .unwrap();
         let again = request(
             dir.path(),
-            Layout::Versioned {
-                app_root: app_root.clone(),
+            Layout::MacBundle {
+                bundle: app_root.join("Onicode.app"),
+                incoming: app_root.join(".Onicode.app.new"),
             },
             "1.0.0",
             "2.0.0",
@@ -1515,8 +1483,9 @@ mod tests {
         assert_eq!(failed.report().state, UpdateState::Failed);
         let next = request(
             dir.path(),
-            Layout::Versioned {
-                app_root: app_root.clone(),
+            Layout::MacBundle {
+                bundle: app_root.join("Onicode.app"),
+                incoming: app_root.join(".Onicode.app.new"),
             },
             "1.0.0",
             "2.0.0",

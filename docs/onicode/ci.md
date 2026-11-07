@@ -1,18 +1,16 @@
 # CI
 
 `.github/workflows/ci.yml` runs on pull requests, main and nightly at 02:23 ICT. `CI result` is the one required check;
-it needs `static`, `lint`, `mac` and `ios`. macOS and iOS are tested thoroughly on GitHub's hosted Macs. Linux gets only
-the static and clippy gates, and nothing else is a target.
+it needs `static` and `mac`. Onicode is built for macOS and iOS alone, tested on GitHub's hosted Macs; `static` runs on
+Linux only because its checkers build nothing. The iOS lane comes back with the iOS client, last in the plan.
 
 | Job | Where | What |
 |---|---|---|
 | `static` | ubuntu-24.04 | `scripts/dev/check.sh static`, `fmt` and `deps`: every checker that builds nothing |
-| `lint` | ubuntu-24.04 | `cargo lint` for Linux, so cfg(linux) code still compiles; rustdoc, warnings denied |
-| `mac` | xcode-27 | `scripts/ci/mac.sh`: clippy for macOS, the app build, every test, diff-scoped mutants |
-| `ios` | xcode-27 | `scripts/ci/ios.sh`: the mobile core for the simulator, binding drift, `OnicodeTests` |
+| `mac` | xcode-27 | `scripts/ci/mac.sh`: clippy and rustdoc for macOS, the app build, every test, diff-scoped mutants |
 
 Pull requests and main use the nextest `ci` profile (`scripts/ci/nextest.toml`), which leaves out the slow and soak
-tests. Nightly runs the default profile, then `scripts/ci/gates.sh` on the Mac, and one UI smoke test on the simulator.
+tests. Nightly runs the default profile, then `scripts/ci/gates.sh` on the Mac.
 
 ## Static checks
 
@@ -54,7 +52,7 @@ checkers and rustfmt on the staged files only, in parallel; pre-push runs `check
 
 ## Hosted Macs
 
-`mac` and `ios` run on GitHub's `xcode-27` image: macOS 27 on 3 M1 cores, 7 GB of RAM and 14 GB of disk. Standard
+`mac` runs on GitHub's `xcode-27` image: macOS 27 on 3 M1 cores, 7 GB of RAM and 14 GB of disk. Standard
 runners are free and unlimited for a public repository, but an organization on the Free plan runs at most 5 macOS jobs
 at once, across all its repositories (libghostty-rs's prebuilts included); the rest queue. `.github/actions/mac-ci`
 selects Xcode 27.2 (the image defaults to 27.1), deletes the other Xcodes for disk room, installs the Metal toolchain
@@ -62,6 +60,6 @@ and the Rust toolchain, and restores the cache. Fork pull requests run with no s
 
 ## Caches
 
-`Swatinem/rust-cache` for `lint`, `mac` and `ios`. The Mac caches are keyed by the image version, because build
+`Swatinem/rust-cache` for `mac`. Its caches are keyed by the image version, because build
 scripts record absolute paths into Xcode (ort-sys links its clang_rt), and carry onnxruntime's download cache. Only
 main saves, so pull requests never evict main's cache under the 10 GB limit.

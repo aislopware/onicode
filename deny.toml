@@ -1,12 +1,11 @@
 # cargo-deny (scripts/dev/check.sh deny, the static CI job). Needs a settled Cargo.lock; builds nothing.
 
 [graph]
-# The platforms onicode builds for: the macOS and iOS apps, and Linux for the cursory clippy lane.
+# The platforms onicode builds for: macOS and iOS, nothing else (docs/onicode/decisions/platform.md).
 targets = [
     "aarch64-apple-darwin",
     "aarch64-apple-ios",
     "aarch64-apple-ios-sim",
-    "x86_64-unknown-linux-gnu",
 ]
 all-features = true
 
@@ -19,10 +18,7 @@ ignore = [
     # Unmaintained, no maintained release to move to; each comes in through a third-party crate.
     { id = "RUSTSEC-2025-0141", reason = "bincode via heed-types (fff-search's LMDB index); fff-search pins heed 0.22" },
     { id = "RUSTSEC-2024-0436", reason = "paste via metal (gpui, core-video): a proc macro with no runtime code" },
-    { id = "RUSTSEC-2026-0192", reason = "ttf-parser via fontdb (cosmic-text) and usvg (gpui); successor skrifa not yet adopted upstream" },
-    { id = "RUSTSEC-2026-0370", reason = "zvariant via atspi (accesskit_unix): Linux accessibility only, Linux gets cursory support" },
-    { id = "RUSTSEC-2026-0371", reason = "zbus_names via atspi (accesskit_unix): Linux accessibility only" },
-    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive via atspi (accesskit_unix): Linux accessibility only" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser via mermaid-rs-renderer and its fontdb; successor skrifa not yet adopted there" },
     # Unsound APIs onicode never calls.
 ]
 
@@ -67,17 +63,12 @@ deny = [
 skip = [
     { crate = "bit-set@0.8.0", reason = "via fancy-regex" },
     { crate = "bit-vec@0.8.0", reason = "via bit-set" },
-    { crate = "block-buffer@0.10.4", reason = "via digest" },
     { crate = "convert_case@0.10.0", reason = "via derive_more-impl" },
     { crate = "core-foundation@0.9.4", reason = "via cocoa, cocoa-foundation, core-graphics and more" },
     { crate = "cpufeatures@0.2.17", reason = "via aes, chacha20, curve25519-dalek and more" },
-    { crate = "crypto-common@0.1.7", reason = "via aead, cipher, digest and more" },
-    { crate = "digest@0.10.7", reason = "via ecdsa, elliptic-curve, hmac and more" },
-    { crate = "font-types@0.11.3", reason = "via read-fonts" },
-    { crate = "fontdb@0.23.0", reason = "via cosmic-text (gpui_wgpu), mermaid-rs-renderer" },
+    { crate = "fontdb@0.23.0", reason = "via mermaid-rs-renderer" },
     { crate = "getrandom@0.2.17", reason = "via const-random-macro, loro-internal, rand_core and more" },
     { crate = "getrandom@0.3.4", reason = "via ahash, gpui, rand_core and more" },
-    { crate = "harfrust@0.5.2", reason = "via cosmic-text (gpui_wgpu)" },
     { crate = "hashbrown@0.16.1", reason = "via accesskit_consumer, accesskit_macos and more" },
     { crate = "heck@0.4.1", reason = "via cbindgen, enum-as-inner, glib-macros" },
     { crate = "miniz_oxide@0.8.9", reason = "via exr, png" },
@@ -87,17 +78,12 @@ skip = [
     { crate = "quick-error@1.2.3", reason = "via rusty-fork" },
     { crate = "rand@0.9.5", reason = "via gpui, scheduler, num-bigint-dig" },
     { crate = "rand_core@0.9.5", reason = "via rand, rand_chacha, rand_xorshift" },
-    { crate = "read-fonts@0.37.0", reason = "via harfrust, skrifa" },
     { crate = "roxmltree@0.20.0", reason = "via fontconfig-parser" },
-    { crate = "rustc-hash@1.1.0", reason = "via naga, wgpu-core" },
     { crate = "serde_spanned@0.6.9", reason = "via toml 0.8 and toml_edit 0.22: cbindgen, a build dependency of gpui_apple" },
-    { crate = "sha2@0.10.9", reason = "via oo7 (gpui_linux)" },
-    { crate = "skrifa@0.40.0", reason = "via cosmic-text" },
     { crate = "spin@0.9.9", reason = "via flume, heapless" },
     { crate = "syn@2.0.119", reason = "via arg_enum_proc_macro, asn1-rs-derive, asn1-rs-impl and more" },
     { crate = "toml@0.8.23", reason = "via cbindgen, a build dependency of gpui_apple" },
     { crate = "toml_datetime@0.6.11", reason = "via toml, toml_edit" },
-    { crate = "toml_edit@0.22.27", reason = "via toml" },
     { crate = "winnow@0.7.15", reason = "via toml_edit" },
 ]
 
@@ -111,10 +97,6 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
     # gpui-fast's CoreText font loading (zed's fork of font-kit).
     "https://github.com/zed-industries/font-kit",
-    # gpui-fast's renderer on Linux pins wgpu by rev.
-    "https://github.com/gfx-rs/wgpu",
-    # gpui-fast's keychain on Linux (zed's fork of oo7).
-    "https://github.com/zed-industries/oo7",
 ]
 
 [sources.allow-org]

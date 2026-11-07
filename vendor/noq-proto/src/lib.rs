@@ -123,10 +123,7 @@ pub mod n0_nat_traversal;
 
 // Deal with time
 pub(crate) use core::time::Duration;
-#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 pub(crate) use std::time::{Instant, SystemTime, UNIX_EPOCH};
-#[cfg(all(target_family = "wasm", target_os = "unknown"))]
-pub(crate) use web_time::{Instant, SystemTime, UNIX_EPOCH};
 
 // Deal with hash maps
 #[expect(clippy::disallowed_types)]

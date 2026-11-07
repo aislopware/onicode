@@ -1,10 +1,10 @@
-# noq-proto, vendored with twenty-three patches
+# noq-proto, vendored with twenty-four patches
 
 The published `noq-proto` 1.4.0 (crates.io, upstream tag `noq-proto-v1.4.0`, commit
 `34f75c49f` of <https://github.com/n0-computer/noq>) with these commits on top. Patches 1 to 20
 keep the numbers they had on 1.3.0; 21 was 33 there, 22 undoes one of 1.4.0's changes, and
 1.3.0's 21 to 32 are 1.4.0's own ("The sync to 1.4.0", below). Patch 23 is Axolotty's, on top
-of Slopty's copy as it stood on 2026-11-03.
+of Slopty's copy as it stood on 2026-11-03. Patch 24 is onicode's, its Apple-only sweep.
 
 onicode took this copy from axolotty's `axquic` on 2026-11-06, unchanged. The patches were
 written and measured in slopty and axolotty, so the measurements, `docs/` pages and test paths
@@ -304,6 +304,20 @@ and its seeded simulations (`crates/net/tests/sim.rs`) re-run axquic's.
    100–450 ms in half of 30 seeds, with nothing lost and nothing overflowed. Exempt, every one
    of 100 seeds kept the echo within 20 ms of the idle link's. Tests:
    `stream_priority_unpaced_writes_past_a_full_send_window`, and the two the other way round.
+
+24. Apple-only (macOS on Apple silicon, iOS, 27.2): non-Apple platform code removed, 2026-11-07
+
+   onicode runs on macOS and iOS 27.2 alone (`docs/onicode/decisions/platform.md`). The only
+   platform-gated code in this crate is wasm's, and it went: the `web-time` shim for `Instant`,
+   `SystemTime` and `UNIX_EPOCH` (`src/lib.rs` takes them from `std::time`), the
+   `cfg(all(target_family = "wasm", target_os = "unknown"))` dependencies (`getrandom` with
+   `wasm_js`, `ring` with `wasm32_unknown_unknown_js`, `rustls-pki-types` with `web`,
+   `web-time`, the `getrandom_0_3` dev-dependency), the `wasm-bindgen-test` dev-dependency and
+   its `test` re-imports in `src/tests/mod.rs` and `src/tests/token.rs`, and the wasm gates on
+   the `encode_decode`, `proptests` and `random_interaction` test modules and on the
+   `assembler` and `send_buffer` unit tests, which now always build. No protocol code changed:
+   frames, congestion control, crypto and path validation had no platform branch. Re-vendoring:
+   delete the same `[target]` sections and `cfg`s from the new copy.
 
 A probe-up exit for an app-limited round (leaving `ProbeBW_UP` when a round ends
 app-limited) was tried beside patches 11 to 13 and not taken. The draft and Linux keep such a

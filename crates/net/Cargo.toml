@@ -8,6 +8,9 @@ description = "onicode's transport: plaintext QUIC over the tailnet (vendored no
 
 [dependencies]
 bytes.workspace = true
+# `EMSGSIZE`, to tell a datagram too large for the interface from other send errors (`udp`), and
+# the QUIC threads' QoS class on Apple platforms.
+libc.workspace = true
 noq.workspace = true
 noq-proto.workspace = true
 onicode-tailnet.workspace = true
@@ -20,13 +23,8 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
-# `EMSGSIZE`, to tell a datagram too large for the interface from other send errors (`udp`), and
-# the QUIC threads' QoS class on Apple platforms.
-[target.'cfg(unix)'.dependencies]
-libc.workspace = true
-
-# Apple's batched `sendmsg_x`/`recvmsg_x` datapath, compiled in on macOS only (private calls
-# reached by `dlsym`, never on iOS), on unless `ONICODE_BATCHED_UDP=0`.
+# Apple's batched `sendmsg_x`/`recvmsg_x` datapath, compiled in on macOS only (private calls,
+# never on iOS), on unless `ONICODE_BATCHED_UDP=0`.
 [target.'cfg(target_os = "macos")'.dependencies]
 noq = { workspace = true, features = ["fast-apple-datapath"] }
 

@@ -88,7 +88,6 @@ pub fn withdraw(ids: &[String]) {
     }
 }
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn respond(response: Response) {
     if let Some(handler) = HANDLER
         .lock()
@@ -97,17 +96,6 @@ fn respond(response: Response) {
     {
         handler(response);
     }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    pub(super) fn install(_categories: &[super::Category]) -> bool {
-        false
-    }
-
-    pub(super) fn post(_note: &super::Note) {}
-
-    pub(super) fn withdraw(_ids: &[String]) {}
 }
 
 #[cfg(target_os = "macos")]

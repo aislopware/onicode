@@ -12,11 +12,11 @@
 //! * **Open source** `tailscaled` listens on the unix socket `/var/run/tailscaled.socket`, where
 //!   reading needs no token.
 //!
-//! They are tried in that order, as Tailscale's own CLI does. On Linux, `tailscaled`'s socket.
+//! They are tried in that order, as Tailscale's own CLI does.
 //!
 //! Ported from slopty's `slopty-tailnet` `locate.rs` (MIT).
 
-#[cfg(all(unix, not(target_os = "ios")))]
+#[cfg(target_os = "macos")]
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -53,8 +53,6 @@ const STANDALONE_DIR: &str = "/Library/Tailscale";
 /// The open-source daemon's socket.
 #[cfg(target_os = "macos")]
 const DAEMON_SOCKET: &str = "/var/run/tailscaled.socket";
-#[cfg(all(unix, not(any(target_os = "macos", target_os = "ios"))))]
-const DAEMON_SOCKET: &str = "/var/run/tailscale/tailscaled.sock";
 
 /// This machine's `LocalAPI`, or `None` when no Tailscale this process can read is running.
 #[cfg(target_os = "macos")]
@@ -65,16 +63,8 @@ pub fn find() -> Option<Location> {
         .or_else(daemon)
 }
 
-/// This machine's `LocalAPI`, or `None` when no Tailscale this process can read is running.
-#[cfg(all(unix, not(any(target_os = "macos", target_os = "ios"))))]
-#[must_use]
-pub fn find() -> Option<Location> {
-    daemon()
-}
-
-/// Always `None`: no third-party iOS app can reach the Tailscale app's `LocalAPI`, and the
-/// Windows daemon's named pipe is not read here.
-#[cfg(any(target_os = "ios", not(unix)))]
+/// Always `None`: no third-party iOS app can reach the Tailscale app's `LocalAPI`.
+#[cfg(target_os = "ios")]
 #[must_use]
 pub const fn find() -> Option<Location> {
     None
@@ -116,7 +106,7 @@ fn standalone(dir: &Path) -> Option<Location> {
     })
 }
 
-#[cfg(all(unix, not(target_os = "ios")))]
+#[cfg(target_os = "macos")]
 fn daemon() -> Option<Location> {
     let socket = Path::new(DAEMON_SOCKET);
     socket

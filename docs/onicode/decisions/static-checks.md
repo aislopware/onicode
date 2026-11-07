@@ -12,6 +12,5 @@ Tests are held to what they prove: no retries anywhere, leaked processes fail, a
 coverage only rises, and mutants test the tests. Pull requests stay fast by running mutants on the changed lines
 only; the whole-workspace gates (coverage, Miri, a rotating mutants shard, per-feature checks, fuzzing) run nightly.
 
-macOS and iOS are the platforms tested thoroughly, on GitHub's hosted Macs, and the coverage measured there is the one that
-counts. Linux keeps only the cheap gates, static checks and clippy, so cfg(linux) code still compiles; there are no
-other targets.
+macOS and iOS are the only platforms, tested on GitHub's hosted Macs, and the coverage measured there is the one that
+counts. The static checks run on a Linux runner only because they build nothing.

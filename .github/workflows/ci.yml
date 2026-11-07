@@ -1,11 +1,10 @@
 name: CI
 
-# Pull requests, main and the nightly run. macOS and iOS are tested thoroughly; Linux gets the cheap gates
-# only; nothing else is a target.
+# Pull requests, main and the nightly run. Onicode is built for macOS and iOS alone; the static job runs on
+# Linux only because its checkers build nothing.
 #
 #   static    every checker that builds nothing (scripts/dev/check.sh static, fmt, deps)
-#   lint      clippy for Linux, so cfg(linux) code still compiles, and rustdoc, warnings denied
-#   mac       scripts/ci/mac.sh: clippy for macOS, the app and engine, every test, mutants on the diff;
+#   mac       scripts/ci/mac.sh: clippy and rustdoc for macOS, the app and engine, every test, mutants on the diff;
 #             nightly gates; then Onicode.app assembled and verified (scripts/native/bundle-native-macos.sh)
 #   result    "CI result", the GitHub-side check to require
 #
@@ -89,31 +88,6 @@ jobs:
       - name: cargo-deny and cargo-shear
         run: scripts/dev/check.sh deps
 
-  lint:
-    name: lint
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # actionlint 1.7.12, the newest, cannot parse the self-repository form `$/` yet.
-      - uses: ./.github/actions/linux-ci # zizmor: ignore[self-repository]
-        with:
-          rust-cache: lint
-          save-rust-cache: 'true'
-          apt-cache: ui
-          apt-packages: >-
-            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-dev libxcb1-dev libx11-xcb-dev
-            libfontconfig1-dev libfreetype-dev libasound2-dev libvulkan-dev libdbus-1-dev pkg-config cmake
-      - run: cargo lint
-      - name: rustdoc
-        env:
-          RUSTDOCFLAGS: -D warnings
-        run: cargo doc --locked --no-deps --document-private-items --workspace
-
   mac:
     name: mac
     needs: changes
@@ -140,7 +114,7 @@ jobs:
 
   result:
     name: CI result
-    needs: [changes, static, lint, mac]
+    needs: [changes, static, mac]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 3

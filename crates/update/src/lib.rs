@@ -10,9 +10,6 @@
 //! releases published before the manifest existed.
 //!
 //! Install kinds and their update paths:
-//! - **Managed** (`~/.onicode/app/<ver>` + `current` symlink — the Linux tarball's `install.sh`):
-//!   download the headless tarball into a new versioned dir, then restart into a trial of it that
-//!   moves the symlink only once it has proved it's ready ([`transaction`]).
 //! - **MacApp** (running out of an app bundle): download the app tarball, swap the bundle
 //!   directory, relaunch, driven by the UI; or, asked from another device, the engine's own trial
 //!   of it ([`transaction`]).
@@ -110,9 +107,6 @@ const SCHEDULE_TICK: Duration = Duration::from_secs(60);
 const ENGINE_INITIAL_DELAY: Duration = Duration::from_secs(20);
 /// The desktop checker only needs the window on screen first.
 const DESKTOP_INITIAL_DELAY: Duration = Duration::from_secs(2);
-/// While an auto-apply is deferred behind active sessions, re-probe idleness
-/// this often.
-const IDLE_RECHECK: Duration = Duration::from_secs(5 * 60);
 /// A staged binary must answer `--version` within this window.
 const STAGED_VERSION_TIMEOUT: Duration = Duration::from_secs(30);
 /// Release metadata is tiny. Bound both its buffered size and total transfer
@@ -167,8 +161,7 @@ pub struct FileMeta {
     pub sha256: Option<String>,
 }
 
-/// Artifact-name platform pair matching the packaging scripts. Unsupported
-/// updater targets retain their real OS name rather than impersonating Linux.
+/// Artifact-name platform pair matching the packaging scripts.
 pub fn platform_key() -> (&'static str, &'static str) {
     let os = std::env::consts::OS;
     let arch = match (os, std::env::consts::ARCH) {
@@ -176,20 +169,6 @@ pub fn platform_key() -> (&'static str, &'static str) {
         (_, arch) => arch,
     };
     (os, arch)
-}
-
-fn managed_updates_supported(os: &str) -> bool {
-    matches!(os, "linux" | "macos")
-}
-
-fn require_managed_update_platform() -> anyhow::Result<()> {
-    if !managed_updates_supported(std::env::consts::OS) {
-        bail!(
-            "managed updates are not supported on {}",
-            std::env::consts::OS
-        );
-    }
-    Ok(())
 }
 
 fn require_mac_app_update_platform() -> anyhow::Result<()> {
@@ -200,12 +179,6 @@ fn require_mac_app_update_platform() -> anyhow::Result<()> {
         );
     }
     Ok(())
-}
-
-/// `onicode-<ver>-<os>-<arch>.tar.gz` — the headless/CLI tarball (Linux CI builds).
-pub fn headless_artifact(version: &str) -> String {
-    let (os, arch) = platform_key();
-    format!("onicode-{version}-{os}-{arch}.tar.gz")
 }
 
 /// `onicode-<ver>-macos-<arch>-app.tar.gz` — the macOS app update payload.
@@ -559,10 +532,6 @@ fn release_base(feed_url: &str) -> anyhow::Result<String> {
 /// How this binary was installed — decides the update path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstallKind {
-    /// `~/.onicode/app/<ver>/onicode` behind the `current` symlink
-    /// (the Linux tarball's `install.sh`, or a previous
-    /// `onicode update`).
-    Managed { app_root: PathBuf },
     /// Running out of a macOS `.app` bundle.
     MacApp { bundle: PathBuf },
     /// Source build or hand-copied binary — updates are report-only.
@@ -602,9 +571,6 @@ impl InstallKind {
     pub fn supports_desktop_update(&self) -> bool {
         match self {
             Self::MacApp { .. } => true,
-            // The desktop path relaunches a GUI binary; on Linux that binary
-            // is the managed install itself.
-            Self::Managed { .. } => cfg!(target_os = "linux"),
             Self::Unmanaged => false,
         }
     }
@@ -615,9 +581,6 @@ impl InstallKind {
     pub fn desktop_update_blocker(&self) -> Option<UpdateBlocker> {
         match self {
             Self::MacApp { bundle } => mac_bundle_blocker(bundle, dir_writable),
-            Self::Managed { app_root } => {
-                (!dir_writable(app_root)).then(|| UpdateBlocker::NotWritable(app_root.clone()))
-            }
             Self::Unmanaged => None,
         }
     }
@@ -631,10 +594,7 @@ impl InstallKind {
     ) -> anyhow::Result<PathBuf> {
         match self {
             Self::MacApp { .. } => stage_mac_app(feed_url, manifest, data_dir, progress).await,
-            Self::Managed { app_root } if self.supports_desktop_update() => {
-                stage_headless(feed_url, manifest, app_root, progress).await
-            }
-            _ => bail!("this installation does not support desktop updates"),
+            Self::Unmanaged => bail!("this installation does not support desktop updates"),
         }
     }
 
@@ -665,19 +625,7 @@ impl InstallKind {
                 }
                 Ok(())
             }
-            Self::Managed { app_root } if self.supports_desktop_update() => {
-                let version = staged
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .context("staged install has no version directory")?;
-                apply_headless(app_root, version)?;
-                if relaunch {
-                    let binary = app_root.join("current").join("onicode");
-                    relaunch_after_exit(&binary, Path::new(""));
-                }
-                Ok(())
-            }
-            _ => bail!("this installation does not support desktop updates"),
+            Self::Unmanaged => bail!("this installation does not support desktop updates"),
         }
     }
 }
@@ -728,13 +676,6 @@ fn dir_writable(dir: &Path) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum InstallMethod {
-    /// Installed by the Linux installer and kept running by the service manager.
-    LinuxService,
-    /// Installed on Linux and run by the desktop app.
-    LinuxApp,
-    /// Installed by the Linux installer, but started by hand: nothing would
-    /// start it again after an update.
-    StartedByHand,
     /// The macOS app.
     MacApp,
     /// Built from source or copied by hand.
@@ -752,66 +693,22 @@ pub struct UpdateAbility {
     pub can_apply_remotely: bool,
     /// Why it doesn't, in words for the person.
     pub cannot_apply_reason: Option<String>,
-    /// What to run on the device instead, when there's a command for it.
-    pub manual_command: Option<String>,
 }
 
-/// The command that installs Onicode on Linux, run in the unpacked release tarball.
-const LINUX_INSTALL_COMMAND: &str = "./install.sh";
-
 impl UpdateAbility {
-    fn refused(
-        install: InstallMethod,
-        reason: impl Into<String>,
-        manual_command: Option<&str>,
-    ) -> Self {
+    fn refused(install: InstallMethod, reason: impl Into<String>) -> Self {
         Self {
             install,
             can_apply_remotely: false,
             cannot_apply_reason: Some(reason.into()),
-            manual_command: manual_command.map(str::to_owned),
         }
     }
 
     /// `supervised`: something starts this engine again once it stops (see
-    /// [`running_as_installed_service`]). `systemd`: that something is the
-    /// service manager rather than the desktop app. `blocker`: why the
-    /// installation can't replace itself right now.
-    fn decide(
-        kind: &InstallKind,
-        os: &str,
-        supervised: bool,
-        systemd: bool,
-        blocker: Option<UpdateBlocker>,
-    ) -> Self {
+    /// [`running_as_installed_service`]). `blocker`: why the installation can't
+    /// replace itself right now.
+    fn decide(kind: &InstallKind, supervised: bool, blocker: Option<UpdateBlocker>) -> Self {
         match kind {
-            InstallKind::Managed { .. } if os != "linux" => Self::refused(
-                InstallMethod::Unmanaged,
-                "Onicode on a Mac updates through the Onicode app. Install the app on this Mac.",
-                None,
-            ),
-            InstallKind::Managed { .. } if !supervised => Self::refused(
-                InstallMethod::StartedByHand,
-                "Onicode was started by hand on this device, so nothing would start it again \
-                 after an update. Update it on the device, then start it again.",
-                Some("onicode update"),
-            ),
-            InstallKind::Managed { .. } => {
-                let install = if systemd {
-                    InstallMethod::LinuxService
-                } else {
-                    InstallMethod::LinuxApp
-                };
-                match blocker {
-                    Some(blocker) => Self::refused(install, blocker.to_string(), None),
-                    None => Self {
-                        install,
-                        can_apply_remotely: true,
-                        cannot_apply_reason: None,
-                        manual_command: None,
-                    },
-                }
-            }
             // The app's background engine can carry out an update itself. One
             // run any other way has nothing to bring it back.
             InstallKind::MacApp { .. } => Self::desktop(
@@ -824,7 +721,6 @@ impl UpdateAbility {
             InstallKind::Unmanaged => Self::refused(
                 InstallMethod::Unmanaged,
                 "This copy of Onicode wasn't installed by the installer, so it can't replace itself.",
-                (os == "linux").then_some(LINUX_INSTALL_COMMAND),
             ),
         }
     }
@@ -836,13 +732,12 @@ impl UpdateAbility {
         blocker: Option<UpdateBlocker>,
     ) -> Self {
         match blocker {
-            _ if !supervised => Self::refused(install, unsupervised, None),
-            Some(blocker) => Self::refused(install, blocker.to_string(), None),
+            _ if !supervised => Self::refused(install, unsupervised),
+            Some(blocker) => Self::refused(install, blocker.to_string()),
             None => Self {
                 install,
                 can_apply_remotely: true,
                 cannot_apply_reason: None,
-                manual_command: None,
             },
         }
     }
@@ -852,9 +747,7 @@ impl UpdateAbility {
         let kind = detect_install();
         Self::decide(
             &kind,
-            std::env::consts::OS,
             running_as_installed_service(),
-            MANAGED_RESTART.get().is_none(),
             kind.desktop_update_blocker(),
         )
     }
@@ -879,27 +772,12 @@ pub fn detect_install() -> InstallKind {
             let Ok(exe) = std::env::current_exe() else {
                 return InstallKind::Unmanaged;
             };
-            let home = std::env::var_os("HOME").map(PathBuf::from);
-            detect_install_from(&exe, home.as_deref())
+            detect_install_from(&exe)
         })
         .clone()
 }
 
-fn detect_install_from(exe: &Path, home: Option<&Path>) -> InstallKind {
-    detect_install_from_for_os(exe, home, std::env::consts::OS)
-}
-
-fn detect_install_from_for_os(exe: &Path, home: Option<&Path>, os: &str) -> InstallKind {
-    if !managed_updates_supported(os) {
-        return InstallKind::Unmanaged;
-    }
-    if let Some(home) = home {
-        // `current_exe` resolves the `current` symlink to the versioned dir.
-        let app_root = home.join(".onicode").join("app");
-        if exe.starts_with(&app_root) {
-            return InstallKind::Managed { app_root };
-        }
-    }
+fn detect_install_from(exe: &Path) -> InstallKind {
     for ancestor in exe.ancestors() {
         if ancestor.extension().is_some_and(|ext| ext == "app")
             && exe.starts_with(ancestor.join("Contents").join("MacOS"))
@@ -914,17 +792,11 @@ fn detect_install_from_for_os(exe: &Path, home: Option<&Path>, os: &str) -> Inst
 
 /// The version currently installed on disk for `kind`, read without executing
 /// anything. A long-running process compares it with its own version to notice
-/// that something else (the desktop app, `onicode update`, a re-run installer)
-/// has already replaced its binary.
+/// that something else (the desktop app) has already replaced its binary.
 pub fn installed_version(kind: &InstallKind) -> Option<String> {
     let version = match kind {
-        InstallKind::Managed { app_root } => std::fs::read_link(app_root.join("current"))
-            .ok()?
-            .file_name()?
-            .to_str()?
-            .to_owned(),
         InstallKind::MacApp { bundle } => bundle_engine_version(bundle)?,
-        _ => return None,
+        InstallKind::Unmanaged => return None,
     };
     parse_version(&version).map(|_| version)
 }
@@ -1058,81 +930,8 @@ async fn verify_staged_binary(binary: &Path, version: &str) -> anyhow::Result<()
 }
 
 // ---------------------------------------------------------------------------
-// Managed (symlink) installs — the daemon/VPS path and Linux desktop
+// The engine's restart
 // ---------------------------------------------------------------------------
-
-/// Download + unpack the headless tarball into `app_root/<ver>` (idempotent —
-/// an already-staged version is reused). Returns the versioned dir.
-pub async fn stage_headless(
-    feed_url: &str,
-    manifest: &Manifest,
-    app_root: &Path,
-    progress: Progress<'_>,
-) -> anyhow::Result<PathBuf> {
-    // Reject unsupported targets before creating a stage or making a request.
-    require_managed_update_platform()?;
-    let version = &manifest.version;
-    anyhow::ensure!(
-        parse_version(version).is_some(),
-        "invalid release version {version:?}"
-    );
-    let dest = app_root.join(version);
-    if dest.join("onicode").exists() {
-        return Ok(dest);
-    }
-    let file = headless_artifact(version);
-    let stage = app_root.join(format!(".stage-{version}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&stage);
-    std::fs::create_dir_all(&stage).with_context(|| format!("creating {}", stage.display()))?;
-    let result = async {
-        let tarball = stage.join(&file);
-        download_release_file(feed_url, manifest, &file, &tarball, progress).await?;
-        let unpacked = stage.join("unpacked");
-        std::fs::create_dir_all(&unpacked)?;
-        // The tarball's root is its versioned stage dir; strip it exactly as
-        // install.sh does.
-        run(
-            "tar",
-            &[
-                "-xzf",
-                &tarball.to_string_lossy(),
-                "-C",
-                &unpacked.to_string_lossy(),
-                "--strip-components=1",
-            ],
-        )?;
-        if !unpacked.join("onicode").is_file() {
-            bail!("tarball {file} did not contain a onicode binary");
-        }
-        verify_staged_binary(&unpacked.join("onicode"), version).await?;
-        match std::fs::rename(&unpacked, &dest) {
-            Ok(()) => {}
-            // Lost a race with another stager — the staged copy is equivalent.
-            Err(_) if dest.join("onicode").exists() => {}
-            Err(err) => {
-                return Err(err).with_context(|| format!("moving {} into place", dest.display()));
-            }
-        }
-        Ok(dest.clone())
-    }
-    .await;
-    let _ = std::fs::remove_dir_all(&stage);
-    result
-}
-
-/// Atomically repoint `app_root/current` at `app_root/<ver>` (symlink to a temp
-/// name, then rename over — never a window with no `current`).
-pub fn apply_headless(app_root: &Path, version: &str) -> anyhow::Result<()> {
-    let target = app_root.join(version);
-    if !target.join("onicode").exists() {
-        bail!("{} is not a staged install", target.display());
-    }
-    let tmp = app_root.join(format!(".current-{}", std::process::id()));
-    let _ = std::fs::remove_file(&tmp);
-    std::os::unix::fs::symlink(&target, &tmp).context("creating current symlink")?;
-    std::fs::rename(&tmp, app_root.join("current")).context("swapping current symlink")?;
-    Ok(())
-}
 
 type ManagedRestart = Box<dyn Fn() -> anyhow::Result<()> + Send + Sync>;
 
@@ -1162,32 +961,11 @@ fn managed_restart_ready() -> bool {
 }
 
 /// Whether this process is the engine service [`restart_service`] manages:
-/// the desktop app's background engine ([`set_managed_restart`]); systemd
-/// places a service in the `onicode.service` cgroup; launchd names the job in
-/// `XPC_SERVICE_NAME`.
+/// the desktop app's background engine ([`set_managed_restart`]), or the job
+/// launchd names in `XPC_SERVICE_NAME`.
 pub fn running_as_installed_service() -> bool {
-    if MANAGED_RESTART.get().is_some() {
-        return true;
-    }
-    if cfg!(target_os = "macos") {
-        std::env::var("XPC_SERVICE_NAME").is_ok_and(|label| label == "dev.aislopware.onicode")
-    } else if cfg!(target_os = "linux") {
-        std::fs::read_to_string("/proc/self/cgroup")
-            .is_ok_and(|cgroups| in_onicode_service_cgroup(&cgroups))
-    } else {
-        false
-    }
-}
-
-fn in_onicode_service_cgroup(cgroups: &str) -> bool {
-    in_service_cgroup(cgroups, &service_unit())
-}
-
-fn in_service_cgroup(cgroups: &str, unit: &str) -> bool {
-    cgroups
-        .lines()
-        .filter_map(|line| line.rsplit(':').next())
-        .any(|path| path.split('/').any(|part| part == unit))
+    MANAGED_RESTART.get().is_some()
+        || std::env::var("XPC_SERVICE_NAME").is_ok_and(|label| label == "dev.aislopware.onicode")
 }
 
 /// The systemd unit this engine runs as. `ONICODE_SERVICE_UNIT` names another, so
@@ -1199,50 +977,24 @@ pub fn service_unit() -> String {
         .unwrap_or_else(|| "onicode.service".to_owned())
 }
 
-/// Restart the installed engine service (the same units `onicode daemon` and the
-/// tarball's `install.sh` manage). Called after a symlink swap so the running daemon
-/// picks up the new binary. Only queues the restart: the caller may be the
+/// Restart the installed engine: the desktop app's background engine through
+/// [`set_managed_restart`], a launchd job through `launchctl`. Called once a
+/// newer version is in place. Only queues the restart: the caller may be the
 /// service itself, which must stay responsive to the stop signal that follows.
 pub fn restart_service() -> anyhow::Result<()> {
     if let Some(restart) = MANAGED_RESTART.get() {
         return restart();
     }
-    require_managed_update_platform()?;
-    if cfg!(target_os = "macos") {
-        let output = std::process::Command::new("id").arg("-u").output()?;
-        let uid = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        run(
-            "launchctl",
-            &[
-                "kickstart",
-                "-k",
-                &format!("gui/{uid}/dev.aislopware.onicode"),
-            ],
-        )
-    } else {
-        ask_systemd_to_restart(&service_unit())
-    }
-}
-
-/// Called from inside the unit, `systemctl` is in the cgroup being stopped and can
-/// be killed by the very restart it asked for. Killed isn't refused: only an exit
-/// status says it didn't work.
-fn ask_systemd_to_restart(unit: &str) -> anyhow::Result<()> {
-    let output = std::process::Command::new("systemctl")
-        .args(["--user", "--no-block", "restart", unit])
-        .output()
-        .context("running systemctl")?;
-    restart_outcome(output.status.code(), &output.stderr)
-}
-
-fn restart_outcome(code: Option<i32>, stderr: &[u8]) -> anyhow::Result<()> {
-    match code {
-        None | Some(0) => Ok(()),
-        Some(code) => bail!(
-            "systemctl restart failed ({code}): {}",
-            String::from_utf8_lossy(stderr).trim()
-        ),
-    }
+    let output = std::process::Command::new("id").arg("-u").output()?;
+    let uid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    run(
+        "launchctl",
+        &[
+            "kickstart",
+            "-k",
+            &format!("gui/{uid}/dev.aislopware.onicode"),
+        ],
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1325,35 +1077,26 @@ fn prune_stale_stages(updates: &Path, keep: &str) {
 /// in use mustn't be deleted: with its image gone, AppleSystemPolicy rejects every
 /// process it forks, thousands of times a minute (#1037). Can't tell: yes.
 pub fn process_runs_from(dir: &Path) -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        use std::os::unix::ffi::OsStrExt as _;
-        let dir = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-        let mut pids = vec![0 as libc::pid_t; 8192];
-        let bytes = (pids.len() * std::mem::size_of::<libc::pid_t>()) as libc::c_int;
-        // SAFETY: the buffer is `bytes` long; the call writes at most that.
-        let count = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), bytes) };
-        if count <= 0 {
-            return true;
-        }
-        let mut path = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
-        pids.iter()
-            .take(count as usize)
-            .filter(|pid| **pid > 0)
-            .any(|&pid| {
-                // SAFETY: `path` is PROC_PIDPATHINFO_MAXSIZE bytes, as the call needs.
-                let len =
-                    unsafe { libc::proc_pidpath(pid, path.as_mut_ptr().cast(), path.len() as u32) };
-                len > 0
-                    && Path::new(std::ffi::OsStr::from_bytes(&path[..len as usize]))
-                        .starts_with(&dir)
-            })
+    use std::os::unix::ffi::OsStrExt as _;
+    let dir = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let mut pids = vec![0 as libc::pid_t; 8192];
+    let bytes = (pids.len() * std::mem::size_of::<libc::pid_t>()) as libc::c_int;
+    // SAFETY: the buffer is `bytes` long; the call writes at most that.
+    let count = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), bytes) };
+    if count <= 0 {
+        return true;
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = dir;
-        false
-    }
+    let mut path = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    pids.iter()
+        .take(count as usize)
+        .filter(|pid| **pid > 0)
+        .any(|&pid| {
+            // SAFETY: `path` is PROC_PIDPATHINFO_MAXSIZE bytes, as the call needs.
+            let len =
+                unsafe { libc::proc_pidpath(pid, path.as_mut_ptr().cast(), path.len() as u32) };
+            len > 0
+                && Path::new(std::ffi::OsStr::from_bytes(&path[..len as usize])).starts_with(&dir)
+        })
 }
 
 /// Bundles an update set aside (`.Onicode.app.old-…`) or left half-installed
@@ -1368,9 +1111,9 @@ pub fn prune_retired_mac_bundles(bundle: &Path) {
     let waiting = channel::data_dir()
         .and_then(transaction::read)
         .filter(|update| update.in_progress())
-        .and_then(|update| match update.layout {
-            transaction::Layout::MacBundle { incoming, .. } => Some(incoming),
-            _ => None,
+        .map(|update| {
+            let transaction::Layout::MacBundle { incoming, .. } = update.layout;
+            incoming
         });
     let Ok(entries) = std::fs::read_dir(parent) else {
         return;
@@ -1390,35 +1133,24 @@ pub fn prune_retired_mac_bundles(bundle: &Path) {
 /// Exchange two bundles in one step: `incoming` becomes `bundle` and the old one
 /// is left under the retired name. Nothing ever finds `bundle` missing.
 pub(crate) fn swap_mac_bundles(incoming: &Path, bundle: &Path) -> anyhow::Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        use std::os::unix::ffi::OsStrExt as _;
-        let c = |path: &Path| std::ffi::CString::new(path.as_os_str().as_bytes());
-        let (from, to) = (c(incoming)?, c(bundle)?);
-        // SAFETY: both are NUL-terminated paths.
-        if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_SWAP) } != 0 {
-            return Err(std::io::Error::last_os_error()).context("swapping in the new app");
-        }
-        let parent = bundle
-            .parent()
-            .context("app bundle has no parent directory")?;
-        let name = bundle
-            .file_name()
-            .context("app bundle has no name")?
-            .to_string_lossy();
-        let retired = parent.join(format!(".{name}.old-{}", std::process::id()));
-        // If this is lost to a crash, it's tidied up under the name it has.
-        let _ = std::fs::rename(incoming, &retired);
-        Ok(())
+    use std::os::unix::ffi::OsStrExt as _;
+    let c = |path: &Path| std::ffi::CString::new(path.as_os_str().as_bytes());
+    let (from, to) = (c(incoming)?, c(bundle)?);
+    // SAFETY: both are NUL-terminated paths.
+    if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_SWAP) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("swapping in the new app");
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (incoming, bundle);
-        bail!(
-            "macOS app updates are not supported on {}",
-            std::env::consts::OS
-        )
-    }
+    let parent = bundle
+        .parent()
+        .context("app bundle has no parent directory")?;
+    let name = bundle
+        .file_name()
+        .context("app bundle has no name")?
+        .to_string_lossy();
+    let retired = parent.join(format!(".{name}.old-{}", std::process::id()));
+    // If this is lost to a crash, it's tidied up under the name it has.
+    let _ = std::fs::rename(incoming, &retired);
+    Ok(())
 }
 
 /// Swap the installed bundle for the staged one: `ditto` the staged copy next to
@@ -1529,9 +1261,6 @@ pub struct UpdateStatus {
     /// Why it can't, in words for the person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cannot_apply_reason: Option<String>,
-    /// What to run on the device instead, when there's a command for it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub manual_command: Option<String>,
     /// The latest update asked of this engine and how it went. Match its `id`
     /// with `ApplyUpdate`'s `updateId`: reconnecting doesn't say whether the
     /// update worked or went back. Absent from older engines, which only have
@@ -1559,7 +1288,6 @@ impl UpdateStatus {
             install: None,
             can_apply_remotely: None,
             cannot_apply_reason: None,
-            manual_command: None,
             update: None,
             app_version: None,
         }
@@ -1569,16 +1297,8 @@ impl UpdateStatus {
         self.install = Some(ability.install);
         self.can_apply_remotely = Some(ability.can_apply_remotely);
         self.cannot_apply_reason = ability.cannot_apply_reason;
-        self.manual_command = ability.manual_command;
         self
     }
-}
-
-/// `ONICODE_AUTO_UPDATE=1|true|yes` — headless daemons apply updates themselves.
-fn auto_update_enabled() -> bool {
-    std::env::var("ONICODE_AUTO_UPDATE")
-        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
-        .unwrap_or(false)
 }
 
 /// `ONICODE_AUTO_UPDATE=0|false|no` — the desktop app then only reports: no
@@ -1595,8 +1315,7 @@ pub type QuiescentCheck = Arc<dyn Fn() -> bool + Send + Sync>;
 
 /// Who runs the checker — decides what it may do beyond reporting.
 enum Role {
-    /// The engine: managed installs with `ONICODE_AUTO_UPDATE` apply themselves,
-    /// and a service daemon restarts into a binary someone else installed.
+    /// The engine: a service daemon restarts into a binary someone else installed.
     Engine { quiescent: Option<QuiescentCheck> },
     /// The desktop app: report only — downloading and installing are UI
     /// decisions (see `crates/app/src/notifications/updater.rs`).
@@ -1605,10 +1324,9 @@ enum Role {
 
 /// Background release checker: polls `{feed}/releases` hourly on a wall-clock
 /// schedule (so sleep/wake cannot stretch it), backs off on failure, and
-/// publishes [`UpdateStatus`] over a watch channel. In the engine, managed
-/// installs with `ONICODE_AUTO_UPDATE` set stage + apply + service restart on
-/// their own — but only in a quiet window: while `quiescent` reports activity,
-/// the apply defers and re-probes every `IDLE_RECHECK`.
+/// publishes [`UpdateStatus`] over a watch channel. In the engine, a service
+/// restarts into a newer installed version only in a quiet window: while
+/// `quiescent` reports activity, the restart defers.
 #[derive(Clone)]
 pub struct Updater {
     feed_url: String,
@@ -1772,16 +1490,6 @@ impl Updater {
                     if forced || schedule.due(SystemTime::now()) {
                         let ok = self.check_once().await;
                         schedule.record(SystemTime::now(), ok);
-                        if ok
-                            && self.status_tx.borrow().update_available
-                            && matches!(*self.role, Role::Engine { .. })
-                            && auto_update_enabled()
-                            && let InstallKind::Managed { .. } = detect_install()
-                            && UpdateAbility::current().can_apply_remotely
-                            && !self.went_back_from_latest()
-                        {
-                            self.auto_apply_when_idle().await;
-                        }
                     }
                     if self.service.load(Ordering::SeqCst) {
                         superseded.poll(|| self.quiescent_now());
@@ -1793,62 +1501,6 @@ impl Updater {
                     }
                 }
             } => {}
-        }
-    }
-
-    /// Sessions must never die to an update: pre-stage the download now
-    /// (harmless while busy), wait for a quiet window (no live runs, no open
-    /// terminals), then apply — which re-fetches the manifest (so a long defer
-    /// lands on whatever is newest) and reuses the staged dir, keeping the
-    /// idle→restart gap to well under a second.
-    async fn auto_apply_when_idle(&self) {
-        if let InstallKind::Managed { app_root } = detect_install() {
-            match fetch_latest(&self.feed_url).await {
-                Ok(manifest) if version_newer(&manifest.version, current_version()) => {
-                    if let Err(err) =
-                        stage_headless(&self.feed_url, &manifest, &app_root, &no_progress).await
-                    {
-                        tracing::warn!(error = %err, "auto-update staging failed");
-                        return;
-                    }
-                }
-                Ok(_) => return,
-                Err(err) => {
-                    tracing::warn!(error = %err, "auto-update staging fetch failed");
-                    return;
-                }
-            }
-        }
-        let mut deferred = false;
-        loop {
-            while !self.quiescent_now() {
-                if !deferred {
-                    deferred = true;
-                    tracing::info!("auto-update deferred: sessions or terminals active");
-                }
-                tokio::time::sleep(IDLE_RECHECK).await;
-            }
-            // `apply_inner` fetches and stages again so a long defer lands on
-            // the newest release. Re-check quiescence immediately before the
-            // symlink swap: work can begin while that network/disk I/O runs.
-            match self.apply_inner(true).await {
-                Ok(Some(applied)) => {
-                    tracing::info!(version = %applied.version, "auto-update accepted; service restarting");
-                    return;
-                }
-                Ok(None) => {
-                    if !deferred {
-                        deferred = true;
-                        tracing::info!(
-                            "auto-update deferred: activity began while staging the update"
-                        );
-                    }
-                }
-                Err(err) => {
-                    tracing::warn!(error = %err, "auto-update failed");
-                    return;
-                }
-            }
         }
     }
 
@@ -1888,7 +1540,6 @@ impl Updater {
             install: None,
             can_apply_remotely: None,
             cannot_apply_reason: None,
-            manual_command: None,
             update: None,
             app_version: None,
         };
@@ -1929,19 +1580,6 @@ impl Updater {
         }
     }
 
-    /// The latest release is one this device already tried and went back from.
-    /// Trying again on a timer would cut running chats off every hour for the
-    /// same result; a person asking still can.
-    fn went_back_from_latest(&self) -> bool {
-        let latest = self.status_tx.borrow().latest_version.clone();
-        channel::data_dir()
-            .and_then(transaction::read)
-            .is_some_and(|last| {
-                last.phase == transaction::Phase::RolledBack
-                    && latest.as_deref() == Some(last.target.as_str())
-            })
-    }
-
     /// Publish the update's latest state, after something settled it.
     pub fn refresh_update_report(&self) {
         let update = channel::data_dir().and_then(transaction::report);
@@ -1958,15 +1596,6 @@ impl Updater {
     /// What became of the update is `UpdateStatus`'s `update`, under the id
     /// answered here.
     pub async fn apply(&self) -> anyhow::Result<AppliedUpdate> {
-        self.apply_inner(false)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("update became busy before apply"))
-    }
-
-    /// `require_quiescent` is used by automatic updates. It deliberately checks
-    /// after all network and staging I/O and directly before the destructive
-    /// swap/restart boundary; `None` tells the caller to wait and try again.
-    async fn apply_inner(&self, require_quiescent: bool) -> anyhow::Result<Option<AppliedUpdate>> {
         let ability = UpdateAbility::current();
         if !ability.can_apply_remotely {
             bail!("{}", ability.cannot_apply_reason.unwrap_or_default());
@@ -1982,9 +1611,6 @@ impl Updater {
         else {
             bail!("already up to date ({})", current_version());
         };
-        if require_quiescent && !self.quiescent_now() {
-            return Ok(None);
-        }
         // Already on disk as `current`: there's nothing to try out, only to
         // restart into.
         let update_id = match prepared.layout {
@@ -2024,10 +1650,10 @@ impl Updater {
                 }
             }
         });
-        Ok(Some(AppliedUpdate {
+        Ok(AppliedUpdate {
             version: manifest.version,
             update_id,
-        }))
+        })
     }
 }
 
@@ -2055,21 +1681,6 @@ async fn prepare_this_install(
     data_dir: &Path,
 ) -> anyhow::Result<Option<PreparedInstall>> {
     match detect_install() {
-        InstallKind::Managed { app_root } => {
-            if !version_newer(&manifest.version, current_version()) {
-                return Ok(None);
-            }
-            prepare_install(feed_url, manifest, &app_root, data_dir).await?;
-            let from = installed_version(&InstallKind::Managed {
-                app_root: app_root.clone(),
-            })
-            .unwrap_or_else(|| current_version().to_owned());
-            Ok(Some(PreparedInstall {
-                layout: (from != manifest.version)
-                    .then_some(transaction::Layout::Versioned { app_root }),
-                from,
-            }))
-        }
         InstallKind::MacApp { bundle } => {
             // The engine's version isn't the app's (a beta carries stable's).
             let from =
@@ -2134,28 +1745,6 @@ pub struct AppliedUpdate {
     pub update_id: Option<String>,
 }
 
-/// Everything before an update has to stop anything: refuse if there's no room,
-/// then download, verify and unpack the release beside the running one.
-pub async fn prepare_install(
-    feed_url: &str,
-    manifest: &Manifest,
-    app_root: &Path,
-    data_dir: &Path,
-) -> anyhow::Result<()> {
-    let download = if app_root.join(&manifest.version).join("onicode").exists() {
-        0
-    } else {
-        artifact_size(feed_url, manifest, &headless_artifact(&manifest.version))
-            .await
-            .unwrap_or(transaction::UNKNOWN_ARTIFACT_BYTES)
-    };
-    if let Err(why) = transaction::ensure_room(data_dir, app_root, download) {
-        bail!(why);
-    }
-    stage_headless(feed_url, manifest, app_root, &no_progress).await?;
-    Ok(())
-}
-
 /// What the feed says the release's download weighs, if it says.
 async fn artifact_size(feed_url: &str, manifest: &Manifest, file: &str) -> Option<u64> {
     let base = manifest.channel.base(&release_base(feed_url).ok()?);
@@ -2210,7 +1799,7 @@ impl Schedule {
 }
 
 /// Restarts a service daemon into a newer binary that is already installed
-/// (the desktop app swapped the bundle, `onicode update` flipped the symlink).
+/// (the desktop app swapped the bundle).
 /// Waits for quiescence, and tries at most once per installed version so a
 /// broken service manager cannot turn into a restart loop.
 #[derive(Debug, Default)]
@@ -2276,58 +1865,32 @@ fn now_ms() -> i64 {
 mod tests {
     use super::*;
 
-    fn managed() -> InstallKind {
-        InstallKind::Managed {
-            app_root: PathBuf::from("/home/me/.onicode/app"),
-        }
-    }
-
-    /// A test install beside a real one names its own unit, and then the real
-    /// one's cgroup isn't its own.
     #[test]
-    fn the_service_is_recognised_by_its_own_unit_only() {
-        let cgroups =
-            "0::/user.slice/user-1000.slice/user@1000.service/app.slice/onicode.service\n";
-        assert!(in_service_cgroup(cgroups, "onicode.service"));
-        assert!(!in_service_cgroup(cgroups, "onicode-test.service"));
-    }
-
-    /// Inside the unit, the restart kills the `systemctl` that asked for it.
-    #[test]
-    fn a_restart_that_kills_its_own_systemctl_still_counts() {
-        assert!(restart_outcome(None, b"").is_ok());
-        assert!(restart_outcome(Some(0), b"").is_ok());
-        let refused = restart_outcome(Some(1), b"Unit not found.").unwrap_err();
-        assert!(refused.to_string().contains("Unit not found."), "{refused}");
-    }
-
-    #[test]
-    fn a_linux_service_can_update_from_afar() {
-        let ability = UpdateAbility::decide(&managed(), "linux", true, true, None);
-        assert_eq!(ability.install, InstallMethod::LinuxService);
-        assert!(ability.can_apply_remotely);
-        assert_eq!(ability.cannot_apply_reason, None);
-        assert_eq!(ability.manual_command, None);
-        let app = UpdateAbility::decide(&managed(), "linux", true, false, None);
-        assert_eq!(app.install, InstallMethod::LinuxApp);
-        assert!(app.can_apply_remotely);
-    }
-
-    #[test]
-    fn what_cant_update_from_afar_says_why_and_what_to_run() {
-        let by_hand = UpdateAbility::decide(&managed(), "linux", false, false, None);
-        assert_eq!(by_hand.install, InstallMethod::StartedByHand);
-        assert!(!by_hand.can_apply_remotely);
-        assert_eq!(by_hand.manual_command.as_deref(), Some("onicode update"));
-
+    fn what_cant_update_from_afar_says_why() {
+        let bundle = InstallKind::MacApp {
+            bundle: PathBuf::from("/Applications/Onicode.app"),
+        };
+        let mac = UpdateAbility::decide(&bundle, true, None);
+        assert_eq!(mac.install, InstallMethod::MacApp);
+        assert!(mac.can_apply_remotely, "the app's background engine can");
+        assert_eq!(mac.cannot_apply_reason, None);
+        let mac_by_hand = UpdateAbility::decide(&bundle, false, None);
+        assert!(!mac_by_hand.can_apply_remotely);
+        assert!(mac_by_hand.cannot_apply_reason.unwrap().contains("Mac"));
+        let mac_translocated =
+            UpdateAbility::decide(&bundle, true, Some(UpdateBlocker::Translocated));
+        assert!(!mac_translocated.can_apply_remotely);
+        assert!(
+            mac_translocated
+                .cannot_apply_reason
+                .unwrap()
+                .contains("Applications")
+        );
         let read_only = UpdateAbility::decide(
-            &managed(),
-            "linux",
-            true,
+            &bundle,
             true,
             Some(UpdateBlocker::NotWritable(PathBuf::from("/opt/onicode"))),
         );
-        assert_eq!(read_only.install, InstallMethod::LinuxService);
         assert!(!read_only.can_apply_remotely);
         assert!(
             read_only
@@ -2336,44 +1899,9 @@ mod tests {
                 .contains("/opt/onicode")
         );
 
-        let bundle = InstallKind::MacApp {
-            bundle: PathBuf::from("/Applications/Onicode.app"),
-        };
-        let mac = UpdateAbility::decide(&bundle, "macos", true, false, None);
-        assert_eq!(mac.install, InstallMethod::MacApp);
-        assert!(mac.can_apply_remotely, "the app's background engine can");
-        let mac_by_hand = UpdateAbility::decide(&bundle, "macos", false, false, None);
-        assert!(!mac_by_hand.can_apply_remotely);
-        assert!(mac_by_hand.cannot_apply_reason.unwrap().contains("Mac"));
-        let mac_translocated = UpdateAbility::decide(
-            &bundle,
-            "macos",
-            true,
-            false,
-            Some(UpdateBlocker::Translocated),
-        );
-        assert!(!mac_translocated.can_apply_remotely);
-        assert!(
-            mac_translocated
-                .cannot_apply_reason
-                .unwrap()
-                .contains("Applications")
-        );
-
-        // No macOS headless release exists, whatever the old layout says.
-        let old_mac_service = UpdateAbility::decide(&managed(), "macos", true, true, None);
-        assert_eq!(old_mac_service.install, InstallMethod::Unmanaged);
-        assert!(!old_mac_service.can_apply_remotely);
-
-        let source = UpdateAbility::decide(&InstallKind::Unmanaged, "linux", false, false, None);
+        let source = UpdateAbility::decide(&InstallKind::Unmanaged, true, None);
         assert_eq!(source.install, InstallMethod::Unmanaged);
-        assert_eq!(
-            source.manual_command.as_deref(),
-            Some(LINUX_INSTALL_COMMAND)
-        );
-        let mac_source =
-            UpdateAbility::decide(&InstallKind::Unmanaged, "macos", false, false, None);
-        assert_eq!(mac_source.manual_command, None);
+        assert!(!source.can_apply_remotely);
     }
 
     /// An older engine's report has none of the fields; a newer engine's
@@ -2390,7 +1918,6 @@ mod tests {
         assert_eq!(older.install, None);
         assert_eq!(older.can_apply_remotely, None);
         assert_eq!(older.cannot_apply_reason, None);
-        assert_eq!(older.manual_command, None);
 
         let newer: UpdateStatus = serde_json::from_value(serde_json::json!({
             "currentVersion": "0.2.200",
@@ -2405,16 +1932,13 @@ mod tests {
     #[test]
     fn the_report_names_its_fields_for_clients() {
         let status = UpdateStatus::initial("1.0.0").with_ability(UpdateAbility::decide(
-            &managed(),
-            "linux",
-            false,
+            &InstallKind::Unmanaged,
             false,
             None,
         ));
         let value = serde_json::to_value(&status).unwrap();
-        assert_eq!(value["install"], "startedByHand");
+        assert_eq!(value["install"], "unmanaged");
         assert_eq!(value["canApplyRemotely"], false);
-        assert_eq!(value["manualCommand"], "onicode update");
         assert!(value["cannotApplyReason"].is_string());
     }
 
@@ -2634,60 +2158,42 @@ mod tests {
     #[test]
     fn install_kind_detection() {
         assert_eq!(
-            detect_install_from_for_os(
-                Path::new("/home/u/.onicode/app/0.1.1/onicode"),
-                Some(Path::new("/home/u")),
-                "linux",
-            ),
-            InstallKind::Managed {
-                app_root: PathBuf::from("/home/u/.onicode/app")
-            }
-        );
-        assert_eq!(
-            detect_install_from_for_os(
-                Path::new("/Applications/Onicode.app/Contents/MacOS/onicode"),
-                Some(Path::new("/Users/u")),
-                "macos",
-            ),
+            detect_install_from(Path::new(
+                "/Applications/Onicode.app/Contents/MacOS/onicode"
+            )),
             InstallKind::MacApp {
                 bundle: PathBuf::from("/Applications/Onicode.app")
             }
         );
         // A path merely containing `.app` without the bundle layout is not a bundle.
         assert_eq!(
-            detect_install_from_for_os(Path::new("/tmp/foo.app/onicode"), None, "macos"),
+            detect_install_from(Path::new("/tmp/foo.app/onicode")),
             InstallKind::Unmanaged
         );
         assert_eq!(
-            detect_install_from_for_os(
-                Path::new("/src/target/release/onicode"),
-                Some(Path::new("/home/u")),
-                "linux",
-            ),
+            detect_install_from(Path::new("/src/target/release/onicode")),
             InstallKind::Unmanaged
         );
     }
 
     #[test]
     fn artifact_names_match_packaging() {
-        let (os, arch) = platform_key();
-        assert!(headless_artifact("0.2.0").starts_with("onicode-0.2.0-"));
+        let (_, arch) = platform_key();
         assert_eq!(
-            headless_artifact("0.2.0"),
-            format!("onicode-0.2.0-{os}-{arch}.tar.gz")
+            mac_app_artifact("0.2.0"),
+            format!("onicode-0.2.0-macos-{arch}-app.tar.gz")
         );
-        assert!(mac_app_artifact("0.2.0").ends_with("-app.tar.gz"));
     }
 
     #[test]
     fn manifest_parses_with_and_without_files() {
         let full: Manifest = serde_json::from_str(
-            r#"{"version":"0.1.1","files":{"onicode-0.1.1-linux-x86_64.tar.gz":{"sha256":"abc"}}}"#,
+            r#"{"version":"0.1.1","files":{"onicode-0.1.1-macos-arm64-app.tar.gz":{"sha256":"abc"}}}"#,
         )
         .unwrap();
         assert_eq!(full.version, "0.1.1");
         assert_eq!(
-            full.files["onicode-0.1.1-linux-x86_64.tar.gz"]
+            full.files["onicode-0.1.1-macos-arm64-app.tar.gz"]
                 .sha256
                 .as_deref(),
             Some("abc")
@@ -2696,28 +2202,6 @@ mod tests {
         assert!(bare.files.is_empty());
     }
 
-    #[test]
-    fn headless_symlink_swap() {
-        let tmp = tempfile::tempdir().unwrap();
-        let app_root = tmp.path().join("app");
-        for ver in ["0.1.0", "0.1.1"] {
-            std::fs::create_dir_all(app_root.join(ver)).unwrap();
-            std::fs::write(app_root.join(ver).join("onicode"), ver).unwrap();
-        }
-        apply_headless(&app_root, "0.1.0").unwrap();
-        assert_eq!(
-            std::fs::read_link(app_root.join("current")).unwrap(),
-            app_root.join("0.1.0")
-        );
-        // Swap over an existing symlink.
-        apply_headless(&app_root, "0.1.1").unwrap();
-        assert_eq!(
-            std::fs::read_link(app_root.join("current")).unwrap(),
-            app_root.join("0.1.1")
-        );
-        // Unstaged version refuses.
-        assert!(apply_headless(&app_root, "0.2.0").is_err());
-    }
     #[test]
     fn schedule_is_wall_clock_with_failure_backoff() {
         let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
@@ -2774,22 +2258,6 @@ mod tests {
         assert_eq!(restarts.get(), 1);
         superseded.poll_installed("0.2.2", "0.2.0", || true, restart);
         assert_eq!(restarts.get(), 2);
-    }
-
-    #[test]
-    fn systemd_service_cgroup_is_recognized() {
-        assert!(in_onicode_service_cgroup(
-            "0::/user.slice/user-1000.slice/user@1000.service/app.slice/onicode.service\n"
-        ));
-        assert!(in_onicode_service_cgroup(
-            "12:pids:/user.slice/user@1000.service/onicode.service\n1:name=systemd:/x\n"
-        ));
-        assert!(!in_onicode_service_cgroup(
-            "0::/user.slice/user-1000.slice/session-3.scope\n"
-        ));
-        assert!(!in_onicode_service_cgroup(
-            "0::/user.slice/user@1000.service/app.slice/onicode.service.d\n"
-        ));
     }
 
     #[test]
@@ -3016,18 +2484,8 @@ mod tests {
     }
 
     #[test]
-    fn installed_version_follows_the_current_symlink_and_bundle() {
+    fn installed_version_follows_the_bundle() {
         let tmp = tempfile::tempdir().unwrap();
-        let app_root = tmp.path().join("app");
-        std::fs::create_dir_all(app_root.join("0.4.0")).unwrap();
-        std::fs::write(app_root.join("0.4.0").join("onicode"), "").unwrap();
-        let managed = InstallKind::Managed {
-            app_root: app_root.clone(),
-        };
-        assert_eq!(installed_version(&managed), None, "no current link yet");
-        apply_headless(&app_root, "0.4.0").unwrap();
-        assert_eq!(installed_version(&managed).as_deref(), Some("0.4.0"));
-
         let bundle = tmp.path().join("Onicode.app");
         std::fs::create_dir_all(bundle.join("Contents")).unwrap();
         std::fs::write(
@@ -3118,69 +2576,6 @@ mod tests {
         assert_eq!(*updater.watch().borrow(), status);
         updater.shutdown().await;
         server.abort();
-    }
-
-    /// A headless tarball whose `onicode` reports `reported` from `--version`.
-    fn fake_headless_tarball(dir: &Path, reported: &str) -> Vec<u8> {
-        use std::os::unix::fs::PermissionsExt as _;
-        let root = dir.join("onicode-pkg");
-        std::fs::create_dir_all(&root).unwrap();
-        let binary = root.join("onicode");
-        std::fs::write(&binary, format!("#!/bin/sh\necho \"onicode {reported}\"\n")).unwrap();
-        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let tarball = dir.join("pkg.tar.gz");
-        run(
-            "tar",
-            &[
-                "-czf",
-                &tarball.to_string_lossy(),
-                "-C",
-                &dir.to_string_lossy(),
-                "onicode-pkg",
-            ],
-        )
-        .unwrap();
-        std::fs::read(tarball).unwrap()
-    }
-
-    #[tokio::test]
-    async fn headless_staging_rejects_a_binary_that_is_not_the_promised_release() {
-        let tmp = tempfile::tempdir().unwrap();
-        let app_root = tmp.path().join("app");
-        std::fs::create_dir_all(&app_root).unwrap();
-        let manifest = |bytes: &[u8]| Manifest {
-            version: "9.9.9".into(),
-            files: [(
-                headless_artifact("9.9.9"),
-                FileMeta {
-                    sha256: Some(base16ct::lower::encode_string(&Sha256::digest(bytes))),
-                },
-            )]
-            .into(),
-            ..Manifest::default()
-        };
-
-        let wrong = fake_headless_tarball(&tmp.path().join("wrong"), "1.0.0");
-        let (base, server) = serve_forever(wrong.clone()).await;
-        let error = stage_headless(&base, &manifest(&wrong), &app_root, &no_progress)
-            .await
-            .unwrap_err();
-        server.abort();
-        assert!(
-            format!("{error:#}").contains("expected \"onicode 9.9.9\""),
-            "unexpected error: {error:#}"
-        );
-        assert!(!app_root.join("9.9.9").exists());
-        assert_eq!(std::fs::read_dir(&app_root).unwrap().count(), 0);
-
-        let right = fake_headless_tarball(&tmp.path().join("right"), "9.9.9");
-        let (base, server) = serve_forever(right.clone()).await;
-        let staged = stage_headless(&base, &manifest(&right), &app_root, &no_progress)
-            .await
-            .unwrap();
-        server.abort();
-        assert_eq!(staged, app_root.join("9.9.9"));
-        assert!(staged.join("onicode").is_file());
     }
 
     #[test]

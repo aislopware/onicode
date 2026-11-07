@@ -48,15 +48,12 @@ pub trait Spawner: Send + Sync + 'static {
 
 /// Hangs up a process group, leaving whatever else holds the terminal.
 pub fn hang_up_group(pgrp: i32) {
-    #[cfg(unix)]
     if pgrp > 1 {
         // SAFETY: `kill` takes any pid and signal number; a stale group fails harmlessly.
         unsafe {
             libc::kill(-pgrp, libc::SIGHUP);
         }
     }
-    #[cfg(not(unix))]
-    let _ = pgrp;
 }
 
 /// Login shells on the platform's PTYs: `openpty`, then the program as a session leader whose
@@ -64,21 +61,12 @@ pub fn hang_up_group(pgrp: i32) {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NativePty;
 
-#[cfg(unix)]
 impl Spawner for NativePty {
     fn spawn(&self, spec: &Spec, size: TerminalSize) -> Result<Spawned, String> {
         native::spawn(spec, size)
     }
 }
 
-#[cfg(not(unix))]
-impl Spawner for NativePty {
-    fn spawn(&self, _: &Spec, _: TerminalSize) -> Result<Spawned, String> {
-        Err("Terminals need a Unix host".into())
-    }
-}
-
-#[cfg(unix)]
 mod native {
     use std::fs::File;
     use std::io;
@@ -217,7 +205,7 @@ mod native {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

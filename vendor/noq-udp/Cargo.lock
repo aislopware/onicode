@@ -42,12 +42,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "cfg_aliases"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
-
-[[package]]
 name = "ciborium"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -202,14 +196,12 @@ dependencies = [
 name = "noq-udp"
 version = "1.4.0"
 dependencies = [
- "cfg_aliases",
  "criterion",
  "libc",
  "log",
  "socket2",
  "tokio",
  "tracing",
- "windows-sys",
 ]
 
 [[package]]

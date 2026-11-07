@@ -2,7 +2,6 @@ use std::{
     cmp::min,
     io::{ErrorKind, IoSliceMut},
     net::{Ipv4Addr, Ipv6Addr, UdpSocket},
-    num::NonZeroUsize,
 };
 
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -17,65 +16,34 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let _guard = rt.enter();
 
-    let (send_state, send_socket) = new_socket();
-    let (recv_state, recv_socket) = new_socket();
-    let dst_addr = recv_socket.local_addr().unwrap();
-
-    let mut permutations = vec![];
-    for gso_enabled in [
+    // Without the batched path a send carries one datagram and a receive takes one; with it
+    // (`fast-apple-datapath`) both go `BATCH_SIZE` at a time through `sendmsg_x`/`recvmsg_x`.
+    for batched in [
         false,
-        #[cfg(any(target_os = "linux", target_os = "windows", apple))]
+        #[cfg(feature = "fast-apple-datapath")]
         true,
     ] {
-        for gro_enabled in [false, true] {
-            #[cfg(target_os = "windows")]
-            if gso_enabled && !gro_enabled {
-                // Windows requires receive buffer to fit entire datagram on GRO
-                // enabled socket.
-                //
-                // OS error: "A message sent on a datagram socket was larger
-                // than the internal message buffer or some other network limit,
-                // or the buffer used to receive a datagram into was smaller
-                // than the datagram itself."
-                continue;
-            }
+        let (send_state, send_socket) = new_socket(batched);
+        let (recv_state, recv_socket) = new_socket(batched);
+        let dst_addr = recv_socket.local_addr().unwrap();
 
-            for recvmmsg_enabled in [false, true] {
-                permutations.push((gso_enabled, gro_enabled, recvmmsg_enabled));
-            }
-        }
-    }
-
-    for (gso_enabled, gro_enabled, recvmmsg_enabled) in permutations {
-        let mut group = c.benchmark_group(format!(
-            "gso_{gso_enabled}_gro_{gro_enabled}_recvmmsg_{recvmmsg_enabled}"
-        ));
+        let mut group = c.benchmark_group(format!("batched_{batched}"));
         group.throughput(criterion::Throughput::Bytes(TOTAL_BYTES as u64));
 
-        let gso_segments = if gso_enabled {
-            send_state.max_gso_segments()
-        } else {
-            NonZeroUsize::MIN
-        };
-        let msg = vec![0xAB; min(MAX_DATAGRAM_SIZE, SEGMENT_SIZE * gso_segments.get())];
+        let segments = send_state.max_gso_segments();
+        let msg = vec![0xAB; min(MAX_DATAGRAM_SIZE, SEGMENT_SIZE * segments.get())];
         let transmit = Transmit {
             destination: dst_addr,
             ecn: None,
             contents: &msg,
-            segment_size: gso_enabled.then_some(SEGMENT_SIZE),
+            segment_size: Some(SEGMENT_SIZE),
             src_ip: None,
         };
-        let gro_segments = if gro_enabled {
-            recv_state.gro_segments()
-        } else {
-            NonZeroUsize::MIN
-        };
-        let batch_size = if recvmmsg_enabled { BATCH_SIZE } else { 1 };
+        let batch_size = if batched { BATCH_SIZE } else { 1 };
 
         group.bench_function("throughput", |b| {
             b.to_async(&rt).iter(|| async {
-                let mut receive_buffers =
-                    vec![vec![0; SEGMENT_SIZE * gro_segments.get()]; batch_size];
+                let mut receive_buffers = vec![vec![0; SEGMENT_SIZE]; batch_size];
                 let mut receive_slices = receive_buffers
                     .iter_mut()
                     .map(|buf| IoSliceMut::new(buf))
@@ -111,15 +79,19 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     }
 }
 
-fn new_socket() -> (UdpSocketState, tokio::net::UdpSocket) {
+fn new_socket(batched: bool) -> (UdpSocketState, tokio::net::UdpSocket) {
     let socket = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0))
         .or_else(|_| UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)))
         .unwrap();
+    let state = UdpSocketState::new((&socket).into()).unwrap();
+    #[cfg(feature = "fast-apple-datapath")]
+    if batched {
+        state.set_apple_fast_path();
+    }
+    #[cfg(not(feature = "fast-apple-datapath"))]
+    let _ = batched;
 
-    (
-        UdpSocketState::new((&socket).into()).unwrap(),
-        tokio::net::UdpSocket::from_std(socket).unwrap(),
-    )
+    (state, tokio::net::UdpSocket::from_std(socket).unwrap())
 }
 
 criterion_group!(benches, criterion_benchmark);

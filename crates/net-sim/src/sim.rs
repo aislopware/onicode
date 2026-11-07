@@ -533,8 +533,8 @@ const fn direction_seed(seed: u64, from: usize, to: usize) -> u64 {
 }
 
 /// Datagrams one send may carry: what macOS's batched `sendmsg_x` takes (`noq_udp::BATCH_SIZE`
-/// there), which onicode's endpoints use (`onicode_net::udp`); Linux's GSO takes more. Every
-/// platform's sim batches alike, so a seed runs the same everywhere. A batch's datagrams after
+/// there), which onicode's endpoints use (`onicode_net::udp`). Every platform's sim batches
+/// alike, so a seed runs the same everywhere. A batch's datagrams after
 /// the first are cut to the first one's size, which splits a burst of frames across packets as
 /// the real sockets do; with one datagram a send, no seed could split the client's
 /// `NEW_CONNECTION_ID` frames (slopty's transport decisions, "A lone `NEW_CONNECTION_ID` is no

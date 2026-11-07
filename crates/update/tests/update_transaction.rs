@@ -1,8 +1,10 @@
 //! An update's failure paths, with real processes: this test binary, copied
-//! into a real `app/<version>/` layout, plays both the old and the new engine. It
-//! really replaces itself with the new binary, really gets killed by the watchdog,
-//! and really crashes (`abort`) at each step. The test plays the service manager,
-//! starting `app/current/onicode` until the update has settled.
+//! into a real macOS app layout (the installed `Onicode.app` and the new bundle
+//! beside it), plays both the old and the new engine. It really replaces itself
+//! with the new binary, really gets killed by the watchdog, and really crashes
+//! (`abort`) at each step. The test plays the service manager, starting
+//! `Onicode.app/Contents/MacOS/onicode` until the update has settled. The
+//! installed bundle only changes at the commit, in one atomic swap.
 //!
 //! The databases here are plain files, since only their bytes matter to the backup.
 
@@ -16,16 +18,12 @@ const DATA_ENV: &str = "FAKE_ENGINE_DATA";
 const ORIGINAL: &str = "original";
 const MIGRATED: &str = "migrated by the new version";
 
+/// What the bundle this executable runs from says in its Info.plist.
 fn this_version() -> String {
-    let exe = std::env::current_exe().unwrap();
-    let exe = std::fs::canonicalize(exe).unwrap();
-    let dir = exe.parent().unwrap();
-    // A macOS bundle says in its Info.plist; a versioned folder is its name.
-    if dir.ends_with("Contents/MacOS") {
-        return onicode_update::bundle_app_version(dir.parent().unwrap().parent().unwrap())
-            .unwrap();
-    }
-    dir.file_name().unwrap().to_str().unwrap().to_owned()
+    let exe = std::fs::canonicalize(std::env::current_exe().unwrap()).unwrap();
+    // `<bundle>/Contents/MacOS/onicode`.
+    let bundle = exe.ancestors().nth(3).unwrap();
+    onicode_update::bundle_app_version(bundle).unwrap()
 }
 
 fn docs(data: &Path) -> PathBuf {
@@ -37,7 +35,7 @@ fn migrate(data: &Path) {
     std::fs::write(docs(data).with_file_name("docs.sqlite3-wal"), "a new wal").unwrap();
 }
 
-/// The engine: settle what's outstanding; on trial, do what this version's
+/// The engine: settle what's outstanding; on trial, do what this bundle's
 /// `behavior` file says; otherwise note that it's up, as a normal start would be.
 #[test]
 fn fake_engine() {
@@ -111,20 +109,8 @@ fn fake_watchdog() {
     std::process::exit(0);
 }
 
-struct Rig {
-    _dir: tempfile::TempDir,
-    data: PathBuf,
-    app: PathBuf,
-    /// A macOS app install instead of a versioned one.
-    mac: Option<MacRig>,
-}
-
-struct MacRig {
-    bundle: PathBuf,
-    incoming: PathBuf,
-}
-
-#[cfg(target_os = "macos")]
+/// A macOS app bundle holding a copy of this test binary. A copy, not a hard
+/// link: which path a process's image goes by decides things here.
 fn write_bundle(bundle: &Path, version: &str, behavior: &str) {
     let dir = bundle.join("Contents/MacOS");
     std::fs::create_dir_all(&dir).unwrap();
@@ -138,17 +124,25 @@ fn write_bundle(bundle: &Path, version: &str, behavior: &str) {
     .unwrap();
 }
 
+struct Rig {
+    _dir: tempfile::TempDir,
+    data: PathBuf,
+    /// The installed app, 1.0.0.
+    bundle: PathBuf,
+    /// The new one beside it, 2.0.0, doing what `behavior` says on trial.
+    incoming: PathBuf,
+}
+
 impl Rig {
     fn new(behavior: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap();
-        let data = root.join(".onicode");
-        let app = data.join("app");
+        let applications = root.join("Applications");
         let rig = Self {
             _dir: dir,
-            data,
-            app,
-            mac: None,
+            data: root.join(".onicode"),
+            bundle: applications.join("Onicode.app"),
+            incoming: applications.join(".Onicode.app.new-test"),
         };
         std::fs::create_dir_all(docs(&rig.data).parent().unwrap()).unwrap();
         std::fs::write(docs(&rig.data), ORIGINAL).unwrap();
@@ -157,52 +151,16 @@ impl Rig {
             "the wal",
         )
         .unwrap();
-        rig.install("1.0.0", "ok");
-        rig.install("2.0.0", behavior);
-        rig.point_current_at("1.0.0");
-        rig
-    }
-
-    /// The same, as a macOS app: the installed bundle, and the new one beside it.
-    #[cfg(target_os = "macos")]
-    fn new_mac(behavior: &str) -> Self {
-        let mut rig = Self::new(behavior);
-        let applications = rig.data.parent().unwrap().join("Applications");
-        let mac = MacRig {
-            bundle: applications.join("Onicode.app"),
-            incoming: applications.join(".Onicode.app.new-test"),
-        };
-        write_bundle(&mac.bundle, "1.0.0", "ok");
-        write_bundle(&mac.incoming, "2.0.0", behavior);
-        rig.mac = Some(mac);
+        write_bundle(&rig.bundle, "1.0.0", "ok");
+        write_bundle(&rig.incoming, "2.0.0", behavior);
         rig
     }
 
     fn layout(&self) -> Layout {
-        match &self.mac {
-            Some(mac) => Layout::MacBundle {
-                bundle: mac.bundle.clone(),
-                incoming: mac.incoming.clone(),
-            },
-            None => Layout::Versioned {
-                app_root: self.app.clone(),
-            },
+        Layout::MacBundle {
+            bundle: self.bundle.clone(),
+            incoming: self.incoming.clone(),
         }
-    }
-
-    fn install(&self, version: &str, behavior: &str) {
-        let dir = self.app.join(version);
-        std::fs::create_dir_all(&dir).unwrap();
-        let exe = std::env::current_exe().unwrap();
-        // A copy, not a hard link: which name a process's image goes by decides
-        // things here, and links to one file across installs muddle that.
-        std::fs::copy(&exe, dir.join("onicode")).unwrap();
-        std::fs::write(dir.join("behavior"), behavior).unwrap();
-    }
-
-    fn point_current_at(&self, version: &str) {
-        let _ = std::fs::remove_file(self.app.join("current"));
-        std::os::unix::fs::symlink(self.app.join(version), self.app.join("current")).unwrap();
     }
 
     fn request(&self, restart: RestartMode, deadline_secs: u64) -> String {
@@ -225,14 +183,15 @@ impl Rig {
         }
     }
 
-    /// One start of the service, as a service manager makes it: whatever
-    /// `current` is at that moment.
+    /// One start of the service, as a service manager makes it: whatever bundle
+    /// is installed at that moment.
     fn start(&self, crash_at: Option<&str>) -> std::process::ExitStatus {
-        let installed = match &self.mac {
-            Some(mac) => mac.bundle.join("Contents/MacOS/onicode"),
-            None => self.app.join("current/onicode"),
-        };
-        let mut command = Command::new(installed);
+        self.start_from(&self.bundle, crash_at)
+    }
+
+    /// One start of the engine in `bundle`, installed or not.
+    fn start_from(&self, bundle: &Path, crash_at: Option<&str>) -> std::process::ExitStatus {
+        let mut command = Command::new(bundle.join("Contents/MacOS/onicode"));
         command
             .args(["--exact", "fake_engine", "--test-threads=1", "--nocapture"])
             .env(DATA_ENV, &self.data)
@@ -254,7 +213,7 @@ impl Rig {
     fn run_until_settled(&self) {
         for _ in 0..8 {
             self.start(None);
-            if self.record().phase_finished() && self.last_ran().is_some() {
+            if !self.record().in_progress() && self.last_ran().is_some() {
                 return;
             }
         }
@@ -269,12 +228,8 @@ impl Rig {
         transaction::read(&self.data).expect("a record")
     }
 
-    fn current(&self) -> String {
-        if let Some(mac) = &self.mac {
-            return onicode_update::bundle_app_version(&mac.bundle).unwrap();
-        }
-        let target = std::fs::read_link(self.app.join("current")).unwrap();
-        target.file_name().unwrap().to_str().unwrap().to_owned()
+    fn installed(&self) -> String {
+        onicode_update::bundle_app_version(&self.bundle).unwrap()
     }
 
     fn last_ran(&self) -> Option<String> {
@@ -294,7 +249,7 @@ impl Rig {
         let record = self.record();
         assert_eq!(record.id, id);
         assert_eq!(record.phase, Phase::Updated, "{:?}", record.reason);
-        assert_eq!(self.current(), "2.0.0");
+        assert_eq!(self.installed(), "2.0.0");
         assert_eq!(self.last_ran().as_deref(), Some("2.0.0"));
         assert_eq!(self.database(), MIGRATED);
         assert!(
@@ -307,9 +262,8 @@ impl Rig {
     /// Set aside or half-installed bundles go once nothing runs from them.
     #[track_caller]
     fn assert_no_bundles_left(&self) {
-        let Some(mac) = &self.mac else { return };
         let left = || -> Vec<String> {
-            std::fs::read_dir(mac.bundle.parent().unwrap())
+            std::fs::read_dir(self.bundle.parent().unwrap())
                 .unwrap()
                 .flatten()
                 .map(|entry| entry.file_name().to_string_lossy().into_owned())
@@ -332,7 +286,7 @@ impl Rig {
         assert_eq!(record.id, id);
         assert_eq!(record.phase, phase, "{:?}", record.reason);
         assert!(record.reason.is_some(), "no reason given");
-        assert_eq!(self.current(), "1.0.0");
+        assert_eq!(self.installed(), "1.0.0");
         assert_eq!(self.last_ran().as_deref(), Some("1.0.0"));
         assert_eq!(self.database(), ORIGINAL);
         assert_eq!(
@@ -347,381 +301,310 @@ impl Rig {
     }
 }
 
-trait Finished {
-    fn phase_finished(&self) -> bool;
+#[test]
+fn a_good_release_swaps_in_and_keeps_its_migration() {
+    let rig = Rig::new("ok");
+    let id = rig.request(Rig::service(), 60);
+    rig.run_until_settled();
+    rig.assert_updated(&id);
+    assert_eq!(
+        rig.record().report().state,
+        onicode_update::UpdateState::Updated
+    );
 }
 
-impl Finished for transaction::Transaction {
-    fn phase_finished(&self) -> bool {
-        !self.in_progress()
-    }
+#[test]
+fn a_new_binary_that_exits_at_once_goes_back() {
+    let rig = Rig::new("exit-1");
+    let id = rig.request(Rig::service(), 60);
+    rig.run_until_settled();
+    rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
+    assert_eq!(
+        rig.record().report().state,
+        onicode_update::UpdateState::RolledBack
+    );
 }
 
-mod versioned {
-    use super::*;
+/// A clean exit is still a failed trial, whatever a service manager makes of it.
+#[test]
+fn a_new_binary_that_exits_cleanly_goes_back() {
+    let rig = Rig::new("exit-0");
+    let id = rig.request(Rig::service(), 60);
+    rig.run_until_settled();
+    rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
+}
 
-    #[test]
-    fn a_good_release_commits_and_keeps_its_migration() {
-        let rig = Rig::new("ok");
-        let id = rig.request(Rig::service(), 60);
-        rig.run_until_settled();
-        rig.assert_updated(&id);
-        assert_eq!(
-            rig.record().report().state,
-            onicode_update::UpdateState::Updated
-        );
-    }
+#[test]
+fn a_migration_is_undone_when_the_new_binary_then_dies() {
+    let rig = Rig::new("migrate-then-exit");
+    let id = rig.request(Rig::service(), 60);
+    let first = rig.start(None);
+    assert_eq!(first.code(), Some(1));
+    assert_eq!(
+        rig.database(),
+        MIGRATED,
+        "the trial should have got that far"
+    );
+    assert_eq!(rig.installed(), "1.0.0", "swapped in before the commit");
+    rig.run_until_settled();
+    rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
+}
 
-    #[test]
-    fn a_new_binary_that_exits_at_once_goes_back() {
-        let rig = Rig::new("exit-1");
-        let id = rig.request(Rig::service(), 60);
-        rig.run_until_settled();
-        rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-        assert_eq!(
-            rig.record().report().state,
-            onicode_update::UpdateState::RolledBack
-        );
-    }
+#[test]
+fn a_trials_own_reason_reaches_the_record() {
+    let rig = Rig::new("gives-up");
+    let id = rig.request(Rig::service(), 60);
+    rig.run_until_settled();
+    rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
+    let reason = rig.record().reason.unwrap();
+    assert!(reason.contains("It couldn't reach anything."), "{reason}");
+    assert!(reason.contains("went back to 1.0.0"), "{reason}");
+}
 
-    /// A clean exit is still a failed trial, whatever a service manager makes of it.
-    #[test]
-    fn a_new_binary_that_exits_cleanly_goes_back() {
-        let rig = Rig::new("exit-0");
-        let id = rig.request(Rig::service(), 60);
-        rig.run_until_settled();
-        rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-    }
+/// The hang: only the watchdog can end it. It's a sibling of the real process,
+/// from the old version, and it kills the new one at the deadline.
+#[test]
+fn a_new_binary_that_hangs_is_stopped_at_the_deadline_and_goes_back() {
+    let rig = Rig::new("hang");
+    let id = rig.request(Rig::service(), 2);
+    let started = Instant::now();
+    let hung = rig.start(None);
+    let waited = started.elapsed();
+    use std::os::unix::process::ExitStatusExt as _;
+    assert_eq!(hung.signal(), Some(libc::SIGKILL), "{hung:?}");
+    assert!(
+        waited >= Duration::from_secs(2),
+        "killed too soon: {waited:?}"
+    );
+    assert!(
+        waited < Duration::from_secs(20),
+        "killed too late: {waited:?}"
+    );
+    rig.run_until_settled();
+    rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
+    let reason = rig.record().reason.unwrap();
+    assert!(reason.contains("didn't finish starting"), "{reason}");
+}
 
-    #[test]
-    fn a_migration_is_undone_when_the_new_binary_then_dies() {
-        let rig = Rig::new("migrate-then-exit");
-        let id = rig.request(Rig::service(), 60);
-        let first = rig.start(None);
-        assert_eq!(first.code(), Some(1));
-        assert_eq!(
-            rig.database(),
-            MIGRATED,
-            "the trial should have got that far"
-        );
-        rig.run_until_settled();
-        rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-    }
-
-    #[test]
-    fn a_trials_own_reason_reaches_the_record() {
-        let rig = Rig::new("gives-up");
-        let id = rig.request(Rig::service(), 60);
-        rig.run_until_settled();
-        rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-        let reason = rig.record().reason.unwrap();
-        assert!(reason.contains("It couldn't reach anything."), "{reason}");
-        assert!(reason.contains("went back to 1.0.0"), "{reason}");
-    }
-
-    /// The hang: only the watchdog can end it. It's a sibling of the real process,
-    /// from the old version, and it kills the new one at the deadline.
-    #[test]
-    fn a_new_binary_that_hangs_is_stopped_at_the_deadline_and_goes_back() {
-        let rig = Rig::new("hang");
-        let id = rig.request(Rig::service(), 2);
-        let started = Instant::now();
-        let hung = rig.start(None);
-        let waited = started.elapsed();
-        use std::os::unix::process::ExitStatusExt as _;
-        assert_eq!(hung.signal(), Some(libc_sigkill()), "{hung:?}");
-        assert!(
-            waited >= Duration::from_secs(2),
-            "killed too soon: {waited:?}"
-        );
-        assert!(
-            waited < Duration::from_secs(20),
-            "killed too late: {waited:?}"
-        );
-        rig.run_until_settled();
-        rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-        let reason = rig.record().reason.unwrap();
-        assert!(reason.contains("didn't finish starting"), "{reason}");
-    }
-
-    /// The desktop app starts its engine when the port goes quiet. Doing that during
-    /// a trial must not be taken for the trial having failed.
-    #[test]
-    fn a_second_start_during_a_trial_leaves_the_trial_alone() {
-        let rig = Rig::new("hang");
-        // Long enough that a slow machine's second start still lands inside it.
-        let id = rig.request(Rig::service(), 8);
-        std::thread::scope(|scope| {
-            let trial = scope.spawn(|| rig.start(None));
-            let waited = Instant::now();
-            while rig.record().phase != Phase::Trial || rig.database() != MIGRATED {
-                assert!(
-                    waited.elapsed() < Duration::from_secs(10),
-                    "the trial never started"
-                );
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            let second = rig.start(None);
-            assert_eq!(second.code(), Some(4), "{second:?}");
-            assert_eq!(rig.record().phase, Phase::Trial);
-            assert_eq!(
-                rig.database(),
-                MIGRATED,
-                "it must not have restored under the trial"
+/// The desktop app starts its engine when the port goes quiet. Doing that during
+/// a trial must not be taken for the trial having failed.
+#[test]
+fn a_second_start_during_a_trial_leaves_the_trial_alone() {
+    let rig = Rig::new("hang");
+    // Long enough that a slow machine's second start still lands inside it.
+    let id = rig.request(Rig::service(), 8);
+    std::thread::scope(|scope| {
+        let trial = scope.spawn(|| rig.start(None));
+        let waited = Instant::now();
+        while rig.record().phase != Phase::Trial || rig.database() != MIGRATED {
+            assert!(
+                waited.elapsed() < Duration::from_secs(10),
+                "the trial never started"
             );
-            let _ = trial.join();
-        });
-        rig.run_until_settled();
-        rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-    }
-
-    fn libc_sigkill() -> i32 {
-        9
-    }
-
-    /// With nothing to restart it (the desktop app closed), the watchdog itself
-    /// starts the old version. This test starts nothing after the first start.
-    #[test]
-    fn with_no_service_manager_the_watchdog_brings_the_old_version_back() {
-        for (behavior, deadline) in [("exit-1", 60), ("exit-0", 60), ("hang", 2)] {
-            let rig = Rig::new(behavior);
-            let id = rig.request(RestartMode::Relaunch, deadline);
-            rig.start(None);
-            let waited = Instant::now();
-            while rig.last_ran().is_none() {
-                assert!(
-                    waited.elapsed() < Duration::from_secs(30),
-                    "{behavior}: nothing came back"
-                );
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
+            std::thread::sleep(Duration::from_millis(20));
         }
-    }
-
-    /// A crash at each step of a good update. Up to the point where the new version
-    /// has been started, starting again simply carries on; once it has, the old
-    /// version can't know how far it got and goes back; from the moment `current`
-    /// moves, it's done.
-    #[test]
-    fn a_crash_at_any_step_of_a_good_update_lands_somewhere_whole() {
-        enum Lands {
-            Updated,
-            Back,
-        }
-        for (step, lands) in [
-            ("snapshot-partial", Lands::Updated),
-            ("snapshot-done", Lands::Updated),
-            ("trial-marked", Lands::Back),
-            ("watchdog-started", Lands::Back),
-            ("trial-before-commit", Lands::Back),
-            ("commit-flipped", Lands::Updated),
-            ("commit-recorded", Lands::Updated),
-        ] {
-            let rig = Rig::new("ok");
-            let id = rig.request(Rig::service(), 60);
-            let crashed = rig.start(Some(step));
-            assert!(!crashed.success(), "{step}: it should have crashed");
-            rig.run_until_settled();
-            match lands {
-                Lands::Updated => rig.assert_updated(&id),
-                Lands::Back => rig.assert_back_on_the_old_version(&id, Phase::RolledBack),
-            }
-        }
-    }
-
-    /// A crash at each step of going back: the restore finishes before anything
-    /// opens the databases, and the record ends up true.
-    #[test]
-    fn a_crash_at_any_step_of_going_back_still_gets_back() {
-        for step in [
-            "restore-marked",
-            "restore-partial",
-            "restored",
-            "rollback-recorded",
-        ] {
-            let rig = Rig::new("migrate-then-exit");
-            let id = rig.request(Rig::service(), 60);
-            assert_eq!(rig.start(None).code(), Some(1));
-            let crashed = rig.start(Some(step));
-            assert!(!crashed.success(), "{step}: it should have crashed");
-            if step != "rollback-recorded" {
-                assert_eq!(rig.record().phase, Phase::Restoring, "{step}");
-            }
-            rig.run_until_settled();
-            rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-        }
-    }
-
-    /// `current` is what boots, so the new version can't be run by mistake while the
-    /// old one has a restore to finish.
-    #[test]
-    fn the_new_version_refuses_to_start_during_a_restore() {
-        let rig = Rig::new("migrate-then-exit");
-        rig.request(Rig::service(), 60);
-        rig.start(None);
-        rig.start(Some("restore-partial"));
-        assert_eq!(rig.record().phase, Phase::Restoring);
-        rig.point_current_at("2.0.0");
-        let refused = rig.start(None);
-        assert_eq!(refused.code(), Some(4));
-        rig.point_current_at("1.0.0");
-        rig.run_until_settled();
-        assert_eq!(rig.database(), ORIGINAL);
-    }
-
-    #[test]
-    fn release_files_gone_missing_leave_it_on_the_old_version_untouched() {
-        let rig = Rig::new("ok");
-        let id = rig.request(Rig::service(), 60);
-        std::fs::remove_dir_all(rig.app.join("2.0.0")).unwrap();
-        rig.run_until_settled();
-        rig.assert_back_on_the_old_version(&id, Phase::Failed);
-        assert_eq!(
-            rig.record().report().state,
-            onicode_update::UpdateState::Failed
-        );
-    }
-
-    /// A binary that can't even be started: it never ran, so nothing was restored
-    /// and there's no second start to wait for.
-    #[test]
-    fn a_new_binary_that_cannot_be_started_leaves_it_on_the_old_version() {
-        use std::os::unix::fs::PermissionsExt as _;
-        let rig = Rig::new("ok");
-        let id = rig.request(Rig::service(), 60);
-        let broken = rig.app.join("2.0.0/onicode");
-        std::fs::remove_file(&broken).unwrap();
-        std::fs::write(&broken, "not a program").unwrap();
-        std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o644)).unwrap();
-        let only = rig.start(None);
-        assert!(only.success(), "{only:?}");
-        rig.assert_back_on_the_old_version(&id, Phase::Failed);
-    }
-
-    /// Someone ran the installer mid-update: that version owns the data now, and
-    /// restoring over it could lose what it wrote.
-    #[test]
-    fn a_third_version_installed_meanwhile_is_left_alone() {
-        let rig = Rig::new("migrate-then-exit");
-        rig.install("3.0.0", "ok");
-        let id = rig.request(Rig::service(), 60);
-        rig.start(None);
-        rig.point_current_at("3.0.0");
-        rig.run_until_settled();
-        let record = rig.record();
-        assert_eq!(record.id, id);
-        assert_eq!(record.phase, Phase::Failed);
-        assert_eq!(rig.last_ran().as_deref(), Some("3.0.0"));
+        let second = rig.start(None);
+        assert_eq!(second.code(), Some(4), "{second:?}");
+        assert_eq!(rig.record().phase, Phase::Trial);
         assert_eq!(
             rig.database(),
             MIGRATED,
-            "it must not restore over another version's data"
+            "it must not have restored under the trial"
         );
-    }
+        let _ = trial.join();
+    });
+    rig.run_until_settled();
+    rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
 }
 
-/// A macOS app: the same rule with the bundle in `current`'s place. The bundle
-/// only changes at the commit, in one atomic swap.
-#[cfg(target_os = "macos")]
-mod mac {
-    use super::*;
-
-    #[test]
-    fn a_good_release_swaps_in_and_keeps_its_migration() {
-        let rig = Rig::new_mac("ok");
-        let id = rig.request(Rig::service(), 60);
-        rig.run_until_settled();
-        rig.assert_updated(&id);
-    }
-
-    #[test]
-    fn a_bad_release_leaves_the_installed_app_alone() {
-        for behavior in ["exit-1", "exit-0", "migrate-then-exit"] {
-            let rig = Rig::new_mac(behavior);
-            let id = rig.request(Rig::service(), 60);
-            rig.run_until_settled();
-            rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-        }
-    }
-
-    #[test]
-    fn a_hung_release_is_stopped_and_the_installed_app_comes_back() {
-        let rig = Rig::new_mac("hang");
-        let id = rig.request(RestartMode::Relaunch, 2);
+/// With nothing to restart it (the desktop app closed), the watchdog itself
+/// starts the installed app. This test starts nothing after the first start.
+#[test]
+fn with_no_service_manager_the_watchdog_brings_the_old_version_back() {
+    for (behavior, deadline) in [("exit-1", 60), ("exit-0", 60), ("hang", 2)] {
+        let rig = Rig::new(behavior);
+        let id = rig.request(RestartMode::Relaunch, deadline);
         rig.start(None);
         let waited = Instant::now();
         while rig.last_ran().is_none() {
             assert!(
                 waited.elapsed() < Duration::from_secs(30),
-                "nothing came back"
+                "{behavior}: nothing came back"
             );
             std::thread::sleep(Duration::from_millis(100));
         }
         rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
     }
+}
 
-    #[test]
-    fn a_crash_at_any_step_lands_somewhere_whole() {
-        for (step, updated) in [
-            ("snapshot-partial", true),
-            ("snapshot-done", true),
-            ("trial-marked", false),
-            ("watchdog-started", false),
-            ("trial-before-commit", false),
-            ("commit-flipped", true),
-            ("commit-recorded", true),
-        ] {
-            let rig = Rig::new_mac("ok");
-            let id = rig.request(Rig::service(), 60);
-            let crashed = rig.start(Some(step));
-            assert!(!crashed.success(), "{step}: it should have crashed");
-            rig.run_until_settled();
-            if updated {
-                rig.assert_updated(&id);
-            } else {
-                rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
-            }
+/// A crash at each step of a good update. Up to the point where the new version
+/// has been started, starting again simply carries on; once it has, the old
+/// version can't know how far it got and goes back; from the moment the bundles
+/// swap, it's done.
+#[test]
+fn a_crash_at_any_step_of_a_good_update_lands_somewhere_whole() {
+    enum Lands {
+        Updated,
+        Back,
+    }
+    for (step, lands) in [
+        ("snapshot-partial", Lands::Updated),
+        ("snapshot-done", Lands::Updated),
+        ("trial-marked", Lands::Back),
+        ("watchdog-started", Lands::Back),
+        ("trial-before-commit", Lands::Back),
+        ("commit-flipped", Lands::Updated),
+        ("commit-recorded", Lands::Updated),
+    ] {
+        let rig = Rig::new("ok");
+        let id = rig.request(Rig::service(), 60);
+        let crashed = rig.start(Some(step));
+        assert!(!crashed.success(), "{step}: it should have crashed");
+        rig.run_until_settled();
+        match lands {
+            Lands::Updated => rig.assert_updated(&id),
+            Lands::Back => rig.assert_back_on_the_old_version(&id, Phase::RolledBack),
         }
     }
+}
 
-    /// #1037: a bundle something runs from isn't deleted, however finished with
-    /// it the update is, and goes once nothing does.
-    #[test]
-    fn a_bundle_in_use_is_kept_until_nothing_runs_from_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
-        let bundle = root.join("Onicode.app");
-        let retired = root.join(".Onicode.app.old-123");
-        std::fs::create_dir_all(&bundle).unwrap();
-        std::fs::create_dir_all(retired.join("Contents/MacOS")).unwrap();
-        let sleeper = retired.join("Contents/MacOS/sleeper");
-        let source = root.join("sleep.c");
-        std::fs::write(
-            &source,
-            "#include <unistd.h>\nint main(void){sleep(30);return 0;}\n",
-        )
-        .unwrap();
-        let compiled = Command::new("cc")
-            .arg("-o")
-            .arg(&sleeper)
-            .arg(&source)
-            .status();
-        if !compiled.is_ok_and(|status| status.success()) {
-            eprintln!("no C compiler: skipping");
-            return;
+/// A crash at each step of going back: the restore finishes before anything
+/// opens the databases, and the record ends up true.
+#[test]
+fn a_crash_at_any_step_of_going_back_still_gets_back() {
+    for step in [
+        "restore-marked",
+        "restore-partial",
+        "restored",
+        "rollback-recorded",
+    ] {
+        let rig = Rig::new("migrate-then-exit");
+        let id = rig.request(Rig::service(), 60);
+        assert_eq!(rig.start(None).code(), Some(1));
+        let crashed = rig.start(Some(step));
+        assert!(!crashed.success(), "{step}: it should have crashed");
+        if step != "rollback-recorded" {
+            assert_eq!(rig.record().phase, Phase::Restoring, "{step}");
         }
-        let mut running = Command::new(&sleeper).spawn().unwrap();
-        std::thread::sleep(Duration::from_millis(200));
-        assert!(onicode_update::process_runs_from(&retired));
-        onicode_update::prune_retired_mac_bundles(&bundle);
-        assert!(retired.exists(), "deleted from under a running process");
-
-        running.kill().unwrap();
-        running.wait().unwrap();
-        assert!(!onicode_update::process_runs_from(&retired));
-        onicode_update::prune_retired_mac_bundles(&bundle);
-        assert!(!retired.exists(), "left behind once nothing ran from it");
-        assert!(bundle.exists());
+        rig.run_until_settled();
+        rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
     }
+}
+
+/// The installed bundle is what boots, so the new one, started by hand from
+/// beside it, can't run while the old one has a restore to finish.
+#[test]
+fn the_new_version_refuses_to_start_during_a_restore() {
+    let rig = Rig::new("migrate-then-exit");
+    let id = rig.request(Rig::service(), 60);
+    assert_eq!(rig.start(None).code(), Some(1));
+    rig.start(Some("restore-partial"));
+    assert_eq!(rig.record().phase, Phase::Restoring);
+    let refused = rig.start_from(&rig.incoming, None);
+    assert_eq!(refused.code(), Some(4), "{refused:?}");
+    assert_eq!(rig.record().phase, Phase::Restoring);
+    rig.run_until_settled();
+    rig.assert_back_on_the_old_version(&id, Phase::RolledBack);
+}
+
+#[test]
+fn release_files_gone_missing_leave_it_on_the_old_version_untouched() {
+    let rig = Rig::new("ok");
+    let id = rig.request(Rig::service(), 60);
+    std::fs::remove_dir_all(&rig.incoming).unwrap();
+    rig.run_until_settled();
+    rig.assert_back_on_the_old_version(&id, Phase::Failed);
+    assert_eq!(
+        rig.record().report().state,
+        onicode_update::UpdateState::Failed
+    );
+}
+
+/// A binary that can't even be started: it never ran, so nothing was restored
+/// and there's no second start to wait for.
+#[test]
+fn a_new_binary_that_cannot_be_started_leaves_it_on_the_old_version() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let rig = Rig::new("ok");
+    let id = rig.request(Rig::service(), 60);
+    let broken = rig.incoming.join("Contents/MacOS/onicode");
+    std::fs::remove_file(&broken).unwrap();
+    std::fs::write(&broken, "not a program").unwrap();
+    std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let only = rig.start(None);
+    assert!(only.success(), "{only:?}");
+    rig.assert_back_on_the_old_version(&id, Phase::Failed);
+}
+
+/// Another version was installed mid-update, the way the app installs one
+/// (`apply_mac_app`: the old bundle set aside, the new one in its place). That
+/// version owns the data now, and restoring over it could lose what it wrote.
+#[test]
+fn a_third_version_installed_meanwhile_is_left_alone() {
+    let rig = Rig::new("migrate-then-exit");
+    let id = rig.request(Rig::service(), 60);
+    assert_eq!(rig.start(None).code(), Some(1));
+    std::fs::rename(
+        &rig.bundle,
+        rig.bundle.with_file_name(".Onicode.app.old-installer"),
+    )
+    .unwrap();
+    write_bundle(&rig.bundle, "3.0.0", "ok");
+    rig.run_until_settled();
+    let record = rig.record();
+    assert_eq!(record.id, id);
+    assert_eq!(record.phase, Phase::Failed);
+    assert!(record.reason.is_some(), "no reason given");
+    assert_eq!(rig.installed(), "3.0.0");
+    assert_eq!(rig.last_ran().as_deref(), Some("3.0.0"));
+    assert_eq!(
+        rig.database(),
+        MIGRATED,
+        "it must not restore over another version's data"
+    );
+    assert!(
+        !rig.data.join("update-snapshots").exists(),
+        "backup left behind"
+    );
+    rig.assert_no_bundles_left();
+}
+
+/// #1037: a bundle something runs from isn't deleted, however finished with
+/// it the update is, and goes once nothing does.
+#[test]
+fn a_bundle_in_use_is_kept_until_nothing_runs_from_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let bundle = root.join("Onicode.app");
+    let retired = root.join(".Onicode.app.old-123");
+    std::fs::create_dir_all(&bundle).unwrap();
+    std::fs::create_dir_all(retired.join("Contents/MacOS")).unwrap();
+    let sleeper = retired.join("Contents/MacOS/sleeper");
+    let source = root.join("sleep.c");
+    std::fs::write(
+        &source,
+        "#include <unistd.h>\nint main(void){sleep(30);return 0;}\n",
+    )
+    .unwrap();
+    let compiled = Command::new("cc")
+        .arg("-o")
+        .arg(&sleeper)
+        .arg(&source)
+        .status();
+    if !compiled.is_ok_and(|status| status.success()) {
+        eprintln!("no C compiler: skipping");
+        return;
+    }
+    let mut running = Command::new(&sleeper).spawn().unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(onicode_update::process_runs_from(&retired));
+    onicode_update::prune_retired_mac_bundles(&bundle);
+    assert!(retired.exists(), "deleted from under a running process");
+
+    running.kill().unwrap();
+    running.wait().unwrap();
+    assert!(!onicode_update::process_runs_from(&retired));
+    onicode_update::prune_retired_mac_bundles(&bundle);
+    assert!(!retired.exists(), "left behind once nothing ran from it");
+    assert!(bundle.exists());
 }

@@ -31,8 +31,3 @@ A release is `scripts/release/bundle-macos.sh`, which better-update runs (`eas.j
 docs/onicode/decisions/releases.md): the release build of all three binaries for Apple silicon, the bundle
 signed with the vault's Developer ID, copied to `target/package/Onicode.app`, where better-update notarizes,
 staples, zips and uploads it.
-
-## Linux
-
-Linux is compiled and linted, not packaged: no script builds a Linux package. `onicode.desktop`, `onicode.png`
-and `onicode.svg` are the desktop entry and icons such a package would carry.

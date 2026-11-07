@@ -46,7 +46,7 @@ Dropped:
   database import and web-view preference reads go when the store moves into the engine.
 - **Updater and star prompt.** monocode's Minisign feed is replaced by Onicode's updater, and the "star us" prompt
   goes.
-- **Windows, Linux and Azure DevOps paths.** Out of Onicode's platforms; Linux keeps compiling.
+- **Windows, Linux and Azure DevOps paths.** Out of Onicode's platforms (`platform.md`).
 
 ## Look on Onicode's stack
 monocode's look rests on its patched GPUI. Onicode keeps the look and replaces the stack: the app moves to gpui-fast
