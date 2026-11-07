@@ -1889,10 +1889,24 @@ mod tests {
                         resets_at: Some(onicode_protocol::usage::now_ms() + 60_000),
                         resume_at_reset: false,
                     });
+                });
+                conversation
+            })
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |shell, _, cx| {
+                // The engine holds the limit a turn ended at; the phone arms that one.
+                let seed = shell.engine.seed();
+                let mut saved = seed.agent_settings(id).unwrap().unwrap_or_default();
+                saved
+                    .usage_limit
+                    .clone_from(&shell.sessions[&id].read(cx).settings.usage_limit);
+                seed.save_agent_settings(id, &saved).unwrap();
+                shell.sessions[&id].update(cx, |v, cx| {
                     let token = v.mobile_usage_limit(cx)["token"].clone();
                     v.mobile_resume_usage(&token, Some(true), cx).unwrap();
                 });
-                conversation
             })
             .unwrap();
         cx.run_until_parked();

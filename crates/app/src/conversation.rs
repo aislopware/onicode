@@ -191,8 +191,8 @@ pub(crate) struct Conversation {
     catalog: Vec<Model>,
     catalog_epoch: u64,
     account_switching: bool,
+    /// Follows the engine's hold on the usage limit the banner shows (`sync_usage_limit`).
     _usage_clock: gpui::Task<()>,
-    _account_usage: Option<Subscription>,
     approvals: std::collections::VecDeque<Approval>,
     approval_ui: approvals::State,
     questions:
@@ -594,17 +594,13 @@ impl Conversation {
                 cx.background_executor()
                     .timer(std::time::Duration::from_secs(30))
                     .await;
-                if this.update(cx, |this, cx| this.tick_usage(cx)).is_err() {
+                if this
+                    .update(cx, |this, cx| this.sync_usage_limit(cx))
+                    .is_err()
+                {
                     break;
                 }
             }
-        });
-        let account_usage = crate::accounts::get(cx).map(|center| {
-            cx.observe(&center, |this, _, cx| {
-                if this.settings.usage_limit.is_some() {
-                    this.tick_usage(cx);
-                }
-            })
         });
         perf_prompt(cx);
         Self {
@@ -666,7 +662,6 @@ impl Conversation {
             catalog_epoch: 0,
             account_switching: false,
             _usage_clock: usage_clock,
-            _account_usage: account_usage,
             approvals: Default::default(),
             approval_ui: Default::default(),
             questions: Default::default(),

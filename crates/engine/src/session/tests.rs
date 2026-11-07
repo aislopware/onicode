@@ -24,6 +24,7 @@ use onicode_core::session_title::{GeneratedTitle, TextModel, WorkItemHint};
 use onicode_core::store::Store;
 use onicode_core::tool::{ToolCall, ToolState};
 use onicode_core::transcript::{Row, Transcript};
+use onicode_core::usage::Limit as UsageLimit;
 use onicode_protocol::session::{
     self, Answer, Btw, BtwAnswer, BtwThread, BtwThreads, Compact, Compacted, Configure, Decide,
     EditLastTurn, EditedTurn, Fork, QueueChange, QueueEdit, ReadBtw, ReadSession, RecallLastTurn,
@@ -2246,4 +2247,478 @@ fn a_stop_cancels_a_running_compaction() {
     let compacted = slot.borrow_mut().take().unwrap().unwrap();
     assert_eq!(compaction_call(&compacted).state, ToolState::Cancelled);
     assert_eq!(compacted.error.as_deref(), Some("Stopped"));
+}
+
+// The usage-limit auto-resume (`hub/resume.rs`) over beats, sends, busy turns, viewers that save
+// what they last saw, disarming, op repeats and engine restarts on the same store.
+
+/// When the scripted limit resets.
+const RESET: i64 = 1_000_000;
+
+/// One step of a resume script. Viewers are taken modulo the script's viewer count.
+#[derive(Clone, Debug)]
+enum Resume {
+    /// The engine's clock beats, before the limit is due or after.
+    Tick { due: bool },
+    /// A viewer reads the session's settings, as opening it does.
+    Look(usize),
+    /// A viewer saves the settings it holds, however old.
+    Save(usize),
+    /// A viewer flips the arming of the limit it holds, and saves.
+    Toggle(usize),
+    /// A viewer sends a message of its own: refused while a turn runs.
+    Send,
+    /// The last send again, under its op.
+    RepeatSend,
+    /// The running turn saves its prompt.
+    Prompt,
+    /// The provider speaks in the running turn.
+    Speak,
+    /// The running turn ends.
+    Finish,
+    /// The engine stops, losing the turn it ran, and starts again on the same store.
+    Restart,
+}
+
+fn resume_step() -> impl Strategy<Value = Resume> {
+    prop_oneof![
+        3 => any::<bool>().prop_map(|due| Resume::Tick { due }),
+        2 => any::<usize>().prop_map(Resume::Look),
+        1 => any::<usize>().prop_map(Resume::Save),
+        1 => any::<usize>().prop_map(Resume::Toggle),
+        1 => Just(Resume::Send),
+        1 => Just(Resume::RepeatSend),
+        2 => Just(Resume::Prompt),
+        2 => Just(Resume::Speak),
+        2 => Just(Resume::Finish),
+        1 => Just(Resume::Restart),
+    ]
+}
+
+/// The turn the scripted provider is running.
+struct Running {
+    resume: bool,
+    /// The user send that launched it.
+    op: Option<OpId>,
+    prompt: String,
+    /// Where its prompt was saved.
+    at: Option<usize>,
+    spoke: bool,
+}
+
+/// A resume script's world: the engine (restarted at will), its viewers' copies of the
+/// settings, and what the provider was asked.
+struct ResumeWorld {
+    harness: Harness,
+    viewers: Vec<Option<Settings>>,
+    running: Option<Running>,
+    revision: u64,
+    last_send: Option<(OpId, MessageId)>,
+    /// User ops whose prompt was saved.
+    prompted: std::collections::HashSet<OpId>,
+    /// Resume turns the provider spoke in.
+    spoken: usize,
+    /// A message of the person's own went in while the limit was armed or its resume in
+    /// flight: it, not the resume, continued the conversation.
+    superseded: bool,
+}
+
+impl ResumeWorld {
+    /// A session whose last turn ended at a limit that viewer 0 then armed.
+    fn new(viewers: usize) -> Self {
+        let mut world = Self {
+            harness: Harness::new(Limits::default()),
+            viewers: vec![None; viewers],
+            running: None,
+            revision: 0,
+            last_send: None,
+            prompted: std::collections::HashSet::new(),
+            spoken: 0,
+            superseded: false,
+        };
+        // What a real turn's start saves.
+        locked(&world.harness.store)
+            .unwrap()
+            .save_agent_settings(world.harness.id, &Settings::default())
+            .unwrap();
+        let _ = world
+            .harness
+            .send(Some(OpId::new()), MessageId::new(), "go");
+        world.harness.publish(Update {
+            rows: vec![prompt_row("go"), answer_row("")],
+            status: "Working".into(),
+            ..Update::default()
+        });
+        world.harness.publish(Update {
+            start: 1,
+            rows: vec![answer_row("Working on it")],
+            status: "You've hit your usage limit".into(),
+            usage_limit: Some(UsageLimit {
+                resets_at: Some(RESET),
+                resume_at_reset: false,
+            }),
+            finished: true,
+            ..Update::default()
+        });
+        let held = world
+            .stored()
+            .usage_limit
+            .expect("the engine holds the limit");
+        assert!(!held.resume_at_reset, "a turn's limit is held unarmed");
+        world.step(&Resume::Look(0));
+        world.step(&Resume::Toggle(0));
+        assert!(world.armed(), "the viewer armed the limit the engine holds");
+        world
+    }
+
+    fn stored(&self) -> Settings {
+        locked(&self.harness.store)
+            .unwrap()
+            .agent_settings(self.harness.id)
+            .unwrap()
+            .unwrap()
+    }
+
+    fn rows(&self) -> Vec<Row> {
+        locked(&self.harness.store)
+            .unwrap()
+            .load(self.harness.id)
+            .unwrap()
+            .rows
+    }
+
+    fn armed(&self) -> bool {
+        self.stored()
+            .usage_limit
+            .is_some_and(|limit| limit.resume_at_reset)
+    }
+
+    /// A resume is kept in flight in the store.
+    fn in_flight(&self) -> bool {
+        locked(&self.harness.store)
+            .unwrap()
+            .setting(super::hub::resume::RESUMES)
+            .unwrap()
+            .is_some()
+    }
+
+    /// Notes the turn the hub launched, if one started since the last look.
+    fn follow(&mut self, op: Option<OpId>) {
+        let jobs = self.harness.jobs.lock().unwrap();
+        match jobs.last() {
+            None => self.running = None,
+            Some(job) if self.running.is_none() => {
+                let resume = job.prompt == super::hub::resume::CONTINUE;
+                if resume {
+                    assert_eq!(
+                        job.settings.usage_limit, None,
+                        "a resume runs past its limit"
+                    );
+                }
+                self.running = Some(Running {
+                    resume,
+                    op: if resume { None } else { op },
+                    prompt: job.prompt.clone(),
+                    at: None,
+                    spoke: false,
+                });
+            }
+            Some(_) => {}
+        }
+    }
+
+    fn save(&mut self, viewer: usize) {
+        let Some(mut settings) = self.viewers[viewer].clone() else {
+            return;
+        };
+        self.revision += 1;
+        settings.revision = self.revision;
+        let saved = block_on(self.harness.hub.configure(
+            Some(OpId::new()),
+            Configure {
+                session: self.harness.session,
+                provider: "codex".into(),
+                settings: settings.clone(),
+            },
+        ));
+        assert_eq!(saved, Ok(Outcome::Applied));
+        self.viewers[viewer] = Some(settings);
+    }
+
+    fn send(&mut self, op: OpId, message: MessageId) {
+        let owed = self.armed() || self.in_flight();
+        let _ = self.harness.send(Some(op), message, "mine");
+        self.follow(Some(op));
+        if self.running.is_some() {
+            self.superseded |= owed;
+            assert!(!self.armed(), "a turn of the person's lifts the limit");
+        }
+    }
+
+    fn step(&mut self, step: &Resume) {
+        let viewers = self.viewers.len();
+        match step {
+            Resume::Tick { due } => {
+                let armed = self.armed() || self.in_flight();
+                let now = if *due { RESET + 30_000 } else { RESET - 1 };
+                let idle = self.running.is_none();
+                let now = u64::try_from(now).unwrap();
+                assert_eq!(self.harness.hub.resume_limits(now), Ok(()));
+                self.harness.settle();
+                self.follow(None);
+                if idle && self.running.as_ref().is_some_and(|running| running.resume) {
+                    assert!(*due, "nothing resumes before its reset");
+                    assert!(armed, "only an armed limit resumes");
+                }
+            }
+            Resume::Look(viewer) => {
+                let record = self
+                    .harness
+                    .hub
+                    .read_session(&ReadSession {
+                        session: self.harness.session,
+                    })
+                    .unwrap();
+                self.viewers[viewer % viewers] = record.settings.map(|settings| *settings);
+            }
+            Resume::Save(viewer) => self.save(viewer % viewers),
+            Resume::Toggle(viewer) => {
+                let viewer = viewer % viewers;
+                let held = self.viewers[viewer]
+                    .as_mut()
+                    .and_then(|settings| settings.usage_limit.as_mut());
+                if let Some(limit) = held {
+                    limit.resume_at_reset = !limit.resume_at_reset;
+                    self.save(viewer);
+                }
+            }
+            Resume::Send => {
+                let sent = (OpId::new(), MessageId::new());
+                self.last_send = Some(sent);
+                if self.running.is_none() {
+                    self.send(sent.0, sent.1);
+                } else {
+                    let _ = self.harness.send(Some(sent.0), sent.1, "mine");
+                }
+            }
+            Resume::RepeatSend => {
+                if let Some((op, message)) = self.last_send
+                    && self.running.is_none()
+                {
+                    self.send(op, message);
+                }
+            }
+            Resume::Prompt => {
+                let at = self.rows().len();
+                let Some(running) = self.running.as_mut().filter(|running| running.at.is_none())
+                else {
+                    return;
+                };
+                running.at = Some(at);
+                if let Some(op) = running.op {
+                    assert!(self.prompted.insert(op), "one op saves one prompt");
+                }
+                let prompt = running.prompt.clone();
+                self.harness.publish(Update {
+                    start: at,
+                    rows: vec![prompt_row(&prompt), answer_row("")],
+                    status: "Working".into(),
+                    ..Update::default()
+                });
+            }
+            Resume::Speak => {
+                let Some(running) = self
+                    .running
+                    .as_mut()
+                    .filter(|running| running.at.is_some() && !running.spoke)
+                else {
+                    return;
+                };
+                running.spoke = true;
+                let start = running.at.unwrap() + 1;
+                if running.resume {
+                    self.spoken += 1;
+                }
+                self.harness.publish(Update {
+                    start,
+                    rows: vec![answer_row("Picking up where I left off")],
+                    turn_ready: true,
+                    status: "Working".into(),
+                    ..Update::default()
+                });
+            }
+            Resume::Finish => {
+                if self.running.take().is_some() {
+                    let start = self.rows().len();
+                    self.harness.publish(Update {
+                        start,
+                        status: "Ready".into(),
+                        finished: true,
+                        ..Update::default()
+                    });
+                }
+            }
+            Resume::Restart => {
+                let (store, id) = (self.harness.store.clone(), self.harness.id);
+                self.harness = Harness::over(store, id, Limits::default());
+                self.running = None;
+            }
+        }
+        assert!(self.spoken <= 1, "the provider is asked to continue once");
+        let copies = self
+            .rows()
+            .iter()
+            .filter(|row| row.first && row.is_prompt() && row.text == super::hub::resume::CONTINUE)
+            .count();
+        assert!(
+            copies <= 1,
+            "the transcript shows one continuation, not {copies}"
+        );
+    }
+
+    /// Runs the turn in flight to its end, the provider answering.
+    fn finish_running(&mut self) {
+        if self.running.is_some() {
+            self.step(&Resume::Prompt);
+            self.step(&Resume::Speak);
+            self.step(&Resume::Finish);
+        }
+    }
+}
+
+fn prompt_row(text: &str) -> Row {
+    Row {
+        role: "user".into(),
+        text: text.into(),
+        first: true,
+        sent_at: None,
+        id: None,
+    }
+}
+
+fn answer_row(text: &str) -> Row {
+    Row {
+        role: "assistant".into(),
+        text: text.into(),
+        first: true,
+        sent_at: None,
+        id: None,
+    }
+}
+
+/// Runs `steps` with `viewers` viewers, then lets the engine run to quiet: an armed limit (or one
+/// in flight) is continued exactly once, and nothing else ever is.
+fn run_resume(viewers: usize, steps: &[Resume]) {
+    let mut world = ResumeWorld::new(viewers);
+    for step in steps {
+        world.step(step);
+    }
+    let resuming = world
+        .running
+        .as_ref()
+        .is_some_and(|running| running.resume && !running.spoke);
+    let owed = (world.armed() || world.in_flight() || resuming) && !world.superseded;
+    let disarmed = world
+        .stored()
+        .usage_limit
+        .is_some_and(|limit| !limit.resume_at_reset)
+        && !world.in_flight()
+        && !resuming;
+    let spoken = world.spoken;
+    for _ in 0..3 {
+        world.finish_running();
+        world.step(&Resume::Tick { due: true });
+    }
+    world.finish_running();
+    if owed {
+        assert_eq!(world.spoken, 1, "an armed limit is continued once");
+        assert!(!world.armed() && !world.in_flight(), "and is then done");
+    }
+    if disarmed {
+        assert_eq!(world.spoken, spoken, "a disarmed limit is not continued");
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    #[test]
+    fn an_armed_limit_is_continued_exactly_once(
+        viewers in 1..5usize,
+        steps in prop::collection::vec(resume_step(), 0..40),
+    ) {
+        run_resume(viewers, &steps);
+    }
+}
+
+#[test]
+fn a_resume_interrupted_before_its_provider_spoke_comes_back_after_a_restart() {
+    let mut world = ResumeWorld::new(2);
+    world.step(&Resume::Tick { due: true });
+    assert!(world.running.as_ref().is_some_and(|running| running.resume));
+    world.step(&Resume::Prompt);
+    assert!(
+        !world.armed() && world.in_flight(),
+        "the limit went with the send"
+    );
+    world.step(&Resume::Restart);
+    world.step(&Resume::Tick { due: true });
+    assert!(
+        world.running.as_ref().is_some_and(|running| running.resume),
+        "sent again on the next beat"
+    );
+    world.finish_running();
+    assert_eq!(world.spoken, 1);
+    let rows = world.rows();
+    let continuations: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| row.is_prompt() && row.text == super::hub::resume::CONTINUE)
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(continuations, vec![2], "its first copy was dropped");
+}
+
+#[test]
+fn a_resume_the_provider_spoke_in_is_never_sent_again() {
+    let mut world = ResumeWorld::new(1);
+    world.step(&Resume::Tick { due: true });
+    world.step(&Resume::Prompt);
+    world.step(&Resume::Speak);
+    world.step(&Resume::Restart);
+    for _ in 0..3 {
+        world.step(&Resume::Tick { due: true });
+    }
+    assert!(world.running.is_none(), "nothing more is sent");
+    assert!(!world.armed() && !world.in_flight());
+    assert_eq!(world.spoken, 1);
+}
+
+#[test]
+fn a_viewer_that_missed_the_resume_cannot_arm_its_limit_again() {
+    let mut world = ResumeWorld::new(2);
+    world.step(&Resume::Look(1));
+    world.step(&Resume::Tick { due: true });
+    world.finish_running();
+    // Viewer 1 still shows the armed limit; saving it, or flipping it twice, arms nothing.
+    world.step(&Resume::Save(1));
+    world.step(&Resume::Toggle(1));
+    world.step(&Resume::Toggle(1));
+    assert_eq!(world.stored().usage_limit, None);
+    world.step(&Resume::Tick { due: true });
+    assert!(world.running.is_none());
+    assert_eq!(world.spoken, 1);
+}
+
+#[test]
+fn a_disarmed_limit_waits_for_the_person() {
+    let mut world = ResumeWorld::new(1);
+    world.step(&Resume::Toggle(0));
+    assert!(!world.armed());
+    world.step(&Resume::Tick { due: true });
+    assert!(world.running.is_none());
+    assert!(
+        world.stored().usage_limit.is_some(),
+        "the limit stays for the banner"
+    );
 }

@@ -175,7 +175,7 @@ releases = false
 [t3code]
 upstream = "pingdotgg/t3code"
 branch = "main"
-base = "d5fc29fe5cb62db68bfbf824cfabe0ae94ac6ac4"
+base = "240446e2d9625600b0c841faf6bddf367bd26967"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = false

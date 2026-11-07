@@ -219,6 +219,17 @@ thread go and hands the next prompt the kept turns as a handoff brief; `Fork` do
 workspace creates, so every viewer sees it arrive. `Compact` runs the provider's own compaction behind the
 `Asides` seam, records it as a `contextCompaction` tool row, holds off turns while it runs and stops on `Stop`.
 `ProviderId` carries `Option<String>`, so watchers see a thread let go.
+The usage limit is the engine's too: a turn that ends at one leaves it in the session's settings, every turn's
+start lifts it, and a viewer's `Configure` only arms or disarms the limit the engine holds, so a viewer saving an
+older copy can neither arm a limit a resume took nor drop one a turn just recorded (dismissing the banner disarms). The scheduler beat (`Local::clock`) finds armed
+limits with a store query, fills a missing reset from the account's usage (`exhausted_reset`), and sends each due,
+idle session "Continue from where you left off." once, under a fresh `OpId` per attempt, with no viewer open and
+however many there are; the conversation only follows what the engine holds. The resume is kept in the store from
+before its limit is cleared until its turn ends: a launch refused before its prompt was saved arms the limit again
+for the next beat, and an engine that stopped in between finds it on its next start, drops the unsent copy of its
+prompt and sends it again, but never one the provider already spoke in. That is t3code #31292's lesson: their
+resume reused an id derived from the limit, so after a restart the ledger answered the retry with the old receipt
+and the resume never came back.
 The preferences split in two (`ui-state.md`): the engine's part (`EngineSettings`) lives in the store under
 `engine-settings`, moved once from monocode's `workspace` key; the app's part lives in its own `ui.sqlite3`,
 handed over once by `TakeViewerState`. The app opens no engine database: `main.rs` opens an `Engine` over

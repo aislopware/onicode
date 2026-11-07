@@ -145,7 +145,6 @@ impl Conversation {
                 );
                 center.update(cx, |center, cx| center.refresh(key, true, cx));
             }
-            self.tick_usage(cx);
         }
     }
 
@@ -169,44 +168,45 @@ impl Conversation {
             })
     }
 
-    pub(super) fn tick_usage(&mut self, cx: &mut Context<Self>) {
-        let Some(limit) = self.settings.usage_limit.clone() else {
+    /// Follows the engine's hold on this session's usage limit while it shows one: the reset the
+    /// engine learned from the account's usage, and the resume the engine sent once an armed
+    /// limit came due. The engine alone resumes; this view only stops showing what it took.
+    pub(super) fn sync_usage_limit(&mut self, cx: &mut Context<Self>) {
+        if self.busy || self.is_remote() || self.settings.usage_limit.is_none() {
             return;
-        };
-        if limit.resets_at.is_none() {
-            let kind = Kind::from_id(&self.summary.provider);
-            let key = crate::accounts::Key::new(
-                kind,
-                self.settings.account.clone(),
-                self.account_model(),
-            );
-            if let Some(center) = crate::accounts::get(cx) {
-                center.update(cx, |center, cx| center.refresh(key.clone(), false, cx));
-            }
-            let reset = crate::accounts::get(cx).and_then(|center| {
-                center
-                    .read(cx)
-                    .usage
-                    .get(&key)
-                    .and_then(|state| state.snapshot.as_ref())
-                    .and_then(|s| s.exhausted_reset())
+        }
+        let record = self.session_call::<ReadSession>(None, |session| ReadSession { session }, cx);
+        cx.spawn(async move |this, cx| {
+            let Ok(record) = record.await else {
+                return;
+            };
+            let held = record.settings.and_then(|settings| settings.usage_limit);
+            let _ = this.update(cx, |this, cx| {
+                if this.busy {
+                    return;
+                }
+                let Some(limit) = this.settings.usage_limit.as_mut() else {
+                    return;
+                };
+                match held {
+                    Some(held) if limit.resets_at.is_none() && held.resets_at.is_some() => {
+                        limit.resets_at = held.resets_at;
+                        cx.notify();
+                    }
+                    None if limit.resume_at_reset && !limit.waiting(usage::now_ms()) => {
+                        this.settings.usage_limit = None;
+                        cx.emit(SessionChanged);
+                        cx.notify();
+                    }
+                    _ => {}
+                }
             });
-            if let Some(at) = reset {
-                self.settings.usage_limit.as_mut().unwrap().resets_at = Some(at);
-                self.save_settings(cx);
-            }
-        }
-        if self
-            .settings
-            .usage_limit
-            .as_ref()
-            .is_some_and(|l| l.resume_due(usage::now_ms(), self.busy))
-        {
-            self.resume_usage(cx);
-        }
-        cx.notify();
+        })
+        .detach();
     }
 
+    /// The person's Continue: a prompt like any other, which the engine runs and which lifts the
+    /// limit as every turn does.
     pub(crate) fn resume_usage(&mut self, cx: &mut Context<Self>) {
         if self.needs_history_restore() {
             self.defer_history_action(|this, cx| this.resume_usage(cx), cx);
@@ -227,15 +227,22 @@ impl Conversation {
     }
 
     pub(super) fn recover_usage_after_model_change(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.stopping || self.settings.usage_limit.take().is_none() {
+        if self.busy || self.stopping {
             return;
         }
+        let Some(limit) = self.settings.usage_limit.as_mut() else {
+            return;
+        };
+        // The engine holds the limit until a turn continues past it: the new model stops its
+        // resume.
+        limit.resume_at_reset = false;
+        self.save_settings(cx);
+        self.settings.usage_limit = None;
         self.status = "Ready".into();
         self.follow_ups.state.paused = false;
         for message in &mut self.follow_ups.state.messages {
             message.error = None;
         }
-        self.save_settings(cx);
         self.save_follow_ups(cx);
         cx.emit(SessionChanged);
         cx.notify();
@@ -482,8 +489,13 @@ impl Conversation {
                         .group_hover("dismiss-usage-limit", |s| s.text_color(content(1.))),
                 )
                 .on_click(cx.listener(|this, _, _, cx| {
-                    this.settings.usage_limit = None;
+                    // The engine holds the limit until a turn continues past it: dismissing the
+                    // notice stops its resume.
+                    if let Some(limit) = this.settings.usage_limit.as_mut() {
+                        limit.resume_at_reset = false;
+                    }
                     this.save_settings(cx);
+                    this.settings.usage_limit = None;
                     cx.notify();
                 })),
             );
@@ -683,6 +695,20 @@ mod tests {
         summary.has_messages = true;
         let id = summary.id;
         let saved = engine.seed();
+        let limit = Limit {
+            resets_at: Some(usage::now_ms() + 3_600_000),
+            resume_at_reset: false,
+        };
+        // The engine holds the limit the last turn ended at; the banner arms that one.
+        saved
+            .save_agent_settings(
+                id,
+                &Settings {
+                    usage_limit: Some(limit.clone()),
+                    ..Settings::default()
+                },
+            )
+            .unwrap();
         let window = cx.update(|cx| {
             crate::accounts::install(engine.clone(), cx);
             crate::accounts::get(cx).unwrap().update(cx, |center, cx| {
@@ -701,10 +727,7 @@ mod tests {
                     let mut view = Conversation::new(summary, engine, cx);
                     view.loaded = true;
                     view.status = "Claude Code reached its usage limit.".into();
-                    view.settings.usage_limit = Some(Limit {
-                        resets_at: Some(usage::now_ms() + 3_600_000),
-                        resume_at_reset: false,
-                    });
+                    view.settings.usage_limit = Some(limit);
                     view
                 })
             })

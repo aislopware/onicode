@@ -1160,6 +1160,32 @@ impl Store {
         Ok(out)
     }
 
+    /// The sessions whose saved settings hold an armed usage limit; the hub parses each match.
+    pub(super) fn shared_armed_usage_limits(&self) -> Vec<i64> {
+        self.shared
+            .as_ref()
+            .unwrap()
+            .extras
+            .borrow()
+            .iter()
+            .filter(|(key, value)| {
+                key.starts_with("agent:") && value.contains("\"resume_at_reset\":true")
+            })
+            .filter_map(|(key, _)| key["agent:".len()..].parse().ok())
+            .collect()
+    }
+
+    pub(super) fn shared_session_provider(&self, id: i64) -> Result<Option<String>, String> {
+        sql(self
+            .conn
+            .query_row(
+                "SELECT harness FROM sessions WHERE id=?1",
+                [self.persisted_session_id(id)?],
+                |r| r.get(0),
+            )
+            .optional())
+    }
+
     pub(super) fn shared_sidebar_hidden(&self) -> Result<HashSet<i64>, String> {
         let mut query = sql(self.conn.prepare(&format!(
             "SELECT id FROM sessions WHERE {}!=0",

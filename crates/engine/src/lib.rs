@@ -25,5 +25,5 @@ pub mod turn;
 pub mod work;
 pub mod workspace;
 
-pub use local::{DATABASE, Local, Options};
+pub use local::{Clock, DATABASE, Local, Options};
 pub use service::{EngineService, Group};

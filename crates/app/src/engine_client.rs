@@ -6,10 +6,10 @@
 //! `Viewer` folds what arrives back into one `turn::Update` per beat. SSH and legacy remote turns
 //! keep their own runners over [`Engine::legacy_store`]. The sidebar, history and workspace views
 //! read the engine's `WatchWorkspace` through [`watch_workspace`] and change it with [`call`]; the
-//! engine's own clock drives its reminder and automation schedulers. The explorer, editor,
-//! Changes, review, history and worktree views read and change files and checkouts through the
-//! app's own engine ([`local`]): its calls, and its `WatchDir` and `WatchGit` watches through
-//! [`Engine::watch`].
+//! engine's own clock drives its reminder, automation and usage-limit resume schedulers. The
+//! explorer, editor, Changes, review, history and worktree views read and change files and
+//! checkouts through the app's own engine ([`local`]): its calls, and its `WatchDir` and
+//! `WatchGit` watches through [`Engine::watch`].
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::pin;
@@ -104,7 +104,7 @@ impl onicode_engine::workspace::Chores for TestChores {
     }
 }
 
-/// How often the engine's schedulers run: due reminders and automation runs.
+/// How often the engine's schedulers run: due reminders, automation runs and usage-limit resumes.
 const SCHEDULER_BEAT: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub(crate) struct EngineClient {
@@ -169,7 +169,7 @@ impl EngineClient {
     /// The schedulers' clock: a beat now for what came due while the app was closed, then every
     /// 30 seconds. Tests beat in virtual time instead (`tick`).
     fn beat(&self) {
-        let clock = self.local.workspace.clone();
+        let clock = self.local.clock();
         let timers = self.executor.clone();
         self.executor
             .spawn(async move {
@@ -646,8 +646,8 @@ impl Engine {
         Ok(Self(EngineClient::serve(local, true, cx)))
     }
 
-    /// Starts the schedulers' clock (due reminders and automation runs), once the launch has
-    /// written what it writes.
+    /// Starts the schedulers' clock (due reminders, automation runs and usage-limit resumes),
+    /// once the launch has written what it writes.
     pub(crate) fn run_schedulers(&self) {
         self.0.beat();
     }
@@ -971,7 +971,7 @@ pub(crate) fn create_for_test(engine: &Engine, provider: &str, cwd: &str, _: &mu
 /// One beat of `engine`'s schedulers at `now`, in a test's virtual time.
 #[cfg(test)]
 pub(crate) fn tick(engine: &Engine, now: u64, _: &mut App) -> Result<(), String> {
-    engine.0.local.workspace.tick(now)
+    engine.0.local.tick(now)
 }
 
 /// Every call `engine` was asked, by name with its routed params.

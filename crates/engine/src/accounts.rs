@@ -25,7 +25,7 @@ use onicode_protocol::agents::{
     HarnessVersion, Harnesses, InspectHarness, KeepIdleAgents, Login, Logout, McpHealth, McpLogin,
     McpServers, RefreshSignIn, RefreshUsage, RemoveAccount, RemoveMcpServer, RenameAccount,
     RunHarnessUpdate, SelectAccount, SignInEntry, Skills, StopGenerate, TransferThread, UsageEntry,
-    UsageKey, WatchAccounts,
+    UsageKey, UsageRead, WatchAccounts,
 };
 use onicode_protocol::{Call, Item, OpId, Outcome, Rejection, Watch};
 use onicode_rpc::{RpcError, RpcReply, RpcService};
@@ -49,6 +49,21 @@ const USAGE_FRESH: Duration = Duration::from_secs(60);
 const EARLY_STOPS: usize = 256;
 
 pub(crate) struct AccountsFeed;
+
+/// The billing provider whose usage a turn of `model` spends: Pi's names it first
+/// (`pi:provider/model`); every other provider bills its own account.
+fn billing(kind: Kind, model: Option<&str>) -> String {
+    if kind != Kind::Pi {
+        return String::new();
+    }
+    model
+        .unwrap_or("")
+        .trim_start_matches("pi:")
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .to_owned()
+}
 
 /// What an event replaces: the book, one account's sign-in, or one key's usage.
 fn target(event: &AccountsEvent) -> (u8, &'static str, &str, &str) {
@@ -300,6 +315,39 @@ impl AccountsHub {
         self.spawn.spawn(Box::pin(async move {
             let _ = hub.read_usage(key).await;
         }));
+    }
+
+    /// When every exhausted window of `account` on `kind` resets, as its last usage read says:
+    /// what an armed usage limit waits for when the provider named no reset. When that is not
+    /// known yet, the usage is read again (a polled provider at most once a minute).
+    pub fn exhausted_reset(
+        self: &Arc<Self>,
+        kind: Kind,
+        account: &str,
+        model: Option<&str>,
+    ) -> Option<i64> {
+        let key = UsageKey {
+            provider: kind,
+            account: account.to_owned(),
+            billing: billing(kind, model),
+        };
+        let known = self
+            .lock()
+            .state()
+            .usage
+            .iter()
+            .find(|entry| entry.key == key)
+            .and_then(|entry| match &entry.usage {
+                UsageRead::Snapshot(snapshot) => snapshot.exhausted_reset(),
+                _ => None,
+            });
+        if known.is_none() && self.known(kind, account) {
+            let hub = self.clone();
+            self.spawn.spawn(Box::pin(async move {
+                let _ = hub.refresh_usage(RefreshUsage { key, force: false }).await;
+            }));
+        }
+        known
     }
 
     /// `RefreshSignIn`.

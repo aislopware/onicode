@@ -38,6 +38,24 @@ pub struct Options {
     pub gh: Option<Arc<dyn Gh>>,
 }
 
+/// The schedulers an engine runs on its own clock, beaten every 30 s by whoever runs it (tests
+/// in virtual time).
+#[derive(Clone)]
+pub struct Clock {
+    workspace: Arc<WorkspaceHub>,
+    session: Arc<SessionHub>,
+}
+
+impl Clock {
+    /// One beat at `now` (Unix ms): the workspace's reminders, automation runs and Inbox claims,
+    /// then the sessions' usage-limit resumes. Both run even when the other fails.
+    pub fn tick(&self, now: u64) -> Result<(), String> {
+        let workspace = self.workspace.tick(now);
+        let session = self.session.resume_limits(now);
+        workspace.and(session)
+    }
+}
+
 /// One engine in this process.
 pub struct Local {
     store: Database,
@@ -123,6 +141,20 @@ impl Local {
             app_access,
             service: Arc::new(service),
         })
+    }
+
+    /// The engine's schedulers, for the clock that beats them.
+    #[must_use]
+    pub fn clock(&self) -> Clock {
+        Clock {
+            workspace: self.workspace.clone(),
+            session: self.session.clone(),
+        }
+    }
+
+    /// One beat of the engine's schedulers at `now` (Unix ms), as [`Clock::tick`].
+    pub fn tick(&self, now: u64) -> Result<(), String> {
+        self.clock().tick(now)
     }
 
     /// The store's sessions, read only, without opening it for writing: `--check-data`.

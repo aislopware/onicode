@@ -3,7 +3,14 @@
 use super::*;
 
 impl Store {
-    pub(in crate::store) fn shared_rewind(&self, id: i64, start: usize) -> Result<(), String> {
+    /// Keeps the source blocks before the prompt at row `start`; with `let_thread_go`, the
+    /// provider thread goes too.
+    pub(in crate::store) fn shared_cut(
+        &self,
+        id: i64,
+        start: usize,
+        let_thread_go: bool,
+    ) -> Result<(), String> {
         self.shared_writable()?;
         let tx = sql(self.conn.unchecked_transaction())?;
         let blocks = self.shared_blocks(id)?;
@@ -19,10 +26,8 @@ impl Store {
         let cut = cut.ok_or("No prompt starts this turn any more")?;
         let next = &blocks[..cut];
         self.shared_store_blocks(id, next)?;
-        self.shared_patch(
-            id,
-            &[
-                ("provider_session_id", Value::Null),
+        let mut fields =
+            vec![
                 ("updated_at", json!(crate::time::now_ms())),
                 (
                     "has_user_message",
@@ -30,8 +35,11 @@ impl Store {
                         && b["internal"] != true
                         && b["draft"] != true)),
                 ),
-            ],
-        )?;
+            ];
+        if let_thread_go {
+            fields.push(("provider_session_id", Value::Null));
+        }
+        self.shared_patch(id, &fields)?;
         sql(tx.commit())?;
         if let Some(shared) = self.shared.as_ref() {
             shared

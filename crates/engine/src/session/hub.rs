@@ -27,6 +27,8 @@ use onicode_protocol::{Item, MessageId, OpId, Outcome, Rejection, SessionId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
+pub(crate) mod resume;
+
 use super::asides::{Aside, Asides, ProviderAsides, btw_prompt};
 use super::queue::SessionFeed;
 use super::split;
@@ -125,6 +127,8 @@ struct Turn {
     steers: HashMap<String, Pending>,
     /// The message `SendNow` launches once this turn ends.
     next: Option<Next>,
+    /// The engine's usage-limit resume (`resume.rs`).
+    resume: bool,
 }
 
 struct Live {
@@ -158,6 +162,9 @@ struct Inner {
     btw: HashMap<(SessionId, String), Arc<AtomicBool>>,
     /// Running compactions, by session: `Stop` stops one, and no turn starts meanwhile.
     compacting: HashMap<SessionId, Arc<AtomicBool>>,
+    /// The usage-limit resumes in flight, as the store keeps them; `None` until this run's first
+    /// beat recovered the ones an earlier run left.
+    resumes: Option<resume::Resumes>,
 }
 
 /// A session's by-the-way threads as the store keeps them (`btw:{row}`): with the desktop app's
@@ -254,6 +261,7 @@ impl SessionHub {
                 rewinding: HashSet::new(),
                 btw: HashMap::new(),
                 compacting: HashMap::new(),
+                resumes: None,
             }),
             workspace: OnceLock::new(),
             settings: OnceLock::new(),
@@ -540,6 +548,14 @@ impl SessionHub {
             Kind::from_id(&summary.provider),
             settings.account.id.clone(),
         );
+        // The turn continues the conversation past any usage limit it was held at, armed or not.
+        settings.usage_limit = None;
+        if resolve.is_none() {
+            return Err("This call already started a turn".into());
+        }
+        if let Some(lifted) = self.lift_limit(live.id)? {
+            publish(live, vec![lifted]);
+        }
         let resolve = resolve.take().ok_or("This call already started a turn")?;
         if let Some(op) = op {
             ops.inflight.insert(op, resolve.subscribe());
@@ -562,6 +578,7 @@ impl SessionHub {
             started: false,
             steers: HashMap::new(),
             next: None,
+            resume: false,
         });
         if let Some(workspace) = self.workspace.get() {
             workspace.turn_started(live.id);
@@ -595,13 +612,32 @@ impl SessionHub {
     /// last, the end of the turn.
     fn apply_update(self: &Arc<Self>, session: SessionId, turn_id: u64, mut update: Update) {
         let mut inner = self.lock();
-        let Inner { sessions, ops, .. } = &mut *inner;
+        let Inner {
+            sessions,
+            ops,
+            resumes,
+            ..
+        } = &mut *inner;
         let Some(live) = sessions.get_mut(&session) else {
             return;
         };
         let Some(turn) = live.turn.as_mut().filter(|turn| turn.id == turn_id) else {
             return;
         };
+        let (resuming, cancelled) = (turn.resume, turn.cancel.load(Ordering::Relaxed));
+        if resuming && resume::spoke(&update) {
+            self.resume_spoke(resumes, live.id);
+        }
+        // A turn that ends at a usage limit leaves the engine holding it.
+        let reported = update.usage_limit.is_some();
+        let limited = (update.finished && !cancelled)
+            .then(|| {
+                update
+                    .usage_limit
+                    .clone()
+                    .or_else(|| onicode_core::usage::Limit::from_error(&update.status))
+            })
+            .flatten();
         let delivered = std::mem::take(&mut update.follow_up_delivered);
         let failed = std::mem::take(&mut update.follow_up_errors);
         let finished = update.finished;
@@ -681,6 +717,14 @@ impl SessionHub {
         events.extend(receipts);
         if finished && started {
             events.extend(self.turn_finished(live.id));
+        }
+        if finished {
+            if resuming {
+                events.extend(self.resume_ended(resumes, live.id, started, cancelled));
+            }
+            if let Some(limit) = limited {
+                events.extend(self.hold_limit(live.id, limit, reported));
+            }
         }
         events.extend(status);
         publish(live, events);
@@ -1158,31 +1202,42 @@ impl SessionHub {
     }
 
     /// `Configure`: replaces the session's provider and agent settings, unless the stored
-    /// settings are newer.
+    /// settings are newer. The usage limit stays the engine's: a viewer only arms or disarms the
+    /// one it holds (`resume::viewer_limit`).
     pub async fn configure(&self, op: Option<OpId>, body: Configure) -> Result<Outcome, String> {
         self.once(op, |inner| {
+            let Configure {
+                session,
+                provider,
+                mut settings,
+            } = body;
             let store = locked(&self.store)?;
-            let outcome = match store.session_by_uid(body.session.0)? {
-                Some(id)
-                    if store
-                        .agent_settings(id)?
-                        .is_some_and(|saved| saved.revision > body.settings.revision) =>
-                {
-                    Outcome::Rejected(Rejection::StaleRev)
-                }
-                Some(id) => {
-                    store.configure_agent(id, &body.provider, &body.settings)?;
-                    Outcome::Applied
-                }
+            let outcome = match store.session_by_uid(session.0)? {
+                Some(id) => match store.agent_settings(id)? {
+                    Some(saved) if saved.revision > settings.revision => {
+                        Outcome::Rejected(Rejection::StaleRev)
+                    }
+                    saved => {
+                        settings.usage_limit = resume::viewer_limit(
+                            saved.and_then(|saved| saved.usage_limit),
+                            settings.usage_limit.take(),
+                        );
+                        store.configure_agent(id, &provider, &settings)?;
+                        Outcome::Applied
+                    }
+                },
                 None => Outcome::Rejected(Rejection::Gone),
             };
             drop(store);
             let events = if outcome == Outcome::Applied {
-                vec![SessionEvent::Settings(Box::new(body.settings))]
+                vec![
+                    SessionEvent::UsageLimit(settings.usage_limit.clone()),
+                    SessionEvent::Settings(Box::new(settings)),
+                ]
             } else {
                 Vec::new()
             };
-            Ok(self.answered(inner, body.session, op, outcome, events))
+            Ok(self.answered(inner, session, op, outcome, events))
         })
         .await
     }

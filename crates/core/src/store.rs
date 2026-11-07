@@ -293,6 +293,46 @@ impl Store {
             .map_err(|e| e.to_string())
     }
 
+    /// The local sessions whose usage limit is armed to resume at its reset, found by a query
+    /// over the saved settings rather than by reading every session's.
+    pub fn armed_usage_limits(&self) -> Result<Vec<i64>, String> {
+        let ids: Vec<i64> = if self.shared.is_some() {
+            self.shared_armed_usage_limits()
+        } else {
+            self.conn
+                .prepare("SELECT CAST(substr(key,7) AS INTEGER) FROM native_settings WHERE key LIKE 'agent:%' AND json_valid(value) AND json_extract(value,'$.usage_limit.resume_at_reset')=1")
+                .map_err(|e| e.to_string())?
+                .query_map([], |row| row.get(0))
+                .map_err(|e| e.to_string())?
+                .collect::<Result<_, _>>()
+                .map_err(|e| e.to_string())?
+        };
+        let mut armed = Vec::with_capacity(ids.len());
+        for id in ids {
+            if id > 0 && self.remote_session(id)?.is_none() {
+                armed.push(id);
+            }
+        }
+        Ok(armed)
+    }
+
+    /// The provider session `id` runs on, without reading the other sessions.
+    pub fn session_provider(&self, id: i64) -> Result<Option<String>, String> {
+        if self.shared.is_some() {
+            return self.shared_session_provider(id);
+        }
+
+        use rusqlite::OptionalExtension;
+        self.conn
+            .query_row(
+                "SELECT provider FROM native_sessions WHERE id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())
+    }
+
     pub fn context_usage(&self, id: i64) -> Result<Option<crate::context::Usage>, String> {
         if self.shared.is_some() {
             return self.shared_context(id);
