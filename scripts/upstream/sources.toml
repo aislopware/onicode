@@ -166,7 +166,7 @@ releases = false
 [t3code]
 upstream = "pingdotgg/t3code"
 branch = "main"
-base = "83a3674ffd84ffb33de768210c806cb1ac53fd80"
+base = "beaeeff40ef108e2cdb37112bfd0dd31b4660eae"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = false
@@ -201,7 +201,7 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "efdacaf46ff54660a239189a6d62434c5db33d2c"
+base = "cce9d3228b5d649cea400bc6d19514a0342ad998"
 base_date = "2026-11-07"
 every_minutes = 60
 pulls = false
