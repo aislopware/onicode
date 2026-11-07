@@ -100,4 +100,8 @@ Ideas worth taking are ported into gpui-fast:
 - warnings that name views rebuilt too often;
 - skipping a present when the frame is unchanged.
 
+All three landed in gpui-fast 3ea6b95 (`fast::same_frame`, `fast::churn`, `gpui::motion_gate`). The skip pays off:
+a window notified 10 times a second that changes once a second presents 1 frame a second instead of 9.7, and its
+process CPU drops from 25 to 13.5 ms a second. Notified 30 times a second for nothing, it drops from 57 to 19 ms.
+
 The evaluation is in `.research/rune/EVALUATION.md`, kept outside the repo.

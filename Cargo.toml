@@ -266,11 +266,12 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # project background's layer mask, drop shadows outside, 3:2 dashes, role cursor, wheel glide, content zoom,
 # atlas clear, group fades, whole blurs ordered as monocode's marker, cached views snapped from their bounds,
 # first runs shaped at next_up; its FORK.md "Onicode"), so the app draws as monocode's patched GPUI snapshot did
-# (docs/onicode/golden.md).
-gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "617af6301e406b7ccf0061c47b6df56dad503061", default-features = false }
-gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "617af6301e406b7ccf0061c47b6df56dad503061", default-features = false }
+# (docs/onicode/golden.md). Since 2026-11-07 it also carries rune's idle ideas: a frame drawn the same as the one
+# shown is not presented, debug churn warnings, and the motion gate for tests (docs/onicode/decisions/rendering.md).
+gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "3ea6b950bfa77a97665b6c5f14bbf75fd8a2c417", default-features = false }
+gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "3ea6b950bfa77a97665b6c5f14bbf75fd8a2c417", default-features = false }
 # The headless Metal renderer, the CoreText text system and the GPU memory snapshot.
-gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "617af6301e406b7ccf0061c47b6df56dad503061" }
+gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "3ea6b950bfa77a97665b6c5f14bbf75fd8a2c417" }
 
 # storage
 # `bundled`: one SQLite on every platform, not whichever the OS ships. `hooks`: a search a newer
