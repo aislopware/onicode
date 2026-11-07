@@ -9,15 +9,18 @@
 //! Every scene is deterministic: a fixed window size at the test window's 2x scale, system fonts
 //! only (`.SystemUIFont`, Menlo), an in-memory store with no timestamps, and frozen motion. Reduced
 //! motion lands every entrance (popovers, modals, scrims, pane slides, spinners) on its resting
-//! frame; the two mid-motion scenes hold their own clocks: the sidebar peek through
+//! frame; the three mid-motion scenes hold their own clocks: the sidebar peek through
 //! `SidebarPeek::held_opening`, the title reveal through `particle_text::hold_clock`, stepped at
-//! 60 fps up to the captured instant.
+//! 60 fps up to the captured instant, and the spinners through the headless executor's virtual
+//! clock. The code scenes read only a scratch project the test writes into a temp dir, and a
+//! scene that opens a control presses it where it is drawn (`press`) or drives it from the
+//! keyboard's actions, as a person would.
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
-    AnyWindowHandle, HeadlessAppContext, ListOffset, PlatformTextSystem,
+    AnyWindowHandle, HeadlessAppContext, ListOffset, Modifiers, PlatformInput, PlatformTextSystem,
     WindowBackgroundAppearance, WindowHandle, point, size,
 };
 use image::{Rgba, RgbaImage};
@@ -27,10 +30,19 @@ use onicode_protocol::transcript::{Row, Transcript};
 use super::*;
 use crate::project_background::ProjectBackground;
 
+#[path = "golden_sources.rs"]
+mod sources;
+
 /// The shell's window, in points; the test window draws it at 2x.
 const SHELL: (f32, f32) = (1000., 660.);
 /// Narrow enough that every title tab fades its label.
 const SHELL_NARROW: (f32, f32) = (840., 660.);
+/// Tall enough for Settings' first groups below an open select.
+const SHELL_TALL: (f32, f32) = (1000., 800.);
+/// The code views' windows: the editor, the diff and the terminal.
+const CODE: (f32, f32) = (760., 520.);
+/// The virtual time the spinners run before they are captured.
+const SPIN: Duration = Duration::from_millis(400);
 const PROJECT: &str = "/work/onicode";
 const ACTIVE_TITLE: &str = "Golden images for the stack port";
 /// Long titles, so each tab label runs into its fade.
@@ -202,6 +214,85 @@ fn settle(cx: &mut HeadlessAppContext, window: AnyWindowHandle) {
             .expect("window is open");
     }
     cx.run_until_parked();
+}
+
+/// Delivers what a platform frame would to `Window::on_next_frame` callbacks, then settles: views
+/// that measure what they drew before showing something over it wait for that frame.
+fn next_frame(cx: &mut HeadlessAppContext, window: AnyWindowHandle) {
+    cx.update_window(window, |_, window, cx| {
+        window.simulate_next_frame(cx);
+        window.refresh();
+    })
+    .expect("window is open");
+    settle(cx, window);
+}
+
+/// Clicks the element assistive technology names `label`, at the middle of where it is drawn, as
+/// a pointer would. The accessibility tree is the one map of drawn bounds GPUI opens to a headless
+/// test, so it is built for the frames that find the element and dropped before the click lands.
+fn press(cx: &mut HeadlessAppContext, window: AnyWindowHandle, label: &str) {
+    cx.update_window(window, |_, window, _| window.set_a11y_active(true))
+        .expect("window is open");
+    settle(cx, window);
+    let position = cx
+        .update_window(window, |_, window, _| {
+            let tree = window
+                .a11y_tree()
+                .expect("an accessibility tree once a frame drew with it active");
+            let bounds = tree
+                .nodes
+                .iter()
+                .find(|(_, node)| node.label() == Some(label))
+                .and_then(|(_, node)| node.bounds())
+                .unwrap_or_else(|| panic!("nothing named {label:?} is drawn"));
+            // The tree's bounds are in device pixels.
+            let scale = f64::from(window.scale_factor());
+            point(
+                px(((bounds.x0 + bounds.x1) / 2. / scale) as f32),
+                px(((bounds.y0 + bounds.y1) / 2. / scale) as f32),
+            )
+        })
+        .expect("window is open");
+    cx.update_window(window, |_, window, cx| {
+        window.set_a11y_active(false);
+        window.dispatch_event(
+            PlatformInput::MouseDown(MouseDownEvent {
+                button: MouseButton::Left,
+                position,
+                modifiers: Modifiers::default(),
+                click_count: 1,
+                first_mouse: false,
+            }),
+            cx,
+        );
+        window.dispatch_event(
+            PlatformInput::MouseUp(MouseUpEvent {
+                button: MouseButton::Left,
+                position,
+                modifiers: Modifiers::default(),
+                click_count: 1,
+            }),
+            cx,
+        );
+    })
+    .expect("window is open");
+    settle(cx, window);
+}
+
+/// A view on the window's surface, as the shell's panes lay one out.
+struct Framed<V: 'static>(Entity<V>);
+
+impl<V: Render> Render for Framed<V> {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .bg(surface())
+            .font_family(crate::fonts::UI)
+            .text_color(content(0.9))
+            .child(self.0.clone())
+    }
 }
 
 fn golden_dir() -> PathBuf {
@@ -795,6 +886,309 @@ fn project_background() {
     ] {
         run(name, |cx, _| backdrop(cx, empty, effect));
     }
+}
+
+/// Settings on `section` in place of the workspace, after clicking the control named `label`.
+fn settings_page(
+    cx: &mut HeadlessAppContext,
+    look: Look,
+    section: crate::settings::Section,
+    label: Option<&str>,
+) -> AnyWindowHandle {
+    let fixture = Fixture::new(cx, look, SHELL_TALL, |_| {}, None);
+    fixture.with_shell(cx, |shell, window, cx| {
+        shell.open_settings(section, window, cx);
+    });
+    settle(cx, fixture.handle());
+    if let Some(label) = label {
+        press(cx, fixture.handle(), label);
+    }
+    fixture.handle()
+}
+
+/// Settings' controls in their rail and pages: the rail's search field and sections, page and
+/// group headers, segmented controls, sliders (light dims the dark-only ones), accent swatches,
+/// select triggers and toggles. `settings-appearance` opens the workspace theme select: its
+/// listbox popover with the filter field, swatch icons and the check on the chosen row.
+/// `settings-accent` opens the custom accent popover, its field's text selected.
+/// `settings-chat` shows toggles on and off beside segmented rows.
+#[test]
+#[ignore = "golden images: scripts/dev/golden.sh"]
+fn settings() {
+    use crate::settings::Section;
+    for (name, section, label) in [
+        (
+            "settings-appearance",
+            Section::Appearance,
+            Some("Workspace theme: Default"),
+        ),
+        ("settings-accent", Section::Appearance, Some("Custom color")),
+        ("settings-chat", Section::Chat, None),
+    ] {
+        run(name, |cx, look| settings_page(cx, look, section, label));
+    }
+}
+
+/// Quick Open as the command palette over the chat: its scrim and modal surface, the query field
+/// holding `>`, and every command row with its icon and shortcut, the first one highlighted.
+#[test]
+#[ignore = "golden images: scripts/dev/golden.sh"]
+fn quick_open() {
+    run("quick-open", |cx, look| {
+        let fixture = Fixture::new(cx, look, SHELL, |_| {}, None);
+        fixture.with_shell(cx, |shell, window, cx| {
+            shell.open_quick_open(true, window, cx);
+        });
+        fixture.handle()
+    });
+}
+
+/// The session menu driven from the keyboard: the highlight stepped down to "Copy session ID"
+/// and its submenu open beside it, a disabled row first, over the menu's separators, shortcut
+/// hint, submenu chevrons and danger row.
+#[test]
+#[ignore = "golden images: scripts/dev/golden.sh"]
+fn menu_submenu() {
+    run("menu-submenu", |cx, look| {
+        let fixture = Fixture::new(cx, look, SHELL, |_| {}, None);
+        let active = fixture.active;
+        fixture.with_shell(cx, |shell, window, cx| {
+            let anchor = Anchor::Point(point(px(420.), px(150.)));
+            shell.open_menu(MenuTarget::Session(active), anchor, window, cx);
+        });
+        settle(cx, fixture.handle());
+        let keys: [Box<dyn gpui::Action>; 3] = [
+            Box::new(crate::popover::SelectNext),
+            Box::new(crate::popover::SelectNext),
+            Box::new(crate::popover::OpenSubmenu),
+        ];
+        for action in keys {
+            cx.update_window(fixture.handle(), |_, window, cx| {
+                window.dispatch_action(action, cx);
+            })
+            .expect("window is open");
+            settle(cx, fixture.handle());
+        }
+        fixture.handle()
+    });
+}
+
+/// A project folder the test owns in the temp dir, holding the editor's file. The folder's own
+/// name and the file's place in it are fixed, so only `src` shows in the breadcrumbs. Removed when
+/// dropped.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new() -> Self {
+        let dir = std::env::temp_dir().join(format!("onicode-golden-{}", std::process::id()));
+        let src = dir.join("onicode/src");
+        std::fs::create_dir_all(&src).expect("a scratch project");
+        std::fs::write(src.join("edge_fade.rs"), sources::EDGE_FADE).expect("the scratch file");
+        Self(dir)
+    }
+
+    fn project(&self) -> PathBuf {
+        self.0.join("onicode")
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_dir_all(&self.0) {
+            eprintln!("{}: {error}", self.0.display());
+        }
+    }
+}
+
+/// The file editor on a Rust file: breadcrumbs with the file's icon, line numbers, syntax colours
+/// and a soft-wrapped doc comment; the find bar with the query Find took from the selected word,
+/// its toggles and count, every match marked in the text and on the scrollbar rail beside its
+/// thumb; and a selection across a whole function with the "Add to chat" popover above it.
+#[test]
+#[ignore = "golden images: scripts/dev/golden.sh"]
+fn editor() {
+    let scratch = Scratch::new();
+    run("editor", |cx, look| {
+        cx.update(|cx| cx.set_global(look.preferences()));
+        let project = scratch.project();
+        let path = project
+            .join("src/edge_fade.rs")
+            .to_string_lossy()
+            .into_owned();
+        let project = project.to_string_lossy().into_owned();
+        let window = open(cx, CODE, move |_, cx| {
+            let git = cx.new(|cx| crate::git_status::ProjectGit::new(project, cx));
+            let editor = cx.new(|cx| crate::file_editor::FileEditor::new(path, git, cx));
+            cx.new(|_| Framed(editor))
+        });
+        let editor = window
+            .update(cx, |framed, _, _| framed.0.clone())
+            .expect("window is open");
+        let handle: AnyWindowHandle = window.into();
+        let word = sources::EDGE_FADE.find("fade").expect("the file says fade");
+        cx.update_window(handle, |_, window, cx| {
+            editor.update(cx, |editor, cx| {
+                editor.set_visible(true, cx);
+                let input = editor.input.clone();
+                window.focus(&input.focus_handle(cx), cx);
+                input.update(cx, |input, cx| input.select_range(word..word + 4, cx));
+            });
+        })
+        .expect("window is open");
+        settle(cx, handle);
+        cx.update_window(handle, |_, window, cx| {
+            window.dispatch_action(Box::new(crate::file_editor::Find), cx);
+        })
+        .expect("window is open");
+        settle(cx, handle);
+        let function = sources::lines(sources::EDGE_FADE, 18, 25);
+        cx.update_window(handle, |_, _, cx| {
+            let input = editor.read(cx).input.clone();
+            input.update(cx, |input, cx| input.select_range(function, cx));
+        })
+        .expect("window is open");
+        settle(cx, handle);
+        // The popover anchors on the selection as the frame after it laid out placed it.
+        next_frame(cx, handle);
+        handle
+    });
+}
+
+fn diff_file(path: &str, before: &str, after: &str) -> crate::diff_view::DiffFile {
+    let unified = onicode_protocol::diff::build_unified_file(before, after, 3);
+    crate::diff_view::DiffFile {
+        id: path.to_owned().into(),
+        path: format!("{PROJECT}/{path}"),
+        label: path.into(),
+        binary: false,
+        too_large: false,
+        empty_message: None,
+        additions: unified.additions,
+        deletions: unified.deletions,
+        blocks: Arc::new(unified.blocks),
+        can_stage: true,
+        can_discard: true,
+        can_stage_hunk: true,
+    }
+}
+
+/// The unified diff of two files, both open: the toolbar's file count, line counts and hunk
+/// stepper; file headers with their icons, counts and actions; hunk headers; the gutter's line
+/// numbers; added, deleted and context lines over syntax colours; the overview rail's thumb; and
+/// the sideways scrollbar under a line too long for the lane.
+#[test]
+#[ignore = "golden images: scripts/dev/golden.sh"]
+fn diff() {
+    run("diff", |cx, look| {
+        cx.update(|cx| cx.set_global(look.preferences()));
+        let before = sources::edge_fade_before();
+        let (doc_before, doc_after) = sources::GOLDEN_DOC;
+        let files = vec![
+            diff_file("src/edge_fade.rs", &before, sources::EDGE_FADE),
+            diff_file("docs/onicode/golden.md", doc_before, doc_after),
+        ];
+        open(cx, CODE, move |_, cx| {
+            let view = cx.new(crate::diff_view::DiffView::new);
+            view.update(cx, |view, cx| view.set_files(files, cx));
+            cx.new(|_| Framed(view))
+        })
+        .into()
+    });
+}
+
+/// The terminal's grid fed a test run's output, with no shell behind it: bold, dim, italic,
+/// underlined, struck and inverse text, the 16 colours as ink and fill, a 256-colour grey ramp,
+/// truecolor ink, and the focused block cursor at the prompt. The terminal font is pinned to
+/// Menlo, whatever Nerd Font the machine has installed.
+#[test]
+#[ignore = "golden images: scripts/dev/golden.sh"]
+fn terminal() {
+    crate::fonts::pin_terminal_font();
+    run("terminal", |cx, _| {
+        let window = open(cx, CODE, |_, cx| {
+            let terminal = cx.new(|cx| Terminal::new(PROJECT.into(), cx));
+            cx.new(|_| Framed(terminal))
+        });
+        let terminal = window
+            .update(cx, |framed, _, _| framed.0.clone())
+            .expect("window is open");
+        let output = sources::terminal_output();
+        cx.update_window(window.into(), |_, window, cx| {
+            window.focus(&terminal.focus_handle(cx), cx);
+            terminal.update(cx, |terminal, cx| terminal.feed(output.as_bytes(), cx));
+        })
+        .expect("window is open");
+        window.into()
+    });
+}
+
+/// Every kind of spinner, each in its own row.
+struct Spinners {
+    marks: Vec<Entity<SessionMark>>,
+}
+
+impl Render for Spinners {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let row = || div().flex().items_center().gap(px(16.));
+        div()
+            .size_full()
+            .p(px(20.))
+            .flex()
+            .flex_col()
+            .gap(px(16.))
+            .bg(surface())
+            .text_color(content(0.9))
+            .child(
+                row()
+                    .child(crate::session_mark::spinner(
+                        "golden-wave",
+                        crate::pulse::Rate::Smooth,
+                    ))
+                    .children([0., 0.25, 0.5, 0.75].map(crate::session_mark::spinner_at)),
+            )
+            .child(
+                row()
+                    .child(crate::right_panel::spinner("golden-loader", "loader", 16.))
+                    .child(crate::right_panel::spinner(
+                        "golden-loader-small",
+                        "loader",
+                        12.,
+                    ))
+                    .child(crate::right_panel::spinner(
+                        "golden-sync",
+                        "refresh-cw",
+                        14.,
+                    )),
+            )
+            .child(row().children(self.marks.iter().cloned()))
+    }
+}
+
+/// The spinners with motion on, `SPIN` of virtual time after they first drew, so each loop on the
+/// shared clock stands at that clock's last tick: the session wave live and at four fixed
+/// fractions of its period, the rotating loaders, and a session mark idle, working, done and
+/// waiting on an approval.
+#[test]
+#[ignore = "golden images: scripts/dev/golden.sh"]
+fn spinners() {
+    use crate::session_mark::State;
+    run("spinners", |cx, _| {
+        cx.update(|cx| cx.set_reduce_motion(false));
+        let window = open(cx, (360., 150.), |_, cx| {
+            let marks = [State::Idle, State::Working, State::Done, State::Attention].map(|state| {
+                cx.new(|cx| {
+                    let mut mark = SessionMark::new("claude".into());
+                    mark.set("claude", state, cx);
+                    mark
+                })
+            });
+            cx.new(|_| Spinners {
+                marks: Vec::from(marks),
+            })
+        });
+        cx.advance_clock(SPIN);
+        window.into()
+    });
 }
 
 #[test]

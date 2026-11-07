@@ -1378,6 +1378,13 @@ pub(crate) fn agent_cli(label: &str) -> Option<&'static str> {
     onicode_core::provider::Kind::parse(name).map(|kind| kind.id())
 }
 impl Terminal {
+    /// Feeds the mirror as the host's output would, with no shell (golden scenes).
+    #[cfg(test)]
+    pub(crate) fn feed(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+        self.mirror.feed(bytes);
+        cx.notify();
+    }
+
     /// The agent CLI holding this terminal: by its foreground command, else by the app its
     /// status report names.
     pub(crate) fn agent(&self) -> Option<&'static str> {

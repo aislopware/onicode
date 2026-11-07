@@ -8,9 +8,24 @@ gpui-fast (`.research/monocode/stack-port.md` §6) can be diffed pixel by pixel.
 the shell (sidebar labels, tabs, the inset card's corners, composer glass), narrow faded tab labels, the transcript
 mid-scroll with both edges faded, a session menu, a modal, a toast, a bare popover card, a dashed draft bubble, the
 sidebar peek halfway open, interface scale 125%, the title reveal at 300 and 700 ms, SF labels in three weights, and the
-project background empty or filled, plain or with Haze. They are deterministic: a fixed window at the test window's 2x
-scale, system fonts, an in-memory store without timestamps, reduced motion so every entrance rests on its last frame,
-and held clocks for the two mid-motion scenes. Two more things keep them fixed: the window clears opaque whatever its
+project background empty or filled, plain or with Haze.
+
+The rest pin every widget the move of monocode's widgets onto gpui-kit could shift, so that migration is held to pixel
+parity: Settings on Appearance with the workspace theme select open (`settings-appearance`: rail search field, segmented
+controls, sliders, accent swatches, toggles, the listbox with its filter field and swatch rows), with the custom accent
+field open and its text selected (`settings-accent`), and on Chat with toggles on and off (`settings-chat`); Quick Open
+as the command palette (`quick-open`); the session menu stepped from the keyboard to an open submenu (`menu-submenu`);
+the file editor on a Rust file with syntax colours, a wrapped line, the find bar and its matches on the scrollbar rail, a
+selection and its "Add to chat" popover (`editor`); a unified diff of two files with hunks, gutter, overview rail and
+sideways scrollbar (`diff`); the terminal fed coloured output in every attribute with its focused block cursor
+(`terminal`); and every spinner, live on the shared clock and at fixed fractions (`spinners`).
+
+They are deterministic: a fixed window at the test window's 2x scale, system fonts, an in-memory store without
+timestamps, reduced motion so every entrance rests on its last frame, and held clocks for the mid-motion scenes (the
+spinners run 400 ms of the headless executor's virtual clock with motion on). The editor reads only a scratch project
+the test writes into the temp dir, the terminal is fed bytes with no shell behind it and its font is pinned to Menlo
+whatever Nerd Font is installed, and a scene that opens a control clicks it where the accessibility tree says it is
+drawn, or drives it with the keyboard's actions. Two more things keep them fixed: the window clears opaque whatever its
 background, as monocode's test window always did, and the harness claims the agent-update check before any scene draws,
 so no toast shows the machine's installed CLI versions. `check` fails on any channel that moved, except by 1 level on an
 antialiased edge (a pixel with a neighbour at least 16 levels away in the recorded image), the ring §1.1 expects to

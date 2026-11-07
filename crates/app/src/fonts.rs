@@ -39,6 +39,17 @@ pub(crate) fn terminal(cx: &App) -> Font {
         .clone()
 }
 
+/// Pins the terminal's font to the code monospace with no fallbacks, as on a Mac with no Nerd
+/// Font, so a golden scene draws the same on every Mac. Each test runs in its own process.
+#[cfg(test)]
+pub(crate) fn pin_terminal_font() {
+    let font = TERMINAL.get_or_init(|| terminal_font(&[], mono()));
+    assert!(
+        font.family.as_ref() == mono() && font.fallbacks.is_none(),
+        "the terminal font was chosen before it was pinned"
+    );
+}
+
 fn terminal_font(installed: &[String], mono: &str) -> Font {
     let has = |name: &str| installed.iter().any(|font| font == name);
     let family = TERMINAL_PRIMARY
