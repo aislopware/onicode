@@ -47,13 +47,13 @@ def sources() -> dict[str, dict]:
         return tomllib.load(f)
 
 
-def run(*args: str, timeout: int = 60) -> str | None:
-    """Run a command and return its stdout, or None when it fails, times out or is missing."""
+def run(*args: str, timeout: int = 60, ok: tuple[int, ...] = (0,)) -> str | None:
+    """Run a command and return its stdout, or None when it exits outside `ok`, times out or is missing."""
     try:
-        out = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=True)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        out = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
         return None
-    return out.stdout
+    return out.stdout if out.returncode in ok else None
 
 
 def gh_json(*args: str) -> object:
@@ -375,7 +375,8 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_deps(_: argparse.Namespace) -> int:
     """Print toolchain and crate updates."""
-    print((run("rustup", "check", timeout=120) or "rustup check failed\n").strip())
+    # rustup check exits 100 when an update is available.
+    print((run("rustup", "check", timeout=120, ok=(0, 100)) or "rustup check failed\n").strip())
     out = run(
         "cargo",
         "upgrade",
