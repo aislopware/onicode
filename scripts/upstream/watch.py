@@ -11,7 +11,9 @@ references it studies (peers that drive coding agents, Claude Code and its SDKs)
 also report GitHub releases (`releases`), RSS items (`feed`), release-notes headings (`page`) or
 npm versions (`npm`), whose published artifacts are studied with REA (docs/onicode/upstream.md).
 A head move is named only when the commits since the last look touch the source's `paths`, a pull
-request only when its files do. A source with a `fork` also reports how many upstream commits the
+request only when its files do. A source with `branches = true` also reports its other branches (work
+pushed before any pull request) when one appears or moves and its diff from the main branch touches
+`paths`. A source with a `fork` also reports how many upstream commits the
 fork's `main` lacks, whenever that number changes, so a fork never drifts behind unnoticed. Nothing
 is applied: changes are read and ported by intent (docs/onicode/upstream.md), and `base` moves in
 the adopting commit. What a round saw is kept in
@@ -104,6 +106,44 @@ def pulls(src: dict) -> dict[str, dict] | None:
         for p in data
         if relevant([f["path"] for f in p.get("files") or []], paths)
     }
+
+
+def branch_heads(src: dict) -> dict[str, str] | None:
+    """Return the tip of every branch but the main one, by name, when the source watches branches."""
+    if not src.get("branches"):
+        return {}
+    out = run("git", "ls-remote", "--heads", f"https://github.com/{src['upstream']}")
+    if out is None:
+        return None
+    heads = {}
+    for line in out.splitlines():
+        sha, ref = line.split()
+        name = ref.removeprefix("refs/heads/")
+        if name != src["branch"]:
+            heads[name] = sha
+    return heads
+
+
+def branch_lines(name: str, src: dict, seen: dict[str, str], heads: dict[str, str]) -> list[str]:
+    """Report branches that appeared or moved since the last round and touch the source's paths."""
+    lines = []
+    for branch, sha in sorted(heads.items()):
+        if seen.get(branch) == sha:
+            continue
+        diff = compare(src, src["branch"], sha)
+        if diff is None:
+            continue
+        commits, files = diff
+        hits = relevant(files, src.get("paths", []))
+        if not hits:
+            continue
+        what = "moved" if branch in seen else "appeared"
+        subject = commits[-1]["commit"]["message"].splitlines()[0] if commits else ""
+        url = f"https://github.com/{src['upstream']}/compare/{src['branch']}...{branch}"
+        lines.append(
+            f"{name}: branch {branch} {what}, {len(commits)} commits, {len(hits)} relevant files: {subject} ({url})"
+        )
+    return lines
 
 
 def releases(src: dict) -> list[str] | None:
@@ -255,7 +295,8 @@ def one_round(state: dict, now: float) -> list[str]:
         new = head(src)
         prs = pulls(src)
         tags = releases(src)
-        if new is None or prs is None or tags is None:
+        heads = branch_heads(src)
+        if new is None or prs is None or tags is None or heads is None:
             continue
         if "releases" in seen:
             lines += [
@@ -267,7 +308,9 @@ def one_round(state: dict, now: float) -> list[str]:
         lines += fork_lines(name, src, seen)
         if "pulls" in seen:
             lines += pull_lines(name, src, seen["pulls"], prs)
-        seen.update(head=new, pulls=prs, releases=tags, at=now)
+        if "branches" in seen:
+            lines += branch_lines(name, src, seen["branches"], heads)
+        seen.update(head=new, pulls=prs, releases=tags, branches=heads, at=now)
     return lines
 
 

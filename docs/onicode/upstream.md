@@ -10,7 +10,8 @@ blindly.
 `scripts/upstream/sources.toml` names every source, the upstream commit onicode stands on (`base`) and the
 paths that matter. `scripts/upstream/watch.py`:
 
-- `round`: one line per head move or pull request that touches those paths since the last round;
+- `round`: one line per head move or pull request that touches those paths since the last round, and for a source
+  with `branches = true` (monocode) each other branch that appears or moves with a diff touching them;
 - `loop`: rounds every 5 minutes, for a Monitor in the working session;
 - `status [name]`: what lies between `base` and the upstream head, commit by commit and file by file;
 - `deps`: `rustup check` and `cargo upgrade --dry-run --incompatible`.
@@ -35,6 +36,11 @@ A version bump or a fast-forward on its own is not adoption. For each change:
 Open upstream pull requests are adopted the same way when they help now: merge them into our fork and finish
 them, then reconcile when upstream lands them. Before building anything in GPUI or the terminal, check the open
 upstream pull requests so the work is not done twice.
+
+monocode's open pull requests and feature branches are read as they move, for what they teach and what they will
+change, but its UI/UX work is adopted only once it lands on monocode's `main`. Notes on what is coming go in
+`.research/monocode/incoming.md`; a fix that does not touch the interface may be ported earlier when onicode hits
+the bug.
 
 For the toolchain and crates, take the newest that pays off, including nightly, prerelease and breaking majors.
 Fix the call sites and adopt what the new version offers. A dependency that blocks a bump or falls short is

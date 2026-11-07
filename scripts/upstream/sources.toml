@@ -16,6 +16,8 @@ checkout = "forks/monocode"
 base = "1de99e7bc7305bf266a571cb5c0e4d11d72c9525"
 base_date = "2026-11-06"
 every_minutes = 0
+# Its feature branches too: work lands there days before a pull request, and is studied, not adopted.
+branches = true
 # The native app, its core and vendored GPUI; the Tauri/React app, Node host and Expo app are not onicode's.
 paths = [
     "crates/monocode-gpui/",
@@ -154,7 +156,7 @@ every_minutes = 0
 [rune]
 upstream = "anomalyco/rune"
 branch = "dev"
-base = "1571ad5792a372483e6beebe9a0f9e6d74b138df"
+base = "b03d77a813a157225c2cd940b6447e9677ec94e0"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = true
@@ -164,7 +166,7 @@ releases = false
 [t3code]
 upstream = "pingdotgg/t3code"
 branch = "main"
-base = "257e4073c1c51dcae291ecc7ca482dc66900f961"
+base = "f8c7c7593f32c5fd17c9647cb89761ce8285cc7e"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = false
@@ -199,7 +201,7 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "f5ac7a757e8f6f4fe922f3daab0fcaba02f1fa72"
+base = "c4f0e09912fd4c1173258ccd17e33284a876e826"
 base_date = "2026-11-07"
 every_minutes = 60
 pulls = false
