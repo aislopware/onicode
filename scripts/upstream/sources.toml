@@ -52,7 +52,7 @@ every_minutes = 0
 upstream = "zed-industries/zed"
 branch = "main"
 checkout = "../slopty/.research/zed-main"
-base = "9a8ab54db4f9f9af4dc6efb42b304c55c6a62bd3"
+base = "b5cd310b3b54dfc659fcc06453e6358843dfe216"
 base_date = "2026-11-07"
 every_minutes = 240
 pulls = false
@@ -156,7 +156,7 @@ every_minutes = 0
 [rune]
 upstream = "anomalyco/rune"
 branch = "dev"
-base = "f3d04f3f2069d177d04c963b0ba9f6b2065e46eb"
+base = "8cb5e3c24b6c972562f52c4de7c4d6bf7474d435"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = true
@@ -201,7 +201,7 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "4be90eb069e6e027423c29eedeab5cab9da349dd"
+base = "efdacaf46ff54660a239189a6d62434c5db33d2c"
 base_date = "2026-11-07"
 every_minutes = 60
 pulls = false
