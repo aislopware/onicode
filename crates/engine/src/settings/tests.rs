@@ -66,7 +66,7 @@ struct Viewer {
     stream: Option<Stream>,
     shown: Option<(Cursor, EngineSettings)>,
     held: Vec<(Cursor, EngineSettings)>,
-    /// Each receipt with the seq of the event that carried it.
+    /// Each receipt with the last seq of the batch that carried it.
     receipts: Vec<(u64, OpId, Outcome)>,
 }
 
@@ -97,10 +97,13 @@ impl Viewer {
                 } => {
                     let (cursor, state) = self.shown.as_mut().expect("events after a snapshot");
                     assert_eq!(first, cursor.seq + 1, "no gap and no repeat");
-                    for (seq, event) in (first..).zip(&events) {
+                    // A batch may merge what it spans, so a receipt is known only to lie in it:
+                    // it is kept under the batch's last seq, and every cursor a viewer comes back
+                    // at is a batch's end.
+                    for event in &events {
                         SettingsFeed::apply(state, event);
                         if let EngineSettingsEvent::Receipt { op, outcome } = event {
-                            self.receipts.push((seq, *op, outcome.clone()));
+                            self.receipts.push((last, *op, outcome.clone()));
                         }
                     }
                     cursor.seq = last;
