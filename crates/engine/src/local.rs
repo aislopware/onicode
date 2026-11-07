@@ -125,6 +125,7 @@ impl Local {
             None => WorkspaceHub::new(store.clone(), spawn.clone()),
         };
         session.attach(workspace.clone());
+        workspace.attach_session(&session);
         session.attach_settings(settings.clone());
         let (files, git) = if options.quiet {
             (

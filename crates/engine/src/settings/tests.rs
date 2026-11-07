@@ -2,7 +2,8 @@
 //! some under ops sent twice, while viewers join, fall behind, drop and come back at cursors they
 //! held. Every viewer must fold to the hub's settings, a snapshot plus the events after it must be
 //! the later snapshot, and a repeated op must get its first receipt and change nothing again.
-//! Then the move out of monocode's saved preferences, which runs once.
+//! Projects' notification preferences are set one project at a time, under any spelling of its
+//! folder, beside the keys. Then the move out of monocode's saved preferences, which runs once.
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -11,9 +12,10 @@ use futures::executor::block_on;
 use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
 use onicode_core::store::Store;
+use onicode_protocol::alerts::{AGENT_FINISHED, AGENT_INPUT, Mute, ProjectNotifications};
 use onicode_protocol::engine_settings::{
     EngineSetting, EngineSettings, EngineSettingsEvent, ModelChoice, SetEngineSetting,
-    WatchEngineSettings,
+    SetProjectNotifications, WatchEngineSettings,
 };
 use onicode_protocol::{Cursor, Item, OpId, Outcome};
 use proptest::prelude::*;
@@ -147,11 +149,41 @@ fn setting() -> impl Strategy<Value = EngineSetting> {
     ]
 }
 
+/// One project's preferences: categories off, a mute, a resume.
+fn notifications() -> impl Strategy<Value = ProjectNotifications> {
+    (
+        prop::collection::btree_set(
+            prop_oneof![
+                Just(AGENT_INPUT.to_owned()),
+                Just(AGENT_FINISHED.to_owned())
+            ],
+            0..3,
+        ),
+        prop::option::of(prop_oneof![
+            Just(Mute::UntilResumed),
+            (0..4_u64).prop_map(Mute::Until)
+        ]),
+        0..3_u64,
+    )
+        .prop_map(|(disabled, muted, resumed_at)| ProjectNotifications {
+            disabled,
+            muted,
+            resumed_at,
+            enabled_after: BTreeMap::new(),
+        })
+}
+
 #[derive(Clone, Debug)]
 enum Step {
     /// A viewer sets a key, under op number `op` when given: a number already used repeats it.
     Set {
         setting: EngineSetting,
+        op: Option<u8>,
+    },
+    /// A viewer sets one project's notification preferences, naming its folder one of two ways.
+    Notify {
+        project: &'static str,
+        notifications: ProjectNotifications,
         op: Option<u8>,
     },
     Join,
@@ -171,6 +203,16 @@ fn step() -> impl Strategy<Value = Step> {
     prop_oneof![
         5 => (setting(), prop::option::of(0..6_u8))
             .prop_map(|(setting, op)| Step::Set { setting, op }),
+        3 => (
+            prop_oneof![Just("/work/a"), Just("/work/a/"), Just("/work/b")],
+            notifications(),
+            prop::option::of(0..6_u8),
+        )
+            .prop_map(|(project, notifications, op)| Step::Notify {
+                project,
+                notifications,
+                op,
+            }),
         2 => Just(Step::Join),
         4 => any::<usize>().prop_map(|viewer| Step::Pump { viewer }),
         1 => any::<usize>().prop_map(|viewer| Step::Drop { viewer }),
@@ -203,6 +245,31 @@ fn run(steps: &[Step], limits: Limits) {
                     effects.applied.load(Ordering::Relaxed),
                     applied,
                     "a repeated op changes nothing again"
+                );
+            }
+            Step::Notify {
+                project,
+                notifications,
+                op,
+            } => {
+                let repeat = op.is_some_and(|op| ops.contains_key(&op));
+                let op = op.map(|op| *ops.entry(op).or_default());
+                let body = SetProjectNotifications {
+                    project: (*project).to_owned(),
+                    notifications: notifications.clone(),
+                };
+                assert_eq!(
+                    block_on(hub.set_project_notifications(op, body)),
+                    Ok(Outcome::Applied)
+                );
+                if !repeat {
+                    model.set_project_notifications(project, notifications.clone());
+                    applied += 1;
+                }
+                assert_eq!(effects.applied.load(Ordering::Relaxed), applied);
+                assert!(
+                    model.project_notifications.len() <= 2,
+                    "one entry per folder, whatever its spelling"
                 );
             }
             Step::Join => {
@@ -308,4 +375,37 @@ fn an_empty_store_starts_from_the_defaults() {
     let (hub, _) = hub(&store, Limits::default());
     assert_eq!(hub.current(), EngineSettings::default());
     assert!(store.lock().unwrap().setting(KEY).unwrap().is_some());
+}
+
+/// A project's mute is the engine's: saved with its settings, so the engine that starts next
+/// holds it before any viewer says anything, and the defaults clear it.
+#[test]
+fn a_project_mute_outlives_the_engine_run() {
+    let store = store();
+    let (hub, _) = hub(&store, Limits::default());
+    let muted = ProjectNotifications {
+        muted: Some(Mute::UntilResumed),
+        ..ProjectNotifications::default()
+    };
+    let set = |hub: &Arc<SettingsHub>, project: &str, notifications: ProjectNotifications| {
+        block_on(hub.set_project_notifications(
+            Some(OpId::new()),
+            SetProjectNotifications {
+                project: project.to_owned(),
+                notifications,
+            },
+        ))
+    };
+    assert_eq!(set(&hub, "/work/a/", muted.clone()), Ok(Outcome::Applied));
+    let (again, _) = hub_again(&store);
+    assert_eq!(
+        again.current().project_notifications,
+        BTreeMap::from([("/work/a".to_owned(), muted)])
+    );
+    assert_eq!(
+        set(&again, "/work/a", ProjectNotifications::default()),
+        Ok(Outcome::Applied)
+    );
+    let (third, _) = hub_again(&store);
+    assert!(third.current().project_notifications.is_empty());
 }

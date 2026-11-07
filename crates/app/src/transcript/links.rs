@@ -1,4 +1,6 @@
-//! AgentMarkdown's file-link actions, with browser actions for web links.
+//! AgentMarkdown's file-link actions, with browser actions for web links. Open in Onicode
+//! dispatches `OpenPath`, which the shell resolves with a `Stat` on the engine holding the path: a
+//! folder opens the explorer there (`shell/open_paths.rs`), a file a review tab.
 use std::path::Path;
 
 use gpui::{AnyElement, Entity, Point, Subscription};

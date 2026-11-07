@@ -264,6 +264,9 @@ pub(crate) struct Explorer {
     show_excluded: bool,
     expanded: HashSet<String>,
     selected: Option<String>,
+    /// A folder being revealed: its row is scrolled into view once its parents' listings show
+    /// it.
+    revealing: Option<String>,
     /// loadExpanded / loadSelected: remembered per project for the session.
     saved: HashMap<String, Saved>,
     /// listCachedDir: what each folder shows, its listing with the echoes
@@ -499,6 +502,7 @@ impl Explorer {
             show_excluded: false,
             expanded: HashSet::new(),
             selected: None,
+            revealing: None,
             saved: HashMap::new(),
             dirs: HashMap::new(),
             listed: HashMap::new(),
@@ -589,6 +593,71 @@ impl Explorer {
         window.focus(&self.focus, cx);
         cx.notify();
         true
+    }
+
+    /// Shows `folder` (a path of this project, as the app spells it) in the tree: every folder
+    /// from the root down to it expanded, itself too, so its contents list; it is selected and
+    /// scrolled into view as soon as its row shows. `false` when it lies outside the project,
+    /// which the tree cannot show.
+    pub(crate) fn reveal_folder(&mut self, folder: &str, cx: &mut Context<Self>) -> bool {
+        self.sync_project(cx);
+        let folder = files::path_key(folder);
+        if !self.available() || !files::is_equal_or_inside(&folder, &self.cwd) {
+            return false;
+        }
+        let mut chain = vec![folder.clone()];
+        let mut at = folder.clone();
+        while files::path_key(&at) != files::path_key(&self.cwd) {
+            let parent = parent_of(&at);
+            if parent == at {
+                break;
+            }
+            chain.push(parent.clone());
+            at = parent;
+        }
+        self.naming = None;
+        self.expand(&chain);
+        self.expanded.insert(self.cwd.clone());
+        self.selected = Some(folder.clone());
+        self.revealing = (folder != files::path_key(&self.cwd)).then_some(folder);
+        self.rebuild(cx);
+        true
+    }
+
+    /// Whether `folder` shows revealed: selected, expanded with every folder above it, its row
+    /// in the tree and what it holds listed under it.
+    #[cfg(test)]
+    pub(crate) fn is_revealed(&self, folder: &str) -> bool {
+        let row = |at: &dyn Fn(&str) -> bool| {
+            self.lines
+                .iter()
+                .any(|line| matches!(line, Line::Entry { entry, .. } if at(&entry.path)))
+        };
+        let mut above = folder.to_owned();
+        while above != self.cwd && above != parent_of(&above) {
+            if !self.expanded.contains(&above) {
+                return false;
+            }
+            above = parent_of(&above);
+        }
+        self.selected.as_deref() == Some(folder)
+            && row(&|path| path == folder)
+            && row(&|path| parent_of(path) == folder)
+    }
+
+    /// Scrolls the folder being revealed into view once its row shows.
+    fn scroll_to_revealed(&mut self) {
+        let Some(folder) = &self.revealing else {
+            return;
+        };
+        if let Some(ix) = self
+            .lines
+            .iter()
+            .position(|l| matches!(l, Line::Entry { entry, .. } if entry.path == *folder))
+        {
+            self.list.scroll_to_reveal_item(ix);
+            self.revealing = None;
+        }
     }
 
     /// notifyDirsChanged on window focus: the engine keeps every watched
@@ -898,6 +967,7 @@ impl Explorer {
         if start < old_end || start < new_end {
             self.list.splice(start..old_end, new_end - start);
         }
+        self.scroll_to_revealed();
         cx.notify();
     }
 
@@ -2431,6 +2501,45 @@ mod tests {
         assert_eq!(moved.path, "peer://nMac/code/b.rs");
         assert_eq!(moved.listed[0].root, "peer://nMac/code");
         assert_eq!(away.path_of(&moved.path), "/code/b.rs");
+    }
+
+    /// A folder link of a project on another engine reveals that folder in the app's spelling:
+    /// every folder from the project down to it expanded, itself selected. A folder outside the
+    /// project is not the tree's to show.
+    #[gpui::test]
+    fn a_peer_folder_is_revealed_in_its_projects_tree(cx: &mut TestAppContext) {
+        let root = "peer://nMac/code".to_owned();
+        let (explorer, cx) = cx.add_window_view(|window, cx| {
+            let git = cx.new(|cx| ProjectGit::new(root.clone(), cx));
+            Explorer::new(git, window, cx)
+        });
+        explorer.update(cx, |explorer, cx| {
+            assert!(explorer.reveal_folder("peer://nMac/code/src/app/", cx));
+            assert_eq!(explorer.cwd, root);
+            for folder in [
+                "peer://nMac/code",
+                "peer://nMac/code/src",
+                "peer://nMac/code/src/app",
+            ] {
+                assert!(explorer.expanded.contains(folder), "{folder} is expanded");
+            }
+            assert_eq!(
+                explorer.selected.as_deref(),
+                Some("peer://nMac/code/src/app")
+            );
+            assert_eq!(
+                explorer.revealing.as_deref(),
+                Some("peer://nMac/code/src/app"),
+                "its row is scrolled to once its listing shows it"
+            );
+            let before = explorer.expanded.clone();
+            assert!(!explorer.reveal_folder("peer://nMac/other", cx));
+            assert!(
+                !explorer.reveal_folder("/code/src", cx),
+                "this Mac's folder"
+            );
+            assert_eq!(explorer.expanded, before);
+        });
     }
 
     /// A folder of its own under the temp dir, gone with the test.

@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::accounts::Profile;
 use crate::agent::{AccessMode, Settings};
-use crate::automations::DueAutomationRun;
 use crate::notes::{Note, NoteUpsert, ResponseNote};
 use crate::search::Hit;
 use crate::sessions::{Groups, Reminder, Session, TextModel, WorkItem};
@@ -60,9 +59,6 @@ pub struct WorkspaceState {
     pub reminders: Vec<Reminder>,
     /// How many notes there are.
     pub notes: usize,
-    /// Automation runs the scheduler claimed that no viewer has started yet
-    /// ([`PrepareAutomationRun`]), oldest first.
-    pub automations: Vec<DueAutomationRun>,
 }
 
 /// One change to the workspace, in the order the engine made it.
@@ -78,10 +74,6 @@ pub enum WorkspaceEvent {
     /// now: viewers announce it.
     Reminders(Vec<Reminder>),
     Notes(usize),
-    /// The scheduler claimed a run.
-    AutomationDue(Box<DueAutomationRun>),
-    /// A viewer started the run with this id, or it was given up.
-    AutomationTaken(String),
     /// What became of a mutating call.
     Receipt {
         op: OpId,
@@ -150,7 +142,7 @@ pub struct CreateSession {
 }
 workspace_call!(CreateSession, agent: true, reply: Created);
 
-/// [`CreateSession`]'s reply, and [`PrepareAutomationRun`]'s.
+/// [`CreateSession`]'s reply.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Created {
     pub outcome: Outcome,
@@ -332,29 +324,10 @@ pub struct SaveResponseNote {
 }
 workspace_call!(SaveResponseNote, agent: false, reply: Outcome);
 
-/// Start an automation run, one the scheduler claimed or one the person started: create its
-/// session (or take the reusable one, `reuse`) with `settings`, link and file it, and record the
-/// run as running. The viewer then sends its prompt. A run the scheduler claimed is taken as the
-/// engine holds it.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PrepareAutomationRun {
-    pub due: Box<DueAutomationRun>,
-    pub reuse: Option<i64>,
-    pub settings: Box<Settings>,
-}
-workspace_call!(PrepareAutomationRun, agent: false, reply: Created);
-
-/// Record how a run ended: `succeeded`, `failed` or `cancelled`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FinishAutomationRun {
-    pub run: String,
-    pub status: String,
-    pub error: Option<String>,
-}
-workspace_call!(FinishAutomationRun, agent: false, reply: Outcome);
-
-/// Inbox items that appeared: claim the event automations they trigger. Claimed runs arrive as
-/// [`WorkspaceEvent::AutomationDue`]; items whose claim failed are retried on the next tick.
+/// Inbox items that appeared: claim and start the event automations of this engine they
+/// trigger. A viewer's Inbox hands them to every engine whose automations wait on Inbox events,
+/// each item's `project_path` spelled as that engine names its project; items whose claim failed
+/// are retried on the next tick.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClaimInboxEvents {
     pub items: Vec<crate::inbox::Item>,

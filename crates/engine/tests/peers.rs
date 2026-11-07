@@ -12,6 +12,8 @@
 //! * A slow phone is pushed to `Resync` by the host while the Mac, through its engine, stays live.
 //! * Round trips against the latency baseline: a remote receipt in 1 RTT + 1 ms, and a resume after
 //!   a link drop with the cursor in the ring in 1 RTT, with no snapshot.
+//! * An automation the app makes for a project on another machine is that machine's: the edit waits
+//!   in the outbox while it sleeps, and only its clock runs it, with no viewer.
 use std::io;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -32,11 +34,15 @@ use onicode_net_sim::{Faults, Link, Net, NodeId, NodeSpec, SimTailnet, report_se
 use onicode_peer::{
     LinkState, LinksConfig, PeerConfig, PeerDirectory, PeerEndpoint, PeerLinks, Sockets,
 };
+use onicode_protocol::automations::{
+    Automation, AutomationRun, AutomationTrigger, AutomationUpsert,
+};
 use onicode_protocol::engine::{EngineInfo, WatchMachines};
 use onicode_protocol::session::{self, SessionEvent, SessionState, WatchSession};
 use onicode_protocol::session_groups::WorkItem;
 use onicode_protocol::session_title::{GeneratedTitle, TextModel, WorkItemHint};
 use onicode_protocol::transcript::Row;
+use onicode_protocol::work::{ListAutomations, RunAutomationNow, UpsertAutomation};
 use onicode_protocol::workspace::{CreateSession, NewSession};
 use onicode_protocol::{Call, Cursor, EngineId, Item, MessageId, OpId, Routed, SessionId, Watch};
 use onicode_rpc::{RpcClient, RpcSubscription, memory_client};
@@ -740,4 +746,105 @@ async fn remote_receipts_and_resumes_cost_one_round_trip() {
         "{listed:?}"
     );
     assert!(state.get(&a.id()).is_some(), "and this engine");
+}
+
+/// The app makes an automation, through its own engine, for a project on the studio. The studio
+/// is asleep, so the edit waits in the outbox and lands once when it wakes; from then the studio
+/// alone lists it, and when both clocks pass its hour the studio runs it, with no viewer of its
+/// own, in its project, while the Mac's engine runs nothing. Running it now through the app's
+/// engine starts another run on the studio.
+#[tokio::test(start_paused = true)]
+async fn an_automation_belongs_to_the_engine_that_holds_its_project() {
+    const SEED: u64 = 83;
+    let _seed = report_seed(
+        "an_automation_belongs_to_the_engine_that_holds_its_project",
+        SEED,
+    );
+    let tailnet = SimTailnet::new(Faults::CLEAR, SEED);
+    let mac = tailnet.add(NodeSpec::owned("mac", USER));
+    let host = tailnet.add(NodeSpec::owned("studio", USER));
+    let dirs = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let project = tempfile::tempdir().unwrap();
+    let folder = project.path().to_string_lossy().into_owned();
+    let a = engine(&tailnet, mac, dirs.0.path(), SEED).await;
+    let b = engine(&tailnet, host, dirs.1.path(), SEED + 1).await;
+    a.find().await;
+    tailnet.set_asleep(host, true);
+
+    let app = app(&a);
+    let wall = i64::try_from(onicode_protocol::time::now_ms()).unwrap();
+    let mut draft = AutomationUpsert::new(folder.clone(), "codex".into(), String::new());
+    draft.name = "Nightly".into();
+    draft.prompt = "Review what changed".into();
+    draft.workspace_mode = "current".into();
+    draft.triggers = Some(vec![AutomationTrigger::new("time", "hourly")]);
+    draft.sync_triggers(wall);
+    let upsert = {
+        let (app, studio) = (app.clone(), b.id());
+        let body = UpsertAutomation { automation: draft };
+        tokio::spawn(async move {
+            app.call(
+                UpsertAutomation::NAME,
+                routed(Some(&studio), Some(OpId::new()), body),
+            )
+            .await
+        })
+    };
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    assert!(!upsert.is_finished(), "it waits for the studio");
+    assert!(b.local.work.automations().unwrap().is_empty());
+
+    tailnet.set_asleep(host, false);
+    let saved = tokio::time::timeout(Duration::from_secs(300), upsert)
+        .await
+        .expect("delivered once the studio is back")
+        .unwrap()
+        .unwrap();
+    let saved: Automation = serde_json::from_value(saved).unwrap();
+    assert_eq!(saved.cwd, folder, "as the studio names its project");
+    assert_eq!(b.local.work.automations().unwrap().len(), 1);
+    assert!(
+        a.local.work.automations().unwrap().is_empty(),
+        "the app's own engine never holds it"
+    );
+    let listed = app
+        .call(
+            ListAutomations::NAME,
+            routed(Some(&b.id()), None, ListAutomations {}),
+        )
+        .await
+        .unwrap();
+    let listed: Vec<Automation> = serde_json::from_value(listed).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, saved.id);
+
+    let due = u64::try_from(saved.next_run_at).unwrap();
+    a.local.tick(due).unwrap();
+    b.local.tick(due).unwrap();
+    until(Duration::from_secs(10), || b.turns() == 1).await;
+    assert_eq!(a.turns(), 0, "the Mac's clock runs nothing");
+    {
+        let jobs = b.jobs.lock().unwrap();
+        assert_eq!(jobs[0].prompt, "Review what changed");
+        assert_eq!(jobs[0].summary.cwd, folder);
+    }
+
+    let run = app
+        .call(
+            RunAutomationNow::NAME,
+            routed(
+                Some(&b.id()),
+                Some(OpId::new()),
+                RunAutomationNow {
+                    automation: saved.id.clone(),
+                },
+            ),
+        )
+        .await
+        .unwrap();
+    let run: AutomationRun = serde_json::from_value(run).unwrap();
+    assert_eq!(run.status, "running");
+    assert!(run.session_id.is_some());
+    until(Duration::from_secs(10), || b.turns() == 2).await;
+    assert_eq!(a.turns(), 0);
 }

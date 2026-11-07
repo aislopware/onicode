@@ -29,18 +29,6 @@ pub fn apply(state: &mut WorkspaceState, event: &WorkspaceEvent) {
         }
         WorkspaceEvent::Reminders(reminders) => state.reminders.clone_from(reminders),
         WorkspaceEvent::Notes(count) => state.notes = *count,
-        WorkspaceEvent::AutomationDue(due) => {
-            if !state
-                .automations
-                .iter()
-                .any(|known| known.run.id == due.run.id)
-            {
-                state.automations.push((**due).clone());
-            }
-        }
-        WorkspaceEvent::AutomationTaken(run) => {
-            state.automations.retain(|known| known.run.id != *run);
-        }
         WorkspaceEvent::Receipt { .. } => {}
     }
 }
@@ -62,9 +50,7 @@ fn key(event: &WorkspaceEvent) -> Option<Key<'_>> {
         WorkspaceEvent::Project(project) => Key::Project(&project.path),
         WorkspaceEvent::Reminders(_) => Key::Reminders,
         WorkspaceEvent::Notes(_) => Key::Notes,
-        WorkspaceEvent::AutomationDue(_)
-        | WorkspaceEvent::AutomationTaken(_)
-        | WorkspaceEvent::Receipt { .. } => return None,
+        WorkspaceEvent::Receipt { .. } => return None,
     })
 }
 

@@ -20,10 +20,12 @@ mod new_chat_choice;
 #[cfg(test)]
 mod new_chat_choice_tests;
 mod notifications;
+mod open_paths;
 mod peer_projects;
 mod peer_sessions;
 mod picker_preferences;
 mod pinned_tabs;
+mod project_notifications;
 mod project_rail;
 mod project_removal;
 mod project_settings;
@@ -623,6 +625,8 @@ pub(crate) struct Shell {
     /// The engine's workspace as the shell mirrors it.
     mirror: workspace_mirror::Mirror,
     engine_settings: engine_settings_mirror::Mirror,
+    /// Every engine's project notification preferences as the shell mirrors them.
+    project_notifications: project_notifications::Mirror,
     selected_sessions: HashSet<i64>,
     selection_anchor: Option<i64>,
     context_selection: bool,
@@ -792,6 +796,10 @@ impl Shell {
         let mut workspace = Workspace::restore(saved.as_deref(), &metadata, &cwd);
         let engine_settings_now = engine.settings_now();
         workspace.preferences.engine = engine_settings_now.clone();
+        workspace
+            .preferences
+            .project_notifications
+            .clone_from(&engine_settings_now.project_notifications);
         let quit_state = ui_state.clone();
         // This application-level hook survives the last window/entity being released.
         let app: &mut App = cx;
@@ -940,6 +948,9 @@ impl Shell {
             group_writes: None,
             mirror: Default::default(),
             engine_settings: engine_settings_mirror::Mirror::new(&engine_settings_now),
+            project_notifications: project_notifications::Mirror::new(
+                &engine_settings_now.project_notifications,
+            ),
             selected_sessions: HashSet::new(),
             selection_anchor: None,
             context_selection: false,
@@ -1173,7 +1184,6 @@ impl Shell {
                     this.git.update(cx, |git, cx| git.reload(cx));
                 }
                 this.sync_search_session(id, cx);
-                this.automation_session_changed(id, cx);
                 this.sync_review_locks(cx);
                 this.refresh_session_mark(id, cx);
                 this.notification_session_changed(id, cx);
@@ -3919,6 +3929,7 @@ impl Shell {
         let state = serde_json::to_string(&self.workspace).unwrap();
         self.ui_state.set(crate::ui_state::WORKSPACE, state);
         self.send_engine_settings(cx);
+        self.send_project_notifications(cx);
     }
 
     fn update_usage_provider(&self, cx: &mut Context<Self>) {
@@ -8385,14 +8396,8 @@ impl Render for Shell {
             }))
             .on_action(
                 cx.listener(|this, event: &crate::file_editor::OpenPath, window, cx| {
-                    let cwd = this.git.read(cx).project().to_owned();
-                    let (path, location) = crate::file_editor::file_location(&event.0, &cwd);
-                    this.open_review(crate::review::ReviewTab::File { cwd, path }, window, cx);
-                    if let Some((line, column)) = location
-                        && let Some(pane) = this.active_review(cx)
-                    {
-                        pane.update(cx, |pane, cx| pane.navigate_file(line, column, cx));
-                    }
+                    // A folder opens the explorer there; a file, a review tab.
+                    this.open_path(&event.0, window, cx);
                 }),
             )
             .on_action(

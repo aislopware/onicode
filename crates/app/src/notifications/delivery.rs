@@ -3,59 +3,12 @@
 
 use std::collections::HashSet;
 
-use serde_json::Value;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Permission {
     Prompt,
     Granted,
     Denied,
     Unsupported,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ProjectRule {
-    pub enabled: bool,
-    /// Last suppressed millisecond. A scheduled mute expires at its deadline.
-    pub after: u64,
-}
-
-impl Default for ProjectRule {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            after: 0,
-        }
-    }
-}
-
-impl ProjectRule {
-    /// Read the exact React preference schema, including indefinite null mutes.
-    /// Invalid fields are ignored, as in loadNotificationPreferences.
-    pub fn from_preferences(preferences: &Value, project: &str, category: &str) -> Self {
-        let preference = &preferences[project];
-        let disabled = preference["disabled"]
-            .as_array()
-            .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(category)));
-        Self {
-            enabled: preference.get("mutedUntil") != Some(&Value::Null) && !disabled,
-            after: timestamp(&preference["resumedAt"])
-                .max(timestamp(&preference["mutedUntil"]).saturating_sub(1))
-                .max(timestamp(&preference["enabledAfter"][category])),
-        }
-    }
-
-    pub fn allows(self, occurred_at: u64, now: u64) -> bool {
-        self.enabled && now > self.after && occurred_at > self.after
-    }
-}
-
-fn timestamp(value: &Value) -> u64 {
-    value
-        .as_f64()
-        .filter(|number| number.is_finite() && *number >= 0.0)
-        .map(|number| number.min(u64::MAX as f64) as u64)
-        .unwrap_or(0)
 }
 
 pub fn should_notify(

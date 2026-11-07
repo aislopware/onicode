@@ -4,10 +4,13 @@
 //!
 //! Each [`EngineSetting`] is one typed key with its whole value: setting it replaces that value,
 //! so a viewer echoes a change in the frame it makes it and the event that follows says the same.
+//! One project's notification preferences are set on their own ([`SetProjectNotifications`]), so
+//! two viewers muting two projects never undo each other.
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::alerts::ProjectNotifications;
 use crate::{Call, Cursor, OpId, Outcome, Watch};
 
 /// A provider and, optionally, one of its models: the background model, or a picker's choice.
@@ -60,6 +63,10 @@ pub struct EngineSettings {
     pub default_access: Option<String>,
     /// The last effort picked for each provider, shared across projects.
     pub provider_efforts: BTreeMap<String, String>,
+    /// Each project's notification preferences (its mute and categories), by the project's
+    /// folder as this engine names it. The engine's alerts and banners follow them with or
+    /// without a viewer (`docs/onicode/decisions/alerts.md`).
+    pub project_notifications: BTreeMap<String, ProjectNotifications>,
 }
 
 impl Default for EngineSettings {
@@ -78,6 +85,7 @@ impl Default for EngineSettings {
             project_providers: BTreeMap::new(),
             default_access: None,
             provider_efforts: BTreeMap::new(),
+            project_notifications: BTreeMap::new(),
         }
     }
 }
@@ -98,6 +106,7 @@ pub enum EngineSetting {
     ProjectProviders(BTreeMap<String, ProviderDefaults>),
     DefaultAccess(Option<String>),
     ProviderEfforts(BTreeMap<String, String>),
+    ProjectNotifications(BTreeMap<String, ProjectNotifications>),
 }
 
 impl EngineSetting {
@@ -118,6 +127,7 @@ impl EngineSetting {
             Self::ProjectProviders(_) => "project-providers",
             Self::DefaultAccess(_) => "default-access",
             Self::ProviderEfforts(_) => "provider-efforts",
+            Self::ProjectNotifications(_) => "project-notifications",
         }
     }
 }
@@ -141,6 +151,7 @@ impl EngineSettings {
             EngineSetting::ProjectProviders(value) => self.project_providers = value,
             EngineSetting::DefaultAccess(value) => self.default_access = value,
             EngineSetting::ProviderEfforts(value) => self.provider_efforts = value,
+            EngineSetting::ProjectNotifications(value) => self.project_notifications = value,
         }
     }
 
@@ -173,7 +184,23 @@ impl EngineSettings {
             EngineSetting::ProjectProviders(self.project_providers.clone()),
             EngineSetting::DefaultAccess(self.default_access.clone()),
             EngineSetting::ProviderEfforts(self.provider_efforts.clone()),
+            EngineSetting::ProjectNotifications(self.project_notifications.clone()),
         ]
+    }
+
+    /// Sets the notification preferences of the project at `project`, replacing what any
+    /// spelling of its folder held; the defaults leave no entry.
+    pub fn set_project_notifications(
+        &mut self,
+        project: &str,
+        notifications: ProjectNotifications,
+    ) {
+        let key = crate::files::path_key(project);
+        self.project_notifications
+            .retain(|path, _| crate::files::path_key(path) != key);
+        if notifications != ProjectNotifications::default() {
+            self.project_notifications.insert(key, notifications);
+        }
     }
 
     /// The providers `project`'s pickers leave out: the hidden ones, and the project's own.
@@ -224,4 +251,21 @@ impl Call for SetEngineSetting {
     type Reply = Outcome;
 
     const NAME: &'static str = "SetEngineSetting";
+}
+
+/// Set one project's notification preferences on the engine that holds the project: `project`
+/// is its folder as that engine names it. Replaces what that folder held, under any spelling;
+/// the defaults clear it. Answered `Applied`, and every viewer sees the engine's
+/// `ProjectNotifications` setting move.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetProjectNotifications {
+    pub project: String,
+    pub notifications: ProjectNotifications,
+}
+
+impl Call for SetProjectNotifications {
+    type Params = Self;
+    type Reply = Outcome;
+
+    const NAME: &'static str = "SetProjectNotifications";
 }

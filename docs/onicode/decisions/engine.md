@@ -72,7 +72,7 @@ first port is a translation, not a redesign.
 | Git | `WatchGit {checkout}` (status and branch, from the engine's fs watch) | `ReadStatus`, `Diff`, `FileDiff`, `Branches`, `Refs`, `History`, `Switch`, `CreateBranch`, `Stage`, `Unstage`, `Discard`, `Commit`, `Push`, `Pull`, `Sync`, `HeadMessage`, `CommitContext`, `PrContext`, `PrStatus`, `CreatePr`, `Worktrees`, `CreateWorktree`, `RemoveWorktree`, `ReadCheckpoint`, `RestoreCheckpoint`, `ReadSessionChanges` |
 | Terminal | `WatchTerminal {terminal, viewer, since}` (a libghostty snapshot of the host's screen through READY, its scrollback as an unnumbered `History` right after it, then output, resizes, clipboard writes, OSC 7501 `Status` and exit; `terminal.md`) | `OpenTerminal {terminal, viewer, cwd, size, colors}`, `ListTerminals` (with each terminal's status), `ResizeTerminal {viewer}`, `CloseTerminal`, `TerminalInput {viewer, Key, Text, Paste, Wheel}`, `ReadForeground`, `StopForeground`. The PTY takes the size of the viewer that typed last. |
 | Agents | `WatchAccounts` (accounts with usage from the streams) | `Catalog`, `Skills`, `Commands`, `AddAccount`, `Login`, `Logout`, `SetProviderEnabled`, MCP servers, `HarnessUpdates` |
-| Engine settings | `WatchEngineSettings` | `SetEngineSetting` (typed keys: keep-awake, worktree defaults, title generation, hooks) |
+| Engine settings | `WatchEngineSettings` | `SetEngineSetting` (typed keys: keep-awake, worktree defaults, title generation, hooks), `SetProjectNotifications` (one project's mute and categories) |
 | Work | `WatchAutomations`, `WatchInbox` | automation upsert, delete and run now; inbox refresh; `LinkWorkItem` |
 | Alerts | `WatchAlerts` (`alerts.md`) | `SetViewportFocus` |
 | Desktop | none | `OpenDesktop`, `DesktopGrants`, `DesktopOpenGuide`: the engine brokers its Mac's desktopd and carries no media (`remote-desktop.md`) |
@@ -113,7 +113,7 @@ app-owned, its steers sent as `Steer` with the queued message staged whole; `Sen
 `EditLastTurn`, `Rewind`, `Fork`, `Btw` and `SwitchProvider` answer "not served yet" until step 4.
 
 **Step 4 as built.** The engine's `WorkspaceHub` holds the workspace (every session's summary, the projects'
-folders, reminders, the note count and the automation runs waiting to start) and serves
+folders, reminders and the note count; automation runs start in the engine, see "Automations") and serves
 it as `WatchWorkspace` with a session's seq, ring and backpressure. Only the Workspace calls change it, each
 answered from the ledger on repeat; a created session takes the viewer's `SessionId`. A session created that
 way which no turn has started in is removed when its last session watcher leaves, once the store shows no rows and
@@ -138,8 +138,7 @@ events to a watch that holds no turns. Deleting a session stops its title genera
 naming, so no provider or `gh` runs for it after it goes; closing the conversation stops its side answers with
 `StopBtw`, as monocode's drop did. `Rewind`, `Fork` and `SwitchProvider` stay unserved until the
 composer and accounts move (step 6).
-App-side for now: a run's prompt still goes through the conversation, since the composer and accounts move in step
-6 (the engine claims the run, creates its session and records its end); the Inbox view still fetches from
+App-side for now: the Inbox view still fetches from
 GitHub and reports what appeared (`ClaimInboxEvents`) until that fetch moves with a watch of its own;
 the Automations view edits definitions until settings move (step 6); the layout and seen markers are preferences (step 6); note
 images, attachments, worktree removal and session search are files and search (step 5). `PROTOCOL` is 4; the golden
@@ -372,25 +371,48 @@ behind, and a push when the upstream moved to HEAD. That `TurnGit` rides in the 
 sent in `TurnFinished` and saved with the receipt) and the card renders only it, so a locale, an alias or a
 wrapper script cannot change what it shows. `PROTOCOL` is 13.
 
-The engine applies project mutes itself (`alerts.md`): `SetViewportFocus` carries the viewport's `Mutes` in
-that engine's paths, and the app watches and reports to every engine whose projects the window shows. The
+The engine keeps and applies project mutes itself (`alerts.md`): each project's notification preferences are an
+engine setting (`EngineSettings::project_notifications`, by folder), set one project at a time with
+`SetProjectNotifications` on the engine that holds it, and the app watches the alerts and follows the settings
+of every engine whose projects the window shows. The
 Inbox lists a peer project's items: the app asks the engine that holds it for the repositories its checkout
 belongs to (`InboxRepos`, asked once per project) and hands them to its own engine's `InboxList` as
 `elsewhere`; every `gh` call names its repository, so one for a peer project runs from the home folder
-(`gh_root`), as GitHub's connection check does when the Inbox's checkout is a peer's. `PROTOCOL` is 14.
+(`gh_root`), as GitHub's connection check does when the Inbox's checkout is a peer's. `PROTOCOL` is 15.
 
 What else works over peers, and what cannot. A note mentioned in any chat is the owner's, from this Mac's
 engine (the Notes view's), its body sent with the prompt. Copy Path copies a peer file as its machine names it.
+What a transcript names without a line (a link, a tool's file) is told apart with a `Stat` on the engine that
+holds it: a folder, here or on a peer, opens the explorer at that folder, revealed, expanded and selected (one
+outside the current project says so), and anything else opens as a file, as before.
 The header's branch for a peer project is its checkout's HEAD as its engine last answered (`git_cache`). A file
 of a third engine is attached through `Read`, as a preview reads it (text or an image), and carried as its
 bytes; anything else stays on its machine. These stay on this Mac, shown but disabled for a peer path: Reveal in
 Finder and Open in Default App (link menu, explorer, project menu) and Open in editor, since Finder, Launch
 Services and this Mac's editors open only this Mac's files, and MCP's Show config, which is Reveal. A video
 plays only from this Mac, since AVPlayer plays a local path (a peer's would need its bytes streamed); the
-buttons of the file editor's error state (Reveal, Open externally) do nothing for a peer file. Two are not done: an automation in a peer project is refused (the
-app's engine schedules it and checks the folder on its own disk; it belongs on the engine that holds the
-project, with the Automations view listing and editing each engine's), and a link to a folder opens as a file,
-here and on a peer alike (it wants a `Stat` and the explorer opened at the folder).
+buttons of the file editor's error state (Reveal, Open externally) do nothing for a peer file.
+
+**Automations.** An automation belongs to the engine that holds its project: it is stored there, scheduled on that
+engine's clock, and run there, so a run never needs a viewer open and two viewers never start it twice. The
+Automations view sends `UpsertAutomation`, `SetAutomationEnabled`, `DeleteAutomation` and `RunAutomationNow` to the
+project's engine through `engine_client::for_project` (a peer project's cwd is its `peer://` path there, spelled as
+its engine names it), so a call for a sleeping peer waits in this engine's outbox and is delivered once. An engine
+refuses an automation whose folder is not on its own disk ("on another machine"); moving one to a project of
+another engine creates it there and deletes it from the first. The view asks every engine it follows
+(`ListAutomations`, the app's own and each one a project of the window lives on) and shows them together, newest
+definition per id, each engine's last answer kept while it is unreachable and the view's pending edits laid over
+it until their receipt; a peer automation's project carries the existing remote-project tile, with no new chrome.
+Runs come from the owner engine (`AutomationRuns`). The engine claims a run (schedule, matched Inbox event,
+recovery of one an earlier run claimed, or `RunAutomationNow`), makes or reuses its session with the automation's
+settings on the account its project uses there (`WorkspaceHub::prepare_automation_run`), sends the prompt with no
+viewer, as the usage-limit resume does (`SessionHub::start_automation`), and records the run as succeeded, failed
+(status and the last answer) or cancelled when that turn ends. `RunAutomationNow` answers the `AutomationRun` it
+started. Viewers see the run's session as any other and open it as a tab when it turns busy; the shell hands each
+engine waiting on Inbox events (`HasEventAutomations`) only the items of its own projects, in its own paths
+(`ClaimInboxEvents`). `PrepareAutomationRun`, `FinishAutomationRun`, `WorkspaceState.automations` and the
+`AutomationDue`/`AutomationTaken` events are gone. The last-known lists live in the view's memory only, not across
+launches.
 
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,

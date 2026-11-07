@@ -5,10 +5,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::StreamExt;
 use onicode_protocol::workspace::{
-    Archive, ClaimInboxEvents, CreateNote, CreateSession, Delete, DeleteNote, FinishAutomationRun,
-    GenerateTitle, ListNotes, MarkSeen, NameWorktree, Pin, PrepareAutomationRun, PreviewSession,
-    Rename, SaveGroups, SaveResponseNote, SearchSessions, SetReminder, SetWorkItem, UpsertNote,
-    WatchWorkspace,
+    Archive, ClaimInboxEvents, CreateNote, CreateSession, Delete, DeleteNote, GenerateTitle,
+    ListNotes, MarkSeen, NameWorktree, Pin, PreviewSession, Rename, SaveGroups, SaveResponseNote,
+    SearchSessions, SetReminder, SetWorkItem, UpsertNote, WatchWorkspace,
 };
 use onicode_protocol::{Call, OpId, Routed, Watch};
 use onicode_rpc::{RpcError, RpcReply, RpcService, parse_params};
@@ -34,7 +33,7 @@ impl WorkspaceService {
 }
 
 /// Every method this service serves.
-const METHODS: [&str; 22] = [
+const METHODS: [&str; 20] = [
     WatchWorkspace::NAME,
     CreateSession::NAME,
     Rename::NAME,
@@ -54,8 +53,6 @@ const METHODS: [&str; 22] = [
     UpsertNote::NAME,
     DeleteNote::NAME,
     SaveResponseNote::NAME,
-    PrepareAutomationRun::NAME,
-    FinishAutomationRun::NAME,
     ClaimInboxEvents::NAME,
 ];
 
@@ -168,14 +165,6 @@ impl RpcService for WorkspaceService {
             SaveResponseNote::NAME => {
                 let (op, body) = routed(params)?;
                 reply(hub.save_response_note(op, body).await)
-            }
-            PrepareAutomationRun::NAME => {
-                let (op, body) = routed(params)?;
-                reply(hub.prepare_automation_run(op, body).await)
-            }
-            FinishAutomationRun::NAME => {
-                let (op, body) = routed(params)?;
-                reply(hub.finish_automation_run(op, body).await)
             }
             ClaimInboxEvents::NAME => {
                 let (op, body) = routed(params)?;

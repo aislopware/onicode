@@ -1,7 +1,7 @@
 //! The Work group's hub (`docs/onicode/decisions/engine.md`, migration step 6): the Inbox's
-//! GitHub items, the automations the workspace hub schedules, and the GitHub activity of the
-//! items sessions link to. Every network and `gh` call runs here, off the caller's thread, behind
-//! the [`Trackers`] and [`Gh`] seams the tests script.
+//! GitHub items, the automations of this engine's projects, which the workspace hub schedules
+//! and starts, and the GitHub activity of the items sessions link to. Every network and `gh` call
+//! runs here, off the caller's thread, behind the [`Trackers`] and [`Gh`] seams the tests script.
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -385,15 +385,16 @@ impl WorkHub {
             .await
     }
 
-    /// `RunAutomationNow`, once per op: the run, with the automation as it was listed before it.
+    /// `RunAutomationNow`, once per op: starts a run in this engine, and answers it as it
+    /// started (`running` in its session, or `failed` with why).
     pub async fn run_automation_now(
         &self,
         op: Option<OpId>,
         body: RunAutomationNow,
-    ) -> Result<DueAutomationRun, String> {
+    ) -> Result<AutomationRun, String> {
         self.ledger
             .once(op, async move {
-                self.workspace.with_automations(|service| {
+                let due = self.workspace.with_automations(|service| {
                     let automation = service
                         .list()?
                         .into_iter()
@@ -402,7 +403,14 @@ impl WorkHub {
                     let now = i64::try_from(onicode_core::time::now_ms()).unwrap_or(i64::MAX);
                     let run = service.run_now(&automation.id, now)?;
                     Ok(DueAutomationRun { automation, run })
-                })
+                })?;
+                let (automation, run) = (due.automation.id.clone(), due.run.id.clone());
+                self.workspace.start_runs(vec![due]);
+                self.workspace
+                    .with_automations(|service| service.runs(&automation))?
+                    .into_iter()
+                    .find(|started| started.id == run)
+                    .ok_or_else(|| "Automation run not found.".to_owned())
             })
             .await
     }

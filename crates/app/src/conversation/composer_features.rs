@@ -473,45 +473,6 @@ impl Conversation {
                 .into_any_element(),
         )
     }
-
-    pub(crate) fn external_outcome(&self, cx: &gpui::App) -> (bool, String) {
-        let rows = self.transcript.read(cx).source_rows();
-        let start = rows.iter().rposition(|row| row.role == "user").unwrap_or(0);
-        let text = onicode_protocol::response::prose(&rows[start..]);
-        (
-            self.status == "Ready",
-            onicode_protocol::response::limit(&format!("{}\n{}", self.status, text), 12_000),
-        )
-    }
-
-    /// Managed runs must wait for history restoration and worktree setup as
-    /// well as the provider, including submissions deferred by the editor.
-    pub(crate) fn external_submission_pending(&self) -> bool {
-        self.busy
-            || self.stopping
-            || self.preparing_worktree
-            || self.attaching
-            || self.account_switching
-            || self.loading
-            || (!self.history_actions.is_empty() && self.history_ready())
-            || self.editing_last_turn.pending()
-    }
-
-    /// An evicted history can be restored for a managed run; a user's draft
-    /// or an already accepted message must keep ownership of this composer.
-    pub(crate) fn available_for_managed_run(&self, cx: &gpui::App) -> bool {
-        !self.busy
-            && !self.stopping
-            && !self.preparing_worktree
-            && !self.attaching
-            && !self.account_switching
-            && !self.editing_last_turn.pending()
-            && self.input.read(cx).content.is_empty()
-            && self.attachments.is_empty()
-            && self.follow_ups.state.messages.is_empty()
-            && self.follow_ups.state.draft.is_none()
-            && !self.settings.worktree_removed
-    }
 }
 
 /// The bytes a file of a third engine is attached with, as that engine read it for a preview:

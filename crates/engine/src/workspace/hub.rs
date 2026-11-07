@@ -6,25 +6,28 @@
 //!
 //! The hub also runs the workspace's schedulers on [`WorkspaceHub::tick`]: due reminders, due
 //! and recovered automation runs, and retried Inbox event claims. `tick` takes the time it runs
-//! at, so its tests run in virtual time.
+//! at, so its tests run in virtual time. An automation run starts here, in the engine that holds
+//! its project, with no viewer: the hub makes or takes its session and the session hub sends its
+//! prompt (`SessionHub::start_automation`); the run records how its turn ended.
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 
 use futures::stream::BoxStream;
+use onicode_core::accounts::Profile;
 use onicode_core::agent::{AccessMode, Settings};
-use onicode_core::automations::{AutomationRun, DueAutomationRun, Service};
+use onicode_core::automations::{Automation, AutomationRun, DueAutomationRun, Service};
 use onicode_core::inbox::Item as InboxItem;
 use onicode_core::session_groups::WorkItem;
 use onicode_core::store::{Session, Store};
 use onicode_protocol::workspace::{
     Archive, ClaimInboxEvents, CreateNote, CreateSession, Created, Delete, DeleteNote,
-    FinishAutomationRun, GenerateTitle, MarkSeen, NameWorktree, Named, NewSession, Pin,
-    PrepareAutomationRun, Preview, PreviewSession, Project, ReminderChange, Rename, SaveGroups,
-    SaveResponseNote, SearchResults, SearchSessions, SessionDefaults, SessionSummary, SetReminder,
-    SetWorkItem, UpsertNote, WatchWorkspace, WorkspaceEvent, WorkspaceState,
+    GenerateTitle, MarkSeen, NameWorktree, Named, NewSession, Pin, Preview, PreviewSession,
+    Project, ReminderChange, Rename, SaveGroups, SaveResponseNote, SearchResults, SearchSessions,
+    SessionDefaults, SessionSummary, SetReminder, SetWorkItem, UpsertNote, WatchWorkspace,
+    WorkspaceEvent, WorkspaceState,
 };
 use onicode_protocol::{Cursor, Item, OpId, Outcome, Rejection, SessionId};
 use serde::Serialize;
@@ -37,7 +40,7 @@ use super::queue::WorkspaceFeed;
 pub(crate) use crate::feed::Limits;
 use crate::feed::{self, Topic};
 use crate::searches::Searches;
-use crate::session::Spawn;
+use crate::session::{SessionHub, Spawn};
 use crate::turn::{Database, locked};
 
 /// How long the ledger keeps a processed op (engine.md "Ids").
@@ -111,6 +114,15 @@ pub struct WorkspaceHub {
     inner: Mutex<Inner>,
     /// The session searches running, by search id.
     searches: Searches,
+    /// Sends an automation run's prompt; attached once the engine is built. Weak: the session
+    /// hub holds this hub.
+    session: OnceLock<Weak<SessionHub>>,
+}
+
+/// An automation run's session, made or taken and ready for its prompt.
+pub(crate) struct Prepared {
+    pub(crate) session: SessionId,
+    pub(crate) prompt: String,
 }
 
 /// What a mutating call did: its reply, the outcome its receipt carries, and its events.
@@ -170,7 +182,26 @@ impl WorkspaceHub {
                 unprompted: HashSet::new(),
             }),
             searches: Searches::default(),
+            session: OnceLock::new(),
         })
+    }
+
+    /// Starts automation runs through `session`, which sends their prompts. Lock order: the
+    /// session hub's state, then this hub's; this hub calls it only with its own lock released.
+    pub fn attach_session(&self, session: &Arc<SessionHub>) {
+        let _ = self.session.set(Arc::downgrade(session));
+    }
+
+    /// Starts each claimed run in this engine, with no lock held. Without a session hub (a
+    /// workspace on its own, in a test) the runs stay pending, and a later engine run hands them
+    /// out again.
+    pub(crate) fn start_runs(&self, due: Vec<DueAutomationRun>) {
+        let Some(session) = self.session.get().and_then(Weak::upgrade) else {
+            return;
+        };
+        for due in due {
+            session.start_automation(due);
+        }
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -843,158 +874,139 @@ impl WorkspaceHub {
         .await
     }
 
-    /// `PrepareAutomationRun`: the store half of starting a claimed run.
-    pub async fn prepare_automation_run(
+    /// The store half of starting a claimed run: its session (the reusable one when the
+    /// automation keeps one that is free, else a new one in its project) given the
+    /// automation's settings on `account`, linked and filed, and the run recorded as running.
+    /// A run that cannot start is recorded as failed, with why.
+    pub(crate) fn prepare_automation_run(
         &self,
-        op: Option<OpId>,
-        body: PrepareAutomationRun,
-    ) -> Result<Created, String> {
-        self.mutate(op, move |inner, store| {
-            let claimed = inner
-                .topic
-                .state()
-                .automations
-                .iter()
-                .find(|due| due.run.id == body.due.run.id)
-                .cloned();
-            let mut events = Vec::new();
-            if claimed.is_some() {
-                events.push(WorkspaceEvent::AutomationTaken(body.due.run.id.clone()));
+        due: &DueAutomationRun,
+        account: Profile,
+    ) -> Result<Prepared, String> {
+        let mut inner = self.lock();
+        self.ready(&mut inner)?;
+        let store = locked(&self.store)?;
+        let now = ms(onicode_core::time::now_ms());
+        let reuse = reusable(&inner, &store, &due.automation);
+        let prepared =
+            prepare_run(&store, due, reuse, account).and_then(|(stored, settings, persisted)| {
+                let row = stored.id;
+                let summary = SessionSummary {
+                    id: SessionId(store.session_uid(row)?),
+                    key: persisted_key(&store, row),
+                    worktree: settings.worktree_cwd.clone(),
+                    draft: false,
+                    automation: Some(due.automation.id.clone()),
+                    busy: inner.busy.contains(&row),
+                    unread: inner.unread.contains(&row),
+                    model: settings.model.as_deref().and_then(|model| {
+                        onicode_core::store::native_model(model, &stored.provider)
+                    }),
+                    session: stored,
+                };
+                service(&mut inner.automations, &store)?.update_run(
+                    &due.run.id,
+                    "running",
+                    Some(persisted),
+                    None,
+                    now,
+                )?;
+                Ok(summary)
+            });
+        let summary = match prepared {
+            Ok(summary) => summary,
+            Err(error) => {
+                // A run that cannot start is over: record why.
+                let _ = service(&mut inner.automations, &store).and_then(|service| {
+                    service.update_run(&due.run.id, "failed", None, Some(error.clone()), now)
+                });
+                return Err(error);
             }
-            let due = claimed.unwrap_or(*body.due);
-            let now = ms(onicode_core::time::now_ms());
-            let prepared = prepare_run(store, &due, body.reuse, *body.settings).and_then(
-                |(stored, settings, persisted)| {
-                    let row = stored.id;
-                    let summary = SessionSummary {
-                        id: SessionId(store.session_uid(row).unwrap_or_else(|_| row_uid(row))),
-                        key: persisted_key(store, row),
-                        worktree: settings.worktree_cwd.clone(),
-                        draft: false,
-                        automation: Some(due.automation.id.clone()),
-                        busy: inner.busy.contains(&row),
-                        unread: inner.unread.contains(&row),
-                        model: settings.model.as_deref().and_then(|model| {
-                            onicode_core::store::native_model(model, &stored.provider)
-                        }),
-                        session: stored,
-                    };
-                    service(&mut inner.automations, store)?.update_run(
-                        &due.run.id,
-                        "running",
-                        Some(persisted),
-                        None,
-                        now,
-                    )?;
-                    Ok((summary, settings))
-                },
-            );
-            match prepared {
-                Ok((summary, settings)) => {
-                    let row = summary.session.id;
-                    events.push(WorkspaceEvent::Session(Box::new(summary.clone())));
-                    events.extend(new_project(inner, store, &due.automation.cwd));
-                    if !due.automation.session_folder_id.is_empty() {
-                        let mut groups = store.groups(&due.automation.cwd)?;
-                        groups.add_to_folder(&due.automation.session_folder_id, row);
-                        store.save_groups(&due.automation.cwd, &groups)?;
-                        events.push(WorkspaceEvent::Project(Project {
-                            path: due.automation.cwd.clone(),
-                            groups,
-                        }));
-                    }
-                    let created = Created {
-                        outcome: Outcome::Applied,
-                        session: Some(Box::new(summary)),
-                        settings: Some(Box::new(settings)),
-                    };
-                    Ok((created, Outcome::Applied, events))
-                }
-                Err(error) => {
-                    // A run that cannot start is over: record why.
-                    let _ = service(&mut inner.automations, store).and_then(|service| {
-                        service.update_run(&due.run.id, "failed", None, Some(error.clone()), now)
-                    });
-                    let outcome = Outcome::Rejected(Rejection::Denied(error));
-                    let created = Created {
-                        outcome: outcome.clone(),
-                        session: None,
-                        settings: None,
-                    };
-                    Ok((created, outcome, events))
-                }
-            }
+        };
+        let row = summary.session.id;
+        let session = summary.id;
+        let mut events = vec![WorkspaceEvent::Session(Box::new(summary))];
+        events.extend(new_project(&inner, &store, &due.automation.cwd));
+        if !due.automation.session_folder_id.is_empty() {
+            let mut groups = store.groups(&due.automation.cwd)?;
+            groups.add_to_folder(&due.automation.session_folder_id, row);
+            store.save_groups(&due.automation.cwd, &groups)?;
+            events.push(WorkspaceEvent::Project(Project {
+                path: due.automation.cwd.clone(),
+                groups,
+            }));
+        }
+        drop(store);
+        publish(&mut inner, events);
+        Ok(Prepared {
+            session,
+            prompt: due
+                .run
+                .prompt
+                .clone()
+                .unwrap_or_else(|| due.automation.prompt.clone()),
         })
-        .await
     }
 
-    /// `FinishAutomationRun`.
-    pub async fn finish_automation_run(
-        &self,
-        op: Option<OpId>,
-        body: FinishAutomationRun,
-    ) -> Result<Outcome, String> {
-        self.mutate(op, move |inner, store| {
-            let now = ms(onicode_core::time::now_ms());
-            service(&mut inner.automations, store)?.update_run(
-                &body.run,
-                &body.status,
-                None,
-                body.error,
-                now,
-            )?;
-            Ok((Outcome::Applied, Outcome::Applied, Vec::new()))
-        })
-        .await
+    /// Records how run `run` ended: `succeeded`, `failed` or `cancelled`, with why it failed.
+    pub(crate) fn finish_automation_run(&self, run: &str, status: &str, error: Option<String>) {
+        let mut inner = self.lock();
+        let Ok(store) = locked(&self.store) else {
+            return;
+        };
+        let now = ms(onicode_core::time::now_ms());
+        let _ = service(&mut inner.automations, &store)
+            .and_then(|service| service.update_run(run, status, None, error, now));
     }
 
-    /// `ClaimInboxEvents`: claims the event automations the items trigger now; the items whose
-    /// claim failed wait for the next tick.
+    /// `ClaimInboxEvents`: claims the event automations the items trigger now and starts their
+    /// runs; the items whose claim failed wait for the next tick.
     pub async fn claim_inbox_events(
         &self,
         op: Option<OpId>,
         body: ClaimInboxEvents,
     ) -> Result<Outcome, String> {
-        self.mutate(op, move |inner, store| {
-            let now = onicode_core::time::now_ms();
-            let waiting = retries(&mut inner.automations, store);
-            for item in body.items {
-                waiting.insert(item.key(), item);
-            }
-            let due = claim_events(&mut inner.automations, store, now)?;
-            let events = due
-                .into_iter()
-                .map(|due| WorkspaceEvent::AutomationDue(Box::new(due)))
-                .collect();
-            Ok((Outcome::Applied, Outcome::Applied, events))
-        })
-        .await
+        let mut claimed = Vec::new();
+        let outcome = self
+            .mutate(op, |inner, store| {
+                let now = onicode_core::time::now_ms();
+                let waiting = retries(&mut inner.automations, store);
+                for item in body.items {
+                    waiting.insert(item.key(), item);
+                }
+                claimed = claim_events(&mut inner.automations, store, now)?;
+                Ok((Outcome::Applied, Outcome::Applied, Vec::new()))
+            })
+            .await;
+        self.start_runs(claimed);
+        outcome
     }
 
     /// One beat of the schedulers at `now` (Unix ms): delivers due reminders, claims due and
-    /// recovered automation runs, and retries Inbox event claims.
+    /// recovered automation runs and retries Inbox event claims, then starts the runs it
+    /// claimed.
     pub fn tick(&self, now: u64) -> Result<(), String> {
-        let mut inner = self.lock();
-        self.ready(&mut inner)?;
-        let mut store = locked(&self.store)?;
-        let mut events = Vec::new();
-        if !store.take_due_reminders(now)?.is_empty() {
-            events.push(WorkspaceEvent::Reminders(store.reminders()?));
-        }
-        let mut due = Vec::new();
-        let automations = &mut inner.automations;
-        if !automations.recovered {
-            due.extend(service(automations, &store)?.recover(ms(self.started), ms(now))?);
-            automations.recovered = true;
-        }
-        due.extend(service(automations, &store)?.claim_due(ms(now))?);
-        due.extend(claim_events(automations, &store, now)?);
-        drop(store);
-        events.extend(
-            due.into_iter()
-                .map(|due| WorkspaceEvent::AutomationDue(Box::new(due))),
-        );
-        publish(&mut inner, events);
+        let due = {
+            let mut inner = self.lock();
+            self.ready(&mut inner)?;
+            let mut store = locked(&self.store)?;
+            let mut events = Vec::new();
+            if !store.take_due_reminders(now)?.is_empty() {
+                events.push(WorkspaceEvent::Reminders(store.reminders()?));
+            }
+            let mut due = Vec::new();
+            let automations = &mut inner.automations;
+            if !automations.recovered {
+                due.extend(service(automations, &store)?.recover(ms(self.started), ms(now))?);
+                automations.recovered = true;
+            }
+            due.extend(service(automations, &store)?.claim_due(ms(now))?);
+            due.extend(claim_events(automations, &store, now)?);
+            drop(store);
+            publish(&mut inner, events);
+            due
+        };
+        self.start_runs(due);
         Ok(())
     }
 
@@ -1272,7 +1284,6 @@ fn load(
         projects,
         reminders: store.reminders()?,
         notes: store.list_notes().map_or(0, |notes| notes.len()),
-        automations: Vec::new(),
     })
 }
 
@@ -1379,12 +1390,13 @@ fn claim_events(
 }
 
 /// The session a claimed run starts in: the reusable one, or a new one in the automation's
-/// project, linked, titled and given `settings`. Returns it, its settings and its persisted id.
+/// project, linked, titled and given the automation's settings on `account`. Returns it, its
+/// settings and its persisted id.
 fn prepare_run(
     store: &Store,
     due: &DueAutomationRun,
     reuse: Option<i64>,
-    mut settings: Settings,
+    account: Profile,
 ) -> Result<(Session, Settings, String), String> {
     let automation = &due.automation;
     if onicode_core::provider::Kind::parse(&automation.harness).is_none() {
@@ -1396,10 +1408,10 @@ fn prepare_run(
     if automation.workspace_mode == "existing" && !Path::new(&automation.worktree_cwd).is_dir() {
         return Err("The automation's worktree is unavailable".into());
     }
+    let mut settings = Settings::default();
     let mut summary = if let Some(row) = reuse {
         if let Some(previous) = store.agent_settings(row)? {
-            settings.turns = previous.turns;
-            settings.revision = previous.revision;
+            settings = previous;
         }
         store
             .sessions()?
@@ -1419,11 +1431,83 @@ fn prepare_run(
         store.set_work_item(summary.id, Some(&item))?;
         summary.work_item = Some(item);
     }
-    if reuse.is_none() {
-        store.save_agent_settings(summary.id, &settings)?;
-    }
+    // The engine sends the prompt under the session's stored settings.
+    let settings = run_settings(automation, settings, account);
+    store.save_agent_settings(summary.id, &settings)?;
     let persisted = store.persisted_session_id(summary.id)?;
     Ok((summary, settings, persisted))
+}
+
+/// `settings` as an automation's run takes them: its agent's model and model settings, its
+/// access, and its checkout (a new worktree off `HEAD`, an existing one, or the project's), on
+/// `account`, the one its project uses on this engine.
+fn run_settings(automation: &Automation, mut settings: Settings, account: Profile) -> Settings {
+    let kind = onicode_core::provider::Kind::from_id(&automation.harness);
+    let choice = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|key| automation.model_settings.get(*key).cloned())
+    };
+    settings.account = account;
+    settings.model = onicode_protocol::sessions::native_model(&automation.model, kind.id());
+    settings
+        .model_settings
+        .clone_from(&automation.model_settings);
+    settings.effort = choice(&[
+        "effort",
+        "reasoning",
+        "reasoningEffort",
+        "reasoning_effort",
+        "variant",
+    ]);
+    settings.fast = choice(&["fast"]).is_some_and(|value| value == "true");
+    settings.service_tier = choice(&["serviceTier", "service_tier"]);
+    settings.thinking = choice(&["thinking"]).and_then(|value| value.parse().ok());
+    settings.access = AccessMode::from_id(&automation.runtime_mode);
+    let worktree = automation.workspace_mode == "worktree";
+    settings.new_worktree = worktree;
+    settings.worktree_base = worktree.then(|| "HEAD".into());
+    settings.worktree_cwd =
+        (automation.workspace_mode == "existing").then(|| automation.worktree_cwd.clone());
+    settings.plan = false;
+    settings.prepared_prompt = None;
+    settings
+}
+
+/// The session `automation` keeps for its runs, when it is free for one: the same agent, not
+/// archived, no turn running, nothing in its composer or queue, and in the checkout the
+/// automation runs in.
+fn reusable(inner: &Inner, store: &Store, automation: &Automation) -> Option<i64> {
+    if !automation.reuse_session {
+        return None;
+    }
+    let key = automation.last_session_id.as_deref()?;
+    let summary = inner
+        .topic
+        .state()
+        .sessions
+        .iter()
+        .find(|summary| summary.key == key)?;
+    let row = summary.session.id;
+    let same = |a: &str, b: &str| {
+        onicode_protocol::files::path_key(a) == onicode_protocol::files::path_key(b)
+    };
+    let checkout = match automation.workspace_mode.as_str() {
+        "current" => summary.worktree.is_none() && same(&summary.session.cwd, &automation.cwd),
+        "existing" => summary
+            .worktree
+            .as_deref()
+            .is_some_and(|cwd| same(cwd, &automation.worktree_cwd)),
+        _ => false,
+    };
+    let free = summary.session.provider == automation.harness
+        && !summary.session.archived
+        && !summary.draft
+        && !inner.busy.contains(&row)
+        && checkout;
+    let idle = store
+        .follow_ups(row)
+        .is_ok_and(|queue| queue.messages.is_empty() && queue.draft.is_none());
+    (free && idle).then_some(row)
 }
 
 /// The pull request or issue a GitHub event run is about.

@@ -316,8 +316,10 @@ fn automations_round_trip_and_a_repeated_run_starts_once() {
     };
     let first = block_on(hub.run_automation_now(Some(op), run.clone())).unwrap();
     let again = block_on(hub.run_automation_now(Some(op), run)).unwrap();
-    assert_eq!(first.run.id, again.run.id);
-    assert_eq!(first.automation.id, saved.id);
+    assert_eq!(first.id, again.id);
+    assert_eq!(first.automation_id, saved.id);
+    // No session hub here to send the prompt: the run waits for the engine's next run.
+    assert_eq!(first.status, "pending");
     let runs = hub
         .automation_runs(&onicode_protocol::work::AutomationRuns {
             automation: saved.id.clone(),

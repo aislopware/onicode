@@ -598,9 +598,9 @@ impl Shell {
         self.sync_agent_alerts(cx);
     }
 
-    /// Tells the engines' alerts what the window shows and what the owner muted, and posts
-    /// what they raised since: the app's own engine's, and every other engine's whose projects
-    /// the window shows.
+    /// Tells the engines' alerts what the window shows, and posts what they raised since (each
+    /// engine already held back what its projects' mutes say): the app's own engine's, and every
+    /// other engine's whose projects the window shows.
     fn sync_agent_alerts(&mut self, cx: &mut Context<Self>) {
         let prefs = &self.workspace.preferences;
         let on_screen = self
@@ -618,7 +618,6 @@ impl Shell {
             window_focused: self.window_active,
             on_screen,
             peers: self.followed_peers(),
-            mutes: crate::notifications::agent_alerts::mutes(prefs),
         };
         self.notification_state.agent_alerts.sync(&policy, cx);
     }
@@ -1047,24 +1046,30 @@ impl Shell {
         }
     }
 
+    /// Whether a linked pull request's or issue's news may show: by the preferences of the
+    /// project its session works in, kept by the engine holding that project. A session outside
+    /// any project has none to hold it back.
     fn linked_activity_allowed(&self, card: &github_activity::Card) -> bool {
-        let project = format!(
-            "repository:github.com/{}",
-            card.item.repo.trim().to_lowercase()
-        );
         let category = if card.item.kind == "pr" {
             "pullRequests"
         } else {
             "issues"
         };
-        let occurred = u64::try_from(card.updated_at).ok();
-        occurred.is_some()
-            && self.workspace.preferences.allows_notification_project(
-                &project,
-                category,
-                occurred,
-                onicode_protocol::time::now_ms(),
-            )
+        let Ok(occurred) = u64::try_from(card.updated_at) else {
+            return false;
+        };
+        let prefs = &self.workspace.preferences;
+        self.session_summaries
+            .get(&card.session)
+            .and_then(|summary| prefs.known_notification_project_id(&summary.cwd))
+            .is_none_or(|project| {
+                prefs.allows_notification_project(
+                    &project,
+                    category,
+                    Some(occurred),
+                    onicode_protocol::time::now_ms(),
+                )
+            })
     }
 
     fn observe_linked_activity(&mut self, cx: &mut Context<Self>) {

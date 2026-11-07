@@ -212,8 +212,10 @@ impl Shell {
                 .map_or(&self.reminders, |state| &state.reminders),
         );
         let mut removed = Vec::new();
-        let mut due = Vec::new();
         let mut receipts = Vec::new();
+        // The automations' sessions this update brought, with what the engine showed of each
+        // before it.
+        let mut runs: Vec<(Option<SessionSummary>, SessionSummary)> = Vec::new();
         // What the engine showed of each session this update changes, from before it.
         let mut before: HashMap<i64, Option<SessionSummary>> = HashMap::new();
         match update {
@@ -234,7 +236,6 @@ impl Shell {
                     }
                 }
                 removed.extend(known.into_keys());
-                due.extend(state.automations.iter().cloned());
                 // The snapshot holds what became of every answered call: its sessions show it.
                 let settled = self.mirror.settle_echoes(None, false);
                 before.extend(settled.into_iter().map(|row| (row, None)));
@@ -245,19 +246,20 @@ impl Shell {
                 for event in &events {
                     match event {
                         WorkspaceEvent::Removed(row) => removed.push(*row),
-                        WorkspaceEvent::AutomationDue(run) => due.push(run.as_ref().clone()),
                         WorkspaceEvent::Receipt { op, outcome } => {
                             receipts.push((*op, outcome.clone()))
                         }
                         WorkspaceEvent::Session(summary) => {
                             let row = summary.session.id;
-                            before.entry(row).or_insert_with(|| {
-                                state
-                                    .sessions
-                                    .iter()
-                                    .find(|known| known.session.id == row)
-                                    .cloned()
-                            });
+                            let known = state
+                                .sessions
+                                .iter()
+                                .find(|known| known.session.id == row)
+                                .cloned();
+                            if summary.automation.is_some() {
+                                runs.push((known.clone(), (**summary).clone()));
+                            }
+                            before.entry(row).or_insert(known);
                         }
                         _ => {}
                     }
@@ -287,9 +289,14 @@ impl Shell {
         for (row, due_at) in fired {
             self.deliver_reminder_notice(row, due_at, cx);
         }
-        for run in due {
-            self.launch_automation(run, false, cx);
+        let mut tabbed = false;
+        for (known, now) in &runs {
+            tabbed |= self.automation_turn_started(now.session.id, known.as_ref(), now);
         }
+        if tabbed {
+            self.persist(cx);
+        }
+        self.automations_moved(!runs.is_empty(), cx);
         self.invalidate_chrome(cx);
         cx.notify();
     }
@@ -440,25 +447,10 @@ impl Shell {
         }
     }
 
-    /// Makes a mutating workspace call under a new op, after the shell's earlier writes. `echo`
-    /// shows its effect now and over every update until the engine's receipt; `settle` gets the
-    /// reply.
-    pub(super) fn workspace_call<C: Call + 'static>(
-        &mut self,
-        body: C::Params,
-        echo: Option<Echo>,
-        cx: &mut Context<Self>,
-        settle: impl FnOnce(&mut Self, Result<C::Reply, String>, &mut Context<Self>) + 'static,
-    ) where
-        C::Params: Send + 'static,
-        C::Reply: Send + 'static,
-    {
-        let engine = self.engine.clone();
-        self.workspace_call_on::<C>(&engine, body, echo, cx, settle);
-    }
-
-    /// [`Self::workspace_call`] made to `engine`: another engine's, for a call about one of its
-    /// sessions (`Shell::session_engine`), whose body names the row it stores it at.
+    /// Makes a mutating workspace call to `engine` under a new op, after the shell's earlier
+    /// writes: the app's own engine's, or another engine's for a call about one of its sessions
+    /// (`Shell::session_engine`), whose body names the row it stores it at. `echo` shows its
+    /// effect now and over every update until the engine's receipt; `settle` gets the reply.
     pub(super) fn workspace_call_on<C: Call + 'static>(
         &mut self,
         engine: &Engine,
@@ -549,23 +541,9 @@ impl Shell {
         }
     }
 
-    /// [`Self::workspace_call`] for a call answered with an [`Outcome`]: a failure, or a refusal
-    /// with a reason, shows as "Could not {what}". Any other rejection means the engine moved on
-    /// first, and the mirror already shows what it holds.
-    pub(super) fn workspace_write<C: Call<Reply = Outcome> + 'static>(
-        &mut self,
-        what: &'static str,
-        body: C::Params,
-        echo: Option<Echo>,
-        cx: &mut Context<Self>,
-    ) where
-        C::Params: Send + 'static,
-    {
-        let engine = self.engine.clone();
-        self.workspace_write_on::<C>(&engine, what, body, echo, cx);
-    }
-
-    /// [`Self::workspace_write`] made to `engine`, as [`Self::workspace_call_on`].
+    /// [`Self::workspace_call_on`] for a call answered with an [`Outcome`]: a failure, or a
+    /// refusal with a reason, shows as "Could not {what}". Any other rejection means the engine
+    /// moved on first, and the mirror already shows what it holds.
     pub(super) fn workspace_write_on<C: Call<Reply = Outcome> + 'static>(
         &mut self,
         engine: &Engine,
@@ -703,7 +681,8 @@ mod tests {
                     "the engine's draft marks it"
                 );
                 // An event for the session that leaves its title alone, and one for another.
-                shell.workspace_write::<Pin>(
+                shell.workspace_write_on::<Pin>(
+                    &shell.engine.clone(),
                     "pin the sessions",
                     Pin {
                         sessions: vec![a, b],
@@ -735,7 +714,8 @@ mod tests {
                 let echo: Echo = Box::new(move |shell: &mut Shell, cx: &mut Context<Shell>| {
                     shell.mark_session(a, cx, |summary| summary.title = "Refused".into());
                 });
-                shell.workspace_write::<Rename>(
+                shell.workspace_write_on::<Rename>(
+                    &shell.engine.clone(),
                     "rename the session",
                     Rename {
                         session: a,

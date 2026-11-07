@@ -2,22 +2,25 @@
 //! virtual time (a flicker never rings, a cause rings once after its hold and only while it
 //! stands, seeding and replay never ring, the key on screen never rings, terminals are
 //! rate-limited), then the hub from scripted workspace, session and terminal news to the
-//! `WatchAlerts` items a viewer folds. Nothing here posts a real notification.
+//! `WatchAlerts` items a viewer folds, and the projects' mutes the engine keeps in its settings,
+//! with or without a viewer and across a restart. Nothing here posts a real notification.
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
 use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
+use onicode_core::store::Store;
 use onicode_protocol::agent::{Approval, Question, QuestionItem, QuestionOption};
 use onicode_protocol::alerts::{
-    self, Alert, AlertAction, AlertKind, AlertsEvent, AlertsState, MuteRule, Mutes, Need, OnScreen,
-    ProjectMute, SetViewportFocus, Subject, WatchAlerts,
+    self, AGENT_FINISHED, AGENT_INPUT, Alert, AlertAction, AlertKind, AlertsEvent, AlertsState,
+    Mute, Need, OnScreen, ProjectNotifications, SetViewportFocus, Subject, WatchAlerts,
 };
+use onicode_protocol::engine_settings::{EngineSettings, SetProjectNotifications};
 use onicode_protocol::session::{SessionEvent, SessionState, TurnState};
 use onicode_protocol::sessions::Session;
 use onicode_protocol::terminal::{ProgramState, ProgramStatus, TerminalSummary};
 use onicode_protocol::workspace::{SessionSummary, WorkspaceEvent, WorkspaceState};
-use onicode_protocol::{Item, SessionId, TerminalId};
+use onicode_protocol::{Item, OpId, SessionId, TerminalId};
 use proptest::prelude::*;
 
 use super::alerter::{
@@ -26,7 +29,10 @@ use super::alerter::{
 };
 use super::banners::Banners;
 use super::hub::AlertsHub;
+use super::pump::follow_settings;
 use crate::feed::Limits;
+use crate::settings::{Effects, SettingsHub};
+use crate::turn::Database;
 
 const T0: u64 = 1_800_000_000_000;
 
@@ -439,7 +445,6 @@ fn report(
         presents,
         banners: true,
         sound: false,
-        mutes: Mutes::default(),
     }
 }
 
@@ -730,8 +735,8 @@ fn stopped_failed_and_side_chats() {
     );
 }
 
-/// The folders the mutes test runs chats in: a repository's two checkouts, a folder of its own,
-/// one no mute names, and the home folder.
+/// The folders the mutes test runs chats in: three projects with preferences (one stored under
+/// a trailing slash), one with none, and the home folder.
 const FOLDERS: [&str; 5] = [
     "/work/onicode",
     "/work/onicode-wt",
@@ -740,34 +745,44 @@ const FOLDERS: [&str; 5] = [
     "/Users/me",
 ];
 
-fn mute_rule() -> impl Strategy<Value = MuteRule> {
+/// One project's preferences: either agent category off, a mute until resumed or until a time,
+/// a resume before or after the alert.
+fn notifications() -> impl Strategy<Value = ProjectNotifications> {
+    let moment = || prop_oneof![Just(0), Just(T0 - 1), Just(T0 + 60_000), Just(u64::MAX)];
     (
         any::<bool>(),
-        prop_oneof![Just(0), Just(T0 - 1), Just(T0 + 60_000), Just(u64::MAX),],
+        any::<bool>(),
+        prop::option::of(prop_oneof![
+            Just(Mute::UntilResumed),
+            moment().prop_map(Mute::Until)
+        ]),
+        moment(),
     )
-        .prop_map(|(enabled, after)| MuteRule { enabled, after })
+        .prop_map(|(input_off, finished_off, muted, resumed_at)| {
+            let mut project = ProjectNotifications {
+                muted,
+                resumed_at,
+                ..ProjectNotifications::default()
+            };
+            project.set_enabled(AGENT_INPUT, !input_off, 0);
+            project.set_enabled(AGENT_FINISHED, !finished_off, 0);
+            project
+        })
 }
 
-/// A repository with both checkouts, then the first checkout and the folder of its own, each
-/// muted alone: the repository decides for its checkout.
-fn mutes() -> impl Strategy<Value = Mutes> {
-    proptest::collection::vec((mute_rule(), mute_rule()), 3).prop_map(|rules| {
-        let paths = [
-            vec![FOLDERS[0].to_owned(), format!("{}/", FOLDERS[1])],
-            vec![FOLDERS[0].to_owned()],
-            vec![FOLDERS[2].to_owned()],
+/// Preferences for the first three folders, each maybe none, the second under a trailing slash.
+fn projects() -> impl Strategy<Value = BTreeMap<String, ProjectNotifications>> {
+    proptest::collection::vec(prop::option::of(notifications()), 3).prop_map(|each| {
+        let names = [
+            FOLDERS[0].to_owned(),
+            format!("{}/", FOLDERS[1]),
+            FOLDERS[2].to_owned(),
         ];
-        Mutes {
-            projects: paths
-                .into_iter()
-                .zip(rules)
-                .map(|(paths, (needs_you, finished))| ProjectMute {
-                    paths,
-                    needs_you,
-                    finished,
-                })
-                .collect(),
-        }
+        names
+            .into_iter()
+            .zip(each)
+            .filter_map(|(name, project)| Some((name, project?)))
+            .collect()
     })
 }
 
@@ -777,111 +792,240 @@ fn summary_in(row: i64, id: SessionId, cwd: &str, busy: bool, unread: bool) -> S
     summary
 }
 
+/// The settings change nothing else here.
+struct Quiet;
+
+impl Effects for Quiet {
+    fn applied(&self, _: &EngineSettings) {}
+}
+
+fn store() -> Database {
+    Arc::new(Mutex::new(Store::in_memory().unwrap()))
+}
+
+/// An engine run's settings over `store`: what it saved before is what it starts from.
+fn settings_over(store: &Database) -> Arc<SettingsHub> {
+    SettingsHub::with(store.clone(), Arc::new(Quiet), Limits::default()).unwrap()
+}
+
+/// `projects` set through the engine's settings, one call each, as viewers mute them.
+fn store_projects(settings: &SettingsHub, projects: &BTreeMap<String, ProjectNotifications>) {
+    for (project, notifications) in projects {
+        let set = settings.set_project_notifications(
+            Some(OpId::new()),
+            SetProjectNotifications {
+                project: project.clone(),
+                notifications: notifications.clone(),
+            },
+        );
+        assert_eq!(
+            futures::executor::block_on(set),
+            Ok(onicode_protocol::Outcome::Applied)
+        );
+    }
+}
+
+/// Runs a chat in `cwd` from idle to an approval (`asks`) or to its end, at `start`, and steps
+/// the hub past the hold: the kind it would raise.
+fn run_chat(
+    hub: &AlertsHub,
+    row: i64,
+    id: SessionId,
+    cwd: &str,
+    asks: bool,
+    start: u64,
+) -> AlertKind {
+    hub.workspace(
+        Item::Snapshot {
+            at: onicode_protocol::Cursor::default(),
+            state: WorkspaceState {
+                sessions: vec![summary_in(row, id, cwd, false, false)],
+                ..WorkspaceState::default()
+            },
+        },
+        start,
+    );
+    hub.workspace(
+        events(vec![WorkspaceEvent::Session(Box::new(summary_in(
+            row, id, cwd, true, false,
+        )))]),
+        start,
+    );
+    hub.session(
+        row,
+        Item::Snapshot {
+            at: onicode_protocol::Cursor::default(),
+            state: SessionState::default(),
+        },
+        start,
+    );
+    let kind = if asks {
+        hub.session(
+            row,
+            session_events(vec![
+                SessionEvent::Approval(Approval {
+                    id: "a1".into(),
+                    title: "Run cargo test".into(),
+                    detail: String::new(),
+                    can_remember: true,
+                }),
+                status("Waiting for approval", false),
+            ]),
+            start,
+        );
+        AlertKind::NeedsYou
+    } else {
+        hub.session(row, session_events(vec![status("Ready", true)]), start);
+        hub.workspace(
+            events(vec![WorkspaceEvent::Session(Box::new(summary_in(
+                row, id, cwd, false, true,
+            )))]),
+            start,
+        );
+        hub.turn_ended(row, start);
+        AlertKind::Finished
+    };
+    hub.step(start);
+    hub.step(start + HOLD_MS);
+    kind
+}
+
+fn raised_kinds(events: Vec<AlertsEvent>) -> Vec<AlertKind> {
+    events
+        .into_iter()
+        .filter_map(|event| match event {
+            AlertsEvent::Raised(alert) => Some(alert.kind),
+            AlertsEvent::Withdrawn(_) => None,
+        })
+        .collect()
+}
+
+/// A muted project stays quiet on an engine no viewer has reached since it started: the mute
+/// was saved by the engine run before, the engine's own banner is held back, and an unmuted
+/// project beside it still rings and posts one.
+#[test]
+fn a_stored_mute_holds_after_a_restart_with_no_viewer() {
+    let store = store();
+    let before = settings_over(&store);
+    store_projects(
+        &before,
+        &BTreeMap::from([(
+            FOLDERS[0].to_owned(),
+            ProjectNotifications {
+                muted: Some(Mute::UntilResumed),
+                ..ProjectNotifications::default()
+            },
+        )]),
+    );
+    drop(before);
+
+    // The next engine run: nothing but its store.
+    let settings = settings_over(&store);
+    let banners = Arc::new(Recorded::default());
+    let hub = AlertsHub::at_home(banners.clone(), Limits::default(), Some("/Users/me".into()));
+    let _settings_watch = follow_settings(&hub, &settings);
+    let mut viewer = Viewer::join(&hub);
+    run_chat(&hub, 3, SessionId::new(), FOLDERS[0], false, T0);
+    assert!(
+        raised_kinds(viewer.pump()).is_empty(),
+        "the stored mute holds"
+    );
+    assert!(banners.posted.lock().unwrap().is_empty());
+
+    run_chat(&hub, 5, SessionId::new(), FOLDERS[3], false, T0 + 10_000);
+    assert_eq!(raised_kinds(viewer.pump()), vec![AlertKind::Finished]);
+    assert_eq!(banners.posted.lock().unwrap().len(), 1);
+
+    // Resumed through the engine: the hub takes it in, and the project rings again.
+    store_projects(
+        &settings,
+        &BTreeMap::from([(
+            FOLDERS[0].to_owned(),
+            ProjectNotifications {
+                resumed_at: T0 + 15_000,
+                ..ProjectNotifications::default()
+            },
+        )]),
+    );
+    hub.set_projects(settings.current().project_notifications);
+    run_chat(&hub, 7, SessionId::new(), FOLDERS[0], true, T0 + 20_000);
+    assert_eq!(raised_kinds(viewer.pump()), vec![AlertKind::NeedsYou]);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// The engine alone applies the project mutes. An alert rings, to every viewer and as the
-    /// engine's own banner, exactly when the mutes allow it at its raise: the mutes of every
-    /// fresh report (a viewer holding none never loosens another's), or the last report's once
-    /// none is fresh. What a mute holds back never shows anywhere, and work outside a project
-    /// never rings.
+    /// The engine alone applies the project mutes it keeps. An alert rings, to every viewer and
+    /// as the engine's own banner, exactly when the stored preferences allow it at its raise:
+    /// whether a viewer is connected or not, presents or not, and whether the preferences were
+    /// handed over now or read back from the store by the next engine run. What a mute holds
+    /// back never shows anywhere, and work outside a project never rings.
     #[test]
     fn the_engine_alone_applies_project_mutes(
-        mutes in mutes(),
+        projects in projects(),
         folder in 0..FOLDERS.len(),
         asks in any::<bool>(),
-        presents in any::<bool>(),
-        stale in any::<bool>(),
-        second in any::<bool>(),
+        viewer_presents in prop::option::of(any::<bool>()),
+        restarted in any::<bool>(),
         late in 0u64..120_000,
     ) {
         let banners = Arc::new(Recorded::default());
         let hub = AlertsHub::at_home(banners.clone(), Limits::default(), Some("/Users/me".into()));
-        let mut viewer = Viewer::join(&hub);
-        let (id, row) = (SessionId::new(), 3);
-        let cwd = FOLDERS[folder];
-        let start = T0 + late;
-        hub.workspace(
-            Item::Snapshot {
-                at: onicode_protocol::Cursor::default(),
-                state: WorkspaceState {
-                    sessions: vec![summary_in(row, id, cwd, false, false)],
-                    ..WorkspaceState::default()
-                },
-            },
-            start,
-        );
-        // The report goes stale before the raise, or stands at it; a second viewer without
-        // mutes may stand beside it.
-        let reported = if stale { start - 30_000 } else { start };
-        hub.set_focus(
-            SetViewportFocus {
-                mutes: mutes.clone(),
-                ..report("app", false, None, presents)
-            },
-            reported,
-        );
-        if second && !stale {
-            hub.set_focus(report("phone", false, None, true), reported);
-        }
-        hub.workspace(
-            events(vec![WorkspaceEvent::Session(Box::new(summary_in(row, id, cwd, true, false)))]),
-            start,
-        );
-        hub.session(
-            row,
-            Item::Snapshot {
-                at: onicode_protocol::Cursor::default(),
-                state: SessionState::default(),
-            },
-            start,
-        );
-        let kind = if asks {
-            hub.session(
-                row,
-                session_events(vec![
-                    SessionEvent::Approval(Approval {
-                        id: "a1".into(),
-                        title: "Run cargo test".into(),
-                        detail: String::new(),
-                        can_remember: true,
-                    }),
-                    status("Waiting for approval", false),
-                ]),
-                start,
-            );
-            AlertKind::NeedsYou
+        let store = store();
+        let _settings_watch = if restarted {
+            store_projects(&settings_over(&store), &projects);
+            Some(follow_settings(&hub, &settings_over(&store)))
         } else {
-            hub.session(row, session_events(vec![status("Ready", true)]), start);
-            hub.workspace(
-                events(vec![WorkspaceEvent::Session(Box::new(summary_in(row, id, cwd, false, true)))]),
-                start,
-            );
-            hub.turn_ended(row, start);
-            AlertKind::Finished
+            hub.set_projects(projects.clone());
+            None
         };
-        hub.step(start);
+        let mut viewer = Viewer::join(&hub);
+        let start = T0 + late;
+        if let Some(presents) = viewer_presents {
+            hub.set_focus(report("app", false, None, presents), start);
+        }
+        let cwd = FOLDERS[folder];
+        let kind = run_chat(&hub, 3, SessionId::new(), cwd, asks, start);
         let raised_at = start + HOLD_MS;
-        hub.step(raised_at);
-        let allowed = mutes.allows(cwd, kind, Some("/Users/me"), raised_at);
-        let rung: Vec<AlertKind> = viewer
-            .pump()
-            .into_iter()
-            .filter_map(|event| match event {
-                AlertsEvent::Raised(alert) => Some(alert.kind),
-                AlertsEvent::Withdrawn(_) => None,
-            })
-            .collect();
+        let allowed = alerts::allows(&projects, cwd, kind, Some("/Users/me"), raised_at);
+        let rung = raised_kinds(viewer.pump());
         prop_assert_eq!(rung.clone(), if allowed { vec![kind] } else { Vec::new() });
         prop_assert_eq!(hub.current().alerts.len(), usize::from(allowed));
-        let presenting = (presents || second) && !stale;
         prop_assert_eq!(
             banners.posted.lock().unwrap().len(),
-            usize::from(allowed && !presenting),
+            usize::from(allowed && viewer_presents != Some(true)),
             "the engine's own banner follows the same mutes"
         );
         if folder == FOLDERS.len() - 1 {
             prop_assert!(rung.is_empty(), "the home folder is no project");
         }
     }
+}
+
+/// monocode's rules, as the engine reads them: a timed mute ends a millisecond before its time,
+/// nothing from before a resume or a category turning back on rings, and a mute until resumed
+/// keeps every category quiet whatever is on.
+#[test]
+fn project_rules_read_as_monocode_reads_them() {
+    let mut project = ProjectNotifications::default();
+    project.mute(Mute::Until(T0));
+    assert!(project.muted_at(T0 - 1) && !project.muted_at(T0));
+    assert!(!project.rule(AGENT_INPUT).allows(T0 - 1, T0 - 1));
+    assert!(project.rule(AGENT_INPUT).allows(T0, T0));
+    project.resume(T0 + 10);
+    assert_eq!(project.muted, None);
+    assert!(!project.rule(AGENT_FINISHED).allows(T0 + 10, T0 + 20));
+    assert!(project.rule(AGENT_FINISHED).allows(T0 + 11, T0 + 20));
+    project.set_enabled(AGENT_INPUT, false, T0 + 30);
+    assert!(!project.rule(AGENT_INPUT).allows(T0 + 40, T0 + 40));
+    project.set_enabled(AGENT_INPUT, true, T0 + 50);
+    assert!(!project.rule(AGENT_INPUT).allows(T0 + 50, T0 + 60));
+    assert!(project.rule(AGENT_INPUT).allows(T0 + 51, T0 + 60));
+    project.mute(Mute::UntilResumed);
+    assert!(project.muted_at(u64::MAX - 1));
+    assert!(!project.rule(AGENT_FINISHED).allows(T0 + 100, T0 + 100));
+    assert!(
+        project.enabled(AGENT_FINISHED),
+        "a mute keeps the category choices"
+    );
 }

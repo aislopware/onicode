@@ -44,10 +44,10 @@ use onicode_protocol::terminal::{
 };
 use onicode_protocol::transcript::Row;
 use onicode_protocol::workspace::{
-    Archive, ClaimInboxEvents, CreateNote, CreateSession, Delete, DeleteNote, FinishAutomationRun,
-    GenerateTitle, ListNotes, MarkSeen, NameWorktree, NewSession, Pin, PrepareAutomationRun,
-    PreviewSession, ReminderChange, Rename, SaveGroups, SaveResponseNote, SearchSessions,
-    SetReminder, SetWorkItem, UpsertNote, WatchWorkspace,
+    Archive, ClaimInboxEvents, CreateNote, CreateSession, Delete, DeleteNote, GenerateTitle,
+    ListNotes, MarkSeen, NameWorktree, NewSession, Pin, PreviewSession, ReminderChange, Rename,
+    SaveGroups, SaveResponseNote, SearchSessions, SetReminder, SetWorkItem, UpsertNote,
+    WatchWorkspace,
 };
 use onicode_protocol::{
     Call, Cursor, Item, METHODS, MessageId, Method, MethodKind, OpId, PROTOCOL, Rejection, Routed,
@@ -281,8 +281,6 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<UpsertNote>();
     shapes.call::<DeleteNote>();
     shapes.call::<SaveResponseNote>();
-    shapes.call::<PrepareAutomationRun>();
-    shapes.call::<FinishAutomationRun>();
     shapes.call::<ClaimInboxEvents>();
     // Files.
     shapes.watch::<WatchDir>();
@@ -374,6 +372,7 @@ fn shapes() -> (Vec<Method>, String) {
     // Engine settings.
     shapes.watch::<engine_settings::WatchEngineSettings>();
     shapes.call::<engine_settings::SetEngineSetting>();
+    shapes.call::<engine_settings::SetProjectNotifications>();
     // Work.
     shapes.call::<onicode_protocol::work::InboxList>();
     shapes.call::<onicode_protocol::work::InboxRepos>();
@@ -445,6 +444,7 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.variants::<onicode_protocol::alerts::Need>();
     shapes.variants::<onicode_protocol::alerts::Subject>();
     shapes.variants::<onicode_protocol::alerts::OnScreen>();
+    shapes.variants::<onicode_protocol::alerts::Mute>();
     shapes.variants::<onicode_protocol::desktop::Pane>();
     shapes.variants::<std::net::SocketAddr>();
     shapes.table()

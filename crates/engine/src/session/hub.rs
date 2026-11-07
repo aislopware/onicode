@@ -27,6 +27,7 @@ use onicode_protocol::{Item, MessageId, OpId, Outcome, Rejection, SessionId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
+mod automation;
 pub(crate) mod resume;
 
 use super::asides::{Aside, Asides, ProviderAsides, btw_prompt};
@@ -113,6 +114,8 @@ struct Turn {
     next: Option<Next>,
     /// The engine's usage-limit resume (`resume.rs`).
     resume: bool,
+    /// The automation run the turn is, by run id (`automation.rs`).
+    automation: Option<String>,
 }
 
 struct Live {
@@ -571,6 +574,7 @@ impl SessionHub {
             steers: HashMap::new(),
             next: None,
             resume: false,
+            automation: None,
         });
         if let Some(workspace) = self.workspace.get() {
             workspace.turn_started(live.id);
@@ -617,6 +621,7 @@ impl SessionHub {
             return;
         };
         let (resuming, cancelled) = (turn.resume, turn.cancel.load(Ordering::Relaxed));
+        let run = update.finished.then(|| turn.automation.clone()).flatten();
         if resuming && resume::spoke(&update) {
             self.resume_spoke(resumes, live.id);
         }
@@ -717,11 +722,21 @@ impl SessionHub {
                 events.extend(self.hold_limit(live.id, limit, reported));
             }
         }
+        let last_status = match &status {
+            Some(SessionEvent::Status { status, .. }) => status.clone(),
+            _ => String::new(),
+        };
         events.extend(status);
         publish(live, events);
         if finished {
             if let Some(workspace) = self.workspace.get() {
                 workspace.turn_finished(live.id);
+                if let Some(run) = run {
+                    let rows = &live.topic.state().rows;
+                    let (outcome, error) =
+                        automation::ended(&last_status, rows, started, cancelled);
+                    workspace.finish_automation_run(&run, outcome, error);
+                }
             }
             let row = live.id;
             let next = live.turn.take().and_then(|turn| turn.next);

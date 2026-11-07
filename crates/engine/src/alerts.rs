@@ -7,7 +7,8 @@
 //! failed, finished unseen, stalled; a 1.5 s hold; one alert per chat or terminal), and serves the
 //! result as `WatchAlerts` ([`AlertsService`]). `SetViewportFocus` tells it what each viewer has on
 //! screen and whether the viewer presents the alerts; while none presents, the hub posts plain
-//! banners itself ([`Banners`]).
+//! banners itself ([`Banners`]). The projects' mutes are the engine's own settings
+//! (`SetProjectNotifications`), applied to every alert and banner with or without a viewer.
 mod alerter;
 mod banners;
 mod hub;

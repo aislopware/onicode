@@ -27,9 +27,9 @@ use onicode_protocol::transcript::Row;
 use onicode_protocol::usage::Limit;
 use onicode_protocol::workspace::{
     Archive, ClaimInboxEvents, CreateNote, CreateSession, Created, Delete, DeleteNote,
-    FinishAutomationRun, GenerateTitle, MarkSeen, NameWorktree, Named, NewSession, Pin, Preview,
-    PreviewSession, Project, ReminderChange, Rename, SaveGroups, SearchSessions, SessionDefaults,
-    SessionSummary, SetReminder, SetWorkItem, WatchWorkspace, WorkspaceEvent, WorkspaceState,
+    GenerateTitle, MarkSeen, NameWorktree, Named, NewSession, Pin, Preview, PreviewSession,
+    Project, ReminderChange, Rename, SaveGroups, SearchSessions, SessionDefaults, SessionSummary,
+    SetReminder, SetWorkItem, WatchWorkspace, WorkspaceEvent, WorkspaceState,
 };
 use onicode_protocol::{
     Cursor, EngineId, Item, MessageId, OpId, Outcome, ProjectRef, Rejection, Routed, SessionId,
@@ -1138,7 +1138,6 @@ fn workspace_event() -> impl Strategy<Value = WorkspaceEvent> {
         project().prop_map(WorkspaceEvent::Project),
         vec(reminder(), 0..3).prop_map(WorkspaceEvent::Reminders),
         any::<usize>().prop_map(WorkspaceEvent::Notes),
-        text().prop_map(WorkspaceEvent::AutomationTaken),
         (op_id(), outcome()).prop_map(|(op, outcome)| WorkspaceEvent::Receipt { op, outcome }),
     ]
 }
@@ -1155,7 +1154,6 @@ fn workspace_state() -> impl Strategy<Value = WorkspaceState> {
             projects,
             reminders,
             notes,
-            automations: Vec::new(),
         })
 }
 
@@ -1291,8 +1289,7 @@ proptest! {
         round_trips(&NameWorktree { session, root: project.clone(), cwd: project.clone(), message, model })?;
         round_trips(&Named { branch })?;
         round_trips(&CreateNote { id: run.clone(), cwd: Some(project) })?;
-        round_trips(&DeleteNote { id: run.clone() })?;
-        round_trips(&FinishAutomationRun { run, status: "succeeded".into(), error: None })?;
+        round_trips(&DeleteNote { id: run })?;
         round_trips(&ClaimInboxEvents::default())?;
     }
 }

@@ -4,9 +4,13 @@
 //! The app's own look and layout are saved with the workspace in its `ui.sqlite3`. What the engine
 //! does on its own behalf (providers, models, skills, idle agents, hooks) is the engine's: the
 //! Settings pages edit it in [`Preferences::engine`], which the shell mirrors from the engine and
-//! sends back to it, key by key (`shell/engine_settings_mirror.rs`).
-use std::collections::HashMap;
+//! sends back to it, key by key (`shell/engine_settings_mirror.rs`). Each project's notification
+//! preferences belong to the engine that holds the project: the Settings pages edit them in
+//! [`Preferences::project_notifications`], which the shell follows from every engine and sends to
+//! the one holding each project (`shell/project_notifications.rs`).
+use std::collections::{BTreeMap, HashMap};
 
+use onicode_protocol::alerts::ProjectNotifications;
 use onicode_protocol::engine_settings::EngineSettings;
 pub(crate) use onicode_protocol::engine_settings::ModelChoice;
 use onicode_protocol::provider::Kind;
@@ -18,8 +22,11 @@ pub(crate) struct Preferences {
     // General
     pub sounds: bool,
     pub notifications: bool,
-    pub project_notifications: serde_json::Value,
-    pub notification_projects: serde_json::Value,
+    /// Every project's notification preferences, by its folder as the app spells it (a project
+    /// on another engine by its `peer://` URI), as each engine holds them: never saved with the
+    /// workspace.
+    #[serde(skip)]
+    pub project_notifications: BTreeMap<String, ProjectNotifications>,
     pub file_tabs: String,
     pub file_word_wrap: bool,
     pub file_view_mode: String,
@@ -104,8 +111,7 @@ impl Default for Preferences {
         Self {
             sounds: true,
             notifications: false,
-            project_notifications: serde_json::json!({}),
-            notification_projects: serde_json::json!([]),
+            project_notifications: BTreeMap::new(),
             file_tabs: "pane".into(),
             file_word_wrap: true,
             file_view_mode: "preview".into(),

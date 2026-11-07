@@ -510,7 +510,7 @@ impl Automations {
             actions = actions.child(
                 button(
                     "automation-run",
-                    if self.running {
+                    if self.starting() {
                         "Starting…"
                     } else {
                         "Run now"
@@ -520,11 +520,12 @@ impl Automations {
                 .on_click(cx.listener(|this, _, _, cx| this.run(cx))),
             );
         }
-        let disabled = !valid || self.saving || (editor.saved && !editor.dirty);
+        let saving = self.saving_open();
+        let disabled = !valid || saving || (editor.saved && !editor.dirty);
         actions = actions.child(
             button(
                 "automation-save",
-                if self.saving {
+                if saving {
                     "Saving…"
                 } else if editor.saved {
                     "Save"
@@ -1072,8 +1073,15 @@ impl Automations {
                     .child(div().w(px(108.)).child("Status"))
                     .child(div().w(px(56.)).text_right().child("Duration")),
             );
+            // The runs are the engine's that holds the automation, and so are their sessions.
+            let engine = self
+                .selected
+                .as_ref()
+                .and_then(|id| self.owner(id))
+                .and_then(|engine| engine.target().cloned());
             for (index, run) in self.runs.iter().take(100).enumerate() {
                 let session = run.session_id.clone();
+                let engine = engine.clone();
                 let trigger = if run.trigger == "manual" {
                     "Test run".into()
                 } else if run.trigger == "event" {
@@ -1182,7 +1190,7 @@ impl Automations {
                         )
                         .on_click(cx.listener(move |_, _, _, cx| {
                             if let Some(id) = &session {
-                                cx.emit(Event::OpenSession(id.clone()));
+                                cx.emit(Event::OpenSession(engine.clone(), id.clone()));
                             }
                         })),
                 );

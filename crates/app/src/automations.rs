@@ -1,6 +1,14 @@
 //! Native counterpart of AutomationsView: persisted list, example gallery,
-//! trigger editor and run history. All scheduling lives in monocode-core.
-use std::collections::HashMap;
+//! trigger editor and run history.
+//!
+//! An automation belongs to the engine that holds its project, which stores, schedules and runs
+//! it (engine.md, "Automations"). The view lists the automations of the app's own engine and of
+//! every engine a `peer://` project names together, each in the app's spelling (its project's
+//! URI, so its row shows that machine's tile as every peer project does), and sends every edit,
+//! run and history read to the engine its project names. An edit shows at once and stays laid
+//! over each engine's list until that engine answers; a peer that cannot be reached keeps its
+//! automations as last listed, and an edit for it waits in the engine's outbox.
+use std::collections::{HashMap, HashSet};
 
 use gpui::prelude::*;
 use gpui::{
@@ -8,10 +16,9 @@ use gpui::{
     Subscription, Window, div, px, rgb,
 };
 use onicode_core::automations;
-use onicode_protocol::OpId;
 use onicode_protocol::agents::{Catalog, CatalogRead};
 use onicode_protocol::automations::{
-    Automation, AutomationRun, AutomationTrigger, AutomationUpsert, DueAutomationRun,
+    Automation, AutomationRun, AutomationTrigger, AutomationUpsert,
 };
 use onicode_protocol::provider::Kind;
 use onicode_protocol::session_groups::Folder;
@@ -19,6 +26,7 @@ use onicode_protocol::work::{
     AutomationRuns, DeleteAutomation, ListAutomations, ProjectGroups, RunAutomationNow,
     SetAutomationEnabled, UpsertAutomation,
 };
+use onicode_protocol::{EngineId, OpId, ProjectRef};
 use serde::Deserialize;
 
 use crate::engine_client::{Engine, call};
@@ -43,8 +51,20 @@ fn trigger_mark(kind: &str, side: f32) -> AnyElement {
 
 pub(crate) enum Event {
     Close,
-    Launch(Box<DueAutomationRun>),
-    OpenSession(String),
+    /// Open the session the engine (`None`, the app's own) keeps under this key: a run's.
+    OpenSession(Option<EngineId>, String),
+}
+
+/// An edit made ahead of its engine's answer, laid over every list until the call answers.
+enum Echo {
+    Saved(Box<Automation>),
+    Enabled(String, bool),
+    Deleted(String),
+}
+
+struct Pending {
+    op: OpId,
+    echo: Echo,
 }
 
 #[derive(Clone, Deserialize)]
@@ -103,14 +123,20 @@ pub(crate) struct Automations {
     cwd: String,
     projects: Vec<String>,
     appearances: HashMap<String, onicode_protocol::project_appearance::ProjectAppearance>,
+    /// Every engine's automations as shown: each engine's last list, the edits in flight laid
+    /// over them, newest first.
     automations: Vec<Automation>,
+    /// Each engine's automations as it last listed them, in the app's spelling.
+    listed: HashMap<Option<EngineId>, Vec<Automation>>,
+    pending: Vec<Pending>,
     runs: Vec<AutomationRun>,
     selected: Option<String>,
     editor: Option<Editor>,
     loading: bool,
     error: Option<String>,
-    saving: bool,
-    running: bool,
+    /// The automations whose save, or whose run now, waits on its engine.
+    saving: HashSet<String>,
+    running: HashSet<String>,
     gallery: bool,
     category: String,
     templates: Vec<Template>,
@@ -157,13 +183,15 @@ impl Automations {
             projects,
             appearances: HashMap::new(),
             automations: Vec::new(),
+            listed: HashMap::new(),
+            pending: Vec::new(),
             runs: Vec::new(),
             selected: None,
             editor: None,
             loading: true,
             error: None,
-            saving: false,
-            running: false,
+            saving: HashSet::new(),
+            running: HashSet::new(),
             gallery: true,
             category: "popular".into(),
             templates: serde_json::from_str(include_str!("automations/templates.json"))
@@ -244,52 +272,178 @@ impl Automations {
         cx.notify();
     }
 
+    /// The engines whose automations the view lists: the app's own, and each one a project of
+    /// the workspace names.
+    fn engines(&self) -> Vec<Engine> {
+        let mut peers: Vec<EngineId> = Vec::new();
+        for project in self
+            .projects
+            .iter()
+            .filter_map(|path| ProjectRef::parse_uri(path))
+        {
+            if !peers.contains(&project.engine) {
+                peers.push(project.engine);
+            }
+        }
+        std::iter::once(self.engine.clone())
+            .chain(peers.into_iter().map(|peer| self.engine.on(peer)))
+            .collect()
+    }
+
+    /// The engine that holds the automation `id`: the one its project names.
+    fn owner(&self, id: &str) -> Option<Engine> {
+        let automation = self.automations.iter().find(|a| a.id == id)?;
+        Some(self.engine.for_path(&automation.cwd).0)
+    }
+
+    /// Asks every engine for its automations, and the selected one's engine for its runs. An
+    /// engine that does not answer keeps what it last listed.
     pub(crate) fn refresh(&mut self, cx: &mut Context<Self>) {
-        let engine = self.engine.clone();
-        let selected = self.selected.clone();
-        let selected_for_work = selected.clone();
-        let work = cx.background_executor().spawn(async move {
-            let list = engine
-                .call::<ListAutomations>(None, ListAutomations {})
-                .await?;
-            let runs = match selected_for_work {
-                Some(automation) => {
-                    engine
-                        .call::<AutomationRuns>(None, AutomationRuns { automation })
-                        .await?
-                }
-                None => Vec::new(),
-            };
-            Ok::<_, String>((list, runs))
-        });
+        let engines = self.engines();
+        let wanted: Vec<Option<EngineId>> = engines.iter().map(|e| e.target().cloned()).collect();
+        self.listed.retain(|engine, _| wanted.contains(engine));
+        for engine in engines {
+            let target = engine.target().cloned();
+            let work = call::<ListAutomations>(&engine, None, ListAutomations {}, cx);
+            cx.spawn(async move |this, cx| {
+                let result = work.await;
+                let _ = this.update(cx, |this, cx| match result {
+                    Ok(list) => this.listed(target, list, cx),
+                    Err(error) => {
+                        if target.is_none() {
+                            this.loading = false;
+                            this.error = Some(error);
+                            cx.notify();
+                        }
+                    }
+                });
+            })
+            .detach();
+        }
+        let Some(selected) = self.selected.clone() else {
+            return;
+        };
+        let Some(engine) = self.owner(&selected) else {
+            return;
+        };
+        let work = call::<AutomationRuns>(
+            &engine,
+            None,
+            AutomationRuns {
+                automation: selected.clone(),
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
-                this.loading = false;
-                match result {
-                    Ok((list, runs)) => {
-                        this.automations = list;
-                        if this.selected == selected {
-                            this.runs = runs;
-                        }
-                        if this
-                            .selected
-                            .as_ref()
-                            .is_some_and(|id| !this.automations.iter().any(|a| &a.id == id))
-                        {
-                            this.selected = None;
-                            if !this.editor.as_ref().is_some_and(|e| e.dirty) {
-                                this.editor = None;
-                                this.gallery = true;
-                            }
-                        }
-                    }
-                    Err(error) => this.error = Some(error),
+                if let Ok(runs) = result
+                    && this.selected.as_ref() == Some(&selected)
+                {
+                    this.runs = runs;
+                    cx.notify();
                 }
-                cx.notify();
             });
         })
         .detach();
+    }
+
+    /// What `engine` (`None`, the app's own) listed, spelled as the app spells its paths.
+    pub(crate) fn listed(
+        &mut self,
+        engine: Option<EngineId>,
+        list: Vec<Automation>,
+        cx: &mut Context<Self>,
+    ) {
+        let on = match &engine {
+            Some(peer) => self.engine.on(peer.clone()),
+            None => {
+                self.loading = false;
+                self.engine.clone()
+            }
+        };
+        let list = list
+            .into_iter()
+            .map(|automation| spelled(&on, automation))
+            .collect();
+        self.listed.insert(engine, list);
+        self.show_listed(cx);
+    }
+
+    /// Lays the edits in flight over every engine's last list, newest first; a selection whose
+    /// automation went leaves the editor unless it holds changes.
+    fn show_listed(&mut self, cx: &mut Context<Self>) {
+        let mut shown: Vec<Automation> = Vec::new();
+        for automation in self.listed.values().flatten() {
+            // An automation moving between engines is listed by both until the old one deletes
+            // it: the newer copy shows.
+            match shown.iter_mut().find(|known| known.id == automation.id) {
+                Some(known) if known.updated_at < automation.updated_at => {
+                    *known = automation.clone();
+                }
+                Some(_) => {}
+                None => shown.push(automation.clone()),
+            }
+        }
+        for pending in &self.pending {
+            match &pending.echo {
+                Echo::Saved(saved) => {
+                    shown.retain(|known| known.id != saved.id);
+                    shown.push((**saved).clone());
+                }
+                Echo::Enabled(id, enabled) => {
+                    if let Some(known) = shown.iter_mut().find(|known| known.id == *id) {
+                        known.enabled = *enabled;
+                    }
+                }
+                Echo::Deleted(id) => shown.retain(|known| known.id != *id),
+            }
+        }
+        shown.sort_by(|a, b| {
+            b.updated_at
+                .cmp(&a.updated_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        self.automations = shown;
+        if self
+            .selected
+            .as_ref()
+            .is_some_and(|id| !self.automations.iter().any(|a| &a.id == id))
+        {
+            self.selected = None;
+            if !self.editor.as_ref().is_some_and(|e| e.dirty) {
+                self.editor = None;
+                self.gallery = true;
+            }
+        }
+        cx.notify();
+    }
+
+    /// Settles the edit made under `op`: its engine answered, with `saved` when it holds the
+    /// automation as saved now, or `gone` when it deleted it.
+    fn settle(
+        &mut self,
+        op: OpId,
+        engine: Option<EngineId>,
+        saved: Option<Automation>,
+        gone: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        self.pending.retain(|pending| pending.op != op);
+        let on = match &engine {
+            Some(peer) => self.engine.on(peer.clone()),
+            None => self.engine.clone(),
+        };
+        let list = self.listed.entry(engine).or_default();
+        if let Some(id) = gone {
+            list.retain(|known| known.id != id);
+        }
+        if let Some(saved) = saved {
+            let saved = spelled(&on, saved);
+            list.retain(|known| known.id != saved.id);
+            list.push(saved);
+        }
+        self.show_listed(cx);
     }
 
     fn load_folders(&mut self, cx: &mut Context<Self>) {
@@ -299,7 +453,8 @@ impl Automations {
             .map(|e| e.draft.cwd.clone())
             .unwrap_or_else(|| self.cwd.clone());
         let expected = cwd.clone();
-        let work = call::<ProjectGroups>(&self.engine, None, ProjectGroups { project: cwd }, cx);
+        let (engine, project) = self.engine.for_path(&cwd);
+        let work = call::<ProjectGroups>(&engine, None, ProjectGroups { project }, cx);
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -508,43 +663,121 @@ impl Automations {
     }
 
     fn save(&mut self, cx: &mut Context<Self>) {
-        if self.saving {
-            return;
-        }
         let Some(draft) = self.collected(cx) else {
             return;
         };
-        self.saving = true;
+        if self.saving.contains(&draft.id) {
+            return;
+        }
         self.error = None;
-        let work = call::<UpsertAutomation>(
-            &self.engine,
-            Some(OpId::new()),
-            UpsertAutomation { automation: draft },
-            cx,
-        );
+        let previous = self.automations.iter().find(|a| a.id == draft.id);
+        let echo = echoed(&draft, previous);
+        // Moved to a project on another engine: that engine takes it, then the old one lets go.
+        let moved_from = previous
+            .map(|previous| self.engine.for_path(&previous.cwd).0)
+            .filter(|old| old.target() != self.engine.for_path(&draft.cwd).0.target());
+        let (engine, body) = self.routed(draft.clone());
+        let target = engine.target().cloned();
+        let op = OpId::new();
+        self.pending.push(Pending {
+            op,
+            echo: Echo::Saved(Box::new(echo.clone())),
+        });
+        self.saving.insert(draft.id.clone());
+        self.selected = Some(draft.id.clone());
+        self.set_editor(AutomationUpsert::from_automation(&echo), true, cx);
+        self.show_listed(cx);
+        let work =
+            call::<UpsertAutomation>(&engine, Some(op), UpsertAutomation { automation: body }, cx);
+        let id = draft.id;
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
-                this.saving = false;
+                this.saving.remove(&id);
                 match result {
                     Ok(saved) => {
-                        this.selected = Some(saved.id.clone());
-                        this.set_editor(AutomationUpsert::from_automation(&saved), true, cx);
-                        this.refresh(cx);
+                        let shown = spelled(&engine, saved.clone());
+                        if let Some(editor) = &this.editor
+                            && editor.draft.id == shown.id
+                            && !editor.dirty
+                        {
+                            this.set_editor(AutomationUpsert::from_automation(&shown), true, cx);
+                        }
+                        this.settle(op, target, Some(saved), None, cx);
+                        if let Some(old) = moved_from {
+                            this.forget(&old, id.clone(), cx);
+                        }
                     }
-                    Err(error) => this.error = Some(error),
+                    Err(error) => {
+                        this.error = Some(error);
+                        this.settle(op, target, None, None, cx);
+                    }
                 }
-                cx.notify();
+                this.refresh(cx);
             });
         })
         .detach();
         cx.notify();
     }
 
+    /// `draft` as the engine its project names takes it: that engine, and the draft with its
+    /// project and checkout spelled as it names them.
+    fn routed(&self, mut draft: AutomationUpsert) -> (Engine, AutomationUpsert) {
+        let (engine, cwd) = self.engine.for_path(&draft.cwd);
+        draft.cwd = cwd;
+        if !draft.worktree_cwd.is_empty() {
+            draft.worktree_cwd = engine.path_of(&draft.worktree_cwd);
+        }
+        (engine, draft)
+    }
+
+    /// Deletes the automation `id` from `engine`, which held it before it moved elsewhere.
+    fn forget(&mut self, engine: &Engine, id: String, cx: &mut Context<Self>) {
+        let target = engine.target().cloned();
+        let op = OpId::new();
+        let work = call::<DeleteAutomation>(
+            engine,
+            Some(op),
+            DeleteAutomation {
+                automation: id.clone(),
+            },
+            cx,
+        );
+        cx.spawn(async move |this, cx| {
+            let result = work.await;
+            let _ = this.update(cx, |this, cx| {
+                if let Err(error) = result {
+                    this.error = Some(error);
+                }
+                if let Some(list) = this.listed.get_mut(&target) {
+                    list.retain(|known| known.id != id);
+                }
+                this.show_listed(cx);
+            });
+        })
+        .detach();
+    }
+
     fn toggle(&mut self, id: String, enabled: bool, cx: &mut Context<Self>) {
+        let Some(engine) = self.owner(&id) else {
+            return;
+        };
+        let target = engine.target().cloned();
+        let op = OpId::new();
+        self.pending.push(Pending {
+            op,
+            echo: Echo::Enabled(id.clone(), enabled),
+        });
+        if let Some(editor) = &mut self.editor
+            && editor.draft.id == id
+            && !editor.dirty
+        {
+            editor.draft.enabled = enabled;
+        }
+        self.show_listed(cx);
         let work = call::<SetAutomationEnabled>(
-            &self.engine,
-            Some(OpId::new()),
+            &engine,
+            Some(op),
             SetAutomationEnabled {
                 automation: id,
                 enabled,
@@ -562,8 +795,12 @@ impl Automations {
                         {
                             editor.draft.enabled = saved.enabled;
                         }
+                        this.settle(op, target, Some(saved), None, cx);
                     }
-                    Err(error) => this.error = Some(error),
+                    Err(error) => {
+                        this.error = Some(error);
+                        this.settle(op, target, None, None, cx);
+                    }
                 }
                 this.refresh(cx);
             });
@@ -572,9 +809,6 @@ impl Automations {
     }
 
     fn run(&mut self, cx: &mut Context<Self>) {
-        if self.running {
-            return;
-        }
         let Some(automation) = self
             .selected
             .as_ref()
@@ -583,19 +817,35 @@ impl Automations {
         else {
             return;
         };
-        self.running = true;
+        if self.running.contains(&automation) {
+            return;
+        }
+        let Some(engine) = self.owner(&automation) else {
+            return;
+        };
+        let target = engine.target().cloned();
+        self.running.insert(automation.clone());
         let work = call::<RunAutomationNow>(
-            &self.engine,
+            &engine,
             Some(OpId::new()),
-            RunAutomationNow { automation },
+            RunAutomationNow {
+                automation: automation.clone(),
+            },
             cx,
         );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
-                this.running = false;
+                this.running.remove(&automation);
                 match result {
-                    Ok(run) => cx.emit(Event::Launch(Box::new(run))),
+                    // The engine runs it; the person sees it where it runs.
+                    Ok(run) => match (run.session_id, run.error) {
+                        (Some(key), _) if run.status != "failed" => {
+                            cx.emit(Event::OpenSession(target, key));
+                        }
+                        (_, Some(error)) => this.error = Some(error),
+                        _ => {}
+                    },
                     Err(error) => this.error = Some(error),
                 }
                 this.refresh(cx);
@@ -603,6 +853,20 @@ impl Automations {
         })
         .detach();
         cx.notify();
+    }
+
+    /// Whether the open automation's run now waits on its engine.
+    fn starting(&self) -> bool {
+        self.selected
+            .as_ref()
+            .is_some_and(|id| self.running.contains(id))
+    }
+
+    /// Whether the open automation's save waits on its engine.
+    fn saving_open(&self) -> bool {
+        self.editor
+            .as_ref()
+            .is_some_and(|editor| self.saving.contains(&editor.draft.id))
     }
 
     /// Asks with the standard confirmation before deleting the open automation.
@@ -626,24 +890,38 @@ impl Automations {
         let Some(id) = self.selected.clone() else {
             return;
         };
+        let Some(engine) = self.owner(&id) else {
+            return;
+        };
+        let target = engine.target().cloned();
+        let op = OpId::new();
+        self.pending.push(Pending {
+            op,
+            echo: Echo::Deleted(id.clone()),
+        });
+        self.confirm_delete = false;
+        self.editor = None;
+        self.selected = None;
+        self.gallery = true;
+        self.runs.clear();
+        self.show_listed(cx);
         let work = call::<DeleteAutomation>(
-            &self.engine,
-            Some(OpId::new()),
-            DeleteAutomation { automation: id },
+            &engine,
+            Some(op),
+            DeleteAutomation {
+                automation: id.clone(),
+            },
             cx,
         );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
-                this.confirm_delete = false;
                 match result {
-                    Ok(_) => {
-                        this.editor = None;
-                        this.selected = None;
-                        this.gallery = true;
-                        this.runs.clear();
+                    Ok(_) => this.settle(op, target, None, Some(id.as_str()), cx),
+                    Err(error) => {
+                        this.error = Some(error);
+                        this.settle(op, target, None, None, cx);
                     }
-                    Err(error) => this.error = Some(error),
                 }
                 this.refresh(cx);
             });
@@ -662,11 +940,14 @@ impl Automations {
         let model =
             onicode_protocol::sessions::native_model(&editor.draft.model, &editor.draft.harness)
                 .unwrap_or_default();
+        // The project's engine lists its agents' models; another machine's accounts are its own.
+        let engine = self.engine.for_path(&editor.draft.cwd).0;
         let profile = crate::accounts::get(cx)
+            .filter(|_| engine.target().is_none())
             .map(|a| a.read(cx).selected(kind, &editor.draft.cwd))
             .unwrap_or_default();
         let work = call::<Catalog>(
-            &self.engine,
+            &engine,
             None,
             Catalog {
                 provider: kind,
@@ -860,6 +1141,78 @@ impl Automations {
             });
         })
         .detach();
+    }
+}
+
+/// What a shell test reads and does through the view, as the person would.
+#[cfg(test)]
+impl Automations {
+    pub(crate) fn shown(&self) -> &[Automation] {
+        &self.automations
+    }
+
+    /// Opens automation `id`, gives it `name` and saves it.
+    pub(crate) fn rename_for_test(&mut self, id: &str, name: &str, cx: &mut Context<Self>) {
+        self.select(id.to_owned(), cx);
+        if let Some(editor) = &self.editor {
+            editor
+                .name
+                .update(cx, |input, cx| input.set_text(name.to_owned(), cx));
+        }
+        self.save(cx);
+    }
+
+    pub(crate) fn toggle_for_test(&mut self, id: &str, enabled: bool, cx: &mut Context<Self>) {
+        self.toggle(id.to_owned(), enabled, cx);
+    }
+}
+
+/// `automation`, as `engine` listed it, in the app's spelling: its project and checkout under
+/// that engine's URI when it is another machine's.
+fn spelled(engine: &Engine, mut automation: Automation) -> Automation {
+    automation.cwd = engine.app_path(&automation.cwd);
+    if !automation.worktree_cwd.is_empty() {
+        automation.worktree_cwd = engine.app_path(&automation.worktree_cwd);
+    }
+    automation
+}
+
+/// The automation `draft` saves as, shown until its engine answers: what it last ran keeps.
+fn echoed(draft: &AutomationUpsert, previous: Option<&Automation>) -> Automation {
+    let now = onicode_protocol::automations::now_millis();
+    Automation {
+        id: draft.id.clone(),
+        name: draft.name.trim().to_string(),
+        prompt: draft.prompt.clone(),
+        harness: draft.harness.clone(),
+        model: draft.model.clone(),
+        model_settings: draft.model_settings.clone(),
+        cwd: draft.cwd.clone(),
+        workspace_mode: draft.workspace_mode.clone(),
+        worktree_cwd: if draft.workspace_mode == "existing" {
+            draft.worktree_cwd.trim().to_string()
+        } else {
+            String::new()
+        },
+        session_folder_id: draft.session_folder_id.trim().to_string(),
+        reuse_session: draft.reuse_session,
+        runtime_mode: draft.runtime_mode.clone(),
+        trigger_kind: draft.trigger_kind.clone(),
+        trigger_event: draft.trigger_event.trim().to_string(),
+        schedule_kind: draft.schedule_kind.clone(),
+        minute: draft.minute,
+        time: draft.time.clone(),
+        day_of_week: draft.day_of_week,
+        triggers: Some(onicode_protocol::automations::normalize_triggers(draft)),
+        missed_run_grace_minutes: draft.missed_run_grace_minutes,
+        enabled: draft.enabled,
+        next_run_at: draft.next_run_at,
+        last_run_at: previous.and_then(|p| p.last_run_at),
+        last_run_status: previous.and_then(|p| p.last_run_status.clone()),
+        last_run_error: previous.and_then(|p| p.last_run_error.clone()),
+        last_session_id: previous.and_then(|p| p.last_session_id.clone()),
+        created_at: previous.map_or(now, |p| p.created_at),
+        updated_at: now,
     }
 }
 

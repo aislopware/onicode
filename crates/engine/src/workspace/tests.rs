@@ -833,8 +833,11 @@ fn hourly(cwd: &str, next_run_at: i64) -> AutomationUpsert {
     }
 }
 
+/// The scheduler claims an occurrence once however many beats see it due. A workspace with no
+/// session hub to send the prompt leaves the run pending, for the engine's next run to hand out
+/// (`automation_tests.rs` runs it through a whole engine).
 #[test]
-fn automations_come_due_in_virtual_time_once_and_return_after_a_restart() {
+fn automations_come_due_in_virtual_time_once() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("native.db");
     let store: Database = Arc::new(Mutex::new(Store::open(&path).unwrap()));
@@ -842,56 +845,25 @@ fn automations_come_due_in_virtual_time_once_and_return_after_a_restart() {
     // time takes it from there.
     let due_at = i64::try_from(onicode_core::time::now_ms()).unwrap() + 3_600_000;
     let project = dir.path().to_string_lossy().into_owned();
-    Service::open(&path)
+    let automation = Service::open(&path)
         .unwrap()
         .upsert(hourly(&project, due_at))
         .unwrap();
     let start = u64::try_from(due_at).unwrap() - 10;
-    let harness = Harness::over(store.clone(), Limits::default(), start);
+    let harness = Harness::over(store, Limits::default(), start);
     let hub = harness.hub.clone();
-    let mut viewer = Viewer::join(&hub);
+    let runs = || Service::open(&path).unwrap().runs(&automation.id).unwrap();
     hub.tick(start).unwrap();
-    viewer.pump(&hub);
-    assert!(viewer.state.as_ref().unwrap().automations.is_empty());
+    assert!(runs().is_empty());
     let at = u64::try_from(due_at).unwrap();
     hub.tick(at).unwrap();
     hub.tick(at).unwrap();
-    viewer.pump(&hub);
-    let due = viewer.state.as_ref().unwrap().automations.clone();
-    assert_eq!(due.len(), 1, "claimed once");
-    assert_eq!(due[0].run.status, "pending");
-    // An engine that starts later hands the unstarted run out again.
-    drop(viewer);
-    drop(harness);
-    let restarted = Harness::over(store, Limits::default(), at + 1);
-    restarted.hub.tick(at + 1).unwrap();
-    let again = restarted.state().automations;
-    assert_eq!(again.len(), 1);
-    assert_eq!(again[0].run.id, due[0].run.id);
-    // Starting it makes its session in the project and takes it off the list.
-    let prepared = block_on(restarted.hub.prepare_automation_run(
-        Some(OpId::new()),
-        onicode_protocol::workspace::PrepareAutomationRun {
-            due: Box::new(again[0].clone()),
-            reuse: None,
-            settings: Box::default(),
-        },
-    ))
-    .unwrap();
-    assert_eq!(prepared.outcome, Outcome::Applied);
-    let session = prepared.session.unwrap();
-    assert_eq!(session.session.title, "Nightly review");
-    assert_eq!(
-        session.automation.as_deref(),
-        Some(due[0].automation.id.as_str())
-    );
-    let state = restarted.state();
-    assert!(state.automations.is_empty());
+    let claimed = runs();
+    assert_eq!(claimed.len(), 1, "claimed once");
+    assert_eq!(claimed[0].status, "pending");
     assert!(
-        state
-            .sessions
-            .iter()
-            .any(|s| s.session.id == session.session.id)
+        harness.state().sessions.is_empty(),
+        "no session until the engine starts the run"
     );
 }
 

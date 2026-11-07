@@ -7,16 +7,18 @@
 //! status the turn ended on is known. A turn that ended on "Ready" while it still waited on its
 //! owner was stopped, and does not count as finished. "Seen" is the workspace's unread mark: a chat
 //! on screen in a focused window of any viewer is marked seen there, so every device of the owner
-//! agrees, and a chat whose mark clears stops alerting everywhere.
-use std::collections::{BTreeSet, HashMap, HashSet};
+//! agrees, and a chat whose mark clears stops alerting everywhere. The projects' notification
+//! preferences come from the engine's own settings, which the pump hands over as they move, so a
+//! mute holds with no viewer connected and from the first moment after a restart.
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::stream::BoxStream;
 use onicode_protocol::agent::{Approval, Question, QuestionOption};
 use onicode_protocol::alerts::{
-    self, Alert, AlertKind, AlertsEvent, AlertsState, Mutes, Need, OnScreen, SetViewportFocus,
-    Subject, WatchAlerts,
+    self, Alert, AlertKind, AlertsEvent, AlertsState, Need, OnScreen, ProjectNotifications,
+    SetViewportFocus, Subject, WatchAlerts,
 };
 use onicode_protocol::provider::Kind;
 use onicode_protocol::session::{SessionEvent, SessionState};
@@ -334,9 +336,8 @@ struct Inner {
     terminals: HashMap<TerminalId, Term>,
     reports: HashMap<String, Report>,
     prefs: Prefs,
-    /// Each viewport's project mutes, by its id, with when it last reported them. Kept whether
-    /// or not the viewport is focused or presents: they are the owner's word.
-    mutes: HashMap<String, (u64, Mutes)>,
+    /// Each project's notification preferences, by folder, as the engine's settings hold them.
+    projects: BTreeMap<String, ProjectNotifications>,
     /// This machine's home folder: work there is in no project, and never rings.
     home: Option<String>,
     seen: Vec<i64>,
@@ -444,24 +445,20 @@ impl Inner {
         self.reports.values().any(|report| report.presents)
     }
 
-    /// Whether the project mutes let `alert` ring at `now`: those of every viewport that
-    /// reported within [`REPORT_TTL_MS`] of the latest report, any of them holding it back, so
-    /// the mutes stand while the viewers that set them are away and two viewers never undo each
-    /// other's. The engine is the only judge: no viewer and no banner of its own ever shows a
-    /// muted alert.
+    /// Whether the project's notification preferences, as this engine keeps them, let `alert`
+    /// ring at `now`. The engine is the only judge, whether or not any viewer is connected: no
+    /// viewer and no banner of its own ever shows a muted alert.
     fn allows(&self, alert: &Alert, now: u64) -> bool {
         let Some(folder) = alert.project.as_deref() else {
             return true;
         };
-        let home = self.home.as_deref();
-        let Some(newest) = self.mutes.values().map(|(at, _)| *at).max() else {
-            return Mutes::default().allows(folder, alert.kind, home, now);
-        };
-        let floor = newest.saturating_sub(REPORT_TTL_MS);
-        self.mutes
-            .values()
-            .filter(|(at, _)| *at > floor || *at == newest)
-            .all(|(_, mutes)| mutes.allows(folder, alert.kind, home, now))
+        alerts::allows(
+            &self.projects,
+            folder,
+            alert.kind,
+            self.home.as_deref(),
+            now,
+        )
     }
 
     fn alert(&self, key: Key, kind: AlertKind, now: u64) -> Option<Alert> {
@@ -644,7 +641,7 @@ impl AlertsHub {
                     banners: true,
                     sound: true,
                 },
-                mutes: HashMap::new(),
+                projects: BTreeMap::new(),
                 home,
                 seen: Vec::new(),
                 posted: HashSet::new(),
@@ -682,6 +679,12 @@ impl AlertsHub {
         )
     }
 
+    /// The projects' notification preferences as the engine's settings now hold them: every
+    /// alert raised from now on follows them.
+    pub fn set_projects(&self, projects: BTreeMap<String, ProjectNotifications>) {
+        self.lock().projects = projects;
+    }
+
     /// `SetViewportFocus` at `now`: the report counts for 20 s; the pump takes it in at once.
     pub fn set_focus(&self, report: SetViewportFocus, now: u64) {
         {
@@ -690,13 +693,6 @@ impl AlertsHub {
                 banners: report.banners,
                 sound: report.sound,
             };
-            inner
-                .mutes
-                .insert(report.viewport.clone(), (now, report.mutes));
-            let newest = inner.mutes.values().map(|(at, _)| *at).max().unwrap_or(now);
-            inner
-                .mutes
-                .retain(|_, (at, _)| *at == newest || newest.saturating_sub(*at) < REPORT_TTL_MS);
             if report.focused || report.presents {
                 inner.reports.insert(
                     report.viewport,

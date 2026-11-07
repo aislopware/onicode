@@ -14,6 +14,10 @@
 //! pin, title or link, is a call to that engine naming its own rows. Its echo shows at once and
 //! stays until the receipt arrives on that engine's watch; a call it fails or refuses takes the
 //! echo back at once, showing what the engine holds.
+//!
+//! A peer project's automations run on that engine (`automation_runs.rs`): its sessions show
+//! their automation's mark, and a run that starts gets a tab, as one of the app's own engine's
+//! does.
 use std::collections::BTreeSet;
 
 use onicode_protocol::session_groups::Groups;
@@ -230,7 +234,8 @@ impl Shell {
     }
 
     /// Follows the workspace of every engine a `peer://` project names, and stops following
-    /// one no project names any more; sessions of a project that left go with it.
+    /// one no project names any more; sessions of a project that left go with it. The project
+    /// notification preferences of the same engines are followed alongside.
     pub(super) fn follow_peers(&mut self, cx: &mut Context<Self>) {
         let wanted: HashSet<EngineId> = self
             .workspace
@@ -272,6 +277,8 @@ impl Shell {
         if moved {
             self.show_workspace(cx);
         }
+        // Their projects' notification preferences, which those engines keep.
+        self.follow_project_notifications(cx);
     }
 
     fn watch_peer(&mut self, engine: EngineId, projects: BTreeSet<String>, cx: &mut Context<Self>) {
@@ -325,14 +332,28 @@ impl Shell {
             .map(|state| super::workspace_mirror::armed(&state.reminders))
             .unwrap_or_default();
         let mut receipts = Vec::new();
+        // The automations' sessions this update brought, with what the engine showed of each
+        // before it.
+        let mut runs: Vec<(Option<SessionSummary>, SessionSummary)> = Vec::new();
         let snapshot = matches!(update, WorkspaceUpdate::Snapshot(_));
         match update {
             WorkspaceUpdate::Snapshot(state) => followed.state = Some(*state),
             WorkspaceUpdate::Events(events) => {
                 let state = followed.state.get_or_insert_with(Default::default);
                 for event in &events {
-                    if let WorkspaceEvent::Receipt { op, outcome } = event {
-                        receipts.push((*op, outcome.clone()));
+                    match event {
+                        WorkspaceEvent::Receipt { op, outcome } => {
+                            receipts.push((*op, outcome.clone()));
+                        }
+                        WorkspaceEvent::Session(summary) if summary.automation.is_some() => {
+                            let known = state
+                                .sessions
+                                .iter()
+                                .find(|known| known.session.id == summary.session.id)
+                                .cloned();
+                            runs.push((known, (**summary).clone()));
+                        }
+                        _ => {}
                     }
                     onicode_engine::workspace::apply(state, event);
                 }
@@ -363,8 +384,37 @@ impl Shell {
                 self.deliver_reminder_notice(row, due_at, cx);
             }
         }
+        let mut tabbed = false;
+        for (known, now) in &runs {
+            let row = engine_client::peer_row(&SessionKey {
+                engine: engine.clone(),
+                session: now.id,
+            });
+            tabbed |= self.automation_turn_started(row, known.as_ref(), now);
+        }
+        if tabbed {
+            self.persist(cx);
+        }
+        self.automations_moved(!runs.is_empty(), cx);
         self.invalidate_chrome(cx);
         cx.notify();
+    }
+
+    /// The app's row for the session `engine` (another engine) keeps under `key`, while its
+    /// workspace shows it.
+    pub(super) fn peer_row_for_key(&self, engine: &EngineId, key: &str) -> Option<i64> {
+        let followed = self.peers.followed.get(engine)?;
+        let summary = followed
+            .state
+            .as_ref()?
+            .sessions
+            .iter()
+            .find(|summary| summary.key == key)?;
+        let row = engine_client::peer_row(&SessionKey {
+            engine: engine.clone(),
+            session: summary.id,
+        });
+        followed.shown.contains_key(&row).then_some(row)
     }
 
     /// Lays the peer sessions at `rows` over the shell's maps whole as their engines hold them:
@@ -532,6 +582,11 @@ impl Shell {
         });
         if summary.model.is_some() {
             self.session_details.entry(row).or_default().model = summary.model.clone();
+        }
+        if let Some(automation) = &summary.automation {
+            self.automation_state
+                .session_automations
+                .insert(row, automation.clone());
         }
     }
 }

@@ -2284,7 +2284,8 @@ mod tests {
                 assert_eq!(link.number, 42);
                 assert!(shell.link_dialog.is_none());
                 shell.run_menu(MenuTarget::Session(a), "reminder:cancel", None, w, cx);
-                shell.workspace_write::<SetReminder>(
+                shell.workspace_write_on::<SetReminder>(
+                    &shell.engine.clone(),
                     "set the reminder",
                     SetReminder {
                         sessions: vec![a],

@@ -1,4 +1,8 @@
-//! Exact project identity and timestamp semantics of notificationPreferences.ts.
+//! Settings → Notifications' project rows, with monocode's project identity and timestamp
+//! semantics (`notificationPreferences.ts`). Each project's preferences are kept by the engine
+//! that holds the project ([`ProjectNotifications`]); the app edits them in
+//! [`Preferences::project_notifications`] by folder, and the shell sends each change to that
+//! engine and shows what every engine holds.
 use std::collections::HashSet;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
@@ -6,12 +10,12 @@ use std::time::Duration;
 use chrono::{Datelike, Local, NaiveDate, NaiveDateTime, TimeZone};
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Entity, Role, Subscription, Task, Window, div, px};
-use serde_json::{Value, json};
+use onicode_protocol::alerts::{Mute, ProjectNotifications};
 
 use super::widgets::secondary_button;
 use super::{Preferences, SettingsView};
 use crate::input;
-use crate::notifications::delivery::{Permission, ProjectRule};
+use crate::notifications::delivery::Permission;
 use crate::notifications::platform;
 use crate::popover::{
     Align, Anchor, AnchorSlot, Menu, MenuAction, MenuEvent, menu_popover, popover,
@@ -43,39 +47,27 @@ pub(super) struct Project {
     id: String,
     name: String,
     detail: String,
-    kind: String,
 }
 impl Preferences {
+    /// The project `cwd` belongs to, as its preferences are keyed: its folder, as an engine
+    /// already holds it in any spelling, else as `cwd` spells it. `None` outside any project.
     pub(crate) fn known_notification_project_id(&self, cwd: &str) -> Option<String> {
         if !looks_like_project(cwd) {
             return None;
         }
         let key = path_key(cwd);
-        self.notification_projects
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|project| {
-                valid_project(project)
-                    && project["paths"].as_array().is_some_and(|paths| {
-                        paths
-                            .iter()
-                            .any(|p| p.as_str().is_some_and(|p| path_key(p) == key))
-                    })
-            })
-            .and_then(|project| project["id"].as_str())
-            .map(str::to_owned)
-            .or_else(|| Some(format!("local:{key}")))
+        self.project_notifications
+            .keys()
+            .find(|folder| path_key(folder) == key)
+            .cloned()
+            .or(Some(key))
     }
 
-    /// None means muted until manually resumed. Time is milliseconds since epoch.
+    /// `None` means muted until manually resumed. Time is milliseconds since epoch.
     pub(crate) fn mute_notification_project(&mut self, cwd: &str, until: Option<u64>) {
         if let Some(id) = self.known_notification_project_id(cwd) {
-            self.mute_projects(
-                &[id],
-                Some(until.map_or(Value::Null, |at| json!(at))),
-                onicode_protocol::time::now_ms(),
-            );
+            let mute = until.map_or(Mute::UntilResumed, Mute::Until);
+            self.mute_projects(&[id], Some(mute), onicode_protocol::time::now_ms());
         }
     }
 
@@ -103,7 +95,11 @@ impl Preferences {
         occurred_at: Option<u64>,
         now: u64,
     ) -> bool {
-        let rule = ProjectRule::from_preferences(&self.project_notifications, id, category);
+        let rule = self
+            .project_notifications
+            .get(id)
+            .map(|project| project.rule(category))
+            .unwrap_or_default();
         rule.allows(occurred_at.unwrap_or(now), now)
     }
 
@@ -111,86 +107,53 @@ impl Preferences {
     /// resumes, categories enabled) are at or before `now`. A change means
     /// some rule now answers differently.
     pub(crate) fn notification_times_passed(&self, now: u64) -> usize {
-        let passed = |value: &Value| value.as_f64().is_some_and(|at| at <= now as f64);
         self.project_notifications
-            .as_object()
-            .into_iter()
-            .flat_map(|map| map.values())
-            .map(|p| {
-                let enabled = p["enabledAfter"]
-                    .as_object()
-                    .map_or(0, |map| map.values().filter(|at| passed(at)).count());
-                usize::from(passed(&p["mutedUntil"]))
-                    + usize::from(passed(&p["resumedAt"]))
-                    + enabled
-            })
-            .sum()
+            .values()
+            .flat_map(ProjectNotifications::moments)
+            .filter(|at| *at <= now)
+            .count()
     }
 
-    fn project_muted(&self, id: &str, now: u64) -> bool {
-        let p = &self.project_notifications[id];
-        p.get("mutedUntil") == Some(&Value::Null)
-            || p["mutedUntil"].as_u64().is_some_and(|at| at > now)
+    pub(crate) fn project_muted(&self, id: &str, now: u64) -> bool {
+        self.project_notifications
+            .get(id)
+            .is_some_and(|project| project.muted_at(now))
     }
 
-    fn mute_projects(&mut self, ids: &[String], until: Option<Value>, now: u64) {
-        if !self.project_notifications.is_object() {
-            self.project_notifications = json!({});
-        }
+    /// When the mute of project `id` ends, for one muted until a time.
+    fn project_mute_ends(&self, id: &str) -> Option<u64> {
+        self.project_notifications
+            .get(id)
+            .and_then(ProjectNotifications::mute_ends)
+    }
+
+    fn project_enabled(&self, id: &str, category: &str) -> bool {
+        self.project_notifications
+            .get(id)
+            .is_none_or(|project| project.enabled(category))
+    }
+
+    /// Mutes the projects `ids` for `mute`, or resumes them (`None`) at `now`.
+    pub(super) fn mute_projects(&mut self, ids: &[String], mute: Option<Mute>, now: u64) {
         for id in ids {
-            let p = &mut self.project_notifications[id];
-            if !p.is_object() {
-                *p = json!({"disabled":[]});
-            }
-            if let Some(until) = &until {
-                p["mutedUntil"] = until.clone();
-            } else if p.get("mutedUntil").is_some() {
-                p.as_object_mut().unwrap().remove("mutedUntil");
-                p["resumedAt"] = json!(now);
+            let project = self.project_notifications.entry(id.clone()).or_default();
+            match mute {
+                Some(mute) => project.mute(mute),
+                None => project.resume(now),
             }
         }
+        self.project_notifications
+            .retain(|_, project| *project != ProjectNotifications::default());
     }
 
-    fn set_category(&mut self, id: &str, category: &str, enabled: bool, now: u64) {
-        if !self.project_notifications.is_object() {
-            self.project_notifications = json!({});
-        }
-        let p = &mut self.project_notifications[id];
-        if !p.is_object() {
-            *p = json!({"disabled":[]});
-        }
-        let mut disabled: Vec<_> = p["disabled"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .filter(|id| CATEGORIES.iter().any(|(cat, _)| id == cat))
-            .map(str::to_owned)
-            .collect();
-        let was_disabled = disabled.iter().any(|id| id == category);
-        disabled.retain(|id| id != category);
-        if !enabled {
-            disabled.push(category.to_owned());
-        }
-        if enabled && was_disabled {
-            if !p["enabledAfter"].is_object() {
-                p["enabledAfter"] = json!({});
-            }
-            p["enabledAfter"][category] = json!(now);
-        }
-        p["disabled"] = json!(disabled);
+    pub(super) fn set_category(&mut self, id: &str, category: &str, enabled: bool, now: u64) {
+        self.project_notifications
+            .entry(id.to_owned())
+            .or_default()
+            .set_enabled(category, enabled, now);
+        self.project_notifications
+            .retain(|_, project| *project != ProjectNotifications::default());
     }
-}
-fn valid_project(p: &Value) -> bool {
-    ["id", "name", "detail"]
-        .iter()
-        .all(|key| p[*key].is_string())
-        && p["kind"]
-            .as_str()
-            .is_some_and(|kind| ["repository", "local"].contains(&kind))
-        && p["paths"]
-            .as_array()
-            .is_some_and(|paths| paths.iter().all(Value::is_string))
 }
 struct MuteMenu {
     menu: Entity<Menu>,
@@ -277,10 +240,8 @@ impl SettingsView {
         if let Some(next) = self
             .prefs
             .project_notifications
-            .as_object()
-            .into_iter()
-            .flat_map(|map| map.values())
-            .filter_map(|p| p["mutedUntil"].as_u64())
+            .values()
+            .filter_map(ProjectNotifications::mute_ends)
             .filter(|at| *at > ms)
             .min()
         {
@@ -294,10 +255,8 @@ impl SettingsView {
         let deadline = self
             .prefs
             .project_notifications
-            .as_object()
-            .into_iter()
-            .flat_map(|map| map.values())
-            .filter_map(|p| p["mutedUntil"].as_u64())
+            .values()
+            .filter_map(ProjectNotifications::mute_ends)
             .filter(|at| *at > now)
             .min();
         self.notification_state._deadline = deadline.map(|at| {
@@ -395,6 +354,8 @@ impl SettingsView {
         }
     }
 
+    /// The projects the window has, each by its folder (a project on another engine by its
+    /// URI): their preferences are the engine's that holds them.
     fn notification_projects(&self) -> Vec<Project> {
         let mut projects = Vec::new();
         let mut ids = HashSet::new();
@@ -406,32 +367,6 @@ impl SettingsView {
             .chain(std::iter::once(self.ctx.cwd.as_str()))
             .filter(|path| looks_like_project(path))
             .collect();
-        for p in self
-            .prefs
-            .notification_projects
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|p| valid_project(p))
-        {
-            if p["paths"].as_array().is_some_and(|entries| {
-                entries.is_empty()
-                    || entries.iter().any(|entry| {
-                        entry.as_str().is_some_and(|entry| {
-                            paths.iter().any(|path| path_key(entry) == path_key(path))
-                        })
-                    })
-            }) {
-                let id = p["id"].as_str().unwrap().to_owned();
-                ids.insert(id.clone());
-                projects.push(Project {
-                    id,
-                    name: p["name"].as_str().unwrap().into(),
-                    detail: p["detail"].as_str().unwrap().into(),
-                    kind: p["kind"].as_str().unwrap().into(),
-                });
-            }
-        }
         for path in paths {
             let Some(id) = self.prefs.known_notification_project_id(path) else {
                 continue;
@@ -447,7 +382,6 @@ impl SettingsView {
                         .map(|(_, n)| n.clone())
                         .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path).into()),
                     detail: path.into(),
-                    kind: "local".into(),
                 });
             }
         }
@@ -492,8 +426,8 @@ impl SettingsView {
                 let now = onicode_protocol::time::now_ms();
                 if id.as_ref() == "mute:custom" {
                     let initial = if targets.len() == 1 {
-                        this.prefs.project_notifications[&targets[0]]["mutedUntil"]
-                            .as_u64()
+                        this.prefs
+                            .project_mute_ends(&targets[0])
                             .filter(|at| *at > now)
                             .unwrap_or(now + 3_600_000)
                     } else {
@@ -528,15 +462,15 @@ impl SettingsView {
                         error: None,
                     });
                 } else {
-                    let until = if id.as_ref() == "mute:indefinite" {
-                        Some(Value::Null)
+                    let mute = if id.as_ref() == "mute:indefinite" {
+                        Some(Mute::UntilResumed)
                     } else {
                         id.strip_prefix("mute:")
                             .and_then(|h| h.parse::<u64>().ok())
-                            .map(|h| json!(now + h * 3_600_000))
+                            .map(|h| Mute::Until(now + h * 3_600_000))
                     };
-                    if let Some(until) = until {
-                        this.update(cx, |p| p.mute_projects(&targets, Some(until), now));
+                    if let Some(mute) = mute {
+                        this.update(cx, |p| p.mute_projects(&targets, Some(mute), now));
                     }
                 }
             }
@@ -567,7 +501,7 @@ impl SettingsView {
         } else if ids.len() > 1 {
             format!("{} of {} projects muted", muted.len(), ids.len())
         } else {
-            match self.prefs.project_notifications[&ids[0]]["mutedUntil"].as_u64() {
+            match self.prefs.project_mute_ends(&ids[0]) {
                 Some(at) => chrono::DateTime::from_timestamp_millis(at as i64)
                     .map(|at| {
                         format!(
@@ -704,17 +638,11 @@ impl SettingsView {
             let muted = self.prefs.project_muted(&id, now);
             let categories: Vec<_> = CATEGORIES
                 .iter()
-                .filter(|(cat, _)| {
-                    project.kind != "local" || !["pullRequests", "issues"].contains(cat)
-                })
+                .filter(|(cat, _)| !["pullRequests", "issues"].contains(cat))
                 .collect();
             let enabled_count = categories
                 .iter()
-                .filter(|(cat, _)| {
-                    !self.prefs.project_notifications[&id]["disabled"]
-                        .as_array()
-                        .is_some_and(|values| values.iter().any(|v| v.as_str() == Some(cat)))
-                })
+                .filter(|(cat, _)| self.prefs.project_enabled(&id, cat))
                 .count();
             let status = if muted {
                 "All notifications paused".into()
@@ -730,9 +658,7 @@ impl SettingsView {
             for (cat, label) in categories {
                 let category = (*cat).to_owned();
                 let project_id = id.clone();
-                let enabled = !self.prefs.project_notifications[&id]["disabled"]
-                    .as_array()
-                    .is_some_and(|values| values.iter().any(|v| v.as_str() == Some(cat)));
+                let enabled = self.prefs.project_enabled(&id, cat);
                 category_rows.push(
                     div()
                         .flex()
@@ -860,14 +786,7 @@ impl SettingsView {
                                                     .mt_1()
                                                     .text_size(px(12.))
                                                     .text_color(content(0.45))
-                                                    .child(format!(
-                                                        "{}{status}",
-                                                        if project.kind == "local" {
-                                                            "Local project · "
-                                                        } else {
-                                                            ""
-                                                        }
-                                                    )),
+                                                    .child(format!("Local project · {status}")),
                                             ),
                                     )
                                     .child(icon(
@@ -1046,7 +965,11 @@ impl SettingsView {
                                                 Some(at) if at > now => {
                                                     let ids = custom.ids.clone();
                                                     this.update(cx, |p| {
-                                                        p.mute_projects(&ids, Some(json!(at)), now)
+                                                        p.mute_projects(
+                                                            &ids,
+                                                            Some(Mute::Until(at)),
+                                                            now,
+                                                        )
                                                     });
                                                     this.notification_state.custom = None;
                                                 }

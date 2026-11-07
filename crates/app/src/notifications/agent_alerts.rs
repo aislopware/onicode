@@ -4,25 +4,24 @@
 //! it. The app's own engine is watched, and so is every other engine whose projects the window
 //! shows, so an agent working on another Mac reaches the Mac in front of its owner as one here
 //! does. The shell tells this, on every poll, what the window shows and the owner's notification
-//! preferences; it reports that to each engine with `SetViewportFocus` (the project mutes in that
-//! engine's paths), so the engine never alerts for the chat on screen, marks it seen, holds back
-//! what the owner muted, and leaves the posting to the app while the app runs.
+//! preferences; it reports that to each engine with `SetViewportFocus`, so the engine never alerts
+//! for the chat on screen, marks it seen, and leaves the posting to the app while the app runs.
+//! Project mutes are not reported: each engine keeps its projects' own and holds back what they
+//! mute before any viewer hears of it (`shell/project_notifications.rs`).
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use gpui::App;
 use onicode_protocol::alerts::{
-    self, Alert, AlertCommand, AlertsEvent, AlertsState, MuteRule, Mutes, OnScreen, ProjectMute,
-    SetViewportFocus, Subject, WatchAlerts,
+    self, Alert, AlertCommand, AlertsEvent, AlertsState, OnScreen, SetViewportFocus, Subject,
+    WatchAlerts,
 };
 use onicode_protocol::session::{self, Answer, Decide, Stop};
-use onicode_protocol::{EngineId, OpId, ProjectRef, SessionKey};
-use serde_json::Value;
+use onicode_protocol::{EngineId, OpId, SessionKey};
 
-use super::delivery::{self, Permission, ProjectRule};
+use super::delivery::{self, Permission};
 use super::platform::{self, AlertResponse};
 use crate::engine_client::{Engine, WatchUpdate, Watching};
-use crate::settings::Preferences;
 
 /// How often the report is repeated while nothing changes; the engine forgets one after 20 s.
 const HEARTBEAT: Duration = Duration::from_secs(5);
@@ -43,107 +42,6 @@ pub(crate) struct Policy {
     pub(crate) on_screen: Option<(Option<EngineId>, i64)>,
     /// Every other engine whose projects the window shows.
     pub(crate) peers: Vec<EngineId>,
-    /// The owner's project mutes, in the app's spelling ([`mutes`]).
-    pub(crate) mutes: Mutes,
-}
-
-/// The project mutes `prefs` hold, as engines apply them: every repository project with the
-/// folders it goes by, first, then each folder muted on its own (`local:<folder>`), so the first
-/// project naming a folder is the one monocode's `knownNotificationProjectId` picks for it. A
-/// peer project's folders keep their `peer://` spelling; [`AgentAlerts`] gives each engine its
-/// own.
-pub(crate) fn mutes(prefs: &Preferences) -> Mutes {
-    let rules = |id: &str| ProjectMute {
-        paths: Vec::new(),
-        needs_you: rule(ProjectRule::from_preferences(
-            &prefs.project_notifications,
-            id,
-            "agentInput",
-        )),
-        finished: rule(ProjectRule::from_preferences(
-            &prefs.project_notifications,
-            id,
-            "agentFinished",
-        )),
-    };
-    let mut projects: Vec<ProjectMute> = prefs
-        .notification_projects
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|project| valid_project(project))
-        .filter_map(|project| {
-            let id = project["id"].as_str()?;
-            let paths = project["paths"]
-                .as_array()?
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect();
-            Some(ProjectMute { paths, ..rules(id) })
-        })
-        .collect();
-    projects.extend(
-        prefs
-            .project_notifications
-            .as_object()
-            .into_iter()
-            .flat_map(|map| map.keys())
-            .filter_map(|id| {
-                let folder = id.strip_prefix("local:")?;
-                Some(ProjectMute {
-                    paths: vec![folder.to_owned()],
-                    ..rules(id)
-                })
-            }),
-    );
-    Mutes { projects }
-}
-
-fn rule(rule: ProjectRule) -> MuteRule {
-    MuteRule {
-        enabled: rule.enabled,
-        after: rule.after,
-    }
-}
-
-/// A repository project as monocode's notification preferences keep one.
-fn valid_project(project: &Value) -> bool {
-    ["id", "name", "detail"]
-        .iter()
-        .all(|key| project[*key].is_string())
-        && project["kind"]
-            .as_str()
-            .is_some_and(|kind| ["repository", "local"].contains(&kind))
-        && project["paths"]
-            .as_array()
-            .is_some_and(|paths| paths.iter().all(Value::is_string))
-}
-
-/// `mutes` (in the app's spelling) as the engine `target` names its folders (`None`, the app's
-/// own): only that engine's folders, each as it names them.
-fn mutes_on(mutes: &Mutes, target: Option<&EngineId>) -> Mutes {
-    let projects = mutes
-        .projects
-        .iter()
-        .filter_map(|project| {
-            let paths: Vec<String> = project
-                .paths
-                .iter()
-                .filter_map(|path| match (ProjectRef::parse_uri(path), target) {
-                    (Some(peer), Some(target)) if peer.engine == *target => Some(peer.path),
-                    (None, None) => Some(path.clone()),
-                    _ => None,
-                })
-                .collect();
-            (!paths.is_empty()).then_some(ProjectMute {
-                paths,
-                needs_you: project.needs_you,
-                finished: project.finished,
-            })
-        })
-        .collect();
-    Mutes { projects }
 }
 
 /// The identifier this Mac posts `alert` of the engine `target` under: a chat on another engine
@@ -227,7 +125,6 @@ impl Watched {
             presents: policy.permission != Permission::Unsupported,
             banners: policy.enabled,
             sound: policy.sound,
-            mutes: mutes_on(&policy.mutes, target),
         };
         let due = self
             .reported
@@ -428,84 +325,11 @@ impl AgentAlerts {
 #[cfg(test)]
 mod tests {
     use onicode_protocol::alerts::AlertKind;
-    use serde_json::json;
 
     use super::*;
 
     fn studio() -> EngineId {
         EngineId("nStudio".into())
-    }
-
-    /// The mutes a person set in Settings → Notifications: a repository muted for approvals,
-    /// one of its folders also muted on its own (which the repository shadows), a folder on
-    /// another Mac muted until a time, and a folder whose finished alerts are off.
-    fn prefs() -> Preferences {
-        let peer = ProjectRef {
-            engine: studio(),
-            path: "/Users/me/api".into(),
-        }
-        .uri();
-        Preferences {
-            notification_projects: json!([{
-                "id": "repo:onicode",
-                "name": "onicode",
-                "detail": "github.com/me/onicode",
-                "kind": "repository",
-                "paths": ["/work/onicode", "/work/onicode-wt"],
-            }]),
-            project_notifications: json!({
-                "repo:onicode": {"disabled": ["agentInput"]},
-                "local:/work/onicode": {"mutedUntil": null, "disabled": []},
-                format!("local:{peer}"): {"mutedUntil": 2_000, "disabled": []},
-                "local:/work/site": {"disabled": ["agentFinished"]},
-            }),
-            ..Preferences::default()
-        }
-    }
-
-    #[test]
-    fn each_engine_gets_its_own_folders_mutes_as_settings_say() {
-        let mutes = mutes(&prefs());
-        let home = Some("/Users/me");
-        let own = mutes_on(&mutes, None);
-        let allows = |mutes: &Mutes, folder: &str, kind: AlertKind, now: u64| {
-            mutes.allows(folder, kind, home, now)
-        };
-        // The repository decides for its folders, over the folder's own mute.
-        assert!(!allows(&own, "/work/onicode", AlertKind::NeedsYou, 5_000));
-        assert!(allows(&own, "/work/onicode", AlertKind::Finished, 5_000));
-        assert!(!allows(
-            &own,
-            "/work/onicode-wt/",
-            AlertKind::NeedsYou,
-            5_000
-        ));
-        assert!(allows(&own, "/work/site", AlertKind::NeedsYou, 5_000));
-        assert!(!allows(&own, "/work/site", AlertKind::Stalled, 5_000));
-        assert!(allows(&own, "/work/other", AlertKind::Failed, 5_000));
-        // Outside every project nothing rings.
-        assert!(!allows(&own, "/Users/me", AlertKind::Finished, 5_000));
-        assert!(!allows(&own, "/", AlertKind::Finished, 5_000));
-        // The other Mac's folder is that engine's, in its own spelling, and only there.
-        assert!(allows(&own, "/Users/me/api", AlertKind::Finished, 1_000));
-        let theirs = mutes_on(&mutes, Some(&studio()));
-        assert_eq!(theirs.projects.len(), 1);
-        assert_eq!(theirs.projects[0].paths, ["/Users/me/api"]);
-        assert!(!allows(
-            &theirs,
-            "/Users/me/api",
-            AlertKind::Finished,
-            1_000
-        ));
-        assert!(
-            allows(&theirs, "/Users/me/api", AlertKind::Finished, 2_000),
-            "the mute ends at its time"
-        );
-        assert!(
-            mutes_on(&mutes, Some(&EngineId("nOther".into())))
-                .projects
-                .is_empty()
-        );
     }
 
     #[test]

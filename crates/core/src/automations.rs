@@ -90,6 +90,11 @@ fn validate_upsert(input: &AutomationUpsert, now: i64) -> Result<(), String> {
     if input.cwd.trim().is_empty() {
         return Err("Choose a project for this automation.".into());
     }
+    // An automation belongs to the engine that holds its project: a folder elsewhere (a
+    // `peer://` project) is that engine's to store and run.
+    if !Path::new(input.cwd.trim()).is_absolute() {
+        return Err("This automation's project is on another machine.".into());
+    }
     if !matches!(
         input.workspace_mode.as_str(),
         "current" | "worktree" | "existing"
@@ -464,6 +469,10 @@ impl Service {
         Ok(runs)
     }
 
+    /// The runs a stopped engine left behind, at `now`: a pending run is handed out again and a
+    /// running one is recorded as interrupted. Only runs created strictly before `started_before`
+    /// (this process's start) count; a run made in the same millisecond the engine started is
+    /// this process's own, and its turn may be running.
     pub fn recover(
         &mut self,
         started_before: i64,
@@ -473,7 +482,7 @@ impl Service {
         let tx = conn.transaction().map_err(|error| error.to_string())?;
         let mut statement = tx
             .prepare(
-                "SELECT run_json FROM automation_runs WHERE created_at <= ?1
+                "SELECT run_json FROM automation_runs WHERE created_at < ?1
              ORDER BY created_at, id",
             )
             .map_err(|error| error.to_string())?;
@@ -1059,6 +1068,29 @@ mod tests {
         assert_eq!(
             claims[0].run.event_key.as_deref(),
             Some("github:pr:acme/app:2")
+        );
+    }
+
+    #[test]
+    fn a_run_made_the_millisecond_the_engine_started_is_not_recovered() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut service = Service::open(&directory.path().join("sessions.sqlite")).unwrap();
+        let automation = save(&mut service, vec![]);
+        let started = now_millis();
+        let run = service.run_now(&automation.id, started).unwrap();
+        service
+            .update_run(&run.id, "running", Some("session-1".into()), None, started)
+            .unwrap();
+        assert!(
+            service
+                .recover(started, started + 60_000)
+                .unwrap()
+                .is_empty()
+        );
+        let history = service.runs(&automation.id).unwrap();
+        assert_eq!(
+            history[0].status, "running",
+            "its turn is this engine's own"
         );
     }
 

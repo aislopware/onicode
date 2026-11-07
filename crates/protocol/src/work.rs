@@ -3,6 +3,10 @@
 //! are the runs an engine starts on a schedule or on an Inbox event; linked activity is what
 //! changed on the GitHub items sessions are linked to.
 //!
+//! An automation belongs to the engine that holds its project: that engine stores it, schedules
+//! it and runs it, with no viewer needed, and its `cwd` is a folder of that engine's. A viewer
+//! lists every engine's automations and sends each edit to the automation's own engine.
+//!
 //! Every `gh` call stays in the engine: a viewer names what it shows
 //! (the projects, the item) and renders what comes back. The mutating calls travel with an
 //! [`OpId`](crate::OpId) in their [`Routed`](crate::Routed), and a repeat of the op is answered
@@ -12,7 +16,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::automations::{Automation, AutomationRun, AutomationUpsert, DueAutomationRun};
+use crate::automations::{Automation, AutomationRun, AutomationUpsert};
 use crate::files::Bytes;
 use crate::inbox::{Checks, Details, Diff, Item, ProjectRepos, Status, Thread, ViewState};
 use crate::sessions::{Groups, Session, WorkItem};
@@ -128,7 +132,7 @@ pub struct InboxAvatar {
 }
 work_call!(InboxAvatar, reply: Bytes);
 
-/// Every automation.
+/// Every automation of this engine.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListAutomations {}
 work_call!(ListAutomations, reply: Vec<Automation>);
@@ -140,7 +144,8 @@ pub struct AutomationRuns {
 }
 work_call!(AutomationRuns, reply: Vec<AutomationRun>);
 
-/// Create an automation, or replace the one its id names; the reply is it as saved.
+/// Create an automation, or replace the one its id names; the reply is it as saved. Its `cwd`
+/// must be a folder of this engine: an automation in a project elsewhere is that engine's.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpsertAutomation {
     pub automation: AutomationUpsert,
@@ -155,12 +160,13 @@ pub struct SetAutomationEnabled {
 }
 work_call!(SetAutomationEnabled, reply: Automation);
 
-/// Start an automation's run now; the reply is the run for the viewer to start in a conversation.
+/// Start an automation's run now, in this engine. The reply is the run as it started: `running`
+/// with the session it runs in (`session_id`, the session's key), or `failed` with why.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunAutomationNow {
     pub automation: String,
 }
-work_call!(RunAutomationNow, reply: DueAutomationRun);
+work_call!(RunAutomationNow, reply: AutomationRun);
 
 /// Delete an automation and its runs.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

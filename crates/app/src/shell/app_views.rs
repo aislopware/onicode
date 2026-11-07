@@ -320,13 +320,8 @@ impl Shell {
                 window,
                 |this, _, event: &automations::Event, window, cx| match event {
                     automations::Event::Close => this.close_app_view(window, cx),
-                    automations::Event::Launch(run) => {
-                        this.launch_automation(run.as_ref().clone(), true, cx)
-                    }
-                    automations::Event::OpenSession(key) => {
-                        if let Some(id) = this.mirror.row_for_key(key) {
-                            this.open(id, window, cx);
-                        }
+                    automations::Event::OpenSession(engine, key) => {
+                        this.open_automation_session(engine.clone(), key.clone(), window, cx);
                     }
                 },
             ));

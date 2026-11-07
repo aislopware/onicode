@@ -341,11 +341,9 @@ impl Shell {
     pub(super) fn project_notification_menu(&self, cwd: &str) -> MenuAction {
         let now = onicode_protocol::time::now_ms();
         let prefs = &self.workspace.preferences;
-        let muted = prefs.known_notification_project_id(cwd).is_some_and(|id| {
-            let preference = &prefs.project_notifications[id];
-            preference.get("mutedUntil") == Some(&serde_json::Value::Null)
-                || preference["mutedUntil"].as_u64().is_some_and(|at| at > now)
-        });
+        let muted = prefs
+            .known_notification_project_id(cwd)
+            .is_some_and(|id| prefs.project_muted(&id, now));
         if muted {
             MenuAction::new("mute:resume", "Resume notifications").icon("bell")
         } else {

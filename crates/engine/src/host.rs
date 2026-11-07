@@ -258,6 +258,7 @@ impl Host {
             local.workspace.clone(),
             local.session.clone(),
             local.terminal.clone(),
+            local.settings.clone(),
         );
         let keeping_awake = crate::keep_awake::run(
             local.workspace.clone(),

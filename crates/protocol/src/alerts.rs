@@ -5,6 +5,8 @@
 //!
 //! An [`Alert`] carries what its notification shows and the [`AlertAction`]s it offers; [`command`]
 //! turns an action into the Session call that does it, so every viewer answers alike.
+use std::collections::{BTreeMap, BTreeSet};
+
 use serde::{Deserialize, Serialize};
 
 use crate::session::{self, Answer, Decide, Stop, Verdict};
@@ -158,7 +160,7 @@ pub struct Alert {
     pub title: String,
     /// Plain text. A terminal program's words are its own and untrusted.
     pub body: String,
-    /// The folder it runs in, which the project mutes go by.
+    /// The folder it runs in, which the project's notification preferences go by.
     pub project: Option<String>,
     /// Unix ms.
     pub raised_at: u64,
@@ -333,9 +335,8 @@ pub enum OnScreen {
 /// viewer repeats it while it lives (every 5 s) and a viewer that went away holds nothing back.
 /// A chat on screen in a focused window never alerts, and showing it marks it seen for every
 /// device. While no viewer presents, the engine posts plain banners itself, as the last report's
-/// `banners` and `sound` say. The engine alone applies project mutes: an alert that the `mutes`
-/// of any viewport reporting within 20 s of the latest report hold back is raised to no viewer
-/// and posted as no banner, so mutes stand while their viewer is away.
+/// `banners` and `sound` say. Project mutes are not reported: the engine keeps them itself
+/// ([`ProjectNotifications`]) and applies them with or without a viewer.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetViewportFocus {
     /// The viewport's own id, minted once per run.
@@ -348,12 +349,28 @@ pub struct SetViewportFocus {
     pub banners: bool,
     /// Banners play a sound.
     pub sound: bool,
-    /// The owner's project mutes for this engine's projects, in this engine's paths.
-    pub mutes: Mutes,
 }
 
-/// When a project's alerts of one category may ring: one of monocode's project notification
-/// rules (`notificationPreferences.ts`), as the viewer resolved it.
+/// The project notification category of agent approvals and questions ([`AlertKind::NeedsYou`]):
+/// Settings' "Agent approvals and questions".
+pub const AGENT_INPUT: &str = "agentInput";
+/// The project notification category of every other agent alert (finished, failed, stalled):
+/// Settings' "Agent finished".
+pub const AGENT_FINISHED: &str = "agentFinished";
+
+impl AlertKind {
+    /// The project notification category an alert of this kind rings under.
+    #[must_use]
+    pub fn category(self) -> &'static str {
+        match self {
+            Self::NeedsYou => AGENT_INPUT,
+            Self::Failed | Self::Finished | Self::Stalled => AGENT_FINISHED,
+        }
+    }
+}
+
+/// When a project's notifications of one category may ring, as monocode's project notification
+/// rules (`notificationPreferences.ts`) resolve: [`ProjectNotifications::rule`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MuteRule {
     /// The category is on for the project, and the project is not muted until resumed.
@@ -380,49 +397,142 @@ impl MuteRule {
     }
 }
 
-/// One project's mutes: the folders it goes by (a repository's checkouts share one project) and
-/// a rule for each category of agent alert.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProjectMute {
-    /// As the engine the report goes to names them.
-    pub paths: Vec<String>,
-    /// "Agent approvals and questions": [`AlertKind::NeedsYou`].
-    pub needs_you: MuteRule,
-    /// "Agent finished": every other kind.
-    pub finished: MuteRule,
+/// How long a project is muted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Mute {
+    /// Until someone resumes it.
+    UntilResumed,
+    /// Until this moment (Unix ms).
+    Until(u64),
 }
 
-/// The project mutes a viewer holds. The first project naming a folder decides for it; a folder
-/// no project names is not muted.
+/// One project's notification preferences, as monocode's `notificationPreferences.ts` keeps
+/// them: the categories turned off, a mute, and when each was last lifted. The engine that holds
+/// the project keeps them in its settings
+/// ([`crate::engine_settings::EngineSettings::project_notifications`], by the project's folder),
+/// so they stand with no viewer connected and across its restarts, and every viewer follows them.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Mutes {
-    pub projects: Vec<ProjectMute>,
+#[serde(default)]
+pub struct ProjectNotifications {
+    /// The categories turned off ([`AGENT_INPUT`], [`AGENT_FINISHED`], and the viewer's own:
+    /// `reminders`, `pullRequests`, `issues`).
+    pub disabled: BTreeSet<String>,
+    pub muted: Option<Mute>,
+    /// When it was last resumed (Unix ms); 0 if never.
+    pub resumed_at: u64,
+    /// When each category was last turned back on (Unix ms).
+    pub enabled_after: BTreeMap<String, u64>,
 }
 
-impl Mutes {
-    /// Whether an alert of `kind` about work in `folder` may ring at `now`, on a machine whose
-    /// home folder is `home`. Work outside any project (the home folder, the root, inside an app
-    /// bundle) never rings, as monocode's project notifications never did.
+impl ProjectNotifications {
+    /// When notifications of `category` may ring: on while the category is on and the project is
+    /// not muted until resumed; nothing that happened before the last resume, the end of the last
+    /// timed mute or the category turning back on rings.
     #[must_use]
-    pub fn allows(&self, folder: &str, kind: AlertKind, home: Option<&str>, now: u64) -> bool {
-        if !is_project(folder, home) {
-            return false;
+    pub fn rule(&self, category: &str) -> MuteRule {
+        let mute_end = match self.muted {
+            Some(Mute::Until(at)) => at.saturating_sub(1),
+            Some(Mute::UntilResumed) | None => 0,
+        };
+        MuteRule {
+            enabled: self.muted != Some(Mute::UntilResumed) && !self.disabled.contains(category),
+            after: self
+                .resumed_at
+                .max(mute_end)
+                .max(self.enabled_after.get(category).copied().unwrap_or(0)),
         }
-        let key = crate::files::path_key(folder);
-        let Some(project) = self.projects.iter().find(|project| {
-            project
-                .paths
-                .iter()
-                .any(|path| crate::files::path_key(path) == key)
-        }) else {
-            return true;
-        };
-        let rule = match kind {
-            AlertKind::NeedsYou => project.needs_you,
-            AlertKind::Failed | AlertKind::Finished | AlertKind::Stalled => project.finished,
-        };
-        rule.allows(now, now)
     }
+
+    /// Whether `category` is on, muted or not.
+    #[must_use]
+    pub fn enabled(&self, category: &str) -> bool {
+        !self.disabled.contains(category)
+    }
+
+    /// Whether the project is muted at `now`.
+    #[must_use]
+    pub fn muted_at(&self, now: u64) -> bool {
+        match self.muted {
+            Some(Mute::UntilResumed) => true,
+            Some(Mute::Until(at)) => at > now,
+            None => false,
+        }
+    }
+
+    /// When a timed mute ends.
+    #[must_use]
+    pub fn mute_ends(&self) -> Option<u64> {
+        match self.muted {
+            Some(Mute::Until(at)) => Some(at),
+            Some(Mute::UntilResumed) | None => None,
+        }
+    }
+
+    /// Mutes it for `mute`, keeping the category choices.
+    pub fn mute(&mut self, mute: Mute) {
+        self.muted = Some(mute);
+    }
+
+    /// Lifts a mute at `now`: what happened while it stood never rings.
+    pub fn resume(&mut self, now: u64) {
+        if self.muted.take().is_some() {
+            self.resumed_at = now;
+        }
+    }
+
+    /// Turns `category` on or off at `now`; turned back on, what happened while it was off never
+    /// rings.
+    pub fn set_enabled(&mut self, category: &str, enabled: bool, now: u64) {
+        let was_disabled = self.disabled.remove(category);
+        if !enabled {
+            self.disabled.insert(category.to_owned());
+        } else if was_disabled {
+            self.enabled_after.insert(category.to_owned(), now);
+        }
+    }
+
+    /// The moments its rules answer differently after: a timed mute's end, a resume, a category
+    /// turned back on.
+    pub fn moments(&self) -> impl Iterator<Item = u64> + '_ {
+        self.mute_ends()
+            .into_iter()
+            .chain((self.resumed_at > 0).then_some(self.resumed_at))
+            .chain(self.enabled_after.values().copied())
+    }
+}
+
+/// The preferences of the project at `folder` among `projects`, keyed by folder: the entry naming
+/// the same folder, in any spelling of it.
+#[must_use]
+pub fn project_notifications<'a>(
+    projects: &'a BTreeMap<String, ProjectNotifications>,
+    folder: &str,
+) -> Option<&'a ProjectNotifications> {
+    if let Some(found) = projects.get(folder) {
+        return Some(found);
+    }
+    let key = crate::files::path_key(folder);
+    projects
+        .iter()
+        .find(|(path, _)| crate::files::path_key(path) == key)
+        .map(|(_, project)| project)
+}
+
+/// Whether an alert of `kind` about work in `folder` may ring at `now`, by the project
+/// preferences `projects` an engine keeps, on a machine whose home folder is `home`. Work outside
+/// any project (the home folder, the root, inside an app bundle) never rings, as monocode's
+/// project notifications never did; a project with no preferences rings.
+#[must_use]
+pub fn allows(
+    projects: &BTreeMap<String, ProjectNotifications>,
+    folder: &str,
+    kind: AlertKind,
+    home: Option<&str>,
+    now: u64,
+) -> bool {
+    is_project(folder, home)
+        && project_notifications(projects, folder)
+            .is_none_or(|project| project.rule(kind.category()).allows(now, now))
 }
 
 /// Whether `folder` is a project as monocode's notification preferences tell one: not empty,

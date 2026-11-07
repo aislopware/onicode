@@ -1,13 +1,17 @@
 //! The engine settings (`docs/onicode/decisions/engine.md`, migration step 6): what the engine does
 //! on its own behalf, kept in the store under one key and served as `WatchEngineSettings` on the
 //! engine's one `Topic`. `SetEngineSetting` replaces one typed key's value; a repeat of its op
-//! gets the first reply and changes nothing again. The settings take effect in the engine
-//! ([`Effects`]): the provider CLIs' paths and how many idle agents stay parked.
+//! gets the first reply and changes nothing again. `SetProjectNotifications` replaces one
+//! project's notification preferences inside the `ProjectNotifications` key, so viewers muting
+//! different projects never undo each other; the alerts pump follows that key. The settings take
+//! effect in the engine ([`Effects`]): the provider CLIs' paths and how many idle agents stay
+//! parked.
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::stream::BoxStream;
 use onicode_protocol::engine_settings::{
-    EngineSettings, EngineSettingsEvent, SetEngineSetting, WatchEngineSettings,
+    EngineSetting, EngineSettings, EngineSettingsEvent, SetEngineSetting, SetProjectNotifications,
+    WatchEngineSettings,
 };
 use onicode_protocol::{Call, Item, OpId, Outcome, Watch};
 use onicode_rpc::{RpcError, RpcReply, RpcService};
@@ -131,15 +135,43 @@ impl SettingsHub {
 
     /// `SetEngineSetting`: saves the key's value, applies it and publishes it, then the receipt.
     pub async fn set(&self, op: Option<OpId>, body: SetEngineSetting) -> Result<Outcome, String> {
+        self.change(op, |next| {
+            next.apply(&body.setting);
+            body.setting.clone()
+        })
+        .await
+    }
+
+    /// `SetProjectNotifications`: replaces one project's notification preferences, saves them
+    /// and publishes the whole `ProjectNotifications` key, then the receipt.
+    pub async fn set_project_notifications(
+        &self,
+        op: Option<OpId>,
+        body: SetProjectNotifications,
+    ) -> Result<Outcome, String> {
+        self.change(op, |next| {
+            next.set_project_notifications(&body.project, body.notifications.clone());
+            EngineSetting::ProjectNotifications(next.project_notifications.clone())
+        })
+        .await
+    }
+
+    /// Runs `edit` on the settings once per `op`: what moved is saved and published as the
+    /// setting `edit` returns, then the receipt; the effects follow.
+    async fn change(
+        &self,
+        op: Option<OpId>,
+        edit: impl FnOnce(&mut EngineSettings) -> EngineSetting,
+    ) -> Result<Outcome, String> {
         self.ledger
             .once(op, async {
                 let settings = {
                     let mut topic = self.lock();
                     let mut next = topic.state().clone();
-                    next.apply(&body.setting);
+                    let setting = edit(&mut next);
                     if &next != topic.state() {
                         save(&self.store, &next)?;
-                        topic.publish(vec![EngineSettingsEvent::Set(body.setting.clone())]);
+                        topic.publish(vec![EngineSettingsEvent::Set(setting)]);
                     }
                     if let Some(op) = op {
                         topic.publish(vec![EngineSettingsEvent::Receipt {
@@ -185,7 +217,11 @@ impl SettingsService {
     }
 }
 
-const METHODS: [&str; 2] = [WatchEngineSettings::NAME, SetEngineSetting::NAME];
+const METHODS: [&str; 3] = [
+    WatchEngineSettings::NAME,
+    SetEngineSetting::NAME,
+    SetProjectNotifications::NAME,
+];
 
 impl Group for SettingsService {
     fn serves(&self, method: &str) -> bool {
@@ -204,6 +240,10 @@ impl RpcService for SettingsService {
             SetEngineSetting::NAME => {
                 let (op, body) = routed(params)?;
                 reply(self.hub.set(op, body).await)
+            }
+            SetProjectNotifications::NAME => {
+                let (op, body) = routed(params)?;
+                reply(self.hub.set_project_notifications(op, body).await)
             }
             _ => Err(RpcError::UnknownMethod(method.into())),
         }

@@ -20,7 +20,6 @@ impl Feed for WorkspaceFeed {
     fn weight(event: &WorkspaceEvent) -> usize {
         match event {
             WorkspaceEvent::Removed(_) | WorkspaceEvent::Notes(_) => 16,
-            WorkspaceEvent::AutomationTaken(run) => 24 + run.len(),
             WorkspaceEvent::Receipt { .. } => 64,
             other => serde_json::to_vec(other).map_or(256, |bytes| bytes.len()),
         }

@@ -1,6 +1,7 @@
 //! The pump: feeds the [`AlertsHub`] from the engine's own hubs and steps it on its deadlines.
-//! It watches the workspace, each session while a turn runs in it, and every terminal's program
-//! status, and marks seen in the workspace what a focused viewport shows.
+//! It watches the workspace, each session while a turn runs in it, every terminal's program
+//! status and the engine's settings (for the projects' notification preferences), and marks seen
+//! in the workspace what a focused viewport shows.
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::task::Poll;
@@ -8,6 +9,7 @@ use std::time::Duration;
 
 use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
+use onicode_protocol::engine_settings::{EngineSettings, EngineSettingsEvent, WatchEngineSettings};
 use onicode_protocol::session::{SessionEvent, SessionState, WatchSession};
 use onicode_protocol::workspace::{MarkSeen, WatchWorkspace, WorkspaceEvent, WorkspaceState};
 use onicode_protocol::{Item, SessionId};
@@ -15,11 +17,13 @@ use tokio::sync::broadcast::error::RecvError;
 
 use super::hub::{AlertsHub, Wants};
 use crate::session::SessionHub;
+use crate::settings::SettingsHub;
 use crate::terminal::TerminalHub;
 use crate::workspace::WorkspaceHub;
 
 type SessionItems = BoxStream<'static, Item<SessionState, SessionEvent>>;
 type WorkspaceItems = BoxStream<'static, Item<WorkspaceState, WorkspaceEvent>>;
+type SettingsItems = BoxStream<'static, Item<EngineSettings, EngineSettingsEvent>>;
 
 /// The longest the pump sleeps with nothing due.
 const IDLE: Duration = Duration::from_secs(60);
@@ -132,15 +136,18 @@ fn apply(hub: &AlertsHub, sessions: &Arc<SessionHub>, watched: &mut Sessions, wa
     }
 }
 
-/// Feeds `hub` from `workspace`, `sessions` and `terminals` until the terminal hub goes. The
-/// engine process runs it beside its socket.
+/// Feeds `hub` from `workspace`, `sessions`, `terminals` and `settings` until the terminal hub
+/// goes. The engine process runs it beside its socket.
 pub async fn pump(
     hub: Arc<AlertsHub>,
     workspace: Arc<WorkspaceHub>,
     sessions: Arc<SessionHub>,
     terminals: Arc<TerminalHub>,
+    settings: Arc<SettingsHub>,
 ) {
     let mut statuses = terminals.statuses();
+    // The stored mutes hold before the first step, so none rings after a restart.
+    let mut rules: Option<SettingsItems> = Some(follow_settings(&hub, &settings));
     hub.terminals(&terminals.list(), false, now());
     let mut board: Option<WorkspaceItems> = None;
     let mut watched = Sessions::default();
@@ -188,9 +195,21 @@ pub async fn pump(
                 Ok(_) | Err(RecvError::Lagged(_)) => hub.terminals(&terminals.list(), true, now()),
                 Err(RecvError::Closed) => return,
             },
+            item = next_of(&mut rules) => match item {
+                None | Some(Item::Resync) => rules = Some(follow_settings(&hub, &settings)),
+                Some(_) => hub.set_projects(settings.current().project_notifications),
+            },
             _ = reconcile.tick() => hub.terminals(&terminals.list(), true, now()),
             () = hub.woken() => {}
             () = tokio::time::sleep(wait) => {}
         }
     }
+}
+
+/// A watch of the engine's settings, with the projects' notification preferences handed to `hub`
+/// as they stand when it starts: each item after it hands them over again.
+pub(super) fn follow_settings(hub: &AlertsHub, settings: &Arc<SettingsHub>) -> SettingsItems {
+    let items = settings.watch(&WatchEngineSettings { since: None });
+    hub.set_projects(settings.current().project_notifications);
+    items
 }
