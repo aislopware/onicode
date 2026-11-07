@@ -387,10 +387,7 @@ impl Shell {
     }
 
     fn classic_workspace_picker(&self, cx: &Context<Self>) -> AnyElement {
-        if self.workspace.project.is_empty()
-            || self.workspace.project == "~"
-            || self.workspace.project.starts_with("remote://")
-        {
+        if self.workspace.project.is_empty() || self.workspace.project == "~" {
             return div()
                 .flex_1()
                 .min_w_0()

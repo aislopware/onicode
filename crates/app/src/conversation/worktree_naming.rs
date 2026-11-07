@@ -7,7 +7,7 @@ use super::*;
 impl Conversation {
     /// Asks the engine to rename a new checkout's temporary branch after the first prompt.
     pub(super) fn generate_worktree_branch(&mut self, message: &str, cx: &mut Context<Self>) {
-        if message.trim().is_empty() || self.is_remote() || self.naming_worktree {
+        if message.trim().is_empty() || self.naming_worktree {
             return;
         }
         let Some(cwd) = self.settings.worktree_cwd.clone() else {

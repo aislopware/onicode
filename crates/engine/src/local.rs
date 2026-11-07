@@ -287,24 +287,6 @@ impl Local {
         Seed::new(self.store.clone())
     }
 
-    /// The store itself, for the SSH remote and the phone host only: their runners still write it
-    /// in the viewer's process until steps 10 and 11 delete them (engine.md, "Boundary").
-    #[must_use]
-    pub fn legacy_store(&self) -> Database {
-        self.store.clone()
-    }
-
-    /// A connection of the viewer's own to the store in `data_dir`, for the SSH remote and the
-    /// phone host only, whose runners write it from the app's process until steps 10 and 11
-    /// delete them. SQLite serializes it with the engine's writer; the engine reads what they
-    /// write from the store, as it did while both ran in one process.
-    pub fn open_legacy_store(data_dir: &Path) -> Result<Database, String> {
-        let path = data_dir.join(DATABASE);
-        Store::open_monocode(&path)
-            .map(|store| Arc::new(Mutex::new(store)))
-            .map_err(|error| format!("Cannot open {}: {error}", path.display()))
-    }
-
     /// Whether `other` is this engine.
     #[must_use]
     pub fn is(&self, other: &Self) -> bool {

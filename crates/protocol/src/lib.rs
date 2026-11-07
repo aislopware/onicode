@@ -353,7 +353,6 @@ pub mod notes;
 pub mod orchestration;
 pub mod project_appearance;
 pub mod provider;
-pub mod remote;
 pub mod response;
 pub mod scm;
 pub mod search;

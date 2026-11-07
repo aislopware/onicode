@@ -16,23 +16,6 @@ pub struct DesktopPreferences {
 }
 
 impl DesktopPreferences {
-    pub(crate) fn entries(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.values
-            .iter()
-            .map(|(key, value)| (key.as_str(), value.as_str()))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn from_values(values: &[(&str, Value)]) -> Self {
-        Self {
-            values: values
-                .iter()
-                .map(|(key, value)| ((*key).into(), value.to_string()))
-                .collect(),
-            available: true,
-        }
-    }
-
     /// Nothing loads: Onicode never reads monocode's desktop data.
     pub fn load(_data_dir: &Path) -> Self {
         Self::default()

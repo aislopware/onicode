@@ -1140,8 +1140,8 @@ fn gone() -> Applied<Outcome> {
     rejected(Outcome::Rejected(Rejection::Gone), Rejection::Gone)
 }
 
-/// An id for a session the ledger cannot name (a legacy remote one): derived from its row, so it
-/// stays the same, and no session watch finds it.
+/// An id for a session the ledger cannot name (one gone from the store under a racing writer):
+/// derived from its row, so it stays the same, and no session watch finds it.
 fn row_uid(row: i64) -> Uuid {
     Uuid::from_u64_pair(0, row.cast_unsigned())
 }

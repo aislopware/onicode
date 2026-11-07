@@ -5,9 +5,6 @@
 //! discarding show in the same frame and settle with the engine's reply.
 use std::collections::HashSet;
 use std::future::Future;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use gpui::prelude::*;
@@ -15,11 +12,9 @@ use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, FontWeight, Hsla, PromptLevel, Role,
     SharedString, Subscription, Task, Window, div, px, rgb, uniform_list,
 };
-use onicode_core::provider::{Event, Request};
-use onicode_core::{provider, scm};
+use onicode_core::scm;
 use onicode_protocol::OpId;
 use onicode_protocol::accounts::Profile;
-use onicode_protocol::agent::{AccessMode, Settings};
 use onicode_protocol::agents::{Generate, StopGenerate};
 use onicode_protocol::git::{
     self as git_calls, ChangedFile, Commit, CommitContext, Covered, CreatePr, DiffIndex, Discard,
@@ -2044,109 +2039,6 @@ fn pr_content(parsed: Option<(String, String)>, range: &RangeContext) -> (String
         .filter(|b| !b.is_empty())
         .unwrap_or_else(|| range.commit_summary.trim().to_owned());
     (title, body)
-}
-
-// The phone's Changes page runs Git and the provider in place, in the viewer's
-// process, until the phone host goes (engine.md, "Boundary", step 11).
-
-/// A provider CLI and model for one-off text, `None` for its default model.
-pub(crate) type TextHarness = (Kind, PathBuf, Option<String>);
-
-/// pickTextHarness: `chosen` (the background model picked in Settings) when
-/// installed, else `preferred`, then Claude Code, then Codex on their default
-/// models.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the phone's Changes page runs here until the phone host goes in step 11"
-)]
-pub(crate) fn pick_text_harness(
-    preferred: Kind,
-    chosen: Option<(Kind, Option<String>)>,
-) -> Option<TextHarness> {
-    chosen
-        .and_then(|(kind, model)| provider::resolve(kind).map(|binary| (kind, binary, model)))
-        .or_else(|| {
-            [preferred, Kind::Claude, Kind::Codex]
-                .into_iter()
-                .find_map(|kind| provider::resolve(kind).map(|binary| (kind, binary, None)))
-        })
-}
-
-/// generateCommitMessage: a message for the staged changes, written by a
-/// read-only turn of `kind`. Blocking: the phone's Changes page.
-pub(crate) fn generate_commit_message(
-    harness: TextHarness,
-    cwd: PathBuf,
-    cancel: Arc<AtomicBool>,
-) -> Result<String, String> {
-    let context = scm::staged_context(&cwd)?;
-    let kind = harness.0;
-    let prompt =
-        scm::commit_message_prompt(context.branch.as_deref(), &context.summary, &context.patch);
-    let output = text_prompt(harness, cwd, prompt, cancel)?;
-    commit_message(kind, &output)
-}
-
-/// generatePrContent, falling back to the commits, then `gh pr create`; the
-/// new pull request's URL. Blocking: the phone's Changes page.
-pub(crate) fn create_pr_blocking(
-    harness: Option<TextHarness>,
-    cwd: &std::path::Path,
-) -> Result<String, String> {
-    let range = scm::range_context(cwd)?;
-    let parsed = harness.and_then(|harness| {
-        let output = text_prompt(
-            harness,
-            cwd.to_path_buf(),
-            scm::pr_content_prompt(&range),
-            Arc::new(AtomicBool::new(false)),
-        )
-        .ok()?;
-        scm::parse_pr_content(&output)
-    });
-    let (title, body) = pr_content(parsed, &range);
-    scm::pr_create(cwd, &title, &body, &range.base, &range.head)
-}
-
-/// A read-only one-shot turn, as the React text harness runs: the final
-/// assistant message's text.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the phone's Changes page runs here until the phone host goes in step 11"
-)]
-fn text_prompt(
-    (kind, binary, model): TextHarness,
-    cwd: PathBuf,
-    prompt: String,
-    cancel: Arc<AtomicBool>,
-) -> Result<String, String> {
-    let request = Request {
-        kind,
-        binary,
-        cwd,
-        prompt,
-        provider_id: None,
-        model,
-        settings: Settings {
-            access: AccessMode::ReadOnly,
-            ..Default::default()
-        },
-    };
-    let mut text = String::new();
-    provider::run(request, cancel.clone(), |events| {
-        if cancel.load(Ordering::SeqCst) {
-            return Err("Cancelled".into());
-        }
-        for event in events {
-            match event {
-                Event::BeginAssistant => text.clear(),
-                Event::Text(chunk) => text.push_str(&chunk),
-                _ => {}
-            }
-        }
-        Ok(())
-    })?;
-    Ok(text)
 }
 
 impl Render for Changes {

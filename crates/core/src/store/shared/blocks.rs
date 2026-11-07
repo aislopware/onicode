@@ -113,15 +113,6 @@ fn project_content(block: &Value) -> Result<Vec<Row>, String> {
     if block["draft"] == true || (block["internal"] == true && block["role"] != "user") {
         return Ok(Vec::new());
     }
-    if block["nativeRemotePlan"] == true && block["role"] == "plan" {
-        return Ok(vec![metadata_row(
-            "remote-plan",
-            &json!({
-                "id":block["id"],"text":block["text"],"streaming":block["streaming"].as_bool().unwrap_or(false),
-                "status":block["plan"]["status"].as_str().unwrap_or("ready")
-            }),
-        )]);
-    }
     let role = block["role"].as_str().unwrap_or("system");
     let text = block["text"].as_str().unwrap_or("");
     let mut t = Transcript::default();
@@ -180,10 +171,9 @@ fn project_block(block: &Value) -> Result<Vec<Row>, String> {
     }
     let mut rows = project_content(block)?;
     if block["role"] == "user"
-        && (block["nativeRemoteAttachments"] == true
-            || block["attachments"]
-                .as_array()
-                .is_some_and(|files| !files.is_empty()))
+        && block["attachments"]
+            .as_array()
+            .is_some_and(|files| !files.is_empty())
     {
         rows.push(metadata_row(
             crate::transcript::attachments::ROLE,

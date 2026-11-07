@@ -12,18 +12,12 @@ use super::*;
 
 /// Changed files and counts, without the branch and upstream reads.
 pub fn diff_files(cwd: &Path) -> Result<DiffIndex, String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_diff_files", json!({"cwd":cwd}));
-    }
     Ok(diff_index_with(&expand_home(cwd), false))
 }
 
 /// Revalidate the review's file list without computing every file's line
 /// counts or querying remotes. Loaded diffs supply their own exact counts.
 pub fn review_index(cwd: &Path, previous: Option<&DiffIndex>) -> Result<DiffIndex, String> {
-    if remote_workspace::is_remote(cwd) {
-        return diff_files(cwd);
-    }
     let root = expand_home(cwd);
     let status = git_run(
         &root,
@@ -87,34 +81,6 @@ pub fn file_diff_versions(
     cwd: &Path,
     snapshot: &DiffIndex,
 ) -> Result<HashMap<String, FileDiffVersion>, String> {
-    if remote_workspace::is_remote(cwd) {
-        // The host exposes no index object IDs. Fingerprint the bounded diff
-        // contents so equal line counts cannot hide an external host edit.
-        use sha2::{Digest, Sha256};
-        let mut versions = HashMap::new();
-        for file in &snapshot.files {
-            for staged in [true, false] {
-                if if staged { !file.staged } else { !file.unstaged } {
-                    continue;
-                }
-                let diff = file_diff(cwd, &file.relative, staged)?;
-                let bytes = serde_json::to_vec(&diff).map_err(|error| error.to_string())?;
-                versions.insert(
-                    format!(
-                        "{}:{}",
-                        if staged { "staged" } else { "unstaged" },
-                        file.relative
-                    ),
-                    FileDiffVersion {
-                        index: base16ct::lower::encode_string(&Sha256::digest(bytes)),
-                        head: snapshot.head.clone(),
-                        disk: None,
-                    },
-                );
-            }
-        }
-        return Ok(versions);
-    }
     let root = expand_home(cwd);
     let listing = git_run(&root, &["ls-files", "--stage", "-z", "--", "."])
         .ok_or_else(|| "Could not read Git index versions".to_string())?;
@@ -173,12 +139,6 @@ pub fn file_diff_versions(
 /// One file's index or HEAD side against its other side. `staged` compares
 /// HEAD with the index; otherwise the index with the working tree.
 pub fn file_diff(cwd: &Path, relative: &str, staged: bool) -> Result<FileDiff, String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command(
-            "git_file_diff",
-            json!({"cwd":cwd,"relative":relative,"staged":staged}),
-        );
-    }
     let root = expand_home(cwd);
     let relative = resolve_repo_path(&root, relative)?;
     let abs = root.join(&relative);
@@ -213,9 +173,6 @@ pub fn file_diff(cwd: &Path, relative: &str, staged: bool) -> Result<FileDiff, S
 
 /// The files a commit changed, against its first parent (or nothing).
 pub fn commit_files(cwd: &Path, sha: &str) -> Result<Vec<ChangedFile>, String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_commit_files", json!({"cwd":cwd,"sha":sha}));
-    }
     let root = expand_home(cwd);
     if !git_is_work_tree(&root) {
         return Err("Not a git repository".into());
@@ -271,12 +228,6 @@ pub fn commit_files(cwd: &Path, sha: &str) -> Result<Vec<ChangedFile>, String> {
 
 /// One file in a commit against its first parent.
 pub fn commit_file_diff(cwd: &Path, sha: &str, relative: &str) -> Result<FileDiff, String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command(
-            "git_commit_file_diff",
-            json!({"cwd":cwd,"sha":sha,"relative":relative}),
-        );
-    }
     let root = expand_home(cwd);
     let relative = resolve_repo_path(&root, relative)?;
     if !git_is_work_tree(&root) {
@@ -307,13 +258,6 @@ pub fn commit_file_diff(cwd: &Path, sha: &str, relative: &str) -> Result<FileDif
 /// Writes `contents` as the file's index entry, keeping its mode: stages a
 /// single hunk without touching the working tree.
 pub fn stage_contents(cwd: &Path, relative: &str, contents: &[u8]) -> Result<(), String> {
-    if remote_workspace::is_remote(cwd) {
-        let contents = std::str::from_utf8(contents).map_err(|_| "File is not valid UTF-8.")?;
-        return remote_workspace::command(
-            "git_stage_contents",
-            json!({"cwd":cwd,"relative":relative,"contents":contents}),
-        );
-    }
     let root = expand_home(cwd);
     let relative = resolve_repo_path(&root, relative)?;
     if contents.len() as u64 > MAX_TEXT_FILE_BYTES {

@@ -110,20 +110,6 @@ impl QuestionCard {
         &self.request.id
     }
 
-    /// What the agent asked, for a paired phone to show.
-    pub(crate) fn request(&self) -> &Question {
-        &self.request
-    }
-
-    /// A phone's reply, as though given here: the same answer event, so the
-    /// conversation sends and clears it as for the card's own.
-    pub(crate) fn reply(&mut self, answers: Option<Vec<Vec<String>>>, cx: &mut Context<Self>) {
-        cx.emit(Answered {
-            id: self.request.id.clone(),
-            answers,
-        });
-    }
-
     pub(crate) fn blocks_steering(&self) -> bool {
         self.request.auto_resolve_at.is_none()
     }

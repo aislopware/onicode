@@ -96,7 +96,7 @@ impl Section {
             Section::General => {
                 "The build you are running, how Onicode reaches you, and the panels it shows."
             }
-            Section::Connections => "Connect your machines and run agents remotely through SSH.",
+            Section::Connections => "The machines on your tailnet that run your agents.",
             Section::Appearance => {
                 "Theme, tint, translucency, workspace layout, and conversation backgrounds."
             }
@@ -124,7 +124,7 @@ impl Section {
     fn keywords(self) -> &'static str {
         match self {
             Section::General => "version update sounds notifications notes rail",
-            Section::Connections => "ssh remote host machine server environment always on",
+            Section::Connections => "tailnet remote host machine server peer always on",
             Section::Appearance => {
                 "theme dark light color accent glass blur zoom scale wallpaper rail sidebar"
             }
@@ -171,19 +171,7 @@ pub(crate) const INDEX: &[(&str, Section, &str, &str)] = &[
         "remote-machines",
         Section::Connections,
         "Your machines",
-        "ssh remote connect host server environment",
-    ),
-    (
-        "mobile-access",
-        Section::Connections,
-        "Your phones",
-        "phone iphone android mobile app pair qr code device revoke remove testflight",
-    ),
-    (
-        "mobile-remote",
-        Section::Connections,
-        "Connect away from home",
-        "router port upnp nat remote address public hostname vpn wifi",
+        "tailnet remote connect host server machine peer",
     ),
     (
         "mcp-servers",

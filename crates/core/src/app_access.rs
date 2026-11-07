@@ -329,7 +329,6 @@ pub fn launch_settings(
     settings.usage_limit = None;
     settings.handoff = None;
     settings.pending_provider_switch = None;
-    settings.remote_action = None;
     settings.prepared_prompt = None;
     settings.turn_model = None;
     settings.text_only = false;

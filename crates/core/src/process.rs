@@ -266,6 +266,17 @@ pub fn shutdown_all() {
     }
 }
 
+/// A Git command for Onicode to run and read. Onicode reads some of Git's failures by their
+/// English words ("not a git repository"), and an app opened from Finder has no `LANG`, so macOS
+/// Git speaks the system's language: `LANGUAGE=C` keeps its messages English and leaves
+/// `LC_CTYPE`, which hooks inherit, alone.
+#[must_use]
+pub fn git() -> Command {
+    let mut command = Command::new("git");
+    command.env("LANGUAGE", "C");
+    command
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use std::process::{Command, Stdio};
@@ -368,5 +379,20 @@ mod windows_tests {
         assert_eq!(output.status.code(), Some(7));
         assert!(String::from_utf8_lossy(&output.stdout).contains("stdout"));
         assert!(String::from_utf8_lossy(&output.stderr).contains("stderr"));
+    }
+}
+
+#[cfg(test)]
+mod git_tests {
+    /// Git's messages stay English whatever the system language, as a Finder launch has no `LANG`.
+    #[test]
+    fn git_speaks_english_to_onicode() {
+        let command = super::git();
+        assert_eq!(command.get_program(), "git");
+        assert!(
+            command
+                .get_envs()
+                .any(|(key, value)| key == "LANGUAGE" && value == Some("C".as_ref()))
+        );
     }
 }

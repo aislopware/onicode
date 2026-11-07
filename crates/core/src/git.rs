@@ -1,19 +1,14 @@
 //! Working-copy operations used by the native composer. Git protects dirty files;
 //! these operations never force a checkout, stash, or discard changes.
 pub mod naming;
-mod remote;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 pub use onicode_protocol::git::{
     Branch, CommitFile, GitSnapshot as Snapshot, SessionChanges, Worktree, report,
 };
 
 pub(crate) fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {
-    if crate::files::remote::is_remote(cwd) {
-        return Err("This isn’t available for projects on another machine yet.".into());
-    }
-    let mut command = Command::new("git");
+    let mut command = crate::process::git();
     command
         .current_dir(cwd)
         .args(args)
@@ -132,9 +127,6 @@ pub fn commit_files(cwd: &Path, commit: &str) -> Result<Vec<CommitFile>, String>
         .collect())
 }
 pub fn snapshot(cwd: &Path) -> Result<Snapshot, String> {
-    if crate::files::remote::is_remote(cwd) {
-        return remote::snapshot(cwd);
-    }
     let root = git(cwd, &["rev-parse", "--show-toplevel"])?;
     let current = git(cwd, &["symbolic-ref", "--short", "HEAD"])
         .ok()
@@ -193,9 +185,6 @@ pub fn snapshot(cwd: &Path) -> Result<Snapshot, String> {
 
 /// Listing working copies does not require reading every local/remote branch.
 pub fn worktrees(cwd: &Path) -> Result<Vec<Worktree>, String> {
-    if crate::files::remote::is_remote(cwd) {
-        return remote::worktrees(cwd);
-    }
     let mut trees = Vec::new();
     let mut tree = Worktree::default();
     for field in git(cwd, &["worktree", "list", "--porcelain", "-z"])?.split('\0') {
@@ -222,9 +211,6 @@ fn valid_branch(cwd: &Path, name: &str) -> Result<(), String> {
     git(cwd, &["check-ref-format", "--branch", name]).map(|_| ())
 }
 pub fn checkout(cwd: &Path, branch: &Branch) -> Result<(), String> {
-    if crate::files::remote::is_remote(cwd) {
-        return remote::checkout(cwd, branch);
-    }
     valid_branch(cwd, &branch.name)?;
     if let Some(remote) = &branch.remote {
         let reference = format!("{remote}/{}", branch.name);
@@ -238,27 +224,11 @@ pub fn checkout(cwd: &Path, branch: &Branch) -> Result<(), String> {
     Ok(())
 }
 pub fn create_branch(cwd: &Path, name: &str) -> Result<(), String> {
-    if crate::files::remote::is_remote(cwd) {
-        return remote::create_branch(cwd, name);
-    }
     valid_branch(cwd, name)?;
     git(cwd, &["switch", "-c", name])?;
     Ok(())
 }
 pub fn create_worktree(cwd: &Path, base: &str, session: i64) -> Result<PathBuf, String> {
-    if crate::files::remote::is_remote(cwd) {
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        return remote::create_worktree(
-            cwd,
-            &format!("mc/native-{session}-{stamp}"),
-            Some(base),
-            false,
-        )
-        .map(|tree| PathBuf::from(tree.path));
-    }
     let state = snapshot(cwd)?;
     let main = state.worktrees.first().ok_or("No working copies found")?;
     let main = Path::new(&main.path);
@@ -310,9 +280,6 @@ pub fn create_project_worktree(
     base: Option<&str>,
     existing: bool,
 ) -> Result<Worktree, String> {
-    if crate::files::remote::is_remote(cwd) {
-        return remote::create_worktree(cwd, branch.trim(), base, existing);
-    }
     let branch = branch.trim();
     valid_branch(cwd, branch)?;
     let state = snapshot(cwd)?;

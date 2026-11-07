@@ -1704,10 +1704,7 @@ impl Shell {
     }
 
     fn queue_project_rail_stats(&mut self, path: &str, cx: &mut Context<Self>) {
-        if self.project_rail_stats.values.contains_key(path)
-            || path == "~"
-            || path.starts_with("remote://")
-        {
+        if self.project_rail_stats.values.contains_key(path) || path == "~" {
             return;
         }
         self.project_rail_stats.queued.insert(path.into());

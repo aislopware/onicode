@@ -157,10 +157,6 @@ impl Shell {
         }
         let ended = self.notification_state.responding.remove(&id) && !chat.busy;
         if !ended || chat.notification_was_cancelled() || chat.summary.archived {
-            // Ended with no finish to send, as when stopped.
-            if ended {
-                self.mobile_turn_ended(id);
-            }
             return;
         }
         let summary = chat.summary.clone();
@@ -490,7 +486,6 @@ impl Shell {
         let mut snapshots = Vec::new();
         let mut directories = HashMap::new();
         let mut completed = Vec::new();
-        let mut quiet = Vec::new();
         let mut live_ids = HashSet::new();
         for view in views {
             let chat = view.read(cx);
@@ -498,16 +493,13 @@ impl Shell {
             live_ids.insert(id);
             if chat.responding() {
                 self.notification_state.responding.insert(id);
-            } else if self.notification_state.responding.remove(&id) && !chat.busy {
-                if !chat.notification_was_cancelled()
-                    && !chat.summary.archived
-                    && self.sessions.contains_key(&id)
-                {
-                    completed.push((chat.summary.clone(), chat.notification_reply_body(cx)));
-                } else {
-                    // Ended with no finish to send, as when stopped.
-                    quiet.push(id);
-                }
+            } else if self.notification_state.responding.remove(&id)
+                && !chat.busy
+                && !chat.notification_was_cancelled()
+                && !chat.summary.archived
+                && self.sessions.contains_key(&id)
+            {
+                completed.push((chat.summary.clone(), chat.notification_reply_body(cx)));
             }
             directories.insert(id.to_string(), chat.summary.cwd.clone());
             snapshots.push(SessionInputs {
@@ -531,9 +523,6 @@ impl Shell {
         self.notification_state
             .watched
             .retain(|id, _| sessions.contains_key(id));
-        for id in quiet {
-            self.mobile_turn_ended(id);
-        }
         let badge = delivery::dock_badge_count(
             snapshots
                 .iter()
@@ -644,7 +633,6 @@ impl Shell {
         cue: Option<crate::sound::Cue>,
         cx: &mut Context<Self>,
     ) {
-        self.notify_mobile(summary, category, body, cx);
         self.dispatch_notice(
             summary,
             category,

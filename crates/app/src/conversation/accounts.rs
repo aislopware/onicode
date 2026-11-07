@@ -97,14 +97,6 @@ impl Conversation {
         )
     }
 
-    /// A remote session runs on its host's default account. A local one names its account and
-    /// the engine finds its home.
-    pub(crate) fn attach_account(&mut self, _: &App) {
-        if self.is_remote() {
-            self.settings.account = Default::default();
-        }
-    }
-
     pub(crate) fn account_model(&self) -> Option<&str> {
         self.model.as_deref().or(self.resolved_model.as_deref())
     }
@@ -237,7 +229,6 @@ impl Conversation {
         if limited {
             self.settings.usage_limit = limit;
         }
-        self.attach_account(cx);
         let from = self.settings.account.clone();
         let thread = self.summary.provider_id.clone();
         let expected = thread.clone();
@@ -349,9 +340,17 @@ impl Conversation {
     }
 
     pub(crate) fn account_authenticated(&mut self, cx: &mut Context<Self>) {
-        self.attach_account(cx);
         self.refresh_catalog(cx);
         cx.notify();
+    }
+
+    pub(super) fn set_usage_resume_at_reset(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if let Some(limit) = &mut self.settings.usage_limit {
+            limit.resume_at_reset = enabled;
+            self.save_settings(cx);
+            cx.emit(SessionChanged);
+            cx.notify();
+        }
     }
 
     pub(super) fn usage_notice(
@@ -562,7 +561,7 @@ fn usage_button(
         })
 }
 
-/// Shared reset wording for desktop and its paired phone.
+/// The usage notice's reset wording.
 pub(super) fn usage_reset_label(limit: &Limit, now: i64) -> Option<String> {
     limit.resets_at.map(|at| {
         if at <= now {

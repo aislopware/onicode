@@ -322,11 +322,8 @@ pub(crate) fn open_with_default_app(path: &Path, cx: &App) -> Result<(), String>
     Ok(())
 }
 
-/// A file on another machine, or one that is gone, has nothing to show here.
+/// A file that is gone has nothing to show here.
 fn on_this_mac(path: &Path) -> Result<(), String> {
-    if files::remote::is_remote(path) {
-        return Err("This isn’t available for projects on another machine yet.".into());
-    }
     if !path.exists() {
         return Err(format!("{}: No such file or directory", path.display()));
     }

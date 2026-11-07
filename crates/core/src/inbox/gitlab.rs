@@ -2,7 +2,6 @@
 //! remain identical.
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -903,7 +902,7 @@ fn encode_path_component(value: &str) -> String {
 }
 
 fn gitlab_repo_for(root: &Path, gitlab_url: &str) -> Result<String, String> {
-    let mut cmd = Command::new("git");
+    let mut cmd = crate::process::git();
     crate::process::configure_child(&mut cmd);
     crate::scm::shell::apply_gui_env(&mut cmd);
     let output = cmd

@@ -16,7 +16,7 @@ impl Input {
         } else {
             "Ctrl+"
         };
-        let selected = !self.secret && !self.selection.is_empty();
+        let selected = !self.selection.is_empty();
         let action = |id, label, key, enabled: bool| {
             MenuAction::new(id, label)
                 .shortcut(format!("{modifier}{key}"))
@@ -108,9 +108,7 @@ mod tests {
     use super::*;
 
     #[gpui::test]
-    fn editing_actions_respect_selection_clipboard_read_only_and_secrets(
-        cx: &mut gpui::TestAppContext,
-    ) {
+    fn editing_actions_respect_selection_clipboard_and_read_only(cx: &mut gpui::TestAppContext) {
         cx.update(|cx| {
             let input = cx.new(Input::new);
             input.update(cx, |input, _| {
@@ -132,10 +130,7 @@ mod tests {
                 assert_eq!(enabled(input, true), ["cut", "copy", "paste", "select-all"]);
                 input.read_only = true;
                 assert_eq!(enabled(input, true), ["copy", "select-all"]);
-                input.secret = true;
                 input.read_only = false;
-                assert_eq!(enabled(input, true), ["paste", "select-all"]);
-                input.secret = false;
                 input.selection = 5..5;
                 assert_eq!(enabled(input, false), ["select-all"]);
             });

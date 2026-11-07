@@ -33,16 +33,6 @@ pub fn list_project_files_sync_cancellable(
     if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
         return Ok(Vec::new());
     }
-    if super::remote::is_remote(Path::new(cwd)) {
-        let files = super::remote::command("list_project_files", serde_json::json!({"cwd":cwd}))?;
-        return Ok(
-            if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
-                Vec::new()
-            } else {
-                files
-            },
-        );
-    }
     let root = expand_home(Path::new(cwd));
     if !root.is_dir() {
         return Err(format!("{}: Not a directory", root.display()));

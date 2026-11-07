@@ -36,11 +36,6 @@ impl Shell {
     /// sits idle at a prompt and opening a fresh one otherwise.
     pub(super) fn run_action(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         let project = self.workspace.project.clone();
-        if project.starts_with("remote://") {
-            self.error = Some("Actions are not available on remote projects.".into());
-            cx.notify();
-            return;
-        }
         let Some(action) = self.project_actions().iter().find(|a| a.id == id).cloned() else {
             return;
         };
@@ -157,9 +152,6 @@ impl Shell {
 
     /// The footer's split button: run the current action, or pick another.
     pub(super) fn actions_button(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if self.workspace.project.starts_with("remote://") {
-            return None;
-        }
         let classic = self.workspace.boxy_layout();
         let current = self.current_action().cloned();
         let menu_open = self.menu_open(&MenuTarget::Actions);

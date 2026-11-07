@@ -60,9 +60,6 @@ impl Shell {
             }
         }
         SettingsContext {
-            remote: Some(self.remote.clone()),
-            mobile: self.mobile_status(),
-            mobile_invite: self.mobile.invite.clone(),
             quick_error: self.quick.error.clone(),
             inbox_connections: self
                 .inbox
@@ -195,30 +192,11 @@ impl Shell {
                     cx,
                 ),
                 SettingsEvent::ChooseBackground => this.choose_chat_background(cx),
-                SettingsEvent::MobileRefresh => this.sync_settings(cx),
-                SettingsEvent::MobileConfigure {
-                    enabled,
-                    open_router,
-                    remote_address,
-                } => this.mobile_configure(*enabled, *open_router, remote_address.clone(), cx),
-                SettingsEvent::MobilePair => this.pair_mobile(cx),
-                SettingsEvent::MobileCancelInvite => this.mobile_cancel_invite(cx),
-                SettingsEvent::MobileRevoke(id) => this.mobile_revoke(id, cx),
             },
         ));
-        // This dialog is painted at the window root, like React's portal.
-        // Redraw it for countdown/copy/close changes even when only the
-        // Settings entity was notified, without rebuilding the shell for
-        // ordinary settings edits.
-        let mut overlay_was_open = false;
         // The search lives in the cached rail, so redraw it as the query moves.
         let mut search_was = view.read(cx).search_state();
         self.settings_overlay_watch = Some(cx.observe(&view, move |this, view, cx| {
-            let open = view.read(cx).mobile_overlay_open();
-            if open || overlay_was_open {
-                cx.notify();
-            }
-            overlay_was_open = open;
             let search = view.read(cx).search_state();
             if search != search_was {
                 search_was = search;
@@ -257,10 +235,6 @@ impl Shell {
         self.settings = None;
         self.settings_events = None;
         self.settings_overlay_watch = None;
-        // A code nobody can see should not stay usable.
-        if self.mobile.invite.is_some() {
-            self.mobile_cancel_invite(cx);
-        }
         self.sidebar_slide = None;
         self.sidebar_fraction = if self.workspace.sidebar_visible {
             1.
@@ -269,38 +243,6 @@ impl Shell {
         };
         self.focus_active(window, cx);
         this_update(self, cx);
-    }
-
-    /// MobileSettings.tsx's pair: the desktop listens only while a phone is
-    /// paired or being paired, so start listening before making the code.
-    fn pair_mobile(&mut self, cx: &mut Context<Self>) {
-        let Some(status) = self.mobile_status() else {
-            return;
-        };
-        if status.enabled && status.listening {
-            self.mobile_invite(cx);
-            return;
-        }
-        self.mobile_configure(true, status.open_router, status.remote_address, cx);
-        cx.spawn(async move |this, cx| {
-            // Binding runs in the background; a failure lands in `error`.
-            for _ in 0..100 {
-                cx.background_executor()
-                    .timer(std::time::Duration::from_millis(100))
-                    .await;
-                let Ok(ready) = this.update(cx, |this, _| {
-                    this.mobile_status()
-                        .is_some_and(|status| status.enabled && status.listening)
-                }) else {
-                    return;
-                };
-                if ready {
-                    let _ = this.update(cx, |this, cx| this.mobile_invite(cx));
-                    return;
-                }
-            }
-        })
-        .detach();
     }
 
     pub(super) fn apply_preferences(&mut self, cx: &mut Context<Self>) {
@@ -544,62 +486,6 @@ mod tests {
 
     use super::*;
     use crate::shell::tests::window;
-
-    #[gpui::test]
-    fn pairing_dialog_is_a_window_overlay_and_updates_from_settings_notifications(
-        cx: &mut TestAppContext,
-    ) {
-        cx.update(super::super::bind_keys);
-        let (window, _, _) = window(cx);
-        window
-            .update(cx, |shell, w, cx| {
-                shell.open_settings(Section::Connections, w, cx)
-            })
-            .unwrap();
-        let visual = &mut gpui::VisualTestContext::from_window(window.into(), cx);
-        visual.run_until_parked();
-        assert!(visual.debug_bounds("mobile-pair-overlay").is_none());
-        window
-            .update(visual, |shell, _, cx| {
-                shell.mobile.invite = Some(onicode_core::mobile::Invite {
-                    url: format!("monocode://pair?invite={}", "q".repeat(500)),
-                    expires: onicode_protocol::time::now_ms() / 1000 + 900,
-                });
-                // This notifies Settings alone. The root overlay must observe it.
-                shell.sync_settings(cx);
-            })
-            .unwrap();
-        visual.run_until_parked();
-        let viewport = window.update(visual, |_, w, _| w.viewport_size()).unwrap();
-        let scrim = visual
-            .debug_bounds("mobile-pair-overlay")
-            .expect("Settings changes show the portal at the shell root");
-        assert_eq!(scrim.origin, gpui::point(px(0.), px(0.)));
-        assert_eq!(scrim.size, viewport);
-        let dialog = visual.debug_bounds("mobile-pair-dialog").unwrap();
-        assert_eq!(dialog.size.width, px(560.));
-        assert!((dialog.center().x - viewport.width / 2.).abs() < px(1.));
-        assert!((dialog.center().y - viewport.height / 2.).abs() < px(1.));
-        let qr = visual.debug_bounds("mobile-pair-code").unwrap();
-        visual.simulate_click(qr.center(), Default::default());
-        visual.run_until_parked();
-        assert!(
-            visual.debug_bounds("mobile-pair-overlay").is_some(),
-            "clicking inside does not dismiss or reach Settings"
-        );
-        visual.simulate_keystrokes("escape");
-        visual.run_until_parked();
-        assert!(visual.debug_bounds("mobile-pair-overlay").is_none());
-        window
-            .update(visual, |shell, _, _| {
-                assert!(
-                    shell.settings.is_some(),
-                    "Escape only dismisses the pairing dialog"
-                );
-                assert!(shell.mobile.invite.is_none());
-            })
-            .unwrap();
-    }
 
     #[gpui::test]
     fn settings_skill_form_opens_and_cancels_without_leaving_settings(cx: &mut TestAppContext) {

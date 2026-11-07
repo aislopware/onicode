@@ -3,8 +3,7 @@
 //!
 //! Order: project default, Settings default, last choice (`recent_models[0]`),
 //! then Codex (or the first allowed provider). A step is skipped when its
-//! provider is hidden. Hidden providers are ignored for remote projects, as
-//! the model picker ignores them there.
+//! provider is hidden.
 use super::*;
 use crate::settings::Preferences;
 
@@ -37,8 +36,7 @@ fn default_model(prefs: &Preferences, cwd: &str, kind: Kind) -> Option<String> {
 }
 
 fn allowed(prefs: &Preferences, cwd: &str, kind: Kind) -> bool {
-    onicode_protocol::remote::parse_remote_path(cwd).is_some()
-        || !prefs.hidden_for(cwd).iter().any(|id| id == kind.id())
+    !prefs.hidden_for(cwd).iter().any(|id| id == kind.id())
 }
 
 pub(crate) fn resolve(prefs: &Preferences, cwd: &str) -> NewChatChoice {

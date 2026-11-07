@@ -67,7 +67,7 @@ fn setup(cx: &mut TestAppContext, classic: bool, boxy: bool) -> (WindowHandle<Sh
 }
 
 #[gpui::test]
-fn original_project_plus_offers_local_and_remote_folders(cx: &mut TestAppContext) {
+fn original_project_plus_offers_a_folder(cx: &mut TestAppContext) {
     let (window, _) = setup(cx, true, false);
     let visual = &mut VisualTestContext::from_window(window.into(), cx);
     let click = |selector: &'static str, visual: &mut VisualTestContext| {
@@ -84,11 +84,6 @@ fn original_project_plus_offers_local_and_remote_folders(cx: &mut TestAppContext
         "the plus opens a menu before choosing a folder source"
     );
     assert!(visual.debug_bounds("menu-action-open-project").is_some());
-    assert!(
-        visual
-            .debug_bounds("menu-action-open-remote-project")
-            .is_some()
-    );
     click("menu-action-open-project", visual);
     assert!(visual.did_prompt_for_paths());
     visual.simulate_path_prompt_response(|options| {
@@ -97,15 +92,9 @@ fn original_project_plus_offers_local_and_remote_folders(cx: &mut TestAppContext
         None
     });
     visual.run_until_parked();
-    click("rail-open-project", visual);
-    click("menu-action-open-remote-project", visual);
-    assert!(visual.debug_bounds("remote-project-picker").is_some());
-    visual.simulate_keystrokes("escape");
-    visual.run_until_parked();
     window
         .read_with(visual, |shell, _| {
             assert!(shell.menu.is_none());
-            assert!(shell.remote_project_picker.is_none());
             assert_eq!(shell.workspace.project, "/work/monocode");
         })
         .unwrap();

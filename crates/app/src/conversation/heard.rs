@@ -40,7 +40,7 @@ fn shows(held: &[Row], start: usize, rows: &[Row]) -> bool {
 impl Conversation {
     /// Starts following the session's watch, once: a local session, from its first load or send.
     pub(super) fn hear_session(&mut self, cx: &mut Context<Self>) {
-        if self.heard.hearing.is_some() || self.is_remote() {
+        if self.heard.hearing.is_some() {
             return;
         }
         let turns = crate::engine_client::session_turns(&self.engine, self.summary.id, cx);

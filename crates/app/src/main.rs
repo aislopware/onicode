@@ -61,7 +61,6 @@ mod mask;
 mod memory_log;
 #[cfg(all(test, target_os = "macos"))]
 mod metal_tests;
-mod mobile;
 mod modal;
 mod notes;
 mod notifications;
@@ -70,7 +69,6 @@ mod pane_motion;
 mod particle_text;
 mod phase_tile;
 mod pickers;
-mod pixel_mascot;
 mod popover;
 mod project_background;
 mod project_search;
@@ -87,7 +85,6 @@ mod response_actions;
 mod reveal;
 mod review;
 mod right_panel;
-mod runtime;
 mod search;
 mod send_morph;
 mod session_mark;
@@ -174,9 +171,6 @@ fn data_dir() -> PathBuf {
     })
 }
 fn main() {
-    if let Some(code) = onicode_core::remote::ssh_askpass::maybe_run() {
-        std::process::exit(code);
-    }
     let cli_args: Vec<_> = std::env::args().skip(1).collect();
     if cli_args
         .first()

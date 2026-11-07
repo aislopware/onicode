@@ -166,7 +166,7 @@ impl Conversation {
     pub(crate) fn refresh_git_actions(&mut self, cx: &mut Context<Self>) {
         self.session_edits_generation = self.session_edits_generation.wrapping_add(1);
         let generation = self.session_edits_generation;
-        if !self.history_loaded() || self.busy || self.is_remote() {
+        if !self.history_loaded() || self.busy {
             return;
         }
         if self.session_edits.is_empty() || self.settings.worktree_removed {
@@ -247,7 +247,6 @@ impl Conversation {
             && !self.stopping
             && !self.preparing_worktree
             && self.follow_ups.state.messages.is_empty()
-            && !self.is_remote()
             && !self.settings.worktree_removed
     }
 

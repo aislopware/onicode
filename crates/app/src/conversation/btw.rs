@@ -1778,7 +1778,6 @@ impl Conversation {
         if self.attaching || !self.attachments.is_empty() || self.input.read(cx).is_composing() {
             return false;
         }
-        self.attach_account(cx);
         let Some(target) = self.btw_target(cx) else {
             self.status =
                 "Finish a supported conversation turn before asking a side question.".into();

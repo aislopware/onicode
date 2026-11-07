@@ -16,7 +16,6 @@ mod idle_agents;
 mod image_lightbox_tests;
 mod layout;
 mod live_agents;
-mod mobile_host;
 mod new_chat_choice;
 #[cfg(test)]
 mod new_chat_choice_tests;
@@ -30,8 +29,6 @@ mod project_settings;
 mod quick_composer;
 mod quick_open;
 mod rails;
-mod remote_projects;
-mod remote_sessions;
 #[cfg(test)]
 mod retained_tests;
 mod search;
@@ -361,7 +358,7 @@ pub(crate) enum MenuTarget {
     Folder(String),
     /// The sidebar project header's menu.
     Header,
-    /// The original project rail's local or remote folder menu.
+    /// The original project rail's folder menu.
     ProjectRailAdd,
     CompactProjectPicker,
     ProjectRailGroup(String),
@@ -600,7 +597,6 @@ pub(crate) struct Shell {
     quick_open: Option<quick_open::Open>,
     image_lightbox: Option<(Entity<crate::image_lightbox::ImageLightbox>, Subscription)>,
     app_bridge: Option<onicode_core::app_access::bridge::Server>,
-    mobile: mobile_host::Mobile,
     app_results: HashMap<(i64, String), (String, Result<serde_json::Value, String>)>,
     app_pending: HashSet<(i64, String)>,
     orchestrations: HashMap<i64, onicode_engine::workspace::orchestration::Run>,
@@ -649,11 +645,6 @@ pub(crate) struct Shell {
     engine: Engine,
     /// The app's own saved state: the workspace, saved here on every change.
     ui_state: crate::ui_state::UiState,
-    remote: Arc<onicode_core::remote::Connections>,
-    remote_project_picker: Option<remote_projects::Open>,
-    remote_refreshing: bool,
-    remote_marks: HashMap<i64, (bool, bool)>,
-    _remote_clock: gpui::Task<()>,
     sessions: HashMap<i64, Entity<Conversation>>,
     /// Lightweight history index; only opened or previewed chats own GPUI entities.
     session_summaries: HashMap<i64, Session>,
@@ -851,32 +842,6 @@ impl Shell {
         // The views read and change this machine's files and checkouts through this engine.
         crate::engine_client::set_local(&engine, cx);
         let ui_state = crate::ui_state::shared(cx);
-        let remote_dir = engine.data_dir().unwrap_or_else(|| {
-            std::env::temp_dir().join(format!("onicode-remote-{}", std::process::id()))
-        });
-        let remote = Arc::new(onicode_core::remote::Connections::new(remote_dir));
-        onicode_core::remote::set_default_connections(remote.clone());
-        let quit_remote = remote.clone();
-        cx.on_app_quit(move |_, cx| {
-            let remote = quit_remote.clone();
-            cx.background_executor().spawn(async move {
-                remote.shutdown();
-            })
-        })
-        .detach();
-        let remote_clock = cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(std::time::Duration::from_secs(3))
-                    .await;
-                if this
-                    .update(cx, |this, cx| this.refresh_remote_projects(cx))
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        });
         let metadata: Vec<_> = summaries.iter().map(|s| (s.id, s.cwd.clone())).collect();
         let mut workspace = Workspace::restore(saved.as_deref(), &metadata, &cwd);
         let engine_settings_now = engine.settings_now();
@@ -980,7 +945,6 @@ impl Shell {
             quick_open: None,
             image_lightbox: None,
             app_bridge: None,
-            mobile: mobile_host::Mobile::default(),
             app_results: HashMap::new(),
             app_pending: HashSet::new(),
             orchestrations: HashMap::new(),
@@ -1016,11 +980,6 @@ impl Shell {
             tabs_frame,
             engine,
             ui_state,
-            remote,
-            remote_project_picker: None,
-            remote_refreshing: false,
-            remote_marks: HashMap::new(),
-            _remote_clock: remote_clock,
             sessions: HashMap::new(),
             session_summaries: HashMap::new(),
             draft_sessions: sidebar_metadata.drafts,
@@ -1183,7 +1142,6 @@ impl Shell {
             this.order.push(summary.id);
             this.session_summaries.insert(summary.id, summary);
         }
-        this.init_mobile_host(cx);
         if let Some(id) = this.workspace.active {
             this.ensure_session(this.workspace.session_for_pane(id), cx);
             this.record_worktree_session(id, cx);
@@ -2995,9 +2953,6 @@ impl Shell {
 
     /// A restored dock reopens its tabs as fresh shells once it is shown.
     fn ensure_terminals(&mut self, project: &str, cx: &mut Context<Self>) {
-        if project.starts_with("remote://") {
-            return;
-        }
         let Some(dock) = self.workspace.docks.get(project) else {
             return;
         };
@@ -3052,11 +3007,6 @@ impl Shell {
     /// Terminal: New (cmd-`): another terminal in the project's dock, which
     /// opens if it was hidden.
     fn new_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.workspace.project.starts_with("remote://") {
-            self.error = Some("Terminals are not available on remote projects.".into());
-            cx.notify();
-            return;
-        }
         if self.app_view_open() {
             return;
         }
@@ -3094,11 +3044,6 @@ impl Shell {
 
     /// Terminal: Toggle (cmd-j).
     fn toggle_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.workspace.project.starts_with("remote://") {
-            self.error = Some("Terminals are not available on remote projects.".into());
-            cx.notify();
-            return;
-        }
         if self.terminal_in_panel(cx) {
             if self.panel_terminal_shown(cx) {
                 self.set_right_panel_open(false, window, cx);
@@ -5444,9 +5389,6 @@ impl Shell {
                     MenuAction::new("open-project", "Open folder…")
                         .icon("folder-add")
                         .into(),
-                    MenuAction::new("open-remote-project", "Open folder on a machine…")
-                        .icon("globe")
-                        .into(),
                 ],
                 230.,
                 MenuStyle::Explorer,
@@ -5455,7 +5397,6 @@ impl Shell {
                 let picker = cx.new(|cx| {
                     ProjectPicker::new(&self.workspace.projects, &self.workspace.project, cx)
                         .appearance(self.workspace.project_appearance.clone())
-                        .allow_remote()
                 });
                 events.push(cx.subscribe_in(
                     &picker,
@@ -5467,10 +5408,6 @@ impl Shell {
                                 this.select_project(path.clone(), window, cx)
                             }
                             ProjectPicked::New => this.open_project(cx),
-                            ProjectPicked::Remote => {
-                                this.open_remote_project(window, cx);
-                                return;
-                            }
                         }
                         this.focus_active(window, cx);
                         this.invalidate_chrome(cx);
@@ -5490,7 +5427,6 @@ impl Shell {
                 let picker = cx.new(|cx| {
                     ProjectPicker::new(&self.workspace.projects, &self.workspace.project, cx)
                         .appearance(self.workspace.project_appearance.clone())
-                        .allow_remote()
                 });
                 events.push(cx.subscribe_in(
                     &picker,
@@ -5503,10 +5439,6 @@ impl Shell {
                             }
                             ProjectPicked::Project(_) => {}
                             ProjectPicked::New => this.open_project(cx),
-                            ProjectPicked::Remote => {
-                                this.open_remote_project(window, cx);
-                                return;
-                            }
                         }
                         this.focus_active(window, cx);
                         this.invalidate_chrome(cx);
@@ -5550,9 +5482,6 @@ impl Shell {
                         MenuAction::new("project-settings", "Project settings")
                             .icon("sliders")
                             .flyout(self.project_settings_flyout(events, window, cx))
-                            .into(),
-                        MenuAction::new("open-remote-project", "Open folder on a machine…")
-                            .icon("globe")
                             .into(),
                         MenuAction::new("settings", "Settings")
                             .icon("settings")
@@ -5658,7 +5587,7 @@ impl Shell {
                     MenuAction::new("reveal", REVEAL_LABEL)
                         .icon("folder-open")
                         .into(),
-                    self.external_editor_menu(path).into(),
+                    self.external_editor_menu().into(),
                     MenuItem::Separator,
                     self.project_notification_menu(path).into(),
                     MenuItem::Separator,
@@ -5721,11 +5650,11 @@ impl Shell {
             }
             MenuTarget::Session(id) => self.run_session_menu(id, action, window, cx),
             MenuTarget::Folder(folder) => self.run_folder_menu(folder, action, window, cx),
-            MenuTarget::ProjectRailAdd => match action {
-                "open-project" => self.open_project(cx),
-                "open-remote-project" => self.open_remote_project(window, cx),
-                _ => {}
-            },
+            MenuTarget::ProjectRailAdd => {
+                if action == "open-project" {
+                    self.open_project(cx);
+                }
+            }
             MenuTarget::CompactProjectPicker => {}
             MenuTarget::ProjectRailGroup(id) => {
                 if action == "delete-project-group" {
@@ -5741,8 +5670,6 @@ impl Shell {
                 // "Project settings" opens the project's menu beside its row.
                 if action == "settings" {
                     self.open_settings(crate::settings::Section::General, window, cx);
-                } else if action == "open-remote-project" {
-                    self.open_remote_project(window, cx);
                 } else if action == "project-settings" {
                     let at = row
                         .map_or_else(Point::default, |r| Point::new(r.right(), r.top() - px(8.)));
@@ -5778,12 +5705,7 @@ impl Shell {
                         self.project_order_changed(&path, cx);
                     }
                 } else if action == "reveal" {
-                    if path.starts_with("remote://") {
-                        self.error = Some("Remote folders stay on their host machine.".into());
-                        cx.notify();
-                    } else {
-                        cx.reveal_path(std::path::Path::new(&path));
-                    }
+                    cx.reveal_path(std::path::Path::new(&path));
                 } else if action == "project-theme" {
                     self.open_project_theme(path, window, cx);
                 } else if action == "background" {
@@ -8827,10 +8749,6 @@ impl Render for Shell {
                 if this.cancel_classic_sidebar_tab(cx) {
                     return;
                 }
-                if this.remote_project_picker.is_some() {
-                    this.close_remote_project(window, cx);
-                    return;
-                }
                 if this.quick_open.is_some() {
                     this.close_quick_open(window, cx);
                     return;
@@ -9057,15 +8975,9 @@ impl Render for Shell {
             .children(self.resource_modal(window, cx))
             .children(self.quick_open_modal(window, cx))
             .children(self.search_modal(window, cx))
-            .children(self.remote_project_modal(window, cx))
             .children(self.notice_modals(window, cx))
             .children(self.folder_picker_popover(window, cx))
             .children(crate::accounts::get(cx))
-            .children(
-                self.settings
-                    .clone()
-                    .and_then(|view| view.update(cx, |view, cx| view.mobile_overlay(window, cx))),
-            )
             .children(
                 self.image_lightbox
                     .as_ref()

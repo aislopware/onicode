@@ -331,9 +331,6 @@ impl Completion {
     }
 
     pub(crate) fn prepare_prompt(&self, text: &str) -> String {
-        if self.cwd.starts_with("remote://") {
-            return text.to_owned();
-        }
         let text = self.expand_mentions(text);
         let text = onicode_protocol::provider::native_prompt(self.provider, &text);
         // The notes the last load read: `@note/slug` mentions bring their bodies along.
@@ -419,14 +416,6 @@ impl Completion {
     }
 
     fn sync(&mut self, cx: &mut Context<Self>) {
-        if self.cwd.starts_with("remote://") {
-            self.choices.clear();
-            self.token = None;
-            self.input.update(cx, |input, cx| {
-                input.highlight_composer_tokens(Vec::new(), cx)
-            });
-            return;
-        }
         let disabled = cx
             .try_global::<crate::settings::Preferences>()
             .map(|p| p.engine.disabled_skill_paths.clone())

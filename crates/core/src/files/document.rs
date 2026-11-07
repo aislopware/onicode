@@ -2,7 +2,6 @@
 use std::io::Read;
 
 pub use onicode_protocol::files::document::{MAX_LINE_BYTES, MAX_TEXT_BYTES, is_video_path};
-use serde::Deserialize;
 
 use super::*;
 const MAX_PREVIEW_BYTES: u64 = 32 * 1024 * 1024;
@@ -29,44 +28,12 @@ pub enum Document {
     Video {
         size: u64,
         modified: Option<std::time::SystemTime>,
-        /// Remote videos are downloaded within the host preview limit and
-        /// kept alive only while the native player needs their local bytes.
-        source: Option<std::sync::Arc<TemporaryMedia>>,
     },
     Unsupported(String),
 }
 
-#[derive(Debug)]
-pub struct TemporaryMedia {
-    path: PathBuf,
-}
-impl TemporaryMedia {
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-}
-impl Drop for TemporaryMedia {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
-
 /// Resolve an editor link against its workspace without touching disk.
 pub fn resolve_path(path: &Path, cwd: &Path) -> PathBuf {
-    if super::remote::is_remote(path) {
-        return path.to_path_buf();
-    }
-    if super::remote::is_remote(cwd) {
-        if let Some(remote) = crate::remote::parse_remote_path(&cwd.to_string_lossy()) {
-            let path = path.to_string_lossy();
-            let host = if path.starts_with('/') || path.as_bytes().get(1) == Some(&b':') {
-                path.into_owned()
-            } else {
-                super::join_path(&remote.host_path, &path)
-            };
-            return PathBuf::from(crate::remote::remote_path(&remote.environment_id, &host));
-        }
-    }
     let path = expand_home(path);
     let path = if path.is_absolute() {
         path
@@ -85,54 +52,6 @@ pub fn resolve_path(path: &Path, cwd: &Path) -> PathBuf {
 }
 
 pub fn read_document(path: &Path) -> Result<Document, String> {
-    if super::remote::is_remote(path) {
-        let bytes = read_remote_bytes(path)?;
-        if is_video_path(path) {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Modified {
-                mtime_ms: Option<u64>,
-            }
-            let stats: Vec<Modified> =
-                super::remote::command("stat_files", serde_json::json!({"paths":[path]}))?;
-            let modified = stats
-                .first()
-                .and_then(|info| info.mtime_ms)
-                .and_then(|millis| {
-                    UNIX_EPOCH.checked_add(std::time::Duration::from_millis(millis))
-                });
-            let stamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
-            let extension = path
-                .extension()
-                .and_then(|value| value.to_str())
-                .unwrap_or("video");
-            let temporary = std::env::temp_dir().join(format!(
-                "onicode-video-{}-{stamp}.{extension}",
-                std::process::id()
-            ));
-            let mut options = std::fs::OpenOptions::new();
-            options.create_new(true).write(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-            }
-            let mut file = options
-                .open(&temporary)
-                .map_err(|error| error.to_string())?;
-            let source = std::sync::Arc::new(TemporaryMedia { path: temporary });
-            file.write_all(&bytes).map_err(|error| error.to_string())?;
-            return Ok(Document::Video {
-                size: bytes.len() as u64,
-                modified,
-                source: Some(source),
-            });
-        }
-        return document_from_bytes(path, bytes, 1024 * 1024);
-    }
     let path = expand_home(path);
     let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
     let meta = file.metadata().map_err(|e| e.to_string())?;
@@ -143,7 +62,6 @@ pub fn read_document(path: &Path) -> Result<Document, String> {
         return Ok(Document::Video {
             size: meta.len(),
             modified: meta.modified().ok(),
-            source: None,
         });
     }
     if meta.len() > MAX_PREVIEW_BYTES {
@@ -160,27 +78,10 @@ pub fn read_document(path: &Path) -> Result<Document, String> {
             "File is too large to preview (maximum 32 MB).".into(),
         ));
     }
-    document_from_bytes(&path, bytes, MAX_TEXT_BYTES)
+    document_from_bytes(&path, bytes)
 }
 
-fn read_remote_bytes(path: &Path) -> Result<Vec<u8>, String> {
-    use base64::Engine;
-    let encoded: String =
-        super::remote::command("read_binary_file", serde_json::json!({"path":path}))?;
-    let bytes = crate::b64::STANDARD
-        .decode(encoded)
-        .map_err(|error| format!("Invalid remote file content: {error}"))?;
-    if bytes.len() > 10 * 1024 * 1024 {
-        return Err("File is too large to preview (maximum 10 MB).".into());
-    }
-    Ok(bytes)
-}
-
-fn document_from_bytes(
-    path: &Path,
-    bytes: Vec<u8>,
-    max_text_bytes: usize,
-) -> Result<Document, String> {
+fn document_from_bytes(path: &Path, bytes: Vec<u8>) -> Result<Document, String> {
     let format = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         Some("png")
     } else if bytes.starts_with(b"\xff\xd8\xff") {
@@ -229,10 +130,10 @@ fn document_from_bytes(
     {
         return Ok(Document::Unsupported("Not a readable image.".into()));
     }
-    if bytes.len() > max_text_bytes {
+    if bytes.len() > MAX_TEXT_BYTES {
         return Ok(Document::Unsupported(format!(
             "File is too large to edit (maximum {} MB).",
-            max_text_bytes / 1024 / 1024
+            MAX_TEXT_BYTES / 1024 / 1024
         )));
     }
     if bytes.contains(&0) {
@@ -282,18 +183,6 @@ impl TextDocument {
 pub fn save_document(path: &Path, document: &TextDocument, text: &str) -> Result<Vec<u8>, String> {
     if text.len() > MAX_TEXT_BYTES || text.split('\n').any(|line| line.len() > MAX_LINE_BYTES) {
         return Err("Text exceeds the editor size limit.".into());
-    }
-    if super::remote::is_remote(path) {
-        if read_remote_bytes(path)? != document.disk {
-            return Err("The file changed on disk. Reload it before saving your edits.".into());
-        }
-        let bytes = document.encode(text);
-        let content = std::str::from_utf8(&bytes).map_err(|_| "File is not valid UTF-8.")?;
-        super::remote::command::<()>(
-            "write_text_file",
-            serde_json::json!({"path":path,"content":content}),
-        )?;
-        return Ok(bytes);
     }
     let destination = std::fs::canonicalize(expand_home(path)).map_err(|e| e.to_string())?;
     if !matches_disk(&destination, &document.disk)? {
@@ -358,30 +247,15 @@ fn matches_disk(path: &Path, expected: &[u8]) -> Result<bool, String> {
 mod tests {
     use super::*;
     #[test]
-    fn remote_links_resolve_inside_the_host_and_text_keeps_host_limits() {
-        let cwd = Path::new("remote://linux/home/code");
-        assert_eq!(
-            resolve_path(Path::new("../file.rs"), cwd),
-            Path::new("remote://linux/home/file.rs")
-        );
-        assert_eq!(
-            resolve_path(Path::new("/etc/file.rs"), cwd),
-            Path::new("remote://linux/etc/file.rs")
-        );
-        assert_eq!(
-            resolve_path(Path::new("remote://other/code/file.rs"), cwd),
-            Path::new("remote://other/code/file.rs")
-        );
+    fn text_keeps_its_limit_and_line_endings() {
+        let path = Path::new("/code/a.txt");
         assert!(matches!(
-            document_from_bytes(cwd, vec![b'a'; 1024 * 1024 + 1], 1024 * 1024).unwrap(),
+            document_from_bytes(path, vec![b'a'; MAX_TEXT_BYTES + 1]).unwrap(),
             Document::Unsupported(_)
         ));
-        let Document::Text(document) = document_from_bytes(
-            Path::new("remote://linux/home/code/a.txt"),
-            b"\xef\xbb\xbfa\r\n".to_vec(),
-            1024 * 1024,
-        )
-        .unwrap() else {
+        let Document::Text(document) =
+            document_from_bytes(path, b"\xef\xbb\xbfa\r\n".to_vec()).unwrap()
+        else {
             panic!("expected text")
         };
         assert_eq!(document.encode("changed\n"), b"\xef\xbb\xbfchanged\r\n");

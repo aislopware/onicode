@@ -12,10 +12,9 @@
 //!
 //! A local turn runs in the engine: the conversation hands it the composer's context with the
 //! prompt (`Send.turn`), watches the session and folds what arrives back into one `turn::Update`
-//! per beat. The turn outlives the window; the conversation's stop sends `Stop`. SSH and legacy
-//! remote turns keep their own runners over [`Engine::legacy_store`]. The explorer, editor,
-//! Changes, review, history and worktree views read and change files and checkouts through the
-//! app's own engine ([`local`]).
+//! per beat. The turn outlives the window; the conversation's stop sends `Stop`. The explorer,
+//! editor, Changes, review, history and worktree views read and change files and checkouts through
+//! the app's own engine ([`local`]).
 //!
 //! Every call and watch names the engine that serves it (`Routed.engine`): `None` for the app's
 //! own, or another engine on the tailnet, which the app's own engine forwards to (engine.md,
@@ -32,7 +31,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError, Weak, mpsc};
+use std::sync::{Arc, Condvar, LazyLock, Mutex, MutexGuard, PoisonError, Weak, mpsc};
 use std::time::Duration;
 
 use futures::future::{BoxFuture, Either, select};
@@ -41,7 +40,7 @@ use futures::{FutureExt, StreamExt};
 use gpui::{App, BackgroundExecutor, Global, Task};
 use onicode_engine::link::{SocketDoor, Timing};
 use onicode_engine::session::{Expect, Viewer, apply};
-use onicode_engine::turn::{Database, Update};
+use onicode_engine::turn::Update;
 use onicode_protocol::agent::{Control, Decision, Settings};
 use onicode_protocol::engine::{
     MachineEvent, MachineKind, MachineLink, Machines, ResolveSession, WatchMachines,
@@ -205,8 +204,6 @@ enum Link {
         link: Arc<onicode_engine::link::Link>,
         mirror: Arc<Mirror>,
         dir: PathBuf,
-        /// The SSH remote's and the phone host's own connection to the store.
-        legacy: OnceLock<Database>,
     },
     /// An engine in memory, its service called in place: tests stay on gpui's deterministic
     /// executors.
@@ -523,7 +520,8 @@ fn keep(mirror: Weak<Mirror>, executor: BackgroundExecutor) {
 
 /// How the conversation hands a running turn its approvals, answers and steers.
 pub(crate) enum TurnControls {
-    /// A runner that reads them itself: SSH and legacy remote turns.
+    /// A test's stand-in runner, which reads them itself.
+    #[cfg(test)]
     Channel(mpsc::Sender<Control>),
     /// The engine's turn, answered through the Session calls.
     Engine(EngineControls),
@@ -534,6 +532,7 @@ impl TurnControls {
     /// one it cannot apply with a receipt instead.
     pub(crate) fn send(&self, control: Control) -> Result<(), Box<mpsc::SendError<Control>>> {
         match self {
+            #[cfg(test)]
             Self::Channel(sender) => sender.send(control).map_err(Box::new),
             Self::Engine(engine) => {
                 engine.send(control);
@@ -551,12 +550,14 @@ impl TurnControls {
     /// The prompt this view sent, for a turn the engine runs.
     pub(crate) fn message(&self) -> Option<MessageId> {
         match self {
+            #[cfg(test)]
             Self::Channel(_) => None,
             Self::Engine(engine) => engine.turn.message,
         }
     }
 }
 
+#[cfg(test)]
 impl From<mpsc::Sender<Control>> for TurnControls {
     fn from(sender: mpsc::Sender<Control>) -> Self {
         Self::Channel(sender)
@@ -1145,7 +1146,6 @@ impl Engine {
                 link,
                 mirror: mirror.clone(),
                 dir: data_dir.to_path_buf(),
-                legacy: OnceLock::new(),
             },
             cx,
         );
@@ -1217,21 +1217,6 @@ impl Engine {
         self.client.direct().seed()
     }
 
-    /// The store itself: the SSH remote and the phone host only; steps 10-11 delete them. The
-    /// app's own connection to the engine's store, opened on first use.
-    pub(crate) fn legacy_store(&self) -> Database {
-        match &self.client.link {
-            Link::Socket { dir, legacy, .. } => legacy
-                .get_or_init(|| {
-                    onicode_engine::Local::open_legacy_store(dir)
-                        .unwrap_or_else(|error| panic!("no store can open: {error}"))
-                })
-                .clone(),
-            #[cfg(test)]
-            Link::Direct(local) => local.legacy_store(),
-        }
-    }
-
     /// The directory the engine keeps its data in, `None` for one in memory.
     pub(crate) fn data_dir(&self) -> Option<PathBuf> {
         match &self.client.link {
@@ -1264,6 +1249,12 @@ impl Engine {
             #[cfg(test)]
             Link::Direct(local) => local.settings.current(),
         }
+    }
+
+    /// The machines the app's own engine knows, as last seen, for a view's first frame; `None`
+    /// before the engine first answered. A view follows `WatchMachines` from there.
+    pub(crate) fn machines_now(&self) -> Option<Machines> {
+        self.client.machines_now()
     }
 
     /// Makes a call, as a future the caller awaits wherever it likes (a view's task, or the

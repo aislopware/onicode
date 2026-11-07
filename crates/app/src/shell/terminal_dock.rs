@@ -202,7 +202,6 @@ impl Shell {
     pub(super) fn terminal_in_panel(&self, cx: &App) -> bool {
         self.workspace.preferences.terminal_placement() == "panel"
             && !self.workspace.classic_layout
-            && !self.workspace.project.starts_with("remote://")
             && self.git.read(cx).available()
     }
 
@@ -210,7 +209,6 @@ impl Shell {
     /// actions and the footer button.
     pub(super) fn terminal_in_title(&self) -> bool {
         self.workspace.preferences.terminal_placement() == "title"
-            && !self.workspace.project.starts_with("remote://")
     }
 
     pub(super) fn panel_terminal_shown(&self, cx: &App) -> bool {

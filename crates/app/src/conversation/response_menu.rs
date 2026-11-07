@@ -31,47 +31,27 @@ impl Conversation {
         cx: &mut Context<Self>,
     ) {
         self.make_response_menu(turn, kind, anchor.clone(), None, window, cx);
-        let remote = self.is_remote().then(|| self.summary.cwd.clone());
         let hidden = cx
             .try_global::<crate::settings::Preferences>()
             .map(|prefs| prefs.hidden_for(&self.summary.cwd))
             .unwrap_or_default();
-        let harnesses = remote
-            .is_none()
-            .then(|| self.engine.call::<Harnesses>(None, Harnesses {}));
+        let harnesses = self.engine.call::<Harnesses>(None, Harnesses {});
         let work = cx.background_executor().spawn(async move {
-            if let Some(project) = remote {
-                return onicode_core::catalog::remote_catalog(&project).map(|mut catalog| {
-                    catalog
-                        .providers
-                        .into_iter()
-                        .map(|provider| {
-                            let rows = if let Some(error) = catalog.errors.remove(&provider) {
-                                Err(error)
-                            } else {
-                                Ok(catalog.models.remove(&provider).unwrap_or_default())
-                            };
-                            (provider, Some(rows))
-                        })
-                        .collect()
-                });
-            }
             // Discover executables only. Starting every CLI here made one slow
             // provider delay the entire picker, including cached catalogs.
-            let installed = match harnesses {
-                Some(harnesses) => harnesses.await?,
-                None => Vec::new(),
-            };
-            Ok(Kind::ALL
-                .into_iter()
-                .filter(|provider| !hidden.iter().any(|id| id == provider.id()))
-                .filter(|provider| {
-                    installed
-                        .iter()
-                        .any(|harness| harness.provider == *provider && harness.path.is_some())
-                })
-                .map(|provider| (provider, None))
-                .collect::<Catalogs>())
+            let installed = harnesses.await?;
+            Ok::<_, String>(
+                Kind::ALL
+                    .into_iter()
+                    .filter(|provider| !hidden.iter().any(|id| id == provider.id()))
+                    .filter(|provider| {
+                        installed
+                            .iter()
+                            .any(|harness| harness.provider == *provider && harness.path.is_some())
+                    })
+                    .map(|provider| (provider, None))
+                    .collect::<Catalogs>(),
+            )
         });
         cx.spawn_in(window, async move |this, cx| {
             let result = work.await;

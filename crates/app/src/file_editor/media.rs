@@ -64,7 +64,6 @@ pub(super) struct MediaPreview {
     #[cfg(target_os = "macos")]
     video: Option<video::Video>,
     _poll: Option<Task<()>>,
-    _source: Option<Arc<document::TemporaryMedia>>,
 }
 impl EventEmitter<MediaEvent> for MediaPreview {}
 fn file_size(bytes: u64) -> String {
@@ -134,7 +133,6 @@ impl MediaPreview {
             #[cfg(target_os = "macos")]
             video: None,
             _poll: None,
-            _source: None,
         }
     }
 
@@ -142,7 +140,6 @@ impl MediaPreview {
         path: String,
         bytes: u64,
         modified: Option<std::time::SystemTime>,
-        source: Option<Arc<document::TemporaryMedia>>,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut this = Self {
@@ -168,14 +165,8 @@ impl MediaPreview {
             failed: false,
             menu: None,
             #[cfg(target_os = "macos")]
-            video: Some(video::Video::new(
-                source
-                    .as_ref()
-                    .map(|source| source.path().to_string_lossy().into_owned())
-                    .unwrap_or(path),
-            )),
+            video: Some(video::Video::new(path)),
             _poll: None,
-            _source: source,
         };
         this._poll = Some(cx.spawn(async move |this, cx| {
             loop {

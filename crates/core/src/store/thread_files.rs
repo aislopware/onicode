@@ -11,12 +11,11 @@ use std::path::{Path, PathBuf};
 use super::Store;
 
 const ATTACHMENTS: &str = "attachments";
-const REMOTE_PREFIX: &str = "remote:";
 /// Encoded names start with this so they never collide with a plain id.
 const ENCODED_PREFIX: &str = "x-";
 
 /// Folder name for a persisted session id. Plain ids are used verbatim; ids
-/// with path-unsafe characters, such as remote ids, are hex-encoded.
+/// with path-unsafe characters are hex-encoded.
 fn folder_name(id: &str) -> String {
     let plain = !id.is_empty()
         && !id.starts_with('.')
@@ -135,8 +134,7 @@ impl Store {
             let Some(id) = entry.file_name().to_str().and_then(session_id) else {
                 continue;
             };
-            // Remote sessions are not listed locally; leave them alone.
-            if id.starts_with(REMOTE_PREFIX) || self.session_row_exists(&id)? {
+            if self.session_row_exists(&id)? {
                 continue;
             }
             if std::fs::remove_dir_all(entry.path()).is_ok() {
@@ -185,7 +183,7 @@ mod tests {
         for id in [
             "42",
             "abc-DEF_9",
-            "remote:env:7",
+            "a:b:7",
             "../etc",
             ".hidden",
             "x-41",
@@ -217,12 +215,9 @@ mod tests {
 
         let root = store.threads_root().unwrap();
         let orphan = root.join(folder_name("gone"));
-        let remote = root.join(folder_name("remote:env:1"));
         std::fs::create_dir_all(&orphan).unwrap();
-        std::fs::create_dir_all(&remote).unwrap();
         assert_eq!(store.sweep_thread_dirs().unwrap(), 1);
         assert!(!orphan.exists());
-        assert!(remote.exists());
         assert!(kept_dir.exists());
     }
 

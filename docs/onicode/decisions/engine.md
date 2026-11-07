@@ -289,8 +289,21 @@ lists this engine and every engine and viewer the directory knows, with link sta
 DERP), round trip, version, protocol and live agents (`EngineLoad`, asked every 5 s). `SessionKey` and
 `ProjectRef` name things elsewhere; the app's `Engine::on` aims calls, watches and turns at another engine
 through its own, and a turn for one that is offline is refused with a status saying so while the conversation
-keeps what it last saw. Zeron's `StreamRouter` is not ported: engines serve each other only RPC streams. The
-SSH remote's `remote://` paths stay until step 10 deletes them. `PROTOCOL` is 10.
+keeps what it last saw. Zeron's `StreamRouter` is not ported: engines serve each other only RPC streams.
+`PROTOCOL` is 10.
+
+**Steps 10 and 11 as built.** The SSH/Node remote and the phone host are deleted: `runtime/remote.rs`,
+`conversation/{remote,remote_plans,mobile}.rs`, `transcript/remote_plans.rs`,
+`shell/{remote_sessions,remote_projects,mobile_host}.rs`, `mobile/`, `settings/pages/mobile.rs`,
+`core/src/{remote,mobile}*`, `core/src/{files,git}/remote.rs`, `store/remote*.rs`, `protocol::remote`,
+`crates/mobile-link` and the askpass hook in `main.rs`. With them go every `remote://` path and
+`remote-attachment://` source, the `remote-plan` transcript row, `agent::Settings.remote_action`, the app's own
+connection to the store (`Engine::legacy_store`), and the phone's Changes page, the app's last provider runs. Every
+`is_remote()` gate guarded only the SSH route, so each fell with its remote branch and the local path stays;
+another machine's session is reached through `Engine::on`. Settings → Connections lists what `WatchMachines`
+says, in monocode's machine rows: this engine and every engine and viewer on the tailnet, with link state, path,
+round trip, version, protocol and live agents. Adding a machine and "Open folder on a machine…" return with step
+12, the phones half with step 13. `PROTOCOL` stays 10.
 
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,

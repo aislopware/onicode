@@ -10,12 +10,4 @@ additional_cargo_args = ["--config-file", "scripts/ci/nextest.toml", "--lib", "-
 # set fail-fast = false, and cargo-mutants passes no fail-fast flag of its own).
 additional_cargo_test_args = ["--max-fail=1:immediate"]
 # Test code, fixtures, examples and generated code are not mutated.
-exclude_globs = [
-    "**/tests/**",
-    "**/tests.rs",
-    "**/*_tests.rs",
-    "**/examples/**",
-    "**/benches/**",
-    "crates/mobile-bindgen/**",
-    "vendor/**",
-]
+exclude_globs = ["**/tests/**", "**/tests.rs", "**/*_tests.rs", "**/examples/**", "**/benches/**", "vendor/**"]

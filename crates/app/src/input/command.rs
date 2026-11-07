@@ -161,13 +161,6 @@ impl Input {
     }
 
     pub(super) fn display_text(&self) -> (SharedString, DisplayLayout) {
-        if self.secret && !self.content.is_empty() {
-            // Preserve byte positions used by the native selection handler.
-            return (
-                "*".repeat(self.content.len()).into(),
-                DisplayLayout::default(),
-            );
-        }
         let text = if self.content.is_empty() {
             &self.placeholder
         } else {

@@ -2,30 +2,25 @@
 //! pure name and path helpers from the files feature model.
 pub mod document;
 mod index;
-pub(crate) use index::{git_output_capped, is_indexable_root};
-pub use index::{list_project_files, list_project_files_sync_cancellable};
-pub mod remote;
 use std::collections::HashSet;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub(crate) use index::{git_output_capped, is_indexable_root};
+pub use index::{list_project_files, list_project_files_sync_cancellable};
 pub use onicode_protocol::files::{
     DirEntry, NameIssue, NameIssueKind, ProjectFile, Severity, compare_natural_names,
     create_parent_of, dirs_touched_by_create, dirs_touched_by_move, display_path,
     is_equal_or_inside, join_path, leaf_name, parent_path, path_key, rebase_path, unique_name,
     validate_file_name, well_formed_file_name,
 };
-pub use remote::run_remote_command;
 
 use crate::scm::{expand_home, path_to_js};
 
 /// Immediate children of `path` (project tree). Folders first, then natural name order.
 pub fn list_dir(path: &Path) -> Result<Vec<DirEntry>, String> {
-    if remote::is_remote(path) {
-        return remote::command("list_dir", serde_json::json!({"path":path}));
-    }
     let dir = expand_home(path);
     let reader = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
 
@@ -218,12 +213,6 @@ fn missing(path: &Path) -> String {
 /// Create a file or folder under `parent`. `name` may contain `/` or `\` to
 /// nest. Returns the created path.
 pub fn create_path(parent: &Path, name: &str, is_dir: bool) -> Result<String, String> {
-    if remote::is_remote(parent) {
-        return remote::command(
-            "create_path",
-            serde_json::json!({"parent":parent,"name":name,"isDir":is_dir}),
-        );
-    }
     let parent_dir = expand_home(parent);
     let dest = resolve_under(&parent_dir, name)?;
     let label = file_label(&dest, name);
@@ -252,9 +241,6 @@ pub fn create_path(parent: &Path, name: &str, is_dir: bool) -> Result<String, St
 
 /// Rename `path` to `name` (relative to the current parent; `/` nests).
 pub fn rename_path(path: &Path, name: &str) -> Result<String, String> {
-    if remote::is_remote(path) {
-        return remote::command("rename_path", serde_json::json!({"path":path,"name":name}));
-    }
     let from = expand_home(path);
     if !from.exists() {
         return Err(missing(&from));
@@ -298,9 +284,6 @@ pub fn rename_path(path: &Path, name: &str) -> Result<String, String> {
 
 /// Permanently delete a file or folder (not the trash).
 pub fn delete_path(path: &Path) -> Result<(), String> {
-    if remote::is_remote(path) {
-        return remote::command("delete_path", serde_json::json!({"path":path}));
-    }
     let path = expand_home(path);
     if !path.exists() {
         return Err(missing(&path));
@@ -315,12 +298,6 @@ pub fn delete_path(path: &Path) -> Result<(), String> {
 /// Copy `from` into `dest_parent`, naming collisions `name copy.ext`,
 /// `name copy 2.ext`, …. Returns the new path.
 pub fn copy_path(from: &Path, dest_parent: &Path) -> Result<String, String> {
-    if remote::is_remote(from) || remote::is_remote(dest_parent) {
-        return remote::command(
-            "copy_path",
-            serde_json::json!({"from":from,"destParent":dest_parent}),
-        );
-    }
     let from = expand_home(from);
     if !from.exists() {
         return Err(missing(&from));
@@ -343,12 +320,6 @@ pub fn copy_path(from: &Path, dest_parent: &Path) -> Result<String, String> {
 
 /// Move `from` into `dest_parent`, keeping its name. Returns the new path.
 pub fn move_path(from: &Path, dest_parent: &Path) -> Result<String, String> {
-    if remote::is_remote(from) || remote::is_remote(dest_parent) {
-        return remote::command(
-            "move_path",
-            serde_json::json!({"from":from,"destParent":dest_parent}),
-        );
-    }
     let from = expand_home(from);
     if !from.exists() {
         return Err(missing(&from));
@@ -374,9 +345,6 @@ pub fn move_path(from: &Path, dest_parent: &Path) -> Result<String, String> {
 
 /// Open a local file with its registered application. Run off the UI thread.
 pub fn open_path_with_default_app(path: &Path) -> Result<(), String> {
-    if remote::is_remote(path) {
-        return Err("This isn’t available for projects on another machine yet.".into());
-    }
     let path = expand_home(path);
     if !path.exists() {
         return Err(missing(&path));
@@ -409,9 +377,6 @@ pub fn open_path_with_default_app(path: &Path) -> Result<(), String> {
 /// Show `path` in Finder / Explorer, or open its folder elsewhere.
 /// Blocking on Linux, where `xdg-open` may wait for the file manager.
 pub fn reveal_path(path: &Path) -> Result<(), String> {
-    if remote::is_remote(path) {
-        return Err("This isn’t available for projects on another machine yet.".into());
-    }
     let path = expand_home(path);
     if !path.exists() {
         return Err(missing(&path));

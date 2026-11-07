@@ -16,8 +16,7 @@ cd "$(dirname "$0")/../.."
 . scripts/dev/tools.env
 run() { nice -n 10 "$@"; }
 
-# remote_bootstrap.sh is monocode's POSIX bootstrap for its SSH host, deleted with SSH remote (decisions/monocode-base.md).
-sh_files() { git ls-files -co --exclude-standard -- '*.sh' scripts/dev/tools.env | grep -v -e '^vendor/' -e '^crates/core/src/remote/remote_bootstrap.sh$'; }
+sh_files() { git ls-files -co --exclude-standard -- '*.sh' scripts/dev/tools.env | grep -v -e '^vendor/'; }
 skip() {
   echo "$1 not installed (scripts/dev/setup.sh): skipped"
 }

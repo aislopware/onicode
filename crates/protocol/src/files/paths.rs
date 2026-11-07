@@ -38,9 +38,6 @@ fn trim_slash(path: &str) -> String {
 
 /// Stable comparison key for Windows paths without changing their display case.
 pub fn path_key(path: &str) -> String {
-    if let Some(remote) = crate::remote::parse_remote_path(path) {
-        return crate::remote::remote_path(&remote.environment_id, &path_key(&remote.host_path));
-    }
     let normalized = trim_slash(path);
     let drive =
         starts_with_drive(&normalized) && matches!(normalized.as_bytes().get(2), None | Some(b'/'));
@@ -59,9 +56,6 @@ fn skip_chars(text: &str, chars: usize) -> &str {
 }
 
 pub fn parent_path(path: &str) -> String {
-    if let Some(remote) = crate::remote::parse_remote_path(path) {
-        return crate::remote::remote_path(&remote.environment_id, &parent_path(&remote.host_path));
-    }
     let trimmed = trim_slash(path);
     if let Some(rest) = trimmed.strip_prefix("//") {
         let parts: Vec<&str> = rest.split('/').collect();
@@ -109,12 +103,6 @@ pub fn is_equal_or_inside(path: &str, root: &str) -> bool {
 }
 
 pub fn join_path(parent: &str, relative: &str) -> String {
-    if let Some(remote) = crate::remote::parse_remote_path(parent) {
-        return crate::remote::remote_path(
-            &remote.environment_id,
-            &join_path(&remote.host_path, relative),
-        );
-    }
     let mut out = trim_slash(parent);
     let windows = windows_path(parent);
     let parts = relative
@@ -278,28 +266,11 @@ mod tests {
     }
 
     #[test]
-    fn remote_paths_preserve_machine_roots_and_windows_semantics() {
-        assert_eq!(parent_path("remote://linux/"), "remote://linux/");
-        assert_eq!(
-            join_path("remote://linux/", "../../file"),
-            "remote://linux/file"
-        );
-        assert_eq!(
-            parent_path("remote://windows/C:/code"),
-            "remote://windows/C:/"
-        );
-        assert_eq!(
-            join_path("remote://windows/C:/code", "src\\main.rs"),
-            "remote://windows/C:/code/src/main.rs"
-        );
-        assert!(is_equal_or_inside(
-            "remote://windows/c:/CODE/src",
-            "remote://windows/C:/code"
-        ));
-        assert!(!is_equal_or_inside(
-            "remote://other/c:/code/src",
-            "remote://windows/C:/code"
-        ));
+    fn windows_paths_keep_their_drive_roots_and_case_insensitive_keys() {
+        assert_eq!(parent_path("C:/code"), "C:/");
+        assert_eq!(join_path("C:/code", "src\\main.rs"), "C:/code/src/main.rs");
+        assert!(is_equal_or_inside("c:/CODE/src", "C:/code"));
+        assert!(!is_equal_or_inside("D:/code/src", "C:/code"));
     }
 
     #[test]

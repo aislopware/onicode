@@ -93,11 +93,6 @@ impl Conversation {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.is_remote() {
-            self.status = "Editing the last message is not supported by this remote host.".into();
-            cx.notify();
-            return;
-        }
         // The action is tied to a painted source row. A history restoration may
         // replace that row, so never replay this intent against an empty cache.
         if !self.can_prepare_edit(cx) {
@@ -223,7 +218,6 @@ impl Conversation {
             cx.notify();
             return true;
         }
-        self.attach_account(cx);
         let prompt = self.input.read(cx).content.to_string();
         let attachments = self.attachments.clone();
         let checked_attachments = attachments.clone();

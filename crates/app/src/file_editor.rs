@@ -562,34 +562,9 @@ impl FileEditor {
         .detach();
     }
 
-    /// Plays the video at the path. A legacy remote one plays from a local
-    /// download, which this machine makes as before the engine.
+    /// Plays the video at the path.
     fn play(&mut self, size: u64, modified: Option<std::time::SystemTime>, cx: &mut Context<Self>) {
-        if onicode_protocol::remote::is_remote(std::path::Path::new(&self.path)) {
-            let path = PathBuf::from(&self.path);
-            let work = cx
-                .background_executor()
-                .spawn(async move { document::read_document(&path) });
-            cx.spawn(async move |this, cx| {
-                if let Ok(document::Document::Video { source, .. }) = work.await {
-                    let _ = this.update(cx, |this, cx| this.show_video(size, modified, source, cx));
-                }
-            })
-            .detach();
-            return;
-        }
-        self.show_video(size, modified, None, cx);
-    }
-
-    fn show_video(
-        &mut self,
-        size: u64,
-        modified: Option<std::time::SystemTime>,
-        source: Option<Arc<document::TemporaryMedia>>,
-        cx: &mut Context<Self>,
-    ) {
-        let media =
-            cx.new(|cx| media::MediaPreview::video(self.path.clone(), size, modified, source, cx));
+        let media = cx.new(|cx| media::MediaPreview::video(self.path.clone(), size, modified, cx));
         let visible = self.visible;
         media.update(cx, |m, cx| m.set_visible(visible, cx));
         self.media_events = Some(cx.subscribe(&media, |this, _, _: &media::MediaEvent, cx| {

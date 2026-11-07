@@ -6,7 +6,6 @@ use super::*;
 use crate::settings::{ModelChoice, Preferences};
 
 const LOCAL: &str = "/work/project";
-const REMOTE: &str = "remote://env/work/project";
 
 fn recent(provider: &str, model: Option<&str>) -> ModelChoice {
     ModelChoice {
@@ -129,20 +128,6 @@ fn hidden_providers_are_skipped_step_by_step() {
     project(&mut prefs, LOCAL, None, &[], &["pi"]);
     assert_eq!(pick(&prefs, LOCAL).0, Kind::Codex);
     assert_eq!(pick(&prefs, "/work/other").0, Kind::Pi);
-}
-
-#[test]
-fn remote_projects_ignore_the_hidden_list() {
-    let prefs = Preferences {
-        engine: EngineSettings {
-            default_provider: Some("claude".into()),
-            hidden_providers: vec!["claude".into()],
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    assert_eq!(pick(&prefs, LOCAL).0, Kind::Codex);
-    assert_eq!(pick(&prefs, REMOTE).0, Kind::Claude);
 }
 
 #[test]

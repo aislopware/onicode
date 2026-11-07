@@ -867,7 +867,7 @@ fn resolve_edit_path(workspace: &Path, root: &Path, path: &str) -> Result<String
 }
 
 fn git_command(root: &Path, args: &[&str]) -> Command {
-    let mut command = Command::new("git");
+    let mut command = crate::process::git();
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

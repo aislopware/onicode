@@ -6,7 +6,6 @@ pub(super) struct Metadata<'a> {
     pub busy: bool,
     live: Option<&'a Conversation>,
     draft: bool,
-    remote_waiting: bool,
 }
 impl Metadata<'_> {
     pub(super) fn display_title(&self) -> String {
@@ -15,7 +14,7 @@ impl Metadata<'_> {
     }
 
     pub(super) fn needs_approval(&self) -> bool {
-        self.live.is_some_and(Conversation::needs_approval) || self.remote_waiting
+        self.live.is_some_and(Conversation::needs_approval)
     }
 
     pub(super) fn responding(&self) -> bool {
@@ -32,11 +31,9 @@ impl Shell {
         let live = self.sessions.get(&id).map(|view| view.read(cx));
         Metadata {
             summary: live.map_or_else(|| &self.session_summaries[&id], |v| &v.summary),
-            busy: live.is_some_and(|v| v.busy)
-                || self.remote_marks.get(&id).is_some_and(|state| state.0),
+            busy: live.is_some_and(|v| v.busy),
             live,
             draft: self.draft_sessions.contains(&id),
-            remote_waiting: self.remote_marks.get(&id).is_some_and(|state| state.1),
         }
     }
 

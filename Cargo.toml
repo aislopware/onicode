@@ -9,8 +9,6 @@ members = [
     "crates/protocol",
     # The terminal core: the engine's host terminal and the mirror the app paints.
     "crates/term",
-    # Temporary: monocode's phone link, replaced by the tailnet engine protocol (M4, M10).
-    "crates/mobile-link",
     "crates/rpc",
     "crates/update",
     "crates/launch",
@@ -309,7 +307,7 @@ unicode-segmentation = "1"
 unicode-width = "0.2"
 # The updater's HTTP client (onicode-update), HTTP/1.1 only. `rustls-no-provider`: rustls checked by
 # the platform verifier (the system's trust store, so a managed Mac's own roots are honored) on ring,
-# the provider core's rustls and quinn already link, rather than reqwest's default aws-lc-rs, a second
+# the provider core's rustls already links, rather than reqwest's default aws-lc-rs, a second
 # crypto library; onicode-update installs ring. `stream`: downloads are read as they arrive.
 # `system-proxy`: packaged GUI apps do not inherit shell proxy variables, so the macOS system proxy
 # is honored.

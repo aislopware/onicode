@@ -15,10 +15,7 @@ pub use review::{
     stage_contents,
 };
 use serde::Deserialize;
-use serde_json::json;
 pub(crate) use shell::{expand_home, path_to_js};
-
-use crate::files::remote as remote_workspace;
 
 /// The PATH a login terminal would have, for shells the app starts: a
 /// Finder-launched app inherits launchd's bare PATH.
@@ -42,35 +39,23 @@ const MAX_UNTRACKED_BYTES: u64 = 1024 * 1024;
 /// Uncommitted line counts: staged + unstaged vs HEAD, plus untracked
 /// (gitignore-aware) files counted as additions.
 pub fn diff_stats(cwd: &Path) -> Result<DiffStats, String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_diff_stats", json!({"cwd":cwd}));
-    }
     Ok(diff_stats_for(&expand_home(cwd)))
 }
 
 /// Changed files under `cwd` (paths relative to it), with per-file line counts,
 /// status, and branch/upstream synchronization metadata.
 pub fn diff_index(cwd: &Path) -> Result<DiffIndex, String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_diff_index", json!({"cwd":cwd}));
-    }
     Ok(diff_index_with(&expand_home(cwd), true))
 }
 
 /// Recent commits for the Graph view: HEAD, upstream, and the default branch.
 /// Newest first, with parent SHAs for the graph.
 pub fn history(cwd: &Path, limit: Option<u32>) -> Result<History, String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_history", json!({"cwd":cwd,"limit":limit}));
-    }
     history_for(&expand_home(cwd), limit)
 }
 
 /// Stage a changed file or folder (`git add`).
 pub fn stage_file(cwd: &Path, relative: &str) -> Result<(), String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_stage_file", json!({"cwd":cwd,"relative":relative}));
-    }
     let root = expand_home(cwd);
     let relative = resolve_repo_path(&root, relative)?;
     git_checked(&root, &["--literal-pathspecs", "add", "--", &relative])
@@ -78,12 +63,6 @@ pub fn stage_file(cwd: &Path, relative: &str) -> Result<(), String> {
 
 /// Unstage a file or folder (`git restore --staged`).
 pub fn unstage_file(cwd: &Path, relative: &str) -> Result<(), String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command(
-            "git_unstage_file",
-            json!({"cwd":cwd,"relative":relative}),
-        );
-    }
     let root = expand_home(cwd);
     let relative = resolve_repo_path(&root, relative)?;
     git_checked(
@@ -100,36 +79,21 @@ pub fn unstage_file(cwd: &Path, relative: &str) -> Result<(), String> {
 
 /// Discard unstaged changes so the file matches the index (or delete if untracked).
 pub fn discard_file(cwd: &Path, relative: &str) -> Result<(), String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command(
-            "git_discard_file",
-            json!({"cwd":cwd,"relative":relative}),
-        );
-    }
     discard_file_for(&expand_home(cwd), relative)
 }
 
 /// Stage every changed file in the repo.
 pub fn stage_all(cwd: &Path) -> Result<(), String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_stage_all", json!({"cwd":cwd}));
-    }
     git_checked(&expand_home(cwd), &["add", "-A", "--", "."])
 }
 
 /// Unstage every staged file.
 pub fn unstage_all(cwd: &Path) -> Result<(), String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_unstage_all", json!({"cwd":cwd}));
-    }
     git_checked(&expand_home(cwd), &["restore", "--staged", "--", "."])
 }
 
 /// Discard every unstaged change (restore tracked files; delete untracked).
 pub fn discard_all(cwd: &Path) -> Result<(), String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_discard_all", json!({"cwd":cwd}));
-    }
     let root = expand_home(cwd);
     let files: Vec<String> = diff_index_with(&root, true)
         .files
@@ -145,46 +109,28 @@ pub fn discard_all(cwd: &Path) -> Result<(), String> {
 
 /// Create a commit from the current index, or rewrite HEAD with it when `amend` is set.
 pub fn commit(cwd: &Path, message: &str, amend: bool) -> Result<(), String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command(
-            "git_commit",
-            json!({"cwd":cwd,"message":message,"amend":amend}),
-        );
-    }
     let extra: &[&str] = if amend { &["--amend"] } else { &[] };
     commit_args(&expand_home(cwd), message, extra)
 }
 
 /// Full message (subject and body) of the commit at HEAD.
 pub fn head_message(cwd: &Path) -> Result<String, String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_head_message", json!({"cwd":cwd}));
-    }
     git_stdout(&expand_home(cwd), &["log", "-1", "--pretty=%B"])
         .ok_or_else(|| "No commits yet".to_string())
 }
 
 /// Push the current branch to its upstream, or set upstream on first push.
 pub fn push(cwd: &Path) -> Result<(), String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_push", json!({"cwd":cwd}));
-    }
     push_for(&expand_home(cwd))
 }
 
 /// Fast-forward the current branch from its upstream.
 pub fn pull(cwd: &Path) -> Result<(), String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_pull", json!({"cwd":cwd}));
-    }
     git_checked(&expand_home(cwd), &["pull", "--ff-only"])
 }
 
 /// Pull incoming commits, then push local commits.
 pub fn sync(cwd: &Path) -> Result<(), String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_sync", json!({"cwd":cwd}));
-    }
     let root = expand_home(cwd);
     if git_stdout(&root, &["rev-parse", "--abbrev-ref", "@{upstream}"]).is_some() {
         git_checked(&root, &["pull", "--no-edit", "--ff"]).map_err(with_signing_hint)?;
@@ -195,9 +141,6 @@ pub fn sync(cwd: &Path) -> Result<(), String> {
 
 /// Staged diff (or unstaged vs HEAD if nothing is staged) for commit text generation.
 pub fn staged_context(cwd: &Path) -> Result<StagedContext, String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_staged_context", json!({"cwd":cwd}));
-    }
     let root = expand_home(cwd);
     let root = root.as_path();
     let mut summary = git_run(root, &["diff", "--cached", "--stat", "--", "."]).unwrap_or_default();
@@ -232,9 +175,6 @@ pub fn staged_context(cwd: &Path) -> Result<StagedContext, String> {
 
 /// Commits and diff between the default branch and HEAD, for PR text generation.
 pub fn range_context(cwd: &Path) -> Result<RangeContext, String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_range_context", json!({"cwd":cwd}));
-    }
     let root = expand_home(cwd);
     let root = root.as_path();
     let head = git_branch(root).ok_or_else(|| "Not on a branch".to_string())?;
@@ -268,17 +208,11 @@ pub fn range_context(cwd: &Path) -> Result<RangeContext, String> {
 
 /// Latest pull request for the current branch, if `gh` can see one.
 pub fn pr_status(cwd: &Path) -> Result<Option<Pr>, String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command("git_pr_status", json!({"cwd":cwd}));
-    }
     Ok(pr_status_for(&expand_home(cwd)))
 }
 
 /// The working copy's GitHub `owner/name`, via `gh` (Tauri's git_github_repo).
 pub fn github_repo(cwd: &Path) -> Result<String, String> {
-    if remote_workspace::is_remote(cwd) {
-        return Err("GitHub repository lookup is local only".into());
-    }
     github_repo_for(&expand_home(cwd))
 }
 
@@ -290,12 +224,6 @@ pub fn pr_create(
     base: &str,
     head: &str,
 ) -> Result<String, String> {
-    if remote_workspace::is_remote(cwd) {
-        return remote_workspace::command(
-            "git_pr_create",
-            json!({"cwd":cwd,"title":title,"body":body,"base":base,"head":head}),
-        );
-    }
     let root = expand_home(cwd);
     let title = title.trim();
     if title.is_empty() {
@@ -1061,7 +989,7 @@ fn resolve_repo_path(root: &Path, relative: &str) -> Result<String, String> {
 /// Any git can start a filter (git-lfs), which a Finder launch's bare PATH
 /// lacks. The cached search path finds it without waiting on the login shell.
 pub(crate) fn git_cmd() -> Command {
-    let mut cmd = Command::new("git");
+    let mut cmd = crate::process::git();
     crate::process::configure_child(&mut cmd);
     cmd.env("PATH", shell::cached_gui_search_path())
         .env("GIT_TERMINAL_PROMPT", "0");

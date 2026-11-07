@@ -79,8 +79,7 @@ pub fn locked(store: &Database) -> Result<std::sync::MutexGuard<'_, Store>, Stri
 }
 
 /// Runs a local turn to its end on the calling thread, publishing into `tx`, which must be
-/// unbounded. `remote://` sessions run in the app's `runtime::remote` until the engine reaches
-/// them over peers.
+/// unbounded. A session on another machine runs there, reached over peers.
 pub fn run_turn(
     summary: Session,
     prompt: String,

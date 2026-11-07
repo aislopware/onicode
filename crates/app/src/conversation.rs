@@ -13,11 +13,8 @@ mod follow_up;
 pub(crate) mod git_actions;
 mod heard;
 mod history;
-mod mobile;
 mod model_controls;
 mod notifications;
-mod remote;
-pub(crate) mod remote_plans;
 mod response_menu;
 #[cfg(test)]
 mod submission_tests;
@@ -32,9 +29,6 @@ use gpui::prelude::*;
 use gpui::{
     AnyElement, Context, CursorStyle, Entity, EventEmitter, Focusable, MouseButton, Role,
     SharedString, StyleRefinement, Subscription, Window, canvas, div, px,
-};
-pub(crate) use mobile::{
-    Waiting as MobileWaiting, mobile_access_modes, usage_state as mobile_usage_state,
 };
 use onicode_protocol::agent::{AccessMode, Approval, Control, Decision, Settings};
 use onicode_protocol::agents::{Catalog, CatalogRead};
@@ -135,8 +129,6 @@ pub(crate) struct Conversation {
     btw_home: (AnchorSlot, f32),
     _btw_observer: Option<Subscription>,
     pub(crate) summary: Session,
-    remote_state: remote::State,
-    remote_plans: remote_plans::State,
     engine: Engine,
     pub(crate) transcript: Entity<TranscriptView>,
     pub(crate) review: Entity<crate::session_review::SessionReview>,
@@ -279,7 +271,7 @@ impl Drop for Conversation {
             .controls
             .as_ref()
             .is_some_and(crate::engine_client::TurnControls::is_engine);
-        if !self.summary.cwd.starts_with("remote://") && !engine_turn {
+        if !engine_turn {
             self.cancel.store(true, Ordering::Relaxed);
         }
     }
@@ -709,8 +701,6 @@ impl Conversation {
             response_menu: None,
             response_request: None,
             summary,
-            remote_state: remote::State::default(),
-            remote_plans: remote_plans::State::default(),
         }
     }
 
@@ -725,10 +715,6 @@ impl Conversation {
     }
 
     pub(crate) fn load(&mut self, cx: &mut Context<Self>) {
-        if self.is_remote() {
-            self.load_remote(cx);
-            return;
-        }
         if self.history_unloaded {
             self.reload_history(cx);
             return;
@@ -810,7 +796,6 @@ impl Conversation {
                     this.model = settings.model.clone();
                     let environment = std::mem::take(&mut this.settings.environment);
                     this.settings = settings;
-                    this.attach_account(cx);
                     this.settings.environment = environment;
                 }
                 match result {
@@ -889,9 +874,6 @@ impl Conversation {
     /// `invert` sends a mid-turn message the opposite way from the follow-up
     /// preference: queued when it steers, steering when it queues.
     fn send_follow_up(&mut self, invert: bool, cx: &mut Context<Self>) {
-        if self.is_remote() && self.remote_send_guard(cx) {
-            return;
-        }
         if self.needs_history_restore() {
             self.defer_history_action(move |this, cx| this.send_follow_up(invert, cx), cx);
             return;
@@ -1007,8 +989,7 @@ impl Conversation {
         cx: &gpui::App,
     ) -> Option<(&'static str, &'static str)> {
         // Stop and provider switches send the message as the next turn.
-        if self.is_remote()
-            || self.stopping
+        if self.stopping
             || self.settings.pending_provider_switch.is_some()
             || !self.sends_as_follow_up()
         {
@@ -1066,7 +1047,6 @@ impl Conversation {
             return;
         }
         self.settings.usage_limit = None;
-        self.attach_account(cx);
         let worktree_message = if prompt.trim().is_empty() {
             self.settings
                 .attachments
@@ -1079,12 +1059,10 @@ impl Conversation {
         } else {
             prompt.clone()
         };
-        if !self.is_remote() {
-            if !self.summary.has_messages {
-                self.generate_worktree_branch(&worktree_message, cx);
-            }
-            self.generate_title(&prompt, cx);
+        if !self.summary.has_messages {
+            self.generate_worktree_branch(&worktree_message, cx);
         }
+        self.generate_title(&prompt, cx);
         let model_label = self.model_label();
         self.sync_tool_paths(cx);
         self.transcript
@@ -1127,7 +1105,7 @@ impl Conversation {
             started_at: Some(onicode_protocol::time::now_ms()),
             ..Default::default()
         });
-        if !self.is_remote() && settings.prepared_prompt.is_none() {
+        if settings.prepared_prompt.is_none() {
             let prepared = self.completion.read(cx).prepare_prompt(&prompt);
             if prepared != prompt {
                 settings.prepared_prompt = Some(prepared);
@@ -1135,36 +1113,16 @@ impl Conversation {
         }
         settings.model = self.model.clone();
         settings.environment.extend(self.app_environment.clone());
-        if settings.remote_action.as_ref().is_none_or(|action| {
-            (action["type"] == "send"
-                && action["draftBlockId"].is_null()
-                && action["planBlockId"].is_null())
-                || action["type"] == "draft"
-        }) {
-            settings
-                .attachments
-                .extend(std::mem::take(&mut self.attachments));
-        }
-        if settings
-            .remote_action
-            .as_ref()
-            .is_some_and(|action| action["planBlockId"].is_string())
-        {
-            settings.attachments.clear();
-        }
+        settings
+            .attachments
+            .extend(std::mem::take(&mut self.attachments));
         self.preparing_worktree = settings.new_worktree && settings.worktree_cwd.is_none();
         if self.preparing_worktree {
             settings.worktree_base = settings.worktree_base.or(self.branch.clone());
             self.status = "Creating worktree…".into();
         }
-        if settings
-            .remote_action
-            .as_ref()
-            .is_none_or(|action| action["type"] == "send")
-        {
-            self.transcript
-                .update(cx, |view, cx| view.submit_prompt(&prompt, &settings, cx));
-        }
+        self.transcript
+            .update(cx, |view, cx| view.submit_prompt(&prompt, &settings, cx));
         if settings.orchestrator {
             settings.plan = true;
             settings.operator = false;
@@ -1180,48 +1138,18 @@ impl Conversation {
             .as_ref()
             .and_then(|turn| turn.model_id.clone())
             .or_else(|| settings.model.clone());
-        let remote_client = self
-            .is_remote()
-            .then(|| self.remote_state.client.clone())
-            .flatten();
-        let rx = if remote_client.is_some() || summary.cwd.starts_with("remote://") {
-            // The SSH runner reads the hooks setting itself; the engine sets it for its own turns.
-            settings.disable_claude_hooks = cx
-                .try_global::<crate::settings::Preferences>()
-                .is_some_and(|p| !p.engine.claude_hooks);
-            let store = self.engine.legacy_store();
-            let (controls, control_rx) = std::sync::mpsc::channel();
-            self.controls = Some(controls.into());
-            let (tx, rx) = async_channel::bounded(8);
-            cx.background_executor()
-                .spawn(async move {
-                    if let Some(client) = remote_client {
-                        crate::runtime::remote::run_with_client(
-                            client, summary, prompt, settings, control_rx, store, cancel, tx,
-                        );
-                    } else {
-                        crate::runtime::remote::run(
-                            summary, prompt, settings, control_rx, store, cancel, tx,
-                        );
-                    }
-                })
-                .detach();
-            rx
-        } else {
-            // The engine runs the turn. A one-slot channel: while the view waits for its beat,
-            // what arrives folds into the next update instead of queueing behind it.
-            let (tx, rx) = async_channel::bounded(1);
-            self.controls = Some(crate::engine_client::start_turn(
-                &self.engine,
-                summary,
-                prompt,
-                settings,
-                cancel,
-                tx,
-                cx,
-            ));
-            rx
-        };
+        // The engine runs the turn. A one-slot channel: while the view waits for its beat,
+        // what arrives folds into the next update instead of queueing behind it.
+        let (tx, rx) = async_channel::bounded(1);
+        self.controls = Some(crate::engine_client::start_turn(
+            &self.engine,
+            summary,
+            prompt,
+            settings,
+            cancel,
+            tx,
+            cx,
+        ));
         if let Some(message) = self
             .controls
             .as_ref()
@@ -1494,25 +1422,16 @@ impl Conversation {
                             this.status = "Waiting for your answer".into();
                         }
                         if finished {
-                            if this.is_remote() {
-                                this.settings.remote_action = None;
-                                this.remote_state.refreshing = false;
-                            }
                             this.summary.updated_at = onicode_protocol::time::now_ms();
                             this.busy = false;
                             this.stopping = false;
                             this.clear_background();
-                            if this.is_remote() {
-                                this.refresh_remote_snapshot(cx);
-                            }
                             this.preparing_worktree = false;
                             if !stopping && let Some(limit) = update.usage_limit {
                                 this.settings.usage_limit = Some(limit);
                             }
-                            if !this.is_remote() {
-                                this.refresh_turn_usage(cx);
-                                this.detect_usage_limit(cx);
-                            }
+                            this.refresh_turn_usage(cx);
+                            this.detect_usage_limit(cx);
                             this.review
                                 .update(cx, |review, cx| review.set_busy(false, cx));
                             this.follow_ups.ready = false;
@@ -1638,7 +1557,6 @@ impl Conversation {
         }
         self.model = settings.model.clone();
         self.settings = settings;
-        self.attach_account(cx);
         self.loaded = true;
         self.status = "Ready".into();
         self.refresh_catalog(cx);
@@ -1681,9 +1599,6 @@ impl Conversation {
         cx: &mut Context<Self>,
     ) {
         match request {
-            ResponseRequest::RemotePlan { id, text, build } => {
-                self.remote_plan_request(id, text, *build, cx)
-            }
             ResponseRequest::QuoteSelection { text } => self.quote_selection(text, window, cx),
             ResponseRequest::EditLastTurn { turn } => self.begin_edit_last_turn(*turn, window, cx),
             ResponseRequest::Draft { send } => self.draft_action(*send, cx),
@@ -1823,9 +1738,6 @@ impl Conversation {
     /// The review card follows the checkout and rereads its recorded turn.
     pub(crate) fn sync_review(&mut self, cx: &mut Context<Self>) {
         self.sync_tool_paths(cx);
-        if self.is_remote() {
-            return;
-        }
         self.collect_session_edits(cx);
         let cwd = self.execution_cwd().to_owned();
         self.review.update(cx, |review, cx| {
@@ -1978,27 +1890,22 @@ impl Conversation {
             return;
         }
         let kind = Kind::from_id(&self.summary.provider);
-        self.attach_account(cx);
         self.catalog_epoch += 1;
         let epoch = self.catalog_epoch;
         let account = self.settings.account.id.clone();
-        let remote_project = self.is_remote().then(|| self.summary.cwd.clone());
         let engine = self.engine.clone();
         let work = cx.background_executor().spawn(async move {
-            match remote_project {
-                Some(project) => crate::runtime::remote::remote_models(&project, kind),
-                None => engine
-                    .call::<Catalog>(
-                        None,
-                        Catalog {
-                            provider: kind,
-                            account,
-                            read: CatalogRead::Fresh,
-                        },
-                    )
-                    .await?
-                    .ok_or_else(|| format!("{} returned no model catalog", kind.label())),
-            }
+            engine
+                .call::<Catalog>(
+                    None,
+                    Catalog {
+                        provider: kind,
+                        account,
+                        read: CatalogRead::Fresh,
+                    },
+                )
+                .await?
+                .ok_or_else(|| format!("{} returned no model catalog", kind.label()))
         });
         cx.spawn(async move |this, cx| {
             if let Ok(models) = work.await {
@@ -2006,16 +1913,6 @@ impl Conversation {
                     if Kind::from_id(&this.summary.provider) == kind && this.catalog_epoch == epoch
                     {
                         this.catalog = models;
-                        if this.is_remote() && this.model.is_none() {
-                            this.model = this
-                                .catalog
-                                .iter()
-                                .find(|m| m.default)
-                                .or_else(|| this.catalog.first())
-                                .map(|m| m.id.clone());
-                            this.settings.model = this.model.clone();
-                            this.save_settings(cx);
-                        }
                         cx.emit(SessionChanged);
                         cx.notify();
                     }
@@ -2087,14 +1984,6 @@ impl Conversation {
                     crate::engine_client::call::<Rename>(&this.engine, Some(OpId::new()), body, cx)
                         .detach();
                 }
-                if this.is_remote() {
-                    let store = this.engine.legacy_store();
-                    cx.background_executor()
-                        .spawn(async move {
-                            let _ = crate::runtime::remote::configure_saved(store, id);
-                        })
-                        .detach();
-                }
             });
         })
         .detach();
@@ -2153,9 +2042,7 @@ impl Conversation {
             self.settings.model_settings.remove("serviceTier");
         } else if let Some(setting) = id.strip_prefix("model-setting:") {
             if let Ok((key, value)) = serde_json::from_str::<(String, String)>(setting) {
-                if is_effort_key(&key)
-                    && (!self.is_remote() || matches!(key.as_str(), "effort" | "reasoningEffort"))
-                {
+                if is_effort_key(&key) {
                     self.set_effort_choice(&value, cx);
                 }
                 self.settings.model_settings.insert(key, value);
@@ -2687,12 +2574,10 @@ impl Conversation {
                             .icon_color(tint(YELLOW_300, 0.8))
                             .description("Review a plan before building"),
                         MenuAction::new("operator", "Operator")
-                            .disabled(self.is_remote())
                             .icon("cursor-magic")
                             .icon_color(tint(SKY_300, 0.8))
                             .description("Give this thread access to Onicode"),
                         MenuAction::new("orchestrator", "Orchestrator")
-                            .disabled(self.is_remote())
                             .icon("share")
                             .icon_color(tint(FUCHSIA_300, 0.65))
                             .badge("v1")
@@ -2982,11 +2867,11 @@ impl Conversation {
             .children(menu)
             .children(self.model_list_popover(cx))
             .children(self.orchestration_card(cx))
-            .children(if self.is_remote() { None } else { self.usage_notice(window, cx) })
+            .children(self.usage_notice(window, cx))
             .child(self.changes_shelf(window, cx))
             .child(self.background_shelf(window, cx))
             .child(self.message_queue(window, cx))
-            .children(if self.is_remote() { None } else { self.auth_notice(cx) })
+            .children(self.auth_notice(cx))
             .when(self.settings.worktree_removed,|d|d.child(div().mb_2().p_3().rounded_lg().border_1().border_color(content(0.1)).flex().items_center().gap_3().text_size(px(12.)).child(div().flex_1().child("Worktree deleted. Select a branch or worktree to continue this conversation.")).child(tool_pill("reattach-worktree","Select worktree").child("Select worktree").on_click(cx.listener(|this,_,window,cx|this.open_git(GitMode::Worktree,window,cx))))))
             .when_some(self.settings.handoff.clone(), |d, handoff| {
                 d.child(
@@ -3200,7 +3085,6 @@ impl Conversation {
             .children(runner.map(|runner| {
                 runner.cached(crate::composer_runner::Runner::placement())
             }))
-            .children(self.remote_notice(cx))
             .child(self.workspace_bar(cx))
             .into_any_element()
     }
@@ -3953,10 +3837,6 @@ impl Render for Conversation {
             .relative()
             .capture_action(
                 cx.listener(|this, _: &crate::shell::DismissMenu, window, cx| {
-                    if this.close_remote_plan(cx) {
-                        cx.stop_propagation();
-                        return;
-                    }
                     // BtwSheet: Esc anywhere in this pane folds an open sheet away.
                     if let Some(btw) = this.btw.clone()
                         && btw.update(cx, |btw, cx| btw.dismiss(window, cx))
@@ -4050,7 +3930,6 @@ impl Render for Conversation {
                     ),
             )
             .when_some(self.btw.as_ref(), |d, sheet| d.child(sheet.clone()))
-            .children(self.remote_plan_reader(cx))
             .into_any()
     }
 }

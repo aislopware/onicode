@@ -93,7 +93,7 @@ impl DisplayLayout {
 impl Input {
     pub(super) fn display_layout(&self) -> DisplayLayout {
         let command = self.command_layout();
-        if self.secret || self.content.is_empty() {
+        if self.content.is_empty() {
             // The placeholder still sits after a retained mode's slot.
             return DisplayLayout {
                 command,

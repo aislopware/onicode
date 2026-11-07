@@ -53,7 +53,6 @@ impl Conversation {
             || self.attaching
             || self.account_switching
             || self.preparing_worktree
-            || self.is_remote()
             || self.settings.worktree_removed
         {
             self.status = "/visualize is not available in this session.".into();
@@ -116,7 +115,6 @@ impl Conversation {
             cx.notify();
             return;
         }
-        self.attach_account(cx);
         // The engine sets the account's home and the Claude hooks itself.
         let mut settings = self.settings.clone();
         settings.environment.extend(self.app_environment.clone());

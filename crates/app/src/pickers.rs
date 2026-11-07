@@ -9,7 +9,6 @@ use gpui::{
     AnyElement, Context, Entity, EventEmitter, FocusHandle, Focusable, Role, SharedString,
     Subscription, Window, div, px,
 };
-use onicode_core::catalog;
 use onicode_protocol::agents::{Catalog, CatalogRead, Harness, Harnesses};
 use onicode_protocol::catalog::Model;
 use onicode_protocol::provider::Kind;
@@ -170,36 +169,6 @@ fn contains_account_id(value: &str) -> bool {
 mod model_label_tests {
     use super::*;
 
-    #[gpui::test]
-    fn remote_model_availability_comes_from_the_host(cx: &mut gpui::TestAppContext) {
-        cx.update(|cx| {
-            let list = cx.new(|cx| {
-                ModelList::new_for(
-                    Kind::Codex,
-                    None,
-                    "remote://env/home/code",
-                    Default::default(),
-                    cx,
-                )
-                .hide_providers(vec!["claude".into()])
-            });
-            list.update(cx, |list, cx| {
-                list.remote_providers = Some(vec![Kind::Claude]);
-                list.missing = vec![Kind::Codex];
-                list.tab = ModelTab::Harness(Kind::Claude);
-                assert!(list.hidden.is_empty());
-                assert!(list.enabled(Kind::Claude));
-                assert!(!list.enabled(Kind::Codex));
-                assert!(!list.enabled(Kind::Cursor));
-                // Until its host catalog arrives, no local Claude aliases
-                // are advertised as available remote models.
-                let entries = list.entries(cx);
-                assert_eq!(entries.len(), 1);
-                assert_eq!(entries[0].id, None);
-            });
-        });
-    }
-
     #[test]
     fn account_metadata_never_becomes_a_model_label() {
         for id in [
@@ -313,7 +282,6 @@ mod model_label_tests {
                         })
                         .collect(),
                 )];
-                list.remote_providers = list.remote_project.is_some().then(|| vec![kind]);
                 cx.notify();
                 cx.subscribe(&cx.entity(), move |_, _, picked: &ModelPicked, _| {
                     output.borrow_mut().push((picked.0.id(), picked.1.clone()))
@@ -445,16 +413,18 @@ mod model_label_tests {
     }
 
     #[gpui::test]
-    fn remote_prefixed_model_is_favorited_and_picked_by_its_full_id(cx: &mut gpui::TestAppContext) {
-        const REMOTE: &str = "hermes:example-vendor:example-model";
+    fn prefixed_model_is_favorited_and_picked_by_its_full_id(cx: &mut gpui::TestAppContext) {
+        const PREFIXED: &str = "hermes:example-vendor:example-model";
         cx.update(|cx| cx.set_global(crate::settings::Preferences::default()));
-        let (window, picks, _events) =
-            rendered_picker(cx, Kind::Hermes, "remote://env/home/code", &[REMOTE]);
+        let (window, picks, _events) = rendered_picker(cx, Kind::Hermes, "/home/code", &[PREFIXED]);
         let visual = &mut gpui::VisualTestContext::from_window(window.into(), cx);
-        // Default (0), then the host's model (1).
+        // Default (0), then the catalog's model (1).
         click_star(visual, 1);
         visual.update(|_, cx| {
-            assert_eq!(favorites(cx), vec![("hermes".into(), Some(REMOTE.into()))])
+            assert_eq!(
+                favorites(cx),
+                vec![("hermes".into(), Some(PREFIXED.into()))]
+            )
         });
         window
             .update(visual, |list, _, cx| {
@@ -462,20 +432,20 @@ mod model_label_tests {
                 let entries = list.entries(cx);
                 assert_eq!(entries.len(), 1);
                 assert_eq!(entries[0].kind, Kind::Hermes);
-                assert_eq!(entries[0].id.as_deref(), Some(REMOTE));
+                assert_eq!(entries[0].id.as_deref(), Some(PREFIXED));
                 assert!(entries[0].enabled);
                 list.pick(0, cx);
                 cx.notify();
             })
             .unwrap();
-        assert_eq!(*picks.borrow(), vec![("hermes", Some(REMOTE.to_owned()))]);
+        assert_eq!(*picks.borrow(), vec![("hermes", Some(PREFIXED.to_owned()))]);
         // Toggling again from the Favorites row removes it.
         click_star(visual, 0);
         visual.update(|_, cx| assert!(favorites(cx).is_empty()));
         window
             .update(visual, |list, _, cx| {
                 assert!(list.entries(cx).is_empty());
-                assert!(!list.favorite(Kind::Hermes, Some(REMOTE), cx));
+                assert!(!list.favorite(Kind::Hermes, Some(PREFIXED), cx));
             })
             .unwrap();
     }
@@ -511,8 +481,6 @@ pub(crate) struct ModelPicked(pub Kind, pub Option<String>);
 /// between turns.
 pub(crate) struct ModelList {
     provider: Kind,
-    remote_project: Option<String>,
-    remote_providers: Option<Vec<Kind>>,
     current: Option<String>,
     profiles: std::collections::HashMap<Kind, onicode_protocol::accounts::Profile>,
     catalogs: Vec<(Kind, Vec<Model>)>,
@@ -553,9 +521,6 @@ impl ModelList {
         });
         let mut list = Self {
             provider,
-            remote_project: onicode_protocol::remote::parse_remote_path(project)
-                .map(|_| project.to_owned()),
-            remote_providers: None,
             current,
             profiles,
             catalogs: Vec::new(),
@@ -593,9 +558,6 @@ impl ModelList {
     }
 
     pub(crate) fn hide_providers(mut self, hidden: Vec<String>) -> Self {
-        if self.remote_project.is_some() {
-            return self;
-        }
         if let ModelTab::Harness(kind) = self.tab
             && kind != self.provider
             && hidden.iter().any(|id| id == kind.id())
@@ -674,7 +636,7 @@ impl ModelList {
     /// Like the Tauri picker, hide providers whose CLI isn't installed once the
     /// probe settles. The session's own provider always stays.
     fn probe_installed(&mut self, cx: &mut Context<Self>) {
-        if cfg!(test) || self.remote_project.is_some() {
+        if cfg!(test) {
             return;
         }
         let harnesses = crate::engine_client::local(cx).call::<Harnesses>(None, Harnesses {});
@@ -704,45 +666,6 @@ impl ModelList {
 
     fn discover(&mut self, kind: Kind, cx: &mut Context<Self>) {
         if cfg!(test) || self.loading.contains(&kind) {
-            return;
-        }
-        if let Some(project) = self.remote_project.clone() {
-            self.loading = Kind::ALL.to_vec();
-            let work = cx
-                .background_executor()
-                .spawn(async move { catalog::remote_catalog(&project) });
-            cx.spawn(async move |this, cx| {
-                let result = work.await;
-                let _ = this.update(cx, |this, cx| {
-                    this.loading.clear();
-                    match result {
-                        Ok(catalog) => {
-                            this.missing = Kind::ALL
-                                .into_iter()
-                                .filter(|kind| !catalog.providers.contains(kind))
-                                .collect();
-                            this.remote_providers = Some(catalog.providers);
-                            this.catalogs = catalog.models.into_iter().collect();
-                            this.errors = catalog.errors.into_iter().collect();
-                            if let ModelTab::Harness(selected) = this.tab
-                                && this.missing.contains(&selected)
-                                && selected != this.provider
-                            {
-                                this.tab = ModelTab::Harness(this.provider);
-                            }
-                        }
-                        Err(error) => {
-                            this.errors = Kind::ALL
-                                .into_iter()
-                                .map(|kind| (kind, error.clone()))
-                                .collect();
-                        }
-                    }
-                    this.highlighted = this.current_index(cx);
-                    cx.notify();
-                });
-            })
-            .detach();
             return;
         }
         self.loading.push(kind);
@@ -865,7 +788,7 @@ impl ModelList {
                 })
                 .collect();
             entries.extend(additional);
-        } else if kind == Kind::Claude && self.remote_project.is_none() {
+        } else if kind == Kind::Claude {
             // Stable CLI aliases remain usable while discovery is loading.
             let additional: Vec<_> = [("sonnet", "Sonnet"), ("opus", "Opus"), ("haiku", "Haiku")]
                 .into_iter()
@@ -904,13 +827,7 @@ impl ModelList {
     }
 
     fn enabled(&self, kind: Kind) -> bool {
-        (kind == self.provider || self.switch_allowed)
-            && !self.missing.contains(&kind)
-            && (self.remote_project.is_none()
-                || self
-                    .remote_providers
-                    .as_ref()
-                    .is_some_and(|providers| providers.contains(&kind)))
+        (kind == self.provider || self.switch_allowed) && !self.missing.contains(&kind)
     }
 
     fn saved_model_name(&self, kind: Kind, id: Option<&str>) -> SharedString {
@@ -1083,7 +1000,7 @@ impl Render for ModelList {
                             .aria_selected(current)
                             .when(!entry.enabled, |d| {
                                 d.aria_description(if self.missing.contains(&entry.kind) {
-                                    if self.remote_project.is_some() { "This provider is not installed on the connected machine. Install it there, then retry model discovery" } else { "This provider is not installed. Install it, then retry model discovery" }
+                                    "This provider is not installed. Install it, then retry model discovery"
                                 } else {
                                     "Wait for the current turn to finish before switching providers"
                                 })
@@ -1183,17 +1100,9 @@ impl Render for ModelList {
                         Kind::ALL
                             .into_iter()
                             .filter(|kind| {
-                                if self.remote_project.is_some() {
-                                    *kind == self.provider
-                                        || self
-                                            .remote_providers
-                                            .as_ref()
-                                            .is_some_and(|providers| providers.contains(kind))
-                                } else {
-                                    *kind == self.provider
-                                        || (!self.hidden.iter().any(|id| id == kind.id())
-                                            && !self.missing.contains(kind))
-                                }
+                                *kind == self.provider
+                                    || (!self.hidden.iter().any(|id| id == kind.id())
+                                        && !self.missing.contains(kind))
                             })
                             .map(|kind| self.tab(ModelTab::Harness(kind), cx)),
                     ),
@@ -1507,7 +1416,6 @@ impl ModelList {
 pub(crate) enum ProjectPicked {
     Project(String),
     New,
-    Remote,
 }
 
 /// ProjectPickerPopover: a search field over the projects, the current one
@@ -1518,7 +1426,6 @@ pub(crate) struct ProjectPicker {
     projects: Vec<String>,
     current: String,
     active: usize,
-    allow_remote: bool,
     search: Entity<input::Input>,
     _changed: Subscription,
 }
@@ -1540,7 +1447,6 @@ impl ProjectPicker {
             projects,
             current: current.into(),
             active: 0,
-            allow_remote: false,
             search,
             _changed: changed,
         }
@@ -1548,11 +1454,6 @@ impl ProjectPicker {
 
     pub(crate) fn search_focus(&self, cx: &gpui::App) -> FocusHandle {
         self.search.focus_handle(cx)
-    }
-
-    pub(crate) fn allow_remote(mut self) -> Self {
-        self.allow_remote = true;
-        self
     }
 
     pub(crate) fn appearance(
@@ -1655,17 +1556,11 @@ impl Render for ProjectPicker {
                                     .text_color(content(1.))
                                     .into_any_element()
                             } else {
-                                if path.starts_with("remote://") {
-                                    icon("globe", 14.)
-                                        .text_color(content(0.6))
-                                        .into_any_element()
-                                } else {
-                                    crate::project_settings::project_icon(
-                                        &self.appearance.get(&path).cloned().unwrap_or_default(),
-                                        &path,
-                                        14.,
-                                    )
-                                }
+                                crate::project_settings::project_icon(
+                                    &self.appearance.get(&path).cloned().unwrap_or_default(),
+                                    &path,
+                                    14.,
+                                )
                             }),
                     )
                     .child(
@@ -1794,30 +1689,7 @@ impl Render for ProjectPicker {
                             )
                             .child("New project")
                             .on_click(cx.listener(|_, _, _, cx| cx.emit(ProjectPicked::New))),
-                    )
-                    .when(self.allow_remote, |d| {
-                        d.child(
-                            div()
-                                .id("project-remote")
-                                .role(Role::Button)
-                                .aria_label("Open folder on a machine")
-                                .cursor_pointer()
-                                .h(px(36.))
-                                .px(px(10.))
-                                .gap(px(10.))
-                                .rounded(px(8.))
-                                .flex()
-                                .items_center()
-                                .text_size(px(13.))
-                                .text_color(content(0.75))
-                                .hover(|s| s.bg(content(0.08)).text_color(content(1.)))
-                                .child(icon("globe", 16.).text_color(content(0.75)))
-                                .child("Open folder on a machine…")
-                                .on_click(
-                                    cx.listener(|_, _, _, cx| cx.emit(ProjectPicked::Remote)),
-                                ),
-                        )
-                    }),
+                    ),
             )
     }
 }

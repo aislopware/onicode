@@ -90,11 +90,6 @@ fn mascot(index: usize, side: f32, color: gpui::Hsla) -> AnyElement {
     .into_any_element()
 }
 pub(crate) fn project_icon(appearance: &ProjectAppearance, project: &str, side: f32) -> AnyElement {
-    if project.starts_with("remote://") && appearance.logo.is_none() {
-        return icon("internet", side)
-            .text_color(content(0.7))
-            .into_any_element();
-    }
     match &appearance.logo {
         Some(path) => crate::image_memory::thumbnail(PathBuf::from(path))
             .size(px(side))
@@ -110,15 +105,6 @@ pub(crate) fn project_icon(appearance: &ProjectAppearance, project: &str, side: 
 }
 /// Sidebar.tsx's CurrentProjectIcon: a 10px mascot inside a 20px tile.
 pub(crate) fn header_project_icon(appearance: &ProjectAppearance, project: &str) -> AnyElement {
-    if project.starts_with("remote://") && appearance.logo.is_none() {
-        return div()
-            .size(px(20.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(icon("internet", 14.).text_color(content(0.7)))
-            .into_any_element();
-    }
     match &appearance.logo {
         Some(path) => crate::image_memory::thumbnail(PathBuf::from(path))
             .relative()

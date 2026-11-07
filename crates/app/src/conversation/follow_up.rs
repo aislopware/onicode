@@ -135,10 +135,6 @@ impl Conversation {
     }
 
     pub(super) fn save_message_draft(&mut self, cx: &mut Context<Self>) {
-        if self.is_remote() {
-            self.remote_save_draft(cx);
-            return;
-        }
         if self.needs_history_restore() {
             self.defer_history_action(|this, cx| this.save_message_draft(cx), cx);
             return;
@@ -199,10 +195,6 @@ impl Conversation {
     }
 
     pub(super) fn draft_action(&mut self, send: bool, cx: &mut Context<Self>) {
-        if self.is_remote() {
-            self.remote_draft_action(send, cx);
-            return;
-        }
         if self.needs_history_restore() {
             self.defer_history_action(move |this, cx| this.draft_action(send, cx), cx);
             return;

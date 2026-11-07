@@ -33,11 +33,7 @@ impl Attachment {
                 .is_some_and(|path| onicode_protocol::composer::image_mime(path).is_some());
         let data = match value["data"].take() {
             serde_json::Value::String(data) if !data.is_empty() => Some(Arc::from(data)),
-            _ => path
-                .as_ref()
-                .and_then(|path| path.to_str())
-                .filter(|path| onicode_core::remote::attachments::is_attachment_source(path))
-                .map(Arc::from),
+            _ => None,
         };
         Self {
             name: name.into(),
@@ -103,10 +99,7 @@ impl Origin {
 
     fn same(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Embedded(a), Self::Embedded(b)) => {
-                Arc::ptr_eq(a, b)
-                    || (onicode_core::remote::attachments::is_attachment_source(b) && a == b)
-            }
+            (Self::Embedded(a), Self::Embedded(b)) => Arc::ptr_eq(a, b),
             (Self::Path(a), Self::Path(b)) => a == b,
             _ => false,
         }
@@ -177,10 +170,7 @@ impl Photo {
         .detach();
         Self {
             bytes: match &origin {
-                Origin::Embedded(data) => {
-                    onicode_core::remote::attachments::attachment_source_size(data)
-                        .unwrap_or(data.len())
-                }
+                Origin::Embedded(data) => data.len(),
                 Origin::Path(_) => 0,
             },
             origin,

@@ -173,9 +173,6 @@ impl Shell {
             .map(|v| v.read(cx))
             .filter(|v| v.settings.operator_enabled)
             .ok_or("Operator is not enabled for this thread.")?;
-        if caller.summary.cwd.starts_with("remote://") {
-            return Err("Operator is not available on remote projects".into());
-        }
         if call
             .input
             .get("project")

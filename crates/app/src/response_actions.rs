@@ -8,11 +8,6 @@ use crate::popover::AnchorSlot;
 use crate::theme::*;
 
 pub(crate) enum Request {
-    RemotePlan {
-        id: String,
-        text: String,
-        build: bool,
-    },
     QuoteSelection {
         text: String,
     },

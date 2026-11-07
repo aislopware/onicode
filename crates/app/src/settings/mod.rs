@@ -43,10 +43,8 @@ pub(crate) struct ArchivedSession {
 }
 
 /// What Settings shows about the workspace around it.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct SettingsContext {
-    /// The desktop's shared remote connection and SSH setup service.
-    pub remote: Option<std::sync::Arc<onicode_core::remote::Connections>>,
     pub classic: bool,
     pub new_layout_boxy: bool,
     /// The selected project, or empty outside one.
@@ -61,32 +59,6 @@ pub(crate) struct SettingsContext {
     pub quick_error: Option<String>,
     pub catalogs: HashMap<String, Vec<(String, String)>>,
     pub inbox_connections: HashMap<String, (bool, String)>,
-    /// Mobile access, or `None` when this desktop cannot offer it.
-    pub mobile: Option<onicode_core::mobile::Status>,
-    /// The pairing code on show.
-    pub mobile_invite: Option<onicode_core::mobile::Invite>,
-}
-impl PartialEq for SettingsContext {
-    fn eq(&self, other: &Self) -> bool {
-        match (&self.remote, &other.remote) {
-            (Some(a), Some(b)) if !std::sync::Arc::ptr_eq(a, b) => return false,
-            (None, Some(_)) | (Some(_), None) => return false,
-            _ => {}
-        }
-        self.classic == other.classic
-            && self.new_layout_boxy == other.new_layout_boxy
-            && self.cwd == other.cwd
-            && self.project_label == other.project_label
-            && self.archived == other.archived
-            && self.archived_projects == other.archived_projects
-            && self.projects == other.projects
-            && self.sessions == other.sessions
-            && self.quick_error == other.quick_error
-            && self.catalogs == other.catalogs
-            && self.inbox_connections == other.inbox_connections
-            && self.mobile == other.mobile
-            && self.mobile_invite == other.mobile_invite
-    }
 }
 
 pub(crate) enum SettingsEvent {
@@ -110,17 +82,6 @@ pub(crate) enum SettingsEvent {
         path: String,
         delete_sessions: bool,
     },
-    /// Read mobile access again: the router and pairing change on their own.
-    MobileRefresh,
-    MobileConfigure {
-        enabled: bool,
-        open_router: bool,
-        remote_address: String,
-    },
-    /// Start listening when needed, then make a new pairing code.
-    MobilePair,
-    MobileCancelInvite,
-    MobileRevoke(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -236,7 +197,6 @@ pub(crate) struct SettingsView {
     selected_project: String,
     provider_scope: String,
     mcp_filter: String,
-    fields: HashMap<&'static str, Entity<Input>>,
     connections: pages::ConnectionsState,
     skill_preview: Option<std::path::PathBuf>,
     skill_preview_text: Option<Result<std::sync::Arc<skill_document::DocumentData>, String>>,
@@ -249,7 +209,6 @@ pub(crate) struct SettingsView {
     accent_custom: Entity<Input>,
     accent_custom_open: bool,
     accent_anchor: AnchorSlot,
-    mobile: pages::MobileState,
     _subscriptions: Vec<Subscription>,
 }
 impl EventEmitter<SettingsEvent> for SettingsView {}
@@ -386,7 +345,6 @@ impl SettingsView {
             selected_project,
             provider_scope: "global".into(),
             mcp_filter: "all".into(),
-            fields: HashMap::new(),
             connections: pages::ConnectionsState::default(),
             skill_preview: None,
             skill_preview_text: None,
@@ -399,10 +357,8 @@ impl SettingsView {
             accent_custom,
             accent_custom_open: false,
             accent_anchor: AnchorSlot::default(),
-            mobile: pages::MobileState::default(),
             _subscriptions: subscriptions,
         };
-        this.watch_mobile(cx);
         this.watch_connections(cx);
         if this.prefs.notifications {
             this.probe_notification_permission(false, cx);
@@ -443,17 +399,7 @@ impl SettingsView {
 
     pub(crate) fn set_context(&mut self, ctx: SettingsContext, cx: &mut Context<Self>) {
         if self.ctx != ctx {
-            let remote_changed = match (&self.ctx.remote, &ctx.remote) {
-                (Some(a), Some(b)) => !std::sync::Arc::ptr_eq(a, b),
-                (None, None) => false,
-                _ => true,
-            };
             self.ctx = ctx;
-            self.mobile_context_changed(cx);
-            if remote_changed {
-                self.leave_connections(cx);
-                self.watch_connections(cx);
-            }
             cx.notify();
         }
     }
@@ -473,10 +419,8 @@ impl SettingsView {
             }
             self.management = None;
             self.management_generation += 1;
-            self.leave_mobile(cx);
-            self.leave_connections(cx);
+            self.leave_connections();
             self.section = section;
-            self.watch_mobile(cx);
             self.watch_connections(cx);
             if section == Section::Mcp {
                 self.refresh_mcp_health(cx);
@@ -495,12 +439,6 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> bool {
         if self.dismiss_notification_transient(window, cx) {
-            return true;
-        }
-        if self.dismiss_mobile(cx) {
-            return true;
-        }
-        if self.dismiss_connections(cx) {
             return true;
         }
         if self.recording.take().is_some() {
@@ -1067,7 +1005,6 @@ impl Render for SettingsView {
             });
         }
         self.notification_window_state(window, cx);
-        self.connections_window_state(window, cx);
         let page = self.page(window, cx);
         let narrow = self
             .scroll

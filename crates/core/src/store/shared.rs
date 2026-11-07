@@ -215,22 +215,6 @@ impl Store {
         Self::open_shared(path, true, None)
     }
 
-    #[cfg(test)]
-    pub(crate) fn read_monocode_with_preferences_for_test(
-        path: &Path,
-        preferences: std::sync::Arc<crate::desktop_preferences::DesktopPreferences>,
-    ) -> Result<Self, String> {
-        Self::open_shared(path, true, Some(preferences))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn open_monocode_with_preferences_for_test(
-        path: &Path,
-        preferences: std::sync::Arc<crate::desktop_preferences::DesktopPreferences>,
-    ) -> Result<Self, String> {
-        Self::open_shared(path, false, Some(preferences))
-    }
-
     fn open_shared(
         path: &Path,
         read_only: bool,
@@ -359,15 +343,6 @@ impl Store {
 
     /// UI handles are stable hashes; the database always retains its original IDs.
     pub fn persisted_session_id(&self, id: i64) -> Result<String, String> {
-        if id < 0 {
-            if let Some(remote) = self.remote_session(id)? {
-                return Ok(format!(
-                    "remote:{}:{}",
-                    remote.project.environment_id,
-                    remote.session_id.unwrap_or_else(|| id.to_string())
-                ));
-            }
-        }
         if let Some(shared) = &self.shared {
             shared
                 .ids

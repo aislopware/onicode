@@ -15,7 +15,6 @@ mod outline;
 mod perf_scroll;
 pub(crate) mod phases;
 mod provider_switch;
-mod remote_plans;
 pub(crate) mod selection;
 pub(crate) mod tasks;
 mod tools;
@@ -103,7 +102,6 @@ struct RenderedBlock {
 }
 #[derive(Clone)]
 enum Body {
-    RemotePlan(crate::conversation::remote_plans::Plan),
     SavedDraft,
     Markdown(Arc<MarkdownRow>),
     Visual(Arc<onicode_protocol::visual::VisualDocument>),
@@ -350,24 +348,6 @@ fn continues_turn(source: &[Row], turn: usize) -> Option<usize> {
             .rposition(|r| r.is_prompt())
             .map_or(0, |i| i + 1),
     )
-}
-/// isEmojiOnlyMessage: up to three emoji, which read as a reaction.
-pub(crate) fn is_emoji_only(text: &str) -> bool {
-    use unicode_segmentation::UnicodeSegmentation;
-    let mut count = 0;
-    for grapheme in text.trim().graphemes(true) {
-        if grapheme.trim().is_empty() {
-            continue;
-        }
-        let first = grapheme.chars().next().unwrap_or_default() as u32;
-        let picture = matches!(first, 0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0x2B00..=0x2BFF | 0x2300..=0x23FF | 0x3030 | 0x303D | 0x3297 | 0x3299 | 0x00A9 | 0x00AE | 0x203C | 0x2049 | 0x2122 | 0x2139 | 0x2194..=0x21AA)
-            || grapheme.contains('\u{20E3}');
-        count += 1;
-        if !picture || count > 3 {
-            return false;
-        }
-    }
-    count > 0
 }
 
 /// A single clipping boundary across virtualized siblings, matching React's
@@ -2135,7 +2115,7 @@ impl TranscriptView {
                 && !stopped_notice
                 && !matches!(
                     role.as_str(),
-                    "remote-plan" | "visual" | onicode_protocol::transcript::attachments::ROLE
+                    "visual" | onicode_protocol::transcript::attachments::ROLE
                 )
                 && (at == 0
                     || self.source[..at]
@@ -2236,19 +2216,6 @@ impl TranscriptView {
                     self.rows.push(UiRow {
                         key: (0, 0),
                         body: Body::Interjection(note),
-                        message,
-                        first: false,
-                        last: false,
-                        work: false,
-                        work_tail: false,
-                        thought_phase: None,
-                    });
-                }
-            } else if role == "remote-plan" {
-                if let Ok(plan) = serde_json::from_str(&text) {
-                    self.rows.push(UiRow {
-                        key: (0, 0),
-                        body: Body::RemotePlan(plan),
                         message,
                         first: false,
                         last: false,
@@ -3380,7 +3347,6 @@ impl TranscriptView {
         );
         let body = match row.body {
             Body::GitAction(card) => self.git_card_row(&card, message_start, cx),
-            Body::RemotePlan(plan) => self.remote_plan_card(&plan, cx),
             Body::Visual(document) => self.visual_row(message_start, document, cx),
             Body::Interjection(ref note) => {
                 let open = self.expanded.contains(&message_start);

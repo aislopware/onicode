@@ -73,11 +73,6 @@ impl Conversation {
     }
 
     pub(crate) fn toggle_mode(&mut self, id: &str, cx: &mut Context<Self>) {
-        if self.is_remote() && matches!(id, "operator" | "orchestrator") {
-            self.status = "This mode is not available on remote projects.".into();
-            cx.notify();
-            return;
-        }
         if id != "draft" {
             self.follow_ups.draft_selected = false;
         }

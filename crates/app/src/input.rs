@@ -203,7 +203,6 @@ pub struct Input {
     height: f32,
     single_line: bool,
     read_only: bool,
-    secret: bool,
     max_chars: Option<usize>,
     placeholder: SharedString,
     placeholder_alpha: Option<f32>,
@@ -245,11 +244,6 @@ impl Focusable for Input {
     }
 }
 impl Input {
-    /// Keep authentication text out of drawing, accessibility and clipboard.
-    pub(crate) fn set_secret(&mut self, secret: bool) {
-        self.secret = secret;
-    }
-
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             context_menu: None,
@@ -258,7 +252,6 @@ impl Input {
             height: MIN_HEIGHT,
             single_line: false,
             read_only: false,
-            secret: false,
             max_chars: None,
             placeholder: "Ask, build, or describe a change…".into(),
             placeholder_alpha: None,
@@ -1083,7 +1076,7 @@ impl Input {
     }
 
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
-        if !self.secret && !self.selection.is_empty() {
+        if !self.selection.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.content[self.selection.clone()].into(),
             ));
@@ -1259,8 +1252,7 @@ impl EntityInputHandler for Input {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::TextInputConfiguration {
-        let enabled = !self.secret
-            && !self.single_line
+        let enabled = !self.single_line
             && self.inline_commands
             && self.code.is_none()
             && cx
@@ -1282,11 +1274,7 @@ impl EntityInputHandler for Input {
     ) -> Option<String> {
         let r = self.range8(r);
         *actual = Some(self.range16(r.clone()));
-        Some(if self.secret {
-            "*".repeat(self.content[r].encode_utf16().count())
-        } else {
-            self.content[r].into()
-        })
+        Some(self.content[r].into())
     }
 
     fn selected_text_range(
@@ -1930,11 +1918,7 @@ impl Render for Input {
                 Role::MultilineTextInput
             })
             .aria_label(self.label.clone())
-            .aria_value(if self.secret {
-                "*".repeat(self.content.chars().count()).into()
-            } else {
-                self.content.clone()
-            })
+            .aria_value(self.content.clone())
             .tab_index(0)
             .w_full()
             .min_w_0()
@@ -2577,44 +2561,6 @@ mod native_input_tests {
                 (px(0.), px(0.))
             );
         }
-    }
-    #[gpui::test]
-    fn secret_fields_preserve_unicode_value_and_mask_drawing_ime_and_clipboard(
-        cx: &mut TestAppContext,
-    ) {
-        let window = field(cx, true);
-        let secret = "päss🙂e\u{301}";
-        replace(window, secret, cx);
-        window
-            .update(cx, |input, window, cx| {
-                input.set_secret(true);
-                input.select_all(&SelectAll, window, cx);
-                assert_eq!(input.content.as_ref(), secret);
-                let (display, _) = input.display_text();
-                assert!(!display.is_empty());
-                assert!(display.chars().all(|ch| ch == '*'));
-                let units = secret.encode_utf16().count();
-                let mut actual = None;
-                assert_eq!(
-                    input.text_for_range(0..units, &mut actual, window, cx),
-                    Some("*".repeat(units))
-                );
-                assert_eq!(actual, Some(0..units));
-                cx.write_to_clipboard(ClipboardItem::new_string("existing clipboard".into()));
-                input.copy(&Copy, window, cx);
-                assert_eq!(
-                    cx.read_from_clipboard().unwrap().text().as_deref(),
-                    Some("existing clipboard")
-                );
-                input.set_secret(false);
-                assert_eq!(input.display_text().0.as_ref(), secret);
-                input.copy(&Copy, window, cx);
-                assert_eq!(
-                    cx.read_from_clipboard().unwrap().text().as_deref(),
-                    Some(secret)
-                );
-            })
-            .unwrap();
     }
     #[gpui::test]
     fn ime_replacement_and_grapheme_deletion(cx: &mut TestAppContext) {
