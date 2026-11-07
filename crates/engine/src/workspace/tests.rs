@@ -546,6 +546,16 @@ proptest! {
     ) {
         run_script(Limits { ring: (6, 1 << 20), queue: (2, 1 << 20) }, &steps);
     }
+
+    /// A ring far bigger than a viewer's queue: a viewer that comes back with a backlog past its
+    /// queue (a session summary alone outweighs it) gets a snapshot, never `Resync` again, and
+    /// converges.
+    #[test]
+    fn a_rejoin_past_the_queue_size_converges(
+        steps in proptest::collection::vec(step(), 1..60),
+    ) {
+        run_script(Limits { ring: (2048, 1 << 20), queue: (256, 256) }, &steps);
+    }
 }
 
 #[test]

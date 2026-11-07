@@ -26,6 +26,11 @@ impl WorkspaceService {
     pub fn new(hub: Arc<WorkspaceHub>) -> Self {
         Self { hub }
     }
+
+    /// `StopSearch` for a session search.
+    pub(crate) fn stop_search(&self, search: &str) {
+        self.hub.stop_search(search);
+    }
 }
 
 /// Every method this service serves.

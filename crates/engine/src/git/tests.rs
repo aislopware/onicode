@@ -17,7 +17,7 @@ use futures::{FutureExt, StreamExt};
 use onicode_core::scm::{ChangedFile, DiffIndex};
 use onicode_core::store::Store;
 use onicode_protocol::git::{Commit, GitEvent, GitStatus, Stage, StageTarget, WatchGit};
-use onicode_protocol::{Cursor, Item, OpId, Outcome};
+use onicode_protocol::{Cursor, Item, OpId};
 use proptest::prelude::*;
 
 use super::hub::{CheckoutHub, GitFeed};
@@ -495,11 +495,16 @@ fn a_repeated_commit_is_one_commit_and_its_status_comes_first() {
         checkout: checkout.to_owned(),
         target: StageTarget::All,
     };
-    block_on(hub.stage(Some(OpId::new()), stage(&checkout))).unwrap();
+    let covered = block_on(hub.stage(Some(OpId::new()), stage(&checkout))).unwrap();
     let Some(Some(Item::Events { events, .. })) = viewer.next().now_or_never() else {
         panic!("the staged status is out before the reply");
     };
     let GitEvent::Status(staged) = events.last().unwrap();
+    assert_eq!(
+        covered.scan,
+        Some(staged.scan),
+        "the reply names the status that shows it"
+    );
     let files = &staged.index.as_ref().unwrap().files;
     assert!(
         files
@@ -515,13 +520,21 @@ fn a_repeated_commit_is_one_commit_and_its_status_comes_first() {
         push: false,
     };
     let first = block_on(hub.commit(Some(op), commit.clone())).unwrap();
-    assert_eq!(first, Outcome::Applied);
     assert_eq!(git(&cwd, &["rev-list", "--count", "HEAD"]), "1");
     let Some(Some(Item::Events { events, .. })) = viewer.next().now_or_never() else {
         panic!("the clean status is out before the reply");
     };
     let GitEvent::Status(clean) = events.last().unwrap();
     assert!(clean.index.as_ref().unwrap().files.is_empty());
+    assert_eq!(first.scan, Some(clean.scan));
+
+    // A call that changes nothing the watch shows names the status it already holds.
+    let again = block_on(hub.stage(Some(OpId::new()), stage(&checkout))).unwrap();
+    assert_eq!(again.scan, Some(clean.scan));
+    assert!(
+        viewer.next().now_or_never().is_none(),
+        "nothing new to send"
+    );
 
     // The same op again, with something new staged: the first receipt, and no second commit.
     std::fs::write(cwd.join("b.txt"), "b\n").unwrap();

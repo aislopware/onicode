@@ -10,7 +10,6 @@ mod hub;
 mod model;
 mod queue;
 mod reduce;
-mod ring;
 mod service;
 mod split;
 #[cfg(test)]

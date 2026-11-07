@@ -22,7 +22,7 @@ pub use ids::{EngineId, MessageId, OpId, SessionId, TerminalId};
 /// The protocol's version. Peers with different values answer each other only the calls whose
 /// shapes are frozen: [`engine::Hello`], [`engine::EngineInfo`] and [`engine::UpdateEngine`].
 /// Separate from net's `WIRE`, so a mismatch can still say "Needs update".
-pub const PROTOCOL: u32 = 5;
+pub const PROTOCOL: u32 = 6;
 
 /// One request and its reply.
 pub trait Call {
@@ -197,6 +197,7 @@ pub const METHODS: &[Method] = &[
     call::<files::DeletePath>(),
     call::<files::SearchPaths>(),
     call::<files::SearchContent>(),
+    call::<files::StopSearch>(),
     call::<files::ListDrives>(),
     call::<files::SearchHomeFolders>(),
     call::<files::SaveAttachments>(),
@@ -209,6 +210,8 @@ pub const METHODS: &[Method] = &[
     call::<git::Branches>(),
     call::<git::Refs>(),
     call::<git::History>(),
+    call::<git::CommitFiles>(),
+    call::<git::ReadDiffStats>(),
     call::<git::Switch>(),
     call::<git::CreateBranch>(),
     call::<git::Stage>(),

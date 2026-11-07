@@ -2,8 +2,9 @@
 //! ([`WatchGit`]), and the calls behind the Changes, review, history, branch and worktree views.
 //! The mutating calls travel with an [`OpId`](crate::OpId) in their [`Routed`](crate::Routed): a
 //! repeat of the op is answered with the first reply and runs nothing again. A call that changes
-//! a watched checkout rereads its status before it replies, so the status a watcher holds covers
-//! the call by the time the caller sees its reply.
+//! a watched checkout rereads its status before it replies, and its reply ([`Covered`]) names the
+//! scan of the status that covers it: a viewer keeps its echo until it holds a status at or after
+//! that scan, and reads nothing more itself.
 //!
 //! The engine runs Git in two lanes: what a person waits on (these calls and the watch's
 //! refreshes) never queues behind background work such as pull-request discovery
@@ -11,7 +12,9 @@
 use std::collections::BTreeMap;
 
 pub use onicode_core::checkpoint::{CheckpointFile, CheckpointStatus};
-pub use onicode_core::git::{Branch, SessionChanges, Snapshot as GitSnapshot, Worktree};
+pub use onicode_core::git::{
+    Branch, CommitFile, SessionChanges, Snapshot as GitSnapshot, Worktree,
+};
 pub use onicode_core::scm::{
     ChangedFile, DiffIndex, DiffStats, FileDiff as DiffSides, FileDiffVersion,
     History as GitHistory, HistoryCommit, HistoryRef, Pr, RangeContext, StagedContext,
@@ -20,15 +23,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent::Settings;
 use crate::sessions::Session;
-use crate::{Call, Cursor, Outcome, Watch};
+use crate::{Call, Cursor, Watch};
 
 /// A checkout's status as of a read: the changed files with the branch, upstream and counts, and
 /// each change's version (`staged:` or `unstaged:` and the relative path), which tells a review
 /// what to reread.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitStatus {
-    /// Orders the engine's status reads in this run: a viewer drops a read older than one it
-    /// holds.
+    /// Orders the engine's status reads, across engine runs too: a viewer drops a read older
+    /// than one it holds.
     pub scan: u64,
     /// `None` until a read succeeds; a read that fails keeps the last one.
     pub index: Option<DiffIndex>,
@@ -126,7 +129,8 @@ pub struct FileSides {
     pub diff: DiffSides,
 }
 
-/// The checkout's branches, current branch and worktrees, for the branch and worktree pickers.
+/// The checkout's branches, current branch and worktrees, for the branch and worktree pickers;
+/// `here` names the worktree the checkout is, its symlinks resolved.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Refs {
     pub checkout: String,
@@ -156,13 +160,37 @@ pub struct History {
 }
 git_call!(History, agent: true, reply: GitHistory);
 
+/// The files a commit changed against its first parent, as `git show --numstat` counts them:
+/// a transcript's commit card.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommitFiles {
+    pub checkout: String,
+    pub sha: String,
+}
+git_call!(CommitFiles, agent: true, reply: Vec<CommitFile>);
+
+/// The checkout's changed files and lines, read now: the project rail's counts.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadDiffStats {
+    pub checkout: String,
+}
+git_call!(ReadDiffStats, agent: true, reply: DiffStats);
+
+/// What a call that changes a checkout answers: the scan of the status that covers it, which
+/// the checkout's watchers hold by the time the reply arrives (they may not have it in hand yet);
+/// `None` when nothing watches the checkout, so a viewer that shows it reads it itself.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Covered {
+    pub scan: Option<u64>,
+}
+
 /// Check out a branch, tracking a remote one locally. Dirty files are never overwritten.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Switch {
     pub checkout: String,
     pub branch: Branch,
 }
-git_call!(Switch, agent: false, reply: Outcome);
+git_call!(Switch, agent: false, reply: Covered);
 
 /// Create a branch at HEAD and switch to it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,7 +198,7 @@ pub struct CreateBranch {
     pub checkout: String,
     pub name: String,
 }
-git_call!(CreateBranch, agent: false, reply: Outcome);
+git_call!(CreateBranch, agent: false, reply: Covered);
 
 /// What [`Stage`] stages.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -190,7 +218,7 @@ pub struct Stage {
     pub checkout: String,
     pub target: StageTarget,
 }
-git_call!(Stage, agent: false, reply: Outcome);
+git_call!(Stage, agent: false, reply: Covered);
 
 /// Unstage a file or folder, or everything without `path`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,7 +226,7 @@ pub struct Unstage {
     pub checkout: String,
     pub path: Option<String>,
 }
-git_call!(Unstage, agent: false, reply: Outcome);
+git_call!(Unstage, agent: false, reply: Covered);
 
 /// Throw away a file's unstaged changes (deleting it when untracked), or every unstaged change
 /// without `path`.
@@ -207,7 +235,7 @@ pub struct Discard {
     pub checkout: String,
     pub path: Option<String>,
 }
-git_call!(Discard, agent: false, reply: Outcome);
+git_call!(Discard, agent: false, reply: Covered);
 
 /// Commit what is staged (amending HEAD with `amend`), then push with `push`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -217,28 +245,28 @@ pub struct Commit {
     pub amend: bool,
     pub push: bool,
 }
-git_call!(Commit, agent: false, reply: Outcome);
+git_call!(Commit, agent: false, reply: Covered);
 
 /// Push the branch, setting its upstream the first time.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Push {
     pub checkout: String,
 }
-git_call!(Push, agent: false, reply: Outcome);
+git_call!(Push, agent: false, reply: Covered);
 
 /// Pull the branch's upstream, fast-forward only.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pull {
     pub checkout: String,
 }
-git_call!(Pull, agent: false, reply: Outcome);
+git_call!(Pull, agent: false, reply: Covered);
 
 /// Pull, then push.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Sync {
     pub checkout: String,
 }
-git_call!(Sync, agent: false, reply: Outcome);
+git_call!(Sync, agent: false, reply: Covered);
 
 /// HEAD's commit message, which an amend starts from.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

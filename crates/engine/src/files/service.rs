@@ -23,6 +23,11 @@ impl FilesService {
     pub fn new(hub: Arc<FilesHub>) -> Self {
         Self { hub }
     }
+
+    /// `StopSearch` for a path or content search.
+    pub(crate) fn stop_search(&self, search: &str) {
+        self.hub.stop_search(search);
+    }
 }
 
 /// Every method this service serves.

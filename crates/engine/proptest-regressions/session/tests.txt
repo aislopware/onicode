@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 47c2dea2fe347b77553f20e54608c1c817b46a85618bfc7f955d14bd515697fe # shrinks to bytes = 64, steps = [Finish(Change { start: 0, grow: 0, texts: [], fields: Fields { title: None, model: None, worktree: None, provider_id: None, context: None, approval: None, resolve: None, question: None, answer: None, turn_id: None, ready: false, status: 0 } })]

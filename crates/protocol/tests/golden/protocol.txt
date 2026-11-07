@@ -1,4 +1,4 @@
-protocol 5
+protocol 6
 call Hello agent params=e9de24ac3b14849e reply=e9de24ac3b14849e
 call EngineInfo agent params=fa64ac005d4e6ec1 reply=ea30e297db7e7c2b
 call UpdateEngine params=76bcbe41f03a0f3d reply=caf76c905cccc628
@@ -35,7 +35,7 @@ call Delete params=5221703aa502801c reply=5b317dbd01f7735e
 call SetWorkItem agent params=0f2f53dda1b55c2a reply=5b317dbd01f7735e
 call SetReminder params=e4dbb790bba1ac3a reply=5b317dbd01f7735e
 call SaveGroups agent params=2cb32215e702d6eb reply=5b317dbd01f7735e
-call SearchSessions agent params=a32f9959231b507a reply=7bcaa35a8013bee6
+call SearchSessions agent params=9ef426a2b5ac0aaf reply=7bcaa35a8013bee6
 call PreviewSession params=c14d4fb3cd8c0856 reply=6705d3fc00641cab
 call MarkSeen params=475096cc3f51af52 reply=5b317dbd01f7735e
 call SaveOrchestration params=7a86210ed34f8ea4 reply=5b317dbd01f7735e
@@ -54,11 +54,12 @@ call ListDir agent params=9b460aabe54cf14f reply=a6690907e7622de1
 call Stat agent params=79f50cc6258ef95f reply=a075dbb3942dc540
 call Read agent params=66292cc1fa40b023 reply=c78cb08487a90af4
 call Write params=e06e7abd1d05019f reply=39969ceb33cc553e
-call Create params=fc63d10982253ed9 reply=b120a24d4dd35a0b
-call Move params=a06c0f28c648e436 reply=b120a24d4dd35a0b
-call DeletePath params=dafd51e67df620fb reply=5b317dbd01f7735e
+call Create params=fc63d10982253ed9 reply=0dab42e254bc24c6
+call Move params=a06c0f28c648e436 reply=0dab42e254bc24c6
+call DeletePath params=dafd51e67df620fb reply=82d85212491030fe
 call SearchPaths agent params=45ae1ed456e610a9 reply=149c969c21cad89e
 call SearchContent agent params=b4cc8c2235fdf9a9 reply=c6783d524cb8d281
+call StopSearch agent params=1bfc56ca22d05258 reply=5b317dbd01f7735e
 call ListDrives params=377d25905b1564c3 reply=dc7229df361fe256
 call SearchHomeFolders params=b544d577d30c284d reply=44accd26aa668a15
 call SaveAttachments params=702e38c7daa26d0c reply=44accd26aa668a15
@@ -68,17 +69,19 @@ call ReadStatus agent params=f042189fa0555ca0 reply=61b4e33a2ff54fec
 call Diff agent params=74b699ada4ccf4bc reply=2a76b9bc23930332
 call FileDiff agent params=2fc5a6df0618f993 reply=9a696a8071003c30
 call Branches agent params=5ddfef86467abe28 reply=b50745086b5e0fd0
-call Refs agent params=2a53acd9758e16e8 reply=0b75849027de59c1
+call Refs agent params=2a53acd9758e16e8 reply=8fa3987bf80a2d53
 call History agent params=4cf784105ed8f078 reply=aa8c950cc3f37aab
-call Switch params=7fa214a780a290c0 reply=5b317dbd01f7735e
-call CreateBranch params=af402c85d944d97a reply=5b317dbd01f7735e
-call Stage params=6419b18e36fcd45f reply=5b317dbd01f7735e
-call Unstage params=836c027b83d10c11 reply=5b317dbd01f7735e
-call Discard params=c735d4330d615cf9 reply=5b317dbd01f7735e
-call Commit params=fd36ea94d1081e8d reply=5b317dbd01f7735e
-call Push params=522d378178f79b58 reply=5b317dbd01f7735e
-call Pull params=fb16c434bbf37a4e reply=5b317dbd01f7735e
-call Sync params=22392454cc6854aa reply=5b317dbd01f7735e
+call CommitFiles agent params=97d538c7660f4331 reply=b3f066916e661b72
+call ReadDiffStats agent params=007792e380628d18 reply=7c963cff29f0ebab
+call Switch params=7fa214a780a290c0 reply=767473669580ce02
+call CreateBranch params=af402c85d944d97a reply=767473669580ce02
+call Stage params=6419b18e36fcd45f reply=767473669580ce02
+call Unstage params=836c027b83d10c11 reply=767473669580ce02
+call Discard params=c735d4330d615cf9 reply=767473669580ce02
+call Commit params=fd36ea94d1081e8d reply=767473669580ce02
+call Push params=522d378178f79b58 reply=767473669580ce02
+call Pull params=fb16c434bbf37a4e reply=767473669580ce02
+call Sync params=22392454cc6854aa reply=767473669580ce02
 call HeadMessage agent params=882c3b3e227ab6e8 reply=562bd149ab7449c4
 call CommitContext agent params=221f15b99d8af58c reply=3638cd78e55cb8a9
 call PrContext agent params=2d7daf90b48dd16c reply=fa3a20c3dbab20ea

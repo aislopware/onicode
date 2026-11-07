@@ -3,7 +3,10 @@
 //! [`Create`], [`Move`], [`DeletePath`], [`SaveAttachments`] and [`SaveNoteImages`]) travel with an
 //! [`OpId`](crate::OpId) in their [`Routed`](crate::Routed): a repeat of the op is answered with
 //! the first reply and changes nothing again. A call that changes a watched directory relists it
-//! before it replies, so its watchers see the change no later than the caller sees the reply.
+//! before it replies, and its reply names, for each watched directory it touched, the scan of the
+//! listing that covers it ([`Relisted`]): a viewer keeps its echo over that directory until it
+//! holds a listing at or after that scan, so a listing read before the call that arrives after its
+//! reply never flashes the old state.
 //!
 //! File contents travel as one reply each, under the editor's caps: text up to 2 MB, a preview
 //! up to 32 MB, image bytes as base64 ([`Bytes`]) rather than a JSON array, and a poll that names
@@ -47,8 +50,9 @@ pub enum Entries {
     Failed(String),
 }
 
-/// One directory's children as of a scan. `scan` numbers the engine's directory reads in this
-/// run: listings read together share one.
+/// One directory's children as of a scan. `scan` orders the engine's directory reads: listings
+/// read together share one, a later read has a higher one (across engine runs too), and a watch
+/// never offers a listing older than one it offered before.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Listing {
     pub scan: u64,
@@ -210,10 +214,21 @@ pub struct Create {
 }
 files_call!(Create, agent: false, reply: NewPath);
 
-/// [`Create`]'s and [`Move`]'s reply: where the file is now.
+/// [`Create`]'s and [`Move`]'s reply: where the file is now, and the listings that cover the
+/// change.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewPath {
     pub path: String,
+    pub listed: Vec<Relisted>,
+}
+
+/// A watched directory a mutating call changed, under one watched root: its watchers hold a
+/// listing that shows the change once they hold one at `scan` or later.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Relisted {
+    pub root: String,
+    pub path: String,
+    pub scan: u64,
 }
 
 /// Where [`Move`] takes a file or folder.
@@ -240,11 +255,17 @@ files_call!(Move, agent: false, reply: NewPath);
 pub struct DeletePath {
     pub path: String,
 }
-files_call!(DeletePath, agent: false, reply: Outcome);
+files_call!(DeletePath, agent: false, reply: Deleted);
+
+/// [`DeletePath`]'s reply: the listings that cover the deletion.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Deleted {
+    pub listed: Vec<Relisted>,
+}
 
 /// Every file of the project at `root` for Quick Open and mentions: `git ls-files` where it
-/// can, else a bounded walk; up to 20,000. A later search under the same non-empty `search` id
-/// stops this one, which then answers no files.
+/// can, else a bounded walk; up to 20,000. A later search under the same non-empty `search` id,
+/// or a [`StopSearch`] naming it, stops this one, which then answers no files.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchPaths {
     pub root: String,
@@ -259,12 +280,23 @@ pub struct PathList {
 }
 
 /// Search the contents of the project at `options.cwd`, up to 500 matches. A later search under
-/// the same non-empty `options.search_id` stops this one, which then answers no matches.
+/// the same non-empty `options.search_id`, or a [`StopSearch`] naming it, stops this one, which
+/// then answers no matches.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchContent {
     pub options: SearchOptions,
 }
 files_call!(SearchContent, agent: true, reply: SearchResult);
+
+/// Stop the search running under `search` ([`SearchPaths`], [`SearchContent`] or the Workspace
+/// group's `SearchSessions`): a view that closes, or whose query moves on, lets its search go as
+/// monocode's cancel flag did. A stop that arrives before its search does stops it as it starts,
+/// so a viewer mints a fresh id for each search it may stop.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StopSearch {
+    pub search: String,
+}
+files_call!(StopSearch, agent: true, reply: Outcome);
 
 /// The disks an engine's folders can be opened from: its root and every mounted volume.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

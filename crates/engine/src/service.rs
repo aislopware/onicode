@@ -1,6 +1,7 @@
 //! Every group the engine serves, as one `onicode-rpc` service.
 use async_trait::async_trait;
-use onicode_protocol::{OpId, Routed};
+use onicode_protocol::files::StopSearch;
+use onicode_protocol::{Call, OpId, Outcome, Routed};
 use onicode_rpc::{RpcError, RpcReply, RpcService, parse_params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -37,6 +38,13 @@ impl EngineService {
 #[async_trait]
 impl RpcService for EngineService {
     async fn handle(&self, method: &str, params: serde_json::Value) -> Result<RpcReply, RpcError> {
+        if method == StopSearch::NAME {
+            // A search id names one search, whichever group runs it.
+            let (_, StopSearch { search }) = routed(params)?;
+            self.files.stop_search(&search);
+            self.workspace.stop_search(&search);
+            return reply(Ok(Outcome::Applied));
+        }
         if WorkspaceService::serves(method) {
             self.workspace.handle(method, params).await
         } else if FilesService::serves(method) {

@@ -10,6 +10,7 @@ mod fs_watch;
 pub mod git;
 mod ledger;
 mod probe;
+mod searches;
 mod service;
 pub mod session;
 pub mod turn;

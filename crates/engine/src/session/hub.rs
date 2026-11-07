@@ -7,7 +7,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, mpsc};
 
-use futures::StreamExt;
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
 use onicode_core::agent::{AccessMode, Control, Decision, Settings};
@@ -21,15 +20,15 @@ use onicode_protocol::session::{
     RecallLastTurn, RecalledTurn, SaveBtw, SaveQueue, SendNow, SessionEvent, SessionRecord,
     SessionState, Steer, SteerNow, Stop, StopBtw, TranscriptPage, Verdict, WatchSession,
 };
-use onicode_protocol::{Cursor, Item, MessageId, OpId, Outcome, Rejection, SessionId};
+use onicode_protocol::{Item, MessageId, OpId, Outcome, Rejection, SessionId};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Notify, watch};
+use tokio::sync::watch;
 
 use super::asides::{Aside, Asides, ProviderAsides, btw_prompt};
-use super::queue::{QUEUE_BATCHES, QUEUE_BYTES, WatchQueue};
-use super::reduce::apply;
-use super::ring::{RING_BYTES, RING_EVENTS, Ring};
+use super::queue::SessionFeed;
 use super::split;
+pub(crate) use crate::feed::Limits;
+use crate::feed::{self, Topic};
 use crate::turn::{Database, Update, locked};
 use crate::workspace::WorkspaceHub;
 
@@ -89,22 +88,6 @@ pub enum Staged {
     Turn(Box<StagedTurn>),
 }
 
-/// The hub's bounds: the ring's and each watcher queue's, in events or batches and in bytes.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Limits {
-    pub(crate) ring: (usize, usize),
-    pub(crate) queue: (usize, usize),
-}
-
-impl Default for Limits {
-    fn default() -> Self {
-        Self {
-            ring: (RING_EVENTS, RING_BYTES),
-            queue: (QUEUE_BATCHES, QUEUE_BYTES),
-        }
-    }
-}
-
 /// A mutating call waiting on its receipt.
 struct Pending {
     op: Option<OpId>,
@@ -138,18 +121,10 @@ struct Turn {
     next: Option<Next>,
 }
 
-struct Watcher {
-    queue: WatchQueue,
-    notify: Arc<Notify>,
-}
-
 struct Live {
     id: i64,
-    epoch: u64,
-    seq: u64,
-    state: SessionState,
-    ring: Ring,
-    watchers: HashMap<u64, Watcher>,
+    /// The session, its numbering, ring and watchers.
+    topic: Topic<SessionFeed>,
     /// Prompt rows' ids by transcript index.
     prompts: BTreeMap<usize, uuid::Uuid>,
     turn: Option<Turn>,
@@ -168,7 +143,6 @@ struct Inner {
     staged: HashMap<MessageId, Staged>,
     ops: Ops,
     next_epoch: u64,
-    next_watcher: u64,
     next_turn: u64,
     /// Last turns recalled for an edit (`RecallLastTurn`), until `EditLastTurn` takes them.
     recalled: HashMap<SessionId, EditSnapshot>,
@@ -262,7 +236,6 @@ impl SessionHub {
                 ops: Ops::default(),
                 // This run's epochs: a cursor from an earlier run never matches.
                 next_epoch: now.wrapping_shl(16),
-                next_watcher: 0,
                 next_turn: 0,
                 recalled: HashMap::new(),
                 rewinding: HashSet::new(),
@@ -311,11 +284,7 @@ impl SessionHub {
                 *next_epoch += 1;
                 Ok(entry.insert(Live {
                     id,
-                    epoch: *next_epoch,
-                    seq: 0,
-                    state,
-                    ring: Ring::new(self.limits.ring.0, self.limits.ring.1),
-                    watchers: HashMap::new(),
+                    topic: Topic::new(*next_epoch, state, self.limits),
                     prompts: BTreeMap::new(),
                     turn: None,
                     fresh: true,
@@ -330,27 +299,27 @@ impl SessionHub {
         let mut events = Vec::new();
         let mut rows = fresh.rows;
         split::stamp(&mut rows, 0, &live.prompts);
-        split::rows(&live.state, 0, rows, &mut events);
-        if fresh.title != live.state.title {
+        split::rows(live.topic.state(), 0, rows, &mut events);
+        if fresh.title != live.topic.state().title {
             events.push(SessionEvent::Title(fresh.title));
         }
-        if fresh.provider_id != live.state.provider_id
+        if fresh.provider_id != live.topic.state().provider_id
             && let Some(id) = fresh.provider_id
         {
             events.push(SessionEvent::ProviderId(id));
         }
         if serde_json::to_value(&fresh.settings).ok()
-            != serde_json::to_value(&live.state.settings).ok()
+            != serde_json::to_value(&live.topic.state().settings).ok()
         {
             events.push(SessionEvent::Settings(Box::new(fresh.settings)));
         }
-        if fresh.queue_rev != live.state.queue_rev {
+        if fresh.queue_rev != live.topic.state().queue_rev {
             events.push(SessionEvent::Queue {
                 rev: fresh.queue_rev,
                 state: fresh.queue,
             });
         }
-        if fresh.context != live.state.context
+        if fresh.context != live.topic.state().context
             && let Some(usage) = fresh.context
         {
             events.push(SessionEvent::Context(usage));
@@ -591,7 +560,7 @@ impl SessionHub {
                 None => !finished,
             };
         // Name the prompts this update brings: the launch's, then each accepted steer's.
-        let end = live.state.first_row + live.state.rows.len();
+        let end = live.topic.state().first_row + live.topic.state().rows.len();
         let mut ids = Vec::new();
         if launched && let Some(launch) = &turn.launch {
             ids.push(launch.message);
@@ -650,7 +619,7 @@ impl SessionHub {
                 receipts.extend(self.settle(ops, session, steer, outcome));
             }
         }
-        let mut events = split::split(&live.state, update, &live.prompts);
+        let mut events = split::split(live.topic.state(), update, &live.prompts);
         // The `Status` stays last: a watcher sees the receipts of a turn before its end.
         let status = events.pop();
         for (message, error) in requeued {
@@ -668,9 +637,9 @@ impl SessionHub {
             }
             let row = live.id;
             let next = live.turn.take().and_then(|turn| turn.next);
-            let end = live.state.first_row + live.state.rows.len();
+            let end = live.topic.state().first_row + live.topic.state().rows.len();
             live.prompts.retain(|at, _| *at < end);
-            if live.watchers.is_empty() && next.is_none() {
+            if !live.topic.is_watched() && next.is_none() {
                 sessions.remove(&session);
             }
             if let Some(next) = next {
@@ -857,7 +826,7 @@ impl SessionHub {
                 .sessions
                 .get(&session)
                 .filter(|live| live.turn.as_ref().is_some_and(|turn| turn.id == turn_id))
-                .map(|live| live.state.first_row + live.state.rows.len())
+                .map(|live| live.topic.state().first_row + live.topic.state().rows.len())
         };
         if let Some(end) = end {
             self.apply_update(
@@ -966,7 +935,14 @@ impl SessionHub {
             let id = body.approval;
             let (outcome, events) = match live.as_deref() {
                 None => (Outcome::Rejected(Rejection::Gone), Vec::new()),
-                Some(held) if held.state.approvals.iter().any(|known| known.id == id) => {
+                Some(held)
+                    if held
+                        .topic
+                        .state()
+                        .approvals
+                        .iter()
+                        .any(|known| known.id == id) =>
+                {
                     let decision = match body.answer {
                         Verdict::Allow => Decision::Allow,
                         Verdict::AllowForSession => Decision::Session,
@@ -977,7 +953,12 @@ impl SessionHub {
                 }
                 Some(held)
                     if body.answer == Verdict::Deny
-                        && held.state.questions.iter().any(|known| known.id == id) =>
+                        && held
+                            .topic
+                            .state()
+                            .questions
+                            .iter()
+                            .any(|known| known.id == id) =>
                 {
                     let outcome = control(held, &id, Decision::Deny);
                     (outcome, vec![SessionEvent::QuestionResolved(id)])
@@ -1009,7 +990,14 @@ impl SessionHub {
             let id = body.question;
             let (outcome, events) = match live.as_deref() {
                 None => (Outcome::Rejected(Rejection::Gone), Vec::new()),
-                Some(held) if held.state.questions.iter().any(|known| known.id == id) => {
+                Some(held)
+                    if held
+                        .topic
+                        .state()
+                        .questions
+                        .iter()
+                        .any(|known| known.id == id) =>
+                {
                     let outcome = control(held, &id, Decision::Answer(body.answers));
                     let events = if outcome == Outcome::Applied {
                         vec![SessionEvent::QuestionResolved(id)]
@@ -1043,7 +1031,14 @@ impl SessionHub {
             let live = sessions.get_mut(&body.session);
             let outcome = match live.as_deref() {
                 None => Outcome::Rejected(Rejection::Gone),
-                Some(held) if held.state.questions.iter().any(|q| q.id == body.question) => {
+                Some(held)
+                    if held
+                        .topic
+                        .state()
+                        .questions
+                        .iter()
+                        .any(|q| q.id == body.question) =>
+                {
                     control(held, &body.question, Decision::KeepOpen)
                 }
                 Some(_) => Outcome::Rejected(Rejection::AlreadyResolved),
@@ -1399,7 +1394,7 @@ impl SessionHub {
                     {
                         // The transcript lost its last turn and the provider binding moved.
                         let _ = hub.refresh(live);
-                        let end = live.state.first_row + live.state.rows.len();
+                        let end = live.topic.state().first_row + live.topic.state().rows.len();
                         live.prompts.retain(|at, _| *at < end);
                     }
                     hub.resolved(&mut inner, session, op, resolve, outcome, Vec::new());
@@ -1742,88 +1737,54 @@ impl SessionHub {
         self: &Arc<Self>,
         params: WatchSession,
     ) -> Result<BoxStream<'static, Item<SessionState, SessionEvent>>, String> {
-        let notify = Arc::new(Notify::new());
-        let id = {
+        let (epoch, id, notify) = {
             let mut inner = self.lock();
             let Inner {
                 sessions,
                 next_epoch,
-                next_watcher,
                 ..
             } = &mut *inner;
             let live = self.live(sessions, next_epoch, params.session)?;
-            let resumed = params
-                .since
-                .filter(|since| since.epoch == live.epoch)
-                .and_then(|since| {
-                    live.ring
-                        .since(since.seq, live.seq)
-                        .map(|events| (since.seq, events))
-                });
-            let queue = match resumed {
-                Some((since, events)) => {
-                    WatchQueue::resume(since, live.seq, events, self.limits.queue)
-                }
-                None => WatchQueue::snapshot(
-                    Item::Snapshot {
-                        at: Cursor {
-                            epoch: live.epoch,
-                            seq: live.seq,
-                        },
-                        state: snapshot(&live.state, params.window_turns),
-                    },
-                    live.seq,
-                    self.limits.queue,
-                ),
-            };
-            *next_watcher += 1;
-            live.watchers.insert(
-                *next_watcher,
-                Watcher {
-                    queue,
-                    notify: notify.clone(),
-                },
-            );
-            *next_watcher
+            let window = params.window_turns;
+            let (id, notify) = live
+                .topic
+                .join_with(params.since, |state| snapshot(state, window));
+            (live.topic.cursor().epoch, id, notify)
         };
-        let guard = WatchGuard {
-            hub: self.clone(),
-            session: params.session,
-            id,
-        };
-        Ok(
-            futures::stream::unfold(Some((guard, notify)), |held| async move {
-                let (guard, notify) = held?;
-                loop {
-                    match guard.hub.drain(guard.session, guard.id)? {
-                        Some(Item::Resync) => return Some((Item::Resync, None)),
-                        Some(item) => return Some((item, Some((guard, notify)))),
-                        None => notify.notified().await,
-                    }
-                }
-            })
-            .boxed(),
-        )
+        let (draining, leaving) = (self.clone(), self.clone());
+        let session = params.session;
+        Ok(feed::stream(
+            notify,
+            move || draining.drain(session, epoch, id),
+            move || leaving.unwatch(session, epoch, id),
+        ))
+    }
+
+    /// The session's topic of `epoch`, if it is still the live one: a session that went and came
+    /// back numbers its watchers afresh.
+    fn held(inner: &mut Inner, session: SessionId, epoch: u64) -> Option<&mut Live> {
+        inner
+            .sessions
+            .get_mut(&session)
+            .filter(|live| live.topic.cursor().epoch == epoch)
     }
 
     /// The watcher's next item: `None` when it is gone, `Some(None)` when nothing is ready.
     fn drain(
         &self,
         session: SessionId,
+        epoch: u64,
         id: u64,
     ) -> Option<Option<Item<SessionState, SessionEvent>>> {
         let mut inner = self.lock();
-        let watcher = inner.sessions.get_mut(&session)?.watchers.get_mut(&id)?;
-        Some(watcher.queue.drain())
+        Self::held(&mut inner, session, epoch)?.topic.drain(id)
     }
 
-    fn unwatch(&self, session: SessionId, id: u64) {
+    fn unwatch(&self, session: SessionId, epoch: u64, id: u64) {
         let closed = {
             let mut inner = self.lock();
-            let idle = inner.sessions.get_mut(&session).is_some_and(|live| {
-                live.watchers.remove(&id);
-                live.watchers.is_empty() && live.turn.is_none()
-            });
+            let idle = Self::held(&mut inner, session, epoch)
+                .is_some_and(|live| live.topic.leave(id) && live.turn.is_none());
             if idle {
                 inner.sessions.remove(&session).map(|live| live.id)
             } else {
@@ -1839,33 +1800,9 @@ impl SessionHub {
     }
 }
 
-struct WatchGuard {
-    hub: Arc<SessionHub>,
-    session: SessionId,
-    id: u64,
-}
-
-impl Drop for WatchGuard {
-    fn drop(&mut self) {
-        self.hub.unwatch(self.session, self.id);
-    }
-}
-
 /// Numbers `events`, applies them to the state and the ring, and queues them for every watcher.
 fn publish(live: &mut Live, events: Vec<SessionEvent>) {
-    if events.is_empty() {
-        return;
-    }
-    let first = live.seq + 1;
-    for event in &events {
-        live.seq += 1;
-        apply(&mut live.state, event);
-        live.ring.push(live.seq, event.clone());
-    }
-    for watcher in live.watchers.values_mut() {
-        watcher.queue.push(first, events.clone());
-        watcher.notify.notify_one();
-    }
+    live.topic.publish(events);
 }
 
 /// Hands `decision` on `id` to the running turn.

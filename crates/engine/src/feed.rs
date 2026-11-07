@@ -1,9 +1,10 @@
-//! One watchable state for the Files and Git groups: a directory's listing or a checkout's
-//! status, numbered by a `Cursor {epoch, seq}`, with a ring of recent events for watchers that
-//! come back and a bounded queue per watcher, under the rules a session's and the workspace's
-//! watches keep (engine.md "Backpressure"): the ring holds 2048 events or 4 MiB, a watcher's
-//! queue 256 batches or 4 MiB, a pending event is replaced by a later one that supersedes it, and
-//! a watcher that still overflows is dropped to `Resync`.
+//! One watchable state, numbered by a `Cursor {epoch, seq}`, with a ring of recent events for
+//! watchers that come back and a bounded queue per watcher, under engine.md "Backpressure": the
+//! ring holds 2048 events or 4 MiB, a watcher's queue 256 batches or 4 MiB, a slow watcher's
+//! pending events merge as its [`Feed`] allows, and a watcher that still overflows is dropped to
+//! `Resync`. A watcher that comes back with a backlog bigger than its queue gets a snapshot
+//! instead, so a rejoin never meets `Resync` before its first item. Every watch the engine serves
+//! is one: a session, the workspace, a directory's listing and a checkout's status.
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
@@ -18,19 +19,20 @@ pub(crate) const QUEUE_BATCHES: usize = 256;
 pub(crate) const QUEUE_BYTES: usize = 4 << 20;
 
 /// What a topic holds and how its events change it.
-pub(crate) trait Feed: 'static {
+pub(crate) trait Feed: Sized + 'static {
     type State: Clone + Send + 'static;
     type Event: Clone + Send + 'static;
 
     /// Applies `event` to `state`, on the host and in every viewer's mirror alike.
     fn apply(state: &mut Self::State, event: &Self::Event);
 
-    /// Whether `later` supersedes `earlier` whole: applying both leaves what applying `later`
-    /// alone does.
-    fn supersedes(later: &Self::Event, earlier: &Self::Event) -> bool;
-
     /// About how many bytes `event` takes on the wire.
     fn weight(event: &Self::Event) -> usize;
+
+    /// Merges `event` into what a slow watcher holds `pending`, or appends it; `true` when
+    /// appended. A merge must leave the state the drained events build exactly as the unmerged
+    /// ones would.
+    fn absorb(pending: &mut Pending<Self>, event: Self::Event) -> bool;
 }
 
 /// A topic's bounds: the ring's and each watcher queue's, in events or batches and in bytes.
@@ -101,9 +103,94 @@ impl<F: Feed> Ring<F> {
     }
 }
 
-struct Queue<F: Feed> {
+/// The events a watcher has not drained yet, with their weights, for a [`Feed`] to merge into.
+pub(crate) struct Pending<F: Feed> {
+    events: Vec<(F::Event, usize)>,
+    bytes: usize,
+}
+
+impl<F: Feed> Pending<F> {
+    fn new() -> Self {
+        Self {
+            events: Vec::new(),
+            bytes: 0,
+        }
+    }
+
+    /// Appends `event`; always `true`, as [`Feed::absorb`] answers for an append.
+    pub(crate) fn append(&mut self, event: F::Event) -> bool {
+        let size = F::weight(&event);
+        self.events.push((event, size));
+        self.bytes += size;
+        true
+    }
+
+    /// Replaces the newest pending event `event` supersedes (applying both leaves what applying
+    /// `event` alone does), or appends it; `true` when appended.
+    pub(crate) fn replace_or_append(
+        &mut self,
+        event: F::Event,
+        supersedes: impl Fn(&F::Event, &F::Event) -> bool,
+    ) -> bool {
+        match self.rposition(|pending| supersedes(&event, pending)) {
+            Some(at) => {
+                self.events[at].0 = event;
+                self.reweigh(at);
+                false
+            }
+            None => self.append(event),
+        }
+    }
+
+    /// The newest pending event that matches.
+    pub(crate) fn rposition(&self, matches: impl Fn(&F::Event) -> bool) -> Option<usize> {
+        self.events.iter().rposition(|(event, _)| matches(event))
+    }
+
+    /// The pending event at `at`, to merge into; [`Self::reweigh`] it after.
+    pub(crate) fn event_mut(&mut self, at: usize) -> &mut F::Event {
+        &mut self.events[at].0
+    }
+
+    /// Weighs the event at `at` again after a merge.
+    pub(crate) fn reweigh(&mut self, at: usize) {
+        let size = F::weight(&self.events[at].0);
+        self.bytes = self.bytes - self.events[at].1 + size;
+        self.events[at].1 = size;
+    }
+
+    /// Keeps only the pending events that match.
+    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&F::Event) -> bool) {
+        let mut freed = 0;
+        self.events.retain(|(event, size)| {
+            let kept = keep(event);
+            if !kept {
+                freed += size;
+            }
+            kept
+        });
+        self.bytes -= freed;
+    }
+
+    fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+
+    fn take(&mut self) -> Vec<F::Event> {
+        self.bytes = 0;
+        self.events.drain(..).map(|(event, _)| event).collect()
+    }
+
+    fn clear(&mut self) {
+        self.events.clear();
+        self.bytes = 0;
+    }
+}
+
+/// One watcher's queue: the snapshot it starts from, then its pending events, bounded.
+pub(crate) struct Queue<F: Feed> {
     head: Option<Item<F::State, F::Event>>,
-    pending: Vec<(F::Event, usize)>,
+    pending: Pending<F>,
     /// The number of the first event not yet drained.
     next: u64,
     /// The number of the last event pushed.
@@ -111,13 +198,21 @@ struct Queue<F: Feed> {
     /// Drain once even with nothing pending: a resumed watcher learns it missed nothing.
     ack: bool,
     batches: usize,
-    bytes: usize,
     resync: bool,
     max_batches: usize,
     max_bytes: usize,
 }
 
 impl<F: Feed> Queue<F> {
+    /// A watcher that starts from `snapshot`, taken when the last event was `seq`.
+    pub(crate) fn snapshot(
+        snapshot: Item<F::State, F::Event>,
+        seq: u64,
+        limits: (usize, usize),
+    ) -> Self {
+        Self::new(Some(snapshot), seq, false, limits)
+    }
+
     fn new(
         head: Option<Item<F::State, F::Event>>,
         seq: u64,
@@ -126,12 +221,11 @@ impl<F: Feed> Queue<F> {
     ) -> Self {
         Self {
             head,
-            pending: Vec::new(),
+            pending: Pending::new(),
             next: seq + 1,
             last: seq,
             ack,
             batches: 0,
-            bytes: 0,
             resync: false,
             max_batches,
             max_bytes,
@@ -139,45 +233,27 @@ impl<F: Feed> Queue<F> {
     }
 
     /// Queues `events`, numbered from `first`.
-    fn push(&mut self, first: u64, events: &[F::Event]) {
+    pub(crate) fn push(&mut self, first: u64, events: &[F::Event]) {
         if self.resync || events.is_empty() {
             return;
         }
         self.last = first + events.len() as u64 - 1;
         let mut added = false;
         for event in events {
-            added |= self.absorb(event.clone());
+            added |= F::absorb(&mut self.pending, event.clone());
         }
         if added {
             self.batches += 1;
         }
-        if self.batches > self.max_batches || self.bytes > self.max_bytes {
+        if self.batches > self.max_batches || self.pending.bytes > self.max_bytes {
             self.resync = true;
             self.head = None;
             self.pending.clear();
-            self.bytes = 0;
         }
-    }
-
-    /// Replaces the pending event `event` supersedes, or appends it; `true` when appended.
-    fn absorb(&mut self, event: F::Event) -> bool {
-        let size = F::weight(&event);
-        if let Some(at) = self
-            .pending
-            .iter()
-            .rposition(|(pending, _)| F::supersedes(&event, pending))
-        {
-            self.bytes = self.bytes - self.pending[at].1 + size;
-            self.pending[at] = (event, size);
-            return false;
-        }
-        self.pending.push((event, size));
-        self.bytes += size;
-        true
     }
 
     /// The next item for the watcher, if one is ready. After `Resync` the watcher is done.
-    fn drain(&mut self) -> Option<Item<F::State, F::Event>> {
+    pub(crate) fn drain(&mut self) -> Option<Item<F::State, F::Event>> {
         if self.resync {
             return Some(Item::Resync);
         }
@@ -188,15 +264,13 @@ impl<F: Feed> Queue<F> {
             return None;
         }
         self.ack = false;
-        let events = self.pending.drain(..).map(|(event, _)| event).collect();
         let item = Item::Events {
             first: self.next,
             last: self.last,
-            events,
+            events: self.pending.take(),
         };
         self.next = self.last + 1;
         self.batches = 0;
-        self.bytes = 0;
         Some(item)
     }
 }
@@ -237,11 +311,23 @@ impl<F: Feed> Topic<F> {
         &self.state
     }
 
+    /// Replaces the state a topic starts from, before any event is numbered: a hub that reads
+    /// its state lazily.
+    pub(crate) fn load(&mut self, state: F::State) {
+        debug_assert_eq!(self.seq, 0, "a topic loads before its first event");
+        self.state = state;
+    }
+
     pub(crate) fn cursor(&self) -> Cursor {
         Cursor {
             epoch: self.epoch,
             seq: self.seq,
         }
+    }
+
+    /// Whether any watcher holds the topic.
+    pub(crate) fn is_watched(&self) -> bool {
+        !self.watchers.is_empty()
     }
 
     /// Numbers `events`, applies them to the state and the ring, and queues them for every
@@ -262,11 +348,20 @@ impl<F: Feed> Topic<F> {
         }
     }
 
-    /// A new watcher: a snapshot, or with a `since` the ring still covers, only the events after
-    /// it. A backlog bigger than a watcher's queue is a snapshot too, so a watcher that comes
-    /// back never meets `Resync` before its first item. Its id, and what wakes it when something
-    /// is queued for it.
+    /// A new watcher that starts from the whole state; see [`Self::join_with`].
     pub(crate) fn join(&mut self, since: Option<Cursor>) -> (u64, Arc<Notify>) {
+        self.join_with(since, <F::State as Clone>::clone)
+    }
+
+    /// A new watcher: a snapshot (the state as `snapshot` cuts it for this watcher), or with a
+    /// `since` the ring still covers, only the events after it. A backlog bigger than a watcher's
+    /// queue is a snapshot too, so a watcher that comes back never meets `Resync` before its
+    /// first item. Its id, and what wakes it when something is queued for it.
+    pub(crate) fn join_with(
+        &mut self,
+        since: Option<Cursor>,
+        snapshot: impl FnOnce(&F::State) -> F::State,
+    ) -> (u64, Arc<Notify>) {
         let resumed = since
             .filter(|since| since.epoch == self.epoch)
             .and_then(|since| {
@@ -285,13 +380,12 @@ impl<F: Feed> Topic<F> {
             .filter(|queue| !queue.resync);
         let queue = match resumed {
             Some(queue) => queue,
-            None => Queue::new(
-                Some(Item::Snapshot {
+            None => Queue::snapshot(
+                Item::Snapshot {
                     at: self.cursor(),
-                    state: self.state.clone(),
-                }),
+                    state: snapshot(&self.state),
+                },
                 self.seq,
-                false,
                 self.limits.queue,
             ),
         };
@@ -345,16 +439,219 @@ where
     D: FnMut() -> Option<Option<Item<S, E>>> + Send + 'static,
     L: FnOnce() + Send + 'static,
 {
+    // After `Resync` the stream ends, but the watcher is let go only when the stream is dropped:
+    // a viewer resubscribes before it lets the old stream go, so the topic is never left unwatched
+    // between them (an idle session would unload and reload from the store).
     let held = (Leave(Some(leave)), notify, drain);
-    futures::stream::unfold(Some(held), |held| async move {
-        let (leave, notify, mut drain) = held?;
+    futures::stream::unfold((held, false), |(held, ended)| async move {
+        if ended {
+            return None;
+        }
+        let (leave, notify, mut drain) = held;
         loop {
             match drain()? {
-                Some(Item::Resync) => return Some((Item::Resync, None)),
-                Some(item) => return Some((item, Some((leave, notify, drain)))),
+                Some(Item::Resync) => return Some((Item::Resync, ((leave, notify, drain), true))),
+                Some(item) => return Some((item, ((leave, notify, drain), false))),
                 None => notify.notified().await,
             }
         }
     })
     .boxed()
+}
+
+#[cfg(test)]
+mod tests {
+    //! The topic every watch rides, against a list that only grows: viewers fall behind, leave
+    //! and come back at cursors they held, under rings bigger than their queues, and each one,
+    //! caught up, holds the host's list.
+    use futures::FutureExt;
+    use proptest::prelude::*;
+
+    use super::*;
+
+    /// A list of numbers, each event one more number; a later event never replaces an earlier.
+    struct Numbers;
+
+    impl Feed for Numbers {
+        type Event = u32;
+        type State = Vec<u32>;
+
+        fn apply(state: &mut Vec<u32>, event: &u32) {
+            state.push(*event);
+        }
+
+        fn weight(_: &u32) -> usize {
+            8
+        }
+
+        fn absorb(pending: &mut Pending<Self>, event: u32) -> bool {
+            pending.append(event)
+        }
+    }
+
+    struct Viewer {
+        id: Option<u64>,
+        held: Option<(Cursor, Vec<u32>)>,
+        cursors: Vec<Cursor>,
+    }
+
+    impl Viewer {
+        /// Folds whatever is ready; after `Resync` the viewer is out until it rejoins.
+        fn pump(&mut self, topic: &mut Topic<Numbers>) {
+            while let Some(id) = self.id {
+                let Some(Some(item)) = topic.drain(id) else {
+                    return;
+                };
+                match item {
+                    Item::Snapshot { at, state } => self.held = Some((at, state)),
+                    Item::Events {
+                        first,
+                        last,
+                        events,
+                    } => {
+                        let (cursor, state) = self.held.as_mut().expect("a snapshot first");
+                        assert_eq!(first, cursor.seq + 1, "no gap and no repeat");
+                        state.extend(events);
+                        cursor.seq = last;
+                    }
+                    Item::Resync => {
+                        topic.leave(id);
+                        self.id = None;
+                    }
+                }
+                if let Some((cursor, _)) = &self.held {
+                    self.cursors.push(*cursor);
+                }
+            }
+        }
+
+        /// Comes back at a cursor it held (with what it held there), or at its last one.
+        fn rejoin(&mut self, topic: &mut Topic<Numbers>, pick: Option<usize>) {
+            if let Some(id) = self.id.take() {
+                topic.leave(id);
+            }
+            if let Some(pick) = pick
+                && !self.cursors.is_empty()
+            {
+                let at = self.cursors[pick % self.cursors.len()];
+                let mut state = topic.state().clone();
+                state.truncate(usize::try_from(at.seq).unwrap());
+                self.held = Some((at, state));
+            }
+            let since = self.held.as_ref().map(|(cursor, _)| *cursor);
+            let (id, _) = topic.join(since);
+            self.id = Some(id);
+            let Some(Some(first)) = topic.drain(id) else {
+                return;
+            };
+            assert!(
+                !matches!(first, Item::Resync),
+                "a viewer that comes back never meets Resync first"
+            );
+            match first {
+                Item::Snapshot { at, state } => self.held = Some((at, state)),
+                Item::Events {
+                    first,
+                    last,
+                    events,
+                } => {
+                    let (cursor, state) = self.held.as_mut().expect("a resume has a cursor");
+                    assert_eq!(first, cursor.seq + 1);
+                    state.extend(events);
+                    cursor.seq = last;
+                }
+                Item::Resync => unreachable!(),
+            }
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    enum Step {
+        Publish(u8),
+        Pump(usize),
+        Rejoin(usize, Option<usize>),
+    }
+
+    fn step() -> impl Strategy<Value = Step> {
+        prop_oneof![
+            3 => (1u8..12).prop_map(Step::Publish),
+            2 => any::<usize>().prop_map(Step::Pump),
+            2 => (any::<usize>(), proptest::option::of(any::<usize>()))
+                .prop_map(|(at, pick)| Step::Rejoin(at, pick)),
+        ]
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(96))]
+
+        /// Rings much bigger than the queues: a viewer whose backlog alone is past its queue
+        /// comes back to a snapshot, never to `Resync` again, and every viewer converges.
+        #[test]
+        fn a_rejoin_past_the_queue_size_converges(
+            ring in 4usize..64,
+            batches in 1usize..3,
+            bytes in 8usize..48,
+            steps in proptest::collection::vec(step(), 1..80),
+        ) {
+            let mut topic = Topic::<Numbers>::new(
+                7,
+                Vec::new(),
+                Limits { ring: (ring, usize::MAX), queue: (batches, bytes) },
+            );
+            let mut viewers: Vec<Viewer> = (0..3)
+                .map(|_| {
+                    let mut viewer = Viewer { id: None, held: None, cursors: Vec::new() };
+                    viewer.rejoin(&mut topic, None);
+                    viewer
+                })
+                .collect();
+            let mut next = 0;
+            for step in &steps {
+                match step {
+                    Step::Publish(count) => {
+                        let events: Vec<u32> = (0..u32::from(*count)).map(|n| next + n).collect();
+                        next += u32::from(*count);
+                        topic.publish(events);
+                    }
+                    Step::Pump(at) => viewers[at % 3].pump(&mut topic),
+                    Step::Rejoin(at, pick) => viewers[at % 3].rejoin(&mut topic, *pick),
+                }
+            }
+            for viewer in &mut viewers {
+                viewer.pump(&mut topic);
+                if viewer.id.is_none() {
+                    viewer.rejoin(&mut topic, None);
+                    viewer.pump(&mut topic);
+                }
+                let (cursor, state) = viewer.held.as_ref().expect("every viewer holds the list");
+                prop_assert_eq!(*cursor, topic.cursor());
+                prop_assert_eq!(state, topic.state());
+            }
+        }
+    }
+
+    #[test]
+    fn a_stream_lets_its_topic_go_when_dropped() {
+        let topic = Arc::new(std::sync::Mutex::new(Topic::<Numbers>::new(
+            1,
+            Vec::new(),
+            Limits::default(),
+        )));
+        let (id, notify) = topic.lock().unwrap().join(None);
+        let (draining, leaving) = (topic.clone(), topic.clone());
+        let mut items = stream(
+            notify,
+            move || draining.lock().unwrap().drain(id),
+            move || {
+                leaving.lock().unwrap().leave(id);
+            },
+        );
+        assert!(matches!(
+            items.next().now_or_never(),
+            Some(Some(Item::Snapshot { .. }))
+        ));
+        assert!(topic.lock().unwrap().is_watched());
+        drop(items);
+        assert!(!topic.lock().unwrap().is_watched());
+    }
 }

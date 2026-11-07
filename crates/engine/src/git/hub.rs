@@ -11,17 +11,17 @@ use futures::stream::BoxStream;
 use onicode_core::files::is_equal_or_inside;
 use onicode_core::{git, scm, worktree_management};
 use onicode_protocol::git::{
-    Branch, ChangeSet, ChangedFile, CheckpointStatus, Commit, CreateBranch, CreatePr,
-    CreateWorktree, Diff, DiffList, Discard, FileDiff, FileSides, GitEvent, GitHistory,
-    GitSnapshot, GitStatus, History, NewWorktree, Pr, RangeContext, ReadCheckpoint,
+    Branch, ChangeSet, ChangedFile, CheckpointStatus, Commit, CommitFile, CommitFiles, Covered,
+    CreateBranch, CreatePr, CreateWorktree, Diff, DiffList, Discard, FileDiff, FileSides, GitEvent,
+    GitHistory, GitSnapshot, GitStatus, History, NewWorktree, Pr, RangeContext, ReadCheckpoint,
     ReadSessionChanges, RemoveWorktree, RemovedWorktree, Restore, RestoreCheckpoint, SessionGit,
     Stage, StageTarget, StagedContext, Switch, Unstage, WatchGit, Worktree,
 };
-use onicode_protocol::{Cursor, Item, OpId, Outcome};
+use onicode_protocol::{Cursor, Item, OpId};
 use tokio::sync::Notify;
 
 use super::lanes::{Lane, Lanes};
-use crate::feed::{self, Feed, Limits, Topic};
+use crate::feed::{self, Feed, Limits, Pending, Topic};
 use crate::fs_watch::{Change, FsWatch, Pump, Schedule, moves_status};
 use crate::ledger::Ledger;
 use crate::probe::{DiskProbe, Probe};
@@ -41,11 +41,6 @@ impl Feed for GitFeed {
         state.clone_from(status);
     }
 
-    fn supersedes(_: &GitEvent, _: &GitEvent) -> bool {
-        // Every event is the whole status.
-        true
-    }
-
     fn weight(event: &GitEvent) -> usize {
         let GitEvent::Status(status) = event;
         64 + status.index.as_ref().map_or(0, |index| {
@@ -55,6 +50,11 @@ impl Feed for GitFeed {
                 .map(|file| 64 + file.path.len() + file.relative.len())
                 .sum::<usize>()
         }) + status.versions.len() * 96
+    }
+
+    fn absorb(pending: &mut Pending<Self>, event: GitEvent) -> bool {
+        // Every event is the whole status.
+        pending.replace_or_append(event, |_, _| true)
     }
 }
 
@@ -140,7 +140,8 @@ impl CheckoutHub {
             limits,
             watch_fs,
             started,
-            scans: AtomicU64::new(0),
+            // Seeded from the start so a later run's scans follow an earlier run's.
+            scans: AtomicU64::new(started.wrapping_shl(20)),
             workspace: OnceLock::new(),
             me: me.clone(),
             inner: Mutex::default(),
@@ -180,6 +181,12 @@ impl CheckoutHub {
 
     /// Reads the status of `checkout` and offers it to its watchers. The caller holds a slot.
     fn read_status(&self, checkout: &str) -> Result<GitStatus, String> {
+        self.read_offered(checkout).map(|(status, _)| status)
+    }
+
+    /// Reads the status of `checkout`, offers it to its watchers, and names the scan of the
+    /// status they hold after the offer, if the checkout is watched.
+    fn read_offered(&self, checkout: &str) -> Result<(GitStatus, Option<u64>), String> {
         let scan = self.scans.fetch_add(1, Ordering::Relaxed) + 1;
         let (index, versions) = self.probe.status(Path::new(checkout))?;
         let status = GitStatus {
@@ -187,33 +194,36 @@ impl CheckoutHub {
             index: Some(index),
             versions,
         };
-        self.offer(checkout, &status);
-        Ok(status)
+        let held = self.offer(checkout, &status);
+        Ok((status, held))
     }
 
     /// Publishes `status` to the checkout's watchers when it is newer than any read offered
-    /// before and differs from what they hold.
-    fn offer(&self, checkout: &str, status: &GitStatus) {
+    /// before and differs from what they hold. Names the scan of the status they then hold, which
+    /// shows `status` or a newer read: `None` if the checkout is not watched.
+    fn offer(&self, checkout: &str, status: &GitStatus) -> Option<u64> {
         let mut inner = self.lock();
-        let Some(watched) = inner.checkouts.get_mut(checkout) else {
-            return;
-        };
-        if status.scan <= watched.offered {
-            return;
+        let watched = inner.checkouts.get_mut(checkout)?;
+        if status.scan > watched.offered {
+            watched.offered = status.scan;
+            let held = watched.topic.state();
+            if held.index != status.index || held.versions != status.versions {
+                watched
+                    .topic
+                    .publish(vec![GitEvent::Status(Box::new(status.clone()))]);
+            }
         }
-        watched.offered = status.scan;
-        let held = watched.topic.state();
-        if held.index != status.index || held.versions != status.versions {
-            watched
-                .topic
-                .publish(vec![GitEvent::Status(Box::new(status.clone()))]);
-        }
+        Some(watched.topic.state().scan)
     }
 
-    /// Rereads a watched checkout after a call changed it.
-    fn cover(&self, checkout: &str) {
-        if self.lock().checkouts.contains_key(checkout) {
-            let _ = self.read_status(checkout);
+    /// Rereads a watched checkout after a call changed it: the reply that tells its caller
+    /// which status of the watch shows the change. A status that cannot be read covers nothing.
+    fn cover(&self, checkout: &str) -> Covered {
+        if !self.lock().checkouts.contains_key(checkout) {
+            return Covered::default();
+        }
+        Covered {
+            scan: self.read_offered(checkout).ok().and_then(|(_, held)| held),
         }
     }
 
@@ -385,7 +395,7 @@ impl CheckoutHub {
         op: Option<OpId>,
         checkout: String,
         work: W,
-    ) -> Result<Outcome, String>
+    ) -> Result<Covered, String>
     where
         W: FnOnce(&Path) -> Result<(), String> + Send + 'static,
     {
@@ -394,8 +404,7 @@ impl CheckoutHub {
                 op,
                 self.run(Lane::Foreground, move |hub| {
                     work(Path::new(&checkout))?;
-                    hub.cover(&checkout);
-                    Ok(Outcome::Applied)
+                    Ok(hub.cover(&checkout))
                 }),
             )
             .await
@@ -508,7 +517,7 @@ impl CheckoutHub {
     }
 
     /// `Switch`.
-    pub async fn switch(&self, op: Option<OpId>, body: Switch) -> Result<Outcome, String> {
+    pub async fn switch(&self, op: Option<OpId>, body: Switch) -> Result<Covered, String> {
         let Switch { checkout, branch } = body;
         self.mutate(op, checkout, move |root| git::checkout(root, &branch))
             .await
@@ -519,14 +528,14 @@ impl CheckoutHub {
         &self,
         op: Option<OpId>,
         body: CreateBranch,
-    ) -> Result<Outcome, String> {
+    ) -> Result<Covered, String> {
         let CreateBranch { checkout, name } = body;
         self.mutate(op, checkout, move |root| git::create_branch(root, &name))
             .await
     }
 
     /// `Stage`.
-    pub async fn stage(&self, op: Option<OpId>, body: Stage) -> Result<Outcome, String> {
+    pub async fn stage(&self, op: Option<OpId>, body: Stage) -> Result<Covered, String> {
         let Stage { checkout, target } = body;
         self.mutate(op, checkout, move |root| match target {
             StageTarget::All => scm::stage_all(root),
@@ -539,7 +548,7 @@ impl CheckoutHub {
     }
 
     /// `Unstage`.
-    pub async fn unstage(&self, op: Option<OpId>, body: Unstage) -> Result<Outcome, String> {
+    pub async fn unstage(&self, op: Option<OpId>, body: Unstage) -> Result<Covered, String> {
         let Unstage { checkout, path } = body;
         self.mutate(op, checkout, move |root| match path {
             Some(path) => scm::unstage_file(root, &path),
@@ -549,7 +558,7 @@ impl CheckoutHub {
     }
 
     /// `Discard`.
-    pub async fn discard(&self, op: Option<OpId>, body: Discard) -> Result<Outcome, String> {
+    pub async fn discard(&self, op: Option<OpId>, body: Discard) -> Result<Covered, String> {
         let Discard { checkout, path } = body;
         self.mutate(op, checkout, move |root| match path {
             Some(path) => scm::discard_file(root, &path),
@@ -559,7 +568,7 @@ impl CheckoutHub {
     }
 
     /// `Commit`.
-    pub async fn commit(&self, op: Option<OpId>, body: Commit) -> Result<Outcome, String> {
+    pub async fn commit(&self, op: Option<OpId>, body: Commit) -> Result<Covered, String> {
         let Commit {
             checkout,
             message,
@@ -577,18 +586,30 @@ impl CheckoutHub {
     }
 
     /// `Push`.
-    pub async fn push(&self, op: Option<OpId>, checkout: String) -> Result<Outcome, String> {
+    pub async fn push(&self, op: Option<OpId>, checkout: String) -> Result<Covered, String> {
         self.mutate(op, checkout, scm::push).await
     }
 
     /// `Pull`.
-    pub async fn pull(&self, op: Option<OpId>, checkout: String) -> Result<Outcome, String> {
+    pub async fn pull(&self, op: Option<OpId>, checkout: String) -> Result<Covered, String> {
         self.mutate(op, checkout, scm::pull).await
     }
 
     /// `Sync`.
-    pub async fn sync(&self, op: Option<OpId>, checkout: String) -> Result<Outcome, String> {
+    pub async fn sync(&self, op: Option<OpId>, checkout: String) -> Result<Covered, String> {
         self.mutate(op, checkout, scm::sync).await
+    }
+
+    /// `CommitFiles`: the files a commit changed, with their line counts.
+    pub async fn commit_files(&self, body: CommitFiles) -> Result<Vec<CommitFile>, String> {
+        let CommitFiles { checkout, sha } = body;
+        self.read(checkout, move |root| git::commit_files(root, &sha))
+            .await
+    }
+
+    /// `ReadDiffStats`: the working tree's line counts against `HEAD`.
+    pub async fn diff_stats(&self, checkout: String) -> Result<scm::DiffStats, String> {
+        self.read(checkout, scm::diff_stats).await
     }
 
     /// `HeadMessage`.
