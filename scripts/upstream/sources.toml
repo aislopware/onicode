@@ -156,7 +156,7 @@ every_minutes = 0
 [rune]
 upstream = "anomalyco/rune"
 branch = "dev"
-base = "65e7e60bf564940a51804b2f2511912fd03bbf6d"
+base = "78d22ed8eef60d76ac3f322ffc5883f3fcbc57f5"
 base_date = "2026-11-08"
 every_minutes = 0
 pulls = true
@@ -203,7 +203,7 @@ releases = true
 upstream = "sst/opencode"
 branch = "dev"
 paths = ["packages/"]
-base = "f460ccefcb936d4e4747b5feb3c21604d3000c8e"
+base = "c33eaa170ed5093c08f1684862a695aae036dcda"
 base_date = "2026-11-08"
 every_minutes = 60
 pulls = false
