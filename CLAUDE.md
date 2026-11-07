@@ -6,8 +6,10 @@ A native control plane for coding agents: many clients drive many servers peer t
 
 - The base is monocode's native app (hardbeat920/monocode; `docs/onicode/decisions/monocode-base.md`). Onicode owns
   its code outright: rename, restructure or delete anything that makes it better.
-- monocode's interface, layout, motion and icons are kept exactly; UI/UX changes come from monocode upstream only,
-  never from other references.
+- monocode's look (interface, layout, icons) is kept. Behaviour follows Base UI (mui/base-ui) wherever it does
+  better than monocode, even where that visibly changes monocode: for example focus, dismissal, hover intent,
+  accessibility and popup motion. Never rule a Base UI behaviour out because monocode lacks it. Other references
+  inform agent driving and sync, never UI.
 - Changes from monocode and from the forks (gpui-fast, ghostty, libghostty-rs, noq) are ported by intent: an agent
   reads each change, judges it, and re-implements what helps. Never a git merge or rebase.
 - `scripts/upstream/watch.py` reports what moved; check it at least every 30 minutes and adopt per

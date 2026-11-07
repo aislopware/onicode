@@ -67,8 +67,8 @@ scrollbars, badges, toasts, progress and pulse.
 
 How the kit behaves is held to Base UI (mui/base-ui, watched in `scripts/upstream/sources.toml`), the web's best
 unstyled library, so that a component onicode extends from the kit inherits interaction it would otherwise
-rebuild. monocode decides how a component looks; Base UI decides what it does. That is no UI idea from another
-reference: no pixel moves. What moved in the kit (2026-11-07):
+rebuild. monocode decides how a component looks; Base UI decides what it does, and wins where it does better.
+What moved in the kit (2026-11-07):
 - The pointer travels to a hoverable popup (tooltip, hover card, submenu) inside a safe triangle. gpui-fast's
   `fast::hover_intent` judges the triangle; upstream's flat 500 ms closed a tooltip on a slow trip to its button.
 - A popover or dialog that opens hands focus to its first control, and a non-modal popover closes when focus
@@ -80,13 +80,24 @@ reference: no pixel moves. What moved in the kit (2026-11-07):
 - Tabs, radio and toggle groups, toolbars and accordions share one roving focus. A toolbar is one Tab stop.
 - Toasts announce at their priority.
 - A focused scroller scrolls from the keyboard (gpui-fast's `fast::scroll_keys`).
+- A popover can open on hover, leaving the focus where it is.
+  - The pointer may travel to the popover. On the way it closes only once the pointer rests for 40 ms, as
+    floating-ui's `safePolygon` does.
+  - Pressing the trigger keeps a hover-opened popover open and gives it the focus.
+  - HoverCard shares the same machinery (`hover_open.rs`).
 
-Base UI behaviours still to come:
-- popover open-on-hover;
-- a select's list aligned to its trigger;
-- a combobox with its input in the field, and chips;
-- toast swipe and F6;
-- popup exit motion.
+- A select can put its selected item over the trigger (`align_item_with_trigger`), but not after touch input.
+- A combobox takes its input in the field and shows chips when it allows several values.
+- Toasts swipe away and F6 reaches them; the stack is a "Notifications" region.
+- A presence that starts absent is absent at once. This fixes a gpui-base bug that drew the content of popovers that
+  had never opened.
+
+Popups move in and out, as Base UI's are mounted through their ending style (owner, 2026-11-07: Base UI wins over
+monocode wherever it does better).
+- A closing popover stays drawn until its exit ends. Reopening it on the way out turns the motion around.
+- The popover comes out of its trigger and goes back into it with a 150 ms fade and an 8 pt slide, the same as the
+  dropdowns' entry.
+- It is driven by `Popover::motion` and `PopoverState::motion_progress`, through gpui-base's `Presence`.
 
 ## Retained mode
 gpui-fast redraws a view only when something it read changed: an entity, a global, a list or scroll state, or the

@@ -42,7 +42,7 @@ upstream = "longbridge/gpui-kit"
 branch = "main"
 fork = "aislopware/gpui-kit"
 checkout = "forks/gpui-kit"
-base = "46bf6d498fa101a3b11cc64e6d8c20d28d17b720"
+base = "a5bda4aa82318e5f4e67111face6886da3d477c9"
 base_date = "2026-11-07"
 every_minutes = 0
 
@@ -156,7 +156,7 @@ every_minutes = 0
 [rune]
 upstream = "anomalyco/rune"
 branch = "dev"
-base = "06d4f9294cb14ba976cf4421f8f99a7dfd5ce6c2"
+base = "d12581bc66f51068890304ab13e4ce22c355b62a"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = true
