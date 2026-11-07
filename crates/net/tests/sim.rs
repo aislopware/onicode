@@ -16,7 +16,7 @@ use bytes::Bytes;
 use onicode_net::hello::{self, Hello, Role, Session};
 use onicode_net::link::Link;
 use onicode_net::stream::{StreamHead, StreamKind, channel};
-use onicode_net::transport::{AHEAD_OF_DATAGRAMS, PATH_MTU, endpoint_on};
+use onicode_net::transport::{PATH_MTU, endpoint_on};
 use onicode_net::{NetError, StreamTx, close};
 use onicode_net_sim::{Faults, Net, report_seed, shape};
 use tokio::sync::mpsc;
@@ -111,6 +111,8 @@ struct Side {
     link: Link,
     lanes: Arc<Mutex<HashMap<u32, Arc<StreamTx>>>>,
     opening: Arc<tokio::sync::Mutex<()>>,
+    /// Whether the flood lanes are RPC streams, at the keys' priority, instead of files.
+    rpc_floods: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Side {
@@ -119,6 +121,7 @@ impl Side {
             link,
             lanes: Arc::default(),
             opening: Arc::default(),
+            rpc_floods: Arc::default(),
         }
     }
 
@@ -132,13 +135,20 @@ impl Side {
         if found.is_some() {
             return found;
         }
-        let head = StreamHead::new(StreamKind::File, lane.to_string());
-        let (tx, _rx) = self.link.open(&head).await.ok()?;
-        // As in the app: a flood is file transfers, behind the datagrams; keys and echoes go
-        // ahead of them, as an RPC stream does.
-        if lane < FLOOD_BASE {
-            tx.set_priority(AHEAD_OF_DATAGRAMS);
-        }
+        // As in the app: keys and echoes go on RPC streams, ahead of the datagrams; a flood is
+        // file transfers behind them, or RPC streams beside them. The kind sets the priority
+        // the stream opens at (a stream already queued keeps the priority it was queued at).
+        let kind =
+            if lane < FLOOD_BASE || self.rpc_floods.load(std::sync::atomic::Ordering::Relaxed) {
+                StreamKind::Rpc
+            } else {
+                StreamKind::File
+            };
+        let (tx, _rx) = self
+            .link
+            .open(&StreamHead::new(kind, lane.to_string()))
+            .await
+            .ok()?;
         let tx = Arc::new(tx);
         self.lanes.lock().unwrap().insert(lane, Arc::clone(&tx));
         Some(tx)
@@ -322,7 +332,13 @@ async fn type_keys(p: &mut Pair, copies: bool) -> Vec<Duration> {
         }
     })
     .await
-    .expect("every echo comes back");
+    .unwrap_or_else(|_| {
+        panic!(
+            "every echo comes back: {} of {KEYS}, {} bytes still queued on the far side",
+            p.c.applied(ECHO_LANE).len(),
+            p.server.pending(ECHO_LANE),
+        )
+    });
     echoer.abort();
     let echoes = p.c.lanes.lock().unwrap()[&ECHO_LANE].clone();
     let order: Vec<u32> = echoes
@@ -616,6 +632,54 @@ async fn a_lost_key_or_echo_is_carried_by_its_copy() {
     assert!(
         canary >= Duration::from_millis(15),
         "without copies, loss shows in the p99 ({canary:?})"
+    );
+}
+
+/// Four RPC streams flooding at the interactive priority, as busy watches do on an engine: a
+/// key's echo on a fifth stream at that priority still comes back within a few frames of the
+/// idle link's, because a stream waiting for send-buffer room is served in turn, never starved
+/// by writers that refill the room first.
+#[tokio::test(start_paused = true)]
+async fn an_echo_beside_rpc_floods_at_its_priority_comes_back_soon() {
+    let (mut flooded_echoes, mut idle_echoes) = (Vec::new(), Vec::new());
+    let runs: Vec<u64> = if std::env::var_os("ONICODE_SIM_SEEDS").is_some() {
+        seeds(0)
+    } else {
+        (1..=5).collect()
+    };
+    for seed in runs {
+        let _seed = report_seed(
+            "an_echo_beside_rpc_floods_at_its_priority_comes_back_soon",
+            seed,
+        );
+        let mut p = pair(Faults::over(wifi()), seed).await;
+        p.server
+            .rpc_floods
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let f = flood(&p.server, 4);
+        flooded_echoes.extend(type_keys(&mut p, false).await);
+        f.abort();
+        p.client.close();
+        let mut idle = pair(Faults::over(wifi()), seed).await;
+        idle_echoes.extend(type_keys(&mut idle, false).await);
+        idle.client.close();
+    }
+    let q = |v: &[Duration], f| ms(quantile(v, f));
+    println!(
+        "echo p50/p99/max ms beside four RPC floods {:.0}/{:.0}/{:.0}, idle {:.0}/{:.0}/{:.0}",
+        q(&flooded_echoes, 0.5),
+        q(&flooded_echoes, 0.99),
+        q(&flooded_echoes, 1.0),
+        q(&idle_echoes, 0.5),
+        q(&idle_echoes, 0.99),
+        q(&idle_echoes, 1.0),
+    );
+    let added = quantile(&flooded_echoes, 0.99).saturating_sub(quantile(&idle_echoes, 0.99));
+    // Measured: p99 30 ms beside the floods against 12 ms idle over 30 seeds, the round-robin
+    // turn behind four streams' packets.
+    assert!(
+        added <= Duration::from_millis(25),
+        "the floods add {added:?} to the echo's p99"
     );
 }
 

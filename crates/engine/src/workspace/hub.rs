@@ -510,7 +510,7 @@ impl WorkspaceHub {
         .await
     }
 
-    /// `SetReminder`. A reminder at time 0 is refused: [`NO_TIME`].
+    /// `SetReminder`. A reminder at time 0 is refused, since the store keeps only real times.
     pub async fn set_reminder(
         &self,
         op: Option<OpId>,
