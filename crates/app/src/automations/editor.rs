@@ -2,25 +2,12 @@ use chrono::{Local, TimeZone};
 
 use super::*;
 
-pub(super) fn toggle(id: impl Into<gpui::ElementId>, on: bool) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .role(Role::Switch)
-        .aria_label(if on {
-            "Pause automation"
-        } else {
-            "Enable automation"
-        })
-        .w(px(28.))
-        .h(px(16.))
-        .flex_shrink_0()
-        .rounded_full()
-        .px(px(2.))
-        .flex()
-        .items_center()
-        .when(on, |d| d.bg(accent_color()).justify_end())
-        .when(!on, |d| d.bg(content(0.2)))
-        .child(div().size(px(12.)).rounded_full().bg(rgb(0xffffff)))
+pub(super) fn toggle(id: impl Into<gpui::ElementId>, on: bool) -> gpui_component::switch::Switch {
+    crate::kit::small_switch(id, on).accessibility_label(if on {
+        "Pause automation"
+    } else {
+        "Enable automation"
+    })
 }
 fn options(values: &[(&str, &str)]) -> Vec<(String, String)> {
     values

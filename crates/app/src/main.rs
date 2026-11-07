@@ -50,6 +50,7 @@ mod image_memory;
 mod inbox;
 mod ink_field;
 mod input;
+mod kit;
 mod markdown;
 mod markdown_model;
 mod mask;

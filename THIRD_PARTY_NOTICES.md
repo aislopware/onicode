@@ -32,6 +32,16 @@ aislopware/gpui-fast (below).
 GPUI comes from https://github.com/aislopware/gpui-fast, a fork of longbridge/gpui-fast and Zed Industries'
 GPUI, under the Apache License 2.0 (its `LICENSE`); `Cargo.toml` pins the rev.
 
+## gpui-kit
+
+The components come from https://github.com/aislopware/gpui-kit, a fork of longbridge/gpui-kit (Copyright 2024 -
+2026 Longbridge), under the Apache License 2.0 (its `LICENSE`); `Cargo.toml` pins the rev.
+
+## Rust crates
+
+Every crate in `Cargo.lock` is under a license `deny.toml` allows. MIT-0 (borrow-or-share, through ls-types'
+fluent-uri) asks for no notice.
+
 ## zeron
 
 Onicode began as a fork of https://github.com/zeronsh/zeron (MIT, Copyright (c) 2026 Wing; see `LICENSE`).

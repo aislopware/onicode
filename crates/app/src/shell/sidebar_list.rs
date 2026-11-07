@@ -750,20 +750,12 @@ impl Shell {
             .active(self.workspace.preferences.show_archived)
             || self.menu_open(&MenuTarget::SessionFilter);
         let button = if self.workspace.classic_layout {
-            div()
-                .id("filter-sessions")
-                .role(Role::Button)
-                .aria_label("Filter sessions")
+            let colors = crate::kit::Colors::colors(gpui::transparent_black(), content(0.5))
+                .hover(content(0.1));
+            crate::kit::icon_button("filter-sessions", "Filter sessions", colors, 24., 6.)
                 .aria_expanded(self.menu_open(&MenuTarget::SessionFilter))
                 .cursor_pointer()
                 .group("classic-filter")
-                .size(px(24.))
-                .flex_shrink_0()
-                .rounded_md()
-                .flex()
-                .items_center()
-                .justify_center()
-                .hover(|s| s.bg(content(0.1)))
                 .child(
                     icon("filter", 12.)
                         .text_color(content(if active { 1. } else { 0.5 }))

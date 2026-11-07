@@ -27,6 +27,7 @@ ignore = [
 # and to the notices in the same change.
 allow = [
     "MIT",
+    "MIT-0",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
@@ -70,7 +71,6 @@ skip = [
     { crate = "getrandom@0.2.17", reason = "via const-random-macro, loro-internal, rand_core and more" },
     { crate = "getrandom@0.3.4", reason = "via ahash, gpui, rand_core and more" },
     { crate = "hashbrown@0.16.1", reason = "via accesskit_consumer, accesskit_macos and more" },
-    { crate = "heck@0.4.1", reason = "via cbindgen, enum-as-inner, glib-macros" },
     { crate = "miniz_oxide@0.8.9", reason = "via exr, png" },
     { crate = "objc2-app-kit@0.2.2", reason = "via accesskit_macos" },
     { crate = "objc2-foundation@0.2.2", reason = "via accesskit_macos, objc2-app-kit, objc2-core-data and more" },
@@ -79,11 +79,10 @@ skip = [
     { crate = "rand@0.9.5", reason = "via gpui, scheduler, num-bigint-dig" },
     { crate = "rand_core@0.9.5", reason = "via rand, rand_chacha, rand_xorshift" },
     { crate = "roxmltree@0.20.0", reason = "via fontconfig-parser" },
-    { crate = "serde_spanned@0.6.9", reason = "via toml 0.8 and toml_edit 0.22: cbindgen, a build dependency of gpui_apple" },
     { crate = "spin@0.9.9", reason = "via flume, heapless" },
     { crate = "syn@2.0.119", reason = "via arg_enum_proc_macro, asn1-rs-derive, asn1-rs-impl and more" },
-    { crate = "toml@0.8.23", reason = "via cbindgen, a build dependency of gpui_apple" },
-    { crate = "toml_datetime@0.6.11", reason = "via toml, toml_edit" },
+    { crate = "toml@0.9.12", reason = "via cbindgen 0.29, the newest, a build dependency of gpui_apple" },
+    { crate = "toml_datetime@0.7.5", reason = "via toml 0.9" },
     { crate = "winnow@0.7.15", reason = "via toml_edit" },
 ]
 

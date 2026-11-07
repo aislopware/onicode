@@ -3,10 +3,11 @@
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Context, Div, ElementId, FontWeight, Hsla, MouseButton, MouseDownEvent, Role,
-    SharedString, Stateful, div, px, relative, rgb,
+    SharedString, div, px, relative, rgb,
 };
 
 use super::{SettingsView, SliderKind};
+use crate::kit::{self, Button, Colors, Disableable as _};
 use crate::popover::{Align, Anchor, AnchorSlot, Side, popover};
 use crate::theme::*;
 
@@ -67,44 +68,45 @@ pub(crate) fn secondary_button(
     label: impl Into<SharedString>,
     danger: bool,
     disabled: bool,
-) -> Stateful<Div> {
-    button_base(id, label).map(|d| {
-        if disabled {
-            d.opacity(0.4).text_color(if danger {
-                rgb(RED).into()
-            } else {
-                content(0.7)
-            })
-        } else if danger {
-            d.cursor_pointer()
-                .text_color(rgb(RED))
-                .hover(|s| s.border_color(red(0.4)).bg(red(0.1)))
-        } else {
-            d.cursor_pointer()
-                .text_color(content(0.7))
-                .hover(|s| s.bg(content(0.1)).text_color(content(1.)))
-        }
-    })
+) -> Button {
+    let colors = if danger {
+        Colors::colors(gpui::transparent_black(), rgb(RED).into())
+            .border(content(0.1))
+            .hover(red(0.1))
+            .hover_border(red(0.4))
+    } else {
+        Colors::colors(gpui::transparent_black(), content(0.7))
+            .border(content(0.1))
+            .hover(content(0.1))
+            .hover_foreground(content(1.))
+    };
+    button_base(id, label, colors, disabled)
 }
 
-fn button_base(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Stateful<Div> {
-    let label = label.into();
-    div()
-        .id(id)
-        .role(Role::Button)
-        .aria_label(label.clone())
-        .flex()
-        .flex_shrink_0()
-        .items_center()
+/// The settings pages' button: 24 pt tall, 10 pt of padding and 12 pt text with a 16 pt line,
+/// dimmed and inert when `disabled`. `label` names it; what it shows is the caller's children.
+fn button_base(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    colors: Colors,
+    disabled: bool,
+) -> Button {
+    kit::button(id, colors, 6.)
+        .accessibility_label(label)
         .gap(px(6.))
-        .rounded_md()
-        .border_1()
-        .border_color(content(0.1))
+        .h(px(24.))
         .px(px(10.))
         .py_1()
         .text_size(px(12.))
         .line_height(px(16.))
-        .whitespace_nowrap()
+        .disabled(disabled)
+        .map(|button| {
+            if disabled {
+                button.opacity(0.4)
+            } else {
+                button.cursor_pointer()
+            }
+        })
 }
 
 /// Borderless, square icon actions used by SkillsPage.
@@ -116,23 +118,20 @@ pub(super) fn icon_action(
     icon_side: f32,
     alpha: f32,
     disabled: bool,
-) -> Stateful<Div> {
-    div()
-        .id(id)
-        .role(Role::Button)
-        .aria_label(label.into())
+) -> Button {
+    let mut colors = Colors::colors(gpui::transparent_black(), content(alpha));
+    if !disabled {
+        colors = colors.hover(content(0.1)).hover_foreground(content(1.));
+    }
+    kit::icon_button(id, label, colors, side, if side == 20. { 4. } else { 6. })
         .group("settings-icon-action")
-        .size(px(side))
-        .flex_shrink_0()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(if side == 20. { 4. } else { 6. }))
-        .text_color(content(alpha))
-        .when(disabled, |d| d.opacity(0.4))
-        .when(!disabled, |d| {
-            d.cursor_pointer()
-                .hover(|s| s.bg(content(0.1)).text_color(content(1.)))
+        .disabled(disabled)
+        .map(|button| {
+            if disabled {
+                button.opacity(0.4)
+            } else {
+                button.cursor_pointer()
+            }
         })
         .child(
             icon(path, icon_side)
@@ -147,22 +146,11 @@ pub(crate) fn primary_button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     disabled: bool,
-) -> Stateful<Div> {
+) -> Button {
     let mut ink = shell_fill();
     ink.a = 1.;
-    button_base(id, label)
-        .border_0()
-        .bg(content(1.))
-        .text_color(ink)
-        .font_weight(gpui::FontWeight::MEDIUM)
-        .map(|d| {
-            if disabled {
-                d.opacity(0.4)
-            } else {
-                d.cursor_pointer()
-                    .hover(move |s| s.bg(content(0.85)).text_color(ink))
-            }
-        })
+    let colors = Colors::colors(content(1.), ink).hover(content(0.85));
+    button_base(id, label, colors, disabled).font_weight(FontWeight::MEDIUM)
 }
 
 impl SettingsView {
@@ -363,33 +351,12 @@ impl SettingsView {
         div()
             .id(SharedString::from(format!("toggle-{id}")))
             .debug_selector(move || format!("settings-toggle-{id}"))
-            .role(Role::Switch)
-            .aria_label(label.into())
-            .aria_toggled(if on {
-                gpui::Toggled::True
-            } else {
-                gpui::Toggled::False
-            })
-            .relative()
-            .h(px(20.))
-            .w(px(36.))
             .flex_shrink_0()
-            .rounded_full()
-            .bg(if on { accent_color() } else { content(0.2) })
-            .when(disabled, |d| d.opacity(0.4))
             .child(
-                div()
-                    .absolute()
-                    .top(px(2.))
-                    .left(px(if on { 18. } else { 2. }))
-                    .size(px(16.))
-                    .rounded_full()
-                    .bg(rgb(0xffffff)),
+                crate::kit::switch(SharedString::from(format!("switch-{id}")), on, disabled)
+                    .accessibility_label(label)
+                    .on_change(cx.listener(move |this, on: &bool, _, cx| change(this, *on, cx))),
             )
-            .when(!disabled, |d| {
-                d.cursor_pointer()
-                    .on_click(cx.listener(move |this, _, _, cx| change(this, !on, cx)))
-            })
             .into_any_element()
     }
 

@@ -25,6 +25,7 @@ pulldown-cmark.workspace = true
 mermaid-rs-renderer = { version = "0.3.1", default-features = false }
 syntect = { version = "5.3", default-features = false, features = ["parsing", "default-syntaxes", "regex-fancy"] }
 gpui.workspace = true
+gpui-component.workspace = true
 gpui_platform = { workspace = true, features = ["font-kit", "runtime_shaders"] }
 unicode-segmentation = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }

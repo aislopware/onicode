@@ -1222,27 +1222,19 @@ fn project_name(path: &str) -> String {
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| path.into())
 }
-fn button(
-    id: impl Into<gpui::ElementId>,
-    label: impl Into<SharedString>,
-) -> gpui::Stateful<gpui::Div> {
-    let label: SharedString = label.into();
-    div()
-        .id(id)
-        .role(Role::Button)
+/// The Automations view's button: 28 pt tall, 12 pt of padding, a ring that firms under the
+/// pointer, and 12 pt text.
+fn button(id: impl Into<gpui::ElementId>, label: impl Into<SharedString>) -> crate::kit::Button {
+    let colors = crate::kit::Colors::colors(gpui::transparent_black(), content(0.8))
+        .border(content(0.15))
+        .hover(content(0.1))
+        .hover_border(content(0.3));
+    crate::kit::button(id, colors, 6.)
+        .label(label)
         .px(px(12.))
         .h(px(28.))
-        .rounded(px(6.))
-        .flex()
-        .items_center()
-        .justify_center()
         .gap(px(6.))
         .text_size(px(12.))
-        .text_color(content(0.8))
-        .border_1()
-        .border_color(content(0.15))
-        .hover(|s| s.bg(content(0.1)).border_color(content(0.3)))
-        .child(label)
 }
 impl Render for Automations {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1356,8 +1348,10 @@ impl Render for Automations {
                                 SharedString::from(format!("toggle-{toggle_id}")),
                                 enabled,
                             )
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| this.toggle(toggle_id.clone(), !enabled, cx),
+                            .on_change(cx.listener(
+                                move |this, on: &bool, _, cx| {
+                                    this.toggle(toggle_id.clone(), *on, cx)
+                                },
                             )),
                         ),
                     ),

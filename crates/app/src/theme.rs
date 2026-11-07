@@ -1,5 +1,5 @@
 use gpui::prelude::*;
-use gpui::{AnyElement, Div, Hsla, Role, Stateful, Svg, div, img, px, rgb, rgba, svg};
+use gpui::{AnyElement, Div, Hsla, Svg, div, img, px, rgb, rgba, svg};
 // Shared appearance tokens. Interaction fills use translucent content ink
 // rather than opaque replacement greys.
 pub(crate) const CHAT: u32 = 0x141414;
@@ -515,7 +515,7 @@ pub(crate) fn icon_button(
     id: &'static str,
     label: &'static str,
     path: &'static str,
-) -> Stateful<Div> {
+) -> crate::kit::Button {
     icon_button_hover(id, label, path, 0.1)
 }
 pub(crate) fn icon_button_hover(
@@ -523,7 +523,7 @@ pub(crate) fn icon_button_hover(
     label: &'static str,
     path: &'static str,
     hover_alpha: f32,
-) -> Stateful<Div> {
+) -> crate::kit::Button {
     chrome_button(id, label, path, true, hover_alpha)
 }
 pub(crate) fn icon_button_enabled(
@@ -531,7 +531,7 @@ pub(crate) fn icon_button_enabled(
     label: &'static str,
     path: &'static str,
     enabled: bool,
-) -> Stateful<Div> {
+) -> crate::kit::Button {
     chrome_button(id, label, path, enabled, 0.1)
 }
 fn chrome_button(
@@ -540,23 +540,19 @@ fn chrome_button(
     path: &'static str,
     enabled: bool,
     hover_alpha: f32,
-) -> Stateful<Div> {
-    div()
-        .id(id)
-        .role(Role::Button)
-        .aria_label(label)
+) -> crate::kit::Button {
+    let mut colors = crate::kit::Colors::colors(
+        gpui::transparent_black(),
+        content(if enabled { 0.5 } else { 0.25 }),
+    );
+    if enabled {
+        colors = colors
+            .hover(content(hover_alpha))
+            .hover_foreground(content(1.));
+    }
+    crate::kit::icon_button(id, label, colors, 24., 6.)
         .group("chrome-button")
         .cursor_pointer()
-        .flex()
-        .flex_shrink_0()
-        .items_center()
-        .justify_center()
-        .size(px(24.))
-        .rounded_md()
-        .text_color(content(if enabled { 0.5 } else { 0.25 }))
-        .when(enabled, |d| {
-            d.hover(|s| s.bg(content(hover_alpha)).text_color(content(1.)))
-        })
         .child(
             icon(path, 14.)
                 .text_color(content(if enabled { 0.5 } else { 0.25 }))

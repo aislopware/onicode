@@ -234,7 +234,7 @@ impl UsageFooter {
         command: Command,
         disabled: bool,
         cx: &mut Context<Self>,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> crate::kit::Button {
         let id =
             gpui::SharedString::from(format!("banked-reset-{}-{row}", label.replace(' ', "-")));
         let selector = id.clone();
@@ -252,8 +252,7 @@ impl UsageFooter {
             .child(label)
             .when(!disabled, |d| {
                 let click = command.clone();
-                d.focusable()
-                    .tab_index(0)
+                d.tab_index(0)
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.reset_command(click.clone(), window, cx)
                     }))

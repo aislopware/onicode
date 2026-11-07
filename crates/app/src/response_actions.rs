@@ -1,5 +1,5 @@
 use gpui::prelude::*;
-use gpui::{Role, SharedString, div, px};
+use gpui::{SharedString, px};
 use onicode_protocol::agent::Settings;
 use onicode_protocol::response::{Target, TransferKind};
 use onicode_protocol::transcript::Row;
@@ -45,22 +45,18 @@ pub(crate) fn button(
     label: impl Into<SharedString>,
     glyph: &'static str,
     active: bool,
-) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id((action, turn))
-        .role(Role::Button)
-        .aria_label(label.into())
+) -> crate::kit::Button {
+    let rest = if active {
+        content(0.08)
+    } else {
+        gpui::transparent_black()
+    };
+    let colors = crate::kit::Colors::colors(rest, content(if active { 0.7 } else { 0.4 }))
+        .hover(content(0.08))
+        .hover_foreground(content(0.7));
+    crate::kit::icon_button((action, turn), label, colors, 22., 6.)
         .group("response-action")
-        .flex_shrink_0()
-        .size(px(22.))
         .p(px(4.))
-        .rounded(px(6.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_color(content(if active { 0.7 } else { 0.4 }))
-        .when(active, |d| d.bg(content(0.08)))
-        .hover(|s| s.bg(content(0.08)).text_color(content(0.7)))
         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .child(
             icon(glyph, 14.)

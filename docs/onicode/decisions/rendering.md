@@ -47,6 +47,24 @@ aislopware/gpui-fast by the same rev, and follows the same platform ruling (macO
 What onicode gains is one library with gpui-kit's input (IME), virtual lists and tables, keyboard navigation and
 accessibility, and Longbridge's fixes upstream, under monocode's pixels.
 
+Where it stands (2026-11-07): onicode depends on the fork's `gpui-component`, and `crates/app/src/kit.rs` holds
+monocode's primitives built on it. Every button family (the dialog buttons, the settings pages' primary, secondary
+and icon actions, the project settings' and Automations' buttons, the response actions and the title bar's chrome
+icon buttons) is a gpui-kit `Button`, and both toggles are its `Switch`; all 50 golden images match with no pixel
+moved. Three things in the fork made that possible: a custom button paints exactly the colours it is given (it
+used to mix them 20% toward transparent and go transparent when pressed) and takes a hover text colour and a ring
+with its own hover colour; a text size set on a button wins over its size's; and a switch takes its track, thumb
+and whole-control dim from the app. gpui-kit sets itself up for every `App` through gpui-fast's
+`on_every_app!` (`fast::app_init`), so the 452 GPUI tests, each with its own App, need no setup call. The kit
+passes cargo-deny as onicode's own crates do, without a new skip: it is English only (rust-i18n went, with the
+bitflags 1, itertools 0.11 and toml 0.8 it pinned), it speaks LSP through ls-types (lsp-types is unmaintained and
+pinned bitflags 1), and gpui-fast's cbindgen 0.29 drops toml 0.8. MIT-0 (borrow-or-share, under ls-types) joins
+the allowed licenses: it is MIT without the notice. What the
+move gains already: the buttons take keyboard focus and press, a disabled one takes no click, and each has an
+accessible name. The send button's morph stays in the app: it is a motion piece, its faces rolled through absolute
+layers, not a primitive. Next, in order: tooltips, popovers and menus, the text input, pickers, tabs, lists and
+scrollbars, badges, toasts, progress and pulse.
+
 ## Retained mode
 gpui-fast redraws a view only when something it read changed: an entity, a global, a list or scroll state, or the
 window's pointer, modifiers or focus. So:

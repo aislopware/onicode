@@ -143,31 +143,26 @@ pub(crate) fn header_project_icon(appearance: &ProjectAppearance, project: &str)
             .into_any_element(),
     }
 }
+/// The project settings' button: 32 pt tall, 10 pt of padding, a hairline ring and 12 pt text on
+/// an 18 pt line, washed under the pointer.
 pub(crate) fn button(
     id: impl Into<gpui::ElementId>,
     label: impl Into<SharedString>,
-) -> gpui::Stateful<gpui::Div> {
+) -> crate::kit::Button {
     let label = label.into();
     let selector = label.clone();
-    div()
-        .id(id)
+    let colors = crate::kit::Colors::colors(gpui::transparent_black(), content(0.7))
+        .border(content(0.1))
+        .hover(content(0.08))
+        .hover_foreground(content(1.));
+    crate::kit::button(id, colors, 6.)
         .debug_selector(move || format!("project-settings-{selector}"))
-        .role(Role::Button)
-        .aria_label(label.clone())
+        .label(label)
         .h(px(32.))
         .px(px(10.))
-        .flex()
-        .items_center()
-        .justify_center()
         .gap_1p5()
-        .rounded_md()
-        .border_1()
-        .border_color(content(0.1))
         .text_size(px(12.))
         .line_height(px(18.))
-        .text_color(content(0.7))
-        .hover(|s| s.bg(content(0.08)).text_color(content(1.)))
-        .child(label)
 }
 
 pub(crate) struct AppearanceControls {

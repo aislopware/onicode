@@ -8,10 +8,11 @@ use gpui::prelude::*;
 use gpui::{
     Animation, AnimationElement, AnimationExt, App, Context, Div, ElementId, EventEmitter,
     FocusHandle, Focusable, FontWeight, Hsla, KeyDownEvent, MouseButton, PromptButton,
-    PromptHandle, PromptLevel, PromptResponse, RenderablePromptHandle, Role, SharedString,
-    Stateful, Window, canvas, div, px,
+    PromptHandle, PromptLevel, PromptResponse, RenderablePromptHandle, SharedString, Window,
+    canvas, div, px,
 };
 
+use crate::kit::{self, Button, Colors, Disableable as _};
 use crate::theme::*;
 
 pub(crate) const RADIUS: f32 = 16.;
@@ -144,72 +145,49 @@ pub(crate) fn actions() -> Div {
         .gap(px(8.))
 }
 
-fn button(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Stateful<Div> {
-    let label = label.into();
-    div()
-        .id(id)
-        .role(Role::Button)
-        .aria_label(label.clone())
-        .flex()
-        .flex_shrink_0()
-        .items_center()
-        .justify_center()
+/// monocode's dialog button on gpui-kit's [`Button`]: 32 pt tall, 14 pt of padding, 9 pt
+/// corners and 13 pt text, painted in exactly the colours `colors` gives, with the pointing hand
+/// while it can be pressed.
+fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, colors: Colors) -> Button {
+    kit::button(id, colors, 9.)
+        .label(label)
         .h(px(32.))
         .px(px(14.))
-        .rounded(px(9.))
         .text_size(px(13.))
-        .whitespace_nowrap()
-        .child(label)
+        .cursor_pointer()
 }
 /// Quiet text that gains a soft wash on hover, for Cancel and the like.
-pub(crate) fn ghost_button(
-    id: impl Into<ElementId>,
-    label: impl Into<SharedString>,
-) -> Stateful<Div> {
-    button(id, label)
-        .text_color(content(0.6))
-        .hover(|s| s.bg(content(0.07)).text_color(content(1.)))
+pub(crate) fn ghost_button(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Button {
+    let colors = Colors::colors(gpui::transparent_black(), content(0.6))
+        .hover(content(0.07))
+        .hover_foreground(content(1.));
+    button(id, label, colors)
 }
 /// A quiet destructive action, like Delete beside Cancel.
 pub(crate) fn danger_ghost_button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
-) -> Stateful<Div> {
-    button(id, label)
-        .text_color(danger(1.))
-        .hover(|s| s.bg(danger(0.1)))
+) -> Button {
+    let colors = Colors::colors(gpui::transparent_black(), danger(1.)).hover(danger(0.1));
+    button(id, label, colors)
 }
 /// The filled confirming action: content ink with the inverse text.
-pub(crate) fn primary_button(
-    id: impl Into<ElementId>,
-    label: impl Into<SharedString>,
-) -> Stateful<Div> {
+pub(crate) fn primary_button(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Button {
     let mut ink = floating_fill();
     ink.a = 1.;
-    button(id, label)
-        .bg(content(0.92))
-        .text_color(ink)
-        .font_weight(FontWeight::MEDIUM)
-        .hover(|s| s.bg(content(0.8)))
+    let colors = Colors::colors(content(0.92), ink).hover(content(0.8));
+    button(id, label, colors).font_weight(FontWeight::MEDIUM)
 }
 /// A destructive confirmation.
-pub(crate) fn danger_button(
-    id: impl Into<ElementId>,
-    label: impl Into<SharedString>,
-) -> Stateful<Div> {
-    button(id, label)
-        .bg(danger(1.))
-        .text_color(gpui::white())
-        .font_weight(FontWeight::MEDIUM)
-        .hover(|s| s.bg(danger(0.85)))
+pub(crate) fn danger_button(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Button {
+    let colors = Colors::colors(danger(1.), gpui::white()).hover(danger(0.85));
+    button(id, label, colors).font_weight(FontWeight::MEDIUM)
 }
-/// Disables a dialog button without changing its size.
-pub(crate) fn disabled(button: Stateful<Div>, disabled: bool) -> Stateful<Div> {
-    if disabled {
-        button.opacity(0.4)
-    } else {
-        button.cursor_pointer()
-    }
+/// Disables a dialog button without changing its size: it dims and takes no press.
+pub(crate) fn disabled(button: Button, disabled: bool) -> Button {
+    button
+        .disabled(disabled)
+        .when(disabled, |button| button.opacity(0.4).cursor_default())
 }
 fn danger(alpha: f32) -> Hsla {
     gpui::hsla(0., 0.66, if is_light() { 0.5 } else { 0.47 }, alpha)

@@ -4527,14 +4527,15 @@ impl Shell {
 
     /// The classic layout's settings fill the project rail, so its toggle
     /// steps aside. Its slot stays, so nothing beside it moves.
-    fn sidebar_toggle(&self, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
+    fn sidebar_toggle(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         if self.settings.is_some() && self.workspace.classic_layout {
             return div()
                 .id("toggle-sidebar")
                 .debug_selector(|| "toggle-sidebar".into())
                 .flex_shrink_0()
                 .size(px(24.))
-                .child(self.peek_toggle_bounds.probe());
+                .child(self.peek_toggle_bounds.probe())
+                .into_any_element();
         }
         icon_button("toggle-sidebar", TOGGLE_SIDEBAR_LABEL, "sidebar")
             .debug_selector(|| "toggle-sidebar".into())
@@ -4547,6 +4548,7 @@ impl Shell {
                 }
             }))
             .on_click(cx.listener(|this, _, window, cx| this.toggle_primary_sidebar(window, cx)))
+            .into_any_element()
     }
 
     /// Part of the card: the project tools beside the workspace, behind a
@@ -4965,7 +4967,7 @@ impl Shell {
         })
     }
 
-    fn file_search_button(&self, cx: &Context<Self>) -> gpui::Stateful<gpui::Div> {
+    fn file_search_button(&self, cx: &Context<Self>) -> crate::kit::Button {
         let label = if cfg!(target_os = "macos") {
             "Search files (⌘P)"
         } else {

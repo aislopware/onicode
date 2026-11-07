@@ -2013,7 +2013,7 @@ fn toggle(
     id: impl Into<gpui::ElementId>,
     label: impl Into<SharedString>,
     on: bool,
-) -> Stateful<Div> {
+) -> crate::kit::Button {
     let label = label.into();
     secondary_button(id, label.clone(), false, false)
         .when(on, |button| button.bg(content(0.1)).text_color(content(1.)))
