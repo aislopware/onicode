@@ -78,3 +78,26 @@ window's pointer, modifiers or focus. So:
   it lays out no row again. The pane-slide bench (`pane_motion_frame_cost_with_long_history`, 10,000 messages, 80
   frames, release) went from CPU p50 11.9 ms to 7.5 ms (p95 8.1 ms), its samples including the second render the
   layout probes ask for while the panel moves.
+
+## Not rune, for now (2026-11-07)
+The owner weighed moving the GUI to anomalyco/rune, because both gpui forks need heavy patching. A measured
+evaluation on this Mac answered "not yet", and the owner kept gpui-fast and the gpui-kit plan. Rune met the bar in
+three places: a 200×60 terminal grid takes 0.9 ms a frame, it idles at about 0% CPU, and its golden tests run
+headless. It fails onicode's fixed requirements in five:
+- It draws text with its own engine, not Core Text: 4–8% of SF text pixels differ, by up to 68 levels, against
+  monocode's one-level goldens.
+- Its input runs through winit, which drops the IME replacement ranges: Telex tone edits and Japanese reconversion
+  fail.
+- Its video surface takes no 4:4:4 and presents on the UI frame.
+- It has no iOS.
+- monocode, our only UI source, is gpui.
+
+Rune also has no release, takes no PRs and has one main author. It becomes a candidate again when these hold: text
+matches Core Text, it owns its macOS input, video presents off the UI frame in 4:4:4, iOS runs in CI, it has a
+release policy, and a rune app ships publicly on macOS. It stays a reference in `scripts/upstream/sources.toml`.
+Ideas worth taking are ported into gpui-fast:
+- a motion gate that flags flicker and stale frames over time;
+- warnings that name views rebuilt too often;
+- skipping a present when the frame is unchanged.
+
+The evaluation is in `.research/rune/EVALUATION.md`, kept outside the repo.
