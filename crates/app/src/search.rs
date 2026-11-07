@@ -11,11 +11,11 @@ use gpui::{
     MouseButton, MouseMoveEvent, Pixels, Point, Render, Role, ScrollHandle, StyledText,
     Subscription, Task, Window, canvas, div, fill, point, px, relative, size,
 };
-use onicode_core::search::{self, Hit, Scope, Target};
-use onicode_core::store::Session;
-use onicode_core::transcript::Row;
-use onicode_engine::turn::Database;
 use onicode_protocol::files::{SearchContent, SearchPaths};
+use onicode_protocol::search;
+use onicode_protocol::search::{Hit, Scope, Target};
+use onicode_protocol::sessions::Session;
+use onicode_protocol::transcript::Row;
 use onicode_protocol::workspace::SearchSessions;
 
 use crate::engine_client;
@@ -48,7 +48,7 @@ pub(crate) struct SearchView {
     original_header: Option<f32>,
     /// Floating command panel; otherwise the original full page.
     panel: bool,
-    files: Vec<onicode_core::files::ProjectFile>,
+    files: Vec<onicode_protocol::files::ProjectFile>,
     scope: Scope,
     query: String,
     hits: Vec<Hit>,
@@ -65,8 +65,8 @@ pub(crate) struct SearchView {
     truncated: (bool, bool),
     error: Option<String>,
     cancel: Arc<AtomicBool>,
-    /// The app's own engine, which searches files, and the engine serving
-    /// `store`, which searches its saved conversations.
+    /// The app's own engine, which searches files, and the engine whose saved
+    /// conversations this view searches.
     files_engine: engine_client::Engine,
     sessions_engine: engine_client::Engine,
     /// The engine searches still running for this view's query, each under an
@@ -96,7 +96,7 @@ impl Drop for SearchView {
 impl SearchView {
     pub(crate) fn new(
         cwd: String,
-        store: Database,
+        sessions_engine: engine_client::Engine,
         sources: Sources,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -113,8 +113,7 @@ impl SearchView {
             this.refresh(cx);
         });
         let files_engine = engine_client::local(cx);
-        let sessions_engine = engine_client::engine(&store, cx);
-        let listing_id = onicode_core::new_id();
+        let listing_id = onicode_protocol::new_id();
         let listing = files_engine.call::<SearchPaths>(
             None,
             SearchPaths {
@@ -298,7 +297,7 @@ impl SearchView {
 
     /// A fresh id for a search `engine` runs for this query.
     fn search_id(&mut self, engine: &engine_client::Engine) -> String {
-        let id = onicode_core::new_id();
+        let id = onicode_protocol::new_id();
         self.running.push((engine.clone(), id.clone()));
         id
     }
@@ -637,7 +636,7 @@ impl SearchView {
         hits.extend(recent.into_iter().take(conversations).map(|s| Hit {
             id: format!("conversation:{}", s.id),
             target: Target::Conversation(s.id),
-            title: onicode_core::session_title::display_title(&s.title, &s.provider).into(),
+            title: onicode_protocol::session_title::display_title(&s.title, &s.provider).into(),
             meta: search::project_name(&s.cwd),
             provider: s.provider.clone(),
             highlights: vec![],
@@ -1285,10 +1284,7 @@ impl SearchView {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use gpui::TestAppContext;
-    use onicode_core::store::Store;
 
     use super::*;
 
@@ -1324,11 +1320,15 @@ mod tests {
             "const value = 'needle content';\n",
         )
         .unwrap();
-        let mut store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let mut session = store.create("codex", "/another-project").unwrap();
-        store.title(session.id, "Needle conversation").unwrap();
+        let engine = cx.update(engine_client::Engine::memory);
+        let mut session = engine.seed().create("codex", "/another-project").unwrap();
+        engine
+            .seed()
+            .title(session.id, "Needle conversation")
+            .unwrap();
         session.title = "Needle conversation".into();
-        store
+        engine
+            .seed()
             .write_rows(
                 session.id,
                 0,
@@ -1349,7 +1349,7 @@ mod tests {
                 let view = cx.new(|cx| {
                     SearchView::new(
                         cwd,
-                        Arc::new(Mutex::new(store)),
+                        engine,
                         Sources {
                             summaries: vec![session],
                             projects: vec![dir.path().to_string_lossy().into_owned()],
@@ -1476,8 +1476,8 @@ mod tests {
     }
     #[gpui::test]
     fn search_panel_suggests_recent_work_and_tabs_through_scopes(cx: &mut TestAppContext) {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let mut session = store.create("codex", "/project").unwrap();
+        let engine = cx.update(engine_client::Engine::memory);
+        let mut session = engine.seed().create("codex", "/project").unwrap();
         session.title = "Recent work".into();
         session.has_messages = true;
         let window = cx.update(|cx| {
@@ -1487,7 +1487,7 @@ mod tests {
                 let view = cx.new(|cx| {
                     SearchView::new(
                         "/nonexistent-search-panel".into(),
-                        Arc::new(Mutex::new(store)),
+                        engine,
                         Sources {
                             summaries: vec![session],
                             panel: true,

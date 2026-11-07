@@ -66,7 +66,7 @@ pub(super) struct Outline {
 }
 impl Outline {
     /// Patches only replace or extend the source from `start`.
-    pub(super) fn patched(&mut self, source: &[onicode_core::transcript::Row], start: usize) {
+    pub(super) fn patched(&mut self, source: &[onicode_protocol::transcript::Row], start: usize) {
         self.prompts.retain(|&ix| ix < start);
         let from = self.prompts.last().map_or(0, |&ix| ix + 1).max(start);
         self.prompts.extend(
@@ -490,7 +490,7 @@ fn strip_marker(line: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use onicode_core::transcript::Row;
+    use onicode_protocol::transcript::Row;
 
     use super::*;
 

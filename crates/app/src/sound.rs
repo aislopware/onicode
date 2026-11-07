@@ -6,6 +6,13 @@ pub(crate) enum Cue {
     Input,
     LinkedActivity,
 }
+#[cfg_attr(
+    all(target_os = "macos", not(test)),
+    expect(
+        clippy::disallowed_methods,
+        reason = "a cue plays on the viewer's own speakers"
+    )
+)]
 pub(crate) fn play(cue: Cue) {
     #[cfg(all(target_os = "macos", not(test)))]
     std::thread::spawn(move || {

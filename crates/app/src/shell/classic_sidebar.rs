@@ -848,7 +848,7 @@ impl Shell {
                 focused,
                 sessions,
                 ids,
-                self.store.clone(),
+                self.engine.clone(),
                 cx,
             )
         });
@@ -1069,7 +1069,7 @@ mod tests {
                 .update(visual, |shell, _, cx| {
                     shell.workspace.sidebar_width = width;
                     shell.git.update(cx, |git, cx| {
-                        git.stats = Some(onicode_core::scm::DiffStats {
+                        git.stats = Some(onicode_protocol::scm::DiffStats {
                             files: 1,
                             additions,
                             deletions,

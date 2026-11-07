@@ -10,7 +10,7 @@ pub(super) struct Metadata<'a> {
 }
 impl Metadata<'_> {
     pub(super) fn display_title(&self) -> String {
-        onicode_core::session_title::display_title(&self.summary.title, &self.summary.provider)
+        onicode_protocol::session_title::display_title(&self.summary.title, &self.summary.provider)
             .replace('\n', " ")
     }
 
@@ -98,8 +98,8 @@ impl Shell {
 pub(super) struct NewSessionDefaults {
     kind: Kind,
     model: Option<String>,
-    account: onicode_core::accounts::Profile,
-    access: onicode_core::agent::AccessMode,
+    account: onicode_protocol::accounts::Profile,
+    access: onicode_protocol::agent::AccessMode,
     effort: Option<String>,
 }
 
@@ -147,23 +147,24 @@ impl NewSessionDefaults {
 #[cfg(test)]
 mod tests {
     use gpui::TestAppContext;
-    use onicode_core::agent::Settings;
-    use onicode_core::store::Store;
+    use onicode_protocol::agent::Settings;
 
     use super::*;
+    use crate::engine_client::Engine;
 
     #[gpui::test]
     fn whole_project_sidebar_keeps_seven_today_sessions_across_worktrees_lazy(
         cx: &mut TestAppContext,
     ) {
-        let store = Store::open_monocode(std::path::Path::new(":memory:")).unwrap();
+        let engine = cx.update(Engine::memory);
+        let store = engine.seed();
         let mut summaries = Vec::new();
         let mut main = HashSet::new();
         let mut feature = HashSet::new();
         for i in 0..7 {
             let mut summary = store.create("codex", "/work/project").unwrap();
             summary.has_messages = true;
-            summary.updated_at = onicode_core::time::now_ms();
+            summary.updated_at = onicode_protocol::time::now_ms();
             if i < 3 {
                 main.insert(summary.id);
             } else {
@@ -190,10 +191,9 @@ mod tests {
             .unwrap();
         other.has_messages = true;
         summaries.push(other);
-        let database = Arc::new(Mutex::new(store));
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {
-                cx.new(|cx| Shell::new(database, summaries, "/work/project".into(), None, cx))
+                cx.new(|cx| Shell::new(engine, summaries, "/work/project".into(), None, cx))
             })
             .unwrap()
         });
@@ -249,7 +249,8 @@ mod tests {
 
     #[gpui::test]
     fn restoring_large_history_materializes_only_visible_chats(cx: &mut TestAppContext) {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let engine = cx.update(Engine::memory);
+        let store = engine.seed();
         let mut summaries = Vec::new();
         for i in 0..1200 {
             let cwd = if i < 1000 {
@@ -268,12 +269,9 @@ mod tests {
         workspace.open(oldest);
         workspace.open(first);
         let saved = serde_json::to_string(&workspace).unwrap();
-        let database = Arc::new(Mutex::new(store));
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {
-                cx.new(|cx| {
-                    Shell::new(database, summaries, "/work/history".into(), Some(saved), cx)
-                })
+                cx.new(|cx| Shell::new(engine, summaries, "/work/history".into(), Some(saved), cx))
             })
             .unwrap()
         });
@@ -323,7 +321,7 @@ mod tests {
                     .write_rows(
                         summary.id,
                         0,
-                        &[onicode_core::transcript::Row {
+                        &[onicode_protocol::transcript::Row {
                             role: "assistant".into(),
                             text: format!("Saved answer {i}"),
                             first: true,

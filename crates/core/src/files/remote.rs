@@ -1,17 +1,12 @@
 //! The native equivalent of `connections/model/remoteCommands.ts`.
 //! Keep host paths behind `remote://` paths at every workspace API boundary.
-use std::path::Path;
-
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 const UNAVAILABLE: &str = "This isn’t available for projects on another machine yet.";
 const OUTDATED: &str = "Update Onicode Host in Connections settings to use this project’s files.";
 
-pub fn is_remote(path: &Path) -> bool {
-    path.to_str()
-        .is_some_and(|path| path.starts_with("remote://"))
-}
+pub use onicode_protocol::remote::is_remote;
 
 /// Run one of the same bounded workspace commands supported by the Tauri app.
 /// This is synchronous, like the filesystem APIs; call from a background task.

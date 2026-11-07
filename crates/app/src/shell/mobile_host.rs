@@ -7,11 +7,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use gpui::{EntityId, Task};
-use onicode_core::agent::{AccessMode, Settings, TurnInfo};
 use onicode_core::mobile::{
     Event, Invite, MobileHost, Push, Request, Status, WatchStart, notify, watch,
 };
-use onicode_core::transcript::Row;
+use onicode_engine::turn::locked;
+use onicode_protocol::agent::{AccessMode, Settings, TurnInfo};
+use onicode_protocol::transcript::Row;
 use serde_json::{Value, json};
 
 use super::*;
@@ -151,7 +152,7 @@ impl Shell {
         if cx.is_test() {
             return;
         }
-        let Some(path) = locked(&self.store)
+        let Some(path) = locked(&self.engine.legacy_store())
             .ok()
             .and_then(|store| store.data_dir().map(|dir| dir.join("mobile-access.json")))
         else {
@@ -295,7 +296,7 @@ impl Shell {
             if !path.is_empty()
                 && path != "~"
                 && !paths.iter().any(|p| {
-                    onicode_core::files::path_key(p) == onicode_core::files::path_key(&path)
+                    onicode_protocol::files::path_key(p) == onicode_protocol::files::path_key(&path)
                 })
             {
                 paths.push(path);
@@ -316,7 +317,7 @@ impl Shell {
         let choice = self.new_chat_choice(cwd);
         let model = choice
             .model
-            .and_then(|model| onicode_core::store::native_model(&model, choice.kind.id()));
+            .and_then(|model| onicode_protocol::sessions::native_model(&model, choice.kind.id()));
         (choice.kind, model, crate::conversation::default_access(cx))
     }
 
@@ -330,15 +331,15 @@ impl Shell {
                 if summary.archived || !summary.has_messages || self.orchestration_worker(id) {
                     return None;
                 }
-                let key = onicode_core::files::path_key(&summary.cwd);
+                let key = onicode_protocol::files::path_key(&summary.cwd);
                 let project = paths
                     .iter()
-                    .find(|path| onicode_core::files::path_key(path) == key)?;
+                    .find(|path| onicode_protocol::files::path_key(path) == key)?;
                 let live = self.sessions.get(&id).map(|view| {
                     let view = view.read(cx);
                     mobile_catalog::LiveSession {
                         loaded: view.history_loaded(),
-                        metadata: onicode_core::store::MobileSessionMetadata {
+                        metadata: onicode_protocol::sessions::MobileSessionMetadata {
                             model: view.mobile_model().map(str::to_owned),
                             branch: view.mobile_branch().map(str::to_owned),
                             worktree_cwd: view.settings.worktree_cwd.clone(),
@@ -399,7 +400,7 @@ impl Shell {
             })
             .collect();
         let entries = self.mobile_catalog_sessions(&paths, cx);
-        let store = self.store.clone();
+        let store = self.engine.legacy_store();
         let mut ids = self.mobile.ids.clone();
         self.mobile.publishing = true;
         let work = cx.background_executor().spawn(async move {
@@ -486,7 +487,11 @@ impl Shell {
             .iter()
             .find(|(_, persisted)| *persisted == id)
             .map(|(id, _)| *id)
-            .or_else(|| locked(&self.store).ok()?.resolve_existing_session_id(id))
+            .or_else(|| {
+                locked(&self.engine.legacy_store())
+                    .ok()?
+                    .resolve_existing_session_id(id)
+            })
             .filter(|id| self.session_summaries.contains_key(id))
             .ok_or_else(|| "Session is no longer available".into())
     }
@@ -495,7 +500,7 @@ impl Shell {
         if let Some(value) = self.mobile.ids.get(&id) {
             return value.clone();
         }
-        let value = locked(&self.store)
+        let value = locked(&self.engine.legacy_store())
             .ok()
             .and_then(|store| store.persisted_session_id(id).ok())
             .unwrap_or_else(|| id.to_string());
@@ -708,7 +713,7 @@ impl Shell {
 
     fn load_saved(&self, id: i64, cx: &mut Context<Self>) -> Task<Result<Arc<Saved>, String>> {
         let summary = self.session_summaries.get(&id).cloned();
-        let store = self.store.clone();
+        let store = self.engine.legacy_store();
         cx.background_executor().spawn(async move {
             let store = locked(&store)?;
             let rows = store.load(id)?.rows;
@@ -1005,9 +1010,10 @@ impl Shell {
                     string(params, "harness").as_deref().and_then(Kind::parse),
                     string(params, "model"),
                 ) {
-                    (Some(kind), Some(model)) if model.len() <= 256 => {
-                        Some((kind, onicode_core::store::native_model(&model, kind.id())))
-                    }
+                    (Some(kind), Some(model)) if model.len() <= 256 => Some((
+                        kind,
+                        onicode_protocol::sessions::native_model(&model, kind.id()),
+                    )),
                     _ => None,
                 };
                 let settings = model_settings(params);
@@ -1158,7 +1164,7 @@ impl Shell {
         let effort = crate::conversation::preferred_effort(kind.id(), cx);
         let mut chosen_settings = model_settings(&params);
         let stage = self.stage_mobile_attachments(&params, cx);
-        let store = self.store.clone();
+        let store = self.engine.legacy_store();
         let work = cx.background_executor().spawn(async move {
             let attachments = stage.await?;
             let root = PathBuf::from(&cwd);
@@ -1250,8 +1256,11 @@ impl Shell {
         let body = delivery::clip_body(body);
         let (project, path) = self.mobile_notice_project(summary);
         let notice = notify::Notice {
-            title: onicode_core::session_title::display_title(&summary.title, &summary.provider)
-                .to_owned(),
+            title: onicode_protocol::session_title::display_title(
+                &summary.title,
+                &summary.provider,
+            )
+            .to_owned(),
             subtitle: Some(project),
             body: if body.is_empty() {
                 "Finished".into()
@@ -1268,11 +1277,11 @@ impl Shell {
 
     /// The project a session's notice is filed under, by name and path.
     fn mobile_notice_project(&self, summary: &Session) -> (String, String) {
-        let key = onicode_core::files::path_key(&summary.cwd);
+        let key = onicode_protocol::files::path_key(&summary.cwd);
         let path = self
             .mobile_projects()
             .into_iter()
-            .find(|path| onicode_core::files::path_key(path) == key)
+            .find(|path| onicode_protocol::files::path_key(path) == key)
             .unwrap_or_else(|| summary.cwd.clone());
         (self.appearance(&path).label(&path), path)
     }
@@ -1312,7 +1321,7 @@ impl Shell {
         cwd: &str,
         params: &Value,
         cx: &App,
-    ) -> Result<onicode_core::accounts::Profile, String> {
+    ) -> Result<onicode_protocol::accounts::Profile, String> {
         let Some(center) = crate::accounts::get(cx) else {
             return Ok(Default::default());
         };
@@ -1320,7 +1329,7 @@ impl Shell {
         let Some(id) = params.get("providerAccountId").filter(|v| !v.is_null()) else {
             return Ok(center.selected(kind, cwd));
         };
-        if !onicode_core::accounts::supports_profiles(kind) {
+        if !onicode_protocol::accounts::supports_profiles(kind) {
             return Err("This provider does not support account switching".into());
         }
         match id.as_str() {
@@ -1340,7 +1349,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Task<Result<Vec<PathBuf>, String>> {
         let value = params["attachments"].clone();
-        let store = self.store.clone();
+        let store = self.engine.legacy_store();
         cx.background_executor().spawn(async move {
             if value.is_null() {
                 return Ok(Vec::new());
@@ -1386,7 +1395,7 @@ impl Shell {
                         }
                     })
                     .collect();
-                let path = root.join(format!("mobile-{}-{safe}", onicode_core::new_id()));
+                let path = root.join(format!("mobile-{}-{safe}", onicode_protocol::new_id()));
                 std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
                 paths.push(path);
             }
@@ -1400,6 +1409,10 @@ impl Shell {
     /// What the phone's model sheet offers: each provider the desktop picker
     /// shows, their models and settings, the permission modes, the accounts,
     /// and what the conversation or a new session in the project runs with.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the phone host goes in step 11 (engine.md)"
+    )]
     fn mobile_models(&mut self, request: Request, cx: &mut Context<Self>) {
         let params = request.params.clone();
         let current = match string(&params, "conversationId") {
@@ -1422,8 +1435,9 @@ impl Shell {
                                 .session_summaries
                                 .get(&id)
                                 .ok_or("Session is no longer available")?;
-                            let settings =
-                                locked(&self.store)?.agent_settings(id)?.unwrap_or_default();
+                            let settings = locked(&self.engine.legacy_store())?
+                                .agent_settings(id)?
+                                .unwrap_or_default();
                             Ok((
                                 summary.cwd.clone(),
                                 Kind::from_id(&summary.provider),
@@ -1461,7 +1475,7 @@ impl Shell {
                     .map(|a| {
                         let mut value =
                             json!({"id": a.id, "provider": a.provider, "label": a.label});
-                        if a.id == onicode_core::accounts::DEFAULT {
+                        if a.id == onicode_protocol::accounts::DEFAULT {
                             value["isDefault"] = json!(true);
                         }
                         value
@@ -1482,14 +1496,14 @@ impl Shell {
                 )
             })
             .collect();
-        let profiles: Vec<(Kind, onicode_core::accounts::Profile)> = Kind::ALL
+        let profiles: Vec<(Kind, onicode_protocol::accounts::Profile)> = Kind::ALL
             .into_iter()
             .map(|k| {
                 let profile = center.map(|c| c.selected(k, &cwd)).unwrap_or_default();
                 (k, profile)
             })
             .collect();
-        let account = account.filter(|_| onicode_core::accounts::supports_profiles(kind));
+        let account = account.filter(|_| onicode_protocol::accounts::supports_profiles(kind));
         let work = cx.background_executor().spawn(async move {
             let harnesses: Vec<Kind> = profiles
                 .iter()
@@ -1583,7 +1597,7 @@ impl Shell {
             }
             let result = cx.update(|cx| {
                 let center = center.read(cx);
-                let now = onicode_core::usage::now_ms();
+                let now = onicode_protocol::usage::now_ms();
                 let snapshots: serde_json::Map<String, Value> = accounts
                     .iter()
                     .map(|id| {
@@ -1607,7 +1621,7 @@ impl Shell {
                                 let reset = match window.resets_at {
                                     None => window.label(),
                                     Some(at) if at <= now => "reset due".into(),
-                                    Some(at) => format!("Resets in {}", onicode_core::usage::duration(at - now)),
+                                    Some(at) => format!("Resets in {}", onicode_protocol::usage::duration(at - now)),
                                 };
                                 Some(json!({
                                     "title": title,
@@ -1723,7 +1737,7 @@ fn title_case(value: &str) -> String {
 }
 
 /// A catalog model as the phone's model sheet lists it, with its settings.
-fn catalog_model(kind: Kind, model: onicode_core::catalog::Model) -> Value {
+fn catalog_model(kind: Kind, model: onicode_protocol::catalog::Model) -> Value {
     let toggle = |id: &str, label: &str| {
         json!({
             "id": id, "label": label, "kind": "toggle", "value": "false",
@@ -1772,7 +1786,7 @@ fn catalog_model(kind: Kind, model: onicode_core::catalog::Model) -> Value {
 fn explicit_model(prefs: &crate::settings::Preferences, cwd: &str, kind: Kind) -> Option<String> {
     new_chat_choice::NewChatChoice::explicit(prefs, cwd, kind)
         .model
-        .and_then(|model| onicode_core::store::native_model(&model, kind.id()))
+        .and_then(|model| onicode_protocol::sessions::native_model(&model, kind.id()))
 }
 
 /// The model a phone-started session gets: the phone's own pick, else the
@@ -1786,7 +1800,7 @@ fn start_model(
 ) -> Option<String> {
     match (chosen, requested) {
         (Some(kind), Some(model)) if model.len() <= 256 => {
-            onicode_core::store::native_model(&model, kind.id())
+            onicode_protocol::sessions::native_model(&model, kind.id())
         }
         (Some(kind), _) => explicit_model(prefs, cwd, kind),
         _ => default_model,
@@ -1796,7 +1810,7 @@ fn start_model(
 /// Providers the phone's model sheet leaves out. Remote projects list them all,
 /// as the desktop model picker does.
 fn hidden_providers(prefs: &crate::settings::Preferences, cwd: &str) -> Vec<String> {
-    if onicode_core::remote::parse_remote_path(cwd).is_some() {
+    if onicode_protocol::remote::parse_remote_path(cwd).is_some() {
         return Vec::new();
     }
     prefs.hidden_for(cwd)
@@ -1871,8 +1885,8 @@ mod tests {
                         None,
                         cx,
                     );
-                    v.settings.usage_limit = Some(onicode_core::usage::Limit {
-                        resets_at: Some(onicode_core::usage::now_ms() + 60_000),
+                    v.settings.usage_limit = Some(onicode_protocol::usage::Limit {
+                        resets_at: Some(onicode_protocol::usage::now_ms() + 60_000),
                         resume_at_reset: false,
                     });
                     let token = v.mobile_usage_limit(cx)["token"].clone();
@@ -1883,7 +1897,8 @@ mod tests {
             .unwrap();
         cx.run_until_parked();
         window.update(cx, |shell, window, cx| {
-            let store = locked(&shell.store).unwrap();
+            let database = shell.engine.legacy_store();
+            let store = locked(&database).unwrap();
             let summary = shell.session_summaries[&id].clone();
             let saved = Saved { id, settings: store.agent_settings(id).unwrap().unwrap(), rows: store.load(id).unwrap().rows, harness: summary.provider, cwd: summary.cwd };
             drop(store);
@@ -1911,11 +1926,11 @@ mod tests {
 
     #[test]
     fn saved_usage_state_carries_provider_reset_and_recomputes_eligibility() {
-        let reset = onicode_core::usage::now_ms() + 7 * 24 * 3_600_000;
+        let reset = onicode_protocol::usage::now_ms() + 7 * 24 * 3_600_000;
         let mut saved = Saved {
             id: 42,
             settings: Settings {
-                usage_limit: Some(onicode_core::usage::Limit {
+                usage_limit: Some(onicode_protocol::usage::Limit {
                     resets_at: Some(reset),
                     resume_at_reset: true,
                 }),
@@ -1930,7 +1945,7 @@ mod tests {
         assert_eq!(state["canResume"], false);
         assert_eq!(state["resumeAtReset"], true);
         saved.settings.usage_limit.as_mut().unwrap().resets_at =
-            Some(onicode_core::usage::now_ms() - 1);
+            Some(onicode_protocol::usage::now_ms() - 1);
         let state = saved_snapshot(&saved).usage_limit;
         assert_eq!(state["canResume"], true);
         assert_eq!(state["resetLabel"], "Limit has reset");
@@ -1944,7 +1959,7 @@ mod tests {
 
     #[test]
     fn model_choices_use_the_same_ids_as_session_cards_and_normalize_back_for_the_cli() {
-        let model = onicode_core::catalog::Model {
+        let model = onicode_protocol::catalog::Model {
             alias_target: None,
             id: "claude-opus-5-5".into(),
             name: "Claude Opus 5.5".into(),
@@ -1955,6 +1970,7 @@ mod tests {
             default: true,
             tiers: vec![],
             controls: vec![],
+            limits: Default::default(),
         };
         assert_eq!(
             mobile_catalog::current_model_id(Kind::Claude, None, std::slice::from_ref(&model)),
@@ -1973,7 +1989,8 @@ mod tests {
         assert_eq!(choice["name"], "Claude Opus 5.5");
         assert_eq!(choice["settings"][0]["value"], "high");
         assert_eq!(
-            onicode_core::store::native_model(choice["id"].as_str().unwrap(), "claude").as_deref(),
+            onicode_protocol::sessions::native_model(choice["id"].as_str().unwrap(), "claude")
+                .as_deref(),
             Some("claude-opus-5-5")
         );
     }
@@ -1981,7 +1998,10 @@ mod tests {
     #[test]
     fn remote_projects_keep_hidden_providers_in_the_model_sheet() {
         let prefs = crate::settings::Preferences {
-            hidden_providers: vec!["claude".into()],
+            engine: onicode_protocol::engine_settings::EngineSettings {
+                hidden_providers: vec!["claude".into()],
+                ..Default::default()
+            },
             ..Default::default()
         };
         assert_eq!(hidden_providers(&prefs, "/work/project"), ["claude"]);
@@ -1991,10 +2011,14 @@ mod tests {
     #[test]
     fn a_project_hidden_provider_is_left_out_of_the_model_sheet_for_local_projects() {
         let mut prefs = crate::settings::Preferences {
-            hidden_providers: vec!["claude".into()],
+            engine: onicode_protocol::engine_settings::EngineSettings {
+                hidden_providers: vec!["claude".into()],
+                ..Default::default()
+            },
             ..Default::default()
         };
         prefs
+            .engine
             .project_providers
             .entry("/work/project".into())
             .or_default()
@@ -2010,7 +2034,10 @@ mod tests {
     #[test]
     fn an_explicit_phone_provider_without_a_model_uses_its_configured_model() {
         let mut prefs = crate::settings::Preferences {
-            default_models: [("claude".into(), "claude-opus-5-5".into())].into(),
+            engine: onicode_protocol::engine_settings::EngineSettings {
+                default_models: [("claude".into(), "claude-opus-5-5".into())].into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         assert_eq!(
@@ -2018,6 +2045,7 @@ mod tests {
             Some("claude-opus-5-5")
         );
         let project = prefs
+            .engine
             .project_providers
             .entry("/work/project".into())
             .or_default();
@@ -2042,7 +2070,7 @@ mod tests {
         assert_eq!(choice.kind, Kind::Claude);
         let recent = choice
             .model
-            .and_then(|model| onicode_core::store::native_model(&model, "claude"));
+            .and_then(|model| onicode_protocol::sessions::native_model(&model, "claude"));
         assert_eq!(recent.as_deref(), Some("claude-haiku-5-5"));
         let start = |prefs: &crate::settings::Preferences, chosen, requested: Option<&str>| {
             start_model(
@@ -2058,6 +2086,7 @@ mod tests {
         // Explicit without a model: the harness default, not the recent model.
         assert_eq!(start(&prefs, Some(Kind::Claude), None), None);
         prefs
+            .engine
             .default_models
             .insert("claude".into(), "claude-opus-5-5".into());
         assert_eq!(

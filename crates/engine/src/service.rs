@@ -1,4 +1,6 @@
 //! Every group the engine serves, as one `onicode-rpc` service.
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use onicode_protocol::files::StopSearch;
 use onicode_protocol::{Call, OpId, Outcome, Routed};
@@ -11,11 +13,19 @@ use crate::git::GitService;
 use crate::session::SessionService;
 use crate::workspace::WorkspaceService;
 
+/// A group of calls and watches that is not one of the first four: it says which methods it
+/// serves, and serves them.
+pub trait Group: RpcService {
+    fn serves(&self, method: &str) -> bool;
+}
+
 pub struct EngineService {
     session: SessionService,
     workspace: WorkspaceService,
     files: FilesService,
     git: GitService,
+    /// The Agents, Engine settings and later groups, asked in order.
+    groups: Vec<Arc<dyn Group>>,
 }
 
 impl EngineService {
@@ -31,7 +41,15 @@ impl EngineService {
             workspace,
             files,
             git,
+            groups: Vec::new(),
         }
+    }
+
+    /// This service, also serving `group`.
+    #[must_use]
+    pub fn with(mut self, group: Arc<dyn Group>) -> Self {
+        self.groups.push(group);
+        self
     }
 }
 
@@ -45,7 +63,9 @@ impl RpcService for EngineService {
             self.workspace.stop_search(&search);
             return reply(Ok(Outcome::Applied));
         }
-        if WorkspaceService::serves(method) {
+        if let Some(group) = self.groups.iter().find(|group| group.serves(method)) {
+            group.handle(method, params).await
+        } else if WorkspaceService::serves(method) {
             self.workspace.handle(method, params).await
         } else if FilesService::serves(method) {
             self.files.handle(method, params).await
@@ -57,7 +77,7 @@ impl RpcService for EngineService {
     }
 }
 
-/// A Files or Git call's body and op, if it is for this engine.
+/// A call's body and op, if it is for this engine.
 pub(crate) fn routed<T: DeserializeOwned>(
     params: serde_json::Value,
 ) -> Result<(Option<OpId>, T), RpcError> {
@@ -65,7 +85,7 @@ pub(crate) fn routed<T: DeserializeOwned>(
     if routed.engine.is_some() {
         // Forwarding to other engines arrives with peers (engine.md, migration step 9).
         return Err(RpcError::Failed(
-            "This engine serves only its own files and checkouts".into(),
+            "This engine serves only its own calls".into(),
         ));
     }
     Ok((routed.op, routed.body))

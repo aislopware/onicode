@@ -1,17 +1,30 @@
 use gpui::App;
-use onicode_core::accounts::Profile;
-use onicode_core::usage::{self, Limit};
+use onicode_protocol::accounts::Profile;
+use onicode_protocol::agents::{ForgetThread, TransferThread};
+use onicode_protocol::session::ResetThread;
+use onicode_protocol::usage;
+use onicode_protocol::usage::Limit;
 
 use super::*;
 impl Conversation {
     /// Update notifications refresh the account-specific picker after a CLI update.
     pub(crate) fn refresh_models_after_harness_update(&mut self, cx: &mut Context<Self>) {
-        onicode_core::catalog::invalidate(
-            Kind::from_id(&self.summary.provider),
-            &self.settings.account,
+        let reload = self.engine.call::<onicode_protocol::agents::Catalog>(
+            None,
+            onicode_protocol::agents::Catalog {
+                provider: Kind::from_id(&self.summary.provider),
+                account: self.settings.account.id.clone(),
+                read: onicode_protocol::agents::CatalogRead::Reload,
+            },
         );
-        self.refresh_catalog(cx);
-        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let _ = reload.await;
+            let _ = this.update(cx, |this, cx| {
+                this.refresh_catalog(cx);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// Claude reports its limits only during turns, so a finished turn is when its meter moves.
@@ -29,8 +42,8 @@ impl Conversation {
 
     pub(super) fn auth_notice(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let kind = Kind::from_id(&self.summary.provider);
-        let action = onicode_core::accounts::AuthAction::SignIn;
-        if self.busy || onicode_core::accounts::login_arguments(kind, action).is_none() {
+        let action = onicode_protocol::accounts::AuthAction::SignIn;
+        if self.busy || onicode_protocol::accounts::login_arguments(kind, action).is_none() {
             return None;
         }
         let status = self.status.to_ascii_lowercase();
@@ -84,17 +97,11 @@ impl Conversation {
         )
     }
 
-    pub(crate) fn attach_account(&mut self, cx: &App) {
+    /// A remote session runs on its host's default account. A local one names its account and
+    /// the engine finds its home.
+    pub(crate) fn attach_account(&mut self, _: &App) {
         if self.is_remote() {
             self.settings.account = Default::default();
-            return;
-        }
-        if self.settings.account.id == onicode_core::accounts::DEFAULT {
-            self.settings.account.root = None;
-            return;
-        }
-        if let Some(center) = crate::accounts::get(cx) {
-            self.settings.account.root = Some(center.read(cx).root.clone());
         }
     }
 
@@ -262,12 +269,23 @@ impl Conversation {
         let thread = self.summary.provider_id.clone();
         let expected = thread.clone();
         let kind = Kind::from_id(&self.summary.provider);
-        let to = profile.clone();
         self.account_switching = true;
+        let transfer = thread.map(|thread| {
+            self.engine.call::<TransferThread>(
+                Some(OpId::new()),
+                TransferThread {
+                    provider: kind,
+                    from: from.id.clone(),
+                    to: profile.id.clone(),
+                    thread,
+                },
+            )
+        });
         let work = cx.background_executor().spawn(async move {
-            thread
-                .as_ref()
-                .is_some_and(|id| from.transfer(&to, kind, id).is_ok())
+            match transfer {
+                Some(transfer) => transfer.await.unwrap_or(false),
+                None => false,
+            }
         });
         let old = self.settings.account.id.clone();
         cx.spawn(async move |this, cx| {
@@ -286,7 +304,7 @@ impl Conversation {
                 if !carried {
                     if this.settings.pending_provider_switch.is_none() {
                         this.settings.pending_provider_switch =
-                            Some(onicode_core::agent::ProviderSwitch {
+                            Some(onicode_protocol::agent::ProviderSwitch {
                                 from: this.summary.provider.clone(),
                                 model_label: this.model_label().to_string(),
                                 cwd: this.execution_cwd().to_owned(),
@@ -302,28 +320,31 @@ impl Conversation {
                             });
                     }
                     this.summary.provider_id = None;
-                    let store = this.store.clone();
-                    let id = this.summary.id;
                     let expected = expected.clone();
-                    cx.background_executor()
-                        .spawn(async move {
-                            let _ = locked(&store)
-                                .and_then(|s| s.reset_provider_id_if(id, expected.as_deref()));
-                        })
-                        .detach();
-                    this.settings.handoff = Some(onicode_core::agent::Handoff {
+                    this.session_call::<ResetThread>(
+                        Some(OpId::new()),
+                        move |session| ResetThread { session, expected },
+                        cx,
+                    )
+                    .detach();
+                    this.settings.handoff = Some(onicode_protocol::agent::Handoff {
                         from: this.summary.provider.clone(),
-                        brief: onicode_core::response::handoff(
+                        brief: onicode_protocol::response::handoff(
                             this.transcript.read(cx).source_rows(),
                         ),
                     });
-                } else if let Some(id) = &this.summary.provider_id {
-                    onicode_core::provider::forget_session(
-                        kind,
-                        id,
-                        &old,
-                        Path::new(this.execution_cwd()),
+                } else if let Some(thread) = this.summary.provider_id.clone() {
+                    // The thread moved; the old account's agent lets it go.
+                    let forget = this.engine.call::<ForgetThread>(
+                        Some(OpId::new()),
+                        ForgetThread {
+                            provider: kind,
+                            thread,
+                            account: old.clone(),
+                            cwd: this.execution_cwd().to_owned(),
+                        },
                     );
+                    cx.background_executor().spawn(forget).detach();
                 }
                 this.settings.account = profile;
                 this.catalog.clear();
@@ -369,7 +390,7 @@ impl Conversation {
         let kind = Kind::from_id(&self.summary.provider);
         let reset = usage_reset_label(limit, now);
         let mut controls = div().flex().flex_shrink_0().items_center().gap(px(8.));
-        if onicode_core::accounts::supports_profiles(kind)
+        if onicode_protocol::accounts::supports_profiles(kind)
             && crate::accounts::get(cx).is_some_and(|center| {
                 center
                     .read(cx)
@@ -594,15 +615,10 @@ mod tests {
     fn account_recovery_uses_the_terminal_limit_without_reviving_an_older_failure(
         cx: &mut gpui::TestAppContext,
     ) {
-        use onicode_core::transcript::Row;
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
-        let summary = locked(&store)
-            .unwrap()
-            .create("claude", "/fixture")
-            .unwrap();
-        let view = cx.new(|cx| Conversation::new(summary, store, cx));
+        use onicode_protocol::transcript::Row;
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let summary = engine.seed().create("claude", "/fixture").unwrap();
+        let view = cx.new(|cx| Conversation::new(summary, engine, cx));
         view.update(cx, |view, cx| {
             let row = |role: &str, text: &str| Row {
                 role: role.into(),
@@ -640,14 +656,9 @@ mod tests {
     fn claude_limit_code_opens_recovery_and_preserves_the_reported_reset(
         cx: &mut gpui::TestAppContext,
     ) {
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
-        let summary = locked(&store)
-            .unwrap()
-            .create("claude", "/fixture")
-            .unwrap();
-        let view = cx.new(|cx| Conversation::new(summary, store, cx));
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let summary = engine.seed().create("claude", "/fixture").unwrap();
+        let view = cx.new(|cx| Conversation::new(summary, engine, cx));
         view.update(cx, |view, cx| {
             view.status = "rate_limit".into();
             view.detect_usage_limit(cx);
@@ -667,24 +678,27 @@ mod tests {
     fn usage_banner_matches_the_composer_and_can_arm_cancel_and_dismiss(
         cx: &mut gpui::TestAppContext,
     ) {
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
-        let mut summary = locked(&store)
-            .unwrap()
-            .create("claude", "/fixture")
-            .unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let mut summary = engine.seed().create("claude", "/fixture").unwrap();
         summary.has_messages = true;
         let id = summary.id;
-        let saved = store.clone();
+        let saved = engine.seed();
         let window = cx.update(|cx| {
-            crate::accounts::install(store.clone(), cx);
-            crate::accounts::get(cx).unwrap().update(cx, |center, _| {
-                center.book.add(Kind::Claude, "Other account").unwrap();
+            crate::accounts::install(engine.clone(), cx);
+            crate::accounts::get(cx).unwrap().update(cx, |center, cx| {
+                let mut book = center.book.clone();
+                book.add(Kind::Claude, "Other account").unwrap();
+                center.script(
+                    onicode_protocol::agents::AccountsState {
+                        book,
+                        ..Default::default()
+                    },
+                    cx,
+                );
             });
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
-                    let mut view = Conversation::new(summary, store, cx);
+                    let mut view = Conversation::new(summary, engine, cx);
                     view.loaded = true;
                     view.status = "Claude Code reached its usage limit.".into();
                     view.settings.usage_limit = Some(Limit {
@@ -725,9 +739,9 @@ mod tests {
                     .resume_at_reset)
                 .unwrap()
         );
+        visual.run_until_parked();
         assert!(
-            locked(&saved)
-                .unwrap()
+            saved
                 .agent_settings(id)
                 .unwrap()
                 .unwrap()

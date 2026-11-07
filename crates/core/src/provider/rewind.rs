@@ -34,10 +34,6 @@ fn transport_error(message: String, mutating: bool) -> RewindError {
     }
 }
 
-pub fn supports_rewind(kind: Kind) -> bool {
-    matches!(kind, Kind::Codex | Kind::Pi | Kind::Omp | Kind::OpenCode)
-}
-
 /// Runs on a worker, after the caller has reserved its conversation. Returns the
 /// provider binding to persist with the confirmed local truncation. Pi forks to
 /// a new session; Codex keeps the current thread. No prompt is sent here.

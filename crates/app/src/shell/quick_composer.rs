@@ -169,7 +169,7 @@ impl Shell {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let store = self.store.clone();
+        let engine = self.engine.clone();
         let mut choice = launch.clone();
         let attachments = std::mem::take(&mut choice.attachments);
         crate::conversation::remember_access(choice.access, cx);
@@ -177,7 +177,7 @@ impl Shell {
         let account = crate::accounts::get(cx)
             .map(|a| a.read(cx).selected(launch.kind, &launch.cwd))
             .unwrap_or_default();
-        let settings = onicode_core::agent::Settings {
+        let settings = onicode_protocol::agent::Settings {
             account,
             model: choice.model,
             access: choice.access,
@@ -199,19 +199,28 @@ impl Shell {
         let work = cx.spawn(async move |_, cx| {
             let (summary, _) = created.await?;
             let id = summary.id;
-            // The pasted files move into the session's attachments folder: files, which stay
-            // the app's until they move into the engine (engine.md, migration step 5).
-            let attachments = cx
+            // The pasted files move into the session's attachments folder.
+            let strings = |paths: Vec<std::path::PathBuf>| -> Vec<String> {
+                paths
+                    .into_iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect()
+            };
+            let adopt = onicode_protocol::files::AdoptAttachments {
+                session: id,
+                paths: strings(attachments),
+                staged: strings(staged),
+            };
+            let attachments: Vec<std::path::PathBuf> = cx
                 .background_executor()
-                .spawn(async move {
-                    locked(&store)?.adopt_attachments(
-                        id,
-                        &crate::quick_composer::paste_staging_dir(),
-                        attachments,
-                        &staged,
-                    )
-                })
-                .await?;
+                .spawn(engine.call::<onicode_protocol::files::AdoptAttachments>(
+                    Some(onicode_protocol::OpId::new()),
+                    adopt,
+                ))
+                .await?
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .collect();
             Ok::<_, String>((summary, settings, attachments))
         });
         cx.spawn(async move |this, cx| {

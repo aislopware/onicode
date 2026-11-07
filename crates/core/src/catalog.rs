@@ -6,9 +6,10 @@ use std::sync::{Mutex, OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
+pub use onicode_protocol::catalog::{Model, ModelControl, ModelLimits};
 use serde_json::{Value, json};
 
+use crate::accounts::ProfileExt as _;
 use crate::process;
 use crate::provider::{self, Kind};
 
@@ -171,29 +172,6 @@ fn remote_catalog_response(value: &Value, providers: Vec<Kind>) -> Result<Remote
     })
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Model {
-    pub id: String,
-    pub name: String,
-    /// Concrete id behind a moving provider alias, retained for comparisons.
-    #[serde(default)]
-    pub alias_target: Option<String>,
-    pub efforts: Vec<String>,
-    pub default_effort: Option<String>,
-    pub fast: bool,
-    pub thinking: bool,
-    pub default: bool,
-    pub tiers: Vec<(String, String)>,
-    #[serde(default)]
-    pub controls: Vec<ModelControl>,
-}
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ModelControl {
-    pub id: String,
-    pub name: String,
-    pub current: String,
-    pub choices: Vec<(String, String)>,
-}
 #[derive(Default)]
 struct CatalogCache {
     entries: Vec<(Kind, crate::accounts::Profile, Vec<Model>, Instant)>,
@@ -357,6 +335,7 @@ pub fn models_for(kind: Kind, account: &crate::accounts::Profile) -> Result<Vec<
                     default: row["isDefault"] == true,
                     tiers,
                     controls: Vec::new(),
+                    limits: ModelLimits::of(row),
                 })
             })
             .collect()
@@ -403,6 +382,7 @@ fn model(id: &str, name: &str) -> Model {
         default: false,
         tiers: Vec::new(),
         controls: Vec::new(),
+        limits: ModelLimits::default(),
     }
 }
 fn leaves<'a>(values: &'a Value, out: &mut Vec<&'a Value>) {
@@ -483,6 +463,7 @@ fn acp_models(value: &Value) -> Vec<Model> {
                     .or_else(|| row["label"].as_str())
                     .unwrap_or(id),
             );
+            model.limits = ModelLimits::of(row).or(ModelLimits::of(&row["_meta"]));
             let row_config: Vec<_> = row["configOptions"]
                 .as_array()
                 .into_iter()

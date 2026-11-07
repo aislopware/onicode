@@ -5,7 +5,7 @@ use gpui::{
     AnyElement, App, Bounds, FontWeight, Hsla, IntoElement, Pixels, SharedString, Window, canvas,
     div, point, px,
 };
-use onicode_core::visual::{ChartKind, Series, Slice, ThemeColor};
+use onicode_protocol::visual::{ChartKind, Series, Slice, ThemeColor};
 
 use super::color;
 use super::dither::{

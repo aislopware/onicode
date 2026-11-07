@@ -66,13 +66,15 @@ pub fn legacy_tail(text: &str) -> (&str, Vec<PathBuf>) {
 }
 
 impl Transcript {
-    pub fn attach_files(&mut self, paths: &[PathBuf]) {
+    /// Adds the manifest row of `paths`, each with the size `size` finds for it, if any.
+    pub fn attach_files_with(&mut self, paths: &[PathBuf], size: impl Fn(&Path) -> Option<u64>) {
         if !paths.is_empty() {
             let mut files = from_paths(paths);
-            // Runs with provider preparation, off the UI thread.
-            for (file, path) in files.as_array_mut().unwrap().iter_mut().zip(paths) {
-                if let Ok(metadata) = path.metadata() {
-                    file["size"] = serde_json::json!(metadata.len());
+            if let Some(files) = files.as_array_mut() {
+                for (file, path) in files.iter_mut().zip(paths) {
+                    if let Some(size) = size(path) {
+                        file["size"] = serde_json::json!(size);
+                    }
                 }
             }
             self.rows.push(Row {

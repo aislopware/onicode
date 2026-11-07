@@ -7,12 +7,22 @@ use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use onicode_core::agent::{
+use onicode_core::store::{RemoteSession, RemoteUpload};
+use onicode_engine::turn::{Database, Update, locked};
+use onicode_protocol::agent::{
     Approval, Control, Decision, Question, QuestionItem, QuestionOption, Settings,
 };
-use onicode_core::store::{RemoteSession, RemoteUpload, Session};
-use onicode_engine::turn::{Database, Update, locked};
+use onicode_protocol::sessions::Session;
 use serde_json::{Value, json};
+
+/// The models `kind` offers on the SSH remote whose project is `project`: the conversation's
+/// model picker, until step 10 deletes the SSH remote.
+pub(crate) fn remote_models(
+    project: &str,
+    kind: onicode_protocol::provider::Kind,
+) -> Result<Vec<onicode_protocol::catalog::Model>, String> {
+    onicode_core::catalog::remote_models(project, kind.id())
+}
 
 fn update(status: impl Into<String>, finished: bool) -> Update {
     Update {
@@ -44,7 +54,7 @@ fn update(status: impl Into<String>, finished: bool) -> Update {
     }
 }
 fn command(kind: &str, session_id: Option<&str>) -> Value {
-    let mut value = json!({"type":kind,"commandId":onicode_core::new_id()});
+    let mut value = json!({"type":kind,"commandId":onicode_protocol::new_id()});
     if let Some(id) = session_id {
         value["sessionId"] = json!(id);
     }
@@ -368,8 +378,8 @@ fn upload_pending(
 fn accounting(
     snapshot: &Value,
 ) -> (
-    Option<onicode_core::context::Usage>,
-    Option<onicode_core::agent::TurnMetrics>,
+    Option<onicode_protocol::context::Usage>,
+    Option<onicode_protocol::agent::TurnMetrics>,
 ) {
     let context = snapshot["session"]
         .get("context")
@@ -493,6 +503,10 @@ pub(crate) fn run(
     clippy::too_many_arguments,
     reason = "Mirrors the turn worker inputs while injecting the remote transport for isolation"
 )]
+#[expect(
+    clippy::disallowed_types,
+    reason = "the SSH remote goes in step 10 (engine.md)"
+)]
 pub(crate) fn run_with_client(
     client: Arc<onicode_core::remote::Connections>,
     summary: Session,
@@ -573,7 +587,7 @@ pub(crate) fn run_with_client(
                 create["modelSettings"] = json!(model_settings(&summary.provider, &settings));
                 create["runtimeMode"] = json!(settings.access.id());
                 if let Some(path) = &settings.worktree_cwd {
-                    let remote = onicode_core::remote::parse_remote_path(path)
+                    let remote = onicode_protocol::remote::parse_remote_path(path)
                         .ok_or("Invalid remote worktree")?;
                     if remote.environment_id != binding.project.environment_id {
                         return Err("Worktree belongs to another machine".into());
@@ -623,7 +637,7 @@ pub(crate) fn run_with_client(
             binding.outbox.push(send);
             binding.rejected = None;
             binding.summary.has_messages = true;
-            binding.summary.updated_at = onicode_core::time::now_ms();
+            binding.summary.updated_at = onicode_protocol::time::now_ms();
             journal(&store, &binding)?;
             let descriptor = client.request(&machine.id, "environment.describe", json!({}))?;
             if !descriptor["providers"].as_array().is_some_and(|providers| {

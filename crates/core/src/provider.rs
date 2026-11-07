@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
+use crate::accounts::ProfileExt;
 use crate::agent::{AccessMode, Approval, Control, Decision, Settings, TurnMetrics};
 use crate::process;
 use crate::tool::{ToolCall, ToolState};
@@ -18,16 +19,16 @@ use crate::transcript::snapshot_remainder;
 
 mod acp;
 mod commands;
-pub use commands::{
-    NativeCommand, NativeSubcommand, compact, discover_commands, native_invocation, native_prompt,
-    prepare_prompt, supports_compact,
+pub use commands::{compact, discover_commands, prepare_prompt};
+pub use onicode_protocol::provider::{
+    BackgroundTask, Kind, NativeCommand, NativeSubcommand, native_invocation, native_prompt,
+    supports_compact, supports_rewind,
 };
 mod attachments;
 mod compaction;
 pub(crate) mod devin;
 mod discovery;
 mod follow_up;
-mod kind;
 mod lifecycle;
 mod limits;
 mod opencode;
@@ -53,10 +54,9 @@ pub fn forget_session(kind: Kind, provider_id: &str, account_id: &str, cwd: &Pat
 mod questions;
 mod rewind;
 mod tasks;
-pub use rewind::{RewindError, rewind_last_turn, supports_rewind};
+pub use rewind::{RewindError, rewind_last_turn};
 #[cfg(all(test, unix))]
 mod text_tests;
-pub use kind::Kind;
 
 const BATCH_BYTES: usize = 64 * 1024;
 const TICK: Duration = Duration::from_millis(16);
@@ -111,18 +111,6 @@ pub enum Event {
         model_settings: HashMap<String, String>,
     },
     Done,
-}
-
-/// A command or subagent left running after the provider yielded its answer.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct BackgroundTask {
-    pub id: String,
-    pub description: String,
-    pub agent: bool,
-    /// The shell command behind a backgrounded Bash call, when known.
-    pub command: Option<String>,
-    /// Unix milliseconds.
-    pub started_at: u64,
 }
 
 fn codex_error(error: &Value, fallback: &str) -> String {

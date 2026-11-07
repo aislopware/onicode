@@ -10,17 +10,18 @@ impl Asset for Avatar {
     type Output = Result<Arc<Image>, String>;
     type Source = String;
 
-    #[expect(
-        clippy::manual_async_fn,
-        reason = "An async method captures the non-Send App reference."
-    )]
     fn load(
         url: String,
-        _: &mut App,
+        cx: &mut App,
     ) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
+        let avatar = crate::engine_client::local(cx).call::<onicode_protocol::work::InboxAvatar>(
+            None,
+            onicode_protocol::work::InboxAvatar { url },
+        );
         async move {
-            model::avatar_png(&url)
-                .map(|bytes| Arc::new(Image::from_bytes(ImageFormat::Png, bytes)))
+            avatar
+                .await
+                .map(|png| Arc::new(Image::from_bytes(ImageFormat::Png, png.0)))
         }
     }
 }

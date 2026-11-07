@@ -14,10 +14,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, LazyLock, Mutex};
 
-use onicode_core::diff::{self, Line, LineKind};
-use onicode_core::files::{self, ProjectFile};
-use onicode_core::provider::Kind;
-use onicode_core::{composer, git, scm};
+use onicode_core::{files, git, scm};
+use onicode_protocol::diff::{Line, LineKind};
+use onicode_protocol::files::ProjectFile;
+use onicode_protocol::provider::Kind;
+use onicode_protocol::{composer, diff};
 use serde_json::{Value, json};
 
 use crate::syntax::LineHighlighter;
@@ -816,6 +817,10 @@ mod tests {
         }
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the phone host goes in step 11 (engine.md)"
+    )]
     fn run_git(dir: &Path, args: &[&str]) {
         let out = Command::new("git")
             .current_dir(dir)

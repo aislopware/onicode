@@ -1,4 +1,8 @@
 //! Banked Codex resets are shared across footers so only one claim runs per account.
+use std::future::Future;
+
+use onicode_protocol::agents::ConsumeUsageReset;
+
 use super::*;
 
 #[derive(Clone)]
@@ -67,31 +71,61 @@ impl ResetAction {
 
 impl Accounts {
     pub(crate) fn consume_reset(&mut self, key: Key, row: &str, cx: &mut Context<Self>) {
+        let engine = self.engine.clone();
+        let usage = key.usage_key();
         self.consume_reset_with(
             key,
             row,
-            |profile, credit| {
-                let result = usage::consume_reset(profile, credit);
-                // Read even after errors: the server may have applied the claim.
-                let refreshed = usage::fetch_for(Kind::Codex, profile, None);
-                (result, refreshed)
+            move |profile, credit| {
+                let consume = engine.call::<ConsumeUsageReset>(
+                    Some(OpId::new()),
+                    ConsumeUsageReset {
+                        account: profile.id.clone(),
+                        credit: credit.map(str::to_owned),
+                    },
+                );
+                async move {
+                    let result = consume.await;
+                    // Read even after errors: the server may have applied the claim. What it
+                    // read arrives on the accounts watch; only a failed read comes back here.
+                    let refreshed = applied(
+                        engine
+                            .call::<RefreshUsage>(
+                                None,
+                                RefreshUsage {
+                                    key: usage,
+                                    force: true,
+                                },
+                            )
+                            .await,
+                    )
+                    .err()
+                    .map(|message| {
+                        Err(FetchError {
+                            message,
+                            unavailable: false,
+                        })
+                    });
+                    (result, refreshed)
+                }
             },
             cx,
         );
     }
 
-    fn consume_reset_with(
+    /// Claims `row`'s reset through `consume`, which replies with the claim's outcome and, when
+    /// it read the usage again itself, what it read.
+    fn consume_reset_with<F>(
         &mut self,
         key: Key,
         row: &str,
-        consume: impl FnOnce(
-            &Profile,
-            Option<&str>,
-        ) -> (Result<String, String>, Result<Snapshot, FetchError>)
-        + Send
-        + 'static,
+        consume: impl FnOnce(&Profile, Option<&str>) -> F,
         cx: &mut Context<Self>,
-    ) {
+    ) where
+        F: Future<Output = (Result<String, String>, Option<Result<Snapshot, FetchError>>)>
+            + Send
+            + 'static,
+    {
         if key.kind != Kind::Codex
             || (key.profile.id != accounts::DEFAULT && !self.book.exists(key.kind, &key.profile.id))
             || self.reset_actions.get(&key).is_some_and(|a| {
@@ -120,10 +154,10 @@ impl Accounts {
                 result: None,
             },
         );
-        let profile = key.profile.clone();
-        let work = cx
-            .background_executor()
-            .spawn(async move { consume(&profile, row.credit.as_ref().map(|c| c.id.as_str())) });
+        let work = cx.background_executor().spawn(consume(
+            &key.profile,
+            row.credit.as_ref().map(|c| c.id.as_str()),
+        ));
         cx.spawn(async move |this, cx| {
             let (result, refreshed) = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -133,10 +167,13 @@ impl Accounts {
                 if state.generation != generation {
                     return;
                 }
-                let refreshed_ok = refreshed.is_ok();
+                let refreshed_ok = refreshed.as_ref().is_some_and(Result::is_ok);
                 let queued = std::mem::take(&mut state.queued);
                 state.attempted = Some(Instant::now());
-                state.complete(refreshed);
+                match refreshed {
+                    Some(refreshed) => state.complete(refreshed),
+                    None => state.fetching = false,
+                }
                 if let Some(identity) = state.snapshot.as_ref().and_then(|s| s.identity.clone()) {
                     this.identities
                         .insert((key.kind, key.profile.id.clone()), identity);
@@ -215,19 +252,24 @@ mod tests {
     fn banked_claims_are_serialized_per_account_and_refresh_the_right_cache(
         cx: &mut gpui::TestAppContext,
     ) {
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
-        let center =
-            cx.new(|cx| Accounts::new(PathBuf::from("/fixture"), Book::default(), store, cx));
+        let engine = cx.update(Engine::memory);
+        let other = Account {
+            id: "other".into(),
+            provider: "codex".into(),
+            label: "Other".into(),
+        };
+        engine
+            .seed()
+            .save_provider_accounts(&Book {
+                accounts: vec![other.clone()],
+                ..Book::default()
+            })
+            .unwrap();
+        let center = cx.new(|cx| Accounts::new(engine, cx));
         let calls = Arc::new(AtomicUsize::new(0));
         let key = Key::new(Kind::Codex, Profile::default(), None);
         center.update(cx, |accounts, cx| {
-            accounts.book.accounts.push(Account {
-                id: "other".into(),
-                provider: "codex".into(),
-                label: "Other".into(),
-            });
+            accounts.book.accounts.push(other);
             accounts
                 .usage
                 .entry(key.clone())
@@ -263,7 +305,7 @@ mod tests {
                         calls.fetch_add(1, Ordering::SeqCst);
                         assert_eq!(profile.id, accounts::DEFAULT);
                         assert!(credit.is_none());
-                        (Ok("reset".into()), Ok(snapshot(1)))
+                        std::future::ready((Ok("reset".into()), Some(Ok(snapshot(1)))))
                     },
                     cx,
                 );
@@ -274,7 +316,7 @@ mod tests {
                 |profile, credit| {
                     assert_eq!(profile.id, "other");
                     assert_eq!(credit, Some("specific-credit"));
-                    (Ok("nothingToReset".into()), Ok(snapshot(3)))
+                    std::future::ready((Ok("nothingToReset".into()), Some(Ok(snapshot(3)))))
                 },
                 cx,
             );
@@ -313,11 +355,8 @@ mod tests {
     fn banked_claim_errors_preserve_credits_and_invalidated_replies_stay_discarded(
         cx: &mut gpui::TestAppContext,
     ) {
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
-        let center =
-            cx.new(|cx| Accounts::new(PathBuf::from("/fixture"), Book::default(), store, cx));
+        let engine = cx.update(Engine::memory);
+        let center = cx.new(|cx| Accounts::new(engine, cx));
         let key = Key::new(Kind::Codex, Profile::default(), None);
         center.update(cx, |accounts, cx| {
             accounts
@@ -329,13 +368,13 @@ mod tests {
                 key.clone(),
                 "unlisted:0",
                 |_, _| {
-                    (
+                    std::future::ready((
                         Err("Network unavailable".into()),
-                        Err(FetchError {
+                        Some(Err(FetchError {
                             message: "Refresh failed".into(),
                             unavailable: false,
-                        }),
-                    )
+                        })),
+                    ))
                 },
                 cx,
             );
@@ -351,7 +390,7 @@ mod tests {
             accounts.consume_reset_with(
                 key.clone(),
                 "unlisted:0",
-                |_, _| (Ok("reset".into()), Ok(snapshot(0))),
+                |_, _| std::future::ready((Ok("reset".into()), Some(Ok(snapshot(0))))),
                 cx,
             );
             // Match sign-out's generation change while the old account request is pending.

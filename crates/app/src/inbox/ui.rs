@@ -2912,8 +2912,6 @@ impl gpui::Render for Inbox {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
     use gpui::{
         AssetSource, Bounds, Render, TestAppContext, WindowBounds, WindowHandle, WindowOptions,
         point, size,
@@ -2944,8 +2942,8 @@ mod tests {
         }, |_, cx| cx.new(|cx| {
             let item = Item { provider: "github".into(), kind: "pr".into(), state: "open".into(), number: 7, ..Default::default() };
             let inbox = cx.new(|cx| {
-                let store = Arc::new(Mutex::new(onicode_core::store::Store::open(std::path::Path::new(":memory:")).unwrap()));
-                let mut view = Inbox::new_inner(store, vec![], PathBuf::from("/private/tmp/inbox-regression"), false, cx);
+                let engine = crate::engine_client::Engine::memory(cx);
+                let mut view = Inbox::new_inner(engine, vec![], PathBuf::from("/private/tmp/inbox-regression"), false, cx);
                 view.snapshot.items = vec![item.clone()]; view.selected = Some(item.key());
                 view.details = Some(Details { body: "Description".into(), ..Default::default() });
                 let comments = (0..100).map(|ix| model::Comment {
@@ -2983,7 +2981,7 @@ mod tests {
                     assert_eq!(inbox.project_label("/work/other"), "other");
                     inbox.appearances.insert(
                         "/work/other".into(),
-                        onicode_core::project_appearance::ProjectAppearance {
+                        onicode_protocol::project_appearance::ProjectAppearance {
                             name: "Other app".into(),
                             ..Default::default()
                         },

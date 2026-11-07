@@ -29,7 +29,7 @@ impl TranscriptView {
         if self.prompt_provider(previous)? == provider {
             return None;
         }
-        let label = onicode_core::provider::Kind::from_id(provider).label();
+        let label = onicode_protocol::provider::Kind::from_id(provider).label();
         let rule = || div().h(px(1.)).min_w(px(16.)).flex_1().bg(content(0.12));
         Some(
             div()
@@ -74,8 +74,8 @@ mod tests {
             id: None,
         }
     }
-    fn answered_by(provider: &str) -> onicode_core::agent::TurnInfo {
-        onicode_core::agent::TurnInfo {
+    fn answered_by(provider: &str) -> onicode_protocol::agent::TurnInfo {
+        onicode_protocol::agent::TurnInfo {
             provider: provider.into(),
             ..Default::default()
         }

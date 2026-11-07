@@ -218,7 +218,7 @@ impl Shell {
     pub(super) fn open_notes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.prepare_app_view(window, cx);
         if self.notes.is_none() {
-            let view = cx.new(|cx| notes::Notes::new(self.store.clone(), cx));
+            let view = cx.new(|cx| notes::Notes::new(self.engine.clone(), cx));
             self.app_view_events.push(cx.subscribe_in(
                 &view,
                 window,
@@ -271,7 +271,7 @@ impl Shell {
         if self.inbox.is_none() {
             let projects = self.workspace.projects.iter().map(Into::into).collect();
             let cwd = self.workspace.project.clone().into();
-            let view = cx.new(|cx| inbox::Inbox::new(self.store.clone(), projects, cwd, cx));
+            let view = cx.new(|cx| inbox::Inbox::new(self.engine.clone(), projects, cwd, cx));
             self.app_view_events.push(cx.subscribe_in(
                 &view,
                 window,
@@ -315,17 +315,12 @@ impl Shell {
     }
 
     pub(super) fn open_automations(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(service) = self.automation_state.service.clone() else {
-            self.automation_state.open_requested = Some(self.navigation_revision);
-            self.initialize_automations(cx);
-            return;
-        };
         self.prepare_app_view(window, cx);
         if self.automations.is_none() {
             let cwd = self.workspace.project.clone();
             let projects = self.workspace.projects.clone();
-            let view = cx.new(|cx| automations::Automations::new(service, cwd, projects, cx));
-            view.update(cx, |view, cx| view.set_database(self.store.clone(), cx));
+            let engine = self.engine.clone();
+            let view = cx.new(|cx| automations::Automations::new(engine, cwd, projects, cx));
             self.app_view_events.push(cx.subscribe_in(
                 &view,
                 window,
@@ -366,7 +361,7 @@ impl Shell {
 
     fn note_to_chat(
         &mut self,
-        note: onicode_core::notes::Note,
+        note: onicode_protocol::notes::Note,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -377,15 +372,16 @@ impl Shell {
             .unwrap_or_else(|| self.workspace.project.clone());
         let choice = self.new_chat_choice(&cwd);
         let kind = choice.kind;
-        let settings = onicode_core::agent::Settings {
+        let settings = onicode_protocol::agent::Settings {
             model: choice.model,
             effort: crate::conversation::preferred_effort(kind.id(), cx),
             access: self
                 .workspace
                 .preferences
+                .engine
                 .default_access
                 .as_deref()
-                .map(onicode_core::agent::AccessMode::from_id)
+                .map(onicode_protocol::agent::AccessMode::from_id)
                 .unwrap_or_default(),
             account: crate::accounts::get(cx)
                 .map(|accounts| accounts.read(cx).selected(kind, &cwd))
@@ -433,7 +429,7 @@ impl Shell {
 
     fn start_inbox_session(
         &mut self,
-        item: onicode_core::inbox::Item,
+        item: onicode_protocol::inbox::Item,
         prompt: String,
         cx: &mut Context<Self>,
     ) {
@@ -444,15 +440,16 @@ impl Shell {
         };
         let choice = self.new_chat_choice(&cwd);
         let kind = choice.kind;
-        let settings = onicode_core::agent::Settings {
+        let settings = onicode_protocol::agent::Settings {
             model: choice.model,
             effort: crate::conversation::preferred_effort(kind.id(), cx),
             access: self
                 .workspace
                 .preferences
+                .engine
                 .default_access
                 .as_deref()
-                .map(onicode_core::agent::AccessMode::from_id)
+                .map(onicode_protocol::agent::AccessMode::from_id)
                 .unwrap_or_default(),
             account: crate::accounts::get(cx)
                 .map(|accounts| accounts.read(cx).selected(kind, &cwd))

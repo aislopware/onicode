@@ -8,8 +8,8 @@ use gpui::prelude::*;
 use gpui::{
     AnyElement, Context, Pixels, Role, SharedString, Transformation, div, percentage, px, rgb,
 };
-use onicode_core::tool::tasks::{AgentRun, AgentStep, Panel, TaskList, TaskStatus};
-use onicode_core::tool::{ToolCall, ToolState};
+use onicode_protocol::tool::tasks::{AgentRun, AgentStep, Panel, TaskList, TaskStatus};
+use onicode_protocol::tool::{ToolCall, ToolState};
 
 use super::TranscriptView;
 use super::live_phase::{LiveScroll, live_phase};
@@ -372,7 +372,7 @@ fn agent(
         && view
             .source
             .iter()
-            .rposition(onicode_core::transcript::Row::is_prompt)
+            .rposition(onicode_protocol::transcript::Row::is_prompt)
             .is_none_or(|prompt| start > prompt);
     let report = call.agent_report();
     let omitted = call
@@ -393,10 +393,9 @@ fn agent(
     let rotation = view.agent_panels.progress(&key, open).2;
     let toggle_key = key.clone();
     let status = run.status_line(&call.state);
-    let model = run.model_name(
-        onicode_core::provider::Kind::parse(&view.provider)
-            .unwrap_or(onicode_core::provider::Kind::Codex),
-    );
+    let kind = onicode_protocol::provider::Kind::parse(&view.provider)
+        .unwrap_or(onicode_protocol::provider::Kind::Codex);
+    let model = run.model_name(|id| crate::pickers::cached_name(kind, id));
     let header = div()
         .id(SharedString::from(key.clone()))
         .debug_selector(move || format!("subagent-{start}"))

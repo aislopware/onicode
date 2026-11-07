@@ -1,8 +1,9 @@
 //! A title the host changes reaches open remote views, busy or not, and is never sent back.
-use std::sync::atomic::AtomicBool;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use gpui::TestAppContext;
-use onicode_core::store::Store;
+use onicode_engine::turn::locked;
 use serde_json::{Value, json};
 
 use super::*;
@@ -142,7 +143,10 @@ struct Ui {
 
 /// A Shell over one host conversation, open in a background tab of its project.
 fn open(cx: &mut TestAppContext, host: &FakeHost) -> Ui {
-    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    // The SSH remote writes the engine's store itself until step 10 deletes it.
+    let engine = cx.update(crate::engine_client::Engine::memory);
+    let legacy = engine.legacy_store();
+    let store = locked(&legacy).unwrap();
     let project = store
         .remember_remote_project(
             &host.environment,
@@ -164,12 +168,12 @@ fn open(cx: &mut TestAppContext, host: &FakeHost) -> Ui {
     state.open(chat);
     state.open(local);
     let saved = serde_json::to_string(&state).unwrap();
-    let store = Arc::new(Mutex::new(store));
+    drop(store);
     let client = host.client.clone();
     let window = cx.update(|cx| {
         cx.open_window(Default::default(), |_, cx| {
             cx.new(|cx| {
-                let mut shell = Shell::new(store, summaries, project.key.clone(), Some(saved), cx);
+                let mut shell = Shell::new(engine, summaries, project.key.clone(), Some(saved), cx);
                 shell.remote = client;
                 shell.workspace.project = project.key;
                 shell.ensure_session(chat, cx);

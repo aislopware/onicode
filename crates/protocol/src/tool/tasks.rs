@@ -236,10 +236,11 @@ impl AgentStep {
             .get("nativePanel")
             .and_then(|panel| serde_json::from_value(panel.clone()).ok());
         call.display = Some(display);
-        if let Some(run) = call.agent_mut() {
-            if run.name.is_none() && run.brief.is_empty() {
-                run.name = Some(self.text.clone());
-            }
+        if let Some(run) = call.agent_mut()
+            && run.name.is_none()
+            && run.brief.is_empty()
+        {
+            run.name = Some(self.text.clone());
         }
         call
     }
@@ -337,7 +338,9 @@ impl AgentRun {
         }
     }
 
-    pub fn model_name(&self, provider: crate::provider::Kind) -> Option<String> {
+    /// The run's model as the pickers name it: `catalog_name` looks a model id up in the
+    /// provider's catalog the viewer holds.
+    pub fn model_name(&self, catalog_name: impl FnOnce(&str) -> Option<String>) -> Option<String> {
         let id = self.model.as_deref()?.trim();
         if id.is_empty()
             || ["auto", "default", "inherit", "unspecified"]
@@ -346,7 +349,7 @@ impl AgentRun {
         {
             return None;
         }
-        crate::catalog::cached_name(provider, id)
+        catalog_name(id)
             .or_else(|| desktop_model_name(id).map(str::to_owned))
             .or_else(|| Some(id.into()))
     }
@@ -501,7 +504,7 @@ fn is_agent_tool(kind: Option<&str>, title: &str) -> bool {
 }
 
 /// Recover the same output sources for parent calls and mirrored child steps.
-pub(crate) fn desktop_detail(meta: &Value) -> String {
+pub fn desktop_detail(meta: &Value) -> String {
     if let Some(detail) = meta["detail"].as_str().filter(|value| !value.is_empty()) {
         return detail.into();
     }

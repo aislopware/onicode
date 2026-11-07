@@ -1,7 +1,7 @@
 //! LiveFoldTitle's "running in background": once the agent has answered with
 //! commands or subagents still going, they sit on the composer's ledge above
 //! the message queue until they finish or the agent picks the thread back up.
-use onicode_core::provider::BackgroundTask;
+use onicode_protocol::provider::BackgroundTask;
 
 use super::*;
 
@@ -220,7 +220,7 @@ fn live_clock(task: &BackgroundTask) -> impl IntoElement {
         std::time::Duration::from_millis(2_000),
         crate::pulse::Rate::Low,
         move |phase| {
-            let ms = onicode_core::time::now_ms().saturating_sub(started_at);
+            let ms = onicode_protocol::time::now_ms().saturating_sub(started_at);
             // A slow breath: the dot swells and its halo fades out.
             let breath = 0.5 - 0.5 * (phase * std::f32::consts::TAU).cos();
             let live: gpui::Hsla = gpui::rgb(LIVE).into();
@@ -277,10 +277,8 @@ fn elapsed(ms: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
 
     use gpui::{TestAppContext, VisualTestContext};
-    use onicode_core::store::Store;
 
     use super::*;
 
@@ -290,7 +288,7 @@ mod tests {
             description: format!("Task {id}"),
             agent,
             command: (!agent).then(|| "npm run dev".into()),
-            started_at: onicode_core::time::now_ms(),
+            started_at: onicode_protocol::time::now_ms(),
         }
     }
 
@@ -298,8 +296,8 @@ mod tests {
     fn background_work_sits_on_the_ledge_steers_new_messages_and_clears_on_stop(
         cx: &mut TestAppContext,
     ) {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let summary = store.create("claude", "/tmp").unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let summary = engine.seed().create("claude", "/tmp").unwrap();
         let window = cx.update(|cx| {
             input::bind(cx);
             cx.set_reduce_motion(true);
@@ -309,7 +307,7 @@ mod tests {
             });
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
-                    let mut view = Conversation::new(summary, Arc::new(Mutex::new(store)), cx);
+                    let mut view = Conversation::new(summary, engine, cx);
                     view.loaded = true;
                     view.summary.has_messages = true;
                     view.busy = true;
@@ -347,13 +345,13 @@ mod tests {
 
     #[gpui::test]
     fn a_lone_task_folds_into_the_header(cx: &mut TestAppContext) {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let summary = store.create("claude", "/tmp").unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let summary = engine.seed().create("claude", "/tmp").unwrap();
         let window = cx.update(|cx| {
             cx.set_reduce_motion(true);
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
-                    let mut view = Conversation::new(summary, Arc::new(Mutex::new(store)), cx);
+                    let mut view = Conversation::new(summary, engine, cx);
                     view.loaded = true;
                     view.summary.has_messages = true;
                     view.set_background(vec![task("dev", false)], cx);

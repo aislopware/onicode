@@ -1,6 +1,6 @@
 //! Project workspace selection, independent of the project's identity. Existing
 //! conversations keep their execution directory and running provider process.
-use onicode_core::files::path_key;
+use onicode_protocol::files::path_key;
 
 use super::*;
 use crate::worktree_switcher::{Event, TabSession, WorktreeFocus, WorktreeSwitcher};
@@ -98,7 +98,7 @@ impl Shell {
                 focus,
                 sessions,
                 ids,
-                self.store.clone(),
+                self.engine.clone(),
                 cx,
             )
         });
@@ -320,8 +320,8 @@ mod tests {
         let project = "/work/monocode";
         crate::git_cache::remember(
             project,
-            &onicode_core::git::Snapshot {
-                worktrees: vec![onicode_core::git::Worktree {
+            &onicode_protocol::git::GitSnapshot {
+                worktrees: vec![onicode_protocol::git::Worktree {
                     path: "/work".into(),
                     branch: Some("main".into()),
                     main: true,
@@ -445,7 +445,7 @@ mod tests {
                 assert!(shell
                     .session_entries(&shell.sidebar_session_ids(cx), cx)
                     .iter()
-                    .any(|entry| matches!(entry, onicode_core::session_groups::Entry::Folder { id, .. } if id == "saved-folder")),
+                    .any(|entry| matches!(entry, onicode_protocol::session_groups::Entry::Folder { id, .. } if id == "saved-folder")),
                     "opening a worktree chat must not hide the project's other folders");
                 shell.open(main_session, w, cx);
                 // A late blank from the other copy cannot take over after returning.
@@ -474,8 +474,9 @@ mod tests {
                     Some(other.path.as_str())
                 );
                 assert_eq!(
-                    locked(&shell.store)
-                        .unwrap()
+                    shell
+                        .engine
+                        .seed()
                         .agent_settings(id)
                         .unwrap()
                         .unwrap()

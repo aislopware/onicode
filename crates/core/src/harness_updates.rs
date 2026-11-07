@@ -1,9 +1,10 @@
 //! Launch-only harness update detection. All I/O runs on a worker; installation
 //! occurs only when the user chooses Update. Nothing is persisted.
-use std::cmp::Ordering;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::time::Duration;
+
+pub use onicode_protocol::harness_updates::{Update, compare_versions, parse_version};
 
 use crate::provider::{self, Kind};
 use crate::{catalog, cli};
@@ -11,12 +12,6 @@ use crate::{catalog, cli};
 static CLAIMED: AtomicBool = AtomicBool::new(false);
 pub fn claim_launch_check() -> bool {
     !CLAIMED.swap(true, AtomicOrdering::SeqCst)
-}
-#[derive(Clone, Debug)]
-pub struct Update {
-    pub harness: Kind,
-    pub installed: String,
-    pub latest: String,
 }
 fn package(kind: Kind) -> Option<&'static str> {
     match kind {
@@ -26,21 +21,6 @@ fn package(kind: Kind) -> Option<&'static str> {
         Kind::Pi => Some("@earendil-works/pi-coding-agent"),
         _ => None,
     }
-}
-pub fn parse_version(text: &str) -> Option<String> {
-    regex::Regex::new(r"\d+\.\d+\.\d+")
-        .ok()?
-        .find(text)
-        .map(|m| m.as_str().to_owned())
-}
-pub fn compare_versions(a: &str, b: &str) -> Ordering {
-    let parts = |s: &str| {
-        s.split('.')
-            .map(|n| n.parse::<u64>().unwrap_or(0))
-            .take(3)
-            .collect::<Vec<_>>()
-    };
-    parts(a).cmp(&parts(b))
 }
 fn cwd() -> PathBuf {
     crate::accounts::home().unwrap_or_else(|| PathBuf::from("/"))

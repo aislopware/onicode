@@ -16,9 +16,9 @@ use std::path::PathBuf;
 use onicode_protocol::agent::AccessMode;
 use onicode_protocol::engine::{EngineInfo, Hello, StopEngine, UpdateEngine};
 use onicode_protocol::files::{
-    Create, DeletePath, Destination, Entries, ListDir, ListDrives, Move, PathKind, Read,
-    SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths, Stat,
-    StopSearch, WatchDir, Write,
+    AdoptAttachments, Create, DeletePath, Destination, Entries, ListDir, ListDrives, Move,
+    PathKind, Read, SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths,
+    Stat, StopSearch, WatchDir, Write,
 };
 use onicode_protocol::git::{
     Branches, ChangeSet, Commit, CommitContext, CommitFiles, CreateBranch, CreatePr,
@@ -30,9 +30,10 @@ use onicode_protocol::git::{
 use onicode_protocol::provider::Kind;
 use onicode_protocol::search::Target;
 use onicode_protocol::session::{
-    Answer, Btw, Configure, Decide, EditLastTurn, Fork, KeepQuestionOpen, QueueChange, QueueEdit,
-    ReadBtw, ReadSession, ReadTranscript, RecallLastTurn, Rewind, SaveBtw, SaveQueue, Send,
-    SendNow, Steer, SteerNow, Stop, StopBtw, SwitchProvider, Verdict, WatchSession,
+    Answer, Btw, Compact, Configure, Decide, EditLastTurn, Fork, KeepQuestionOpen, QueueChange,
+    QueueEdit, ReadBtw, ReadSession, ReadTranscript, RecallLastTurn, ResetThread, Rewind, SaveBtw,
+    SaveQueue, Send, SendNow, Steer, SteerNow, Stop, StopBtw, SwitchProvider, Verdict,
+    WatchSession,
 };
 use onicode_protocol::transcript::Row;
 use onicode_protocol::workspace::{
@@ -43,7 +44,7 @@ use onicode_protocol::workspace::{
 };
 use onicode_protocol::{
     Call, Cursor, Item, METHODS, MessageId, Method, MethodKind, OpId, PROTOCOL, Rejection, Routed,
-    SessionId, TerminalId, Watch,
+    SessionId, TerminalId, Watch, agents, engine_settings,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -240,6 +241,8 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<Fork>();
     shapes.call::<Btw>();
     shapes.call::<SwitchProvider>();
+    shapes.call::<ResetThread>();
+    shapes.call::<Compact>();
     shapes.call::<ReadTranscript>();
     shapes.call::<ReadSession>();
     shapes.call::<SaveQueue>();
@@ -286,6 +289,7 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<ListDrives>();
     shapes.call::<SearchHomeFolders>();
     shapes.call::<SaveAttachments>();
+    shapes.call::<AdoptAttachments>();
     shapes.call::<SaveNoteImages>();
     // Git.
     shapes.watch::<WatchGit>();
@@ -317,6 +321,73 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<ReadCheckpoint>();
     shapes.call::<RestoreCheckpoint>();
     shapes.call::<ReadSessionChanges>();
+    // Agents.
+    shapes.watch::<agents::WatchAccounts>();
+    shapes.call::<agents::RefreshUsage>();
+    shapes.call::<agents::RefreshSignIn>();
+    shapes.call::<agents::ConsumeUsageReset>();
+    shapes.call::<agents::Catalog>();
+    shapes.call::<agents::Skills>();
+    shapes.call::<agents::CreateSkill>();
+    shapes.call::<agents::Commands>();
+    shapes.call::<agents::AddAccount>();
+    shapes.call::<agents::RenameAccount>();
+    shapes.call::<agents::RemoveAccount>();
+    shapes.call::<agents::SelectAccount>();
+    shapes.call::<agents::Login>();
+    shapes.call::<agents::CancelLogin>();
+    shapes.call::<agents::Logout>();
+    shapes.call::<agents::McpServers>();
+    shapes.call::<agents::AddMcpServer>();
+    shapes.call::<agents::RemoveMcpServer>();
+    shapes.call::<agents::McpLogin>();
+    shapes.call::<agents::McpHealth>();
+    shapes.call::<agents::Harnesses>();
+    shapes.call::<agents::InspectHarness>();
+    shapes.call::<agents::HarnessUpdates>();
+    shapes.call::<agents::RunHarnessUpdate>();
+    shapes.call::<agents::Generate>();
+    shapes.call::<agents::StopGenerate>();
+    shapes.call::<agents::KeepIdleAgents>();
+    shapes.call::<agents::TransferThread>();
+    shapes.call::<agents::ForgetThread>();
+    // Engine settings.
+    shapes.watch::<engine_settings::WatchEngineSettings>();
+    shapes.call::<engine_settings::SetEngineSetting>();
+    shapes.call::<engine_settings::TakeViewerState>();
+    // Work.
+    shapes.call::<onicode_protocol::work::InboxList>();
+    shapes.call::<onicode_protocol::work::ReadInboxDetails>();
+    shapes.call::<onicode_protocol::work::ReadInboxThread>();
+    shapes.call::<onicode_protocol::work::ReadInboxDiff>();
+    shapes.call::<onicode_protocol::work::ReadInboxChecks>();
+    shapes.call::<onicode_protocol::work::PostInboxComment>();
+    shapes.call::<onicode_protocol::work::ConnectInbox>();
+    shapes.call::<onicode_protocol::work::RunInboxAction>();
+    shapes.call::<onicode_protocol::work::InboxMedia>();
+    shapes.call::<onicode_protocol::work::InboxAvatar>();
+    shapes.call::<onicode_protocol::work::ListAutomations>();
+    shapes.call::<onicode_protocol::work::AutomationRuns>();
+    shapes.call::<onicode_protocol::work::UpsertAutomation>();
+    shapes.call::<onicode_protocol::work::SetAutomationEnabled>();
+    shapes.call::<onicode_protocol::work::RunAutomationNow>();
+    shapes.call::<onicode_protocol::work::DeleteAutomation>();
+    shapes.call::<onicode_protocol::work::HasEventAutomations>();
+    shapes.call::<onicode_protocol::work::ProjectGroups>();
+    shapes.call::<onicode_protocol::work::LinkedActivity>();
+    shapes.call::<onicode_protocol::work::AgentProcesses>();
+    shapes.call::<onicode_protocol::work::StopAgentTool>();
+    shapes.call::<onicode_protocol::work::ReadWorkItem>();
+    shapes.call::<onicode_protocol::work::ReadWorkItemDetails>();
+    // App access.
+    shapes.call::<onicode_protocol::app_access::ReadAppReceipt>();
+    shapes.call::<onicode_protocol::app_access::SaveAppReceipt>();
+    shapes.call::<onicode_protocol::app_access::AppModels>();
+    shapes.call::<onicode_protocol::app_access::StartAppSession>();
+    shapes.call::<onicode_protocol::app_access::ReadAppConversation>();
+    shapes.call::<onicode_protocol::app_access::AppNotes>();
+    // Settings pages.
+    shapes.call::<onicode_protocol::settings_pages::ReadWorktreeMarks>();
     // What every call and watch travels in.
     shapes.envelope::<Cursor>("Cursor");
     shapes.envelope::<Item<(), ()>>("Item");
@@ -336,6 +407,12 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.variants::<StageTarget>();
     shapes.variants::<NewWorktree>();
     shapes.variants::<Restore>();
+    shapes.variants::<agents::AccountsEvent>();
+    shapes.variants::<agents::UsageRead>();
+    shapes.variants::<agents::CatalogRead>();
+    shapes.variants::<onicode_protocol::usage::Status>();
+    shapes.variants::<engine_settings::EngineSetting>();
+    shapes.variants::<engine_settings::EngineSettingsEvent>();
     shapes.table()
 }
 

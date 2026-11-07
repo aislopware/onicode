@@ -4,13 +4,13 @@ use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{Context, EventEmitter, FontWeight, Render, Role, Window, div, img, px};
-use onicode_core::store::Store;
 use onicode_update::{UpdateReport, UpdateState};
 
 use super::updater::{INSTALLED_MARKER, ReleaseNotes};
 use crate::markdown::{self, MarkdownRow, Tone};
 use crate::markdown_model;
 use crate::theme::*;
+use crate::ui_state::UiState;
 /// The id of the last update record (`onicode_update::transaction`) shown.
 const REPORT_SEEN: &str = "onicode.updateReportSeen";
 
@@ -27,14 +27,11 @@ pub(crate) enum Notice {
 }
 
 /// The marker names a version; only that version running proves the install
-/// worked. Cleared whatever it says (the settings abstraction has no delete
-/// operation, so an empty value is cleared).
-fn consume_marker(store: &Store, running: &str) -> Result<Option<String>, String> {
-    let Some(raw) = store.setting(INSTALLED_MARKER)? else {
-        return Ok(None);
-    };
+/// worked. Cleared whatever it says (an empty value is cleared).
+fn consume_marker(ui_state: &UiState, running: &str) -> Option<String> {
+    let raw = ui_state.get(INSTALLED_MARKER)?;
     if raw.is_empty() {
-        return Ok(None);
+        return None;
     }
     let parsed = serde_json::from_str::<serde_json::Value>(&raw).ok();
     let version = parsed
@@ -45,27 +42,27 @@ fn consume_marker(store: &Store, running: &str) -> Result<Option<String>, String
         .map(str::to_owned);
     // A cancelled/failed installer must never claim that the app was updated.
     if version.as_deref() != Some(running) {
-        return Ok(None);
+        return None;
     }
-    store.save_setting(INSTALLED_MARKER, "")?;
-    Ok(version)
+    ui_state.set(INSTALLED_MARKER, String::new());
+    version
 }
 
 /// The card to show once at launch: a rollback the update record holds, an
 /// install this app made (its marker names the running version), or one made
 /// from another device. A record is shown once, by its id.
 pub(crate) fn consume_startup_notice(
-    store: &Store,
+    ui_state: &UiState,
     report: Option<&UpdateReport>,
     running: &str,
-) -> Result<Option<Notice>, String> {
-    let installed = consume_marker(store, running)?;
+) -> Option<Notice> {
+    let installed = consume_marker(ui_state, running);
     let report = match report {
         Some(report)
             if report.state != UpdateState::InProgress
-                && store.setting(REPORT_SEEN)?.as_deref() != Some(report.id.as_str()) =>
+                && ui_state.get(REPORT_SEEN).as_deref() != Some(report.id.as_str()) =>
         {
-            store.save_setting(REPORT_SEEN, &report.id)?;
+            ui_state.set(REPORT_SEEN, report.id.clone());
             Some(report)
         }
         _ => None,
@@ -80,7 +77,7 @@ pub(crate) fn consume_startup_notice(
         }
         _ => None,
     });
-    Ok(from_report.or(installed.map(Notice::Updated)))
+    from_report.or(installed.map(Notice::Updated))
 }
 pub(crate) enum AppUpdateEvent {
     Open(String),
@@ -387,87 +384,57 @@ mod tests {
 
     #[test]
     fn installed_notice_requires_the_running_version_and_is_consumed_once() {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        store
-            .save_setting(INSTALLED_MARKER, r#"{"version":"99.0.0-preview.1"}"#)
-            .unwrap();
-        assert!(
-            consume_startup_notice(&store, None, "0.2.0")
-                .unwrap()
-                .is_none()
-        );
-        store
-            .save_setting(INSTALLED_MARKER, r#"{"version":"0.2.0"}"#)
-            .unwrap();
+        let ui_state = UiState::memory();
+        ui_state.set(INSTALLED_MARKER, r#"{"version":"99.0.0-preview.1"}"#.into());
+        assert!(consume_startup_notice(&ui_state, None, "0.2.0").is_none());
+        ui_state.set(INSTALLED_MARKER, r#"{"version":"0.2.0"}"#.into());
         assert_eq!(
-            consume_startup_notice(&store, None, "0.2.0").unwrap(),
+            consume_startup_notice(&ui_state, None, "0.2.0"),
             Some(Notice::Updated("0.2.0".into()))
         );
-        assert!(
-            consume_startup_notice(&store, None, "0.2.0")
-                .unwrap()
-                .is_none()
-        );
+        assert!(consume_startup_notice(&ui_state, None, "0.2.0").is_none());
     }
 
     /// After the row's install: updated (What's new), or a trial that went
     /// back, each said once.
     #[test]
     fn the_update_record_says_updated_or_rolled_back_once() {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let ui_state = UiState::memory();
         // Still trying it out: nothing yet, and not marked seen.
         let trying = report("a", UpdateState::InProgress);
-        assert!(
-            consume_startup_notice(&store, Some(&trying), "0.1.0")
-                .unwrap()
-                .is_none()
-        );
+        assert!(consume_startup_notice(&ui_state, Some(&trying), "0.1.0").is_none());
 
         let back = report("a", UpdateState::RolledBack);
         assert_eq!(
-            consume_startup_notice(&store, Some(&back), "0.1.0").unwrap(),
+            consume_startup_notice(&ui_state, Some(&back), "0.1.0"),
             Some(Notice::RolledBack {
                 version: "0.1.0".into(),
                 reason: Some("The new version stopped while starting.".into()),
             })
         );
-        assert!(
-            consume_startup_notice(&store, Some(&back), "0.1.0")
-                .unwrap()
-                .is_none()
-        );
+        assert!(consume_startup_notice(&ui_state, Some(&back), "0.1.0").is_none());
 
         // An update from another device that held, seen by the version it installed.
         let held = report("b", UpdateState::Updated);
-        assert!(
-            consume_startup_notice(&store, Some(&held), "0.1.0")
-                .unwrap()
-                .is_none()
-        );
+        assert!(consume_startup_notice(&ui_state, Some(&held), "0.1.0").is_none());
         let again = report("c", UpdateState::Updated);
         assert_eq!(
-            consume_startup_notice(&store, Some(&again), "0.2.0").unwrap(),
+            consume_startup_notice(&ui_state, Some(&again), "0.2.0"),
             Some(Notice::Updated("0.2.0".into()))
         );
     }
 
     #[test]
     fn a_rollback_outranks_a_stale_install_marker() {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        store
-            .save_setting(INSTALLED_MARKER, r#"{"version":"0.1.0"}"#)
-            .unwrap();
+        let ui_state = UiState::memory();
+        ui_state.set(INSTALLED_MARKER, r#"{"version":"0.1.0"}"#.into());
         let back = report("a", UpdateState::RolledBack);
         assert!(matches!(
-            consume_startup_notice(&store, Some(&back), "0.1.0").unwrap(),
+            consume_startup_notice(&ui_state, Some(&back), "0.1.0"),
             Some(Notice::RolledBack { .. })
         ));
         // The marker was spent with it.
-        assert!(
-            consume_startup_notice(&store, None, "0.1.0")
-                .unwrap()
-                .is_none()
-        );
+        assert!(consume_startup_notice(&ui_state, None, "0.1.0").is_none());
     }
 
     #[test]

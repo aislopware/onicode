@@ -1,5 +1,5 @@
 //! SessionFolderPicker.tsx and the composer's local /add-to-folder command.
-use onicode_core::session_groups::Folder;
+use onicode_protocol::session_groups::Folder;
 
 use super::*;
 actions!(session_folders, [Dismiss]);
@@ -239,7 +239,7 @@ impl Shell {
                     match target {
                         Target::Existing(folder) => groups.add_to_folder(folder, id),
                         Target::New(name) => {
-                            let folder = onicode_core::new_id();
+                            let folder = onicode_protocol::new_id();
                             groups.create_folder(&[id], folder.clone());
                             groups.rename_folder(&folder, name);
                         }

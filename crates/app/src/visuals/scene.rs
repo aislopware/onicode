@@ -1,5 +1,5 @@
 //! Small perspective scene renderer. Geometry stays in Rust and paints through GPUI paths.
-use onicode_core::visual::{Camera, Geometry, SceneObject, ThemeColor};
+use onicode_protocol::visual::{Camera, Geometry, SceneObject, ThemeColor};
 
 type Vec3 = [f32; 3];
 fn add(a: Vec3, b: Vec3) -> Vec3 {

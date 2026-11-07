@@ -2,7 +2,7 @@
 use chrono::{Local, TimeZone};
 use gpui::prelude::*;
 use gpui::{Context, Entity, EventEmitter, Role, Subscription, Window, div, px};
-use onicode_core::session_groups::{reminder_at, reminder_presets};
+use onicode_protocol::session_groups::{reminder_at, reminder_presets};
 
 use crate::popover::{Anchor, AnchorSlot, Menu, MenuAction, MenuEvent, menu_popover};
 use crate::theme::*;

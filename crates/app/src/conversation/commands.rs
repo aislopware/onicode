@@ -1,7 +1,10 @@
 //! Composer commands are handled before taking a draft or entering the turn queue.
-use onicode_core::provider::{self, Event, Request};
-use onicode_core::tool::{ToolCall, ToolState};
-use onicode_core::transcript::Row;
+use std::time::Duration;
+
+use onicode_protocol::provider;
+use onicode_protocol::session::{Compact, Compacted, Stop};
+use onicode_protocol::tool::{ToolCall, ToolState};
+use onicode_protocol::transcript::Row;
 
 use super::*;
 
@@ -21,11 +24,11 @@ impl Conversation {
         if self.git_action_command(&text, cx) {
             return true;
         }
-        if let Some(request) = onicode_core::composer::consume_command(&text, "visualize") {
+        if let Some(request) = onicode_protocol::composer::consume_command(&text, "visualize") {
             self.visualize_command(&text, request, cx);
             return true;
         }
-        if let Some(question) = onicode_core::composer::consume_command(&text, "btw") {
+        if let Some(question) = onicode_protocol::composer::consume_command(&text, "btw") {
             let question = question.trim().to_owned();
             self.open_btw(question, false, cx);
             return true;
@@ -114,17 +117,12 @@ impl Conversation {
             return;
         }
         self.attach_account(cx);
+        // The engine sets the account's home and the Claude hooks itself.
         let mut settings = self.settings.clone();
         settings.environment.extend(self.app_environment.clone());
-        settings.disable_claude_hooks = cx
-            .try_global::<crate::settings::Preferences>()
-            .is_some_and(|preferences| !preferences.claude_hooks);
-        let cwd = self.execution_cwd().to_owned();
-        let provider_id = self.summary.provider_id.clone();
         let model = self.model.clone();
         self.cancel = Arc::new(AtomicBool::new(false));
         let cancel = self.cancel.clone();
-        let mut context = self.context.unwrap_or_default();
         self.busy = true;
         self.submission_generation = self.submission_generation.wrapping_add(1);
         let generation = self.submission_generation;
@@ -133,7 +131,7 @@ impl Conversation {
         let mut compact_tool = ToolCall::new(
             &format!(
                 "manual-compaction-{}-{generation}",
-                onicode_core::time::now_ms()
+                onicode_protocol::time::now_ms()
             ),
             "contextCompaction",
         );
@@ -141,7 +139,7 @@ impl Conversation {
             role: "tool".into(),
             text: serde_json::to_string(&compact_tool).unwrap(),
             first: true,
-            sent_at: Some(onicode_core::time::now_ms()),
+            sent_at: Some(onicode_protocol::time::now_ms()),
             id: None,
         };
         self.transcript.update(cx, |view, cx| {
@@ -149,67 +147,58 @@ impl Conversation {
         });
         let compact_draft = self.input.read(cx).content.clone();
         let clear_command = compact_draft.trim().eq_ignore_ascii_case("/compact");
-        let store = self.store.clone();
-        let session = self.summary.id;
         let source_provider = self.summary.provider.clone();
         let source_account = self.settings.account.id.clone();
-        let persist_provider = source_provider.clone();
-        let persist_account = source_account.clone();
         self.completion
             .update(cx, |completion, cx| completion.dismiss(cx));
-        let work = cx.background_executor().spawn(async move {
-            let mut commands = None;
-            let cancelled = cancel.clone();
-            let result = (|| {
-                locked(&store)?.write_rows(session, compact_start, &[compact_row.clone()])?;
-                let binary = provider::resolve(kind).ok_or_else(|| kind.unavailable_hint())?;
-                let request = Request {
-                    kind,
-                    binary,
-                    cwd: cwd.into(),
-                    prompt: String::new(),
-                    provider_id,
-                    model,
-                    settings,
-                };
-                provider::compact(request, cancel, |events| {
-                    for event in events {
-                        match event {
-                            Event::Context { used, window } => context.merge(used, window),
-                            Event::Commands(discovered) => commands = Some(discovered),
-                            _ => {}
-                        }
-                    }
-                    Ok(())
-                })?;
-                let store = locked(&store)?;
-                if store
-                    .agent_settings(session)?
-                    .is_some_and(|settings| settings.account.id == persist_account)
-                    && store.sessions()?.iter().any(|current| {
-                        current.id == session && current.provider == persist_provider
-                    })
-                {
-                    store.save_context_usage(session, &context)?;
-                }
-                Ok(())
-            })();
-            compact_tool.state = if cancelled.load(Ordering::Relaxed) {
-                ToolState::Cancelled
-            } else if result.is_ok() {
-                ToolState::Completed
-            } else {
-                ToolState::Failed
-            };
-            compact_tool.output = result.as_ref().err().cloned().unwrap_or_default();
-            compact_row.text = serde_json::to_string(&compact_tool).unwrap();
-            let saved = locked(&store).and_then(|mut store| {
-                store.write_rows(session, compact_start, &[compact_row.clone()])
-            });
-            (result.and(saved), context, commands, compact_row)
-        });
+        let tool = compact_tool.id.clone();
+        let work = self.session_call::<Compact>(
+            Some(OpId::new()),
+            move |session| Compact {
+                session,
+                at: compact_start,
+                tool,
+                model,
+                settings,
+            },
+            cx,
+        );
+        // Stop sets the conversation's cancel flag; the engine hears it as `Stop`.
+        let done = Arc::new(AtomicBool::new(false));
+        let finished = done.clone();
         cx.spawn(async move |this, cx| {
-            let (result, context, commands, compact_row) = work.await;
+            while !finished.load(Ordering::Relaxed) {
+                if cancel.load(Ordering::Relaxed) {
+                    let _ = this.update(cx, |this, cx| {
+                        let stop = |session| Stop { session };
+                        this.session_call::<Stop>(Some(OpId::new()), stop, cx)
+                            .detach();
+                    });
+                    return;
+                }
+                cx.background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
+            }
+        })
+        .detach();
+        cx.spawn(async move |this, cx| {
+            let reply = work.await;
+            done.store(true, Ordering::Relaxed);
+            let (result, context, commands, compact_row) = match reply {
+                Ok(Compacted {
+                    row,
+                    context,
+                    commands,
+                    error,
+                }) => (error.map_or(Ok(()), Err), Some(context), commands, row),
+                Err(error) => {
+                    compact_tool.state = ToolState::Failed;
+                    compact_tool.output.clone_from(&error);
+                    compact_row.text = serde_json::to_string(&compact_tool).unwrap();
+                    (Err(error), None, None, compact_row)
+                }
+            };
             let _ = this.update(cx, |this, cx| {
                 if this.submission_generation != generation {
                     return;
@@ -226,7 +215,7 @@ impl Conversation {
                         completion.set_native_commands(commands, cx)
                     });
                 }
-                if source_selected {
+                if let Some(context) = context.filter(|_| source_selected) {
                     this.context = Some(context);
                 }
                 this.status = match result {
@@ -257,10 +246,8 @@ impl Conversation {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::sync::Mutex;
 
     use gpui::TestAppContext;
-    use onicode_core::store::Store;
 
     use super::*;
 
@@ -268,15 +255,18 @@ mod tests {
     fn visualize_command_preserves_rejected_drafts_and_starts_an_explicit_turn(
         cx: &mut TestAppContext,
     ) {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let mut summary = store.create("codex", "/missing/visual-command").unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let mut summary = engine
+            .seed()
+            .create("codex", "/missing/visual-command")
+            .unwrap();
         summary.provider = "fixture".into();
         let window = cx.update(|cx| {
             input::bind(cx);
             crate::popover::bind(cx);
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
-                    let mut view = Conversation::new(summary, Arc::new(Mutex::new(store)), cx);
+                    let mut view = Conversation::new(summary, engine, cx);
                     view.loaded = true;
                     view.summary.has_messages = true;
                     view

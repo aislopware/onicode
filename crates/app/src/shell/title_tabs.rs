@@ -1,5 +1,5 @@
 //! All title-strip commands operate on the same visible, ordered snapshot.
-use onicode_core::files::path_key;
+use onicode_protocol::files::path_key;
 
 use super::*;
 use crate::workspace::TitleTab;

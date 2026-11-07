@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::path::Path;
+
 use super::*;
 use crate::agent::Settings;
 use crate::store::Store;
@@ -186,10 +189,6 @@ for line in sys.stdin:
             Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
-        assert_eq!(
-            profile.identity(Kind::Codex).unwrap().email.unwrap(),
-            format!("{name}@fixture.test")
-        );
         let model = profile.home(Kind::Codex).unwrap().join("model");
         std::fs::write(&model, "first").unwrap();
         assert_eq!(
@@ -247,6 +246,5 @@ for line in sys.stdin:
             Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
-        assert!(profile.identity(Kind::Codex).is_none());
     }
 }

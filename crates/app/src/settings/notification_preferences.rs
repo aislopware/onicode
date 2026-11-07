@@ -91,14 +91,14 @@ impl Preferences {
             self.mute_projects(
                 &[id],
                 Some(until.map_or(Value::Null, |at| json!(at))),
-                onicode_core::time::now_ms(),
+                onicode_protocol::time::now_ms(),
             );
         }
     }
 
     pub(crate) fn resume_notification_project(&mut self, cwd: &str) {
         if let Some(id) = self.known_notification_project_id(cwd) {
-            self.mute_projects(&[id], None, onicode_core::time::now_ms());
+            self.mute_projects(&[id], None, onicode_protocol::time::now_ms());
         }
     }
 
@@ -288,7 +288,7 @@ impl SettingsView {
     }
 
     pub(super) fn notification_deadline(&mut self, cx: &mut Context<Self>) {
-        let now = onicode_core::time::now_ms();
+        let now = onicode_protocol::time::now_ms();
         let deadline = self
             .prefs
             .project_notifications
@@ -487,7 +487,7 @@ impl SettingsView {
         let targets = ids.clone();
         let events = cx.subscribe(&menu, move |this, _, event: &MenuEvent, cx| {
             if let MenuEvent::Picked(id, _) = event {
-                let now = onicode_core::time::now_ms();
+                let now = onicode_protocol::time::now_ms();
                 if id.as_ref() == "mute:custom" {
                     let initial = if targets.len() == 1 {
                         this.prefs.project_notifications[&targets[0]]["mutedUntil"]
@@ -550,7 +550,7 @@ impl SettingsView {
     }
 
     fn mute_controls(&self, ids: Vec<String>, key: String, cx: &mut Context<Self>) -> AnyElement {
-        let now = onicode_core::time::now_ms();
+        let now = onicode_protocol::time::now_ms();
         let muted: Vec<_> = ids
             .iter()
             .filter(|id| self.prefs.project_muted(id, now))
@@ -601,7 +601,7 @@ impl SettingsView {
                     .child("Resume notifications")
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.update(cx, |p| {
-                            p.mute_projects(&resume_ids, None, onicode_core::time::now_ms())
+                            p.mute_projects(&resume_ids, None, onicode_protocol::time::now_ms())
                         })
                     })),
                 )
@@ -689,7 +689,9 @@ impl SettingsView {
             let expand_id = id.clone();
             let select_id = id.clone();
             let expanded = self.notification_state.expanded.as_ref() == Some(&id);
-            let muted = self.prefs.project_muted(&id, onicode_core::time::now_ms());
+            let muted = self
+                .prefs
+                .project_muted(&id, onicode_protocol::time::now_ms());
             let categories: Vec<_> = CATEGORIES
                 .iter()
                 .filter(|(cat, _)| match project.kind.as_str() {
@@ -770,7 +772,7 @@ impl SettingsView {
                                             &project_id,
                                             &category,
                                             !enabled,
-                                            onicode_core::time::now_ms(),
+                                            onicode_protocol::time::now_ms(),
                                         )
                                     })
                                 })),
@@ -1023,7 +1025,7 @@ impl SettingsView {
                                                 Local.from_local_datetime(&at).earliest()
                                             })
                                             .map(|at| at.timestamp_millis().max(0) as u64);
-                                            let now = onicode_core::time::now_ms();
+                                            let now = onicode_protocol::time::now_ms();
                                             match parsed {
                                                 Some(at) if at > now => {
                                                     let ids = custom.ids.clone();

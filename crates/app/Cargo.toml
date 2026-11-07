@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+rusqlite.workspace = true
 onicode-core = { path = "../core" }
 # Turns run in the engine library, in process until the engine runs on its own (engine.md).
 onicode-engine.workspace = true

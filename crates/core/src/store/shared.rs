@@ -3,6 +3,7 @@
 mod accounts;
 pub(super) mod blocks;
 mod edit;
+mod rewind;
 mod settings;
 #[cfg(test)]
 mod tests;
@@ -478,6 +479,16 @@ impl Store {
             .cloned())
     }
 
+    pub(super) fn shared_delete_setting(&self, key: &str) -> Result<(), String> {
+        self.shared_writable()?;
+        let shared = self.shared.as_ref().unwrap();
+        if let Some(conn) = &shared.extras_db {
+            sql(conn.execute("DELETE FROM settings WHERE key=?1", params![key]))?;
+        }
+        shared.extras.borrow_mut().remove(key);
+        Ok(())
+    }
+
     pub(super) fn shared_save_setting(&self, key: &str, value: &str) -> Result<(), String> {
         self.shared_writable()?;
         let shared = self.shared.as_ref().unwrap();
@@ -699,7 +710,7 @@ impl Store {
             .map(|raw| parse(&raw))
             .transpose()?
             .unwrap_or_default();
-        settings.model = super::monocode_import::native_model(&model, &provider);
+        settings.model = onicode_protocol::sessions::native_model(&model, &provider);
         // A prior native launch may have created an untouched default blank.
         // Seed only that blank, never a saved or resumed conversation's model.
         let default_controls = controls.iter().all(|(key, value)| {
@@ -830,7 +841,7 @@ impl Store {
             [self.persisted_session_id(id)?],
             |r| Ok((r.get(0)?, r.get(1)?)),
         ))?;
-        if settings.model != super::monocode_import::native_model(&saved_model, &provider) {
+        if settings.model != onicode_protocol::sessions::native_model(&saved_model, &provider) {
             let model = settings.model.as_deref().unwrap_or("default");
             let model = if provider == "claude" {
                 model.strip_prefix("claude-").unwrap_or(model)
@@ -892,8 +903,11 @@ impl Store {
                 }
                 if let Some(id) = &info.model_id {
                     model["id"] = json!(if info.provider == session_provider
-                        && super::monocode_import::native_model(&session_model, &session_provider)
-                            .as_ref()
+                        && onicode_protocol::sessions::native_model(
+                            &session_model,
+                            &session_provider
+                        )
+                        .as_ref()
                             == Some(id)
                     {
                         session_model.clone()

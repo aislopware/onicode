@@ -9,10 +9,10 @@ use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{App, Context, Entity, EventEmitter, Global, Role, div, px};
-use onicode_engine::turn::{Database, locked};
 use onicode_update::{Channel, Manifest, Offer, channel, desktop};
 
 use crate::theme::*;
+use crate::ui_state::UiState;
 
 /// Where an install records the version it put in place, for the
 /// "Updated to …" card at the next launch (`app_update.rs`).
@@ -187,11 +187,12 @@ fn block_on<F: std::future::Future>(future: F) -> Result<F::Output, String> {
         .map_err(|error| format!("Couldn’t start the updater: {error}"))
 }
 
-pub(crate) fn shared(store: Database, cx: &mut App) -> Entity<Updater> {
+pub(crate) fn shared(cx: &mut App) -> Entity<Updater> {
     if let Some(shared) = cx.try_global::<Shared>() {
         return shared.0.clone();
     }
-    let entity = cx.new(|cx| Updater::new(store, cx));
+    let ui_state = crate::ui_state::shared(cx);
+    let entity = cx.new(|cx| Updater::new(ui_state, cx));
     let gate = entity.read(cx).gate.clone();
     cx.set_global(Shared(entity.clone(), gate));
     entity
@@ -216,7 +217,8 @@ impl ReleaseNotes {
 pub(crate) struct Updater {
     feed: Option<String>,
     data_dir: Option<PathBuf>,
-    store: Database,
+    /// Where the install marker is kept for the next launch.
+    ui_state: UiState,
     machine: Machine,
     /// The last manifest a check fetched: its notes feed What's new.
     manifest: Option<Manifest>,
@@ -227,7 +229,7 @@ pub(crate) struct Updater {
 }
 impl EventEmitter<Event> for Updater {}
 impl Updater {
-    fn new(store: Database, cx: &mut Context<Self>) -> Self {
+    fn new(ui_state: UiState, cx: &mut Context<Self>) -> Self {
         let feed = onicode_update::feed_url();
         let mut this = Self {
             machine: if feed.is_some() {
@@ -237,7 +239,7 @@ impl Updater {
             },
             feed,
             data_dir: channel::data_dir().map(Path::to_path_buf),
-            store,
+            ui_state,
             manifest: None,
             channel: Channel::of_version(onicode_update::app_version()),
             poll: None,
@@ -325,7 +327,7 @@ impl Updater {
         }
         self.changed(cx); // Close the double-click window before starting I/O.
         let data_dir = self.data_dir.clone();
-        let store = self.store.clone();
+        let ui_state = self.ui_state.clone();
         let gate = self.gate.clone();
         let (tx, rx) = async_channel::bounded(8);
         let work = cx.background_executor().spawn(async move {
@@ -364,16 +366,18 @@ impl Updater {
                     gate.installing = true;
                 }
                 let _ = tx.send_blocking(Progress::Installing);
-                locked(&store)?.save_setting(
+                // The marker must reach the disk before the swap relaunches the app.
+                ui_state.set(
                     INSTALLED_MARKER,
-                    &serde_json::json!({ "version": version }).to_string(),
-                )?;
+                    serde_json::json!({ "version": version }).to_string(),
+                );
+                ui_state.flush();
                 install
                     .apply_desktop(&staged, true)
                     .map_err(|error| format!("{error:#}"))
             })();
             if result.is_err() {
-                let _ = locked(&store).and_then(|store| store.save_setting(INSTALLED_MARKER, ""));
+                ui_state.set(INSTALLED_MARKER, String::new());
             }
             gate.lock().unwrap_or_else(|e| e.into_inner()).installing = false;
             result
@@ -596,21 +600,13 @@ pub(crate) fn row(entity: Entity<Updater>, cx: &App) -> gpui::AnyElement {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
     use gpui::TestAppContext;
 
     use super::*;
 
-    fn store() -> Database {
-        Arc::new(Mutex::new(
-            onicode_core::store::Store::open(std::path::Path::new(":memory:")).unwrap(),
-        ))
-    }
-
     #[gpui::test]
     fn quit_waits_for_installation_to_finish(cx: &mut TestAppContext) {
-        let updater = cx.update(|cx| shared(store(), cx));
+        let updater = cx.update(shared);
         let gate = updater.read_with(cx, |updater, _| updater.gate.clone());
         gate.lock().unwrap().installing = true;
         assert!(cx.update(|cx| defer_quit(cx)));
@@ -621,8 +617,8 @@ mod tests {
 
     #[gpui::test]
     fn windows_share_one_updater_and_busy_operations_cannot_start_again(cx: &mut TestAppContext) {
-        let first = cx.update(|cx| shared(store(), cx));
-        let second = cx.update(|cx| shared(store(), cx));
+        let first = cx.update(shared);
+        let second = cx.update(shared);
         assert_eq!(first.entity_id(), second.entity_id());
         first.update(cx, |view, cx| {
             // Busy work needs a feed to get past the disabled gate.

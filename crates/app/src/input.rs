@@ -554,11 +554,11 @@ impl Input {
         Some(Bounds::new(origin, size(px(1.), self.line_height())))
     }
 
-    pub(crate) fn completion_token(&self) -> Option<onicode_core::composer::Token> {
+    pub(crate) fn completion_token(&self) -> Option<onicode_protocol::composer::Token> {
         if self.is_composing() || !self.selection.is_empty() {
             return None;
         }
-        onicode_core::composer::token_at(&self.content, self.cursor())
+        onicode_protocol::composer::token_at(&self.content, self.cursor())
     }
 
     pub(crate) fn highlight_composer_tokens(
@@ -1375,7 +1375,7 @@ impl EntityInputHandler for Input {
         let text = bounded(
             &normalized,
             (if self.code.is_some() {
-                onicode_core::files::document::MAX_TEXT_BYTES
+                onicode_protocol::files::document::MAX_TEXT_BYTES
             } else {
                 MAX_BYTES
             })
@@ -1429,7 +1429,7 @@ impl EntityInputHandler for Input {
         let text = bounded(
             &normalized,
             (if self.code.is_some() {
-                onicode_core::files::document::MAX_TEXT_BYTES
+                onicode_protocol::files::document::MAX_TEXT_BYTES
             } else {
                 MAX_BYTES
             })

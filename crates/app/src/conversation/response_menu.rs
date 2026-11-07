@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use gpui::App;
-use onicode_core::accounts::Profile;
-use onicode_core::response::{Target, TransferKind};
+use onicode_protocol::accounts::Profile;
+use onicode_protocol::agents::{Catalog, CatalogRead, Harnesses};
+use onicode_protocol::response::{Target, TransferKind};
 
 use super::*;
 use crate::popover::MenuOpened;
@@ -35,9 +36,12 @@ impl Conversation {
             .try_global::<crate::settings::Preferences>()
             .map(|prefs| prefs.hidden_for(&self.summary.cwd))
             .unwrap_or_default();
+        let harnesses = remote
+            .is_none()
+            .then(|| crate::engine_client::local(cx).call::<Harnesses>(None, Harnesses {}));
         let work = cx.background_executor().spawn(async move {
             if let Some(project) = remote {
-                return catalog::remote_catalog(&project).map(|mut catalog| {
+                return onicode_core::catalog::remote_catalog(&project).map(|mut catalog| {
                     catalog
                         .providers
                         .into_iter()
@@ -54,10 +58,18 @@ impl Conversation {
             }
             // Discover executables only. Starting every CLI here made one slow
             // provider delay the entire picker, including cached catalogs.
+            let installed = match harnesses {
+                Some(harnesses) => harnesses.await?,
+                None => Vec::new(),
+            };
             Ok(Kind::ALL
                 .into_iter()
                 .filter(|provider| !hidden.iter().any(|id| id == provider.id()))
-                .filter(|provider| onicode_core::provider::resolve(*provider).is_some())
+                .filter(|provider| {
+                    installed
+                        .iter()
+                        .any(|harness| harness.provider == *provider && harness.path.is_some())
+                })
                 .map(|provider| (provider, None))
                 .collect::<Catalogs>())
         });
@@ -130,13 +142,7 @@ impl Conversation {
             if initial.is_some() {
                 requested.insert(provider);
             }
-            let cached = initial.or_else(|| {
-                (!self.is_remote())
-                    .then(|| catalog::cached_models_for(provider, &profile))
-                    .flatten()
-                    .map(Ok)
-            });
-            let options = cached
+            let options = initial
                 .map(|result| self.response_model_items(turn, kind, provider, result, cx))
                 .unwrap_or_else(|| vec![MenuItem::Note("Loading models…".into())]);
             let models = cx.new(|cx| {
@@ -224,11 +230,21 @@ impl Conversation {
         if cfg!(test) {
             return;
         }
-        let profile = menu.profiles.get(&provider).cloned().unwrap_or_default();
+        let account = menu.profiles.get(&provider).cloned().unwrap_or_default().id;
         let request = self.response_request;
-        let work = cx
-            .background_executor()
-            .spawn(async move { catalog::models_for(provider, &profile) });
+        let read = crate::engine_client::local(cx).call::<Catalog>(
+            None,
+            Catalog {
+                provider,
+                account,
+                read: CatalogRead::Fresh,
+            },
+        );
+        let work = cx.background_executor().spawn(async move {
+            read.await.and_then(|models| {
+                models.ok_or_else(|| format!("{} returned no model catalog", provider.label()))
+            })
+        });
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -365,10 +381,8 @@ pub(super) fn model_ids_match(provider: Kind, left: &str, right: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
 
     use gpui::{TestAppContext, WindowHandle};
-    use onicode_core::store::Store;
 
     use super::*;
 
@@ -389,14 +403,17 @@ mod tests {
     }
 
     fn conversation(cx: &mut TestAppContext) -> WindowHandle<Conversation> {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let summary = store.create("claude", "/work/response-picker").unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let summary = engine
+            .seed()
+            .create("claude", "/work/response-picker")
+            .unwrap();
         let window = cx.update(|cx| {
             input::bind(cx);
             crate::popover::bind(cx);
             cx.set_reduce_motion(true);
             cx.open_window(Default::default(), |_, cx| {
-                cx.new(|cx| Conversation::new(summary, Arc::new(Mutex::new(store)), cx))
+                cx.new(|cx| Conversation::new(summary, engine, cx))
             })
             .unwrap()
         });
@@ -407,14 +424,14 @@ mod tests {
                     transcript.patch(
                         0,
                         vec![
-                            onicode_core::transcript::Row {
+                            onicode_protocol::transcript::Row {
                                 role: "user".into(),
                                 text: "Review the footer".into(),
                                 first: true,
                                 sent_at: None,
                                 id: None,
                             },
-                            onicode_core::transcript::Row {
+                            onicode_protocol::transcript::Row {
                                 role: "assistant".into(),
                                 text: "The footer is ready.".into(),
                                 first: true,
@@ -444,6 +461,7 @@ mod tests {
             default: false,
             tiers: Vec::new(),
             controls: Vec::new(),
+            limits: Default::default(),
         }
     }
 
@@ -564,7 +582,7 @@ mod tests {
                 view.transcript.update(cx, |transcript, _| {
                     transcript.turns.insert(
                         1,
-                        onicode_core::agent::TurnInfo {
+                        onicode_protocol::agent::TurnInfo {
                             provider: "claude".into(),
                             model: "Opus 5.5".into(),
                             model_id: Some("claude:opus-5-5".into()),

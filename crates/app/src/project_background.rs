@@ -13,7 +13,8 @@ use gpui::{
 use gpui::{Corners, Pixels};
 #[cfg(target_os = "macos")]
 use onicode_core::project_appearance::background_texture;
-use onicode_core::project_appearance::{Background, Effect, read_image};
+use onicode_core::project_appearance::read_image;
+use onicode_protocol::project_appearance::{Background, Effect};
 
 use crate::popover::AnchorSlot;
 
@@ -254,7 +255,7 @@ impl ProjectBackground {
                 if !begin {
                     // Other backends have an opaque chat surface. Reveal that
                     // surface with the same view-relative stops while it resizes.
-                    use onicode_core::project_appearance::background_fade;
+                    use onicode_protocol::project_appearance::background_fade;
 
                     use crate::theme::CHAT;
                     let _ = (preview, &clip, opacity);

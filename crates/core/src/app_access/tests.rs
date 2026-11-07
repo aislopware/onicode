@@ -21,6 +21,7 @@ fn model() -> Model {
             current: "a".into(),
             choices: vec![("a".into(), "A".into()), ("b".into(), "B".into())],
         }],
+        limits: crate::catalog::ModelLimits::default(),
     }
 }
 

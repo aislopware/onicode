@@ -113,7 +113,7 @@ fn optimistic_prompt_anchors_once_and_worker_acceptance_keeps_its_entrance(
             view.streaming(true, cx);
             view.submit_prompt(
                 "New question",
-                &onicode_core::agent::Settings::default(),
+                &onicode_protocol::agent::Settings::default(),
                 cx,
             );
             assert_eq!(view.anchor_turn, Some(2));
@@ -732,7 +732,7 @@ fn long_user_messages_clamp_to_four_lines_until_shown_in_full(cx: &mut TestAppCo
             view.visible = false;
             // Use the storage writer's real line/byte chunking for the long
             // prompt; a single hand-built Row cannot exercise chunk expansion.
-            let mut source = onicode_core::transcript::Transcript::default();
+            let mut source = onicode_protocol::transcript::Transcript::default();
             for (role, text) in [
                 ("user", "Short".to_owned()),
                 ("assistant", "Ok.".to_owned()),

@@ -10,11 +10,16 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+pub mod agents;
+pub mod app_access;
 pub mod engine;
+pub mod engine_settings;
 pub mod files;
 pub mod git;
 mod ids;
 pub mod session;
+pub mod settings_pages;
+pub mod work;
 pub mod workspace;
 
 pub use ids::{EngineId, MessageId, OpId, SessionId, TerminalId};
@@ -22,7 +27,7 @@ pub use ids::{EngineId, MessageId, OpId, SessionId, TerminalId};
 /// The protocol's version. Peers with different values answer each other only the calls whose
 /// shapes are frozen: [`engine::Hello`], [`engine::EngineInfo`] and [`engine::UpdateEngine`].
 /// Separate from net's `WIRE`, so a mismatch can still say "Needs update".
-pub const PROTOCOL: u32 = 6;
+pub const PROTOCOL: u32 = 7;
 
 /// One request and its reply.
 pub trait Call {
@@ -155,6 +160,8 @@ pub const METHODS: &[Method] = &[
     call::<session::Fork>(),
     call::<session::Btw>(),
     call::<session::SwitchProvider>(),
+    call::<session::ResetThread>(),
+    call::<session::Compact>(),
     call::<session::ReadTranscript>(),
     call::<session::ReadSession>(),
     call::<session::SaveQueue>(),
@@ -201,6 +208,7 @@ pub const METHODS: &[Method] = &[
     call::<files::ListDrives>(),
     call::<files::SearchHomeFolders>(),
     call::<files::SaveAttachments>(),
+    call::<files::AdoptAttachments>(),
     call::<files::SaveNoteImages>(),
     // Git.
     watch::<git::WatchGit>(),
@@ -232,6 +240,73 @@ pub const METHODS: &[Method] = &[
     call::<git::ReadCheckpoint>(),
     call::<git::RestoreCheckpoint>(),
     call::<git::ReadSessionChanges>(),
+    // Agents.
+    watch::<agents::WatchAccounts>(),
+    call::<agents::RefreshUsage>(),
+    call::<agents::RefreshSignIn>(),
+    call::<agents::ConsumeUsageReset>(),
+    call::<agents::Catalog>(),
+    call::<agents::Skills>(),
+    call::<agents::CreateSkill>(),
+    call::<agents::Commands>(),
+    call::<agents::AddAccount>(),
+    call::<agents::RenameAccount>(),
+    call::<agents::RemoveAccount>(),
+    call::<agents::SelectAccount>(),
+    call::<agents::Login>(),
+    call::<agents::CancelLogin>(),
+    call::<agents::Logout>(),
+    call::<agents::McpServers>(),
+    call::<agents::AddMcpServer>(),
+    call::<agents::RemoveMcpServer>(),
+    call::<agents::McpLogin>(),
+    call::<agents::McpHealth>(),
+    call::<agents::Harnesses>(),
+    call::<agents::InspectHarness>(),
+    call::<agents::HarnessUpdates>(),
+    call::<agents::RunHarnessUpdate>(),
+    call::<agents::Generate>(),
+    call::<agents::StopGenerate>(),
+    call::<agents::KeepIdleAgents>(),
+    call::<agents::TransferThread>(),
+    call::<agents::ForgetThread>(),
+    // Engine settings.
+    watch::<engine_settings::WatchEngineSettings>(),
+    call::<engine_settings::SetEngineSetting>(),
+    call::<engine_settings::TakeViewerState>(),
+    // Work.
+    call::<work::InboxList>(),
+    call::<work::ReadInboxDetails>(),
+    call::<work::ReadInboxThread>(),
+    call::<work::ReadInboxDiff>(),
+    call::<work::ReadInboxChecks>(),
+    call::<work::PostInboxComment>(),
+    call::<work::ConnectInbox>(),
+    call::<work::RunInboxAction>(),
+    call::<work::InboxMedia>(),
+    call::<work::InboxAvatar>(),
+    call::<work::ListAutomations>(),
+    call::<work::AutomationRuns>(),
+    call::<work::UpsertAutomation>(),
+    call::<work::SetAutomationEnabled>(),
+    call::<work::RunAutomationNow>(),
+    call::<work::DeleteAutomation>(),
+    call::<work::HasEventAutomations>(),
+    call::<work::ProjectGroups>(),
+    call::<work::LinkedActivity>(),
+    call::<work::AgentProcesses>(),
+    call::<work::StopAgentTool>(),
+    call::<work::ReadWorkItem>(),
+    call::<work::ReadWorkItemDetails>(),
+    // App access.
+    call::<app_access::ReadAppReceipt>(),
+    call::<app_access::SaveAppReceipt>(),
+    call::<app_access::AppModels>(),
+    call::<app_access::StartAppSession>(),
+    call::<app_access::ReadAppConversation>(),
+    call::<app_access::AppNotes>(),
+    // Settings pages.
+    call::<settings_pages::ReadWorktreeMarks>(),
 ];
 
 /// The row of [`METHODS`] named `name`.
@@ -240,73 +315,42 @@ pub fn method(name: &str) -> Option<&'static Method> {
     METHODS.iter().find(|method| method.name == name)
 }
 
-/// The data types the UI renders. They live in `onicode-core` until step 6 of the engine plan
-/// moves them here; the paths below are where they will stay.
-pub mod agent {
-    pub use onicode_core::agent::{
-        AccessMode, Approval, Handoff, ProviderSwitch, Question, QuestionItem, QuestionOption,
-        Settings, TurnInfo, TurnMetrics,
-    };
-}
+// The data the engine and its viewers share, and the pure helpers over it: what a message
+// carries and what a viewer computes from it. `onicode-core` re-exports each at its old path.
+pub mod accounts;
+pub mod agent;
+pub mod automations;
+pub mod catalog;
+pub mod checkpoint;
+pub mod composer;
+pub mod context;
+pub mod diff;
+pub mod follow_up;
+pub mod harness_updates;
+pub mod inbox;
+pub mod mcp;
+pub mod notes;
+pub mod orchestration;
+pub mod project_appearance;
+pub mod provider;
+pub mod remote;
+pub mod response;
+pub mod scm;
+pub mod search;
+pub mod session_filters;
+pub mod session_groups;
+pub mod session_title;
+pub mod sessions;
+pub mod skills;
+pub mod time;
+pub mod tool;
+pub mod transcript;
+pub mod usage;
+pub mod user_links;
+pub mod visual;
 
-/// The account a session or a background chore runs on.
-pub mod accounts {
-    pub use onicode_core::accounts::Profile;
-}
-
-/// Scheduled and event-triggered runs.
-pub mod automations {
-    pub use onicode_core::automations::{
-        Automation, AutomationRun, AutomationTrigger, DueAutomationRun,
-    };
-}
-
-/// The context window's use, as the UI shows it.
-pub mod context {
-    pub use onicode_core::context::Usage;
-}
-
-/// The queue of messages typed while a turn runs.
-pub mod follow_up {
-    pub use onicode_core::follow_up::{Message, State};
-}
-
-/// An issue, pull request or work item a tracker lists.
-pub mod inbox {
-    pub use onicode_core::inbox::{Item, Label, Person};
-}
-
-/// Notes, and a response kept as one.
-pub mod notes {
-    pub use onicode_core::notes::{Note, NoteUpsert};
-    pub use onicode_core::response::ResponseNote;
-}
-
-/// What the provider offers and leaves running.
-pub mod provider {
-    pub use onicode_core::provider::{BackgroundTask, Kind, NativeCommand, NativeSubcommand};
-}
-
-/// A search over saved conversations.
-pub mod search {
-    pub use onicode_core::search::{Hit, Target};
-}
-
-/// What the sidebar shows of a session: its stored summary, folders, reminders, linked work
-/// item and orchestration, and the model background chores such as titles run on.
-pub mod sessions {
-    pub use onicode_core::orchestration::{Summary as Orchestration, SummaryTask};
-    pub use onicode_core::session_groups::{Folder, Groups, WorkItem};
-    pub use onicode_core::session_title::TextModel;
-    pub use onicode_core::store::{Reminder, Session};
-}
-
-/// A transcript's rows.
-pub mod transcript {
-    pub use onicode_core::transcript::Row;
-}
-
-/// The provider's usage limit.
-pub mod usage {
-    pub use onicode_core::usage::Limit;
+/// A random 128-bit id as 32 hex digits.
+#[must_use]
+pub fn new_id() -> String {
+    format!("{:032x}", uuid::Uuid::new_v4().as_u128())
 }

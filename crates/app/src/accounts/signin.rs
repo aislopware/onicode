@@ -206,17 +206,15 @@ mod tests {
 
     #[gpui::test]
     fn settings_add_signin_stays_inline_after_completion(cx: &mut gpui::TestAppContext) {
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
-        let view =
-            cx.new(|cx| Accounts::new(PathBuf::from("/fixture"), Book::default(), store, cx));
+        let engine = cx.update(Engine::memory);
+        let view = cx.new(|cx| Accounts::new(engine, cx));
         view.update(cx, |accounts, cx| {
             accounts.signin = Some(SignIn {
                 kind: Kind::Codex,
                 profile: Profile::default(),
                 action: AuthAction::SignIn,
                 surface: Surface::InlineSettings,
+                attempt: String::new(),
                 cancel: Arc::new(AtomicBool::new(false)),
                 complete: false,
                 error: None,
@@ -232,12 +230,10 @@ mod tests {
     }
     #[gpui::test]
     fn footer_signin_never_opens_a_modal_or_steals_window_focus(cx: &mut gpui::TestAppContext) {
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
+        let engine = cx.update(Engine::memory);
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {
-                cx.new(|cx| Accounts::new(PathBuf::from("/fixture"), Book::default(), store, cx))
+                cx.new(|cx| Accounts::new(engine, cx))
             })
             .unwrap()
         });
@@ -250,6 +246,7 @@ mod tests {
                     profile: Profile::default(),
                     action: AuthAction::SignIn,
                     surface: Surface::Footer,
+                    attempt: String::new(),
                     cancel: Arc::new(AtomicBool::new(false)),
                     complete: false,
                     error: None,
@@ -299,16 +296,14 @@ mod tests {
     }
     #[gpui::test]
     fn returning_to_the_app_resets_a_sign_in_the_browser_abandoned(cx: &mut gpui::TestAppContext) {
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
-        let view =
-            cx.new(|cx| Accounts::new(PathBuf::from("/fixture"), Book::default(), store, cx));
+        let engine = cx.update(Engine::memory);
+        let view = cx.new(|cx| Accounts::new(engine, cx));
         let waiting = |complete| SignIn {
             kind: Kind::Claude,
             profile: Profile::default(),
             action: AuthAction::SignIn,
             surface: Surface::Footer,
+            attempt: String::new(),
             cancel: Arc::new(AtomicBool::new(false)),
             complete,
             error: None,

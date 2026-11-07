@@ -5,16 +5,16 @@ use super::*;
 
 /// Only explicit native edits override desktop metadata. Saving a selection
 /// must not freeze all desktop account labels in a stale copy of the book.
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
-pub(crate) struct DesktopOverrides {
+pub struct DesktopOverrides {
     accounts: Vec<Account>,
     removed: Vec<(String, String)>,
     selections: HashMap<String, HashMap<String, String>>,
 }
 
 impl Book {
-    pub(crate) fn from_desktop(accounts: &Value, selections: &Value) -> Option<Self> {
+    pub fn from_desktop(accounts: &Value, selections: &Value) -> Option<Self> {
         let stored = accounts.as_object()?;
         let mut book = Self::default();
         for kind in PROVIDERS {
@@ -60,7 +60,7 @@ impl Book {
         Some(book)
     }
 
-    pub(crate) fn desktop_overrides(&self, source: &Self) -> DesktopOverrides {
+    pub fn desktop_overrides(&self, source: &Self) -> DesktopOverrides {
         let mut changes = DesktopOverrides::default();
         for kind in PROVIDERS {
             let desired = self.list(kind);
@@ -91,7 +91,7 @@ impl Book {
         changes
     }
 
-    pub(crate) fn apply_desktop_overrides(&mut self, changes: DesktopOverrides) {
+    pub fn apply_desktop_overrides(&mut self, changes: DesktopOverrides) {
         self.accounts.retain(|a| {
             !changes
                 .removed

@@ -8,11 +8,9 @@ use gpui::{
     Context, Entity, EventEmitter, FocusHandle, Focusable, Role, ScrollHandle, Subscription,
     Window, div, px,
 };
-use onicode_core::files::path_key;
-use onicode_core::git::Snapshot;
-use onicode_engine::turn::{Database, locked};
 use onicode_protocol::OpId;
-use onicode_protocol::git::{CreateWorktree, NewWorktree};
+use onicode_protocol::files::path_key;
+use onicode_protocol::git::{CreateWorktree, GitSnapshot as Snapshot, NewWorktree};
 
 use crate::theme::*;
 use crate::{input, popover};
@@ -140,7 +138,7 @@ impl WorktreeSwitcher {
         focused: Option<WorktreeFocus>,
         sessions: Vec<TabSession>,
         ids: Vec<i64>,
-        store: Database,
+        engine: crate::engine_client::Engine,
         cx: &mut Context<Self>,
     ) -> Self {
         let search = cx.new(|cx| {
@@ -181,7 +179,12 @@ impl WorktreeSwitcher {
         // It must also never hold up the independent Git list.
         if !ids.is_empty() {
             let work = cx.background_executor().spawn(async move {
-                let paths = locked(&store)?.session_worktrees()?;
+                let paths: HashMap<i64, Option<String>> = engine
+                    .workspace_now()?
+                    .sessions
+                    .into_iter()
+                    .map(|summary| (summary.session.id, summary.worktree))
+                    .collect();
                 Ok::<_, String>(
                     ids.into_iter()
                         .map(|id| (id, paths.get(&id).cloned().flatten()))
@@ -567,11 +570,9 @@ impl Render for WorktreeSwitcher {
 mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
-    use std::sync::{Arc, Mutex};
 
     use gpui::TestAppContext;
-    use onicode_core::git::Worktree;
-    use onicode_core::store::Store;
+    use onicode_protocol::git::Worktree;
 
     use super::*;
     fn snapshot() -> Snapshot {
@@ -653,20 +654,20 @@ mod tests {
                 ..Default::default()
             },
         );
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let session = store.create("codex", cwd).unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let seed = engine.seed();
+        let session = seed.create("codex", cwd).unwrap();
         // Membership remains readable even when full turn metadata cannot be
         // deserialized. The old per-session agent_settings call fails here.
-        store
-            .save_setting(
-                &format!("agent:{}", session.id),
-                &serde_json::json!({
-                    "worktree_cwd": feature, "turns": "not a turn map"
-                })
-                .to_string(),
-            )
-            .unwrap();
-        assert!(store.agent_settings(session.id).is_err());
+        seed.save_setting(
+            &format!("agent:{}", session.id),
+            &serde_json::json!({
+                "worktree_cwd": feature, "turns": "not a turn map"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(seed.agent_settings(session.id).is_err());
         let view = cx.new(|cx| {
             WorktreeSwitcher::new(
                 cwd.into(),
@@ -679,7 +680,7 @@ mod tests {
                     busy: true,
                 }],
                 vec![session.id],
-                Arc::new(Mutex::new(store)),
+                engine,
                 cx,
             )
         });
@@ -727,7 +728,7 @@ mod tests {
     #[gpui::test]
     fn search_keyboard_selection_and_create_footer_match_the_flyout(cx: &mut TestAppContext) {
         cx.update(input::bind);
-        let store = Arc::new(Mutex::new(Store::open(Path::new(":memory:")).unwrap()));
+        let engine = cx.update(crate::engine_client::Engine::memory);
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
@@ -739,7 +740,7 @@ mod tests {
                         }),
                         Vec::new(),
                         Vec::new(),
-                        store,
+                        engine,
                         cx,
                     )
                 })

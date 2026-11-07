@@ -13,12 +13,11 @@ use gpui::{
     FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Role, ScrollHandle,
     SharedString, Subscription, Task, Window, div, px, rgb,
 };
-use onicode_core::diff;
-use onicode_protocol::OpId;
 use onicode_protocol::git::{
     self as git_calls, ChangeSet, ChangedFile, Diff, DiffList, DiffSides, Discard, FileDiffVersion,
     Stage, StageTarget,
 };
+use onicode_protocol::{OpId, diff};
 use serde::{Deserialize, Serialize};
 
 use crate::diff_view::{DiffEvent, DiffFile, DiffView};
@@ -1945,6 +1944,7 @@ mod tests {
             repo
         }
 
+        #[expect(clippy::disallowed_methods, reason = "a test builds its git fixture")]
         fn git(&self, args: &[&str]) {
             let result = std::process::Command::new("git")
                 .args([

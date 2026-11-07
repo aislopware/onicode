@@ -5,12 +5,12 @@ use serde::{Deserialize, Serialize};
 use crate::tool::ToolCall;
 use crate::transcript::Row;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransferKind {
     Handoff,
     SecondOpinion,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Target {
     pub provider: String,
     pub model: Option<String>,
@@ -18,7 +18,7 @@ pub struct Target {
     #[serde(default)]
     pub settings: std::collections::HashMap<String, String>,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResponseNote {
     pub id: u64,
     pub title: String,

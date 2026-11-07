@@ -1,4 +1,7 @@
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+use onicode_protocol::files::ProjectFile;
 
 use super::*;
 use crate::store::Store;

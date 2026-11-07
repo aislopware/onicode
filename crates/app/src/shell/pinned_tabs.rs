@@ -420,7 +420,7 @@ mod tests {
 
     fn add_session(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) -> i64 {
         let summary = crate::engine_client::create_for_test(
-            &shell.store,
+            &shell.engine,
             "codex",
             &shell.workspace.project,
             cx,
@@ -442,7 +442,7 @@ mod tests {
             })
             .unwrap();
         cx.run_until_parked();
-        let (store, summaries, saved) = window
+        let (engine, summaries, saved) = window
             .update(cx, |shell, w, cx| {
                 let [a, b, c] = [first, second, third].map(TitleTab::Session);
                 shell.run_menu(MenuTarget::Tab(third), "pin", None, w, cx);
@@ -459,7 +459,7 @@ mod tests {
                 assert_eq!(shell.strip_tabs(cx), [b.clone(), a.clone()]);
                 let sessions = shell.mirror.state().sessions.iter();
                 (
-                    shell.store.clone(),
+                    shell.engine.clone(),
                     sessions
                         .map(|summary| summary.session.clone())
                         .collect::<Vec<_>>(),
@@ -469,7 +469,7 @@ mod tests {
             .unwrap();
         let restored = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {
-                cx.new(|cx| Shell::new(store, summaries, "/work/monocode".into(), Some(saved), cx))
+                cx.new(|cx| Shell::new(engine, summaries, "/work/monocode".into(), Some(saved), cx))
             })
             .unwrap()
         });

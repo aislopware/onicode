@@ -4,18 +4,23 @@ pub(crate) mod resets;
 mod signin;
 pub(crate) mod ui;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{App, Context, Entity, EventEmitter, Focusable, Global, Subscription, Task, Window};
-use onicode_core::accounts::{self, Account, AuthAction, Book, Profile};
-use onicode_core::provider::Kind;
-use onicode_core::usage::{self, FetchError, Snapshot};
-use onicode_engine::turn::{Database, locked};
+use onicode_protocol::accounts::{Account, AuthAction, Book, Profile};
+use onicode_protocol::agents::{
+    AccountsEvent, AccountsState, AddAccount, CancelLogin, Catalog, CatalogRead, Login, Logout,
+    RefreshSignIn, RefreshUsage, RemoveAccount, RenameAccount, SelectAccount, UsageEntry, UsageKey,
+    UsageRead, WatchAccounts,
+};
+use onicode_protocol::provider::Kind;
+use onicode_protocol::usage::{FetchError, Snapshot};
+use onicode_protocol::{OpId, Outcome, Rejection, accounts, usage};
 
+use crate::engine_client::{Engine, WatchUpdate, Watching};
 use crate::input::{self, Input};
 
 pub(crate) struct Shared(pub Entity<Accounts>);
@@ -23,23 +28,25 @@ impl Global for Shared {}
 pub(crate) fn get(cx: &App) -> Option<Entity<Accounts>> {
     cx.try_global::<Shared>().map(|s| s.0.clone())
 }
-pub(crate) fn install(store: Database, cx: &mut App) {
+/// Starts the accounts center over `engine`'s `WatchAccounts`, once per app.
+pub(crate) fn install(engine: Engine, cx: &mut App) {
     if get(cx).is_some() {
         return;
     }
-    let (root, book) = locked(&store)
-        .map(|s| {
-            (
-                s.data_dir().map(Path::to_path_buf),
-                s.provider_accounts().unwrap_or_default(),
-            )
-        })
-        .unwrap_or_default();
-    let root = root.unwrap_or_else(|| {
-        std::env::temp_dir().join(format!("onicode-test-accounts-{}", onicode_core::new_id()))
-    });
-    let center = cx.new(|cx| Accounts::new(root, book, store, cx));
+    let center = cx.new(|cx| Accounts::new(engine, cx));
     cx.set_global(Shared(center));
+}
+
+/// What a mutating Agents call came to, as the error a view shows.
+pub(crate) fn applied(result: Result<Outcome, String>) -> Result<(), String> {
+    match result? {
+        Outcome::Applied => Ok(()),
+        Outcome::Rejected(Rejection::Denied(reason)) => Err(reason),
+        Outcome::Rejected(Rejection::Gone) => Err("Provider account no longer exists".into()),
+        Outcome::Rejected(Rejection::AlreadyResolved | Rejection::StaleRev) => {
+            Err("Another device changed this account first".into())
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -68,8 +75,13 @@ impl Key {
         }
     }
 
-    fn model(&self) -> Option<String> {
-        (!self.billing.is_empty()).then(|| format!("{}/", self.billing))
+    /// The key the engine knows this usage by.
+    fn usage_key(&self) -> UsageKey {
+        UsageKey {
+            provider: self.kind,
+            account: self.profile.id.clone(),
+            billing: self.billing.clone(),
+        }
     }
 }
 #[derive(Clone, Default)]
@@ -146,6 +158,8 @@ struct SignIn {
     profile: Profile,
     action: AuthAction,
     surface: Surface,
+    /// The engine's `Login` attempt id, which `CancelLogin` names.
+    attempt: String,
     cancel: Arc<AtomicBool>,
     complete: bool,
     error: Option<String>,
@@ -159,14 +173,18 @@ struct Picker {
     index: usize,
 }
 pub(crate) struct Accounts {
+    /// The engine's book as shown: an account being added stays out until its sign-in completes.
     pub book: Book,
-    pub root: PathBuf,
     pub usage: HashMap<Key, Cached>,
     pub reset_actions: HashMap<Key, resets::ResetAction>,
     pub identities: HashMap<(Kind, String), accounts::Identity>,
+    /// Accounts whose sign-in the engine was asked for since they last changed.
     identity_loading: std::collections::HashSet<(Kind, String)>,
-    identity_generation: HashMap<(Kind, String), u64>,
-    store: Database,
+    /// The engine's accounts as its watch last said.
+    engine_state: AccountsState,
+    engine: Engine,
+    _watching: Watching<AccountsState, AccountsEvent>,
+    _mirror: Task<()>,
     editor: Option<Editor>,
     signin: Option<SignIn>,
     pub error: Option<String>,
@@ -183,7 +201,16 @@ pub(crate) struct Accounts {
 }
 impl EventEmitter<AccountEvent> for Accounts {}
 impl Accounts {
-    fn new(root: PathBuf, book: Book, store: Database, cx: &mut Context<Self>) -> Self {
+    fn new(engine: Engine, cx: &mut Context<Self>) -> Self {
+        let watching = engine.watch::<WatchAccounts>(|since| WatchAccounts { since });
+        let updates = watching.updates.clone();
+        let mirror = cx.spawn(async move |this, cx| {
+            while let Ok(update) = updates.recv().await {
+                if this.update(cx, |this, cx| this.absorb(update, cx)).is_err() {
+                    break;
+                }
+            }
+        });
         let clock = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor()
@@ -204,14 +231,15 @@ impl Accounts {
             }
         });
         Self {
-            book,
-            root,
-            store,
+            book: Book::default(),
             usage: HashMap::new(),
             reset_actions: HashMap::new(),
             identities: HashMap::new(),
             identity_loading: Default::default(),
-            identity_generation: Default::default(),
+            engine_state: AccountsState::default(),
+            engine,
+            _watching: watching,
+            _mirror: mirror,
             editor: None,
             signin: None,
             error: None,
@@ -228,8 +256,118 @@ impl Accounts {
         }
     }
 
+    /// The account `id` as a session names it. Its home is the engine's to set.
     pub(crate) fn profile(&self, id: &str) -> Profile {
-        Profile::new(id, &self.root)
+        Profile {
+            id: id.to_owned(),
+            root: None,
+        }
+    }
+
+    /// Takes in what the engine's accounts watch sent.
+    fn absorb(
+        &mut self,
+        update: WatchUpdate<AccountsState, AccountsEvent>,
+        cx: &mut Context<Self>,
+    ) {
+        match update {
+            WatchUpdate::Snapshot(state) => {
+                self.engine_state = *state;
+                for entry in self.engine_state.sign_ins.clone() {
+                    self.sign_in_read(entry.provider, &entry.account, &entry.sign_in.identity);
+                }
+                for entry in self.engine_state.usage.clone() {
+                    self.usage_read(entry);
+                }
+            }
+            WatchUpdate::Events(events) => {
+                for event in events {
+                    self.engine_state.apply(&event);
+                    match event {
+                        AccountsEvent::Book(_) => {}
+                        AccountsEvent::SignIn(entry) => {
+                            let identity = &entry.sign_in.identity;
+                            self.sign_in_read(entry.provider, &entry.account, identity);
+                        }
+                        AccountsEvent::Usage(entry) => self.usage_read(entry),
+                    }
+                }
+            }
+        }
+        self.show_book();
+        cx.emit(AccountEvent::Updated);
+        cx.notify();
+    }
+
+    /// Takes `state` as if the engine's watch had sent it: a test's accounts.
+    #[cfg(test)]
+    pub(crate) fn script(&mut self, state: AccountsState, cx: &mut Context<Self>) {
+        // The engine's own snapshot, still on its way, would replace the script.
+        self._mirror = Task::ready(());
+        self.absorb(WatchUpdate::Snapshot(Box::new(state)), cx);
+    }
+
+    /// The engine's book, less an account whose first sign-in is still running.
+    fn show_book(&mut self) {
+        let mut book = self.engine_state.book.clone();
+        if let Some(adding) = self
+            .signin
+            .as_ref()
+            .filter(|signin| !signin.complete)
+            .and_then(|signin| signin.adding.as_ref())
+        {
+            book.accounts
+                .retain(|account| account.provider != adding.provider || account.id != adding.id);
+        }
+        self.book = book;
+    }
+
+    fn sign_in_read(&mut self, kind: Kind, id: &str, identity: &accounts::Identity) {
+        let key = (kind, id.to_owned());
+        if identity.email.is_some()
+            || identity.name.is_some()
+            || identity.plan.is_some()
+            || identity.organization.is_some()
+        {
+            self.identities.insert(key, identity.clone());
+        } else {
+            self.identities.remove(&key);
+        }
+    }
+
+    fn usage_read(&mut self, entry: UsageEntry) {
+        let key = Key {
+            kind: entry.key.provider,
+            profile: self.profile(&entry.key.account),
+            billing: entry.key.billing,
+        };
+        if key.profile.id != accounts::DEFAULT
+            && !self.engine_state.book.exists(key.kind, &key.profile.id)
+        {
+            return;
+        }
+        let state = self.usage.entry(key.clone()).or_default();
+        let refreshed = matches!(entry.usage, UsageRead::Snapshot(_));
+        match entry.usage {
+            UsageRead::Snapshot(snapshot) => state.complete(Ok(snapshot)),
+            UsageRead::Failed(error) => state.complete(Err(error)),
+            // The account's turns have reported nothing yet: nothing to show, and no error.
+            UsageRead::Unreported => {
+                state.fetching = false;
+                state.snapshot = None;
+                state.error = None;
+            }
+        }
+        if refreshed
+            && let Some(action) = self.reset_actions.get_mut(&key)
+            && !action.applying()
+        {
+            action.row = None;
+        }
+        if let Some(identity) = state.snapshot.as_ref().and_then(|s| s.identity.clone()) {
+            self.identities
+                .insert((key.kind, key.profile.id.clone()), identity);
+        }
     }
 
     pub(crate) fn hide_emails(&mut self) {
@@ -366,72 +504,59 @@ impl Accounts {
         }
     }
 
+    /// Asks the engine to read `key`'s usage again: what the account's turns reported, or the
+    /// provider's poll at most every 15 minutes (5 once a window has reset), unless `force`d.
+    /// What it read arrives on the accounts watch.
     pub(crate) fn refresh(&mut self, key: Key, force: bool, cx: &mut Context<Self>) {
         if cfg!(test) {
             return;
         }
         let state = self.usage.entry(key.clone()).or_default();
-        if usage::from_turns(key.kind) {
-            // Nothing to poll: read what this account's turns reported, as often as asked.
-            state.fetching = false;
-            match usage::observed(key.kind, &key.profile) {
-                Some(result) => state.complete(result),
-                None => {
-                    state.snapshot = None;
-                    state.error = None;
-                }
+        if !usage::from_turns(key.kind) {
+            if state.fetching {
+                state.queued |= force;
+                return;
             }
-            cx.notify();
-            return;
+            let reset = state.snapshot.as_ref().is_some_and(|s| {
+                s.windows.iter().any(|w| {
+                    w.resets_at
+                        .is_some_and(|at| at > s.updated_at && at <= usage::now_ms())
+                })
+            });
+            if !force
+                && state.attempted.is_some_and(|at| {
+                    at.elapsed() < Duration::from_secs(if reset { 300 } else { 900 })
+                })
+            {
+                return;
+            }
+            state.fetching = true;
+            state.attempted = Some(Instant::now());
         }
-        if state.fetching {
-            state.queued |= force;
-            return;
-        }
-        let reset = state.snapshot.as_ref().is_some_and(|s| {
-            s.windows.iter().any(|w| {
-                w.resets_at
-                    .is_some_and(|at| at > s.updated_at && at <= usage::now_ms())
-            })
-        });
-        if !force
-            && state
-                .attempted
-                .is_some_and(|at| at.elapsed() < Duration::from_secs(if reset { 300 } else { 900 }))
-        {
-            return;
-        }
-        state.fetching = true;
-        state.attempted = Some(Instant::now());
         let generation = state.generation;
-        let request = key.clone();
-        let work = cx.background_executor().spawn(async move {
-            usage::fetch_for(request.kind, &request.profile, request.model().as_deref())
-        });
+        let call = self.engine.call::<RefreshUsage>(
+            None,
+            RefreshUsage {
+                key: key.usage_key(),
+                force: true,
+            },
+        );
         cx.spawn(async move |this, cx| {
-            let result = work.await;
+            let result = applied(call.await);
             let _ = this.update(cx, |this, cx| {
-                if key.profile.id != accounts::DEFAULT
-                    && !this.book.exists(key.kind, &key.profile.id)
-                {
+                let Some(state) = this.usage.get_mut(&key) else {
                     return;
-                }
-                let state = this.usage.entry(key.clone()).or_default();
+                };
                 if state.generation != generation {
                     return;
                 }
+                state.fetching = false;
                 let queued = std::mem::take(&mut state.queued);
-                let refreshed = result.is_ok();
-                state.complete(result);
-                if refreshed
-                    && let Some(action) = this.reset_actions.get_mut(&key)
-                    && !action.applying()
-                {
-                    action.row = None;
-                }
-                if let Some(identity) = state.snapshot.as_ref().and_then(|s| s.identity.clone()) {
-                    this.identities
-                        .insert((key.kind, key.profile.id.clone()), identity);
+                if let Err(message) = result {
+                    state.complete(Err(FetchError {
+                        message,
+                        unavailable: false,
+                    }));
                 }
                 if queued {
                     this.refresh(key, true, cx);
@@ -449,52 +574,36 @@ impl Accounts {
             if force {
                 self.identities.remove(&(kind, account.id.clone()));
                 self.identity_loading.remove(&(kind, account.id.clone()));
-                *self
-                    .identity_generation
-                    .entry((kind, account.id.clone()))
-                    .or_default() += 1;
             }
             self.identity(kind, &account.id, cx);
         }
     }
 
+    /// Asks the engine who `id` is signed in as, once until the account changes; the answer
+    /// arrives on the accounts watch.
     fn identity(&mut self, kind: Kind, id: &str, cx: &mut Context<Self>) {
         let key = (kind, id.to_owned());
-        if cfg!(test)
-            || self.identities.contains_key(&key)
-            || !self.identity_loading.insert(key.clone())
-        {
+        if cfg!(test) || self.identities.contains_key(&key) || !self.identity_loading.insert(key) {
             return;
         }
-        let profile = self.profile(id);
-        let generation = *self.identity_generation.entry(key.clone()).or_default();
-        let work = cx
-            .background_executor()
-            .spawn(async move { profile.identity(kind) });
-        cx.spawn(async move |this, cx| {
-            let identity = work.await;
-            let _ = this.update(cx, |this, cx| {
-                if this
-                    .identity_generation
-                    .get(&key)
-                    .copied()
-                    .unwrap_or_default()
-                    != generation
-                    || !this.book.exists(key.0, &key.1)
-                {
-                    this.identity_loading.remove(&key);
-                    return;
-                }
-                if let Some(identity) = identity {
-                    this.identities.insert(key, identity);
-                }
-                cx.notify();
-            });
-        })
-        .detach();
+        let call = self.engine.call::<RefreshSignIn>(
+            None,
+            RefreshSignIn {
+                provider: kind,
+                account: id.to_owned(),
+            },
+        );
+        cx.background_executor().spawn(call).detach();
     }
 
-    fn persist(&mut self, book: Book, cx: &mut Context<Self>) {
+    /// Runs a mutating call; once the engine applied it, `book` shows until its watch says the
+    /// same, and on failure the error shows.
+    fn commit(
+        &mut self,
+        book: Book,
+        call: impl std::future::Future<Output = Result<Outcome, String>> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
         self.working = true;
         if let Some(editor) = &self.editor {
             editor
@@ -502,13 +611,8 @@ impl Accounts {
                 .update(cx, |input, _| input.set_read_only(true));
         }
         self.error = None;
-        let store = self.store.clone();
-        let saved = book.clone();
-        let work = cx
-            .background_executor()
-            .spawn(async move { locked(&store)?.save_provider_accounts(&saved) });
         cx.spawn(async move |this, cx| {
-            let result = work.await;
+            let result = applied(call.await);
             let _ = this.update(cx, |this, cx| {
                 this.working = false;
                 if let Some(editor) = &this.editor {
@@ -518,17 +622,8 @@ impl Accounts {
                 }
                 match result {
                     Ok(()) => {
-                        let added: Vec<_> = book
-                            .accounts
-                            .iter()
-                            .filter(|a| !this.book.exists(Kind::from_id(&a.provider), &a.id))
-                            .cloned()
-                            .collect();
                         this.book = book;
                         this.editor = None;
-                        for account in added {
-                            this.invalidate(Kind::from_id(&account.provider), &account.id, cx);
-                        }
                         cx.emit(AccountEvent::Updated);
                     }
                     Err(error) => this.error = Some(error),
@@ -556,7 +651,15 @@ impl Accounts {
             self.error = Some(error);
             return;
         }
-        self.persist(book, cx);
+        let call = self.engine.call::<SelectAccount>(
+            Some(OpId::new()),
+            SelectAccount {
+                provider: kind,
+                project: project.clone(),
+                account: id.clone(),
+            },
+        );
+        self.commit(book, call, cx);
         cx.emit(AccountEvent::Select {
             kind,
             id,
@@ -632,27 +735,68 @@ impl Accounts {
         let mut book = self.book.clone();
         if let Some(id) = id {
             match book.rename(kind, &id, &label) {
-                Ok(()) => self.persist(book, cx),
+                Ok(()) => {
+                    let call = self.engine.call::<RenameAccount>(
+                        Some(OpId::new()),
+                        RenameAccount {
+                            provider: kind,
+                            account: id,
+                            label,
+                        },
+                    );
+                    self.commit(book, call, cx);
+                }
                 Err(error) => {
                     self.error = Some(error);
                     cx.notify();
                 }
             }
-        } else {
-            match book.add(kind, &label) {
-                Ok(account) => self.begin_auth(
-                    kind,
-                    &account.id.clone(),
-                    AuthAction::SignIn,
-                    Some(account),
-                    cx,
-                ),
-                Err(error) => {
-                    self.error = Some(error);
-                    cx.notify();
-                }
-            }
+            return;
         }
+        if let Err(error) = book.add(kind, &label) {
+            self.error = Some(error);
+            cx.notify();
+            return;
+        }
+        // The engine keeps the account from here; it shows once its sign-in completes.
+        self.working = true;
+        editor
+            .input
+            .update(cx, |input, _| input.set_read_only(true));
+        self.error = None;
+        let call = self.engine.call::<AddAccount>(
+            Some(OpId::new()),
+            AddAccount {
+                provider: kind,
+                label,
+            },
+        );
+        cx.spawn(async move |this, cx| {
+            let result = call.await;
+            let _ = this.update(cx, |this, cx| {
+                this.working = false;
+                if let Some(editor) = &this.editor {
+                    editor
+                        .input
+                        .update(cx, |input, _| input.set_read_only(false));
+                }
+                match result {
+                    Ok(account) => this.begin_auth(
+                        kind,
+                        &account.id.clone(),
+                        AuthAction::SignIn,
+                        Some(account),
+                        cx,
+                    ),
+                    Err(error) => {
+                        this.error = Some(error);
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+        cx.notify();
     }
 
     pub(crate) fn begin_auth(
@@ -699,6 +843,7 @@ impl Accounts {
         };
         let cancel = Arc::new(AtomicBool::new(false));
         let request = cancel.clone();
+        let attempt = onicode_protocol::new_id();
         if surface != Surface::Footer || adding.is_some() {
             self.working = true;
         }
@@ -715,7 +860,8 @@ impl Accounts {
             profile: profile.clone(),
             action,
             surface,
-            cancel: cancel.clone(),
+            attempt: attempt.clone(),
+            cancel,
             complete: false,
             error: None,
             adding,
@@ -729,13 +875,47 @@ impl Accounts {
                 .input
                 .update(cx, |input, _| input.set_read_only(true));
         }
+        self.show_book();
+        let engine = self.engine.clone();
+        let account = profile.id;
         let work = cx.background_executor().spawn(async move {
-            if action == AuthAction::SignOut {
-                accounts::stop_processes(kind, &profile);
-            }
-            let result = accounts::authenticate(kind, &profile, action, cancel);
-            onicode_core::catalog::invalidate(kind, &profile);
-            result
+            let result = match action {
+                AuthAction::SignIn => {
+                    engine
+                        .call::<Login>(
+                            Some(OpId::new()),
+                            Login {
+                                provider: kind,
+                                account: account.clone(),
+                                attempt,
+                            },
+                        )
+                        .await
+                }
+                AuthAction::SignOut => {
+                    engine
+                        .call::<Logout>(
+                            Some(OpId::new()),
+                            Logout {
+                                provider: kind,
+                                account: account.clone(),
+                            },
+                        )
+                        .await
+                }
+            };
+            // A sign-in or out changes the models the account is offered.
+            let _ = engine
+                .call::<Catalog>(
+                    None,
+                    Catalog {
+                        provider: kind,
+                        account,
+                        read: CatalogRead::Reload,
+                    },
+                )
+                .await;
+            applied(result)
         });
         cx.spawn(async move |this, cx| {
             let result = work.await;
@@ -765,12 +945,8 @@ impl Accounts {
                     }
                     Ok(()) => {
                         signin.complete = true;
-                        let adding = signin.adding.take();
-                        if let Some(account) = adding {
-                            let mut book = this.book.clone();
-                            book.accounts.push(account);
-                            this.persist(book, cx);
-                        }
+                        signin.adding = None;
+                        this.show_book();
                         this.invalidate(kind, &id, cx);
                         cx.emit(AccountEvent::Authenticated(kind, id));
                     }
@@ -787,10 +963,6 @@ impl Accounts {
             .retain(|key, _| key.kind != kind || key.profile.id != id);
         self.identities.remove(&(kind, id.to_owned()));
         self.identity_loading.remove(&(kind, id.to_owned()));
-        *self
-            .identity_generation
-            .entry((kind, id.to_owned()))
-            .or_default() += 1;
         for (key, state) in &mut self.usage {
             if key.kind == kind && key.profile.id == id {
                 state.generation += 1;
@@ -814,24 +986,23 @@ impl Accounts {
             }
             let _ = this.update(cx, |this, cx| {
                 let kind = Kind::from_id(&account.provider);
-                let profile = this.profile(&account.id);
                 let mut book = this.book.clone();
                 if book.remove(kind, &account.id).is_err() {
                     return;
                 }
                 this.working = true;
                 cx.emit(AccountEvent::Removing(kind, account.id.clone()));
-                let store = this.store.clone();
-                let saved = book.clone();
-                let work = cx.background_executor().spawn(async move {
-                    accounts::stop_processes(kind, &profile);
-                    // An account that is already signed out can fail logout; removal still goes on.
-                    let _ = accounts::sign_out_for_removal(kind, &profile);
-                    profile.remove_credentials(kind)?;
-                    locked(&store)?.save_provider_accounts(&saved)
-                });
+                // The engine stops the account's agents, signs it out through its CLI and drops
+                // it from the book.
+                let call = this.engine.call::<RemoveAccount>(
+                    Some(OpId::new()),
+                    RemoveAccount {
+                        provider: kind,
+                        account: account.id.clone(),
+                    },
+                );
                 cx.spawn(async move |this, cx| {
-                    let result = work.await;
+                    let result = applied(call.await);
                     let _ = this.update(cx, |this, cx| {
                         this.working = false;
                         match result {
@@ -889,6 +1060,38 @@ impl Accounts {
         .detach();
     }
 }
+impl Accounts {
+    /// Stops an unfinished sign-in's CLI and lets go of the account it was adding.
+    fn abandon(&mut self, signin: &SignIn, cx: &mut Context<Self>) {
+        let engine = self.engine.clone();
+        let attempt = signin.attempt.clone();
+        let adding = signin.adding.clone();
+        cx.background_executor()
+            .spawn(async move {
+                let _ = engine
+                    .call::<CancelLogin>(Some(OpId::new()), CancelLogin { attempt })
+                    .await;
+                if let Some(account) = adding {
+                    let _ = engine
+                        .call::<RemoveAccount>(
+                            Some(OpId::new()),
+                            RemoveAccount {
+                                provider: Kind::from_id(&account.provider),
+                                account: account.id,
+                            },
+                        )
+                        .await;
+                }
+            })
+            .detach();
+        self.show_book();
+        if let Some(account) = &signin.adding {
+            self.book
+                .accounts
+                .retain(|a| a.provider != account.provider || a.id != account.id);
+        }
+    }
+}
 impl Drop for Accounts {
     fn drop(&mut self) {
         if let Some(signin) = &self.signin {
@@ -926,8 +1129,22 @@ mod tests {
         }));
         assert!(state.snapshot.is_none());
         assert_ne!(
-            Key::new(Kind::Codex, Profile::new("a", Path::new("/fixture")), None),
-            Key::new(Kind::Codex, Profile::new("b", Path::new("/fixture")), None)
+            Key::new(
+                Kind::Codex,
+                Profile {
+                    id: "a".into(),
+                    root: None
+                },
+                None
+            ),
+            Key::new(
+                Kind::Codex,
+                Profile {
+                    id: "b".into(),
+                    root: None
+                },
+                None
+            )
         );
         assert_eq!(
             Key::new(Kind::Pi, Profile::default(), Some("anthropic/model-a")),

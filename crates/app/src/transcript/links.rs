@@ -2,7 +2,7 @@
 use std::path::Path;
 
 use gpui::{AnyElement, Entity, Point, Subscription};
-use onicode_core::files;
+use onicode_protocol::files;
 
 use super::*;
 use crate::popover::{Menu, MenuAction, MenuEvent, MenuItem, menu_popover};
@@ -150,29 +150,21 @@ impl TranscriptView {
                 ClipboardItem::new_string(files::display_path(path, base.as_deref())),
             ),
             ("open-default" | "reveal", Target::File { path, .. }) => {
-                let path = path.clone();
                 let external = action == "open-default";
-                let work = cx.background_executor().spawn(async move {
-                    if external {
-                        files::open_path_with_default_app(Path::new(&path))
+                let done = if external {
+                    crate::explorer::open_with_default_app(Path::new(path), cx)
+                } else {
+                    crate::explorer::reveal_path(Path::new(path), cx)
+                };
+                if let Err(error) = done {
+                    let action = if external {
+                        "open the file in its default app"
                     } else {
-                        files::reveal_path(Path::new(&path))
-                    }
-                });
-                cx.spawn(async move |this, cx| {
-                    if let Err(error) = work.await {
-                        let _ = this.update(cx, |this, cx| {
-                            let action = if external {
-                                "open the file in its default app"
-                            } else {
-                                "complete the file action"
-                            };
-                            this.links.error = Some(format!("Could not {action}: {error}"));
-                            cx.notify();
-                        });
-                    }
-                })
-                .detach();
+                        "complete the file action"
+                    };
+                    self.links.error = Some(format!("Could not {action}: {error}"));
+                    cx.notify();
+                }
             }
             _ => {}
         }

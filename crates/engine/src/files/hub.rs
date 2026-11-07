@@ -9,10 +9,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use futures::stream::BoxStream;
 use onicode_core::files::{self, DirEntry, document};
 use onicode_protocol::files::{
-    Bytes, Create, DeletePath, Deleted, DirEvent, Drive, Entries, FileContents, ImageFile, ListDir,
-    Listing, Move, NewPath, NoteImageAsset, PathKind, PathList, PathStat, Read, Relisted,
-    SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths, SearchResult,
-    Stat, TextEncoding, TextFile, WatchDir, Write, Written,
+    AdoptAttachments, Bytes, Create, DeletePath, Deleted, DirEvent, Drive, Entries, FileContents,
+    ImageFile, ListDir, Listing, Move, NewPath, NoteImageAsset, PathKind, PathList, PathStat, Read,
+    Relisted, SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths,
+    SearchResult, Stat, TextEncoding, TextFile, WatchDir, Write, Written,
 };
 use onicode_protocol::{Cursor, Item, OpId};
 
@@ -728,6 +728,35 @@ impl FilesHub {
             .await
     }
 
+    /// `AdoptAttachments`.
+    pub async fn adopt_attachments(
+        &self,
+        op: Option<OpId>,
+        body: AdoptAttachments,
+    ) -> Result<Vec<String>, String> {
+        let store = self.store.clone();
+        self.ledger
+            .once(
+                op,
+                self.blocking(move || {
+                    let strings = |paths: Vec<String>| -> Vec<PathBuf> {
+                        paths.into_iter().map(PathBuf::from).collect()
+                    };
+                    let adopted = locked(&store)?.adopt_attachments(
+                        body.session,
+                        &std::env::temp_dir().join(QUICK_COMPOSER_STAGING),
+                        strings(body.paths),
+                        &strings(body.staged),
+                    )?;
+                    Ok(adopted
+                        .into_iter()
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .collect())
+                }),
+            )
+            .await
+    }
+
     /// `SaveNoteImages`.
     pub async fn save_note_images(
         &self,
@@ -938,6 +967,10 @@ fn home_folders(query: &str, limit: u32) -> Vec<String> {
     found
 }
 
+/// The quick composer's staging folder, under the system's temporary one: pasted images wait
+/// there for the session a launch creates ([`AdoptAttachments`]).
+const QUICK_COMPOSER_STAGING: &str = "onicode-quick-composer";
+
 /// Writes pasted images into the session's attachments folder (or the quick composer's staging
 /// folder), under the composer's limits when a session holds them.
 fn save_attachments(store: &Database, body: SaveAttachments) -> Result<Vec<String>, String> {
@@ -963,7 +996,7 @@ fn save_attachments(store: &Database, body: SaveAttachments) -> Result<Vec<Strin
                 .thread_attachments_dir(id)?
                 .unwrap_or_else(|| std::env::temp_dir().join("onicode-attachments"))
         }
-        None => std::env::temp_dir().join("onicode-quick-composer"),
+        None => std::env::temp_dir().join(QUICK_COMPOSER_STAGING),
     };
     std::fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     let mut created = Vec::new();

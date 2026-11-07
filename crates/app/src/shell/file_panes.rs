@@ -164,7 +164,7 @@ mod tests {
             })
             .unwrap();
         visual.run_until_parked();
-        let (store, summaries, saved, project) = window
+        let (engine, summaries, saved, project) = window
             .update(visual, |shell, _, cx| {
                 assert!(
                     !shell.reviews[&session]
@@ -177,12 +177,12 @@ mod tests {
                         .word_wrap(),
                     "new files inherit the setting"
                 );
-                let saved = locked(&shell.store).unwrap().ui_state().unwrap();
+                let saved = shell.ui_state.get(crate::ui_state::WORKSPACE);
                 let persisted: Workspace = serde_json::from_str(saved.as_ref().unwrap()).unwrap();
                 assert!(!persisted.preferences.file_word_wrap);
                 let sessions = shell.mirror.state().sessions.iter();
                 (
-                    shell.store.clone(),
+                    shell.engine.clone(),
                     sessions
                         .map(|summary| summary.session.clone())
                         .collect::<Vec<_>>(),
@@ -193,7 +193,7 @@ mod tests {
             .unwrap();
         let restored = visual.update(|_, cx| {
             cx.open_window(Default::default(), |_, cx| {
-                cx.new(|cx| Shell::new(store, summaries, project, saved, cx))
+                cx.new(|cx| Shell::new(engine, summaries, project, saved, cx))
             })
             .unwrap()
         });

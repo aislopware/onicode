@@ -7,6 +7,7 @@ mod classic_sidebar;
 #[cfg(test)]
 mod classic_surface_tests;
 mod classic_surfaces;
+mod engine_settings_mirror;
 mod file_panes;
 #[cfg(all(test, target_os = "macos"))]
 mod golden_tests;
@@ -53,8 +54,7 @@ mod workspace_mirror;
 mod worktrees;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use gpui::prelude::*;
 use gpui::{
@@ -63,12 +63,12 @@ use gpui::{
     MouseUpEvent, PathPromptOptions, Pixels, Point, Role, ScrollHandle, SharedString,
     StyleRefinement, Subscription, Window, WindowControlArea, actions, canvas, div, px, rgb, rgba,
 };
-use onicode_core::provider::Kind;
-use onicode_core::store::Session;
-use onicode_engine::turn::{Database, locked};
+use onicode_protocol::provider::Kind;
+use onicode_protocol::sessions::Session;
 use session_groups::local_reminder_label;
 
 use crate::conversation::{Conversation, SessionChanged};
+use crate::engine_client::Engine;
 use crate::input;
 use crate::notes::Notes;
 use crate::pane_layout::{Edge, LayoutLeaf, Rect, SplitDir};
@@ -587,7 +587,7 @@ const PANE_DROP_PULL: f32 = 32.;
 
 struct SessionPreview {
     id: i64,
-    data: Option<onicode_core::store::SessionPreviewData>,
+    data: Option<onicode_protocol::sessions::SessionPreviewData>,
     anchor: AnchorSlot,
     surface: AnchorSlot,
 }
@@ -601,7 +601,7 @@ pub(crate) struct Shell {
     app_pending: HashSet<(i64, String)>,
     orchestrations: HashMap<i64, onicode_engine::workspace::orchestration::Run>,
     /// Each lead's last orchestration, whose agents hang under it in the sidebar.
-    orchestration_summaries: HashMap<i64, onicode_core::orchestration::Summary>,
+    orchestration_summaries: HashMap<i64, onicode_protocol::orchestration::Summary>,
     /// Sessions an /operator thread started, by the session that started them.
     started_by: HashMap<i64, i64>,
     /// The sidebar rails under orchestrators and /operator threads.
@@ -642,7 +642,9 @@ pub(crate) struct Shell {
     #[cfg(target_os = "linux")]
     client_decorations: bool,
     tabs_frame: Entity<Chrome>,
-    store: Database,
+    engine: Engine,
+    /// The app's own saved state: the workspace, saved here on every change.
+    ui_state: crate::ui_state::UiState,
     remote: Arc<onicode_core::remote::Connections>,
     remote_project_picker: Option<remote_projects::Open>,
     remote_refreshing: bool,
@@ -674,8 +676,8 @@ pub(crate) struct Shell {
     archive_shortcut_held: bool,
     /// Editors offered by a project's "Open in editor"; `None` while scanning.
     external_editors: Option<Vec<onicode_core::external_editor::ExternalEditor>>,
-    groups: HashMap<String, onicode_core::session_groups::Groups>,
-    reminders: Vec<onicode_core::store::Reminder>,
+    groups: HashMap<String, onicode_protocol::session_groups::Groups>,
+    reminders: Vec<onicode_protocol::sessions::Reminder>,
     renaming: Option<session_groups::Renaming>,
     link_dialog: Option<session_groups::LinkDialog>,
     action_dialog: Option<actions::ActionDialog>,
@@ -688,6 +690,7 @@ pub(crate) struct Shell {
     group_writes: Option<gpui::Task<()>>,
     /// The engine's workspace as the shell mirrors it.
     mirror: workspace_mirror::Mirror,
+    engine_settings: engine_settings_mirror::Mirror,
     selected_sessions: HashSet<i64>,
     selection_anchor: Option<i64>,
     context_selection: bool,
@@ -713,7 +716,7 @@ pub(crate) struct Shell {
     settings_events: Option<Subscription>,
     settings_overlay_watch: Option<Subscription>,
     app_search: Option<search::Open>,
-    saved_search: Option<(String, onicode_core::search::Scope)>,
+    saved_search: Option<(String, onicode_protocol::search::Scope)>,
     order: Vec<i64>,
     pub(crate) workspace: Workspace,
     focus: FocusHandle,
@@ -760,7 +763,7 @@ pub(crate) struct Shell {
     new_tab_task: Option<gpui::Task<()>>,
     worktree_focus: HashMap<String, crate::worktree_switcher::WorktreeFocus>,
     session_worktrees: HashMap<i64, Option<String>>,
-    session_details: HashMap<i64, onicode_core::store::MobileSessionMetadata>,
+    session_details: HashMap<i64, onicode_protocol::sessions::MobileSessionMetadata>,
     sidebar_hidden_sessions: HashSet<i64>,
     worktree_returns: HashMap<(String, String), i64>,
     tab_drag: Option<TabDrag>,
@@ -827,52 +830,30 @@ pub(crate) struct Shell {
     viewport_width: f32,
     viewport_height: f32,
     observations: Vec<Subscription>,
-    generation: Arc<AtomicU64>,
-    latest_state: Arc<Mutex<String>>,
     pub(crate) render_passes: usize,
 }
 impl Shell {
-    #[cfg(test)]
+    /// The window's shell over `engine`, showing `summaries` (newest first) as the engine holds
+    /// them now. The sidebar's first frame reads the engine's workspace as it is now; the
+    /// shell's mirror of it follows from there.
     pub(crate) fn new(
-        store: Database,
+        engine: Engine,
         summaries: Vec<Session>,
         cwd: String,
         saved: Option<String>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let paths = summaries
-            .iter()
-            .map(|s| (s.id, s.cwd.clone()))
-            .collect::<Vec<_>>();
-        let workspace = Workspace::restore(saved.as_deref(), &paths, &cwd);
-        let mut projects = workspace.projects;
-        if !projects.contains(&workspace.project) {
-            projects.push(workspace.project);
-        }
-        let metadata = locked(&store)
-            .map(|db| db.session_sidebar_metadata(&projects))
+        let sidebar_metadata = engine
+            .workspace_now()
+            .map(workspace_mirror::sidebar_metadata)
             .unwrap_or_default();
-        Self::new_with_metadata(store, summaries, cwd, saved, metadata, cx)
-    }
-
-    pub(crate) fn new_with_metadata(
-        store: Database,
-        summaries: Vec<Session>,
-        cwd: String,
-        saved: Option<String>,
-        sidebar_metadata: onicode_core::store::SessionSidebarMetadata,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        crate::accounts::install(store.clone(), cx);
-        // The views read and change this machine's files and checkouts through this store's
-        // engine.
-        crate::engine_client::set_local(&store, cx);
-        let remote_dir = locked(&store)
-            .ok()
-            .and_then(|store| store.data_dir().map(std::path::Path::to_path_buf))
-            .unwrap_or_else(|| {
-                std::env::temp_dir().join(format!("onicode-remote-{}", std::process::id()))
-            });
+        crate::accounts::install(engine.clone(), cx);
+        // The views read and change this machine's files and checkouts through this engine.
+        crate::engine_client::set_local(&engine, cx);
+        let ui_state = crate::ui_state::shared(cx);
+        let remote_dir = engine.data_dir().unwrap_or_else(|| {
+            std::env::temp_dir().join(format!("onicode-remote-{}", std::process::id()))
+        });
         let remote = Arc::new(onicode_core::remote::Connections::new(remote_dir));
         onicode_core::remote::set_default_connections(remote.clone());
         let quit_remote = remote.clone();
@@ -897,19 +878,15 @@ impl Shell {
             }
         });
         let metadata: Vec<_> = summaries.iter().map(|s| (s.id, s.cwd.clone())).collect();
-        let workspace = Workspace::restore(saved.as_deref(), &metadata, &cwd);
-        onicode_core::cli::initialize(&workspace.preferences.binary_paths);
-        let latest_state = Arc::new(Mutex::new(serde_json::to_string(&workspace).unwrap()));
-        let quit_state = latest_state.clone();
-        let quit_store = store.clone();
+        let mut workspace = Workspace::restore(saved.as_deref(), &metadata, &cwd);
+        let engine_settings_now = engine.settings_now();
+        workspace.preferences.engine = engine_settings_now.clone();
+        let quit_state = ui_state.clone();
         // This application-level hook survives the last window/entity being released.
         let app: &mut App = cx;
         app.on_app_quit(move |cx| {
-            let state = quit_state.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            let store = quit_store.clone();
-            cx.background_executor().spawn(async move {
-                let _ = locked(&store).and_then(|s| s.save_ui_state(&state));
-            })
+            let state = quit_state.clone();
+            cx.background_executor().spawn(async move { state.flush() })
         })
         .detach();
         let owner = cx.weak_entity();
@@ -990,7 +967,7 @@ impl Shell {
         });
         let worktree_focus = workspace.worktree_focus.clone();
         let session_worktrees = sidebar_metadata.worktrees;
-        let notification_state = notifications::State::new(&workspace, store.clone(), cx);
+        let notification_state = notifications::State::new(&workspace, engine.clone(), cx);
         let classic_session_search = classic_sidebar::session_search(cx);
         let classic_search_subscription =
             classic_sidebar::bind_session_search(&classic_session_search, cx);
@@ -1037,7 +1014,8 @@ impl Shell {
             #[cfg(target_os = "linux")]
             client_decorations: false,
             tabs_frame,
-            store,
+            engine,
+            ui_state,
             remote,
             remote_project_picker: None,
             remote_refreshing: false,
@@ -1074,6 +1052,7 @@ impl Shell {
             deleting: HashSet::new(),
             group_writes: None,
             mirror: Default::default(),
+            engine_settings: engine_settings_mirror::Mirror::new(&engine_settings_now),
             selected_sessions: HashSet::new(),
             selection_anchor: None,
             context_selection: false,
@@ -1193,8 +1172,6 @@ impl Shell {
                 resource_stops,
                 classic_search_subscription,
             ],
-            generation: Arc::new(AtomicU64::new(0)),
-            latest_state,
             render_passes: 0,
         };
         if !cfg!(test) {
@@ -1221,6 +1198,7 @@ impl Shell {
         this.update_usage_provider(cx);
         this.apply_preferences(cx);
         this.mirror_workspace(cx);
+        this.mirror_engine_settings(cx);
         this.initialize_automations(cx);
         if this.workspace.active.is_none() {
             cx.spawn(async move |this, cx| {
@@ -1289,7 +1267,7 @@ impl Shell {
             .insert(id, cx.new(|_| SessionMark::tab(summary.provider.clone())));
         let appearance = self.appearance(&summary.cwd);
         let worktree = self.session_worktrees.get(&id).cloned().flatten();
-        let view = cx.new(|cx| Conversation::new(summary, self.store.clone(), cx));
+        let view = cx.new(|cx| Conversation::new(summary, self.engine.clone(), cx));
         view.update(cx, |view, cx| {
             // Events may arrive before the first asynchronous agent load. Seed
             // the indexed working directory so those events cannot erase it.
@@ -1423,7 +1401,7 @@ impl Shell {
         self.close_preview(cx);
         let archived = !self.session_metadata(id, cx).summary.archived;
         let work = crate::engine_client::call::<onicode_protocol::workspace::Archive>(
-            &self.store,
+            &self.engine,
             Some(onicode_protocol::OpId::new()),
             onicode_protocol::workspace::Archive {
                 session: id,
@@ -1465,8 +1443,9 @@ impl Shell {
     }
 
     fn transfer_response(&mut self, transfer: Transfer, cx: &mut Context<Self>) {
-        use onicode_core::agent::{Handoff, Settings};
-        use onicode_core::response::{self, TransferKind};
+        use onicode_protocol::agent::{Handoff, Settings};
+        use onicode_protocol::response;
+        use onicode_protocol::response::TransferKind;
         let navigation_revision = self.navigation_revision;
         let target_kind = Kind::from_id(&transfer.target.provider);
         let account = crate::accounts::get(cx)
@@ -3518,12 +3497,11 @@ impl Shell {
         let cwd = self.workspace.project.clone();
         let worktree = target.and_then(|id| {
             let path = self.session_working_copy(id, cx);
-            (onicode_core::files::path_key(path) != onicode_core::files::path_key(&cwd)).then(
-                || crate::worktree_switcher::WorktreeFocus {
+            (onicode_protocol::files::path_key(path) != onicode_protocol::files::path_key(&cwd))
+                .then(|| crate::worktree_switcher::WorktreeFocus {
                     path: path.into(),
                     branch: self.worktree_focus.get(&cwd).and_then(|f| f.branch.clone()),
-                },
-            )
+                })
         });
         let (provider, start) = defaults.start(worktree.as_ref().map(|f| f.path.clone()));
         let work = self.create_in_engine(provider, &cwd, None, start, cx);
@@ -4041,26 +4019,8 @@ impl Shell {
 
     fn save_state(&mut self, cx: &mut Context<Self>) {
         let state = serde_json::to_string(&self.workspace).unwrap();
-        *self.latest_state.lock().unwrap_or_else(|e| e.into_inner()) = state.clone();
-        let revision = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
-        let generation = self.generation.clone();
-        let store = self.store.clone();
-        let work = cx.background_executor().spawn(async move {
-            let store = locked(&store)?;
-            if generation.load(Ordering::SeqCst) == revision {
-                store.save_ui_state(&state)?;
-            }
-            Ok::<_, String>(())
-        });
-        cx.spawn(async move |this, cx| {
-            if let Err(error) = work.await {
-                let _ = this.update(cx, |this, cx| {
-                    this.error = Some(format!("Could not save workspace: {error}"));
-                    cx.notify();
-                });
-            }
-        })
-        .detach();
+        self.ui_state.set(crate::ui_state::WORKSPACE, state);
+        self.send_engine_settings(cx);
     }
 
     fn update_usage_provider(&self, cx: &mut Context<Self>) {
@@ -4083,7 +4043,7 @@ impl Shell {
     }
 
     pub(crate) fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.keep_visible_idle_agents();
+        self.keep_visible_idle_agents(cx);
         if let Some(search) = &self.app_search {
             window.focus(&search.view.focus_handle(cx), cx);
             return;
@@ -4138,7 +4098,7 @@ impl Shell {
             return;
         };
         let cwd = &self.session_metadata(id, cx).summary.cwd;
-        let working_copy = onicode_core::files::path_key(self.session_working_copy(id, cx));
+        let working_copy = onicode_protocol::files::path_key(self.session_working_copy(id, cx));
         let blank = |pane: i64| {
             if self.workspace.review_owners.contains_key(&pane)
                 || !self.session_summaries.contains_key(&pane)
@@ -4147,7 +4107,7 @@ impl Shell {
             }
             let s = self.session_metadata(pane, cx);
             &s.summary.cwd == cwd
-                && onicode_core::files::path_key(self.session_working_copy(pane, cx))
+                && onicode_protocol::files::path_key(self.session_working_copy(pane, cx))
                     == working_copy
                 && !s.summary.has_messages
                 && !s.busy
@@ -4420,8 +4380,8 @@ impl Shell {
         if let Some(id) = self.order.iter().copied().find(|id| {
             let s = self.session_metadata(*id, cx);
             s.summary.cwd == self.workspace.project
-                && onicode_core::files::path_key(self.session_working_copy(*id, cx))
-                    == onicode_core::files::path_key(self.working_copy())
+                && onicode_protocol::files::path_key(self.session_working_copy(*id, cx))
+                    == onicode_protocol::files::path_key(self.working_copy())
                 && !s.summary.archived
                 && !s.summary.has_messages
                 && !s.busy
@@ -4503,7 +4463,7 @@ impl Shell {
         let focus = self.worktree_focus.get(&cwd).cloned();
         // The project folder as a selected checkout is not a separate worktree.
         let copy = focus.clone().filter(|f| {
-            onicode_core::files::path_key(&f.path) != onicode_core::files::path_key(&cwd)
+            onicode_protocol::files::path_key(&f.path) != onicode_protocol::files::path_key(&cwd)
         });
         let blank_key = format!("{cwd}\0{}", focus.as_ref().map_or("", |f| f.path.as_str()));
         if only_if_empty && !self.pending_project_blanks.insert(blank_key.clone()) {
@@ -5868,13 +5828,13 @@ impl Shell {
             }) else {
                 return;
             };
-            let data = work
-                .await
-                .ok()
-                .map(|preview| onicode_core::store::SessionPreviewData {
-                    model: preview.model,
-                    worktree_cwd: preview.worktree,
-                });
+            let data =
+                work.await
+                    .ok()
+                    .map(|preview| onicode_protocol::sessions::SessionPreviewData {
+                        model: preview.model,
+                        worktree_cwd: preview.worktree,
+                    });
             let _ = this.update(cx, |this, cx| {
                 if let Some(preview) = this
                     .session_preview
@@ -6456,9 +6416,9 @@ impl Shell {
                     .into_any()
             } else {
                 div()
-                    .child(onicode_core::time::relative(
+                    .child(onicode_protocol::time::relative(
                         session.summary.updated_at,
-                        onicode_core::time::now_ms(),
+                        onicode_protocol::time::now_ms(),
                     ))
                     .into_any()
             })
@@ -6471,7 +6431,7 @@ impl Shell {
             .workspace
             .session_filters
             .time
-            .start(onicode_core::time::now_ms());
+            .start(onicode_protocol::time::now_ms());
         // No selected worktree means the whole project, as in the desktop
         // sidebar. Tab restoration still uses the stricter execution scope.
         let listable = |id: i64| {
@@ -8309,7 +8269,7 @@ fn enter_from(leaf: &LayoutLeaf) -> (Edge, Rect) {
 }
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.keep_visible_idle_agents();
+        self.keep_visible_idle_agents(cx);
         self.sync_ui_scale(window, cx);
         if let Some(id) = self.pending_composer_focus.take()
             && self
@@ -9015,7 +8975,7 @@ impl Render for Shell {
 #[cfg(test)]
 mod tests {
     use gpui::{EntityInputHandler, TestAppContext, WindowHandle};
-    use onicode_core::store::Store;
+    use onicode_engine::testing::Seed;
 
     use super::*;
     #[gpui::test]
@@ -9028,8 +8988,7 @@ mod tests {
         cx.run_until_parked();
         window
             .update(cx, |shell, _, cx| {
-                let saved = locked(&shell.store).unwrap().ui_state().unwrap().unwrap();
-                assert_eq!(*shell.latest_state.lock().unwrap(), saved);
+                let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                 let restored = Workspace::restore(Some(&saved), &[], "/work/monocode");
                 assert_eq!(restored.window.bounds(cx).get_bounds().size, dimensions);
             })
@@ -9056,8 +9015,7 @@ mod tests {
                     window.inner_window_bounds(),
                     gpui::WindowBounds::Windowed(_)
                 ));
-                let saved = locked(&shell.store).unwrap().ui_state().unwrap().unwrap();
-                assert_eq!(*shell.latest_state.lock().unwrap(), saved);
+                let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                 let restored = Workspace::restore(Some(&saved), &[], "/work/monocode");
                 let bounds = restored.window.bounds(cx);
                 assert!(matches!(bounds, gpui::WindowBounds::Fullscreen(_)));
@@ -9099,14 +9057,7 @@ mod tests {
                 assert!(!shell.workspace.tabs.contains(&a));
                 assert!(shell.sessions[&a].read(cx).summary.archived);
                 assert!(!shell.sidebar_session_ids(cx).contains(&a));
-                assert!(
-                    !locked(&shell.store)
-                        .unwrap()
-                        .load(a)
-                        .unwrap()
-                        .rows
-                        .is_empty()
-                );
+                assert!(!shell.engine.seed().rows(a).unwrap().is_empty());
                 shell.run_menu(MenuTarget::SessionFilter, "archived", None, window, cx);
                 assert!(shell.sidebar_session_ids(cx).contains(&a));
                 shell.toggle_archive(a, cx);
@@ -9179,7 +9130,7 @@ mod tests {
                 // Classic previews remain available without loading a conversation.
                 shell.workspace.classic_layout = true;
                 let mut summary = crate::engine_client::create_for_test(
-                    &shell.store,
+                    &shell.engine,
                     "codex",
                     "/work/monocode",
                     cx,
@@ -9405,7 +9356,7 @@ mod tests {
                 assert!(shell.sessions.contains_key(&a) && shell.sessions.contains_key(&b));
                 assert!(shell.history.back.iter().all(|id| *id == b));
                 assert!(shell.history.forward.is_empty());
-                let saved = locked(&shell.store).unwrap().ui_state().unwrap().unwrap();
+                let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                 let saved: Workspace = serde_json::from_str(&saved).unwrap();
                 assert_eq!(saved.project, shell.workspace.project);
                 assert_eq!(saved.tabs, shell.workspace.tabs);
@@ -9460,7 +9411,7 @@ mod tests {
         window
             .update(cx, |shell, w, cx| {
                 let summary = crate::engine_client::create_for_test(
-                    &shell.store,
+                    &shell.engine,
                     "codex",
                     "/work/another-project",
                     cx,
@@ -9616,7 +9567,7 @@ mod tests {
                 let mut extra = Vec::new();
                 for _ in 0..2 {
                     let summary = crate::engine_client::create_for_test(
-                        &shell.store,
+                        &shell.engine,
                         "codex",
                         "/work/monocode",
                         cx,
@@ -9650,7 +9601,7 @@ mod tests {
         window
             .update(cx, |shell, w, cx| {
                 let summary = crate::engine_client::create_for_test(
-                    &shell.store,
+                    &shell.engine,
                     "codex",
                     "/work/monocode",
                     cx,
@@ -9781,7 +9732,7 @@ mod tests {
     fn project_appearance_menu_edits_and_background_dialog_persist_per_project(
         cx: &mut TestAppContext,
     ) {
-        use onicode_core::project_appearance::{Background, COLORS, Effect, Scope};
+        use onicode_protocol::project_appearance::{Background, COLORS, Effect, Scope};
         let (window, _, active) = window(cx);
         cx.update(|cx| {
             input::bind(cx);
@@ -10065,7 +10016,7 @@ mod tests {
     }
     #[gpui::test]
     fn backgrounds_survive_tab_and_notes_switches_until_the_tab_closes(cx: &mut TestAppContext) {
-        use onicode_core::project_appearance::{Background, Effect, ProjectAppearance};
+        use onicode_protocol::project_appearance::{Background, Effect, ProjectAppearance};
         let (window, a, b) = window(cx);
         window
             .update(cx, |shell, _, cx| {
@@ -11054,7 +11005,7 @@ mod tests {
                     shell.classic_sidebar_tab,
                     classic_sidebar::ClassicSidebarTab::Sessions
                 );
-                let saved = shell.latest_state.lock().unwrap().clone();
+                let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                 let restored = Workspace::restore(Some(&saved), &[], "/work/monocode");
                 assert_eq!(
                     restored.classic_sidebar_tab_order,
@@ -11442,7 +11393,7 @@ mod tests {
         let next = window
             .update(cx, |shell, w, cx| {
                 let mut summary = crate::engine_client::create_for_test(
-                    &shell.store,
+                    &shell.engine,
                     "codex",
                     &shell.workspace.project,
                     cx,
@@ -11611,7 +11562,8 @@ mod tests {
     }
     #[gpui::test]
     fn desktop_database_sessions_load_and_copy_their_original_ids(cx: &mut TestAppContext) {
-        let mut store = Store::open_monocode(std::path::Path::new(":memory:")).unwrap();
+        let engine = cx.update(Engine::memory);
+        let store = engine.seed();
         let summary = store.create("codex", "/work/monocode").unwrap();
         let id = summary.id;
         let original = store.persisted_session_id(id).unwrap();
@@ -11619,7 +11571,7 @@ mod tests {
             .write_rows(
                 id,
                 0,
-                &[onicode_core::transcript::Row {
+                &[onicode_protocol::transcript::Row {
                     role: "user".into(),
                     text: "Existing desktop history".into(),
                     first: true,
@@ -11632,18 +11584,9 @@ mod tests {
         let mut state = Workspace::default();
         state.open(id);
         let saved = serde_json::to_string(&state).unwrap();
-        let database = Arc::new(Mutex::new(store));
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {
-                cx.new(|cx| {
-                    Shell::new(
-                        database,
-                        summaries,
-                        "/work/monocode".into(),
-                        Some(saved),
-                        cx,
-                    )
-                })
+                cx.new(|cx| Shell::new(engine, summaries, "/work/monocode".into(), Some(saved), cx))
             })
             .unwrap()
         });
@@ -11697,7 +11640,7 @@ mod tests {
             .update(cx, |shell, _, cx| {
                 for _ in 0..18 {
                     let summary = crate::engine_client::create_for_test(
-                        &shell.store,
+                        &shell.engine,
                         "codex",
                         "/work/monocode",
                         cx,
@@ -11778,20 +11721,21 @@ mod tests {
         let (window, a, b, ()) = seeded_window(cx, |_| {});
         (window, a, b)
     }
-    /// [`window`], with `seed` writing to the store before the shell and its engine open it, so
-    /// the engine's workspace holds what it wrote.
+    /// [`window`], with `seed` writing to the engine's store before the shell opens, so the
+    /// engine's workspace holds what it wrote.
     pub(super) fn seeded_window<T>(
         cx: &mut TestAppContext,
-        seed: impl FnOnce(&mut Store) -> T,
+        seed: impl FnOnce(&Seed) -> T,
     ) -> (WindowHandle<Shell>, i64, i64, T) {
-        let mut store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let engine = cx.update(Engine::memory);
+        let store = engine.seed();
         let mut a = store.create("codex", "/work/another-project").unwrap();
         let b = store.create("claude", "/work/monocode").unwrap();
         store
             .write_rows(
                 a.id,
                 0,
-                &[onicode_core::transcript::Row {
+                &[onicode_protocol::transcript::Row {
                     role: "assistant".into(),
                     text: "History loaded when the adjacent tab becomes active".into(),
                     first: true,
@@ -11801,7 +11745,7 @@ mod tests {
             )
             .unwrap();
         a.has_messages = true;
-        let seeded = seed(&mut store);
+        let seeded = seed(&store);
         let ids = (a.id, b.id);
         // Layout tests start from the rounded frame and opt into boxy.
         let mut state = Workspace {
@@ -11813,12 +11757,11 @@ mod tests {
         state.open(a.id);
         state.open(b.id);
         let saved = serde_json::to_string(&state).unwrap();
-        let store = Arc::new(Mutex::new(store));
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
                     let mut shell =
-                        Shell::new(store, vec![b, a], "/work/monocode".into(), Some(saved), cx);
+                        Shell::new(engine, vec![b, a], "/work/monocode".into(), Some(saved), cx);
                     // This shared fixture intentionally exposes both entities to
                     // interaction tests; production restoration stays lazy.
                     shell.ensure_session(ids.0, cx);
@@ -12032,7 +11975,7 @@ mod tests {
             let session = shell.sessions[&id].clone();
             session.update(cx, |session, cx| {
                 session.summary.has_messages = true;
-                let mut history = onicode_core::transcript::Transcript::default();
+                let mut history = onicode_protocol::transcript::Transcript::default();
                 for _ in 0..10_000 {
                     history.begin("assistant");
                     history.append("A conversation with enough text to wrap while its pane changes width.\nA second line of native text.");
@@ -12724,7 +12667,7 @@ mod tests {
             cx.set_reduce_motion(true);
             cx.set_global(crate::settings::Preferences::default());
             crate::conversation::remember_access(
-                onicode_core::agent::AccessMode::from_id("auto"),
+                onicode_protocol::agent::AccessMode::from_id("auto"),
                 cx,
             );
         });
@@ -12743,8 +12686,9 @@ mod tests {
                 .update(cx, |shell, _, cx| {
                     let new = shell.workspace.active.unwrap();
                     assert_ne!(new, b, "{keys} opens a new pane");
-                    let saved = locked(&shell.store)
-                        .unwrap()
+                    let saved = shell
+                        .engine
+                        .seed()
                         .agent_settings(new)
                         .unwrap()
                         .expect("the split session saves its settings");
@@ -13029,7 +12973,7 @@ mod tests {
         cx.run_until_parked();
         window
             .update(cx, |shell, _, cx| {
-                let saved = locked(&shell.store).unwrap().ui_state().unwrap().unwrap();
+                let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                 let saved: Workspace = serde_json::from_str(&saved).unwrap();
                 assert_eq!(saved.tabs, vec![b]);
                 assert_eq!(
@@ -13067,7 +13011,7 @@ mod tests {
                     v.transcript.update(cx, |t, cx| {
                         t.patch(
                             0,
-                            vec![onicode_core::transcript::Row {
+                            vec![onicode_protocol::transcript::Row {
                                 role: "assistant".into(),
                                 text: "Streaming output".into(),
                                 first: true,

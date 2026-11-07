@@ -402,7 +402,7 @@ impl Automations {
                         .ml(px(4.))
                         .text_color(content(0.35))
                         .child(next_run_preview(
-                            preview_trigger.next_at(onicode_core::time::now_ms() as i64),
+                            preview_trigger.next_at(onicode_protocol::time::now_ms() as i64),
                         )),
                 );
         } else {
@@ -748,7 +748,7 @@ impl Automations {
                 ),
         );
         let kind = Kind::from_id(&draft.harness);
-        let model = onicode_core::store::native_model(&draft.model, &draft.harness);
+        let model = onicode_protocol::sessions::native_model(&draft.model, &draft.harness);
         let access = match draft.runtime_mode.as_str() {
             "supervised" => "Supervised",
             "auto-accept-edits" => "Auto-accept edits",
@@ -1220,7 +1220,7 @@ impl Automations {
     }
 }
 fn control_label(
-    control: &onicode_core::catalog::ModelControl,
+    control: &onicode_protocol::catalog::ModelControl,
     draft: &AutomationUpsert,
 ) -> String {
     let value = control_value(control, draft);
@@ -1241,7 +1241,7 @@ fn control_label(
     }
 }
 fn control_value<'a>(
-    control: &'a onicode_core::catalog::ModelControl,
+    control: &'a onicode_protocol::catalog::ModelControl,
     draft: &'a AutomationUpsert,
 ) -> &'a String {
     let aliases: &[&str] = match control.id.as_str() {
@@ -1325,7 +1325,7 @@ fn duration(run: &AutomationRun) -> String {
         .or_else(|| (run.status != "pending").then_some(run.created_at));
     let end = run
         .completed_at
-        .or_else(|| (live && start.is_some()).then(|| onicode_core::time::now_ms() as i64));
+        .or_else(|| (live && start.is_some()).then(|| onicode_protocol::time::now_ms() as i64));
     let (Some(start), Some(end)) = (start, end) else {
         return "—".into();
     };

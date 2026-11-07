@@ -10,13 +10,13 @@ use gpui::{
     AnyElement, App, ClipboardItem, Context, CursorStyle, Entity, EventEmitter, ExternalPaths,
     FocusHandle, Focusable, FontWeight, MouseButton, Role, Subscription, Task, Window, div, px,
 };
-use onicode_core::notes::{self, Note, NoteUpsert};
-use onicode_engine::turn::Database;
+use onicode_core::notes;
 use onicode_protocol::files::SaveNoteImages;
+use onicode_protocol::notes::{Note, NoteUpsert};
 use onicode_protocol::workspace::{CreateNote, DeleteNote, ListNotes, UpsertNote};
 use onicode_protocol::{Call, OpId, Outcome, Rejection};
 
-use crate::engine_client;
+use crate::engine_client::{self, Engine};
 use crate::explorer::DraggedFile;
 use crate::input::{self, Input};
 use crate::popover::{Anchor, AnchorSlot, popover};
@@ -30,7 +30,9 @@ pub(crate) enum Event {
 }
 
 pub(crate) struct Notes {
-    store: Database,
+    engine: Engine,
+    /// The engine's data directory, where the note images are kept.
+    data_dir: Option<PathBuf>,
     notes: Vec<Note>,
     selected: Option<String>,
     query: Entity<Input>,
@@ -42,7 +44,7 @@ pub(crate) struct Notes {
     project_open: bool,
     cwd: String,
     projects: Vec<String>,
-    appearances: HashMap<String, onicode_core::project_appearance::ProjectAppearance>,
+    appearances: HashMap<String, onicode_protocol::project_appearance::ProjectAppearance>,
     source: bool,
     modes: HashMap<String, bool>,
     document: Option<Entity<preview::Preview>>,
@@ -77,7 +79,7 @@ impl Focusable for Notes {
 }
 
 impl Notes {
-    pub(crate) fn new(store: Database, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(engine: Engine, cx: &mut Context<Self>) -> Self {
         let query = cx.new(|cx| Input::field("Filter notes", "Filter notes", content(0.4), cx));
         query.update(cx, |input, _| input.set_font_size(12.));
         let title = cx.new(|cx| {
@@ -122,7 +124,8 @@ impl Notes {
             cx.subscribe(&project_query, |_, _, _: &input::Changed, cx| cx.notify()),
         ];
         let mut this = Self {
-            store,
+            data_dir: engine.data_dir(),
+            engine,
             notes: Vec::new(),
             selected: None,
             query,
@@ -160,7 +163,7 @@ impl Notes {
 
     pub(crate) fn set_appearances(
         &mut self,
-        appearances: HashMap<String, onicode_core::project_appearance::ProjectAppearance>,
+        appearances: HashMap<String, onicode_protocol::project_appearance::ProjectAppearance>,
         cx: &mut Context<Self>,
     ) {
         self.appearances = appearances;
@@ -275,7 +278,7 @@ impl Notes {
                 previous.await;
             }
             let Ok(call) = this.update(cx, |this, cx| {
-                engine_client::call::<C>(&this.store, op, body, cx)
+                engine_client::call::<C>(&this.engine, op, body, cx)
             }) else {
                 return;
             };
@@ -525,7 +528,7 @@ impl Notes {
                 preview::Preview::new(
                     &note.body,
                     note.source_cwd.as_deref().unwrap_or(&self.cwd),
-                    &self.store,
+                    self.data_dir.as_deref(),
                 )
             })
         });
@@ -539,7 +542,7 @@ impl Notes {
         // The note opens now under an id minted here; the engine's reply settles it.
         let id = notes::new_id();
         let cwd = Some(self.cwd.clone());
-        let now = i64::try_from(onicode_core::time::now_ms()).unwrap_or(i64::MAX);
+        let now = i64::try_from(onicode_protocol::time::now_ms()).unwrap_or(i64::MAX);
         let title = "Untitled";
         let note = Note {
             id: id.clone(),
@@ -714,7 +717,7 @@ impl Notes {
         self.image_busy = true;
         self.image_drag = false;
         let save = engine_client::call::<SaveNoteImages>(
-            &self.store,
+            &self.engine,
             Some(OpId::new()),
             SaveNoteImages {
                 note: id.clone(),
@@ -1371,10 +1374,10 @@ impl gpui::Render for Notes {
 }
 
 fn project_name(path: &str) -> String {
-    onicode_core::files::leaf_name(path)
+    onicode_protocol::files::leaf_name(path)
 }
 fn relative_time(at: i64) -> String {
-    let seconds = (onicode_core::time::now_ms() as i64 - at).max(0) / 1000;
+    let seconds = (onicode_protocol::time::now_ms() as i64 - at).max(0) / 1000;
     match seconds {
         0..60 => "now".into(),
         60..3600 => format!("{}m", seconds / 60),
@@ -1388,21 +1391,16 @@ fn relative_time(at: i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-    use std::sync::{Arc, Mutex};
-
     use gpui::{TestAppContext, WindowHandle};
-    use onicode_core::store::Store;
-    use onicode_engine::turn::locked;
 
     use super::*;
 
-    fn open(cx: &mut TestAppContext) -> (WindowHandle<gpui::Empty>, Entity<Notes>, Database) {
-        let store: Database = Arc::new(Mutex::new(Store::open(Path::new(":memory:")).unwrap()));
+    fn open(cx: &mut TestAppContext) -> (WindowHandle<gpui::Empty>, Entity<Notes>, Engine) {
+        let engine = cx.update(Engine::memory);
         let window = cx.add_window(|_, _| gpui::Empty);
-        let view = cx.new(|cx| Notes::new(store.clone(), cx));
+        let view = cx.new(|cx| Notes::new(engine.clone(), cx));
         cx.run_until_parked();
-        (window, view, store)
+        (window, view, engine)
     }
 
     fn note(id: &str, title: &str) -> Note {
@@ -1424,7 +1422,7 @@ mod tests {
     fn a_new_note_opens_in_the_frame_it_is_made_and_the_engine_keeps_its_id(
         cx: &mut TestAppContext,
     ) {
-        let (window, view, store) = open(cx);
+        let (window, view, engine) = open(cx);
         let id = window
             .update(cx, |_, window, cx| {
                 view.update(cx, |view, cx| {
@@ -1440,7 +1438,7 @@ mod tests {
             })
             .unwrap();
         cx.run_until_parked();
-        let saved = locked(&store).unwrap().get_note(&id).unwrap();
+        let saved = engine.seed().get_note(&id).unwrap();
         let saved = saved.expect("the engine stored the note under the viewer's id");
         view.read_with(cx, |view, _| {
             assert_eq!(view.selected.as_deref(), Some(id.as_str()));
@@ -1454,7 +1452,7 @@ mod tests {
             assert!(view.error.is_none());
         });
         // A second create under the same id never overwrites the note.
-        let again = locked(&store).unwrap().create_note(&id, None);
+        let again = engine.seed().create_note(&id, None);
         assert!(again.is_err());
     }
 
@@ -1462,11 +1460,8 @@ mod tests {
     fn a_save_that_fails_brings_the_person_back_to_the_note_with_its_edits(
         cx: &mut TestAppContext,
     ) {
-        let (_window, view, store) = open(cx);
-        let kept = locked(&store)
-            .unwrap()
-            .create_note(&notes::new_id(), None)
-            .unwrap();
+        let (_window, view, engine) = open(cx);
+        let kept = engine.seed().create_note(&notes::new_id(), None).unwrap();
         // The store refuses any write of a note under this id.
         let refused = note("not a valid id", "Refused");
         view.update(cx, |view, cx| {
@@ -1496,7 +1491,7 @@ mod tests {
         cx.run_until_parked();
         view.read_with(cx, back);
         assert_eq!(
-            locked(&store).unwrap().list_notes().unwrap(),
+            engine.seed().list_notes().unwrap(),
             vec![kept],
             "nothing else was written"
         );

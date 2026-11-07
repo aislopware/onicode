@@ -1,6 +1,7 @@
 //! AddRemoteProjectDialog.tsx: browse host directories and remember their remote identity.
 use gpui::EventEmitter;
 use onicode_core::remote::{Connections, Machine};
+use onicode_engine::turn::{Database, locked};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -468,8 +469,9 @@ impl Shell {
             .or_else(|| window.focused(cx));
         self.close_menu(cx);
         self.close_preview(cx);
-        let picker =
-            cx.new(|cx| RemoteProjectPicker::new(self.remote.clone(), self.store.clone(), cx));
+        let picker = cx.new(|cx| {
+            RemoteProjectPicker::new(self.remote.clone(), self.engine.legacy_store(), cx)
+        });
         let events = cx.subscribe_in(&picker, window, |this, _, event: &Picked, window, cx| {
             this.close_remote_project(window, cx);
             match event {

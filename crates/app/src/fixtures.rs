@@ -1,6 +1,6 @@
 //! Local reference layout for the chat presentation.
-use onicode_core::tool::{ToolCall, ToolState};
-use onicode_core::transcript::Transcript;
+use onicode_protocol::tool::{ToolCall, ToolState};
+use onicode_protocol::transcript::Transcript;
 pub(crate) fn chat() -> Transcript {
     let mut t = Transcript::default();
     t.begin("assistant");
@@ -82,7 +82,7 @@ pub(crate) fn visuals() -> Transcript {
             include_str!("../../../docs/monocode/native/examples/visual-scene.js"),
         ),
     ] {
-        let document = onicode_core::visual::VisualDocument {
+        let document = onicode_protocol::visual::VisualDocument {
             id: id.into(),
             title: title.into(),
             source: source.into(),
@@ -147,7 +147,7 @@ pub(crate) fn visual_story() -> Transcript {
 ], {label: 'Failures', value: '23'});"#,
         ),
     ] {
-        let document = onicode_core::visual::VisualDocument {
+        let document = onicode_protocol::visual::VisualDocument {
             id: id.into(),
             title: title.into(),
             source: source.into(),
@@ -205,7 +205,7 @@ mod tests {
                     .iter()
                     .map(|row| row.text.as_str())
                     .collect::<String>();
-                let document: onicode_core::visual::VisualDocument =
+                let document: onicode_protocol::visual::VisualDocument =
                     serde_json::from_str(&source).unwrap();
                 document.validate().unwrap();
                 onicode_core::visual::check(&document.source).unwrap();
@@ -235,7 +235,7 @@ mod tests {
                 .unwrap_or(rows.len());
             if rows[index].role == "visual" {
                 let source: String = rows[index..end].iter().map(|r| r.text.as_str()).collect();
-                let document: onicode_core::visual::VisualDocument =
+                let document: onicode_protocol::visual::VisualDocument =
                     serde_json::from_str(&source).unwrap();
                 onicode_core::visual::check(&document.source).unwrap();
                 assert!(placed.contains(&document.id));

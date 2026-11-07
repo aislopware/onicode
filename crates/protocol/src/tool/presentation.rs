@@ -397,12 +397,11 @@ fn normalize_inputs(value: &mut Value, depth: usize) {
     if depth > 5 {
         return;
     }
-    if let Some(text) = value.as_str() {
-        if let Ok(parsed) = serde_json::from_str::<Value>(text) {
-            if parsed.is_object() || parsed.is_array() {
-                *value = parsed;
-            }
-        }
+    if let Some(text) = value.as_str()
+        && let Ok(parsed) = serde_json::from_str::<Value>(text)
+        && (parsed.is_object() || parsed.is_array())
+    {
+        *value = parsed;
     }
     if let Some(items) = value.as_array_mut() {
         for item in items {

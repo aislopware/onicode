@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use onicode_protocol::files::{Bytes, NewAttachment, SaveAttachments};
 
 use super::*;
-pub(crate) struct StartOrchestration(pub onicode_core::orchestration::Plan);
+pub(crate) struct StartOrchestration(pub onicode_protocol::orchestration::Plan);
 pub(crate) struct StopOrchestration;
 
 impl Conversation {
@@ -137,7 +137,7 @@ impl Conversation {
         cx: &mut Context<Self>,
     ) -> String {
         for mode in ["plan", "operator", "orchestrator"] {
-            if let Some(rest) = onicode_core::composer::consume_command(&text, mode) {
+            if let Some(rest) = onicode_protocol::composer::consume_command(&text, mode) {
                 let rest = rest.to_owned();
                 match mode {
                     "plan" => {
@@ -217,7 +217,7 @@ impl Conversation {
         self.attaching = true;
         // The engine keeps them with the conversation, so deleting it removes them.
         let save = crate::engine_client::call::<SaveAttachments>(
-            &self.store,
+            &self.engine,
             Some(OpId::new()),
             SaveAttachments {
                 session: Some(self.summary.id),
@@ -309,7 +309,7 @@ impl Conversation {
             return None;
         }
         for path in &self.attachments {
-            if let Some(mime) = onicode_core::composer::image_mime(path)
+            if let Some(mime) = onicode_protocol::composer::image_mime(path)
                 && !self.attachment_photos.contains_key(path)
             {
                 let origin = crate::transcript::attachments::Origin::Path(path.clone());
@@ -333,7 +333,7 @@ impl Conversation {
                         .to_string_lossy()
                         .to_string();
                     let photo = self.attachment_photos.get(path).cloned();
-                    let image = onicode_core::composer::image_mime(path).is_some();
+                    let image = onicode_protocol::composer::image_mime(path).is_some();
                     let remove = div()
                         .id(("remove-attachment", ix))
                         .role(Role::Button)
@@ -441,7 +441,7 @@ impl Conversation {
             .filter(|row| row.role == "assistant")
             .map(|row| row.text.as_str())
             .collect();
-        match onicode_core::orchestration::parse(&text) {
+        match onicode_protocol::orchestration::parse(&text) {
             Ok(plan) => self.orchestration_plan = Some(plan),
             Err(error) => self.orchestration_error = Some(error),
         }
@@ -462,10 +462,10 @@ impl Conversation {
     pub(crate) fn external_outcome(&self, cx: &gpui::App) -> (bool, String) {
         let rows = self.transcript.read(cx).source_rows();
         let start = rows.iter().rposition(|row| row.role == "user").unwrap_or(0);
-        let text = onicode_core::response::prose(&rows[start..]);
+        let text = onicode_protocol::response::prose(&rows[start..]);
         (
             self.status == "Ready",
-            onicode_core::response::limit(&format!("{}\n{}", self.status, text), 12_000),
+            onicode_protocol::response::limit(&format!("{}\n{}", self.status, text), 12_000),
         )
     }
 
@@ -557,7 +557,7 @@ impl Conversation {
                 .child(
                     div()
                         .text_color(content(0.6))
-                        .child(onicode_core::response::limit(&plan.summary, 600)),
+                        .child(onicode_protocol::response::limit(&plan.summary, 600)),
                 )
                 .child(
                     div()

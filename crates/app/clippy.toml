@@ -1,0 +1,64 @@
+# The app's clippy settings. Clippy reads the nearest clippy.toml, so this file repeats the
+# workspace's settings (../../clippy.toml) and adds the app's boundary (engine.md, "Boundary"): the
+# app asks the engine for the store, provider runs, processes and file watches, and never does
+# them itself. Each exception is an `#[expect]` at its use, with the step that removes it.
+
+# Tests may unwrap, expect, panic, index and print; production code may not.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-print-in-tests = true
+allow-dbg-in-tests = false
+
+warn-on-all-wildcard-imports = true
+
+# Futures bigger than this go behind Box::pin (large_futures).
+future-size-threshold = 16384
+
+# Names doc_markdown accepts without backticks, on top of clippy's own list.
+doc-valid-idents = [
+    "..",
+    "macOS",
+    "iOS",
+    "iPadOS",
+    "tvOS",
+    "visionOS",
+    "AppKit",
+    "UIKit",
+    "SwiftUI",
+    "CoreText",
+    "CoreAudio",
+    "ScreenCaptureKit",
+    "VideoToolbox",
+    "WebKit",
+    "WebRTC",
+    "WebSocket",
+    "UniFFI",
+    "LocalAPI",
+    "OpenAI",
+    "OpenCode",
+    "QUIC",
+    "GPUI",
+    "TestFlight",
+]
+
+# The boundary. `allow-invalid` keeps an entry whose crate the app does not depend on (notify)
+# from being a configuration error.
+disallowed-types = [
+    { path = "onicode_core::store::Store", reason = "the store is the engine's: ask it with a call" },
+    { path = "rusqlite::Connection", reason = "the app keeps only ui.sqlite3 (ui_state.rs)" },
+    { path = "notify::RecommendedWatcher", reason = "watch through WatchDir or WatchGit", allow-invalid = true },
+]
+disallowed-methods = [
+    { path = "onicode_core::store::Store::open", reason = "the store is the engine's: ask it with a call" },
+    { path = "onicode_core::provider::run", reason = "turns and text run in the engine" },
+    { path = "onicode_core::provider::run_with_controls", reason = "turns run in the engine" },
+    { path = "onicode_core::provider::run_text", reason = "text runs in the engine: Generate" },
+    { path = "onicode_core::provider::resolve", reason = "the engine finds the CLIs: Harnesses" },
+    { path = "onicode_core::provider::resolve_auto", reason = "the engine finds the CLIs: Harnesses" },
+    { path = "onicode_core::catalog::models_for", reason = "the engine lists models: Catalog" },
+    { path = "onicode_core::catalog::cached_models_for", reason = "the engine lists models: Catalog" },
+    { path = "std::process::Command::new", reason = "processes run in the engine" },
+    { path = "notify::recommended_watcher", reason = "watch through WatchDir or WatchGit", allow-invalid = true },
+]

@@ -2,8 +2,8 @@
 //! whether a conversation has been materialized on the native desktop.
 use std::collections::HashMap;
 
-use onicode_core::provider::Kind;
-use onicode_core::store::{MobileSessionMetadata, Session};
+use onicode_protocol::provider::Kind;
+use onicode_protocol::sessions::{MobileSessionMetadata, Session};
 use serde_json::{Value, json};
 
 use crate::pickers;
@@ -13,7 +13,7 @@ use crate::pickers;
 /// than starting Git; the last cached snapshot covers anything it can't read.
 /// This runs after releasing the database lock, never on the UI thread.
 pub(crate) fn checkout_branch(cwd: &str, branches: &mut HashMap<String, String>) -> String {
-    let key = onicode_core::files::path_key(cwd);
+    let key = onicode_protocol::files::path_key(cwd);
     if let Some(branch) = branches.get(&key) {
         return branch.clone();
     }
@@ -59,7 +59,7 @@ pub(crate) struct LiveSession {
 /// The phone keeps model choices across desktop versions. Keep Tauri's
 /// provider-qualified keys on the wire and native CLI IDs inside the desktop.
 pub(crate) fn model_id(kind: Kind, model: Option<&str>) -> String {
-    let native = model.and_then(|id| onicode_core::store::native_model(id, kind.id()));
+    let native = model.and_then(|id| onicode_protocol::sessions::native_model(id, kind.id()));
     let id = match (kind, native.as_deref()) {
         (Kind::Claude, Some("claude-opus-4-6")) => "opus-4.6",
         (Kind::Claude, Some("claude-sonnet-4-6")) => "sonnet-4.6",
@@ -77,9 +77,9 @@ pub(crate) fn model_id(kind: Kind, model: Option<&str>) -> String {
 pub(crate) fn current_model_id(
     kind: Kind,
     model: Option<&str>,
-    models: &[onicode_core::catalog::Model],
+    models: &[onicode_protocol::catalog::Model],
 ) -> String {
-    let native = model.and_then(|id| onicode_core::store::native_model(id, kind.id()));
+    let native = model.and_then(|id| onicode_protocol::sessions::native_model(id, kind.id()));
     model_id(
         kind,
         native.as_deref().or_else(|| {
@@ -124,7 +124,7 @@ pub(crate) fn session(
     let mut value = json!({
         "id": id,
         "projectId": project,
-        "title": onicode_core::session_title::display_title(&summary.title, &summary.provider),
+        "title": onicode_protocol::session_title::display_title(&summary.title, &summary.provider),
         "harness": summary.provider,
         "model": model_id(kind, metadata.model.as_deref()),
         "modelName": pickers::cached_model_name(kind, metadata.model.as_deref()).to_string(),
@@ -146,11 +146,16 @@ pub(crate) fn session(
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::disallowed_types,
+    clippy::disallowed_methods,
+    reason = "tests seed a store until the phone host goes in step 11"
+)]
 mod tests {
     use std::path::Path;
 
-    use onicode_core::agent::AccessMode;
     use onicode_core::store::Store;
+    use onicode_protocol::agent::AccessMode;
 
     use super::*;
 
@@ -170,13 +175,13 @@ mod tests {
             assert_eq!(model_id(kind, Some(native)), wire);
             assert_eq!(model_id(kind, Some(wire)), wire);
             assert_eq!(
-                onicode_core::store::native_model(wire, kind.id()).as_deref(),
+                onicode_protocol::sessions::native_model(wire, kind.id()).as_deref(),
                 Some(native)
             );
         }
         assert_eq!(model_id(Kind::Claude, None), "claude:default");
         assert_eq!(
-            onicode_core::store::native_model("claude:default", "claude"),
+            onicode_protocol::sessions::native_model("claude:default", "claude"),
             None
         );
     }

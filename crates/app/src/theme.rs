@@ -72,7 +72,7 @@ pub(crate) fn configure(p: &crate::settings::Preferences, system_light: bool) ->
 /// painted colors changed.
 pub(crate) fn configure_project(
     p: &crate::settings::Preferences,
-    project: Option<&onicode_core::project_appearance::ProjectTheme>,
+    project: Option<&onicode_protocol::project_appearance::ProjectTheme>,
     system_light: bool,
     animate: bool,
 ) -> bool {
@@ -694,7 +694,7 @@ mod composer_tests {
         let preferences = crate::settings::Preferences::default();
         configure(&preferences, false);
         let app_accent = accent_color();
-        let theme = onicode_core::project_appearance::ProjectTheme {
+        let theme = onicode_protocol::project_appearance::ProjectTheme {
             accent_color: Some("#ef4444".into()),
             hue: 20,
             saturation: 40,

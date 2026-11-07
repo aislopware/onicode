@@ -1,7 +1,7 @@
 //! Native FileEditor/FilePane previews. The file is read, saved and diffed
 //! through the app's engine (`Read`, `Write`, `FileDiff`); syntax parsing stays
 //! off the UI thread; drafts, selections and scrolling belong to each live tab.
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -17,6 +17,7 @@ use onicode_protocol::files::{FileContents, Read, TextFile, Write};
 use onicode_protocol::git::{ChangeSet, FileDiff, FileSides};
 
 use crate::engine_client;
+use crate::explorer::reveal_path;
 use crate::git_status::{GitChanged, ProjectGit};
 use crate::input::{self, Input};
 use crate::right_panel::{icon_action, stroke};
@@ -564,7 +565,7 @@ impl FileEditor {
     /// Plays the video at the path. A legacy remote one plays from a local
     /// download, which this machine makes as before the engine.
     fn play(&mut self, size: u64, modified: Option<std::time::SystemTime>, cx: &mut Context<Self>) {
-        if onicode_core::files::remote::is_remote(std::path::Path::new(&self.path)) {
+        if onicode_protocol::remote::is_remote(std::path::Path::new(&self.path)) {
             let path = PathBuf::from(&self.path);
             let work = cx
                 .background_executor()
@@ -1202,12 +1203,7 @@ impl gpui::Render for FileEditor {
                                     .bg(content(0.1))
                                     .child("Reveal")
                                     .on_click(cx.listener(|this, _, _, cx| {
-                                        let path = PathBuf::from(&this.path);
-                                        cx.background_executor()
-                                            .spawn(async move {
-                                                let _ = onicode_core::files::reveal_path(&path);
-                                            })
-                                            .detach();
+                                        let _ = reveal_path(Path::new(&this.path), cx);
                                     })),
                             )
                             .child(
@@ -1331,6 +1327,7 @@ impl gpui::Render for FileEditor {
 }
 
 #[cfg(test)]
+#[expect(clippy::disallowed_methods, reason = "a test builds its git fixture")]
 mod tests {
     use gpui::{
         Bounds, EntityInputHandler, TestAppContext, VisualTestContext, WindowBounds, WindowOptions,

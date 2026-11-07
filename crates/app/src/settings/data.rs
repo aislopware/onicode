@@ -1,8 +1,13 @@
 //! Settings discovery runs on a worker; rendering never probes CLIs or Git.
 use std::path::{Path, PathBuf};
 
-use onicode_core::git;
-use onicode_core::provider::{self, Kind};
+use onicode_protocol::agents::{Harnesses, McpServers, Skills};
+use onicode_protocol::git;
+use onicode_protocol::git::Refs;
+use onicode_protocol::provider::Kind;
+use onicode_protocol::settings_pages::ReadWorktreeMarks;
+
+use crate::engine_client::Engine;
 #[derive(Clone, Debug)]
 pub(super) struct Skill {
     pub name: String,
@@ -43,30 +48,51 @@ pub(super) struct ResultTrees {
     pub main: String,
     pub error: Option<String>,
 }
-pub(super) fn discover(cwd: &str) -> Discovery {
+/// Everything the Skills, MCP, Providers and Worktrees pages show for `cwd`, read through the
+/// engine.
+pub(super) async fn discover(engine: Engine, cwd: String) -> Discovery {
+    let harnesses = engine.call::<Harnesses>(None, Harnesses {}).await;
+    let skills = engine.call::<Skills>(
+        None,
+        Skills {
+            project: cwd.clone(),
+            all: true,
+        },
+    );
+    let mcp = engine.call::<McpServers>(
+        None,
+        McpServers {
+            project: cwd.clone(),
+        },
+    );
+    let harnesses = harnesses.unwrap_or_default();
     let mut data = Discovery {
         binaries: Kind::ALL
             .into_iter()
-            .map(|k| (k, provider::resolve(k)))
+            .map(|kind| {
+                let path = harnesses
+                    .iter()
+                    .find(|harness| harness.provider == kind)
+                    .and_then(|harness| harness.path.as_ref())
+                    .map(PathBuf::from);
+                (kind, path)
+            })
             .collect(),
         ..Default::default()
     };
-    data.skills = onicode_core::skills::list_skills(cwd.into(), None)
+    data.skills = skills
+        .await
         .unwrap_or_default()
         .into_iter()
-        .map(|s| {
-            let path = PathBuf::from(s.path);
-
-            Skill {
-                name: s.name,
-                description: s.description,
-                path,
-                scope: s.scope,
-                provider: s.source,
-            }
+        .map(|s| Skill {
+            name: s.name,
+            description: s.description,
+            path: PathBuf::from(s.path),
+            scope: s.scope,
+            provider: s.source,
         })
         .collect();
-    match onicode_core::mcp::mcp_discover(cwd.into()) {
+    match mcp.await {
         Ok(servers) => {
             data.mcp = servers
                 .into_iter()
@@ -83,7 +109,13 @@ pub(super) fn discover(cwd: &str) -> Discovery {
         Err(e) => data.mcp_error = Some(e),
     }
     if !cwd.is_empty() {
-        match git::snapshot(Path::new(cwd)) {
+        let refs = engine.call::<Refs>(
+            None,
+            Refs {
+                checkout: cwd.clone(),
+            },
+        );
+        match refs.await {
             Ok(s) => {
                 if let Some(main) = s.worktrees.first() {
                     data.worktrees.main = main.path.clone();
@@ -91,18 +123,30 @@ pub(super) fn discover(cwd: &str) -> Discovery {
                         onicode_core::worktree_management::default_root(Path::new(&main.path));
                 }
                 data.worktrees.branches = s.branches;
-                data.worktrees.trees = s
-                    .worktrees
+                let trees: Vec<_> = s.worktrees.into_iter().filter(|t| !t.main).collect();
+                let marks = engine
+                    .call::<ReadWorktreeMarks>(
+                        None,
+                        ReadWorktreeMarks {
+                            checkout: cwd,
+                            trees: trees.clone(),
+                        },
+                    )
+                    .await
+                    .unwrap_or_default();
+                data.worktrees.trees = trees
                     .into_iter()
-                    .filter(|t| !t.main)
                     .map(|tree| {
-                        let status =
-                            onicode_core::worktree_management::status(Path::new(cwd), &tree);
+                        let mark = marks
+                            .iter()
+                            .find(|mark| mark.path == tree.path)
+                            .cloned()
+                            .unwrap_or_default();
                         Tree {
                             tree,
-                            locked: status.0,
-                            dirty: status.1,
-                            unpushed: status.2,
+                            locked: mark.locked,
+                            dirty: mark.dirty,
+                            unpushed: mark.unpushed,
                         }
                     })
                     .collect();

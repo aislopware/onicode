@@ -28,15 +28,16 @@ impl NewChatChoice {
 /// The project's model for the provider, else the Settings default.
 fn default_model(prefs: &Preferences, cwd: &str, kind: Kind) -> Option<String> {
     prefs
+        .engine
         .project_providers
         .get(cwd)
         .and_then(|p| p.models.get(kind.id()))
-        .or(prefs.default_models.get(kind.id()))
+        .or(prefs.engine.default_models.get(kind.id()))
         .cloned()
 }
 
 fn allowed(prefs: &Preferences, cwd: &str, kind: Kind) -> bool {
-    onicode_core::remote::parse_remote_path(cwd).is_some()
+    onicode_protocol::remote::parse_remote_path(cwd).is_some()
         || !prefs.hidden_for(cwd).iter().any(|id| id == kind.id())
 }
 
@@ -45,10 +46,11 @@ pub(crate) fn resolve(prefs: &Preferences, cwd: &str) -> NewChatChoice {
     // 2. The Settings provider.
     for id in [
         prefs
+            .engine
             .project_providers
             .get(cwd)
             .and_then(|p| p.provider.as_deref()),
-        prefs.default_provider.as_deref(),
+        prefs.engine.default_provider.as_deref(),
     ] {
         if let Some(kind) = id.and_then(Kind::parse).filter(|k| allowed(prefs, cwd, *k)) {
             return NewChatChoice::of(kind, default_model(prefs, cwd, kind));

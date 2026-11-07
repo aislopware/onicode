@@ -16,7 +16,8 @@ use gpui::{
     MouseDownEvent, MouseMoveEvent, Pixels, Role, ScrollEvent, SharedString, StyledText,
     Subscription, Task, Window, actions, canvas, div, list, px, rgb,
 };
-use onicode_core::diff::{self, Block, Line, LineKind};
+use onicode_protocol::diff;
+use onicode_protocol::diff::{Block, Line, LineKind};
 
 use crate::file_icons::file_type_icon;
 use crate::input::{self, Input};

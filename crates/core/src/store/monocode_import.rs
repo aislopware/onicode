@@ -2,6 +2,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use onicode_protocol::sessions::native_model;
 use rusqlite::{Connection, OpenFlags, params};
 use serde_json::{Value, json};
 
@@ -233,24 +234,6 @@ fn import_sessions(
     }
     tx.commit()?;
     Ok(report)
-}
-
-pub fn native_model(model: &str, provider: &str) -> Option<String> {
-    let model = model.trim();
-    let model = model.strip_prefix(&format!("{provider}:")).unwrap_or(model);
-    let model = model.split('[').next().unwrap_or(model);
-    if model.is_empty() || model == "default" {
-        return None;
-    }
-    let model = if provider == "claude"
-        && !model.starts_with("claude-")
-        && model.chars().any(|c| c.is_ascii_digit())
-    {
-        format!("claude-{}", model.replace('.', "-"))
-    } else {
-        model.into()
-    };
-    Some(model)
 }
 
 fn transcript(blocks: &[Value]) -> rusqlite::Result<Transcript> {

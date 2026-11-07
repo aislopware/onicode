@@ -7,8 +7,9 @@ use gpui::{
     MouseDownEvent, MouseMoveEvent, ObjectFit, PathPromptOptions, Role, SharedString, Subscription,
     Window, canvas, div, px, rgb,
 };
-use onicode_core::project_appearance::{
-    Background, COLORS, Effect, MASCOTS, ProjectAppearance, Scope, import_image,
+use onicode_core::project_appearance::import_image;
+use onicode_protocol::project_appearance::{
+    Background, COLORS, Effect, MASCOTS, ProjectAppearance, Scope,
 };
 
 use crate::input::{self, Input};

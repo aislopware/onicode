@@ -472,6 +472,7 @@ pub(crate) fn catalog_models(raw: &Value) -> Vec<crate::catalog::Model> {
                     .any(|variant| variant.value == current),
                 tiers: Vec::new(),
                 controls: Vec::new(),
+                limits: crate::catalog::ModelLimits::default(),
             };
             if fusion {
                 let first = fallback.fusion.as_ref().unwrap();

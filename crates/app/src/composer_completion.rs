@@ -9,10 +9,12 @@ use gpui::{
     App, Context, Entity, EventEmitter, Focusable, KeyBinding, MouseButton, Role, SharedString,
     Subscription, Window, actions, div, px,
 };
-use onicode_core::composer::{self, Token, Trigger};
-use onicode_core::files::ProjectFile;
-use onicode_core::skills::DiscoveredSkill;
-use onicode_protocol::files::SearchPaths;
+use onicode_protocol::agents::{Commands, McpServers, Skills};
+use onicode_protocol::composer;
+use onicode_protocol::composer::{Token, Trigger};
+use onicode_protocol::files::{ProjectFile, SearchPaths};
+use onicode_protocol::skills::DiscoveredSkill;
+use onicode_protocol::workspace::ListNotes;
 
 use crate::conversation::git_actions::GitAction;
 use crate::popover::{Anchor, AnchorSlot, Side, popover};
@@ -35,7 +37,7 @@ struct Choice {
     builtin: Option<&'static str>,
     mode: Option<&'static str>,
     file: bool,
-    server: Option<onicode_core::mcp::McpConnection>,
+    server: Option<onicode_protocol::mcp::McpConnection>,
 }
 impl Choice {
     fn icon(&self) -> (&'static str, gpui::Hsla) {
@@ -69,18 +71,17 @@ impl Choice {
 }
 pub(crate) struct Completion {
     input: Entity<input::Input>,
-    store: Option<onicode_engine::turn::Database>,
-    notes: Vec<onicode_core::notes::Note>,
+    notes: Vec<onicode_protocol::notes::Note>,
     cwd: String,
     token: Option<Token>,
     dismissed: Option<Token>,
     skills: Vec<DiscoveredSkill>,
-    provider: onicode_core::provider::Kind,
-    native_commands: Vec<onicode_core::provider::NativeCommand>,
+    provider: onicode_protocol::provider::Kind,
+    native_commands: Vec<onicode_protocol::provider::NativeCommand>,
     native_loading: bool,
     native_revision: usize,
-    mcp: Vec<onicode_core::mcp::McpConnection>,
-    selected_mcp: Vec<(String, onicode_core::mcp::McpConnection)>,
+    mcp: Vec<onicode_protocol::mcp::McpConnection>,
+    selected_mcp: Vec<(String, onicode_protocol::mcp::McpConnection)>,
     mcp_open: bool,
     disabled_paths: Vec<String>,
     known: std::collections::HashSet<String>,
@@ -142,13 +143,12 @@ impl Completion {
         let observe = cx.observe(&input, |this, _, cx| this.sync(cx));
         Self {
             input,
-            store: None,
             notes: Vec::new(),
             cwd,
             token: None,
             dismissed: None,
             skills: Vec::new(),
-            provider: onicode_core::provider::Kind::Codex,
+            provider: onicode_protocol::provider::Kind::Codex,
             native_commands: Vec::new(),
             native_loading: false,
             native_revision: 0,
@@ -197,8 +197,9 @@ impl Completion {
         }
     }
 
-    pub(crate) fn with_store(mut self, store: onicode_engine::turn::Database) -> Self {
-        self.store = Some(store);
+    /// Reads skills, commands, MCP servers and notes from `engine` rather than the app's own.
+    pub(crate) fn with_engine(mut self, engine: engine_client::Engine) -> Self {
+        self.engine = engine;
         self
     }
 
@@ -262,7 +263,7 @@ impl Completion {
     }
 
     pub(crate) fn set_provider(&mut self, provider: &str, cx: &mut Context<Self>) {
-        let provider = onicode_core::provider::Kind::from_id(provider);
+        let provider = onicode_protocol::provider::Kind::from_id(provider);
         if self.provider != provider {
             for command in &self.native_commands {
                 self.known.remove(&format!("/{}", command.invocation));
@@ -286,7 +287,7 @@ impl Completion {
 
     pub(crate) fn set_native_commands(
         &mut self,
-        commands: Vec<onicode_core::provider::NativeCommand>,
+        commands: Vec<onicode_protocol::provider::NativeCommand>,
         cx: &mut Context<Self>,
     ) {
         self.native_revision = self.native_revision.wrapping_add(1);
@@ -334,13 +335,17 @@ impl Completion {
             return text.to_owned();
         }
         let text = self.expand_mentions(text);
-        let text = onicode_core::provider::native_prompt(self.provider, &text);
-        let text = self
-            .store
-            .as_ref()
-            .and_then(|store| onicode_engine::turn::locked(store).ok())
-            .and_then(|store| store.apply_notes_to_turn(&text).ok())
-            .unwrap_or(text);
+        let text = onicode_protocol::provider::native_prompt(self.provider, &text);
+        // The notes the last load read: `@note/slug` mentions bring their bodies along.
+        let picked: Vec<_> = onicode_protocol::notes::slugs_in_text(&text)
+            .iter()
+            .filter_map(|slug| self.notes.iter().find(|note| &note.slug == slug).cloned())
+            .collect();
+        let text = if picked.is_empty() {
+            text
+        } else {
+            onicode_protocol::notes::inject_prompt(&text, &picked)
+        };
         let servers = self
             .selected_mcp
             .iter()
@@ -424,7 +429,7 @@ impl Completion {
         }
         let disabled = cx
             .try_global::<crate::settings::Preferences>()
-            .map(|p| p.disabled_skill_paths.clone())
+            .map(|p| p.engine.disabled_skill_paths.clone())
             .unwrap_or_default();
         if self.disabled_paths != disabled {
             self.disabled_paths = disabled;
@@ -467,7 +472,7 @@ impl Completion {
         if self.native_loading
             || !matches!(
                 self.provider,
-                onicode_core::provider::Kind::Pi | onicode_core::provider::Kind::Omp
+                onicode_protocol::provider::Kind::Pi | onicode_protocol::provider::Kind::Omp
             )
         {
             return;
@@ -475,28 +480,22 @@ impl Completion {
         self.native_loading = true;
         let native_revision = self.native_revision;
         let provider = self.provider;
-        let cwd = self.cwd.clone();
         let generation = self.generation;
         let cancel = self.cancel.clone();
+        let commands = self.engine.call::<Commands>(
+            None,
+            Commands {
+                provider,
+                project: self.cwd.clone(),
+                account: onicode_protocol::accounts::DEFAULT.into(),
+                model: None,
+            },
+        );
         let work = cx.background_executor().spawn(async move {
             if cancel.load(Ordering::Relaxed) {
                 return Err("Stopped".into());
             }
-            let Some(binary) = onicode_core::provider::resolve(provider) else {
-                return Ok(Vec::new());
-            };
-            onicode_core::provider::discover_commands(
-                onicode_core::provider::Request {
-                    kind: provider,
-                    binary,
-                    cwd: cwd.into(),
-                    prompt: String::new(),
-                    provider_id: None,
-                    model: None,
-                    settings: Default::default(),
-                },
-                cancel,
-            )
+            commands.await
         });
         cx.spawn(async move |this, cx| {
             let result = work.await;
@@ -527,10 +526,8 @@ impl Completion {
         self.load_native(cx);
         let cwd = self.cwd.clone();
         let generation = self.generation;
-        let disabled = self.disabled_paths.clone();
-        let store = self.store.clone();
         self.stop_listing();
-        let id = onicode_core::new_id();
+        let id = onicode_protocol::new_id();
         self.listing = Some(id.clone());
         let listing = self.engine.call::<SearchPaths>(
             None,
@@ -539,18 +536,23 @@ impl Completion {
                 search: id.clone(),
             },
         );
+        // The engine leaves out the skills Settings disabled.
+        let notes = self.engine.call::<ListNotes>(None, ListNotes {});
+        let skills = self.engine.call::<Skills>(
+            None,
+            Skills {
+                project: cwd.clone(),
+                all: false,
+            },
+        );
+        let mcp = self
+            .engine
+            .call::<McpServers>(None, McpServers { project: cwd });
         let work = cx.background_executor().spawn(async move {
-            let notes = store
-                .and_then(|s| {
-                    onicode_engine::turn::locked(&s)
-                        .ok()
-                        .and_then(|s| s.list_notes().ok())
-                })
-                .unwrap_or_default();
-            let skills =
-                onicode_core::skills::list_skills(cwd.clone(), Some(disabled)).unwrap_or_default();
+            let notes = notes.await.unwrap_or_default();
+            let skills = skills.await.unwrap_or_default();
             let files = listing.await.map(|listed| listed.files);
-            let mcp = onicode_core::mcp::mcp_discover(cwd).unwrap_or_default();
+            let mcp = mcp.await.unwrap_or_default();
             (skills, files, notes, mcp)
         });
         cx.spawn(async move |this, cx| {
@@ -752,9 +754,9 @@ impl Completion {
                 if id == "btw"
                     && matches!(
                         self.provider,
-                        onicode_core::provider::Kind::Fx
-                            | onicode_core::provider::Kind::Hermes
-                            | onicode_core::provider::Kind::Antigravity
+                        onicode_protocol::provider::Kind::Fx
+                            | onicode_protocol::provider::Kind::Hermes
+                            | onicode_protocol::provider::Kind::Antigravity
                     )
                 {
                     continue;
@@ -1387,7 +1389,7 @@ mod tests {
                 view.input
                     .update(cx, |input, cx| input.set_text("/mcp".into(), cx));
                 view.loading = true;
-                view.mcp = vec![onicode_core::mcp::McpConnection {
+                view.mcp = vec![onicode_protocol::mcp::McpConnection {
                     provider: "codex".into(),
                     name: "docs".into(),
                     scope: "project".into(),

@@ -221,6 +221,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "terminal hosts move into the engine in step 7 (engine.md)"
+    )]
     fn windows_default_shell_runs_a_command() {
         use std::os::windows::process::CommandExt;
         let (shell, args) =

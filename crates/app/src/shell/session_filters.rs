@@ -1,5 +1,5 @@
 //! SessionFiltersMenu.tsx: persisted status, time and provider checkboxes.
-use onicode_core::session_filters::{Status, TimeFilter};
+use onicode_protocol::session_filters::{Status, TimeFilter};
 
 use super::*;
 
@@ -136,7 +136,7 @@ mod tests {
                     shell.sessions[&id].update(cx, |s, _| {
                         s.summary.cwd = project.clone();
                         s.summary.has_messages = true;
-                        s.summary.updated_at = onicode_core::time::now_ms();
+                        s.summary.updated_at = onicode_protocol::time::now_ms();
                     });
                 }
                 shell.sessions[&a].update(cx, |s, _| {
@@ -166,7 +166,8 @@ mod tests {
                 assert!(shell.sessions[&a].read(cx).busy);
                 assert!(!shell.selected_sessions.contains(&b));
                 let state: Workspace =
-                    serde_json::from_str(&shell.latest_state.lock().unwrap()).unwrap();
+                    serde_json::from_str(&shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap())
+                        .unwrap();
                 assert!(state.session_filters.status.working);
             })
             .unwrap();

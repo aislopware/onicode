@@ -9,8 +9,9 @@ use gpui::{
     PathBuilder, Pixels, Point, Render, Role, SharedString, Stateful, Window, canvas, div, fill,
     point, px, relative, size,
 };
-use onicode_core::visual::{
-    Camera, Node, SceneObject, Shape, TextSize, ThemeColor, VisualDocument, VisualRuntime,
+use onicode_core::visual::VisualRuntime;
+use onicode_protocol::visual::{
+    Camera, Node, SceneObject, Shape, TextSize, ThemeColor, VisualDocument,
 };
 use serde_json::{Value, json};
 

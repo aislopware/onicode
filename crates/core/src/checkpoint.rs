@@ -18,25 +18,7 @@ use crate::scm::{MAX_TEXT_FILE_BYTES, expand_home, path_to_js};
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckpointFile {
-    pub path: String,
-    pub relative: String,
-    pub status: String,
-    pub additions: i64,
-    pub deletions: i64,
-    /// True when an exact recorded before/after diff is available.
-    pub exact: bool,
-    /// False when restoring could overwrite a change made outside this session.
-    pub undoable: bool,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckpointStatus {
-    pub files: Vec<CheckpointFile>,
-}
+pub use onicode_protocol::checkpoint::{CheckpointFile, CheckpointStatus};
 
 enum FileState {
     Contents(Vec<u8>),

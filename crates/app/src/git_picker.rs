@@ -7,9 +7,8 @@ use gpui::{
     AnyElement, Context, Entity, EventEmitter, FocusHandle, Focusable, Role, Subscription, Window,
     div, px,
 };
-use onicode_core::git::{self, Snapshot};
-use onicode_protocol::OpId;
-use onicode_protocol::git::{CreateBranch, Switch};
+use onicode_protocol::git::{CreateBranch, GitSnapshot as Snapshot, Switch};
+use onicode_protocol::{OpId, git};
 
 use crate::theme::*;
 use crate::{input, popover};
@@ -325,8 +324,8 @@ impl gpui::Render for GitPicker {
                     Choice::Worktree(tree) => {
                         let selected = if self.existing_only {
                             self.selected.as_deref().is_some_and(|path| {
-                                onicode_core::files::path_key(path)
-                                    == onicode_core::files::path_key(&tree.path)
+                                onicode_protocol::files::path_key(path)
+                                    == onicode_protocol::files::path_key(&tree.path)
                             })
                         } else {
                             // The engine resolved symlinks: a worktree reached through

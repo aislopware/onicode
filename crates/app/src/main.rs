@@ -106,6 +106,7 @@ mod theme;
 #[cfg(target_os = "macos")]
 mod traffic_lights;
 mod transcript;
+mod ui_state;
 mod usage_footer;
 mod visuals;
 #[cfg(test)]
@@ -115,13 +116,16 @@ mod workspace;
 mod worktree_switcher;
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{App, KeyBinding, TitlebarOptions, WindowOptions, actions, point, px, size};
-use onicode_core::store::Store;
-use onicode_core::transcript::Transcript;
+use onicode_protocol::sessions::Session;
+use onicode_protocol::transcript::Transcript;
+use onicode_protocol::workspace::{CreateSession, NewSession};
+use onicode_protocol::{OpId, SessionId};
+
+use crate::engine_client::Engine;
 /// libmalloc keeps freed large spans dirty, so startup decodes and image churn
 /// stayed in the footprint. mimalloc 2 returns them; 3 retains churn too.
 #[cfg(target_os = "macos")]
@@ -257,22 +261,11 @@ fn main() {
         .unwrap_or(cwd)
         .to_string_lossy()
         .to_string();
-    let database = data_dir().join("onicode.db");
-    let mut db = if check_data {
-        Store::read_monocode(&database)
-    } else {
-        Store::open_monocode(&database)
-    }
-    .unwrap_or_else(|error| {
-        eprintln!("Cannot open {}: {error}", database.display());
-        std::process::exit(1);
-    });
     if check_data {
-        match db.sessions() {
-            Ok(sessions) => eprintln!(
-                "Database: {}\n{} saved sessions; no import or migration.",
+        match onicode_engine::Local::check_data(&data_dir()) {
+            Ok((database, sessions)) => eprintln!(
+                "Database: {}\n{sessions} saved sessions; no import or migration.",
                 database.display(),
-                sessions.len()
             ),
             Err(error) => {
                 eprintln!("{error}");
@@ -290,89 +283,11 @@ fn main() {
     {
         eprintln!("Cannot record the beta update channel: {error}");
     }
-    onicode_core::checkpoint::init(
-        database
-            .parent()
-            .unwrap_or(std::path::Path::new("."))
-            .join("checkpoints"),
-    );
-    let saved = db.ui_state().unwrap_or_else(|e| {
-        eprintln!("Cannot read workspace settings: {e}");
-        None
-    });
-    let existing_project = saved
-        .as_deref()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
-        .and_then(|state| {
-            state["project"]
-                .as_str()
-                .filter(|s| !s.is_empty())
-                .map(str::to_owned)
-        })
-        .or_else(|| {
-            db.sessions()
-                .ok()
-                .and_then(|sessions| sessions.into_iter().find(|s| !s.archived).map(|s| s.cwd))
-        });
-    // Opened from the Dock or Finder, macOS starts the app in `/`. Resume the
-    // saved project instead of deriving a project from an internal chat path.
-    let cwd = if let Some(project) = existing_project.filter(|_| !explicit_cwd) {
-        project
-    } else if explicit_cwd || std::path::Path::new(&cwd).parent().is_some() {
-        cwd
-    } else {
-        db.sessions()
-            .ok()
-            .and_then(|sessions| sessions.into_iter().map(|s| s.cwd).find(|c| c != &cwd))
-            .unwrap_or_else(|| std::env::var("HOME").unwrap_or(cwd))
+    let samples = Fixtures {
+        scroll: fixture,
+        chat: chat_fixture,
+        visual: visual_fixture,
     };
-    if fixture {
-        let s = db.create("codex", &cwd).expect("create fixture");
-        db.title(s.id, "Scroll lab · 10,000 messages").unwrap();
-        let mut t = Transcript::default();
-        let started = Instant::now();
-        for i in 0..10_000 {
-            t.begin(if i % 2 == 0 { "user" } else { "assistant" });
-            t.append(&format!("Message {i:05} · Native transcript stress fixture.\nUnicode stays intact: 🙂 漢字 café. Scroll up while another session streams.\nThis message is local fixture data; sending resumes a new real provider conversation."));
-        }
-        db.write_rows(s.id, 0, &t.rows).unwrap();
-        eprintln!("Seeded {} rows in {:?}", t.rows.len(), started.elapsed());
-    }
-    if chat_fixture {
-        let s = db.create("codex", &cwd).expect("create chat fixture");
-        db.title(s.id, "Native chat · Markdown and tools").unwrap();
-        db.write_rows(s.id, 0, &fixtures::chat().rows).unwrap();
-    }
-    if visual_fixture {
-        let s = db.create("codex", &cwd).expect("create visual fixture");
-        db.title(s.id, "Native visuals · Controls, charts and 3D")
-            .unwrap();
-        db.write_rows(s.id, 0, &fixtures::visuals().rows).unwrap();
-        let s = db
-            .create("claude", &cwd)
-            .expect("create visual story fixture");
-        db.title(s.id, "Native visuals · Charts inside an answer")
-            .unwrap();
-        db.write_rows(s.id, 0, &fixtures::visual_story().rows)
-            .unwrap();
-    }
-    let mut sessions = db.sessions().expect("read native sessions");
-    if sessions.is_empty() {
-        sessions.push(db.create("codex", &cwd).expect("create initial session"));
-    }
-    // Gather compact sidebar state before entering the platform event loop.
-    // The shell does not query thousands of saved agents on the UI thread.
-    let metadata = sessions
-        .iter()
-        .map(|s| (s.id, s.cwd.clone()))
-        .collect::<Vec<_>>();
-    let workspace = workspace::Workspace::restore(saved.as_deref(), &metadata, &cwd);
-    let mut projects = workspace.projects;
-    if !projects.contains(&workspace.project) {
-        projects.push(workspace.project);
-    }
-    let sidebar_metadata = db.session_sidebar_metadata(&projects);
-    let db = Arc::new(Mutex::new(db));
     app_log::init();
     let platform = gpui_platform::current_platform(false);
     let title_raster = particle_text::GlyphRaster(platform.text_system());
@@ -388,7 +303,7 @@ fn main() {
             frame_log::start(cx);
             gpu_trim::start(cx);
             #[cfg(target_os = "macos")]
-            hang_watchdog::start(database.with_file_name("gpui-hangs"), cx);
+            hang_watchdog::start(data.join("gpui-hangs"), cx);
             input::bind(cx);
             image_lightbox::bind(cx);
             composer_completion::bind(cx);
@@ -410,6 +325,13 @@ fn main() {
                 }
             })
             .detach();
+            let Launch {
+                engine,
+                sessions,
+                cwd,
+                saved,
+                workspace,
+            } = launch(&data, cwd, explicit_cwd, samples, cx);
             let bounds = workspace.window.bounds(cx);
             cx.open_window(
                 WindowOptions {
@@ -446,32 +368,9 @@ fn main() {
                         window.on_next_frame(|_, cx| app_menu::ready(cx));
                     });
                     // Off the launch path: it lists every conversation folder.
-                    let cleanup = db.clone();
-                    window.on_next_frame(move |_, cx| {
-                        cx.background_executor()
-                            .spawn(async move {
-                                let result = cleanup
-                                    .lock()
-                                    .map_err(|error| error.to_string())
-                                    .and_then(|store| store.sweep_thread_dirs());
-                                if let Err(error) = result {
-                                    eprintln!(
-                                        "Cannot clean up deleted conversations' files: {error}"
-                                    );
-                                }
-                            })
-                            .detach();
-                    });
-                    let shell = cx.new(|cx| {
-                        shell::Shell::new_with_metadata(
-                            db,
-                            sessions,
-                            cwd,
-                            saved,
-                            sidebar_metadata,
-                            cx,
-                        )
-                    });
+                    let cleanup = engine.clone();
+                    window.on_next_frame(move |_, _| cleanup.sweep());
+                    let shell = cx.new(|cx| shell::Shell::new(engine, sessions, cwd, saved, cx));
                     shell.update(cx, |shell, cx| shell.focus_active(window, cx));
                     #[cfg(target_os = "macos")]
                     {
@@ -493,13 +392,178 @@ fn main() {
         });
 }
 
+/// What the first window opens on.
+struct Launch {
+    engine: Engine,
+    sessions: Vec<Session>,
+    cwd: String,
+    saved: Option<String>,
+    workspace: workspace::Workspace,
+}
+
+/// The local samples debug builds can add to their data.
+#[derive(Clone, Copy)]
+struct Fixtures {
+    scroll: bool,
+    chat: bool,
+    visual: bool,
+}
+
+/// Opens the engine and the app's own state, before the first frame as monocode opened its
+/// store, and finds the project and sessions the window opens on.
+fn launch(
+    data: &std::path::Path,
+    cwd: String,
+    explicit_cwd: bool,
+    samples: Fixtures,
+    cx: &mut App,
+) -> Launch {
+    let engine = Engine::open(data, cx).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        std::process::exit(1);
+    });
+    let ui_state = ui_state::UiState::open(data).unwrap_or_else(|error| {
+        eprintln!("{error}; the window's layout will not be kept.");
+        ui_state::UiState::memory()
+    });
+    if let Err(error) = ui_state.adopt(&engine) {
+        eprintln!("Cannot take the saved workspace from the engine: {error}");
+    }
+    cx.set_global(ui_state::Shared(ui_state.clone()));
+    let saved = ui_state.get(ui_state::WORKSPACE);
+    let stored = engine
+        .workspace_now()
+        .map(|state| {
+            state
+                .sessions
+                .into_iter()
+                .map(|summary| summary.session)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|error| {
+            eprintln!("Cannot read the engine's sessions: {error}");
+            Vec::new()
+        });
+    let existing_project = saved
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|state| {
+            state["project"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+        })
+        .or_else(|| stored.iter().find(|s| !s.archived).map(|s| s.cwd.clone()));
+    // Opened from the Dock or Finder, macOS starts the app in `/`. Resume the
+    // saved project instead of deriving a project from an internal chat path.
+    let cwd = if let Some(project) = existing_project.filter(|_| !explicit_cwd) {
+        project
+    } else if explicit_cwd || std::path::Path::new(&cwd).parent().is_some() {
+        cwd
+    } else {
+        stored
+            .iter()
+            .map(|s| s.cwd.clone())
+            .find(|c| c != &cwd)
+            .unwrap_or_else(|| std::env::var("HOME").unwrap_or(cwd))
+    };
+    seed_fixtures(&engine, &cwd, samples);
+    let mut sessions = engine
+        .workspace_now()
+        .map(|state| {
+            state
+                .sessions
+                .into_iter()
+                .map(|summary| summary.session)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if sessions.is_empty() {
+        let created = futures::executor::block_on(engine.call::<CreateSession>(
+            Some(OpId::new()),
+            CreateSession {
+                session: SessionId::new(),
+                provider: "codex".into(),
+                cwd: cwd.clone(),
+                title: None,
+                start: NewSession::Bare,
+                started_by: None,
+            },
+        ));
+        match created.map(|created| created.session) {
+            Ok(Some(summary)) => sessions.push(summary.session),
+            Ok(None) => eprintln!("The engine created no first session"),
+            Err(error) => eprintln!("Cannot create the first session: {error}"),
+        }
+    }
+    // The schedulers start once the store holds the fixtures and the first session.
+    engine.run_schedulers();
+    let metadata = sessions
+        .iter()
+        .map(|s| (s.id, s.cwd.clone()))
+        .collect::<Vec<_>>();
+    let workspace = workspace::Workspace::restore(saved.as_deref(), &metadata, &cwd);
+    Launch {
+        engine,
+        sessions,
+        cwd,
+        saved,
+        workspace,
+    }
+}
+
+/// Writes the debug builds' local samples through the engine's seam, and tells its workspace, so
+/// the sidebar lists them.
+fn seed_fixtures(engine: &Engine, cwd: &str, samples: Fixtures) {
+    let seed = engine.seed();
+    let mut rows = Vec::new();
+    if samples.scroll {
+        let s = seed.create("codex", cwd).expect("create fixture");
+        seed.title(s.id, "Scroll lab · 10,000 messages").unwrap();
+        let mut t = Transcript::default();
+        let started = Instant::now();
+        for i in 0..10_000 {
+            t.begin(if i % 2 == 0 { "user" } else { "assistant" });
+            t.append(&format!("Message {i:05} · Native transcript stress fixture.\nUnicode stays intact: 🙂 漢字 café. Scroll up while another session streams.\nThis message is local fixture data; sending resumes a new real provider conversation."));
+        }
+        seed.write_rows(s.id, 0, &t.rows).unwrap();
+        rows.push(s.id);
+        eprintln!("Seeded {} rows in {:?}", t.rows.len(), started.elapsed());
+    }
+    if samples.chat {
+        let s = seed.create("codex", cwd).expect("create chat fixture");
+        seed.title(s.id, "Native chat · Markdown and tools")
+            .unwrap();
+        seed.write_rows(s.id, 0, &fixtures::chat().rows).unwrap();
+        rows.push(s.id);
+    }
+    if samples.visual {
+        let s = seed.create("codex", cwd).expect("create visual fixture");
+        seed.title(s.id, "Native visuals · Controls, charts and 3D")
+            .unwrap();
+        seed.write_rows(s.id, 0, &fixtures::visuals().rows).unwrap();
+        rows.push(s.id);
+        let s = seed
+            .create("claude", cwd)
+            .expect("create visual story fixture");
+        seed.title(s.id, "Native visuals · Charts inside an answer")
+            .unwrap();
+        seed.write_rows(s.id, 0, &fixtures::visual_story().rows)
+            .unwrap();
+        rows.push(s.id);
+    }
+    for row in rows {
+        engine.refresh_now(row);
+    }
+}
+
 #[cfg(test)]
 mod native_tests {
     use gpui::{
         Bounds, Context, Entity, EntityInputHandler, ListOffset, Render, StyleRefinement,
         TestAppContext, Window, WindowBounds, div, point,
     };
-    use onicode_core::transcript::Row;
+    use onicode_protocol::transcript::Row;
 
     use super::*;
     use crate::input;

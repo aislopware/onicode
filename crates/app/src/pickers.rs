@@ -1,13 +1,18 @@
 // The pickers that open as flyouts beside a menu row: ModelPicker.tsx's
 // ModelFlyout and SearchableProjectPicker.tsx's ProjectPickerPopover. Each
 // owns a search field; arrows and Enter in it move and pick in the list.
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex, PoisonError};
+
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Context, Entity, EventEmitter, FocusHandle, Focusable, Role, SharedString,
     Subscription, Window, div, px,
 };
-use onicode_core::catalog::{self, Model};
-use onicode_core::provider::{self, Kind};
+use onicode_core::catalog;
+use onicode_protocol::agents::{Catalog, CatalogRead, Harness, Harnesses};
+use onicode_protocol::catalog::Model;
+use onicode_protocol::provider::Kind;
 
 use crate::input;
 use crate::theme::*;
@@ -71,10 +76,45 @@ pub(crate) fn model_display_name(kind: Kind, id: &str, name: &str) -> SharedStri
         name.to_owned().into()
     }
 }
-/// A model's name from a cached catalog, else its friendly fallback.
+/// Every model name a catalog the engine sent has named, by provider and id.
+static NAMES: LazyLock<Mutex<HashMap<(Kind, String), String>>> = LazyLock::new(Mutex::default);
+
+/// Keeps the names of a catalog the engine sent, for labels drawn before a picker loads.
+pub(crate) fn remember_catalog(kind: Kind, models: &[Model]) {
+    let mut names = NAMES.lock().unwrap_or_else(PoisonError::into_inner);
+    for model in models {
+        names.insert((kind, model.id.clone()), model.name.clone());
+    }
+}
+
+/// A model's name as a catalog the engine sent gives it.
+pub(crate) fn cached_name(kind: Kind, id: &str) -> Option<String> {
+    let names = NAMES.lock().unwrap_or_else(PoisonError::into_inner);
+    names.get(&(kind, id.to_owned())).cloned()
+}
+
+/// A model's name from a catalog the engine sent, else its friendly fallback.
 pub(crate) fn cached_model_name(kind: Kind, id: Option<&str>) -> SharedString {
-    id.and_then(|id| catalog::cached_name(kind, id).map(|name| model_display_name(kind, id, &name)))
-        .unwrap_or_else(|| model_name(kind, id))
+    let cached = id.and_then(|id| {
+        let names = NAMES.lock().unwrap_or_else(PoisonError::into_inner);
+        let name = names.get(&(kind, id.to_owned()))?;
+        Some(model_display_name(kind, id, name))
+    });
+    cached.unwrap_or_else(|| model_name(kind, id))
+}
+
+/// The providers whose CLI the engine finds no path for.
+async fn uninstalled(harnesses: impl Future<Output = Result<Vec<Harness>, String>>) -> Vec<Kind> {
+    harnesses
+        .await
+        .map(|harnesses| {
+            harnesses
+                .into_iter()
+                .filter(|harness| harness.path.is_none())
+                .map(|harness| harness.provider)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 /// saveRecentModelChoice: the pick moves to the front of the six recents.
 pub(crate) fn remember_model(kind: Kind, model: Option<String>, cx: &mut gpui::App) {
@@ -260,6 +300,7 @@ mod model_label_tests {
                             default: false,
                             tiers: Vec::new(),
                             controls: Vec::new(),
+                            limits: Default::default(),
                         })
                         .collect(),
                 )];
@@ -464,7 +505,7 @@ pub(crate) struct ModelList {
     remote_project: Option<String>,
     remote_providers: Option<Vec<Kind>>,
     current: Option<String>,
-    profiles: std::collections::HashMap<Kind, onicode_core::accounts::Profile>,
+    profiles: std::collections::HashMap<Kind, onicode_protocol::accounts::Profile>,
     catalogs: Vec<(Kind, Vec<Model>)>,
     errors: Vec<(Kind, String)>,
     loading: Vec<Kind>,
@@ -484,7 +525,7 @@ impl ModelList {
         provider: Kind,
         current: Option<String>,
         project: &str,
-        profile: onicode_core::accounts::Profile,
+        profile: onicode_protocol::accounts::Profile,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut profiles = crate::accounts::get(cx)
@@ -503,7 +544,7 @@ impl ModelList {
         });
         let mut list = Self {
             provider,
-            remote_project: onicode_core::remote::parse_remote_path(project)
+            remote_project: onicode_protocol::remote::parse_remote_path(project)
                 .map(|_| project.to_owned()),
             remote_providers: None,
             current,
@@ -627,12 +668,8 @@ impl ModelList {
         if cfg!(test) || self.remote_project.is_some() {
             return;
         }
-        let work = cx.background_executor().spawn(async move {
-            Kind::ALL
-                .into_iter()
-                .filter(|kind| onicode_core::provider::resolve(*kind).is_none())
-                .collect::<Vec<_>>()
-        });
+        let harnesses = crate::engine_client::local(cx).call::<Harnesses>(None, Harnesses {});
+        let work = cx.background_executor().spawn(uninstalled(harnesses));
         cx.spawn(async move |this, cx| {
             let missing = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -701,15 +738,25 @@ impl ModelList {
         }
         self.loading.push(kind);
         self.errors.retain(|(k, _)| *k != kind);
-        let work = cx.background_executor().spawn({
-            let profile = self.profiles.get(&kind).cloned().unwrap_or_default();
-            async move {
-                let result = catalog::models_for(kind, &profile);
-                // Missing is a fact about the binary, not about the message it
-                // produced. Resolve on the worker so the UI never probes paths.
-                let missing = result.is_err() && provider::resolve(kind).is_none();
-                (result, missing)
-            }
+        let account = self.profiles.get(&kind).cloned().unwrap_or_default().id;
+        let engine = crate::engine_client::local(cx);
+        let read = engine.call::<Catalog>(
+            None,
+            Catalog {
+                provider: kind,
+                account,
+                read: CatalogRead::Fresh,
+            },
+        );
+        let harnesses = engine.call::<Harnesses>(None, Harnesses {});
+        let work = cx.background_executor().spawn(async move {
+            let result = read.await.and_then(|models| {
+                models.ok_or_else(|| format!("{} returned no model catalog", kind.label()))
+            });
+            // Missing is a fact about the binary, not about the message it produced: the
+            // engine says whether it finds one.
+            let missing = result.is_err() && uninstalled(harnesses).await.contains(&kind);
+            (result, missing)
         });
         cx.spawn(async move |this, cx| {
             let (result, missing) = work.await;
@@ -717,6 +764,7 @@ impl ModelList {
                 this.loading.retain(|k| *k != kind);
                 match result {
                     Ok(models) => {
+                        remember_catalog(kind, &models);
                         this.catalogs.retain(|(k, _)| *k != kind);
                         this.catalogs.push((kind, models));
                     }
@@ -1457,7 +1505,7 @@ pub(crate) enum ProjectPicked {
 /// first and checked, and "New project" at the foot.
 pub(crate) struct ProjectPicker {
     appearance:
-        std::collections::HashMap<String, onicode_core::project_appearance::ProjectAppearance>,
+        std::collections::HashMap<String, onicode_protocol::project_appearance::ProjectAppearance>,
     projects: Vec<String>,
     current: String,
     active: usize,
@@ -1502,7 +1550,7 @@ impl ProjectPicker {
         mut self,
         appearance: std::collections::HashMap<
             String,
-            onicode_core::project_appearance::ProjectAppearance,
+            onicode_protocol::project_appearance::ProjectAppearance,
         >,
     ) -> Self {
         self.appearance = appearance;

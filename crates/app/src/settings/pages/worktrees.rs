@@ -70,7 +70,9 @@ impl SettingsView {
                             .ctx
                             .sessions
                             .iter()
-                            .filter(|(_, p, _)| onicode_core::files::is_equal_or_inside(p, &t.path))
+                            .filter(|(_, p, _)| {
+                                onicode_protocol::files::is_equal_or_inside(p, &t.path)
+                            })
                             .count();
                         let status = if t.missing {
                             "Missing folder"

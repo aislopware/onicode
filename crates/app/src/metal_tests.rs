@@ -198,7 +198,7 @@ fn background_artwork_mask_rounds_fades_and_blurs_without_touching_the_backdrop(
     for percent in [30., 42., 54., 64., 72., 90.] {
         let y = (8. + 184. * percent / 100.) as u32;
         let fraction = (y as f32 + 0.5 - 8.) / 184.;
-        let fade = onicode_core::project_appearance::background_fade(fraction, true, false);
+        let fade = onicode_protocol::project_appearance::background_fade(fraction, true, false);
         let expected = 128. + 127. * 0.65 * fade;
         assert!(
             (plain.get_pixel(35, y)[3] as f32 - expected).abs() < 3.,

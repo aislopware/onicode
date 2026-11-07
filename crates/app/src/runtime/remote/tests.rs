@@ -1,3 +1,8 @@
+#![expect(
+    clippy::disallowed_types,
+    clippy::disallowed_methods,
+    reason = "the SSH remote and its tests go in step 10 (engine.md)"
+)]
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -13,8 +18,10 @@ use super::*;
 struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {
-        let path =
-            std::env::temp_dir().join(format!("onicode-remote-runtime-{}", onicode_core::new_id()));
+        let path = std::env::temp_dir().join(format!(
+            "onicode-remote-runtime-{}",
+            onicode_protocol::new_id()
+        ));
         std::fs::create_dir_all(&path).unwrap();
         Self(path)
     }
@@ -779,7 +786,7 @@ fn host_context_and_latest_turn_metrics_use_actual_session_fields() {
     let (context, metrics) = accounting(&value);
     assert_eq!(
         context,
-        Some(onicode_core::context::Usage {
+        Some(onicode_protocol::context::Usage {
             used: 1200,
             window: Some(128000)
         })

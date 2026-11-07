@@ -32,7 +32,7 @@ pub(crate) fn row_text(row: &MarkdownRow) -> String {
 pub(crate) fn mark_row(row: &mut MarkdownRow, query: &str, current: bool) {
     let mark = |runs: &mut Vec<InlineRun>| {
         let text = runs.iter().map(|r| r.text.as_str()).collect::<String>();
-        let matches = onicode_core::search::literal_ranges(&text, query);
+        let matches = onicode_protocol::search::literal_ranges(&text, query);
         if matches.is_empty() {
             return;
         }
@@ -82,7 +82,7 @@ pub(crate) fn mark_styles(
     query: &str,
     current: bool,
 ) -> Vec<(Range<usize>, HighlightStyle)> {
-    let matches = onicode_core::search::literal_ranges(text, query);
+    let matches = onicode_protocol::search::literal_ranges(text, query);
     if matches.is_empty() {
         return styles;
     }

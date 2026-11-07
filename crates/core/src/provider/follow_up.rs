@@ -4,21 +4,6 @@ use crate::follow_up::Message;
 
 static STEER_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
-impl Kind {
-    pub fn can_steer(self) -> bool {
-        matches!(
-            self,
-            Self::Codex
-                | Self::Claude
-                | Self::Cursor
-                | Self::Pi
-                | Self::Omp
-                | Self::Hermes
-                | Self::OpenCode
-        )
-    }
-}
-
 impl Protocol {
     pub(super) fn ready(&self) -> bool {
         match self.request.kind {

@@ -218,8 +218,8 @@ mod tests {
         ScrollDelta, ScrollEvent, TestAppContext, TouchPhase, WindowBounds, WindowOptions, point,
         size,
     };
-    use onicode_core::tool::ToolCall;
-    use onicode_core::transcript::Row;
+    use onicode_protocol::tool::ToolCall;
+    use onicode_protocol::transcript::Row;
 
     use super::super::{Body, TranscriptView};
     use super::*;

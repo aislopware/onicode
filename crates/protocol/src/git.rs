@@ -9,21 +9,68 @@
 //! The engine runs Git in two lanes: what a person waits on (these calls and the watch's
 //! refreshes) never queues behind background work such as pull-request discovery
 //! ([`PrStatus`]) or the watch's periodic repair reads.
+pub mod report;
+
 use std::collections::BTreeMap;
 
-pub use onicode_core::checkpoint::{CheckpointFile, CheckpointStatus};
-pub use onicode_core::git::{
-    Branch, CommitFile, SessionChanges, Snapshot as GitSnapshot, Worktree,
-};
-pub use onicode_core::scm::{
-    ChangedFile, DiffIndex, DiffStats, FileDiff as DiffSides, FileDiffVersion,
-    History as GitHistory, HistoryCommit, HistoryRef, Pr, RangeContext, StagedContext,
-};
 use serde::{Deserialize, Serialize};
 
 use crate::agent::Settings;
+pub use crate::checkpoint::{CheckpointFile, CheckpointStatus};
+pub use crate::scm::{
+    ChangedFile, DiffIndex, DiffStats, FileDiff as DiffSides, FileDiffVersion,
+    History as GitHistory, HistoryCommit, HistoryRef, Pr, RangeContext, StagedContext,
+};
 use crate::sessions::Session;
 use crate::{Call, Cursor, Watch};
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Branch {
+    pub name: String,
+    pub remote: Option<String>,
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Worktree {
+    pub path: String,
+    pub branch: Option<String>,
+    pub head: String,
+    pub main: bool,
+    pub missing: bool,
+}
+/// A checkout's branches and worktrees.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitSnapshot {
+    pub current: Option<String>,
+    pub detached: bool,
+    pub linked: bool,
+    pub branches: Vec<Branch>,
+    pub worktrees: Vec<Worktree>,
+    /// The listed path of the worktree the snapshot was read in, compared with symlinks resolved
+    /// (a worktree reached through a link is still the current one), as the pickers mark it.
+    pub here: Option<String>,
+}
+/// Where a session's own paths stand against `HEAD`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionChanges {
+    /// Some of the changes are in the index.
+    pub staged: bool,
+    /// Some of the changes, or untracked files, are only in the working tree.
+    pub unstaged: bool,
+}
+impl SessionChanges {
+    pub fn uncommitted(self) -> bool {
+        self.staged || self.unstaged
+    }
+}
+/// One file of a commit, as `git show --numstat` counts it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommitFile {
+    pub path: String,
+    /// `None` for binary files.
+    pub additions: Option<u64>,
+    pub deletions: Option<u64>,
+}
 
 /// A checkout's status as of a read: the changed files with the branch, upstream and counts, and
 /// each change's version (`staged:` or `unstaged:` and the relative path), which tells a review

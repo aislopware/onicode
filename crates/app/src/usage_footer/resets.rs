@@ -294,21 +294,16 @@ impl UsageFooter {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-    use std::sync::{Arc, Mutex};
-
     use gpui::VisualTestContext;
 
     use super::*;
+    use crate::engine_client::Engine;
 
     #[gpui::test]
     fn banked_cards_require_confirmation_cancel_without_claiming_and_hide_when_empty(
         cx: &mut gpui::TestAppContext,
     ) {
-        let store = Arc::new(Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
-        cx.update(|cx| crate::accounts::install(store, cx));
+        cx.update(|cx| crate::accounts::install(Engine::memory(cx), cx));
         let center = cx.update(|cx| crate::accounts::get(cx).unwrap());
         let key = Key::new(Kind::Codex, Default::default(), None);
         center.update(cx, |accounts, _| {

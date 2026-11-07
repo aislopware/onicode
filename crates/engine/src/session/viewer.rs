@@ -181,7 +181,12 @@ impl Viewer {
                 }
             }
             SessionEvent::Title(title) => self.pending.title = Some(title.clone()),
-            SessionEvent::ProviderId(id) => self.pending.provider_id = Some(id.clone()),
+            // A thread let go reaches the conversation through the call that let it go.
+            SessionEvent::ProviderId(id) => {
+                if let Some(id) = id {
+                    self.pending.provider_id = Some(id.clone());
+                }
+            }
             SessionEvent::Model(model) => self.pending.model = Some(model.clone()),
             SessionEvent::Worktree(cwd) => self.pending.worktree_cwd = Some(cwd.clone()),
             SessionEvent::Context(usage) => self.pending.context = Some(*usage),

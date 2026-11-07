@@ -1,13 +1,13 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{
     App, Context, FocusHandle, FontWeight, KeyBinding, Role, Window, actions, div, px, rgb,
 };
-use onicode_core::provider::Kind;
-use onicode_core::usage;
+use onicode_protocol::provider::Kind;
+use onicode_protocol::usage;
 #[cfg(test)]
-use onicode_core::usage::{FetchError, Snapshot};
+use onicode_protocol::usage::{FetchError, Snapshot};
 
 use crate::popover::{Anchor, AnchorSlot, Side, popover};
 use crate::theme::*;
@@ -67,7 +67,7 @@ impl UsageFooter {
     pub(crate) fn context(
         &mut self,
         kind: Kind,
-        profile: onicode_core::accounts::Profile,
+        profile: onicode_protocol::accounts::Profile,
         model: Option<&str>,
         project: String,
         session: Option<i64>,
@@ -211,6 +211,7 @@ impl UsageFooter {
         }
     }
 
+    /// Reads the usage through the accounts center, which asks the engine.
     fn refresh(&mut self, force: bool, cx: &mut Context<Self>) {
         if let Some(center) = crate::accounts::get(cx) {
             let key = self.key.clone();
@@ -219,44 +220,7 @@ impl UsageFooter {
                 self.cache[index(self.kind)] = state;
             }
             cx.notify();
-            return;
         }
-        if cfg!(test) {
-            return;
-        }
-        let slot = index(self.kind);
-        let state = &mut self.cache[slot];
-        let reset = state.snapshot.as_ref().is_some_and(|s| {
-            s.windows.iter().any(|w| {
-                w.resets_at
-                    .is_some_and(|at| at > s.updated_at && at <= usage::now_ms())
-            })
-        });
-        let interval = if reset { 300 } else { 900 };
-        if state.fetching
-            || (!force
-                && state
-                    .attempted
-                    .is_some_and(|at| at.elapsed() < Duration::from_secs(interval)))
-        {
-            return;
-        }
-        state.fetching = true;
-        state.attempted = Some(Instant::now());
-        let kind = self.kind;
-        let work = cx
-            .background_executor()
-            .spawn(async move { usage::fetch(kind) });
-        cx.spawn(async move |this, cx| {
-            let result = work.await;
-            let _ = this.update(cx, |this, cx| {
-                // Store by the requested provider, even if the user changed tabs.
-                this.cache[slot].complete(result);
-                cx.notify();
-            });
-        })
-        .detach();
-        cx.notify();
     }
 
     #[cfg(test)]
@@ -303,9 +267,9 @@ impl UsageFooter {
 
     fn login_view(&self, cx: &App) -> bool {
         let state = &self.cache[index(self.kind)];
-        onicode_core::accounts::login_arguments(
+        onicode_protocol::accounts::login_arguments(
             self.kind,
-            onicode_core::accounts::AuthAction::SignIn,
+            onicode_protocol::accounts::AuthAction::SignIn,
         )
         .is_some()
             && state.snapshot.as_ref().is_none_or(|s| s.windows.is_empty())
@@ -413,9 +377,10 @@ impl UsageFooter {
                 )
                 .flex()
                 .flex_col()
-                .when(onicode_core::accounts::supports_accounts(self.kind), |d| {
-                    d.child(div().px(px(10.)).pt(px(10.)).child(self.account_row(cx)))
-                })
+                .when(
+                    onicode_protocol::accounts::supports_accounts(self.kind),
+                    |d| d.child(div().px(px(10.)).pt(px(10.)).child(self.account_row(cx))),
+                )
                 .child(panel)
                 .into_any_element();
         }
@@ -489,9 +454,10 @@ impl UsageFooter {
                                     .text_color(content(0.4))
                                     .child(updated),
                             )
-                            .when(onicode_core::accounts::supports_accounts(self.kind), |d| {
-                                d.child(self.account_line(cx))
-                            }),
+                            .when(
+                                onicode_protocol::accounts::supports_accounts(self.kind),
+                                |d| d.child(self.account_line(cx)),
+                            ),
                     )
                     .when(state.fetching, |d| {
                         d.child(

@@ -1,7 +1,7 @@
 //! Original project navigation. Its list and shared image cache stay independent
 //! from streamed conversations; Git counters use one visible-project batch.
 use gpui::{ListAlignment, ListState, list};
-use onicode_core::scm::DiffStats;
+use onicode_protocol::scm::DiffStats;
 
 use super::*;
 use crate::right_panel::{DIFF_ADD, DIFF_DEL, format_integer, tabular};
@@ -875,9 +875,9 @@ impl Shell {
             .or_else(|| {
                 group
                     .color_index
-                    .and_then(|i| onicode_core::project_appearance::COLORS.get(i).copied())
+                    .and_then(|i| onicode_protocol::project_appearance::COLORS.get(i).copied())
             });
-        let appearance = onicode_core::project_appearance::ProjectAppearance {
+        let appearance = onicode_protocol::project_appearance::ProjectAppearance {
             color,
             mascot: group.mascot.clone(),
             ..Default::default()
@@ -1047,9 +1047,9 @@ impl Shell {
             .or_else(|| {
                 group
                     .color_index
-                    .and_then(|i| onicode_core::project_appearance::COLORS.get(i).copied())
+                    .and_then(|i| onicode_protocol::project_appearance::COLORS.get(i).copied())
             });
-        let appearance = onicode_core::project_appearance::ProjectAppearance {
+        let appearance = onicode_protocol::project_appearance::ProjectAppearance {
             name: group.name,
             color,
             mascot: group.mascot,
@@ -1074,7 +1074,7 @@ impl Shell {
                         }
                         group.mascot = appearance.mascot.clone();
                         group.color_index = appearance.color.and_then(|c| {
-                            onicode_core::project_appearance::COLORS
+                            onicode_protocol::project_appearance::COLORS
                                 .iter()
                                 .position(|v| *v == c)
                         });
@@ -1950,7 +1950,7 @@ mod tests {
                 );
                 assert!(shell.project_rail_drag.is_none());
                 assert_eq!(shell.workspace.project_rail_assignments["/rail/a"], "first");
-                let saved = locked(&shell.store).unwrap().ui_state().unwrap().unwrap();
+                let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                 let restored = workspace::Workspace::restore(Some(&saved), &[], "/rail/a");
                 assert_eq!(restored.project_rail_groups[0].id, "second");
                 shell.focus_workspace(w, cx);
@@ -1968,7 +1968,7 @@ mod tests {
                     shell.workspace.projects,
                     vec!["/rail/b", "/rail/a", "/rail/c", "/rail/d"]
                 );
-                let saved = locked(&shell.store).unwrap().ui_state().unwrap().unwrap();
+                let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                 let restored = workspace::Workspace::restore(Some(&saved), &[], "/rail/a");
                 assert_eq!(restored.projects, shell.workspace.projects);
             })
@@ -2066,7 +2066,7 @@ mod tests {
                         view.transcript.update(cx, |t, cx| {
                             t.patch(
                                 0,
-                                vec![onicode_core::transcript::Row {
+                                vec![onicode_protocol::transcript::Row {
                                     role: "assistant".into(),
                                     text: "Streaming output".into(),
                                     first: true,

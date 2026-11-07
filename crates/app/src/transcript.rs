@@ -31,10 +31,10 @@ use gpui::{
     ListState, Pixels, Role, SharedString, StyleRefinement, Window, canvas, div, list, px, rgb,
     size,
 };
-use onicode_core::tool::tasks::Panel;
-use onicode_core::tool::{ToolCall, ToolState};
-use onicode_core::transcript::Row;
-use onicode_core::user_links::{UserMessageLink, parse_user_message_link};
+use onicode_protocol::tool::tasks::Panel;
+use onicode_protocol::tool::{ToolCall, ToolState};
+use onicode_protocol::transcript::Row;
+use onicode_protocol::user_links::{UserMessageLink, parse_user_message_link};
 #[cfg(test)]
 pub(crate) use visuals::placements;
 
@@ -106,9 +106,9 @@ enum Body {
     RemotePlan(crate::conversation::remote_plans::Plan),
     SavedDraft,
     Markdown(Arc<MarkdownRow>),
-    Visual(Arc<onicode_core::visual::VisualDocument>),
+    Visual(Arc<onicode_protocol::visual::VisualDocument>),
     Plain(SharedString),
-    Interjection(onicode_core::transcript::Interjection),
+    Interjection(onicode_protocol::transcript::Interjection),
     /// A commit pill turn's status line, then its card.
     GitAction(Arc<git_turns::GitCard>),
     Tool {
@@ -399,7 +399,7 @@ pub(crate) struct TranscriptView {
     /// Visual ids the answers place in their prose.
     placed: HashSet<String>,
     /// Placed visuals by id: their message's start and document.
-    published: HashMap<String, (usize, Arc<onicode_core::visual::VisualDocument>)>,
+    published: HashMap<String, (usize, Arc<onicode_protocol::visual::VisualDocument>)>,
     history_position: Option<history::HistoryPosition>,
     prepared_parsers: HashMap<usize, MarkdownParser>,
     turn_groups: std::cell::RefCell<HashMap<usize, usize>>,
@@ -409,7 +409,7 @@ pub(crate) struct TranscriptView {
     /// below the row's hitbox, so leaving the row must not hide it.
     hovered_prompt_actions: Option<usize>,
     follow: Follow,
-    saved_draft: Option<onicode_core::follow_up::Message>,
+    saved_draft: Option<onicode_protocol::follow_up::Message>,
     /// A clock for the tool and task shimmers.
     started_at: Instant,
     /// One clock per frame for row motion. The list measures rows and the
@@ -447,7 +447,7 @@ pub(crate) struct TranscriptView {
     phase_tiles: HashMap<usize, Entity<crate::phase_tile::PhaseTile>>,
     /// Each reply's "worked for" tile, keyed by turn.
     work_tiles: HashMap<usize, Entity<crate::phase_tile::PhaseTile>>,
-    pub(crate) target_action: Option<(usize, onicode_core::response::TransferKind)>,
+    pub(crate) target_action: Option<(usize, onicode_protocol::response::TransferKind)>,
     document: bool,
     side_question: bool,
     pub(crate) file_link_base: Option<String>,
@@ -489,7 +489,7 @@ pub(crate) struct TranscriptView {
     fold_targets: HashMap<usize, Option<usize>>,
     step_queue: HashMap<usize, Instant>,
     seen_steps: HashSet<usize>,
-    pub(crate) turns: HashMap<usize, onicode_core::agent::TurnInfo>,
+    pub(crate) turns: HashMap<usize, onicode_protocol::agent::TurnInfo>,
     provider: String,
     model: String,
     active_provider_turn_id: Option<String>,
@@ -548,7 +548,7 @@ impl TranscriptView {
                     Body::Tool { .. } => query.to_owned(),
                     _ => String::new(),
                 };
-                !onicode_core::search::literal_ranges(&text, query).is_empty()
+                !onicode_protocol::search::literal_ranges(&text, query).is_empty()
             })
             .map(|(ix, _)| ix);
         if let Some(item_ix) = matching.or_else(|| candidates().next().map(|(ix, _)| ix)) {
@@ -642,7 +642,7 @@ impl TranscriptView {
         )
     }
 
-    pub(crate) fn metrics(&mut self, metrics: onicode_core::agent::TurnMetrics) {
+    pub(crate) fn metrics(&mut self, metrics: onicode_protocol::agent::TurnMetrics) {
         let Some(turn) = self.active_turn() else {
             return;
         };
@@ -752,8 +752,8 @@ impl TranscriptView {
             .when(
                 !self.side_question
                     && !self.streaming
-                    && onicode_core::provider::supports_rewind(
-                        onicode_core::provider::Kind::from_id(&self.provider),
+                    && onicode_protocol::provider::supports_rewind(
+                        onicode_protocol::provider::Kind::from_id(&self.provider),
                     )
                     && self
                         .source
@@ -787,7 +787,7 @@ impl TranscriptView {
                         .text_color(content(0.4))
                         .aria_label(label.clone())
                         .child(stamp_anchor.probe())
-                        .child(onicode_core::response::local_clock(at))
+                        .child(onicode_protocol::response::local_clock(at))
                         .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                             this.action_hover(start, "sent-at", *hovered, cx)
                         })),
@@ -1110,7 +1110,7 @@ impl TranscriptView {
             return div().h(px(38.)).into_any_element();
         }
         let (rows, _) = self.response_rows(turn);
-        let output = onicode_core::response::prose(&rows);
+        let output = onicode_protocol::response::prose(&rows);
         let copied = self.copied_response.is_some_and(|(id, _)| id == turn);
         let saved = self.note_feedback.get(&turn).is_some_and(|r| r.is_ok());
         let pending = self.note_pending.contains(&turn);
@@ -1211,13 +1211,13 @@ impl TranscriptView {
                 "handoff",
                 "Handoff",
                 "response-handoff",
-                onicode_core::response::TransferKind::Handoff,
+                onicode_protocol::response::TransferKind::Handoff,
             ),
             (
                 "opinion",
                 "Second opinion",
                 "response-opinion",
-                onicode_core::response::TransferKind::SecondOpinion,
+                onicode_protocol::response::TransferKind::SecondOpinion,
             ),
         ]
         .into_iter()
@@ -1292,7 +1292,7 @@ impl TranscriptView {
                     div()
                         .flex_shrink_0()
                         .text_color(content(0.35))
-                        .child(onicode_core::response::local_clock(time)),
+                        .child(onicode_protocol::response::local_clock(time)),
                 )
             });
         if let Some(Err(error)) = self.note_feedback.get(&turn) {
@@ -1345,7 +1345,7 @@ impl TranscriptView {
                     .into_iter()
                     .filter(|(n, _)| *n > 0)
                     .map(|(n, label)| {
-                        format!("{} {label}", onicode_core::context::format_tokens(n))
+                        format!("{} {label}", onicode_protocol::context::format_tokens(n))
                     })
                     .collect::<Vec<_>>()
                     .join(" · ");
@@ -1597,7 +1597,7 @@ impl TranscriptView {
                 && let Some(turn) = self.active_turn()
             {
                 self.elapsed.insert(turn, started.elapsed());
-                let completed_at = onicode_core::time::now_ms();
+                let completed_at = onicode_protocol::time::now_ms();
                 let started_at =
                     Some(completed_at.saturating_sub(started.elapsed().as_millis() as u64));
                 let info = self.turns.entry(turn).or_default();
@@ -1719,10 +1719,10 @@ impl TranscriptView {
     pub(crate) fn submit_prompt(
         &mut self,
         prompt: &str,
-        settings: &onicode_core::agent::Settings,
+        settings: &onicode_protocol::agent::Settings,
         cx: &mut Context<Self>,
     ) {
-        let mut submitted = onicode_core::transcript::Transcript::default();
+        let mut submitted = onicode_protocol::transcript::Transcript::default();
         submitted.begin(if settings.internal_message {
             "mono-system"
         } else {
@@ -1736,8 +1736,8 @@ impl TranscriptView {
         submitted.append(prompt);
         if !settings.attachments.is_empty() {
             submitted.rows.push(Row {
-                role: onicode_core::transcript::attachments::ROLE.into(),
-                text: onicode_core::transcript::attachments::from_paths(&settings.attachments)
+                role: onicode_protocol::transcript::attachments::ROLE.into(),
+                text: onicode_protocol::transcript::attachments::from_paths(&settings.attachments)
                     .to_string(),
                 first: true,
                 sent_at: None,
@@ -1805,7 +1805,7 @@ impl TranscriptView {
             let model = self.model.clone();
             self.turns
                 .entry(turn)
-                .or_insert_with(|| onicode_core::agent::TurnInfo {
+                .or_insert_with(|| onicode_protocol::agent::TurnInfo {
                     provider,
                     model,
                     ..Default::default()
@@ -1825,7 +1825,7 @@ impl TranscriptView {
                         .filter(|&root| root < turn && self.source[prompt].role == "user");
                     self.turns
                         .entry(turn)
-                        .or_insert_with(|| onicode_core::agent::TurnInfo {
+                        .or_insert_with(|| onicode_protocol::agent::TurnInfo {
                             provider,
                             model,
                             provider_turn_id,
@@ -2116,13 +2116,13 @@ impl TranscriptView {
                 && !stopped_notice
                 && !matches!(
                     role.as_str(),
-                    "remote-plan" | "visual" | onicode_core::transcript::attachments::ROLE
+                    "remote-plan" | "visual" | onicode_protocol::transcript::attachments::ROLE
                 )
                 && (at == 0
                     || self.source[..at]
                         .iter()
                         .rev()
-                        .find(|row| row.role != onicode_core::transcript::attachments::ROLE)
+                        .find(|row| row.role != onicode_protocol::transcript::attachments::ROLE)
                         .is_some_and(Row::is_prompt))
             {
                 self.rows.push(UiRow {
@@ -2239,9 +2239,10 @@ impl TranscriptView {
                     });
                 }
             } else if role == "visual" {
-                let document = serde_json::from_str::<onicode_core::visual::VisualDocument>(&text)
-                    .ok()
-                    .filter(|document| document.validate().is_ok());
+                let document =
+                    serde_json::from_str::<onicode_protocol::visual::VisualDocument>(&text)
+                        .ok()
+                        .filter(|document| document.validate().is_ok());
                 // An answer that places the visual draws it in its prose. While
                 // the turn runs, the call that published it stands for it, so
                 // it never appears above the answer and then jumps into it.
@@ -2264,7 +2265,7 @@ impl TranscriptView {
                         thought_phase: None,
                     });
                 }
-            } else if stopped_notice || role == onicode_core::transcript::attachments::ROLE {
+            } else if stopped_notice || role == onicode_protocol::transcript::attachments::ROLE {
                 // Attachments render with their message.
             } else if folded || activity.hidden.contains(&at) || !phase_open {
                 if role == "tool" {
@@ -2366,7 +2367,7 @@ impl TranscriptView {
                 }
             } else {
                 let text_rows = if let Some(text) = display_text {
-                    let mut transcript = onicode_core::transcript::Transcript::default();
+                    let mut transcript = onicode_protocol::transcript::Transcript::default();
                     transcript.begin("user");
                     transcript.append(&text);
                     transcript
@@ -2472,7 +2473,7 @@ impl TranscriptView {
             });
             if !self.document
                 && !is_prompt
-                && self.source[at].role != onicode_core::transcript::attachments::ROLE
+                && self.source[at].role != onicode_protocol::transcript::attachments::ROLE
                 && end == turn_end
             {
                 self.rows.push(UiRow {
@@ -4571,7 +4572,7 @@ mod scroll_tests {
             ("wide text ".repeat(20), 400.),
         ] {
             cx.simulate_window_resize(window.into(), size(px(width), px(1000.)));
-            let mut transcript = onicode_core::transcript::Transcript::default();
+            let mut transcript = onicode_protocol::transcript::Transcript::default();
             transcript.begin("user");
             transcript.append(&format!(
                 "{}\n{wide}\n{}",
@@ -4819,7 +4820,7 @@ mod scroll_tests {
                 vec![row("user", "Also this"), row("assistant", "Done")],
                 cx,
             );
-            view.metrics(onicode_core::agent::TurnMetrics {
+            view.metrics(onicode_protocol::agent::TurnMetrics {
                 output_tokens: 20,
                 ..Default::default()
             });

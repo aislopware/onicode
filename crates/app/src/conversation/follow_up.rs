@@ -1,5 +1,5 @@
 //! Composer.tsx / MessageQueue.tsx's durable follow-ups and saved user draft.
-use onicode_core::follow_up::{Message, State};
+use onicode_protocol::follow_up::{Message, State};
 use onicode_protocol::session::SaveQueue;
 
 use super::*;
@@ -26,7 +26,7 @@ pub(super) struct QueueEdit {
 impl Conversation {
     pub(super) fn draft_active(&self, cx: &gpui::App) -> bool {
         self.follow_ups.draft_selected
-            || onicode_core::composer::consume_command(&self.input.read(cx).content, "draft")
+            || onicode_protocol::composer::consume_command(&self.input.read(cx).content, "draft")
                 .is_some()
     }
 
@@ -152,7 +152,7 @@ impl Conversation {
             return;
         }
         let raw = self.input.read(cx).content.to_string();
-        let text = onicode_core::composer::consume_command(&raw, "draft")
+        let text = onicode_protocol::composer::consume_command(&raw, "draft")
             .unwrap_or(&raw)
             .to_owned();
         if text.trim().is_empty() && self.attachments.is_empty() {
@@ -176,7 +176,8 @@ impl Conversation {
                 title: self.summary.title.clone(),
                 expected: None,
             };
-            crate::engine_client::call::<Rename>(&self.store, Some(OpId::new()), body, cx).detach();
+            crate::engine_client::call::<Rename>(&self.engine, Some(OpId::new()), body, cx)
+                .detach();
         }
         if !self.summary.has_messages {
             self.composer_motion.capture(self.composer_anchor.get());
@@ -589,16 +590,14 @@ fn queue_button(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
 
     use gpui::{TestAppContext, WindowHandle};
-    use onicode_core::store::Store;
 
     use super::*;
 
     fn conversation(cx: &mut TestAppContext) -> WindowHandle<Conversation> {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let summary = store.create("codex", "/tmp").unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let summary = engine.seed().create("codex", "/tmp").unwrap();
         cx.update(|cx| {
             input::bind(cx);
             cx.set_global(crate::settings::Preferences {
@@ -607,7 +606,7 @@ mod tests {
             });
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
-                    let mut view = Conversation::new(summary, Arc::new(Mutex::new(store)), cx);
+                    let mut view = Conversation::new(summary, engine, cx);
                     view.loaded = true;
                     view
                 })
@@ -757,10 +756,10 @@ mod tests {
             cx.run_until_parked();
             window
                 .update(cx, |view, _, _| {
-                    let store = locked(&view.store).unwrap();
-                    let saved = store.agent_settings(view.summary.id).unwrap().unwrap();
+                    let seed = view.engine.seed();
+                    let saved = seed.agent_settings(view.summary.id).unwrap().unwrap();
                     assert!(!saved.plan && !saved.operator && !saved.orchestrator);
-                    let queue = store.follow_ups(view.summary.id).unwrap();
+                    let queue = seed.follow_ups(view.summary.id).unwrap();
                     assert_eq!(queue.messages[0].mode.as_deref(), Some(mode));
                     assert_eq!(queue.messages[1].mode, None);
                 })
@@ -1115,10 +1114,7 @@ mod tests {
         cx.run_until_parked();
         window
             .update(cx, |view, _, cx| {
-                let saved = locked(&view.store)
-                    .unwrap()
-                    .follow_ups(view.summary.id)
-                    .unwrap();
+                let saved = view.engine.seed().follow_ups(view.summary.id).unwrap();
                 assert_eq!(
                     saved.draft.unwrap().attachments,
                     [std::path::PathBuf::from("/tmp/note.txt")]
@@ -1133,7 +1129,7 @@ mod tests {
         cx.run_until_parked();
         window
             .update(cx, |view, _, _| {
-                assert!(!locked(&view.store).unwrap().sessions().unwrap()[0].has_messages);
+                assert!(!view.engine.seed().sessions().unwrap()[0].has_messages);
             })
             .unwrap();
     }

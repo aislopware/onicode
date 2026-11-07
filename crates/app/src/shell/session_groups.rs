@@ -2,11 +2,11 @@
 //! folders and deletion, and the grouped list they shape.
 use chrono::{Local, NaiveDateTime, TimeZone};
 use gpui::EventEmitter;
-use onicode_core::session_groups::{
+use onicode_protocol::session_groups::{
     Entry, Groups, build_list, format_reminder, navigation_ids, parse_github_work_item,
     reminder_at, reminder_presets,
 };
-use onicode_core::store::Reminder;
+use onicode_protocol::sessions::Reminder;
 use onicode_protocol::workspace::{
     Delete, Pin, ReminderChange, Rename, SaveGroups, SetReminder, SetWorkItem,
 };
@@ -235,7 +235,7 @@ impl Shell {
                 self.update_groups(cx, |g| g.add_to_folder(&folder, source))
             }
             ListDrop::Session(target) if source != target => {
-                let folder = format!("{:x}-{source}-{target}", onicode_core::time::now_ms());
+                let folder = format!("{:x}-{source}-{target}", onicode_protocol::time::now_ms());
                 self.update_groups(cx, |g| {
                     g.create_folder(&[source, target], folder.clone());
                 });
@@ -603,7 +603,10 @@ impl Shell {
                 );
             }
             "folder-new" => {
-                let folder = format!("{:x}", onicode_core::time::now_ms() ^ ((id as u64) << 40));
+                let folder = format!(
+                    "{:x}",
+                    onicode_protocol::time::now_ms() ^ ((id as u64) << 40)
+                );
                 self.update_groups(cx, |groups| {
                     groups.create_folder(&ids, folder.clone());
                 });
@@ -684,7 +687,7 @@ impl Shell {
 
     /// Opening a session whose reminder is due dismisses it.
     pub(super) fn dismiss_due_reminder(&mut self, id: i64, cx: &mut Context<Self>) {
-        let now = onicode_core::time::now_ms();
+        let now = onicode_protocol::time::now_ms();
         let Some(due) = self
             .reminders
             .iter()
@@ -1893,7 +1896,7 @@ mod tests {
                 let mut ids = Vec::new();
                 for _ in 0..2 {
                     let mut summary = crate::engine_client::create_for_test(
-                        &shell.store,
+                        &shell.engine,
                         "codex",
                         &shell.workspace.project,
                         cx,
@@ -1909,7 +1912,7 @@ mod tests {
                     "save folders",
                     shell.workspace.project.clone(),
                     Groups {
-                        folders: vec![onicode_core::session_groups::Folder {
+                        folders: vec![onicode_protocol::session_groups::Folder {
                             id: "visual-folder".into(),
                             name: "Review work".into(),
                             session_ids: vec![a, b],
@@ -2228,7 +2231,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let (window, a, _) = setup(cx);
-        let now = onicode_core::time::now_ms();
+        let now = onicode_protocol::time::now_ms();
         let due_at = now.saturating_sub(1);
         window
             .update(cx, |shell, w, cx| {
@@ -2278,7 +2281,7 @@ mod tests {
         window
             .update(cx, |shell, _, cx| {
                 assert!(shell.mirror.state().reminders[0].fired_at.is_none());
-                crate::engine_client::tick(&shell.store, now, cx).unwrap();
+                crate::engine_client::tick(&shell.engine, now, cx).unwrap();
             })
             .unwrap();
         cx.run_until_parked();
@@ -2388,14 +2391,7 @@ mod tests {
                 assert!(saved_session(shell, a).is_none());
                 assert!(shell.mirror.state().reminders.is_empty());
                 assert!(saved_groups(shell).folders.is_empty());
-                assert!(
-                    locked(&shell.store)
-                        .unwrap()
-                        .load(a)
-                        .unwrap()
-                        .rows
-                        .is_empty()
-                );
+                assert!(shell.engine.seed().rows(a).unwrap().is_empty());
             })
             .unwrap();
     }

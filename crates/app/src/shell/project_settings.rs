@@ -1,4 +1,4 @@
-use onicode_core::project_appearance::ProjectAppearance;
+use onicode_protocol::project_appearance::ProjectAppearance;
 
 use super::*;
 use crate::project_background::ProjectBackground;
@@ -256,7 +256,7 @@ impl Shell {
         };
         let mut appearance = self.appearance(&path);
         if appearance.background.is_none() {
-            use onicode_core::project_appearance::{Background, Effect, Scope};
+            use onicode_protocol::project_appearance::{Background, Effect, Scope};
             let p = &self.workspace.preferences;
             appearance.background = p.chat_background.as_ref().map(|path| Background {
                 path: path.clone(),
@@ -339,7 +339,7 @@ impl Shell {
 
 impl Shell {
     pub(super) fn project_notification_menu(&self, cwd: &str) -> MenuAction {
-        let now = onicode_core::time::now_ms();
+        let now = onicode_protocol::time::now_ms();
         let prefs = &self.workspace.preferences;
         let muted = prefs.known_notification_project_id(cwd).is_some_and(|id| {
             let preference = &prefs.project_notifications[id];
@@ -382,7 +382,7 @@ impl Shell {
                 "mute:forever" => None,
                 _ => return,
             };
-            let until = hours.map(|hours| onicode_core::time::now_ms() + hours * 3_600_000);
+            let until = hours.map(|hours| onicode_protocol::time::now_ms() + hours * 3_600_000);
             self.workspace
                 .preferences
                 .mute_notification_project(cwd, until);

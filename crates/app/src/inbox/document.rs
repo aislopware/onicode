@@ -128,10 +128,16 @@ fn attachment(
             view,
             move |cx| {
                 let renderer = cx.svg_renderer();
+                let media = crate::engine_client::local(cx)
+                    .call::<onicode_protocol::work::InboxMedia>(
+                        None,
+                        onicode_protocol::work::InboxMedia { url },
+                    );
                 async move {
-                    let bytes = onicode_core::inbox::media_png(&url)
+                    let png = media
+                        .await
                         .map_err(|error| ImageCacheError::Asset(error.into()))?;
-                    Image::from_bytes(ImageFormat::Png, bytes)
+                    Image::from_bytes(ImageFormat::Png, png.0)
                         .to_image_data(renderer)
                         .map_err(|error| ImageCacheError::Other(Arc::new(error)))
                 }

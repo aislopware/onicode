@@ -1415,6 +1415,10 @@ fn working_dir(cwd: &str) -> std::path::PathBuf {
 /// pty.rs's foreground_label: the command holding the terminal, unless it
 /// is the shell itself.
 #[cfg(unix)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "terminal hosts move into the engine in step 7 (engine.md)"
+)]
 fn foreground_label(master_fd: i32, shell_pid: u32) -> Option<String> {
     if master_fd < 0 {
         return None;
@@ -1469,7 +1473,7 @@ pub(crate) fn agent_cli(label: &str) -> Option<&'static str> {
         "pi-coding-agent" => return Some("pi"),
         _ => {}
     }
-    onicode_core::provider::Kind::parse(name).map(|kind| kind.id())
+    onicode_protocol::provider::Kind::parse(name).map(|kind| kind.id())
 }
 impl Terminal {
     /// The agent CLI holding this terminal, if any.

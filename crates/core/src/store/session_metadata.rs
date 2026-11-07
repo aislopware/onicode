@@ -1,32 +1,10 @@
 //! Small sidebar metadata can be gathered before the UI constructs chat entities.
 use std::collections::{HashMap, HashSet};
 
+pub use onicode_protocol::sessions::{MobileSessionMetadata, SessionSidebarMetadata};
+
 use super::Store;
 use crate::agent::AccessMode;
-use crate::{orchestration, session_groups};
-
-#[derive(Default)]
-pub struct SessionSidebarMetadata {
-    pub worktrees: HashMap<i64, Option<String>>,
-    pub details: HashMap<i64, MobileSessionMetadata>,
-    pub drafts: HashSet<i64>,
-    pub sidebar_hidden: HashSet<i64>,
-    pub started_by: HashMap<i64, i64>,
-    pub orchestrations: HashMap<i64, orchestration::Summary>,
-    pub groups: HashMap<String, session_groups::Groups>,
-    pub reminders: Vec<super::Reminder>,
-}
-
-/// Scalar fields sent to paired phones, including sessions with no live view.
-/// Model IDs use the native representation, as agent_settings does.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct MobileSessionMetadata {
-    pub model: Option<String>,
-    pub branch: Option<String>,
-    pub worktree_cwd: Option<String>,
-    pub worktree_removed: bool,
-    pub access: AccessMode,
-}
 
 impl Store {
     /// One bounded metadata query per publication. Never decode transcript

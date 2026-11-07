@@ -1,13 +1,17 @@
-//! The app's link to its engine (engine.md, migration steps 3 and 4). A local turn runs in the
-//! engine's `SessionHub`: the conversation stages the turn's in-process context, watches the
-//! session and sends the prompt over `onicode-rpc`'s in-memory transport, and a `Viewer` folds what
-//! arrives back into one `turn::Update` per beat. SSH and legacy remote turns keep their own
-//! runners. The sidebar, history and workspace views read the engine's `WatchWorkspace` through
-//! [`watch_workspace`] and change it with [`call`]; the engine's own clock drives its reminder and
-//! automation schedulers. The explorer, editor, Changes, review, history and worktree views read
-//! and change files and checkouts through the app's own engine ([`local`]): its calls, and its
-//! `WatchDir` and `WatchGit` watches through [`Engine::watch`].
+//! The app's link to its engine (engine.md, migration steps 3 to 6). The app runs one
+//! [`onicode_engine::Local`] in its own process until the engine runs on its own (step 8): the
+//! engine opens the store, and the app holds an [`Engine`] and speaks the protocol to it. A local
+//! turn runs in the engine's `SessionHub`: the conversation stages the turn's in-process context,
+//! watches the session and sends the prompt over `onicode-rpc`'s in-memory transport, and a
+//! `Viewer` folds what arrives back into one `turn::Update` per beat. SSH and legacy remote turns
+//! keep their own runners over [`Engine::legacy_store`]. The sidebar, history and workspace views
+//! read the engine's `WatchWorkspace` through [`watch_workspace`] and change it with [`call`]; the
+//! engine's own clock drives its reminder and automation schedulers. The explorer, editor,
+//! Changes, review, history and worktree views read and change files and checkouts through the
+//! app's own engine ([`local`]): its calls, and its `WatchDir` and `WatchGit` watches through
+//! [`Engine::watch`].
 use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::pin::pin;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError, mpsc};
@@ -16,20 +20,16 @@ use futures::future::{BoxFuture, Either, select};
 use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
 use gpui::{App, BackgroundExecutor, Global, Task};
-use onicode_core::agent::{Control, Decision, Settings};
-use onicode_core::store::Session;
-use onicode_engine::EngineService;
-use onicode_engine::files::{FilesHub, FilesService};
-use onicode_engine::git::{CheckoutHub, GitService};
-use onicode_engine::session::{
-    Expect, SessionHub, SessionService, Spawn, Staged, StagedTurn, Viewer,
-};
+use onicode_engine::session::{Expect, Spawn, Staged, StagedTurn, Viewer};
 use onicode_engine::turn::{Database, Update};
-use onicode_engine::workspace::{WorkspaceHub, WorkspaceService};
+use onicode_engine::{EngineService, Local, Options};
+use onicode_protocol::agent::{Control, Decision, Settings};
+use onicode_protocol::engine_settings::EngineSettings;
 use onicode_protocol::session::{
     self, Answer, Decide, KeepQuestionOpen, SessionEvent, SessionState, SteerNow, Verdict,
     WatchSession,
 };
+use onicode_protocol::sessions::Session;
 use onicode_protocol::workspace::{WatchWorkspace, WorkspaceEvent, WorkspaceState};
 use onicode_protocol::{Call, Cursor, Item, MessageId, OpId, Outcome, Routed, SessionId, Watch};
 use onicode_rpc::{RpcClient, RpcReply, RpcService};
@@ -45,16 +45,10 @@ static RUNTIME: LazyLock<Option<tokio::runtime::Runtime>> = LazyLock::new(|| {
         .ok()
 });
 
-/// The engines this app started, one per store.
-#[derive(Default)]
-struct Engines(Vec<Arc<EngineClient>>);
+/// The app's own engine: the one the shell opened, which [`local`] serves.
+struct LocalEngine(Engine);
 
-impl Global for Engines {}
-
-/// The store of the app's own engine: the one the shell opened.
-struct LocalStore(Database);
-
-impl Global for LocalStore {}
+impl Global for LocalEngine {}
 
 /// Turns run on gpui's background threads, where the app ran them before the engine.
 struct GpuiSpawn(BackgroundExecutor);
@@ -82,11 +76,11 @@ struct TestChores;
 impl onicode_engine::workspace::Chores for TestChores {
     fn title(
         &self,
-        _: onicode_core::session_title::TextModel,
+        _: onicode_protocol::session_title::TextModel,
         _: &std::path::Path,
         _: &str,
         _: Arc<AtomicBool>,
-    ) -> Option<onicode_core::session_title::GeneratedTitle> {
+    ) -> Option<onicode_protocol::session_title::GeneratedTitle> {
         None
     }
 
@@ -94,14 +88,14 @@ impl onicode_engine::workspace::Chores for TestChores {
         &self,
         message: &str,
         _: &std::path::Path,
-        _: Option<&onicode_core::session_title::WorkItemHint>,
-    ) -> Option<onicode_core::session_groups::WorkItem> {
-        onicode_core::session_groups::parse_github_work_item(message)
+        _: Option<&onicode_protocol::session_title::WorkItemHint>,
+    ) -> Option<onicode_protocol::session_groups::WorkItem> {
+        onicode_protocol::session_groups::parse_github_work_item(message)
     }
 
     fn branch(
         &self,
-        _: onicode_core::session_title::TextModel,
+        _: onicode_protocol::session_title::TextModel,
         _: &std::path::Path,
         _: &str,
         _: Arc<AtomicBool>,
@@ -114,12 +108,7 @@ impl onicode_engine::workspace::Chores for TestChores {
 const SCHEDULER_BEAT: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub(crate) struct EngineClient {
-    store: Database,
-    hub: Arc<SessionHub>,
-    workspace: Arc<WorkspaceHub>,
-    /// Held for the engine's lifetime: the Files and Git groups' hubs, served through `link`.
-    _files: Arc<FilesHub>,
-    _git: Arc<CheckoutHub>,
+    local: Local,
     link: Link,
     executor: BackgroundExecutor,
     /// Every call made, by name with its routed params, for a test to assert on.
@@ -150,83 +139,48 @@ fn refuse(viewer: &Mutex<Viewer>, reason: String) -> Option<Update> {
     viewer.take()
 }
 
+/// What runs an engine on gpui's background threads.
+fn spawner(cx: &App) -> Arc<dyn Spawn> {
+    Arc::new(GpuiSpawn(cx.background_executor().clone()))
+}
+
 impl EngineClient {
-    /// The engine serving `store`, started on first use.
-    fn get(store: &Database, cx: &mut App) -> Arc<Self> {
-        if let Some(engine) = cx.try_global::<Engines>().and_then(|engines| {
-            engines
-                .0
-                .iter()
-                .find(|engine| Arc::ptr_eq(&engine.store, store))
-                .cloned()
-        }) {
-            return engine;
-        }
-        let executor = cx.background_executor().clone();
-        let hub = SessionHub::new(store.clone(), Arc::new(GpuiSpawn(executor.clone())));
-        let spawn: Arc<dyn Spawn> = Arc::new(GpuiSpawn(executor.clone()));
-        // Tests answer the chores in place: no provider CLI, `gh` or network.
-        #[cfg(test)]
-        let workspace =
-            WorkspaceHub::with_chores(store.clone(), spawn.clone(), Arc::new(TestChores));
-        #[cfg(not(test))]
-        let workspace = WorkspaceHub::new(store.clone(), spawn.clone());
-        hub.attach(workspace.clone());
-        // Tests watch no disk: a listing or a status changes only through the engine's calls.
-        #[cfg(test)]
-        let (files, git) = (
-            FilesHub::quiet(store.clone(), spawn.clone()),
-            CheckoutHub::quiet(store.clone(), spawn),
-        );
-        #[cfg(not(test))]
-        let (files, git) = (
-            FilesHub::new(store.clone(), spawn.clone()),
-            CheckoutHub::new(store.clone(), spawn),
-        );
-        git.attach(workspace.clone());
-        let service = Arc::new(EngineService::new(
-            SessionService::new(hub.clone()),
-            WorkspaceService::new(workspace.clone()),
-            FilesService::new(files.clone()),
-            GitService::new(git.clone()),
-        ));
-        let runtime = if cfg!(test) { None } else { RUNTIME.as_ref() };
+    /// Serves `local`: over the in-memory transport when `transport` and its thread allow, else
+    /// through the service's own dispatch.
+    fn serve(local: Local, transport: bool, cx: &App) -> Arc<Self> {
+        let runtime = if transport { RUNTIME.as_ref() } else { None };
         let link = match runtime {
             Some(runtime) => {
                 let _entered = runtime.enter();
+                let service: Arc<dyn RpcService> = local.service.clone();
                 Link::Rpc(Arc::new(onicode_rpc::memory_client(service)))
             }
-            None => Link::Direct(service),
+            None => Link::Direct(local.service.clone()),
         };
-        // The schedulers' clock: a beat now for what came due while the app was closed, then
-        // every 30 seconds. Tests beat in virtual time instead (`tick`).
-        if !cfg!(test) {
-            let clock = workspace.clone();
-            let timers = executor.clone();
-            executor
-                .spawn(async move {
-                    loop {
-                        if let Err(error) = clock.tick(onicode_core::time::now_ms()) {
-                            eprintln!("The engine's schedulers could not run: {error}");
-                        }
-                        timers.timer(SCHEDULER_BEAT).await;
-                    }
-                })
-                .detach();
-        }
-        let engine = Arc::new(Self {
-            store: store.clone(),
-            hub,
-            workspace,
-            _files: files,
-            _git: git,
+        Arc::new(Self {
+            local,
             link,
-            executor,
+            executor: cx.background_executor().clone(),
             #[cfg(test)]
             calls: Mutex::default(),
-        });
-        cx.default_global::<Engines>().0.push(engine.clone());
-        engine
+        })
+    }
+
+    /// The schedulers' clock: a beat now for what came due while the app was closed, then every
+    /// 30 seconds. Tests beat in virtual time instead (`tick`).
+    fn beat(&self) {
+        let clock = self.local.workspace.clone();
+        let timers = self.executor.clone();
+        self.executor
+            .spawn(async move {
+                loop {
+                    if let Err(error) = clock.tick(onicode_protocol::time::now_ms()) {
+                        eprintln!("The engine's schedulers could not run: {error}");
+                    }
+                    timers.timer(SCHEDULER_BEAT).await;
+                }
+            })
+            .detach();
     }
 
     async fn call<C: Call>(&self, op: Option<OpId>, body: C::Params) -> Result<C::Reply, String> {
@@ -403,19 +357,19 @@ impl EngineControls {
     }
 }
 
-/// Runs `prompt` as a turn of `summary` in the engine serving `store`. Its updates arrive on
-/// `updates`, one per beat: the conversation merges them as it merged the turn's own.
+/// Runs `prompt` as a turn of `summary` in `engine`. Its updates arrive on `updates`, one per
+/// beat: the conversation merges them as it merged the turn's own.
 pub(crate) fn start_turn(
-    store: &Database,
+    engine: &Engine,
     summary: Session,
     prompt: String,
     settings: Settings,
     cancel: Arc<AtomicBool>,
     updates: async_channel::Sender<Update>,
-    cx: &mut App,
+    _: &mut App,
 ) -> TurnControls {
-    let engine = EngineClient::get(store, cx);
-    let session = match engine.hub.session_id(summary.id) {
+    let engine = engine.0.clone();
+    let session = match engine.local.session.session_id(summary.id) {
         Ok(session) => session,
         Err(status) => {
             let _ = updates.try_send(Update {
@@ -445,7 +399,7 @@ pub(crate) fn start_turn(
         text: prompt.clone(),
         attachments: settings.attachments.clone(),
     };
-    engine.hub.stage(
+    engine.local.session.stage(
         message,
         Staged::Turn(Box::new(StagedTurn {
             summary,
@@ -606,11 +560,11 @@ async fn relay(
     }
 }
 
-/// Makes a call to the engine serving `store`, off the main thread. A mutating call carries the
+/// Makes a call to `engine`, off the main thread. A mutating call carries the
 /// viewer's `op`: the caller echoes its effect in the same frame and settles the echo with the
 /// reply, and a retry under the same op gets the first reply.
 pub(crate) fn call<C: Call + 'static>(
-    store: &Database,
+    engine: &Engine,
     op: Option<OpId>,
     body: C::Params,
     cx: &mut App,
@@ -619,7 +573,7 @@ where
     C::Params: Send + 'static,
     C::Reply: Send + 'static,
 {
-    let engine = EngineClient::get(store, cx);
+    let engine = engine.0.clone();
     cx.background_executor()
         .spawn(async move { engine.call::<C>(op, body).await })
 }
@@ -627,7 +581,7 @@ where
 /// Makes a call naming the session stored at `row`, its engine id looked up off the main thread.
 /// A mutating call carries the viewer's `op`, as [`call`]'s do.
 pub(crate) fn session_call<C: Call + 'static>(
-    store: &Database,
+    engine: &Engine,
     row: i64,
     op: Option<OpId>,
     body: impl FnOnce(SessionId) -> C::Params + Send + 'static,
@@ -637,53 +591,38 @@ where
     C::Params: Send + 'static,
     C::Reply: Send + 'static,
 {
-    let engine = EngineClient::get(store, cx);
+    let engine = engine.0.clone();
     cx.background_executor().spawn(async move {
-        let session = engine.hub.session_id(row)?;
+        let session = engine.local.session.session_id(row)?;
         engine.call::<C>(op, body(session)).await
     })
 }
 
-/// The engine serving a store, held by a view for the calls it makes where no `App` is at hand:
-/// its `Drop`, or a task it spawns.
+/// The app's engine, held by every view that reads or changes what it keeps: cloned freely, and
+/// used where no `App` is at hand (a view's `Drop`, or a task it spawns).
 #[derive(Clone)]
 pub(crate) struct Engine(Arc<EngineClient>);
 
-/// The engine serving `store`.
-pub(crate) fn engine(store: &Database, cx: &mut App) -> Engine {
-    Engine(EngineClient::get(store, cx))
-}
-
-/// Names `store` as the app's own engine's: the shell's store, which [`local`] serves.
-pub(crate) fn set_local(store: &Database, cx: &mut App) {
-    cx.set_global(LocalStore(store.clone()));
+/// Names `engine` the app's own: the shell's, which [`local`] serves.
+pub(crate) fn set_local(engine: &Engine, cx: &mut App) {
+    cx.set_global(LocalEngine(engine.clone()));
 }
 
 /// The app's own engine: the one this machine's files and checkouts are read and changed
-/// through. A view made before any shell (a test's) gets an engine over an in-memory store.
+/// through. A view made before any shell (a test's) gets an engine in memory.
 pub(crate) fn local(cx: &mut App) -> Engine {
-    let store = match cx.try_global::<LocalStore>() {
-        Some(local) => local.0.clone(),
-        None => {
-            let opened = onicode_core::store::Store::open(std::path::Path::new(":memory:"))
-                .map(|store| Arc::new(Mutex::new(store)));
-            match opened {
-                Ok(store) => {
-                    set_local(&store, cx);
-                    store
-                }
-                // An in-memory store that cannot open leaves the first engine there is.
-                Err(error) => match cx
-                    .try_global::<Engines>()
-                    .and_then(|engines| engines.0.first().cloned())
-                {
-                    Some(engine) => return Engine(engine),
-                    None => panic!("no engine can start: {error}"),
-                },
-            }
-        }
+    if let Some(local) = cx.try_global::<LocalEngine>() {
+        return local.0.clone();
+    }
+    #[cfg(test)]
+    let engine = Engine::memory(cx);
+    #[cfg(not(test))]
+    let engine = match Local::memory(spawner(cx), Options::default()) {
+        Ok(local) => Engine(EngineClient::serve(local, true, cx)),
+        Err(error) => panic!("no engine can start: {error}"),
     };
-    Engine(EngineClient::get(&store, cx))
+    set_local(&engine, cx);
+    engine
 }
 
 /// What a watcher receives: the whole state, or what changed since.
@@ -699,6 +638,81 @@ pub(crate) struct Watching<S, E> {
 }
 
 impl Engine {
+    /// The engine over the store in `data_dir`, created if missing: the app's own, opened before
+    /// its first frame as monocode opened its store. Its schedulers wait for
+    /// [`Engine::run_schedulers`].
+    pub(crate) fn open(data_dir: &Path, cx: &mut App) -> Result<Self, String> {
+        let local = Local::open(data_dir, spawner(cx), Options::default())?;
+        Ok(Self(EngineClient::serve(local, true, cx)))
+    }
+
+    /// Starts the schedulers' clock (due reminders and automation runs), once the launch has
+    /// written what it writes.
+    pub(crate) fn run_schedulers(&self) {
+        self.0.beat();
+    }
+
+    /// Tells the engine that session `row` changed in the store behind it, at once: the debug
+    /// fixtures, written through [`Engine::seed`].
+    pub(crate) fn refresh_now(&self, row: i64) {
+        self.0.local.workspace.refresh_session(row);
+    }
+
+    /// An engine over a store in memory for a test: no disk watched, no provider CLI, `gh` or
+    /// network asked, and its schedulers beat only through `tick`.
+    #[cfg(test)]
+    pub(crate) fn memory(cx: &mut App) -> Self {
+        let options = Options {
+            quiet: true,
+            chores: Some(Arc::new(TestChores)),
+            probe: Some(Arc::new(onicode_engine::accounts::OfflineProbe)),
+            trackers: Some(Arc::new(onicode_engine::work::OfflineTrackers)),
+            gh: Some(Arc::new(onicode_engine::work::OfflineGh)),
+        };
+        let local = Local::memory(spawner(cx), options).expect("an engine in memory opens");
+        Self(EngineClient::serve(local, false, cx))
+    }
+
+    /// Writes and reads the engine's store as typed calls: tests, and the debug fixtures.
+    pub(crate) fn seed(&self) -> onicode_engine::testing::Seed {
+        self.0.local.seed()
+    }
+
+    /// The store itself: the SSH remote and the phone host only; steps 10-11 delete them.
+    pub(crate) fn legacy_store(&self) -> Database {
+        self.0.local.legacy_store()
+    }
+
+    /// The directory the engine keeps its data in, `None` for one in memory.
+    pub(crate) fn data_dir(&self) -> Option<PathBuf> {
+        self.0.local.data_dir()
+    }
+
+    /// The workspace as the engine holds it now, for a window's first frame; the shell's mirror
+    /// follows it from there.
+    pub(crate) fn workspace_now(&self) -> Result<WorkspaceState, String> {
+        self.0.local.workspace.snapshot().map(|(_, state)| state)
+    }
+
+    /// The engine settings as they are now, for a window's first frame; the shell's mirror
+    /// follows them from there.
+    pub(crate) fn settings_now(&self) -> EngineSettings {
+        self.0.local.settings.current()
+    }
+
+    /// Removes the files of conversations deleted since the last sweep, off the main thread.
+    pub(crate) fn sweep(&self) {
+        let engine = self.0.clone();
+        self.0
+            .executor
+            .spawn(async move {
+                if let Err(error) = engine.local.sweep() {
+                    eprintln!("Cannot sweep deleted conversations: {error}");
+                }
+            })
+            .detach();
+    }
+
     /// Makes a call, as a future the caller awaits wherever it likes (a view's task, or the
     /// background executor). A mutating call carries the viewer's `op`: the caller echoes its
     /// effect in the same frame and settles the echo with the reply, and a retry under the same
@@ -773,7 +787,7 @@ impl Engine {
         self.0
             .executor
             .spawn(async move {
-                if let Ok(session) = engine.hub.session_id(row) {
+                if let Ok(session) = engine.local.session.session_id(row) {
                     let _ = engine.call::<C>(op, body(session)).await;
                 }
             })
@@ -788,17 +802,17 @@ const LISTENER_CHECK: std::time::Duration = std::time::Duration::from_secs(1);
 /// turns in its snapshot, resumed with its cursor whenever the engine drops it behind. Ends when
 /// the receiver goes or the engine stops serving the session.
 pub(crate) fn session_events(
-    store: &Database,
+    engine: &Engine,
     row: i64,
-    cx: &mut App,
+    _: &mut App,
 ) -> async_channel::Receiver<SessionEvent> {
-    let engine = EngineClient::get(store, cx);
+    let engine = engine.0.clone();
     let (events, received) = async_channel::unbounded();
     let executor = engine.executor.clone();
     executor
         .clone()
         .spawn(async move {
-            let Ok(session) = engine.hub.session_id(row) else {
+            let Ok(session) = engine.local.session.session_id(row) else {
                 return;
             };
             let mut since: Option<Cursor> = None;
@@ -915,13 +929,13 @@ async fn resume<W: Watch>(
     }
 }
 
-/// Watches the workspace of the engine serving `store`: a snapshot, then every batch of events,
-/// resuming with its cursor whenever the engine drops it behind. Ends when the receiver goes.
+/// Watches `engine`'s workspace: a snapshot, then every batch of events, resuming with its
+/// cursor whenever the engine drops it behind. Ends when the receiver goes.
 pub(crate) fn watch_workspace(
-    store: &Database,
-    cx: &mut App,
+    engine: &Engine,
+    _: &mut App,
 ) -> async_channel::Receiver<WorkspaceUpdate> {
-    let engine = EngineClient::get(store, cx);
+    let engine = engine.0.clone();
     let (updates, received) = async_channel::unbounded();
     engine
         .executor
@@ -935,43 +949,11 @@ pub(crate) fn watch_workspace(
     received
 }
 
-/// Whether an enabled automation of the engine serving `store` waits on Inbox events, so the
-/// Inbox keeps polling in the background for it.
-pub(crate) fn has_event_automations(store: &Database, cx: &mut App) -> Task<bool> {
-    let engine = EngineClient::get(store, cx);
-    cx.background_executor()
-        .spawn(async move { engine.workspace.has_event_automations().unwrap_or(false) })
-}
-
-/// The automations of the engine serving `store`, for the Automations view to list and edit.
-/// Their runs are the engine's: it claims them, and the shell starts them through
-/// `PrepareAutomationRun`. Editing them moves into the engine with its settings (engine.md,
-/// migration step 6).
-pub(crate) fn automations(
-    store: &Database,
-    cx: &mut App,
-) -> Task<Result<onicode_core::automations::Service, String>> {
-    let store = store.clone();
-    cx.background_executor().spawn(async move {
-        let path = onicode_engine::turn::locked(&store)?
-            .database_path()
-            .to_path_buf();
-        onicode_core::automations::Service::open(&path)
-    })
-}
-
-/// Creates a session in the engine serving `store` at once, for a test to seed the workspace
-/// with.
+/// Creates a session in `engine` at once, for a test to seed the workspace with.
 #[cfg(test)]
-pub(crate) fn create_for_test(
-    store: &Database,
-    provider: &str,
-    cwd: &str,
-    cx: &mut App,
-) -> Session {
+pub(crate) fn create_for_test(engine: &Engine, provider: &str, cwd: &str, _: &mut App) -> Session {
     use onicode_protocol::workspace::{CreateSession, NewSession};
-    let workspace = EngineClient::get(store, cx).workspace.clone();
-    let created = futures::executor::block_on(workspace.create_session(
+    let created = futures::executor::block_on(engine.0.local.workspace.create_session(
         Some(OpId::new()),
         CreateSession {
             session: SessionId::new(),
@@ -986,28 +968,20 @@ pub(crate) fn create_for_test(
     created.session.expect("a created session").session
 }
 
-/// Tells the engine serving `store` that session `row` changed in the store behind it (the app
-/// bridge's launches), so its watchers see it.
-pub(crate) fn refresh_session(store: &Database, row: i64, cx: &mut App) {
-    let engine = EngineClient::get(store, cx);
-    cx.background_executor()
-        .spawn(async move { engine.workspace.refresh_session(row) })
-        .detach();
-}
-
-/// One beat of the engine's schedulers at `now`, in a test's virtual time.
+/// One beat of `engine`'s schedulers at `now`, in a test's virtual time.
 #[cfg(test)]
-pub(crate) fn tick(store: &Database, now: u64, cx: &mut App) -> Result<(), String> {
-    EngineClient::get(store, cx).workspace.tick(now)
+pub(crate) fn tick(engine: &Engine, now: u64, _: &mut App) -> Result<(), String> {
+    engine.0.local.workspace.tick(now)
 }
 
-/// Every call the engine serving `store` was asked, by name with its routed params.
+/// Every call `engine` was asked, by name with its routed params.
 #[cfg(test)]
 pub(crate) fn calls_for_test(
-    store: &Database,
-    cx: &mut App,
+    engine: &Engine,
+    _: &mut App,
 ) -> Vec<(&'static str, serde_json::Value)> {
-    EngineClient::get(store, cx)
+    engine
+        .0
         .calls
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -1016,17 +990,13 @@ pub(crate) fn calls_for_test(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use onicode_core::follow_up::Message;
-    use onicode_core::store::Store;
+    use onicode_protocol::follow_up::Message;
 
     use super::*;
 
     #[gpui::test]
     fn a_steer_that_fails_before_it_leaves_shows_at_once(cx: &mut gpui::TestAppContext) {
-        let store: Database = Arc::new(Mutex::new(Store::open(Path::new(":memory:")).unwrap()));
-        let engine = cx.update(|cx| EngineClient::get(&store, cx));
+        let engine = cx.update(Engine::memory).0;
         let session = SessionId::new();
         let viewer = Arc::new(Mutex::new(Viewer::default()));
         let nudge = Arc::new(Notify::new());

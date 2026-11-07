@@ -9,11 +9,26 @@ description = "The calls and watches onicode's viewers speak to engines: plain s
 [dependencies]
 # `files::Bytes`: file contents as one base64 string, not a JSON array of numbers.
 base64 = "0.22"
-# The data types the UI renders, re-exported until step 6 of the engine plan moves them here.
-onicode-core.workspace = true
+# Timestamps the inbox, reminders and usage meters parse, and the local day the filters start at.
+chrono.workspace = true
+# Searches, links, version strings and the provider text the transcript parses.
+regex = "1"
 serde.workspace = true
-# `v7`: ids minted by whoever creates the thing sort by when they were minted.
+# Stored floats must reload exactly, or saved revisions stop matching.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+# A tool call's shell command, split as the shell would.
+shlex = "2"
+# `diff`: a turn's line changes.
+similar.workspace = true
+unicode-width.workspace = true
+url = "2"
+# `v4`: random ids (accounts, notes, automations); `v7`: ids minted by whoever creates the thing
+# sort by when they were minted.
 uuid = { workspace = true, features = ["v7"] }
+
+[target.'cfg(unix)'.dependencies]
+# `response::local_clock`: the local wall clock without a time-zone database of our own.
+libc.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

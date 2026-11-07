@@ -2,13 +2,12 @@
 //! due runs and Inbox-triggered ones and records how each ended; the shell starts each in a
 //! conversation (`PrepareAutomationRun`, then the prompt) and reports its end
 //! (`FinishAutomationRun`).
-use onicode_core::automations::{DueAutomationRun, Service};
+use onicode_protocol::automations::DueAutomationRun;
+use onicode_protocol::work::HasEventAutomations;
 use onicode_protocol::workspace::{ClaimInboxEvents, FinishAutomationRun, PrepareAutomationRun};
 use onicode_protocol::{Outcome, Rejection};
 
 use super::*;
-
-pub(super) type ServiceHandle = Arc<Mutex<Service>>;
 
 pub(super) struct Running {
     run_id: String,
@@ -18,10 +17,6 @@ pub(super) struct Running {
 
 #[derive(Default)]
 pub(super) struct State {
-    /// The automations, for the Automations view to list and edit.
-    pub service: Option<ServiceHandle>,
-    pub open_requested: Option<u64>,
-    opening: bool,
     polling: bool,
     pending: HashSet<String>,
     running: HashMap<i64, Running>,
@@ -30,43 +25,22 @@ pub(super) struct State {
 }
 
 impl Shell {
+    /// Starts the automations' background work once the window is up: the Inbox polls when an
+    /// automation waits on its events, and a saved app tab opens again.
     pub(super) fn initialize_automations(&mut self, cx: &mut Context<Self>) {
-        if self.automation_state.opening || self.automation_state.service.is_some() {
-            return;
-        }
-        self.automation_state.opening = true;
-        let work = crate::engine_client::automations(&self.store, cx);
         cx.spawn(async move |this, cx| {
-            let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.automation_state.opening = false;
-                match result {
-                    Ok(service) => {
-                        this.automation_state.service = Some(Arc::new(Mutex::new(service)));
-                        if !cfg!(test) {
-                            this.ensure_background_inbox(window, cx);
-                        }
-                        this.poll_automations(cx);
-                        if this
-                            .automation_state
-                            .open_requested
-                            .take()
-                            .is_some_and(|revision| revision == this.navigation_revision)
-                        {
-                            this.open_automations(window, cx);
-                        } else if this.navigation_revision == 0
-                            && this.active_app_view.is_none()
-                            && this.settings.is_none()
-                        {
-                            let saved = this.workspace.scope_focus.get(&this.tab_scope()).cloned();
-                            if let Some(tab @ TitleTab::App(_)) = saved {
-                                this.open_title_tab(&tab, window, cx);
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        this.error = Some(format!("Could not open automations: {error}"));
-                        cx.notify();
+                if !cfg!(test) {
+                    this.ensure_background_inbox(window, cx);
+                }
+                this.poll_automations(cx);
+                if this.navigation_revision == 0
+                    && this.active_app_view.is_none()
+                    && this.settings.is_none()
+                {
+                    let saved = this.workspace.scope_focus.get(&this.tab_scope()).cloned();
+                    if let Some(tab @ TitleTab::App(_)) = saved {
+                        this.open_title_tab(&tab, window, cx);
                     }
                 }
             });
@@ -86,9 +60,14 @@ impl Shell {
             return;
         }
         self.automation_state.polling = true;
-        let work = crate::engine_client::has_event_automations(&self.store, cx);
+        let work = crate::engine_client::call::<HasEventAutomations>(
+            &self.engine,
+            None,
+            HasEventAutomations {},
+            cx,
+        );
         cx.spawn(async move |this, cx| {
-            let has_events = work.await;
+            let has_events = work.await.unwrap_or(false);
             let _ = this.update_in(cx, |this, window, cx| {
                 this.automation_state.polling = false;
                 if has_events {
@@ -103,7 +82,7 @@ impl Shell {
     /// retries a failed claim on its own.
     pub(super) fn inbox_automation_events(
         &mut self,
-        items: Vec<onicode_core::inbox::Item>,
+        items: Vec<onicode_protocol::inbox::Item>,
         cx: &mut Context<Self>,
     ) {
         if items.is_empty() {
@@ -159,16 +138,18 @@ impl Shell {
                                     .get(id)
                                     .and_then(Option::as_deref)
                                     .is_none()
-                                    && onicode_core::files::path_key(&summary.cwd)
-                                        == onicode_core::files::path_key(&automation.cwd)
+                                    && onicode_protocol::files::path_key(&summary.cwd)
+                                        == onicode_protocol::files::path_key(&automation.cwd)
                             }
                             "existing" => self
                                 .session_worktrees
                                 .get(id)
                                 .and_then(Option::as_deref)
                                 .is_some_and(|cwd| {
-                                    onicode_core::files::path_key(cwd)
-                                        == onicode_core::files::path_key(&automation.worktree_cwd)
+                                    onicode_protocol::files::path_key(cwd)
+                                        == onicode_protocol::files::path_key(
+                                            &automation.worktree_cwd,
+                                        )
                                 }),
                             _ => false,
                         }
@@ -191,7 +172,7 @@ impl Shell {
             })
             .unwrap_or_default();
         settings.account = account;
-        settings.model = onicode_core::store::native_model(&automation.model, kind.id());
+        settings.model = onicode_protocol::sessions::native_model(&automation.model, kind.id());
         settings.model_settings = automation.model_settings.clone();
         settings.effort = [
             "effort",
@@ -215,7 +196,7 @@ impl Shell {
             .model_settings
             .get("thinking")
             .and_then(|value| value.parse().ok());
-        settings.access = onicode_core::agent::AccessMode::from_id(&automation.runtime_mode);
+        settings.access = onicode_protocol::agent::AccessMode::from_id(&automation.runtime_mode);
         settings.new_worktree = automation.workspace_mode == "worktree";
         settings.worktree_base = (automation.workspace_mode == "worktree").then(|| "HEAD".into());
         settings.worktree_cwd =

@@ -28,7 +28,7 @@ pub(crate) fn split(
     stamp(&mut update.rows, update.start, prompts);
     rows(state, update.start, update.rows, &mut events);
     if let Some(id) = update.provider_id {
-        events.push(SessionEvent::ProviderId(id));
+        events.push(SessionEvent::ProviderId(Some(id)));
     }
     if let Some(handoff) = update.handoff {
         events.push(SessionEvent::Handoff(handoff));

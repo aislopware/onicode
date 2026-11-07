@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+pub use onicode_protocol::mcp::McpConnection;
 use serde_json::Value;
 
 use crate::scm::shell::dirs_home;
@@ -416,17 +416,6 @@ fn write_json_config(
         let _ = std::fs::remove_file(&temporary);
     }
     result.map_err(|e| e.to_string())
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McpConnection {
-    pub provider: String,
-    pub name: String,
-    pub scope: String,
-    pub config_path: String,
-    pub transport: String,
-    pub enabled: bool,
 }
 
 pub fn mcp_discover(cwd: String) -> Result<Vec<McpConnection>, String> {

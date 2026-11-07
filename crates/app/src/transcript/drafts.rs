@@ -1,5 +1,5 @@
 use gpui::{PathBuilder, point};
-use onicode_core::follow_up::Message as Draft;
+use onicode_protocol::follow_up::Message as Draft;
 
 use super::*;
 
@@ -282,7 +282,7 @@ mod tests {
                             let mut view = TranscriptView::new();
                             if history {
                                 let mut transcript =
-                                    onicode_core::transcript::Transcript::default();
+                                    onicode_protocol::transcript::Transcript::default();
                                 transcript.begin("user");
                                 transcript.append("An earlier question");
                                 transcript.begin("assistant");

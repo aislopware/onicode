@@ -1,7 +1,8 @@
 //! React Settings forms and their asynchronous actions.
-use onicode_core::provider::Kind;
 use onicode_protocol::OpId;
+use onicode_protocol::agents::{AddMcpServer, CreateSkill, HarnessVersion, InspectHarness};
 use onicode_protocol::git::{CreateWorktree, NewWorktree};
+use onicode_protocol::provider::Kind;
 
 use super::widgets::{note, secondary_button};
 use super::*;
@@ -26,7 +27,7 @@ pub(super) struct Editor {
     pub busy: bool,
     pub error: Option<String>,
     pub editing: bool,
-    pub inspection: Option<onicode_core::cli::Inspection>,
+    pub inspection: Option<HarnessVersion>,
     previous: Option<FocusHandle>,
     _subscriptions: Vec<Subscription>,
 }
@@ -56,6 +57,7 @@ impl SettingsView {
             name.update(cx, |input, cx| {
                 input.set_text(
                     self.prefs
+                        .engine
                         .binary_paths
                         .get(kind.id())
                         .cloned()
@@ -67,7 +69,7 @@ impl SettingsView {
         if matches!(target, Target::Skill) {
             name.update(cx, |input, cx| {
                 input.set_font_size(13.);
-                input.set_text(onicode_core::skills::slug_name(&self.skill_query), cx);
+                input.set_text(onicode_protocol::skills::slug_name(&self.skill_query), cx);
             });
         }
         let body=cx.new(|cx|Input::multiline_field("JSON configuration", "{\"mcpServers\":{\"my-server\":{\"command\":\"npx\",\"args\":[\"-y\",\"example-mcp\"]}}}",cx));
@@ -145,9 +147,14 @@ impl SettingsView {
         editor.busy = true;
         editor.error = None;
         let generation = self.management_generation;
-        let work = cx
-            .background_executor()
-            .spawn(async move { onicode_core::cli::inspect(kind, Some(&draft)) });
+        let inspect = crate::engine_client::local(cx).call::<InspectHarness>(
+            None,
+            InspectHarness {
+                provider: kind,
+                path: Some(draft).filter(|path| !path.is_empty()),
+            },
+        );
+        let work = cx.background_executor().spawn(inspect);
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -163,9 +170,9 @@ impl SettingsView {
                                 let value = editor.name.read(cx).content.trim().to_owned();
                                 this.update(cx, |p| {
                                     if value.is_empty() {
-                                        p.binary_paths.remove(kind.id());
+                                        p.engine.binary_paths.remove(kind.id());
                                     } else {
-                                        p.binary_paths.insert(kind.id().into(), value);
+                                        p.engine.binary_paths.insert(kind.id().into(), value);
                                     }
                                 });
                                 this.management = None;
@@ -192,7 +199,7 @@ impl SettingsView {
                 Ok(()) => {
                     if let Some(editor) = &self.management
                         && let Target::DeleteTree(tree) = &editor.target
-                        && onicode_core::files::is_equal_or_inside(
+                        && onicode_protocol::files::is_equal_or_inside(
                             &self.selected_project,
                             &tree.tree.path,
                         )
@@ -257,11 +264,30 @@ impl SettingsView {
             cx.background_executor()
                 .spawn(async move { create.await.map(|_| ()) })
         } else {
+            let engine = crate::engine_client::local(cx);
             cx.background_executor().spawn(async move {
                 match target {
-                    Target::Mcp => onicode_core::mcp::mcp_add(cwd, provider, scope, name, body),
+                    Target::Mcp => {
+                        let add = AddMcpServer {
+                            project: cwd,
+                            provider,
+                            scope,
+                            name,
+                            config: body,
+                        };
+                        let added = engine.call::<AddMcpServer>(Some(OpId::new()), add).await;
+                        crate::accounts::applied(added)
+                    }
                     Target::Skill => {
-                        onicode_core::skills::create_blank(&cwd, &name, scope == "user").map(|_| ())
+                        let create = CreateSkill {
+                            project: cwd,
+                            name,
+                            personal: scope == "user",
+                        };
+                        engine
+                            .call::<CreateSkill>(Some(OpId::new()), create)
+                            .await
+                            .map(|_| ())
                     }
                     _ => Ok(()),
                 }
@@ -300,11 +326,17 @@ impl SettingsView {
         let mut rows = Vec::new();
         match &target {
             Target::Cli(kind) => {
-                let overridden = self.prefs.binary_paths.contains_key(kind.id());
-                let pending = onicode_core::cli::configured(*kind)
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    != self.prefs.binary_paths.get(kind.id()).cloned();
+                let overridden = self.prefs.engine.binary_paths.get(kind.id());
+                // The engine reads the paths once per run: one set since resolves elsewhere.
+                let pending = overridden.is_some_and(|path| {
+                    self.discovery
+                        .binaries
+                        .iter()
+                        .find(|(k, _)| k == kind)
+                        .and_then(|(_, resolved)| resolved.as_ref())
+                        .is_some_and(|resolved| resolved.as_os_str() != path.as_str())
+                });
+                let overridden = overridden.is_some();
                 rows.push(
                     div()
                         .flex()
@@ -346,16 +378,15 @@ impl SettingsView {
                             .text_size(px(10.))
                             .child(
                                 div().font_family(crate::fonts::mono()).child(
-                                    inspection
-                                        .as_ref()
-                                        .map(|i| i.path.display().to_string())
-                                        .unwrap_or_else(|| {
+                                    inspection.as_ref().map(|i| i.path.clone()).unwrap_or_else(
+                                        || {
                                             if busy {
                                                 "Checking the selected CLI…".into()
                                             } else {
                                                 "CLI could not be resolved".into()
                                             }
-                                        }),
+                                        },
+                                    ),
                                 ),
                             )
                             .child(div().mt_1().text_color(content(0.4)).child(
@@ -557,7 +588,9 @@ impl SettingsView {
                     .ctx
                     .sessions
                     .iter()
-                    .filter(|(_, p, _)| onicode_core::files::is_equal_or_inside(p, &tree.tree.path))
+                    .filter(|(_, p, _)| {
+                        onicode_protocol::files::is_equal_or_inside(p, &tree.tree.path)
+                    })
                     .count();
                 rows.push(note(
                     "This permanently deletes the working copy and everything inside it.",
@@ -667,7 +700,7 @@ impl SettingsView {
                             .child("Open location")
                             .on_click(move |_, _, cx| {
                                 if let Some(path) = &path {
-                                    cx.reveal_path(path);
+                                    cx.reveal_path(std::path::Path::new(path));
                                 }
                             }),
                     )
@@ -689,7 +722,7 @@ impl SettingsView {
                     .gap_3()
                     .children(rows)
                     .into_any_element();
-            } else if self.prefs.binary_paths.contains_key(kind.id()) {
+            } else if self.prefs.engine.binary_paths.contains_key(kind.id()) {
                 actions = actions.child(
                     secondary_button("auto-cli", "Use auto-detected path", false, busy)
                         .child("Use auto-detected path")

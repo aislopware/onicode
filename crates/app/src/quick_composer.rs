@@ -10,12 +10,12 @@ use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, ExternalPaths, FocusHandle, Focusable,
     MouseButton, Render, Role, SharedString, Subscription, Task, Window, WindowHandle, div, px,
 };
-use onicode_core::agent::AccessMode;
-use onicode_core::git::Snapshot;
-use onicode_core::project_appearance::ProjectAppearance;
-use onicode_core::provider::Kind;
 use onicode_protocol::OpId;
+use onicode_protocol::agent::AccessMode;
 use onicode_protocol::files::{Bytes, NewAttachment, SaveAttachments};
+use onicode_protocol::git::GitSnapshot as Snapshot;
+use onicode_protocol::project_appearance::ProjectAppearance;
+use onicode_protocol::provider::Kind;
 
 use crate::engine_client;
 use crate::git_picker::{GitPicker, Mode as GitMode, Picked as GitPicked};
@@ -94,11 +94,6 @@ pub(crate) struct Launch {
     pub worktree_base: Option<String>,
     pub worktree_cwd: Option<String>,
     pub foreground: bool,
-}
-/// Pasted images wait here until the launch creates their conversation, which
-/// then adopts them into its own folder.
-pub(crate) fn paste_staging_dir() -> PathBuf {
-    std::env::temp_dir().join("onicode-quick-composer")
 }
 impl Launch {
     pub(crate) fn choice(
@@ -361,7 +356,7 @@ impl QuickComposer {
     fn set_project(&mut self, path: String, cx: &mut Context<Self>) {
         self.cwd = path;
         self.workspace = Workspace::default();
-        let p = cx.global::<crate::settings::Preferences>();
+        let p = &cx.global::<crate::settings::Preferences>().engine;
         let kind = p
             .project_providers
             .get(&self.cwd)
@@ -485,7 +480,8 @@ impl QuickComposer {
                 .clone()
                 .filter(|_| !new_worktree)
                 .filter(|tree| {
-                    onicode_core::files::path_key(tree) != onicode_core::files::path_key(&self.cwd)
+                    onicode_protocol::files::path_key(tree)
+                        != onicode_protocol::files::path_key(&self.cwd)
                 }),
             foreground,
         });
@@ -773,7 +769,7 @@ impl QuickComposer {
         if images.is_empty() {
             return true;
         }
-        // The engine writes them to `paste_staging_dir`, where they wait for
+        // The engine writes them to its quick composer staging folder, where they wait for
         // the launch to create their conversation.
         let save = engine_client::local(cx).call::<SaveAttachments>(
             Some(OpId::new()),
@@ -830,6 +826,10 @@ impl QuickComposer {
 
     /// User-initiated region or window capture. The panel steps aside while
     /// the system overlay is up; cancelling leaves the draft intact.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a screenshot of the viewer's own screen"
+    )]
     fn take_screenshot(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_picker_state(cx);
         self.attaching = true;
@@ -837,7 +837,7 @@ impl QuickComposer {
         crate::traffic_lights::hide(window);
         let path = std::env::temp_dir()
             .join("onicode-quick-composer")
-            .join(format!("screenshot-{}.png", onicode_core::new_id()));
+            .join(format!("screenshot-{}.png", onicode_protocol::new_id()));
         let work = cx.background_executor().spawn({
             let path = path.clone();
             async move {
@@ -1155,7 +1155,7 @@ impl QuickComposer {
         let attachments = &self.attachments;
         self.photos.retain(|path, _| attachments.contains(path));
         for path in &self.attachments {
-            if let Some(mime) = onicode_core::composer::image_mime(path)
+            if let Some(mime) = onicode_protocol::composer::image_mime(path)
                 && !self.photos.contains_key(path)
             {
                 let origin = crate::transcript::attachments::Origin::Path(path.clone());

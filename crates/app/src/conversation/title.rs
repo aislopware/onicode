@@ -1,5 +1,5 @@
 //! Background session names never join or rewrite the user's provider history.
-use onicode_core::session_title::{TextModel, display_title};
+use onicode_protocol::session_title::{TextModel, display_title};
 use onicode_protocol::workspace::GenerateTitle;
 
 use super::*;
@@ -78,7 +78,7 @@ impl Conversation {
             model: self.background_text_model(cx),
         };
         // Applied or not, the workspace says what the title became.
-        crate::engine_client::call::<GenerateTitle>(&self.store, Some(OpId::new()), body, cx)
+        crate::engine_client::call::<GenerateTitle>(&self.engine, Some(OpId::new()), body, cx)
             .detach();
     }
 }

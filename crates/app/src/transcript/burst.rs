@@ -22,9 +22,9 @@ pub(super) enum Kind {
 impl Kind {
     pub(super) fn from_prompt(
         prompt: &str,
-        settings: &onicode_core::agent::Settings,
+        settings: &onicode_protocol::agent::Settings,
     ) -> Option<Self> {
-        if onicode_core::composer::consume_command(prompt, "visualize").is_some() {
+        if onicode_protocol::composer::consume_command(prompt, "visualize").is_some() {
             Some(Self::Visualize)
         } else if settings.orchestrator {
             Some(Self::Orchestrator)

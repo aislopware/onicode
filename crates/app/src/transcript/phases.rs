@@ -1,9 +1,9 @@
 //! Reasoning and calls share a phase until assistant prose starts the next one.
 use std::collections::{HashMap, HashSet};
 
-use onicode_core::tool::tasks::Panel;
-use onicode_core::tool::{ToolCall, ToolState};
-use onicode_core::transcript::Row;
+use onicode_protocol::tool::tasks::Panel;
+use onicode_protocol::tool::{ToolCall, ToolState};
+use onicode_protocol::transcript::Row;
 
 #[derive(Default)]
 pub(crate) struct Phases {

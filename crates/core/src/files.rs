@@ -2,10 +2,8 @@
 //! pure name and path helpers from the files feature model.
 pub mod document;
 mod index;
-pub use index::{ProjectFile, list_project_files, list_project_files_sync_cancellable};
 pub(crate) use index::{git_output_capped, is_indexable_root};
-mod name;
-mod paths;
+pub use index::{list_project_files, list_project_files_sync_cancellable};
 pub mod remote;
 use std::collections::HashSet;
 use std::io::{ErrorKind, Write};
@@ -13,26 +11,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub use name::{
-    NameIssue, NameIssueKind, Severity, leaf_name, validate_file_name, well_formed_file_name,
-};
-pub use paths::{
+pub use onicode_protocol::files::{
+    DirEntry, NameIssue, NameIssueKind, ProjectFile, Severity, compare_natural_names,
     create_parent_of, dirs_touched_by_create, dirs_touched_by_move, display_path,
-    is_equal_or_inside, join_path, parent_path, path_key, rebase_path,
+    is_equal_or_inside, join_path, leaf_name, parent_path, path_key, rebase_path, unique_name,
+    validate_file_name, well_formed_file_name,
 };
 pub use remote::run_remote_command;
-use serde::{Deserialize, Serialize};
 
 use crate::scm::{expand_home, path_to_js};
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct DirEntry {
-    pub name: String,
-    pub path: String,
-    pub is_dir: bool,
-    pub ignored: bool,
-}
 
 /// Immediate children of `path` (project tree). Folders first, then natural name order.
 pub fn list_dir(path: &Path) -> Result<Vec<DirEntry>, String> {
@@ -82,51 +69,6 @@ pub fn list_dir(path: &Path) -> Result<Vec<DirEntry>, String> {
             .then_with(|| compare_natural_names(&a.name, &b.name))
     });
     Ok(out)
-}
-
-/// Case-insensitive order where digit runs compare by numeric value.
-pub fn compare_natural_names(a: &str, b: &str) -> std::cmp::Ordering {
-    use std::cmp::Ordering;
-
-    let (a, b) = (a.as_bytes(), b.as_bytes());
-    let (mut i, mut j) = (0, 0);
-    while i < a.len() && j < b.len() {
-        if a[i].is_ascii_digit() && b[j].is_ascii_digit() {
-            let a_start = i;
-            let b_start = j;
-            while i < a.len() && a[i].is_ascii_digit() {
-                i += 1;
-            }
-            while j < b.len() && b[j].is_ascii_digit() {
-                j += 1;
-            }
-            let a_digits = &a[a_start..i];
-            let b_digits = &b[b_start..j];
-            let a_value = a_digits
-                .iter()
-                .position(|digit| *digit != b'0')
-                .map_or(&a_digits[a_digits.len()..], |start| &a_digits[start..]);
-            let b_value = b_digits
-                .iter()
-                .position(|digit| *digit != b'0')
-                .map_or(&b_digits[b_digits.len()..], |start| &b_digits[start..]);
-            let order = a_value
-                .len()
-                .cmp(&b_value.len())
-                .then_with(|| a_value.cmp(b_value));
-            if order != Ordering::Equal {
-                return order;
-            }
-        } else {
-            let order = a[i].to_ascii_lowercase().cmp(&b[j].to_ascii_lowercase());
-            if order != Ordering::Equal {
-                return order;
-            }
-            i += 1;
-            j += 1;
-        }
-    }
-    (a.len() - i).cmp(&(b.len() - j)).then_with(|| a.cmp(b))
 }
 
 const CHECK_IGNORE_SOME_MATCHED: i32 = 0;
@@ -541,41 +483,8 @@ fn same_entry(a: &Path, b: &Path) -> bool {
     }
 }
 
-fn split_stem_ext(name: &str) -> (&str, &str) {
-    match name.rfind('.') {
-        Some(i) if i > 0 => (&name[..i], &name[i..]),
-        _ => (name, ""),
-    }
-}
-
 fn unique_name_in(dir: &Path, name: &str) -> String {
     unique_name(name, |candidate| dir.join(candidate).exists())
-}
-
-/// The name a copy of `name` takes beside the names `taken` says are in use, as Finder names
-/// one: `name`, then `stem copy.ext`, then `stem copy 2.ext` and on. What [`copy_path`] picks, so
-/// a viewer can show the copy before it is made.
-pub fn unique_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
-    let (stem, ext) = split_stem_ext(name);
-    let mut n = 0u32;
-    loop {
-        let candidate = match n {
-            0 => name.to_string(),
-            1 => format!("{stem} copy{ext}"),
-            _ => format!("{stem} copy {n}{ext}"),
-        };
-        if !taken(&candidate) {
-            return candidate;
-        }
-        n += 1;
-        if n > 1000 {
-            let stamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
-            return format!("{stem} copy {stamp}{ext}");
-        }
-    }
 }
 
 fn copy_recursive(from: &Path, to: &Path) -> Result<(), String> {
@@ -621,14 +530,6 @@ mod tests {
         ignored_names(&list_dir(dir).unwrap())
             .iter()
             .any(|n| n == name)
-    }
-
-    #[test]
-    fn split_stem_ext_keeps_dotfiles_whole() {
-        assert_eq!(split_stem_ext("foo.ts"), ("foo", ".ts"));
-        assert_eq!(split_stem_ext("foo.d.ts"), ("foo.d", ".ts"));
-        assert_eq!(split_stem_ext(".gitignore"), (".gitignore", ""));
-        assert_eq!(split_stem_ext("Makefile"), ("Makefile", ""));
     }
 
     #[test]

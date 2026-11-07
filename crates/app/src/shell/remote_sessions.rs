@@ -1,4 +1,5 @@
 //! Project indexes are fetched on workers; opening a row materializes the chat.
+use onicode_engine::turn::locked;
 use serde_json::json;
 
 use super::*;
@@ -10,7 +11,7 @@ impl Shell {
         }
         self.remote_refreshing = true;
         let project_key = self.workspace.project.clone();
-        let store = self.store.clone();
+        let store = self.engine.legacy_store();
         let client = self.remote.clone();
         let work = cx.background_executor().spawn(async move {
             let project = locked(&store)?

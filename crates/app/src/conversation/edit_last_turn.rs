@@ -1,9 +1,9 @@
 //! Last-turn editing recalls first, and rewinds only when the user resubmits.
 use std::path::PathBuf;
 
-use onicode_core::provider;
-use onicode_core::transcript::Row;
+use onicode_protocol::provider;
 use onicode_protocol::session::{EditLastTurn, EditedTurn, RecallLastTurn, RecalledTurn};
+use onicode_protocol::transcript::Row;
 
 use super::*;
 
@@ -191,7 +191,7 @@ impl Conversation {
             || text.eq_ignore_ascii_case("/mcp")
             || ["btw", "draft", "add-to-folder"]
                 .iter()
-                .any(|command| onicode_core::composer::consume_command(text, command).is_some())
+                .any(|command| onicode_protocol::composer::consume_command(text, command).is_some())
             || self.draft_active(cx)
         {
             self.status = "Cancel message editing before running a local command".into();
@@ -220,15 +220,6 @@ impl Conversation {
             || self.execution_cwd() != edit.cwd
         {
             self.status = "Conversation changed; cancel the edit before sending".into();
-            cx.notify();
-            return true;
-        }
-        let kind = Kind::from_id(&self.summary.provider);
-        if provider::resolve(kind).is_none() {
-            self.status = format!(
-                "{} executable was not found; edited prompt preserved",
-                kind.label()
-            );
             cx.notify();
             return true;
         }
@@ -329,7 +320,7 @@ impl Conversation {
         at: usize,
         cx: &mut Context<Self>,
     ) {
-        let message = onicode_core::follow_up::Message {
+        let message = onicode_protocol::follow_up::Message {
             id: onicode_protocol::MessageId::new().to_string(),
             text,
             attachments,
@@ -349,73 +340,73 @@ impl Conversation {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use gpui::TestAppContext;
-    use onicode_core::store::{EditSnapshot, Store};
-    use onicode_core::transcript::Transcript;
+    use onicode_protocol::transcript::Transcript;
 
     use super::*;
 
-    /// The edit as `RecallLastTurn` hands it to the conversation.
-    fn recalled(edit: &EditSnapshot) -> RecalledTurn {
+    /// The last turn as `RecallLastTurn` hands it to the conversation.
+    fn recalled(session: &Session, rows: &[Row]) -> RecalledTurn {
         RecalledTurn {
-            start: edit.start,
-            prompt: edit.prompt.clone(),
-            attachments: edit.attachments.clone(),
-            provider: edit.provider().to_owned(),
-            provider_id: edit.provider_id.clone(),
-            account_id: edit.account_id.clone(),
-            cwd: edit.cwd.clone(),
-            rows: edit.rows.clone(),
+            start: 0,
+            prompt: "Original".into(),
+            attachments: Vec::new(),
+            provider: session.provider.clone(),
+            provider_id: session.provider_id.clone().unwrap_or_default(),
+            account_id: String::new(),
+            cwd: session.cwd.clone(),
+            rows: rows.to_vec(),
         }
     }
-    #[gpui::test]
-    fn cancelled_recall_preserves_history_and_native_provider_binding(cx: &mut TestAppContext) {
-        let mut store = Store::open(Path::new(":memory:")).unwrap();
-        let mut session = store.create("codex", "/project").unwrap();
-        store.provider_id(session.id, "thread").unwrap();
-        session.provider_id = Some("thread".into());
+
+    fn answered() -> Transcript {
         let mut transcript = Transcript::default();
         transcript.begin("user");
         transcript.append("Original");
         transcript.begin("assistant");
         transcript.append("Answer");
-        store.write_rows(session.id, 0, &transcript.rows).unwrap();
-        let edit = store
-            .prepare_edit_last_turn(session.id, &transcript.rows, Some("turn"))
+        transcript
+    }
+
+    #[gpui::test]
+    fn cancelled_recall_preserves_history_and_native_provider_binding(cx: &mut TestAppContext) {
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let mut session = engine.seed().create("codex", "/project").unwrap();
+        engine.seed().provider_id(session.id, "thread").unwrap();
+        session.provider_id = Some("thread".into());
+        let transcript = answered();
+        engine
+            .seed()
+            .write_rows(session.id, 0, &transcript.rows)
             .unwrap();
-        let chat = cx.new(|cx| Conversation::new(session, Arc::new(Mutex::new(store)), cx));
+        let edit = recalled(&session, &transcript.rows);
+        let chat = cx.new(|cx| Conversation::new(session, engine, cx));
         chat.update(cx, |chat, cx| {
             chat.loaded = true;
             chat.transcript
                 .update(cx, |view, cx| view.patch(0, transcript.rows.clone(), cx));
-            chat.editing_last_turn.prepared = Some(recalled(&edit));
+            chat.editing_last_turn.prepared = Some(edit);
             assert!(chat.submit_edited(cx));
             assert!(!chat.editing_last_turn.pending());
             assert_eq!(chat.transcript.read(cx).source_rows(), transcript.rows);
             assert_eq!(chat.summary.provider_id.as_deref(), Some("thread"));
             assert_eq!(
-                locked(&chat.store)
-                    .unwrap()
-                    .load(chat.summary.id)
-                    .unwrap()
-                    .rows,
+                chat.engine.seed().rows(chat.summary.id).unwrap(),
                 transcript.rows
             );
         });
     }
     #[gpui::test]
     fn newer_composer_and_saved_draft_survive_interrupted_edit_recovery(cx: &mut TestAppContext) {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let session = store.create("codex", "/project").unwrap();
-        let chat = cx.new(|cx| Conversation::new(session, Arc::new(Mutex::new(store)), cx));
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let session = engine.seed().create("codex", "/project").unwrap();
+        let chat = cx.new(|cx| Conversation::new(session, engine, cx));
         chat.update(cx, |chat, cx| {
             chat.loaded = true;
             chat.input
                 .update(cx, |input, cx| input.set_text("New draft".into(), cx));
             chat.attachments.push("/tmp/new.png".into());
-            chat.follow_ups.state.draft = Some(onicode_core::follow_up::Message {
+            chat.follow_ups.state.draft = Some(onicode_protocol::follow_up::Message {
                 id: "saved".into(),
                 text: "Existing draft".into(),
                 ..Default::default()
@@ -433,25 +424,22 @@ mod tests {
     }
     #[gpui::test]
     fn local_commands_and_cancel_never_remove_recalled_history(cx: &mut TestAppContext) {
-        let mut store = Store::open(Path::new(":memory:")).unwrap();
-        let mut session = store.create("codex", "/project").unwrap();
-        store.provider_id(session.id, "thread").unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let mut session = engine.seed().create("codex", "/project").unwrap();
+        engine.seed().provider_id(session.id, "thread").unwrap();
         session.provider_id = Some("thread".into());
-        let mut transcript = Transcript::default();
-        transcript.begin("user");
-        transcript.append("Original");
-        transcript.begin("assistant");
-        transcript.append("Answer");
-        store.write_rows(session.id, 0, &transcript.rows).unwrap();
-        let edit = store
-            .prepare_edit_last_turn(session.id, &transcript.rows, Some("turn"))
+        let transcript = answered();
+        engine
+            .seed()
+            .write_rows(session.id, 0, &transcript.rows)
             .unwrap();
-        let chat = cx.new(|cx| Conversation::new(session, Arc::new(Mutex::new(store)), cx));
+        let edit = recalled(&session, &transcript.rows);
+        let chat = cx.new(|cx| Conversation::new(session, engine, cx));
         chat.update(cx, |chat, cx| {
             chat.loaded = true;
             chat.transcript
                 .update(cx, |view, cx| view.patch(0, transcript.rows.clone(), cx));
-            chat.editing_last_turn.prepared = Some(recalled(&edit));
+            chat.editing_last_turn.prepared = Some(edit);
             chat.input
                 .update(cx, |input, cx| input.set_text("/compact".into(), cx));
             assert!(chat.submit_edited(cx));
@@ -461,11 +449,7 @@ mod tests {
             assert!(!chat.editing_last_turn.pending());
             assert_eq!(chat.input.read(cx).content, "/compact");
             assert_eq!(
-                locked(&chat.store)
-                    .unwrap()
-                    .load(chat.summary.id)
-                    .unwrap()
-                    .rows,
+                chat.engine.seed().rows(chat.summary.id).unwrap(),
                 transcript.rows
             );
         });
@@ -474,30 +458,19 @@ mod tests {
     fn persisted_recovery_guard_preserves_a_new_composer_before_normal_send(
         cx: &mut TestAppContext,
     ) {
-        let mut store = Store::open(Path::new(":memory:")).unwrap();
-        let mut session = store.create("pi", "/project").unwrap();
-        store.provider_id(session.id, "original").unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let mut session = engine.seed().create("pi", "/project").unwrap();
+        engine.seed().provider_id(session.id, "original").unwrap();
         session.provider_id = Some("original".into());
-        let mut transcript = Transcript::default();
-        transcript.begin("user");
-        transcript.append("Original");
-        store.write_rows(session.id, 0, &transcript.rows).unwrap();
-        let edit = store
-            .prepare_edit_last_turn(session.id, &transcript.rows, None)
-            .unwrap();
-        store.provider_id(session.id, "changed").unwrap();
-        assert!(
-            store
-                .finish_edit_last_turn(session.id, &edit, "fork")
-                .is_err()
-        );
-        let recovery = store.edit_recovery_reason(session.id).unwrap();
-        assert!(recovery.is_some());
-        let chat = cx.new(|cx| Conversation::new(session, Arc::new(Mutex::new(store)), cx));
+        let chat = cx.new(|cx| Conversation::new(session, engine, cx));
         chat.update(cx, |chat, cx| {
             chat.loaded = true;
-            // As `ReadSession` loads it.
-            chat.edit_recovery = recovery;
+            // As `ReadSession` loads it after an edit the engine could not reconcile.
+            chat.edit_recovery = Some(
+                "A previous edit changed provider context before local history could be \
+                 reconciled. Start a new conversation; the saved history is preserved here."
+                    .into(),
+            );
             chat.input.update(cx, |input, cx| {
                 input.set_text("Unsent edited prompt".into(), cx)
             });
