@@ -533,8 +533,7 @@ struct Judged {
     drawn: u64,
     /// Frames the receiver gave up on in the window.
     lost: u64,
-    /// Pictures skipped on purpose in the window: frames nothing refers to, and pictures the
-    /// pacer dropped as stale.
+    /// Pictures skipped on purpose in the window: those the pacer dropped as stale.
     skipped: u64,
     /// Capture to glass, first showing of each capture, microseconds, ascending.
     latency: Vec<u64>,
@@ -591,8 +590,7 @@ impl Run {
             uncoded,
             drawn: last.saturating_sub(first).saturating_add(1),
             lost: after.frames_lost.saturating_sub(before.frames_lost),
-            skipped: after.frames_skipped.saturating_sub(before.frames_skipped)
-                + after.pacing.skipped.saturating_sub(before.pacing.skipped)
+            skipped: after.pacing.skipped.saturating_sub(before.pacing.skipped)
                 + after.pacing.late.saturating_sub(before.pacing.late),
             latency,
         }

@@ -9,17 +9,11 @@
 //! up on, a refresh, the time the picture stood still) and what parity costs on the wire.
 //! One clock drives both ends in 1 ms steps, so a run repeats exactly and takes no wall time.
 //!
-//! The same link prices temporal layers (`layers_under_burst_loss`): the encoder writes every
-//! other frame as one nothing refers to, at the sizes the host's session gives them, and the
-//! receiver either treats it as any other frame or skips it when it cannot repair it.
-//!
 //! ```text
 //! cargo nextest run -p onicode-desktop-media --release --run-ignored only -E 'test(parity_under_burst_loss)' --no-capture
-//! cargo nextest run -p onicode-desktop-media --release --run-ignored only -E 'test(layers_under_burst_loss)' --no-capture
 //! ```
 //!
-//! MEASUREMENTS ("two parity fragments on small frames", "temporal layers under
-//! clumped loss") records runs.
+//! MEASUREMENTS ("two parity fragments on small frames") records runs.
 
 #[cfg(test)]
 mod tests {
@@ -113,25 +107,6 @@ mod tests {
         bytes: (usize, usize),
     }
 
-    /// How the stream uses temporal layers.
-    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-    enum Layers {
-        /// Every frame a reference, as the host's session is without layers.
-        Off,
-        /// Every other frame one nothing refers to, but not said on the wire: the receiver
-        /// treats it as any other frame.
-        Unflagged,
-        /// Every other frame one nothing refers to, flagged, and skipped when it is not repaired.
-        Flagged,
-    }
-
-    /// What layers do to frame sizes on the host's session at 1080p, switched on once it has
-    /// run a while as the host switches them (MEASUREMENTS, "temporal layers switched on a
-    /// live session": 16.9 KB base and 5.5 KB layer-1 frames against 12.2 KB without layers),
-    /// in thousandths: base frames and layer-1 frames.
-    const BASE_SIZE: usize = 1_378;
-    const LAYER1_SIZE: usize = 450;
-
     /// A still window: a caret and a few cells change, 1 to 5 fragments a frame.
     const STILL: Scene = Scene {
         name: "still",
@@ -162,14 +137,6 @@ mod tests {
         worst_ms: u64,
         /// Frames shown more than a frame interval after their first fragment arrived.
         late: u64,
-        /// Frames nothing refers to that were skipped.
-        skipped: u64,
-        /// Refreshes asked for after a loss (repeats of the same request not counted).
-        episodes: u64,
-        /// Of those, the ones whose lost frame was one nothing refers to: the frame after the
-        /// last one delivered. Only read without the flag; with it that frame may have been
-        /// skipped, and what refreshes is the loss of a later one.
-        episodes_layer1: u64,
     }
 
     impl Outcome {
@@ -187,22 +154,12 @@ mod tests {
             self.frozen_ms += o.frozen_ms;
             self.worst_ms = self.worst_ms.max(o.worst_ms);
             self.late += o.late;
-            self.skipped += o.skipped;
-            self.episodes += o.episodes;
-            self.episodes_layer1 += o.episodes_layer1;
         }
     }
 
     /// Stream `seconds` of `scene` at 60 fps over the channel; the parity ratio follows the
     /// receiver's reports through [`Redundancy`], as it does on the host.
-    fn run(
-        scene: Scene,
-        layers: Layers,
-        loss: f64,
-        burst: f64,
-        seconds: u64,
-        seed: u64,
-    ) -> Outcome {
+    fn run(scene: Scene, loss: f64, burst: f64, seconds: u64, seed: u64) -> Outcome {
         let epoch = Instant::now();
         let at = |us: u64| epoch + Duration::from_micros(us);
         let mut tx = Packetizer::new(STREAM);
@@ -219,9 +176,6 @@ mod tests {
         let (mut keyframe, mut refresh) = (true, false);
         let mut sent_since_report = 0_u32;
         let mut last_shown: Option<u64> = None;
-        // Which frames nothing refers to, by number, and the last refresh request's frame.
-        let mut layer1: Vec<bool> = Vec::new();
-        let mut last_request: Option<u32> = None;
         let end = seconds * 1_000_000;
         let mut send = |now: u64, datagram: &Bytes, forward: &mut VecDeque<(u64, Bytes)>| {
             if !channel.drops() {
@@ -256,20 +210,7 @@ mod tests {
                 }
             }
             if now >= next_frame {
-                // The encoder alternates layers by its own count of frames; a keyframe or a
-                // refresh takes its slot but is never one nothing refers to.
-                let slot_layer1 = layers != Layers::Off && tx.next_frame() % 2 == 1;
-                let is_layer1 = slot_layer1 && !keyframe && !refresh;
-                let mut drawn = || {
-                    let drawn = sizes.between(scene.bytes.0, scene.bytes.1);
-                    match layers {
-                        Layers::Off => drawn,
-                        Layers::Unflagged | Layers::Flagged if is_layer1 => {
-                            drawn * LAYER1_SIZE / 1000
-                        }
-                        Layers::Unflagged | Layers::Flagged => drawn * BASE_SIZE / 1000,
-                    }
-                };
+                let mut drawn = || sizes.between(scene.bytes.0, scene.bytes.1);
                 let size = if keyframe {
                     60_000
                 } else if refresh {
@@ -277,14 +218,12 @@ mod tests {
                 } else {
                     drawn()
                 };
-                layer1.push(is_layer1);
                 let data = vec![(now % 251) as u8; size];
                 let frame = EncodedFrame {
                     data: &data,
                     keyframe,
                     ltr_token: keyframe.then_some(1),
                     ltr_refresh: refresh && !keyframe,
-                    discardable: is_layer1 && layers == Layers::Flagged,
                     capture_ts_us: now as u32,
                     stripes: 0,
                 };
@@ -325,20 +264,6 @@ mod tests {
                 last_shown = Some(now);
             }
             for action in rx.tick(at(now), RTT) {
-                if let Action::RequestRefresh {
-                    last_good_frame,
-                    keyframe: false,
-                } = action
-                    && out.shown > 0
-                    && last_request != Some(last_good_frame)
-                {
-                    last_request = Some(last_good_frame);
-                    out.episodes += 1;
-                    let lost = last_good_frame as usize + 1;
-                    if layer1.get(lost).copied().unwrap_or(false) {
-                        out.episodes_layer1 += 1;
-                    }
-                }
                 back.push_back((now + ONE_WAY_US, Back::Action(action)));
             }
             if now >= next_report {
@@ -352,7 +277,6 @@ mod tests {
         out.retransmitted = stats.frames_retransmit;
         out.lost = stats.frames_lost;
         out.refreshes = stats.refreshes;
-        out.skipped = stats.frames_skipped;
         out
     }
 
@@ -376,14 +300,7 @@ mod tests {
                     }
                     let mut sum = Outcome::default();
                     for seed in [1, 2, 3] {
-                        let o = run(
-                            scene,
-                            Layers::Off,
-                            loss,
-                            burst,
-                            60,
-                            seed * 0x1234_5678_9abc_def1,
-                        );
+                        let o = run(scene, loss, burst, 60, seed * 0x1234_5678_9abc_def1);
                         sum.add(&o);
                     }
                     assert!(
@@ -410,58 +327,6 @@ mod tests {
                         sum.resent,
                         sum.wire as f64 * 8.0 / 180.0 / 1e6,
                     );
-                }
-            }
-        }
-    }
-
-    /// Temporal layers against none, at every scene and loss of the parity measurement plus
-    /// 10 %, a minute each over three seeds (the same seeds, so the same channel). Prints one
-    /// `MEASURE` line per case and mode; asserts only that the simulation ran.
-    #[test]
-    #[ignore = "a measurement; run with --run-ignored only --no-capture"]
-    fn layers_under_burst_loss() {
-        for scene in [STILL, SCROLL] {
-            for loss in [0.0, 0.01, 0.03, 0.05, 0.10] {
-                for burst in [1.0, 2.0, 4.0] {
-                    if loss == 0.0 && burst > 1.0 {
-                        continue;
-                    }
-                    for layers in [Layers::Off, Layers::Unflagged, Layers::Flagged] {
-                        let mut sum = Outcome::default();
-                        for seed in [1, 2, 3] {
-                            sum.add(&run(
-                                scene,
-                                layers,
-                                loss,
-                                burst,
-                                60,
-                                seed * 0x1234_5678_9abc_def1,
-                            ));
-                        }
-                        assert!(sum.shown > 0, "{}: nothing shown", scene.name);
-                        eprintln!(
-                            "MEASURE layers scene={} loss={:.0}% burst={burst} mode={layers:?} \
-                             frames={} shown={} skipped={} waited={} late={} lost={} \
-                             refresh_episodes={} of_them_layer1={} refreshes={} frozen={}ms \
-                             worst={}ms parity/data={:.1}% wire={:.2}Mbit/s",
-                            scene.name,
-                            loss * 100.0,
-                            sum.frames,
-                            sum.shown,
-                            sum.skipped,
-                            sum.retransmitted,
-                            sum.late,
-                            sum.lost,
-                            sum.episodes,
-                            sum.episodes_layer1,
-                            sum.refreshes,
-                            sum.frozen_ms,
-                            sum.worst_ms,
-                            sum.parity as f64 * 100.0 / sum.data.max(1) as f64,
-                            sum.wire as f64 * 8.0 / 180.0 / 1e6,
-                        );
-                    }
                 }
             }
         }

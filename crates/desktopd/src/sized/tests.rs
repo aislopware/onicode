@@ -48,7 +48,7 @@ impl Drop for Shown {
 impl Factory for Fake {
     type Display = Shown;
 
-    fn create(&mut self, _key: DisplayKey, plan: &Plan) -> Result<Shown, DisplayError> {
+    fn create(&mut self, plan: &Plan) -> Result<Shown, DisplayError> {
         let id = {
             let mut script = self.0.lock();
             if let Some(refused) = script.refuse.clone() {

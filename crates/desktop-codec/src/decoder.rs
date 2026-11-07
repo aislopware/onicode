@@ -11,8 +11,8 @@ use bytes::Bytes;
 use objc2_core_foundation::{CFDictionary, CFNumber, CFRetained, CFString, CFType};
 use objc2_core_media::{
     CMBlockBuffer, CMBlockBufferCustomBlockSource, CMFormatDescription, CMSampleBuffer,
-    CMSampleTimingInfo, CMTime, CMVideoFormatDescriptionCreateFromH264ParameterSets,
-    CMVideoFormatDescriptionCreateFromHEVCParameterSets, kCMTimeInvalid,
+    CMSampleTimingInfo, CMTime, CMVideoFormatDescriptionCreateFromHEVCParameterSets,
+    kCMTimeInvalid,
 };
 use objc2_core_video::{
     CVImageBuffer, CVPixelBuffer, CVPixelBufferGetHeight, CVPixelBufferGetWidth,
@@ -30,7 +30,7 @@ use onicode_desktop_media::wire::VideoCodec;
 
 use crate::CodecError;
 use crate::cf::{self, check};
-use crate::nal::{AccessUnit, h264, hevc};
+use crate::nal::{AccessUnit, hevc};
 
 /// A decoded picture that may cross threads.
 ///
@@ -260,7 +260,6 @@ impl Decoder {
         }
         let is_ps: fn(&[u8]) -> bool = match self.codec {
             VideoCodec::Hevc => hevc::is_parameter_set,
-            VideoCodec::H264 => h264::is_parameter_set,
         };
         let unit = AccessUnit::parse(access_unit, is_ps)?;
         let sets = unit.parameter_sets();
@@ -420,7 +419,6 @@ fn output_format(codec: VideoCodec, sets: &[Vec<u8>]) -> u32 {
             .iter()
             .filter_map(|set| hevc::sample_format(set))
             .find(|format| format.chroma_format_idc == 3),
-        VideoCodec::H264 => None,
     };
     match full {
         Some(format) if format.bit_depth > 8 => kCVPixelFormatType_444YpCbCr10BiPlanarFullRange,
@@ -502,20 +500,6 @@ pub(crate) fn format_description(
                     NonNull::from(sizes.as_mut_slice()).cast::<usize>(),
                     4,
                     None,
-                    NonNull::from(&mut out),
-                )
-            },
-        ),
-        VideoCodec::H264 => (
-            "CMVideoFormatDescriptionCreateFromH264ParameterSets",
-            // SAFETY: as above.
-            unsafe {
-                CMVideoFormatDescriptionCreateFromH264ParameterSets(
-                    None,
-                    pointers.len(),
-                    NonNull::from(pointers.as_mut_slice()).cast::<NonNull<u8>>(),
-                    NonNull::from(sizes.as_mut_slice()).cast::<usize>(),
-                    4,
                     NonNull::from(&mut out),
                 )
             },

@@ -34,7 +34,6 @@ enum Call {
     Resize(StreamId, DisplayShape),
     Close(StreamId),
     Input(StreamId, ScreenInput),
-    Focused(StreamId, bool),
     Control(bool),
     Sound(bool),
     Curtain(bool),
@@ -75,10 +74,6 @@ impl Link for Recorder {
 
     fn input(&self, stream: StreamId, input: ScreenInput) {
         self.push(Call::Input(stream, input));
-    }
-
-    fn focused(&self, stream: StreamId, focused: bool) {
-        self.push(Call::Focused(stream, focused));
     }
 
     fn take_control(&self, take: bool) {

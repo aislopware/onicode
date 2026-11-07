@@ -72,8 +72,6 @@ enum Op {
     Audio {
         seq: u32,
         len: u16,
-        /// Earlier packets carried again (modulo 4; the datagram takes two at most).
-        copies: u8,
     },
     Cursor {
         seq: u32,
@@ -188,10 +186,9 @@ impl Run {
                 self.clean = false;
                 self.arrive(&Bytes::copy_from_slice(bytes));
             }
-            Op::Audio { seq, len, copies } => {
+            Op::Audio { seq, len } => {
                 let opus = vec![0x5a; usize::from(len)];
-                let earlier = vec![&opus[..]; usize::from(copies % 4)];
-                if let Some(datagram) = audio_datagram(STREAM, seq, 0, &opus, &earlier) {
+                if let Some(datagram) = audio_datagram(STREAM, seq, 0, &opus) {
                     self.arrive(&datagram);
                 }
             }
@@ -226,7 +223,6 @@ impl Run {
             ltr_token: ltr,
             ltr_refresh: refresh,
             capture_ts_us: 0,
-            discardable: false,
             stripes: 0,
         };
         let number = self.packetizer.next_frame();

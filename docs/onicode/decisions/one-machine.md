@@ -5,7 +5,7 @@ in daily work. It skips polish that saves a click a week. Ranked by benefit:
 
 1. **Files across machines.** A file explorer over every peer, with drag and drop between peers and to and
    from Finder, on a transfer engine fast enough that a copy across the tailnet feels like a local one.
-2. **A clipboard that follows you.** Copy on one Mac and paste on another, with no button: lazy, private,
+2. **A clipboard that follows you.** Copy on one Mac and paste on another, with no button: instant, private,
    and loop-free.
 3. **Agent alerts on every device,** with actions: approve, steer or stop from the notification
    (`alerts.md`).
@@ -68,15 +68,19 @@ Dragging a remote item out to Finder:
 
 ## Clipboard
 
-The clipboard is lazy, the way RDP's clipboard channel and X11 selections work: announce, then fetch on paste.
+The clipboard is eager and capped: a copy travels when it is made, so a paste never waits on the other Mac.
+It was lazy at first, the way RDP's clipboard channel and X11 selections work (announce, then fetch on paste);
+that was simplified on 2026-11-07 (`remote-desktop.md`), because answering a pasteboard promise means blocking
+inside AppKit's callback, pumping the main run loop, for as long as the other Mac takes.
 
 Announce and fetch:
-- Each engine polls its pasteboard's `changeCount` and, on a change, announces an offer to the owner's other
-  engines and clients. An offer carries the origin device, a sequence number, the types and sizes, and
-  privacy flags.
-- Items up to 16 KiB ride inside the offer, so most pastes of text are instant. Larger ones become lazy
-  pasteboard items whose provider fetches from the origin when someone pastes, with a deadline.
-- Files on the clipboard become descriptors fetched through the transfer engine.
+- Each side polls its pasteboard's `changeCount` and, on a change, reads the copy and announces an offer. An
+  offer carries the origin device, a sequence number, the types and sizes, and privacy flags.
+- Items up to 16 KiB ride inside the offer, so most text lands with the offer itself. The rest, up to 16 MiB
+  of bytes, is fetched at once on streams of its own, and the copy is written whole once it lands. A type past
+  the cap stays home; the app's next-ranked type may still go.
+- Regular files of 16 MiB or less in all are fetched into a cache folder before the copy is written. Bigger
+  files and folders stay home.
 
 Loops and focus:
 - A received item is written with onicode's origin type and `currentHostOnly`. Its `changeCount` is
@@ -103,12 +107,12 @@ the clipboard between Macs outside a desktop window.
   the newest offer the Mac has seen, so a Mac whose clock runs behind still wins with a later copy.
 - A fetch names the item as well as the type, `clip/<seq>/<item>/<type>`: a copy of several pictures has the
   same type in each item. `clip/<seq>/<type>` means item 0.
-- Until "Paste from Other Apps" is allowed, an offer carries types alone (size 0, nothing inline) and the
-  origin reads the bytes only when a peer pastes, so nobody is prompted unasked. Denied, the watcher stops.
+- Until "Paste from Other Apps" is allowed, the origin reads nothing, so nobody is prompted, and its copies
+  stay there; the other side's copies still land. The guide to that pane raises the one prompt that lists
+  desktopd there when it was never asked.
 - A privacy marker on any item keeps the whole copy home, since some apps write the marker as an item of
   its own.
-- Files of 16 MiB or less in all, each a regular file, are fetched as soon as the offer lands, so their
-  paste is instant. Bigger copies and folders wait for the paste, with a 120 s deadline; other types have
-  3 s.
+- A copy has 30 s to arrive in full; a newer copy on either Mac meanwhile wins, and a copy that never
+  arrives leaves the board as it was.
 - Tests keep the clipboard in memory. Only the running app and desktopd use the general pasteboard, and the
   `NSPasteboard` tests are opt-in (`ONICODE_PASTEBOARD_LIVE`) on uniquely named pasteboards.

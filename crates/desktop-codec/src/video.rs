@@ -22,9 +22,9 @@ pub struct EncoderConfig {
     pub fps: u16,
     /// Target bitrate, bits per second.
     pub bitrate_bps: u32,
-    /// The colour the stream carries. [`Chroma::Full`] is HEVC only, and every picture must
-    /// then be full-range 10-bit bi-planar 4:4:4 (`xf44`); the encoder refuses anything else
-    /// rather than let the hardware quietly encode 4:2:0.
+    /// The colour the stream carries. Every picture of a [`Chroma::Full`] stream must be
+    /// full-range 10-bit bi-planar 4:4:4 (`xf44`); the encoder refuses anything else rather than
+    /// let the hardware quietly encode 4:2:0.
     pub chroma: Chroma,
 }
 
@@ -51,9 +51,6 @@ pub struct EncodedPacket {
     pub ltr_token: Option<u64>,
     /// This very frame was submitted with `force_ltr_refresh` (and the session has LTR).
     pub ltr_refresh: bool,
-    /// Nothing later refers to this frame: the encoder's temporal layer 1
-    /// ([`VideoEncoder::set_temporal_layers`]). Never a keyframe or a refresh.
-    pub discardable: bool,
     /// How far the encoder's own reconstruction of this frame is from its source, when the
     /// session measures it.
     pub mse: Option<Mse>,
@@ -116,22 +113,6 @@ pub trait VideoEncoder: Send + Sync + Sized + 'static {
         Err(CodecError::NoStripes)
     }
 
-    /// Whether this machine codes a `width` × `height` picture carrying `chroma` faster as two
-    /// stripes at once than whole, timed now (`crate::stripes::side_by_side`): a few hundred
-    /// milliseconds of the encode engines, once per size. `None` for an encoder that codes no
-    /// stripes (the default), or a picture too short to split.
-    ///
-    /// # Errors
-    ///
-    /// When a session for the timing is refused.
-    fn side_by_side(
-        _width: u32,
-        _height: u32,
-        _chroma: Chroma,
-    ) -> Result<Option<crate::stripes::SideBySide>, CodecError> {
-        Ok(None)
-    }
-
     /// Submit one picture; `pts_us` comes back on its packet.
     ///
     /// # Errors
@@ -157,24 +138,6 @@ pub trait VideoEncoder: Send + Sync + Sized + 'static {
     ///
     /// The encoder refused the property.
     fn set_frame_rate(&self, fps: u16) -> Result<(), CodecError>;
-
-    /// Turn temporal layers on or off from the next frame: with them on, every other frame is
-    /// one nothing later refers to ([`EncodedPacket::discardable`]), which a receiver may skip
-    /// when it cannot repair it. Returns whether the session writes layers now. An encoder
-    /// without them writes none, whatever it is asked.
-    ///
-    /// # Errors
-    ///
-    /// The encoder refused the property.
-    fn set_temporal_layers(&self, _on: bool) -> Result<bool, CodecError> {
-        Ok(false)
-    }
-
-    /// Frames the session gave up since it opened (its rate control dropped them, or they
-    /// failed); 0 for an encoder that never does.
-    fn frames_dropped(&self) -> u64 {
-        0
-    }
 }
 
 /// An Opus encoder for the captured audio: 48 kHz interleaved stereo float in, 10 ms packets

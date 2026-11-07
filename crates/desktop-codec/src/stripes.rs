@@ -8,8 +8,9 @@
 //!   the client both call it, so they agree without the wire saying more than the height.
 //! - `StripeCopy` (macOS): a stripe's coded rows copied out of the capture into a picture of its
 //!   own, `IOSurface`-backed so the session codes it inside the submit.
-//! - `side_by_side` (macOS): whether this Mac's engines code the two stripes at once, the gate
-//!   before a stream is striped.
+//!
+//! Which streams are striped is the host's call, by their size alone (`onicode-desktopd`'s
+//! `stripes`).
 
 /// Rows each stripe codes past the seam, one HEVC coding tree unit.
 ///
@@ -72,50 +73,28 @@ pub const fn layout(height: u32) -> Option<[Stripe; 2]> {
     ])
 }
 
-/// What `side_by_side` timed: a capture coded whole, and as two stripes submitted at once.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct SideBySide {
-    /// The whole picture's median encode.
-    pub whole: std::time::Duration,
-    /// The two stripes' median: both copies and both submits, from the first start to the
-    /// last return.
-    pub striped: std::time::Duration,
-}
-
-impl SideBySide {
-    /// Whether stripes are worth their bits here: two beat one by a quarter. On one engine
-    /// the stripes take turns and are no faster (MEASUREMENTS.md, "stripes across the two
-    /// encode engines").
-    #[must_use]
-    pub fn pays(&self) -> bool {
-        self.striped.saturating_mul(5) <= self.whole.saturating_mul(4)
-    }
-}
-
 #[cfg(target_os = "macos")]
-pub use imp::{StripeCopy, side_by_side};
+pub use imp::StripeCopy;
 
 #[cfg(target_os = "macos")]
 mod imp {
     use std::ptr::{self, NonNull};
-    use std::time::{Duration, Instant};
 
     use objc2_core_foundation::{CFDictionary, CFNumber, CFRetained, CFString, CFType};
     use objc2_core_video::{
-        CVPixelBuffer, CVPixelBufferCreate, CVPixelBufferGetBaseAddressOfPlane,
-        CVPixelBufferGetBytesPerRowOfPlane, CVPixelBufferGetHeight, CVPixelBufferGetHeightOfPlane,
-        CVPixelBufferGetPixelFormatType, CVPixelBufferGetWidth, CVPixelBufferLockBaseAddress,
-        CVPixelBufferLockFlags, CVPixelBufferPool, CVPixelBufferUnlockBaseAddress,
-        kCVPixelBufferHeightKey, kCVPixelBufferIOSurfacePropertiesKey,
-        kCVPixelBufferPixelFormatTypeKey, kCVPixelBufferWidthKey,
+        CVPixelBuffer, CVPixelBufferGetBaseAddressOfPlane, CVPixelBufferGetBytesPerRowOfPlane,
+        CVPixelBufferGetHeight, CVPixelBufferGetHeightOfPlane, CVPixelBufferGetPixelFormatType,
+        CVPixelBufferGetWidth, CVPixelBufferLockBaseAddress, CVPixelBufferLockFlags,
+        CVPixelBufferPool, CVPixelBufferUnlockBaseAddress, kCVPixelBufferHeightKey,
+        kCVPixelBufferIOSurfacePropertiesKey, kCVPixelBufferPixelFormatTypeKey,
+        kCVPixelBufferWidthKey,
     };
-    use onicode_desktop_media::wire::VideoCodec;
 
-    use super::{SideBySide, Stripe, layout};
+    use super::Stripe;
+    use crate::CodecError;
     use crate::cf::check;
     use crate::encoder::pixel_format;
-    use crate::video::{Chroma, EncoderConfig, FrameOptions};
-    use crate::{CodecError, Encoder, PixelBuffer};
+    use crate::video::Chroma;
 
     /// The attributes of an `IOSurface`-backed picture `width` × `height` in `format`.
     fn surface_attributes(
@@ -399,118 +378,17 @@ mod imp {
         Ok(())
     }
 
-    /// Frames each way before [`side_by_side`] counts: the sessions placing themselves.
-    const SETTLE: usize = 4;
-    /// Frames each way it counts.
-    const COUNTED: usize = 9;
-
-    /// Time a picture coded whole against its two stripes coded at once.
-    ///
-    /// `width` × `height` pictures carrying `chroma`, whole, then as the two stripes of
-    /// [`layout`] on two threads at once, on this Mac's engines as they are now. A few hundred
-    /// milliseconds at 4K: run it once per boot and size, off any stream's path. `None` for a
-    /// picture too short to stripe.
-    pub fn side_by_side(
-        width: u32,
-        height: u32,
-        chroma: Chroma,
-    ) -> Result<Option<SideBySide>, CodecError> {
-        let Some(stripes) = layout(height) else {
-            return Ok(None);
-        };
-        let (w, h) = (
-            usize::try_from(width).unwrap_or(usize::MAX),
-            usize::try_from(height).unwrap_or(usize::MAX),
-        );
-        let config = |rows: u32| EncoderConfig {
-            width,
-            height: rows,
-            codec: VideoCodec::Hevc,
-            fps: 60,
-            bitrate_bps: 40_000_000,
-            chroma,
-        };
-        let even = PixelBuffer::from_retained(picture(w, h, 0, chroma)?);
-        let odd = PixelBuffer::from_retained(picture(w, h, 1, chroma)?);
-        let capture = |frame: usize| {
-            if frame & 1 == 0 {
-                even.as_cv()
-            } else {
-                odd.as_cv()
-            }
-        };
-        let whole = Encoder::new(config(height), |_packet| {})?;
-        let mut whole_took = Vec::with_capacity(COUNTED);
-        for frame in 0..SETTLE + COUNTED {
-            let options = FrameOptions {
-                force_keyframe: frame == 0,
-                ..FrameOptions::default()
-            };
-            let started = Instant::now();
-            whole.encode(capture(frame), stamp(frame), &options)?;
-            if frame >= SETTLE {
-                whole_took.push(started.elapsed());
-            }
-        }
-        drop(whole);
-        let parts = stripes
-            .iter()
-            .map(|&stripe| {
-                Ok((
-                    StripeCopy::new((w, h), stripe, chroma)?,
-                    Encoder::new(config(stripe.coded_rows), |_packet| {})?,
-                ))
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
-        let mut striped_took = Vec::with_capacity(COUNTED);
-        for frame in 0..SETTLE + COUNTED {
-            let options = FrameOptions {
-                force_keyframe: frame == 0,
-                ..FrameOptions::default()
-            };
-            let started = Instant::now();
-            let submit = |(copy, encoder): &(StripeCopy, Encoder)| -> Result<(), CodecError> {
-                encoder.encode(&*copy.copy(capture(frame))?, stamp(frame), &options)
-            };
-            std::thread::scope(|scope| {
-                let lower = scope.spawn(|| parts.get(1).map_or(Ok(()), submit));
-                let upper = parts.first().map_or(Ok(()), submit);
-                let lower = lower.join().unwrap_or(Err(CodecError::Os {
-                    call: "VTCompressionSessionEncodeFrame",
-                    status: -1,
-                }));
-                upper.and(lower)
-            })?;
-            if frame >= SETTLE {
-                striped_took.push(started.elapsed());
-            }
-        }
-        Ok(Some(SideBySide {
-            whole: median(whole_took),
-            striped: median(striped_took),
-        }))
-    }
-
-    /// A frame's stamp on a 60 beat, microseconds: the rate control spends by it.
-    fn stamp(frame: usize) -> u64 {
-        u64::try_from(frame)
-            .unwrap_or(u64::MAX)
-            .saturating_mul(16_667)
-    }
-
-    fn median(mut took: Vec<Duration>) -> Duration {
-        took.sort_unstable();
-        took.get(took.len() / 2).copied().unwrap_or_default()
-    }
-
     /// An `IOSurface`-backed picture of blocks like text, scrolled `scroll` × 4 rows, so each
     /// frame is work for the encoder as a changing screen is.
+    #[cfg(test)]
     fn picture(
         width: usize,
         height: usize,
         scroll: usize,
         chroma: Chroma,
     ) -> Result<CFRetained<CVPixelBuffer>, CodecError> {
+        use objc2_core_video::CVPixelBufferCreate;
+
         let format = pixel_format(chroma);
         let attributes = surface_attributes(width, height, format);
         let mut raw: *mut CVPixelBuffer = ptr::null_mut();
@@ -572,7 +450,14 @@ mod imp {
 
     #[cfg(test)]
     mod tests {
+        use std::time::{Duration, Instant};
+
+        use onicode_desktop_media::wire::VideoCodec;
+
         use super::*;
+        use crate::PixelBuffer;
+        use crate::stripes::layout;
+        use crate::video::{EncoderConfig, FrameOptions};
 
         /// Each stripe's picture holds exactly its coded rows of the capture, in both planes
         /// and both chroma formats (a 4:2:0 session's 4:4:4 capture too), and the two stripes
@@ -684,24 +569,8 @@ mod imp {
             );
         }
 
-        /// The gate times both ways on the real encoder and says which won.
-        #[test]
-        fn the_gate_times_both_ways() {
-            if !onicode_desktop_testkit::live::opted_in(onicode_desktop_testkit::live::VT_TESTS) {
-                return;
-            }
-            let gate = side_by_side(1920, 1088, Chroma::Subsampled)
-                .unwrap()
-                .unwrap();
-            assert!(
-                gate.whole > Duration::ZERO && gate.striped > Duration::ZERO,
-                "{gate:?}"
-            );
-            assert_eq!(side_by_side(1920, 192, Chroma::Subsampled).unwrap(), None);
-        }
-
-        /// What a stripe's copy costs, and what the gate says, at the sizes stripes are for: run
-        /// by hand (MEASUREMENTS.md, "large streams on the encode engines").
+        /// What a stripe's copy costs at the sizes stripes are for: run by hand (MEASUREMENTS.md,
+        /// "large streams on the encode engines").
         #[test]
         #[ignore = "a measurement; run with --run-ignored only --no-capture"]
         fn stripes_copy_cost() {
@@ -723,16 +592,11 @@ mod imp {
                     .take(200)
                     .collect();
                     took.sort_unstable();
-                    let gate = side_by_side(w, h, chroma).unwrap().unwrap();
                     eprintln!(
-                        "MEASURE stripes {w}x{h} {chroma:?}: both copies p50 {:?} p95 {:?} max {:?}; \
-                         gate whole {:?} striped {:?} pays {}",
+                        "MEASURE stripes {w}x{h} {chroma:?}: both copies p50 {:?} p95 {:?} max {:?}",
                         took[took.len() / 2],
                         took[took.len() * 95 / 100],
                         took[took.len() - 1],
-                        gate.whole,
-                        gate.striped,
-                        gate.pays(),
                     );
                 }
             }

@@ -507,7 +507,6 @@ pub struct Fake {
     config: Mutex<EncoderConfig>,
     sink: Sink,
     coded: AtomicU64,
-    layers: AtomicBool,
 }
 
 impl std::fmt::Debug for Fake {
@@ -529,7 +528,6 @@ impl VideoEncoder for Fake {
             config: Mutex::new(config),
             sink: Box::new(sink),
             coded: AtomicU64::new(0),
-            layers: AtomicBool::new(false),
         })
     }
 
@@ -567,10 +565,6 @@ impl VideoEncoder for Fake {
         let ltr_token = coded
             .is_multiple_of(LTR_EVERY)
             .then_some(coded.wrapping_add(1));
-        let discardable = !keyframe
-            && ltr_token.is_none()
-            && self.layers.load(Ordering::Relaxed)
-            && coded % 2 == 1;
         let len = if keyframe {
             KEYFRAME_BYTES
         } else {
@@ -587,7 +581,6 @@ impl VideoEncoder for Fake {
             keyframe,
             ltr_token,
             ltr_refresh: options.force_ltr_refresh && !keyframe,
-            discardable,
             mse: None,
             pts_us,
         });
@@ -602,11 +595,6 @@ impl VideoEncoder for Fake {
     fn set_frame_rate(&self, fps: u16) -> Result<(), CodecError> {
         self.config.lock().fps = fps;
         Ok(())
-    }
-
-    fn set_temporal_layers(&self, on: bool) -> Result<bool, CodecError> {
-        self.layers.store(on, Ordering::Relaxed);
-        Ok(true)
     }
 }
 

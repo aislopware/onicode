@@ -42,8 +42,11 @@ pub mod order;
 /// The session wire's generation, said in [`Up::Join`] and [`Down::Welcome`]. Bumped with any
 /// change a peer of the last generation could misread; peers refuse every other. 2: typed text,
 /// the paste chord, input-source sync, the chord's character and the focused field are gone;
-/// the clipboard came ([`Up::Clip`], [`Down::Clip`] and its fetch streams).
-pub const WIRE: u32 = 2;
+/// the clipboard came ([`Up::Clip`], [`Down::Clip`] and its fetch streams). 3: H.264 is gone,
+/// video is HEVC only. 4: a stream's focus is gone (the engines no longer favour a focused
+/// stream), and so is the sound report (no audio copies to size); a clipboard offer's bytes past
+/// the inline ones are fetched as soon as it lands.
+pub const WIRE: u32 = 4;
 
 /// desktopd's UDP port on every tailnet address: the engine's port (`onicode_net::transport::
 /// PORT`, 7433) plus one.

@@ -90,7 +90,6 @@ async fn open(display: u32) -> Opened {
         events: Arc::new(move |event: StreamEvent| {
             let _gone = told.send(event);
         }),
-        sound: None,
     })
     .await
     .expect("the drawn display opens");
@@ -405,27 +404,22 @@ fn configs_follow_the_display_and_the_quality() {
     assert_eq!(encoder.fps, 60, "no faster than the display");
     assert_eq!(capture.fps, 0, "the display's own rate");
 
-    let h264 = Quality {
-        codec: VideoCodec::H264,
+    let half = Quality {
         scale: 0.5,
         fps: 30,
         bitrate_bps: 0,
         ..Quality::default()
     };
-    let (capture, encoder) = configs((1366, 768), &h264, None, Chroma::Subsampled);
+    let (capture, encoder) = configs((1366, 768), &half, None, Chroma::Subsampled);
     assert_eq!((capture.width, capture.height), (684, 384));
-    assert_eq!(
-        (encoder.width, encoder.height),
-        (684, 384),
-        "H.264 keeps the even size"
-    );
+    assert_eq!((encoder.width, encoder.height), (688, 384), "padded to 16");
     assert_eq!(capture.fps, 30, "no display rate: the asked one");
     assert_eq!(encoder.bitrate_bps, 100_000, "a floor under the rate");
 }
 
 proptest! {
     /// Every side is even, at least 2, never larger than the display's, and the encoder's
-    /// covers the capture's, padded to the codec's multiple.
+    /// covers the capture's, padded to [`HEVC_ALIGN`].
     #[test]
     fn configs_are_coded_whole(
         width in 1_u32..8_000,
@@ -433,12 +427,10 @@ proptest! {
         scale in 0.0_f32..2.0,
         fps in 0_u16..300,
         hz in proptest::option::of(1.0_f64..240.0),
-        hevc in any::<bool>(),
     ) {
         let quality = Quality {
             scale,
             fps,
-            codec: if hevc { VideoCodec::Hevc } else { VideoCodec::H264 },
             ..Quality::default()
         };
         let (capture, encoder) = configs((width, height), &quality, hz, Chroma::Subsampled);
@@ -446,9 +438,8 @@ proptest! {
             prop_assert!(side >= 2 && side % 2 == 0, "{side}");
             prop_assert!(side <= native.max(2).next_multiple_of(2), "{side} of {native}");
         }
-        let multiple = if hevc { HEVC_ALIGN } else { 2 };
-        prop_assert_eq!(encoder.width % multiple, 0);
-        prop_assert_eq!(encoder.height % multiple, 0);
+        prop_assert_eq!(encoder.width % HEVC_ALIGN, 0);
+        prop_assert_eq!(encoder.height % HEVC_ALIGN, 0);
         prop_assert!(encoder.width >= capture.width && encoder.height >= capture.height);
         prop_assert!((1..=240).contains(&encoder.fps));
     }

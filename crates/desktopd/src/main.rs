@@ -7,7 +7,6 @@
 //!   ([`grants::GrantsCommand`]).
 //! - `--request-grant <privilege>`: raise that one alert in this process (the onboarding
 //!   checklist's click), then print the grants and exit.
-//! - `--display-holder <socket> <list>`: be the display holder ([`onicode_desktopd::holder`]).
 //! - `--synthetic`: serve drawn displays; never captures, never needs a grant.
 //! - `doctor`: print the grants as the session tells them, without prompting.
 
@@ -52,9 +51,6 @@ fn main() -> ExitCode {
         .with_writer(std::io::stderr)
         .init();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.first().map(String::as_str) == Some(onicode_desktopd::holder::HOLDER_ARG) {
-        return holder_main(&args);
-    }
     if args.first().map(String::as_str) == Some("doctor") {
         return doctor();
     }
@@ -105,23 +101,18 @@ fn doctor() -> ExitCode {
 /// Serve: the made displays and the main queue on the main thread, the runtime on a
 /// thread beside it, ending the process when it ends.
 fn serve(data_dir: PathBuf, synthetic: bool) -> ExitCode {
-    use onicode_desktopd::holder;
-
     let made = if synthetic {
         None
     } else {
-        sized::on_main_queue(holder::Remote::unlinked())
+        sized::on_main_queue(sized::Cg)
     };
     let spawned = std::thread::Builder::new()
         .name("onicode-desktopd".to_owned())
         .spawn(move || {
             let ended = runtime().map(|runtime| {
                 runtime.block_on(async move {
-                    if let Some(made) = &made {
-                        hold_displays(made, &data_dir);
-                    }
                     if synthetic {
-                        run::<onicode_desktopd::synthetic::Canvas, holder::Remote>(
+                        run::<onicode_desktopd::synthetic::Canvas, sized::Cg>(
                             data_dir,
                             None,
                             all_granted,
@@ -129,7 +120,7 @@ fn serve(data_dir: PathBuf, synthetic: bool) -> ExitCode {
                         )
                         .await
                     } else {
-                        run::<Native, holder::Remote>(data_dir, made, grants::current, true).await
+                        run::<Native, sized::Cg>(data_dir, made, grants::current, true).await
                     }
                 })
             });
@@ -159,34 +150,6 @@ fn runtime() -> Result<tokio::runtime::Runtime, String> {
         .thread_name("onicode-desktopd-rt")
         .build()
         .map_err(|e| format!("no runtime: {e}"))
-}
-
-/// Have the made displays held by the display holder, its socket and list in the data
-/// directory, and take those it holds from the desktopd before ([`onicode_desktopd::holder`]);
-/// once more a little later, for those a holder that had to go is still making again.
-fn hold_displays(made: &Displays<onicode_desktopd::holder::Remote>, data_dir: &std::path::Path) {
-    use onicode_desktopd::holder;
-
-    let program = match std::env::current_exe() {
-        Ok(program) => program,
-        Err(e) => {
-            tracing::warn!(error = %e, "no display holder: every display streams a physical one");
-            return;
-        }
-    };
-    let dial = holder::spawning(
-        program,
-        data_dir.join("displays.sock"),
-        data_dir.join("displays.json"),
-    );
-    made.with_factory(move |remote| remote.set_dial(dial));
-    made.set_linger(sized::LINGER);
-    made.adopt();
-    let again = made.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(holder::ADOPT_AGAIN_AFTER).await;
-        again.adopt();
-    });
 }
 
 /// desktopd's life: the grants, the control socket, the endpoint once the tailnet is up, and
@@ -261,60 +224,4 @@ fn before_exit<P: Platform, F: Factory>(host: &Host<P, F>) {
         tracing::warn!("some held input was not let go of before the restart");
     }
     host.close_all();
-}
-
-/// The display holder's whole life (`onicode-desktopd --display-holder <socket> <list>`): its
-/// displays on the main thread, desktopds served from a thread beside it, until it is alone for
-/// [`onicode_desktopd::holder::ALONE_FOR`] or asked to quit.
-fn holder_main(args: &[String]) -> ExitCode {
-    use onicode_desktopd::holder::{self, Ended, Holder};
-    use onicode_desktopd::sized::Main;
-
-    let (Some(socket), Some(store)) = (args.get(1), args.get(2)) else {
-        return ExitCode::FAILURE;
-    };
-    let (socket, store) = (PathBuf::from(socket), PathBuf::from(store));
-    let Some(queue) = sized::MainQueue::new(Holder::new(sized::Cg, store.clone())) else {
-        return ExitCode::FAILURE;
-    };
-    let main: Arc<dyn Main<Holder<sized::Cg>>> = Arc::new(queue);
-    let serving = std::thread::Builder::new()
-        .name("onicode-display-holder".to_owned())
-        .spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build();
-            let ended = runtime.map(|runtime| {
-                runtime.block_on(async {
-                    let first = holder::first_link()
-                        .inspect_err(|e| tracing::info!(error = %e, "no desktopd on stdin"))
-                        .ok();
-                    let listener = holder::listen(&socket)
-                        .inspect_err(|e| tracing::warn!(error = %e, "the holder's socket"))
-                        .ok();
-                    let restoring = Arc::clone(&main);
-                    tokio::spawn(async move { holder::restore(restoring, &store).await });
-                    let ended =
-                        holder::serve(Arc::clone(&main), first, listener, holder::ALONE_FOR).await;
-                    if ended == Ended::Alone {
-                        let (tx, rx) = tokio::sync::oneshot::channel();
-                        main.run(Box::new(move |held: &mut Holder<sized::Cg>| {
-                            held.release_all();
-                            let _done = tx.send(());
-                        }));
-                        let _released = rx.await;
-                    }
-                    tracing::info!(?ended, "display holder ending");
-                });
-            });
-            #[expect(
-                clippy::exit,
-                reason = "the main thread never returns; this ends the process"
-            )]
-            std::process::exit(i32::from(ended.is_err()));
-        });
-    if serving.is_err() {
-        return ExitCode::FAILURE;
-    }
-    sized::park_main()
 }

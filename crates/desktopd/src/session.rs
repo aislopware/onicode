@@ -248,7 +248,6 @@ impl<P: Platform> Client<P> {
             events: Arc::new(move |event: StreamEvent| {
                 let _gone = notes.send(Note::Stream(id, event));
             }),
-            sound: Some(self.sound.clock()),
         }
     }
 
@@ -824,16 +823,6 @@ impl<P: Platform, F: Factory> Host<P, F> {
                 }
                 true
             }
-            ScreenRequest::Focused { stream, focused } => {
-                if let Some(open) = client.streams.get(&stream) {
-                    open.pipeline.set_focused(focused);
-                }
-                true
-            }
-            ScreenRequest::SoundReport(report) => {
-                client.sound.report(report);
-                true
-            }
             ScreenRequest::Curtain { on } => {
                 let refused = if !on {
                     None
@@ -910,7 +899,6 @@ impl<P: Platform, F: Factory> Host<P, F> {
                     let _decided = pipeline.report(index, &report, path_sample(&client.link));
                 }
             }
-            Feedback::Sound(report) => client.sound.report(report),
         }
     }
 

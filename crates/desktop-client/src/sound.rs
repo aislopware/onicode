@@ -1,26 +1,26 @@
 //! The Mac's sound on this device: one Opus decoder and one player for the whole link.
 //!
 //! desktopd captures the Mac's sound once for each client that asked to hear it
-//! (`Up::Join { sound }`, `Up::Sound`) and sends it on media stream [`SOUND`]. The session
-//! starts this task with the link: it reads [`SOUND`] off the router, fills short gaps from the
-//! copies a later datagram carries or conceals them, plays through the platform's output, and
-//! tells desktopd what arrived every [`REPORT_EVERY`], which sizes those copies.
+//! (`Up::Join { sound }`, `Up::Sound`) and sends it on media stream [`SOUND`], one packet a
+//! datagram. The session starts this task with the link: it reads [`SOUND`] off the router,
+//! fades over the packets that never came (`onicode_desktop_codec::audio::LossFade`), and plays
+//! through the platform's output.
 //!
 //! Ported from slopty's client `screen/sound.rs` (MIT, same authors). The player is
 //! `onicode_desktop_codec::audio`'s.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bytes::Bytes;
-use onicode_desktop_media::wire::{Feedback, HEADER_BYTES, Kind, MediaHeader, SOUND};
-use onicode_desktop_media::{MAX_AUDIO_COPIES, SoundCount, parse_audio};
+use onicode_desktop_media::parse_audio;
+use onicode_desktop_media::wire::{HEADER_BYTES, Kind, MediaHeader, SOUND};
 use tokio::sync::{oneshot, watch};
 use tokio::task::JoinHandle;
 
 use crate::router::{Arrival, ScreenRouter};
-use crate::screen::{Delivery, REPORT_EVERY};
+use crate::screen::REPORT_EVERY;
 
 /// What the sound has done so far.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -31,10 +31,8 @@ pub struct SoundStats {
     pub packets: u64,
     /// Packets missing from the sequence, late, or landed before the player was open.
     pub lost: u64,
-    /// Lost packets stood in for.
+    /// Lost packets faded over.
     pub concealed: u64,
-    /// Lost packets decoded from a copy a later datagram carried.
-    pub recovered: u64,
     /// Times playback ran dry under sound.
     pub underruns: u64,
     /// Audio dropped to keep the delay at the target.
@@ -53,15 +51,13 @@ pub type OpenPlayer = fn() -> Option<Box<dyn Playback>>;
 pub trait Playback: Send {
     /// Decode one Opus packet; `None` when it does not decode.
     fn decode(&mut self, packet: &[u8]) -> Option<Vec<f32>>;
-    /// Queue `pcm`, a packet that arrived at `at` numbered `seq`; `muted` keeps its timing but
-    /// not its sound.
-    fn play(&mut self, pcm: &[f32], seq: u32, at: Instant, muted: bool);
-    /// Queue a stand-in for lost packets.
-    fn conceal(&mut self, pcm: &[f32]);
-    /// The stand-in for `missing` lost packets, after what was played.
-    fn stand_in(&mut self, missing: u32, out: &mut Vec<f32>);
-    /// `pcm` as it is to be played: crossfaded in from a stand-in before it.
-    fn take(&mut self, pcm: &[f32]) -> Vec<f32>;
+    /// Queue `pcm`, the next packet, faded in when a gap went before it; `muted` keeps its
+    /// place but not its sound.
+    fn play(&mut self, pcm: &[f32], muted: bool);
+    /// Stand in for `missing` lost packets before the next: what was playing fades to silence,
+    /// which keeps their time. `false` when nothing stands in (nothing was played yet, or the
+    /// gap is a pause).
+    fn conceal(&mut self, missing: u32, muted: bool) -> bool;
     /// Counters to lay over [`SoundStats`].
     fn stats(&self, stats: &mut SoundStats);
 }
@@ -79,17 +75,17 @@ pub fn platform_player() -> Option<Box<dyn Playback>> {
 }
 
 mod apple {
-    use std::time::Instant;
-
     use onicode_desktop_codec::CodecError;
-    use onicode_desktop_codec::audio::{Arrival, Conceal, OpusDecoder, Player};
+    use onicode_desktop_codec::audio::{LossFade, OpusDecoder, Player};
 
     use super::{Playback, SoundStats};
 
     pub(super) struct Opus {
         decoder: OpusDecoder,
         player: Player,
-        conceal: Conceal,
+        fade: LossFade,
+        /// Scratch for a stand-in's samples.
+        stand_in: Vec<f32>,
     }
 
     impl Opus {
@@ -97,7 +93,8 @@ mod apple {
             Ok(Self {
                 decoder: OpusDecoder::new()?,
                 player: Player::new()?,
-                conceal: Conceal::default(),
+                fade: LossFade::default(),
+                stand_in: Vec::new(),
             })
         }
     }
@@ -113,25 +110,25 @@ mod apple {
             }
         }
 
-        fn play(&mut self, pcm: &[f32], seq: u32, at: Instant, muted: bool) {
-            let arrival = Arrival { seq, at };
+        fn play(&mut self, pcm: &[f32], muted: bool) {
+            let pcm = self.fade.take(pcm);
             if muted {
-                self.player.hold(arrival);
+                self.player.hold();
             } else {
-                self.player.push(pcm, arrival);
+                self.player.push(pcm);
             }
         }
 
-        fn conceal(&mut self, pcm: &[f32]) {
-            self.player.conceal(pcm);
-        }
-
-        fn stand_in(&mut self, missing: u32, out: &mut Vec<f32>) {
-            self.conceal.fill(missing, out);
-        }
-
-        fn take(&mut self, pcm: &[f32]) -> Vec<f32> {
-            self.conceal.take(pcm).to_vec()
+        fn conceal(&mut self, missing: u32, muted: bool) -> bool {
+            self.stand_in.clear();
+            self.fade.fill(missing, &mut self.stand_in);
+            if self.stand_in.is_empty() {
+                return false;
+            }
+            if !muted {
+                self.player.conceal(&self.stand_in);
+            }
+            true
         }
 
         fn stats(&self, stats: &mut SoundStats) {
@@ -168,27 +165,23 @@ impl Drop for Sound {
 }
 
 impl Sound {
-    /// Play what `router` brings on [`SOUND`] through what `open` opens, reporting on
-    /// `feedback`; `muted` silences it here.
+    /// Play what `router` brings on [`SOUND`] through what `open` opens; `muted` silences it
+    /// here.
     pub fn spawn(
         runtime: &tokio::runtime::Handle,
         router: &ScreenRouter,
         open: OpenPlayer,
         muted: bool,
-        feedback: Box<dyn Fn(Bytes) -> Delivery + Send>,
     ) -> Self {
         let muted = Arc::new(AtomicBool::new(muted));
         let (stats_tx, stats) = watch::channel(SoundStats::default());
         let task = Task {
             datagrams: router.attach(SOUND).datagrams,
-            feedback,
             muted: Arc::clone(&muted),
             stats: stats_tx,
             counters: SoundStats::default(),
-            count: SoundCount::default(),
             player: Slot::Unopened(open),
             seq: None,
-            stand_in: Vec::new(),
         };
         Self {
             muted,
@@ -228,36 +221,27 @@ enum Slot {
 
 struct Task {
     datagrams: tokio::sync::mpsc::Receiver<Arrival>,
-    feedback: Box<dyn Fn(Bytes) -> Delivery + Send>,
     muted: Arc<AtomicBool>,
     stats: watch::Sender<SoundStats>,
     counters: SoundStats,
-    /// What arrived since the last report.
-    count: SoundCount,
     player: Slot,
     /// The last packet played.
     seq: Option<u32>,
-    /// Scratch for the stand-in samples.
-    stand_in: Vec<f32>,
 }
 
 impl Task {
     async fn run(mut self) {
-        let mut report = tokio::time::interval(REPORT_EVERY);
-        report.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut publish = tokio::time::interval(REPORT_EVERY);
+        publish.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {
                 biased;
-                _instant = report.tick() => {
-                    if !self.report() {
-                        break;
-                    }
-                }
+                _instant = publish.tick() => self.publish(),
                 arrival = self.datagrams.recv() => {
-                    let Some((at, datagram)) = arrival else { break };
-                    self.ingest(&datagram, at);
-                    while let Ok((at, datagram)) = self.datagrams.try_recv() {
-                        self.ingest(&datagram, at);
+                    let Some((_at, datagram)) = arrival else { break };
+                    self.ingest(&datagram);
+                    while let Ok((_at, datagram)) = self.datagrams.try_recv() {
+                        self.ingest(&datagram);
                     }
                 }
             }
@@ -265,7 +249,7 @@ impl Task {
         tracing::debug!("the sound finished");
     }
 
-    fn ingest(&mut self, datagram: &Bytes, at: Instant) {
+    fn ingest(&mut self, datagram: &Bytes) {
         self.counters.datagrams = self.counters.datagrams.saturating_add(1);
         let Some((header, _payload)) = MediaHeader::parse(datagram) else {
             return;
@@ -274,12 +258,10 @@ impl Task {
             return;
         }
         let (data_count, seq) = (header.data_count.get(), header.frame.get());
-        let payload = datagram.slice(HEADER_BYTES..);
-        let Some(packets) = parse_audio(data_count, &payload) else {
+        let Some(packet) = parse_audio(data_count, &datagram.slice(HEADER_BYTES..)) else {
             return;
         };
-        self.count.arrived(seq);
-        self.play(seq, &packets.packet, &packets.earlier, at);
+        self.play(seq, &packet);
     }
 
     /// Move the player towards open: start opening it on the first packet, pick it up once the
@@ -302,16 +284,9 @@ impl Task {
         };
     }
 
-    /// Decode and queue one packet that arrived at `at`; late duplicates are dropped, gaps
-    /// counted. The end of a gap that `earlier` covers is decoded from those copies, and only
-    /// the rest is concealed. A packet that lands while the player is still opening is lost.
-    fn play(
-        &mut self,
-        seq: u32,
-        payload: &Bytes,
-        earlier: &[Option<Bytes>; MAX_AUDIO_COPIES],
-        at: Instant,
-    ) {
+    /// Decode and queue packet `seq`; late duplicates are dropped, and a gap is counted and
+    /// faded over. A packet that lands while the player is still opening is lost.
+    fn play(&mut self, seq: u32, packet: &[u8]) {
         self.open();
         let Slot::Open(playback) = &mut self.player else {
             self.counters.lost = self.counters.lost.saturating_add(1);
@@ -324,98 +299,66 @@ impl Task {
                 self.counters.lost = self.counters.lost.saturating_add(1);
                 return;
             }
-            if gap > 1 {
-                let missing = gap.saturating_sub(1);
+            let missing = gap.saturating_sub(1);
+            if missing > 0 {
                 self.counters.lost = self.counters.lost.saturating_add(u64::from(missing));
-                let copies = earlier.iter().take_while(|copy| copy.is_some()).count();
-                let recovered = missing.min(u32::try_from(copies).unwrap_or(0));
-                let concealed = missing.saturating_sub(recovered);
-                self.stand_in.clear();
-                if concealed > 0 {
-                    playback.stand_in(concealed, &mut self.stand_in);
-                    if !self.stand_in.is_empty() {
-                        self.counters.concealed =
-                            self.counters.concealed.saturating_add(u64::from(concealed));
-                    }
-                }
-                // Oldest first; a recovered packet keeps the gap's time.
-                let copies = earlier
-                    .get(..usize::try_from(recovered).unwrap_or(0))
-                    .unwrap_or_default();
-                for copy in copies.iter().rev().flatten() {
-                    if let Some(pcm) = playback.decode(copy) {
-                        let pcm = playback.take(&pcm);
-                        self.stand_in.extend_from_slice(&pcm);
-                        self.counters.recovered = self.counters.recovered.saturating_add(1);
-                    }
-                }
-                if !self.stand_in.is_empty() && !muted {
-                    playback.conceal(&self.stand_in);
+                if playback.conceal(missing, muted) {
+                    self.counters.concealed =
+                        self.counters.concealed.saturating_add(u64::from(missing));
                 }
             }
         }
         self.seq = Some(seq);
-        if let Some(pcm) = playback.decode(payload) {
-            let pcm = playback.take(&pcm);
-            playback.play(&pcm, seq, at, muted);
+        if let Some(pcm) = playback.decode(packet) {
+            playback.play(&pcm, muted);
             self.counters.packets = self.counters.packets.saturating_add(1);
         }
     }
 
-    /// Publish the counters, and tell desktopd what arrived while anything did. `false` once
-    /// the link is gone.
-    fn report(&mut self) -> bool {
+    /// Publish the counters.
+    fn publish(&mut self) {
         if let Slot::Open(playback) = &self.player {
             playback.stats(&mut self.counters);
         }
         let counters = self.counters;
         self.stats
             .send_if_modified(|stats| std::mem::replace(stats, counters) != counters);
-        let report = self.count.take();
-        if report.received == 0 && report.lost == 0 {
-            return true;
-        }
-        // A report that does not go loses the window's count; the next brings the next one.
-        (self.feedback)(Feedback::Sound(report).encode()) != Delivery::Gone
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use onicode_desktop_media::audio_datagram;
-    use onicode_desktop_media::wire::SoundReport;
-    use parking_lot::Mutex;
 
     use super::*;
 
-    /// A player that decodes a packet to its bytes as samples, and plays nothing.
-    struct Echo;
+    /// A player that decodes a packet to its bytes as samples, plays nothing, and stands in for
+    /// any gap once something was played.
+    #[derive(Default)]
+    struct Echo {
+        played: bool,
+    }
 
     impl Playback for Echo {
         fn decode(&mut self, packet: &[u8]) -> Option<Vec<f32>> {
             Some(packet.iter().map(|b| f32::from(*b)).collect())
         }
 
-        fn play(&mut self, _pcm: &[f32], _seq: u32, _at: Instant, _muted: bool) {}
-
-        fn conceal(&mut self, _pcm: &[f32]) {}
-
-        fn stand_in(&mut self, missing: u32, out: &mut Vec<f32>) {
-            out.extend(std::iter::repeat_n(
-                0.0,
-                usize::try_from(missing).unwrap() * 4,
-            ));
+        fn play(&mut self, _pcm: &[f32], _muted: bool) {
+            self.played = true;
         }
 
-        fn take(&mut self, pcm: &[f32]) -> Vec<f32> {
-            pcm.to_vec()
+        fn conceal(&mut self, _missing: u32, _muted: bool) -> bool {
+            self.played
         }
 
         fn stats(&self, _stats: &mut SoundStats) {}
     }
 
     fn echo() -> Option<Box<dyn Playback>> {
-        Some(Box::new(Echo))
+        Some(Box::new(Echo::default()))
     }
 
     fn never() -> Option<Box<dyn Playback>> {
@@ -426,7 +369,6 @@ mod tests {
         rt: tokio::runtime::Runtime,
         router: ScreenRouter,
         sound: Sound,
-        reports: Arc<Mutex<Vec<SoundReport>>>,
         routed: u64,
     }
 
@@ -438,27 +380,18 @@ mod tests {
                 .build()
                 .unwrap();
             let router = ScreenRouter::new();
-            let reports = Arc::new(Mutex::new(Vec::new()));
-            let caught = Arc::clone(&reports);
-            let feedback = Box::new(move |bytes: Bytes| {
-                if let Some(Feedback::Sound(report)) = Feedback::decode(&bytes) {
-                    caught.lock().push(report);
-                }
-                Delivery::Sent
-            });
-            let sound = Sound::spawn(rt.handle(), &router, open, false, feedback);
+            let sound = Sound::spawn(rt.handle(), &router, open, false);
             Self {
                 rt,
                 router,
                 sound,
-                reports,
                 routed: 0,
             }
         }
 
-        fn route(&mut self, seq: u32, earlier: &[&[u8]]) {
+        fn route(&mut self, seq: u32) {
             self.routed += 1;
-            let datagram = audio_datagram(SOUND, seq, 0, &[1, 2, 3], earlier).unwrap();
+            let datagram = audio_datagram(SOUND, seq, 0, &[1, 2, 3]).unwrap();
             self.router.route(datagram, Instant::now());
         }
 
@@ -482,16 +415,15 @@ mod tests {
     }
 
     /// The first packet starts opening the player off the task and is lost to it; once it is
-    /// open a gap is concealed, a late duplicate is not played, and a gap the next datagram
-    /// carries again is decoded from its copies. desktopd hears of every packet that arrived.
+    /// open a gap is counted and faded over, and a late duplicate is not played.
     #[test]
-    fn a_gap_is_concealed_or_recovered_and_a_late_packet_dropped() {
+    fn a_gap_is_concealed_and_a_late_packet_dropped() {
         let mut h = Harness::start(echo);
         let mut seq = 1;
-        h.route(seq, &[]);
+        h.route(seq);
         while h.settle().packets == 0 {
             seq += 1;
-            h.route(seq, &[]);
+            h.route(seq);
         }
         let before = h.settle();
         assert!(
@@ -499,49 +431,31 @@ mod tests {
             "the packets that landed while opening: {before:?}"
         );
         seq += 2;
-        h.route(seq, &[]);
+        h.route(seq);
         let after = h.settle();
         assert_eq!(after.packets, before.packets + 1);
         assert_eq!(after.lost, before.lost + 1, "one missing");
-        assert_eq!(after.concealed, before.concealed + 1, "and concealed");
-        h.route(seq - 1, &[]);
+        assert_eq!(after.concealed, before.concealed + 1, "and faded over");
+        h.route(seq - 1);
         let late = h.settle();
         assert_eq!(late.lost, after.lost + 1, "too late to play");
         assert_eq!(late.packets, after.packets, "not played");
         seq += 3;
-        h.route(seq, &[&[9], &[8]]);
-        let recovered = h.settle();
-        assert_eq!(recovered.lost, late.lost + 2);
-        assert_eq!(
-            recovered.recovered,
-            late.recovered + 2,
-            "both from the copies"
-        );
-        assert_eq!(recovered.concealed, late.concealed, "nothing concealed");
-        h.wait_for("the last report", |h| {
-            h.reports
-                .lock()
-                .iter()
-                .map(|r| u64::from(r.received))
-                .sum::<u64>()
-                == h.routed - 1
-        });
-        let lost: u32 = h.reports.lock().iter().map(|r| u32::from(r.lost)).sum();
-        assert_eq!(lost, 1 + 2, "the gap of one and the gap of two");
+        h.route(seq);
+        let gap = h.settle();
+        assert_eq!(gap.lost, late.lost + 2);
+        assert_eq!(gap.concealed, late.concealed + 2, "both faded over");
     }
 
-    /// A platform with no player counts every packet lost, and still reports what arrived.
+    /// A platform with no player counts every packet lost.
     #[test]
-    fn no_player_counts_everything_lost_and_still_reports() {
+    fn no_player_counts_everything_lost() {
         let mut h = Harness::start(never);
         for seq in 1..=5 {
-            h.route(seq, &[]);
+            h.route(seq);
         }
         let stats = h.settle();
         assert_eq!((stats.packets, stats.lost), (0, 5));
-        h.wait_for("a report", |h| {
-            h.reports.lock().iter().map(|r| r.received).sum::<u16>() == 5
-        });
         drop(h.sound);
         assert_eq!(h.router.attached(), 0, "the sound lets go of its stream");
     }

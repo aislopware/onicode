@@ -2,12 +2,12 @@
 //!
 //! Ported from slopty's `slopty-proto::screen` (MIT, same authors). Whole displays only: window
 //! streams, regions and crops are gone, and so are drags (file drag is later). The receiver
-//! report, the sound report, the rate verdict, the source state, the codec and the chroma are the
-//! media wire's ([`onicode_desktop_media::wire`]), re-exported here; loss feedback and clock
-//! probes travel as that wire's `Feedback` datagrams on channel `FEEDBACK`.
+//! report, the rate verdict, the source state, the codec and the chroma are the media wire's
+//! ([`onicode_desktop_media::wire`]), re-exported here; loss feedback and clock probes travel as
+//! that wire's `Feedback` datagrams on channel `FEEDBACK`.
 
 pub use onicode_desktop_media::wire::{
-    Chroma, RateVerdict, ReceiverReport, SoundReport, SourceState, StreamId, VideoCodec,
+    Chroma, RateVerdict, ReceiverReport, SourceState, StreamId, VideoCodec,
 };
 use serde::{Deserialize, Serialize};
 
@@ -449,19 +449,6 @@ pub enum ScreenRequest {
         /// How.
         quality: Quality,
     },
-    /// Whether the stream's tile has this client's keyboard, in a key window of an active app.
-    /// Sent on each change, and again for the stream a reconnect opens; a stream starts
-    /// unfocused. The worker favours a focused stream when its encode engines are full.
-    Focused {
-        /// Stream.
-        stream: StreamId,
-        /// Focused.
-        focused: bool,
-    },
-    /// What the client's player of the worker's sound heard, at the receiver reports' cadence
-    /// while it plays (`docs/decisions/audio.md`, "One sound per worker on a client, not one
-    /// per stream").
-    SoundReport(SoundReport),
     /// Draw the curtain over the worker's Mac, or let it go: its physical screens show a black
     /// shield that no capture shows, for as long as the controller holds it. Only the
     /// controller may draw it; it lifts when the controller lets go of it or of the controls,
@@ -486,8 +473,6 @@ impl ScreenRequest {
             | Self::OpenDisplay { .. }
             | Self::Close(_)
             | Self::Report { .. }
-            | Self::Focused { .. }
-            | Self::SoundReport(_)
             | Self::Curtain { .. }
             | Self::Resize { .. } => None,
         }

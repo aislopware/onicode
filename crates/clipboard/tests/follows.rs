@@ -1,6 +1,6 @@
 //! The clipboard between Macs, on `Held` boards and an in-memory network of peers, on tokio's
-//! paused clock: what moves, when, and what never does. Each pair follows the other, as a focused
-//! desktop window and its host do. Nothing here touches a real pasteboard.
+//! paused clock: what moves, when, and what never does or stays past the caps. Each pair follows
+//! the other, as a focused desktop window and its host do. Nothing here touches a real pasteboard.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -15,14 +15,15 @@ use onicode_clipboard::types::{
     TRANSIENT_TYPE,
 };
 use onicode_clipboard::{
-    Board as _, Clipboard, ClipboardOffer, ClipboardSettings, Clock, Config, FETCH_DEADLINE, Held,
-    Inline, Item, PasteAccess, Peers, Received,
+    Board as _, Clipboard, ClipboardOffer, ClipboardSettings, Clock, Config, FETCH_DEADLINE,
+    FILES_MAX, Held, Inline, Item, Key, PasteAccess, Peers, Received, SEND_MAX,
 };
 use parking_lot::Mutex;
 use proptest::prelude::*;
 
 const TEXT: &str = "public.utf8-plain-text";
 const PNG: &str = "public.png";
+const TIFF: &str = "public.tiff";
 
 /// Epoch milliseconds the test sets.
 #[derive(Default)]
@@ -38,7 +39,7 @@ impl Clock for Ticks {
 #[derive(Default)]
 struct Net {
     clips: Mutex<HashMap<String, Clipboard>>,
-    /// Bytes fetched for pastes.
+    /// Bytes fetched for copies.
     moved: AtomicU64,
     /// Files copied by the stand-in file streams.
     files: AtomicUsize,
@@ -66,15 +67,13 @@ impl Peers for NetPeers {
             // A device that left the tailnet: the dial never answers.
             return std::future::pending().await;
         };
-        let uti = uti.to_owned();
-        let bytes = tokio::task::spawn_blocking(move || clip.serve(seq, item, &uti))
-            .await
-            .map_err(|e| e.to_string())?
+        let bytes = clip
+            .serve(seq, item, uti)
             .ok_or_else(|| "the origin holds it no more".to_owned())?;
         self.0
             .moved
             .fetch_add(bytes.len() as u64, Ordering::Relaxed);
-        Ok(bytes)
+        Ok(bytes.to_vec())
     }
 
     async fn fetch_file(
@@ -88,9 +87,8 @@ impl Peers for NetPeers {
         let Some(clip) = clip else {
             return std::future::pending().await;
         };
-        let from = tokio::task::spawn_blocking(move || clip.serve_file(seq, item))
-            .await
-            .map_err(|e| e.to_string())?
+        let from = clip
+            .serve_file(seq, item)
             .ok_or_else(|| "the origin holds it no more".to_owned())?;
         let name = from.file_name().ok_or("no name")?;
         let landed = into.join(name);
@@ -176,19 +174,17 @@ fn copy(board: &Held, items: &[&[(&str, &[u8])]]) {
             )
         })
         .collect();
-    board.write(&items, None).unwrap();
+    board.write(&items).unwrap();
 }
 
-/// A paste on `board`, as an app reads it: from a thread of its own, which waits on a promise
-/// while the runtime fetches.
-async fn paste(board: &Arc<Held>, item: usize, kind: &str) -> Option<Vec<u8>> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    let board = Arc::clone(board);
-    let kind = kind.to_owned();
-    std::thread::spawn(move || {
-        let _sent = tx.send(board.data(item, &kind));
-    });
-    rx.await.unwrap()
+/// Lets fetches run and copies land: a few steps of the paused clock, until `done`.
+async fn settle(done: impl Fn() -> bool) {
+    for _ in 0..100 {
+        if done() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 /// The next offer `sub` sees within a second, if any.
@@ -222,18 +218,14 @@ async fn text_copied_on_one_pastes_on_another_from_the_offer() {
     assert_eq!(types[0].size, 5);
     assert!(types[0].inline.is_some(), "small enough to ride inline");
 
-    assert_eq!(b.clip.receive((*offer).clone()), Received::Applied);
     assert_eq!(
-        b.board.promised(),
-        vec![Vec::<String>::new()],
-        "nothing promised"
+        b.clip.receive((*offer).clone()),
+        Received::Applied,
+        "written at once"
     );
-    assert_eq!(
-        paste(&b.board, 0, TEXT).await.as_deref(),
-        Some(&b"hello"[..])
-    );
+    assert_eq!(b.board.data(0, TEXT).as_deref(), Some(&b"hello"[..]));
     assert_eq!(b.board.data(0, ORIGIN_TYPE).as_deref(), Some(&b"a"[..]));
-    assert_eq!(mesh.net.moved(), 0, "the paste took no fetch");
+    assert_eq!(mesh.net.moved(), 0, "no fetch");
 
     assert_eq!(b.clip.look(), None, "never announced back");
     assert_eq!(next(&mut to_a).await, None);
@@ -245,9 +237,10 @@ async fn text_copied_on_one_pastes_on_another_from_the_offer() {
     );
 }
 
-/// A big picture is promised, not sent: no byte moves until a paste asks, and then all of it.
+/// A big picture is fetched as soon as its offer lands and written whole, caption and all, so a
+/// paste never waits on the other Mac; each type moves once.
 #[tokio::test(start_paused = true)]
-async fn a_big_picture_moves_only_when_pasted() {
+async fn a_big_picture_arrives_whole_before_any_paste() {
     let mesh = Mesh::new(&["a", "b"]);
     let (a, b) = (mesh.node(0), mesh.node(1));
     mesh.pair(0, 1);
@@ -257,21 +250,102 @@ async fn a_big_picture_moves_only_when_pasted() {
     let png = &offer.items[0].types[0];
     assert_eq!((png.size, png.inline.is_none()), (5_000_000, true));
 
-    assert_eq!(b.clip.receive((*offer).clone()), Received::Applied);
-    assert_eq!(b.board.promised(), vec![vec![PNG.to_owned()]]);
-    tokio::time::sleep(Duration::from_secs(5)).await;
-    assert_eq!(mesh.net.moved(), 0, "no byte before the paste");
-
-    assert_eq!(
-        paste(&b.board, 0, TEXT).await.as_deref(),
-        Some(&b"caption"[..])
+    assert_eq!(b.clip.receive((*offer).clone()), Received::Fetching);
+    assert!(
+        b.board.items().is_empty(),
+        "nothing written before it all lands"
     );
-    assert_eq!(mesh.net.moved(), 0, "the caption rode inline");
-    assert_eq!(paste(&b.board, 0, PNG).await, Some(picture.clone()));
-    assert_eq!(mesh.net.moved(), 5_000_000);
-    assert_eq!(paste(&b.board, 0, PNG).await, Some(picture), "kept");
+    settle(|| !b.board.items().is_empty()).await;
+    assert_eq!(
+        b.board.items(),
+        vec![vec![
+            ORIGIN_TYPE.to_owned(),
+            PNG.to_owned(),
+            TEXT.to_owned()
+        ]],
+        "the origin's order"
+    );
+    assert_eq!(b.board.data(0, PNG), Some(picture));
+    assert_eq!(b.board.data(0, TEXT).as_deref(), Some(&b"caption"[..]));
+    assert_eq!(mesh.net.moved(), 5_000_000, "the caption rode inline");
+    tokio::time::sleep(Duration::from_secs(5)).await;
     assert_eq!(mesh.net.moved(), 5_000_000, "fetched once");
-    assert!(!b.clip.shutdown(), "every promise kept: nothing to clear");
+    assert_eq!(b.clip.look(), None, "never announced back");
+}
+
+/// A copy made here while the other Mac's is still arriving is newer: the late one is dropped
+/// and the board keeps this Mac's copy.
+#[tokio::test(start_paused = true)]
+async fn a_copy_made_here_wins_over_one_still_arriving() {
+    let mesh = Mesh::new(&["a", "b"]);
+    let (a, b) = (mesh.node(0), mesh.node(1));
+    mesh.pair(0, 1);
+    copy(&a.board, &[&[(PNG, &vec![3; 100_000])]]);
+    let offer = a.clip.look().unwrap();
+    assert_eq!(b.clip.receive((*offer).clone()), Received::Fetching);
+    copy(&b.board, &[&[(TEXT, b"mine")]]);
+    let mine = b.clip.look().expect("the copy here is announced");
+    assert!(Key::of(&mine) > Key::of(&offer));
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(b.board.data(0, TEXT).as_deref(), Some(&b"mine"[..]));
+    assert_eq!(b.board.data(0, PNG), None, "the late copy is dropped");
+}
+
+/// What is past the caps stays home: a type past what is left of [`SEND_MAX`] (the next in the
+/// app's ranking still goes), a copy of nothing but such types, and files past [`FILES_MAX`] or
+/// a folder, whole items and all.
+#[tokio::test(start_paused = true)]
+async fn what_is_past_the_caps_stays_home() {
+    let mesh = Mesh::new(&["a", "b"]);
+    let (a, b) = (mesh.node(0), mesh.node(1));
+    mesh.pair(0, 1);
+    let cap = usize::try_from(SEND_MAX).unwrap();
+    let tiff = vec![1; cap + 1];
+    let png = vec![2; 1 << 20];
+    copy(&a.board, &[&[(TIFF, &tiff), (PNG, &png), (TEXT, b"shot")]]);
+    let offer = a.clip.look().unwrap();
+    let types: Vec<&str> = offer.items[0]
+        .types
+        .iter()
+        .map(|t| t.uti.as_str())
+        .collect();
+    assert_eq!(types, [PNG, TEXT], "the TIFF stays, the PNG goes");
+    assert_eq!(b.clip.receive((*offer).clone()), Received::Fetching);
+    settle(|| b.board.data(0, PNG).is_some()).await;
+    assert_eq!(b.board.data(0, PNG), Some(png));
+    assert_eq!(b.board.data(0, TIFF), None);
+
+    copy(&a.board, &[&[(PNG, &vec![4; cap + 1])]]);
+    assert_eq!(
+        a.clip.look(),
+        None,
+        "nothing within the cap: nothing announced"
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let big = dir.path().join("big.bin");
+    std::fs::File::create(&big)
+        .unwrap()
+        .set_len(FILES_MAX + 1)
+        .unwrap();
+    let small = dir.path().join("small.txt");
+    std::fs::write(&small, b"small").unwrap();
+    let folder = dir.path().join("folder");
+    std::fs::create_dir(&folder).unwrap();
+    for files in [vec![big, small.clone()], vec![folder, small]] {
+        let urls: Vec<String> = files
+            .iter()
+            .map(|path| onicode_clipboard::files::url_of_path(path))
+            .collect();
+        let reps: Vec<[(&str, &[u8]); 2]> = urls
+            .iter()
+            .map(|url| [(FILE_URL_TYPE, url.as_bytes()), (TEXT, &b"name"[..])])
+            .collect();
+        let items: Vec<&[(&str, &[u8])]> = reps.iter().map(|rep| &rep[..]).collect();
+        copy(&a.board, &items);
+        assert_eq!(a.clip.look(), None, "files that stay keep their items home");
+    }
+    assert_eq!(mesh.net.files.load(Ordering::Relaxed), 0);
 }
 
 /// A password manager's copy, a transient one and Universal Clipboard's never leave; an
@@ -325,28 +399,24 @@ async fn private_copies_never_leave() {
     );
 }
 
-/// Without "Paste from Other Apps" an offer carries its types alone, and the origin reads the
-/// bytes only when the other Mac pastes; denied, the clipboard stays home.
+/// Where a read would prompt or fail ("Paste from Other Apps" not Allow) nothing is read and
+/// copies stay home; once it is allowed, the copy standing then goes.
 #[tokio::test(start_paused = true)]
-async fn an_origin_that_may_not_read_unasked_sends_types_alone() {
+async fn an_origin_that_may_not_read_keeps_its_copies() {
     let mesh = Mesh::new(&["a", "b"]);
-    let (a, b) = (mesh.node(0), mesh.node(1));
+    let a = mesh.node(0);
     mesh.pair(0, 1);
-    *mesh.access.lock() = PasteAccess::Ask;
-    copy(&a.board, &[&[(TEXT, b"asked")]]);
-    let offer = a.clip.look().unwrap();
-    let text = &offer.items[0].types[0];
-    assert_eq!((text.size, text.inline.as_ref()), (0, None));
-    assert_eq!(b.clip.receive((*offer).clone()), Received::Applied);
+    for stays in [PasteAccess::NotAsked, PasteAccess::Ask, PasteAccess::Denied] {
+        *mesh.access.lock() = stays;
+        copy(&a.board, &[&[(TEXT, b"kept home")]]);
+        assert_eq!(a.clip.look(), None, "{stays:?}");
+    }
+    *mesh.access.lock() = PasteAccess::Allowed;
+    let offer = a.clip.look().expect("allowed: the copy standing goes");
     assert_eq!(
-        paste(&b.board, 0, TEXT).await.as_deref(),
-        Some(&b"asked"[..])
+        offer.items[0].types[0].inline,
+        Some(Inline(b"kept home".to_vec()))
     );
-    assert_eq!(mesh.net.moved(), 5);
-
-    *mesh.access.lock() = PasteAccess::Denied;
-    copy(&a.board, &[&[(TEXT, b"kept home")]]);
-    assert_eq!(a.clip.look(), None);
 }
 
 /// While a window follows a session, only that device's copies apply and this Mac's go only to
@@ -405,53 +475,39 @@ async fn a_followed_session_has_the_clipboard_both_ways() {
     assert_eq!(c.clip.receive((*from_a).clone()), Received::Applied);
 }
 
-/// A paste whose origin left fails within the deadline, and the board keeps the offer as it
-/// was: another paste fails the same way, a newer copy still lands, and a quit clears an
-/// unkept promise.
+/// A copy whose origin left never lands: past the deadline the board keeps what it had, the
+/// failure is no copy, and a newer copy still lands.
 #[tokio::test(start_paused = true)]
-async fn a_paste_from_a_vanished_origin_fails_in_time() {
+async fn a_copy_from_a_vanished_origin_never_lands() {
     let mesh = Mesh::new(&["a", "b", "c"]);
     let (a, b, c) = (mesh.node(0), mesh.node(1), mesh.node(2));
     mesh.pair(0, 1);
+    copy(&b.board, &[&[(TEXT, b"before")]]);
+    assert!(b.clip.look().is_some());
+    mesh.clock.0.fetch_add(10, Ordering::Relaxed);
     copy(&a.board, &[&[(PNG, &vec![1; 100_000])]]);
     let offer = a.clip.look().unwrap();
-    assert_eq!(b.clip.receive((*offer).clone()), Received::Applied);
+    assert_eq!(b.clip.receive((*offer).clone()), Received::Fetching);
     mesh.net.clips.lock().remove("a");
 
-    let began = tokio::time::Instant::now();
-    assert_eq!(paste(&b.board, 0, PNG).await, None);
-    let took = began.elapsed();
-    assert!(
-        took >= FETCH_DEADLINE && took < FETCH_DEADLINE + Duration::from_secs(1),
-        "{took:?}"
-    );
-    assert_eq!(
-        b.board.items(),
-        vec![vec![ORIGIN_TYPE.to_owned(), PNG.to_owned()]]
-    );
-    assert_eq!(
-        b.board.promised(),
-        vec![vec![PNG.to_owned()]],
-        "still promised"
-    );
-    assert_eq!(paste(&b.board, 0, PNG).await, None);
-    assert_eq!(b.clip.look(), None, "the failed paste is no copy");
-    assert_eq!(b.clip.newest(), Some(onicode_clipboard::Key::of(&offer)));
-
-    assert!(b.clip.shutdown(), "a quit clears the unkept promise");
-    assert!(b.board.items().is_empty());
+    tokio::time::sleep(FETCH_DEADLINE + Duration::from_secs(1)).await;
+    assert_eq!(b.board.data(0, TEXT).as_deref(), Some(&b"before"[..]));
+    assert_eq!(b.board.data(0, PNG), None);
+    assert_eq!(b.clip.look(), None, "the failure is no copy");
+    assert_eq!(b.clip.newest(), Some(Key::of(&offer)));
 
     mesh.clock.0.fetch_add(10, Ordering::Relaxed);
     mesh.pair(1, 2);
     copy(&c.board, &[&[(TEXT, b"later")]]);
     let later = c.clip.look().unwrap();
     assert_eq!(b.clip.receive((*later).clone()), Received::Applied);
+    assert_eq!(b.board.data(0, TEXT).as_deref(), Some(&b"later"[..]));
 }
 
-/// A small copied file lands in the cache before any paste, and the paste names the local copy;
-/// the cache keeps only the newest offer's files.
+/// A small copied file lands in the cache before the copy is written, which names the local
+/// copy; the cache keeps only the newest offer's files.
 #[tokio::test(start_paused = true)]
-async fn a_small_file_is_fetched_ahead_and_pasted_from_the_cache() {
+async fn a_small_file_lands_in_the_cache_before_the_copy_is_written() {
     let mesh = Mesh::new(&["a", "b"]);
     let (a, b) = (mesh.node(0), mesh.node(1));
     mesh.pair(0, 1);
@@ -463,14 +519,13 @@ async fn a_small_file_is_fetched_ahead_and_pasted_from_the_cache() {
     let offer = a.clip.look().unwrap();
     assert_eq!(offer.items[0].types[0].file_size, Some(8));
 
-    assert_eq!(b.clip.receive((*offer).clone()), Received::Applied);
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert_eq!(mesh.net.files.load(Ordering::Relaxed), 1, "fetched ahead");
-    let pasted = paste(&b.board, 0, FILE_URL_TYPE).await.unwrap();
-    let local = onicode_clipboard::files::path_of_url(&pasted).unwrap();
+    assert_eq!(b.clip.receive((*offer).clone()), Received::Fetching);
+    settle(|| b.board.data(0, FILE_URL_TYPE).is_some()).await;
+    assert_eq!(mesh.net.files.load(Ordering::Relaxed), 1);
+    let written = b.board.data(0, FILE_URL_TYPE).unwrap();
+    let local = onicode_clipboard::files::path_of_url(&written).unwrap();
     assert!(local.starts_with(&b.cache), "{}", local.display());
     assert_eq!(std::fs::read(&local).unwrap(), b"remember");
-    assert_eq!(mesh.net.files.load(Ordering::Relaxed), 1, "fetched once");
 
     mesh.clock.0.fetch_add(10, Ordering::Relaxed);
     copy(&a.board, &[&[(TEXT, b"next")]]);

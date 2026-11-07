@@ -1,7 +1,7 @@
 //! macOS's seams: ScreenCaptureKit, VideoToolbox, Opus and CoreGraphics events, the window
 //! server's display list, the curtain's shield windows and the power assertion that keeps the
-//! displays awake. The only file besides the made displays ([`crate::sized`],
-//! [`crate::holder`]) that names the platform's libraries.
+//! displays awake. The only file besides the made displays ([`crate::sized`]) that names the
+//! platform's libraries.
 //!
 //! The display list is CoreGraphics', which needs no grant and prompts for none:
 //! ScreenCaptureKit's shareable content is asked only by a stream's open, which the session lets

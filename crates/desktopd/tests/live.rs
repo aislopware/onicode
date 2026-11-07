@@ -73,7 +73,6 @@ async fn the_main_display_streams_from_a_keyframe() {
                 "the capture stopped: {event:?}"
             );
         }),
-        sound: None,
     })
     .await
     .expect("the display opens");

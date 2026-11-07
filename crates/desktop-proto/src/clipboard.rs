@@ -1,12 +1,13 @@
 //! The clipboard while a desktop window has focus (`docs/onicode/decisions/remote-desktop.md`,
 //! "The clipboard follows the window"; the design is `one-machine.md`'s "Clipboard").
 //!
-//! Lazy, as RDP's clipboard channel and X11 selections are: a copy is announced ([`Clip::Offer`])
-//! and its bytes move when someone pastes. Items up to [`INLINE_MAX`] ride inside the offer, so
-//! most pastes of text are instant. The rest is fetched on a stream of its own, never on the
-//! control stream, so a big picture holds up no input or cursor: the fetcher opens a file stream
-//! named by [`Fetch::name`] and reads the bytes back raw (a type), or as [`FileEntry`] frames (a
-//! copied file or folder). A refused fetch is a reset stream ([`REFUSED`]).
+//! Eager: a copy is announced when it is made ([`Clip::Offer`]) and the other end takes all of it
+//! at once, so a paste never waits on the link. Items up to [`INLINE_MAX`] ride inside the offer.
+//! The rest is fetched as soon as the offer lands, on a stream of its own, never on the control
+//! stream, so a big picture holds up no input or cursor: the fetcher opens a file stream named by
+//! [`Fetch::name`] and reads the bytes back raw (a type), or as [`FileEntry`] frames (a copied
+//! file). A refused fetch is a reset stream ([`REFUSED`]). How much travels is capped by
+//! `onicode-clipboard`.
 //!
 //! Ported from onicode's peer clipboard (`git show f01736b3^:crates/proto/src/clipboard.rs`),
 //! scoped to the desktop session: the pasteboard and the sync logic are `onicode-clipboard`'s.
@@ -54,14 +55,13 @@ impl<'de> Deserialize<'de> for Inline {
 pub struct ClipboardType {
     /// Its uniform type identifier (`public.utf8-plain-text`).
     pub uti: String,
-    /// Its bytes; 0 when the origin may not read them unasked (macOS's "Paste from Other
-    /// Apps"), and they come only on paste.
+    /// Its bytes.
     pub size: u64,
     /// The bytes themselves, when `size <= INLINE_MAX`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline: Option<Inline>,
     /// For a `public.file-url`, the size of the regular file it names; `None` for a folder or
-    /// when unknown. A receiver fetches small files before the paste.
+    /// when unknown. Only regular files of known size travel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_size: Option<u64>,
 }
@@ -86,8 +86,8 @@ pub struct ClipboardOffer {
     pub items: Vec<ClipboardItem>,
 }
 
-/// Whether a Mac may read its general pasteboard unasked (macOS 15.4+'s "Paste from Other
-/// Apps").
+/// Whether a Mac may read its general pasteboard without a prompt (macOS 15.4+'s "Paste from
+/// Other Apps"). Copies leave a Mac only where it may.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Serialize, Deserialize)]
 pub enum PasteAccess {
     /// No pasteboard privacy here: the foreground app's own reads, or a board in memory.
@@ -99,23 +99,16 @@ pub enum PasteAccess {
     Ask,
     /// Listed and allowed: reads never prompt.
     Allowed,
-    /// Listed and denied: reads fail, and copies there stay there.
+    /// Listed and denied: reads fail.
     Denied,
 }
 
 impl PasteAccess {
-    /// Whether a copy's bytes may be read when it is announced, for its sizes and the inline
-    /// fast path. Otherwise an offer carries types alone and the origin reads only when the other
-    /// end pastes, so nobody is prompted on a Mac until someone pastes its copy.
+    /// Whether copies may be read, and so sent, when they are made. Otherwise nothing is read,
+    /// so nobody is prompted, and copies on that Mac stay there.
     #[must_use]
     pub const fn reads_freely(self) -> bool {
         matches!(self, Self::Ungated | Self::Allowed)
-    }
-
-    /// Whether the watcher stops.
-    #[must_use]
-    pub const fn stops(self) -> bool {
-        matches!(self, Self::Denied)
     }
 }
 
@@ -130,8 +123,8 @@ pub enum Clip {
     },
     /// A copy on the sender's pasteboard.
     Offer(ClipboardOffer),
-    /// Whether the sender may read its pasteboard unasked, when following starts and whenever
-    /// it changes. Sent by the host, so the viewer can say why copies there wait for a paste.
+    /// Whether the sender may read its pasteboard without a prompt, when following starts and
+    /// whenever it changes. Sent by the host, so the viewer can say why copies there stay there.
     Access(PasteAccess),
 }
 
@@ -147,7 +140,7 @@ pub enum Fetch {
         /// The type.
         uti: String,
     },
-    /// The file or folder one item names, as [`FileEntry`] frames: `clipfiles/<seq>/<item>`.
+    /// The file one item names, as [`FileEntry`] frames: `clipfiles/<seq>/<item>`.
     Files {
         /// The offer.
         seq: u64,
@@ -193,7 +186,7 @@ impl Fetch {
     }
 }
 
-/// One entry of a copied file or folder on a [`Fetch::Files`] stream: a frame of its own, as JSON,
+/// One entry of a copied file on a [`Fetch::Files`] stream: a frame of its own, as JSON,
 /// and for a file its bytes after it, in frames that add up to `size`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileEntry {
@@ -275,7 +268,6 @@ mod tests {
         assert!(PasteAccess::Allowed.reads_freely());
         assert!(!PasteAccess::Ask.reads_freely());
         assert!(!PasteAccess::NotAsked.reads_freely());
-        assert!(PasteAccess::Denied.stops());
-        assert!(!PasteAccess::Ask.stops());
+        assert!(!PasteAccess::Denied.reads_freely());
     }
 }

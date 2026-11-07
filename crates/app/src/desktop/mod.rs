@@ -202,8 +202,6 @@ trait Link {
     fn close(&self, stream: StreamId);
     /// Input for `stream`.
     fn input(&self, stream: StreamId, input: ScreenInput);
-    /// `stream`'s view has the keyboard, or lost it.
-    fn focused(&self, stream: StreamId, focused: bool);
     /// Take the controls, or give them up.
     fn take_control(&self, take: bool);
     /// Hear the Mac's sound, or stop.
@@ -237,10 +235,6 @@ impl Link for DesktopSession {
 
     fn input(&self, stream: StreamId, input: ScreenInput) {
         DesktopSession::input(self, stream, input);
-    }
-
-    fn focused(&self, stream: StreamId, focused: bool) {
-        DesktopSession::focused(self, stream, focused);
     }
 
     fn take_control(&self, take: bool) {
@@ -970,11 +964,6 @@ impl DesktopView {
             _shapes: shapes_task,
             _cursor: cursor_task,
         });
-        if let Some(link) = &self.link
-            && self.focused
-        {
-            link.focused(stream.stream, true);
-        }
         self.gestures();
     }
 
@@ -1277,9 +1266,6 @@ impl DesktopView {
             self.flush();
         } else {
             self.let_go(cx);
-        }
-        if let (Some(link), Some(screen)) = (&self.link, &self.screen) {
-            link.focused(screen.stream, focused);
         }
         self.update_grab(cx);
         self.follow_clipboard();

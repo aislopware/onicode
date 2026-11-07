@@ -1,27 +1,31 @@
-//! The clipboard that follows a desktop window: announce a copy, fetch it on paste.
+//! The clipboard that follows a desktop window: a copy goes to the other Mac when it is made.
 //!
 //! [`Clipboard`] is one Mac's side, pure behind a [`Board`], [`Peers`] and a [`Clock`]:
 //!
 //! - **Watching.** While someone listens ([`Clipboard::subscribe`]), the board's `changeCount` is
 //!   looked at every [`POLL`]. A change becomes an offer: its items' types and sizes, the small
-//!   ones inline. Nothing leaves that carries a privacy marker, that Universal Clipboard brought,
-//!   or that onicode wrote itself (the origin marker, and the count its own write left).
+//!   ones inline, and the bytes of the rest read now and held for the other Mac to take. Nothing
+//!   leaves that carries a privacy marker, that Universal Clipboard brought, that onicode wrote
+//!   itself (the origin marker, and the count its own write left), or that is past the caps
+//!   ([`SEND_MAX`] of bytes, [`FILES_MAX`] of regular files). Where reading the board would prompt
+//!   (Paste from Other Apps not Allow), nothing is read and copies stay on their Mac.
 //! - **Applying.** The other Mac's offer that is newer by `(at, origin, seq)` than everything
-//!   applied or announced here is written at once: inline types as bytes, the rest as promises a
-//!   paste fetches from the origin, files on streams of their own.
-//! - **Serving.** The other Mac, pasting, asks the origin for one type of one item of the offer it
-//!   holds ([`Clipboard::serve`], [`Clipboard::serve_file`]); only what the offer announced, and
-//!   only while the board still holds it.
+//!   applied or announced here is taken at once. One of inline types alone is written straight
+//!   away; otherwise its other bytes and its files are fetched from the origin first, within
+//!   [`FETCH_DEADLINE`], and the whole copy is written once they land, unless something newer came
+//!   meanwhile. A paste never waits on the other Mac.
+//! - **Serving.** The other Mac asks the origin for one type of one item of its newest offer
+//!   ([`Clipboard::serve`], [`Clipboard::serve_file`]), answered from the bytes read at the copy.
 //! - **Following.** While a desktop window has focus, the clipboard follows that session both ways
 //!   and no other ([`Clipboard::follow`]).
 
 use std::future::Future;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use futures::stream::BoxStream;
 use onicode_desktop_proto::clipboard::{
     ClipboardItem, ClipboardOffer, ClipboardType, INLINE_MAX, Inline, PasteAccess,
@@ -31,9 +35,8 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
 
-use crate::board::{Board, Capped, Item, Provide};
-use crate::bridge::wait;
-use crate::files::{Files, file_size, path_of_url};
+use crate::board::{Board, Capped, Item};
+use crate::files::{self, file_size, path_of_url};
 use crate::types::{
     AUTO_GENERATED_TYPE, CONCEALED_TYPE, FILE_URL_TYPE, ORIGIN_TYPE, REMOTE_CLIPBOARD_TYPE,
     TRANSIENT_TYPE, carried,
@@ -42,22 +45,18 @@ use crate::types::{
 /// How often the board is looked at while someone listens: a copy reaches the other Mac within
 /// this and a link's delay, and a look at an unchanged board is one cheap call.
 pub const POLL: Duration = Duration::from_millis(150);
-/// How long a paste waits for a type's bytes from its origin. Past it the paste gets nothing and
-/// the board stays as it was, so a Mac that left never hangs an app.
-pub const FETCH_DEADLINE: Duration = Duration::from_secs(3);
-/// How long a paste of files waits for them: about a gigabyte on a fast tailnet.
-pub const FILE_DEADLINE: Duration = Duration::from_secs(120);
-/// Files of a received offer are fetched at once, before any paste, when each is a regular file
-/// of known size and together they are no more than this.
-///
-/// A paste of files blocks the app that pastes until they land, and Finder shows nothing while
-/// it waits; most copied files (documents, screenshots, small archives) are well under this, so
-/// fetching them ahead makes the paste as instant as a local one. It costs at most this much of
-/// the link and of the cache per copy that is never pasted, and the cache keeps only the newest
-/// offer. Bigger copies, and folders (whose size needs a walk), wait for the paste.
-pub const PREFETCH_MAX: u64 = 16 << 20;
-/// The most bytes one fetch of a type takes in.
-pub const FETCH_MAX: usize = 512 << 20;
+/// The most bytes of one copy, its files aside, that travel. Text, rich text and pictures are
+/// well under it (a Retina screenshot's PNG is a few MiB); a type past what is left of it stays
+/// home and the next in the copying app's ranking may still go, so a screenshot's huge TIFF
+/// stays while its PNG travels. It bounds what a copy costs the link and memory on both Macs.
+pub const SEND_MAX: u64 = 16 << 20;
+/// The most a copy's files travel, all together, each a regular file of known size. Most copied
+/// files (documents, screenshots, small archives) are under it; bigger copies and folders stay
+/// on their Mac.
+pub const FILES_MAX: u64 = 16 << 20;
+/// How long the other Mac's copy has to arrive in full: past it the board keeps what it had.
+/// [`SEND_MAX`] and [`FILES_MAX`] take a few seconds on a slow tailnet path.
+pub const FETCH_DEADLINE: Duration = Duration::from_secs(30);
 
 /// What a clipboard does and sends.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -121,7 +120,7 @@ impl Clock for SystemClock {
     }
 }
 
-/// The Macs whose offers this one applies, as a paste here reaches them.
+/// The Macs whose offers this one applies, as their copies' bytes and files are fetched.
 #[async_trait]
 pub trait Peers: Send + Sync + 'static {
     /// The bytes of type `uti` of item `item` of `origin`'s offer `seq`.
@@ -137,7 +136,7 @@ pub trait Peers: Send + Sync + 'static {
         uti: &str,
     ) -> Result<Vec<u8>, String>;
 
-    /// The file or folder item `item` of `origin`'s offer `seq` names, copied into the local
+    /// The file item `item` of `origin`'s offer `seq` names, copied into the local
     /// folder `into` under its own name; returns its local path once all of it is there.
     ///
     /// # Errors
@@ -165,7 +164,7 @@ pub struct Config {
     pub peers: Arc<dyn Peers>,
     /// Stamps offers.
     pub clock: Arc<dyn Clock>,
-    /// Whether the board may be read unasked.
+    /// Whether the board may be read without a prompt.
     pub access: Access,
     /// Where received files land, one folder per offer: `~/Library/Caches/<bundle>/clipboard`.
     pub cache: PathBuf,
@@ -178,6 +177,9 @@ pub struct Config {
 pub enum Received {
     /// It is on the board.
     Applied,
+    /// Its bytes or files are on their way: it is written once they land, unless something newer
+    /// came meanwhile.
+    Fetching,
     /// Something newer was applied or announced here.
     Stale,
     /// Not taken: sync is off, it is this device's own, another device is followed, or it holds
@@ -219,25 +221,15 @@ struct State {
     seq: u64,
     /// The newest offer applied or announced.
     newest: Option<Key>,
-    /// What the newest announced offer is on the board.
+    /// The newest announced offer's bytes, while the board still holds it.
     announced: Option<Announced>,
-    /// The last offer of the other Mac's written.
-    written: Option<Written>,
 }
 
-/// An announced offer as it sits on the board.
+/// An announced offer's bytes, read when it was copied.
 struct Announced {
     seq: u64,
-    count: isize,
-    /// Per offer item: its index on the board and the types offered.
-    items: Vec<(usize, Vec<String>)>,
-}
-
-/// The other Mac's offer as written here.
-struct Written {
-    count: isize,
-    /// Promises not yet kept.
-    unkept: Arc<AtomicUsize>,
+    /// Per offer item: each type offered and its bytes.
+    items: Vec<Vec<(String, Bytes)>>,
 }
 
 impl Clipboard {
@@ -282,7 +274,7 @@ impl Clipboard {
         self.0.settings.send_replace(settings);
     }
 
-    /// Whether the board may be read unasked, as the access check says now.
+    /// Whether the board may be read without a prompt, as the access check says now.
     #[must_use]
     pub fn access(&self) -> PasteAccess {
         (self.0.access)()
@@ -391,11 +383,9 @@ impl Clipboard {
     pub fn look(&self) -> Option<Arc<ClipboardOffer>> {
         let inner = &*self.0;
         let settings = self.settings();
-        if !settings.enabled {
-            return None;
-        }
-        let access = (inner.access)();
-        if access.stops() {
+        // Where a read would prompt or fail, copies stay here; the first look once it may read
+        // sends the copy standing then.
+        if !settings.enabled || !(inner.access)().reads_freely() {
             return None;
         }
         let count = inner.board.change_count();
@@ -405,11 +395,13 @@ impl Clipboard {
                 return None;
             }
             state.seen = Some(count);
+            // What was announced is not the board's any more.
+            state.announced = None;
             if state.own == Some(count) {
                 return None;
             }
         }
-        let read = read_board(&*inner.board, settings, access.reads_freely())?;
+        let read = read_board(&*inner.board, settings)?;
         let mut state = inner.state.lock();
         // The board moved while it was read (the other Mac's offer landed, or another copy): the
         // next look reads it again, unless it was this Mac's own write.
@@ -431,8 +423,7 @@ impl Clipboard {
         state.newest = Some(Key::of(&offer));
         state.announced = Some(Announced {
             seq: state.seq,
-            count,
-            items: read.index,
+            items: read.held,
         });
         drop(state);
         inner.offers.send_replace(Some(Arc::clone(&offer)));
@@ -444,8 +435,9 @@ impl Clipboard {
         Some(offer)
     }
 
-    /// Takes the other Mac's offer: written to the board when it is newer than everything
-    /// applied or announced here and the followed device made it.
+    /// Takes the other Mac's offer when it is newer than everything applied or announced here
+    /// and the followed device made it: written at once when it rode inline whole, else once
+    /// the rest of it is fetched.
     pub fn receive(&self, offer: ClipboardOffer) -> Received {
         let inner = &*self.0;
         if !self.settings().enabled || offer.origin == inner.device || offer.items.is_empty() {
@@ -454,93 +446,90 @@ impl Clipboard {
         if inner.follow.borrow().as_deref() != Some(offer.origin.as_str()) {
             return Received::Ignored;
         }
-        let key = Key::of(&offer);
-        let offer = Arc::new(offer);
         let plan = Plan::of(&offer);
-        let unkept = Arc::new(AtomicUsize::new(plan.promised));
+        if plan.items.is_empty() {
+            return Received::Ignored;
+        }
+        let key = Key::of(&offer);
+        {
+            let mut state = inner.state.lock();
+            if state.newest.as_ref().is_some_and(|newest| key <= *newest) {
+                return Received::Stale;
+            }
+            state.newest = Some(key.clone());
+            state.announced = None;
+        }
         let dir = inner.cache.join(format!("{}-{}", offer.origin, offer.seq));
-        let files = Arc::new(Files {
-            peers: Arc::clone(&inner.peers),
-            origin: offer.origin.clone(),
-            seq: offer.seq,
-            dir: dir.clone(),
-            sources: plan.files,
-            done: tokio::sync::OnceCell::new(),
+        if plan.whole() {
+            return self.land(&key, &plan.written(&offer.origin), dir);
+        }
+        let clipboard = Arc::downgrade(&self.0);
+        let peers = Arc::clone(&inner.peers);
+        let _task = inner.runtime.spawn(async move {
+            let mut plan = plan;
+            let fetched =
+                tokio::time::timeout(FETCH_DEADLINE, gather(&*peers, &offer, &mut plan, &dir))
+                    .await
+                    .unwrap_or_else(|_late| Err("past the deadline".to_owned()));
+            if let Err(error) = fetched {
+                tracing::debug!(origin = %offer.origin, seq = offer.seq, %error, "a clipboard copy did not arrive");
+                return;
+            }
+            let Some(inner) = clipboard.upgrade() else {
+                return;
+            };
+            let clipboard = Self(inner);
+            let items = plan.written(&offer.origin);
+            // Writing may wait on the pasteboard server: off the runtime's threads.
+            let _landed =
+                tokio::task::spawn_blocking(move || clipboard.land(&key, &items, dir)).await;
         });
-        let provide = (plan.promised > 0).then(|| {
-            provider(
-                Arc::downgrade(&self.0),
-                Arc::clone(&offer),
-                Arc::clone(&files),
-                Arc::clone(&unkept),
-            )
-        });
+        Received::Fetching
+    }
+
+    /// Writes the other Mac's copy `key`, all of it here, unless something newer was applied or
+    /// announced meanwhile; its files are in `dir`, the one cache folder kept.
+    fn land(&self, key: &Key, items: &[Item], dir: PathBuf) -> Received {
+        let inner = &*self.0;
         let mut state = inner.state.lock();
-        if state.newest.as_ref().is_some_and(|newest| key <= *newest) {
+        if state.newest.as_ref() != Some(key) {
             return Received::Stale;
         }
         // Written under the state lock, so a look in between cannot take it for a copy.
-        let Some(count) = inner.board.write(&plan.items, provide) else {
+        let Some(count) = inner.board.write(items) else {
             return Received::Failed;
         };
         state.own = Some(count);
         state.seen = Some(count);
-        state.newest = Some(key);
-        state.announced = None;
-        state.written = Some(Written { count, unkept });
         drop(state);
-        tracing::debug!(origin = %offer.origin, seq = offer.seq, "clipboard applied");
+        tracing::debug!(origin = %key.origin, seq = key.seq, "clipboard applied");
         self.keep_only(dir);
-        if prefetches(&offer) {
-            let _task = inner.runtime.spawn(async move {
-                let _url = Arc::clone(&files).url(0).await;
-            });
-        }
         Received::Applied
     }
 
-    /// The bytes of type `uti` of item `item` of this Mac's offer `seq`, for the other Mac that
-    /// pastes it; `None` when the offer is not the board's any more or did not offer that. Reads
-    /// the board: call it off the runtime's threads.
+    /// The bytes of type `uti` of item `item` of this Mac's offer `seq`, for the other Mac;
+    /// `None` when the offer is not the newest announced, the board moved on, or it did not
+    /// offer that.
     #[must_use]
-    pub fn serve(&self, seq: u64, item: usize, uti: &str) -> Option<Vec<u8>> {
-        let inner = &*self.0;
-        let (count, on_board) = {
-            let state = inner.state.lock();
-            let announced = state.announced.as_ref().filter(|a| a.seq == seq)?;
-            let (on_board, types) = announced.items.get(item)?;
-            if !types.iter().any(|t| t == uti) {
-                return None;
-            }
-            (announced.count, *on_board)
-        };
-        if inner.board.change_count() != count {
-            return None;
-        }
-        let bytes = inner.board.data(on_board, uti)?;
-        // The copy moved on while it was read.
-        (inner.board.change_count() == count).then_some(bytes)
+    pub fn serve(&self, seq: u64, item: usize, uti: &str) -> Option<Bytes> {
+        self.0
+            .state
+            .lock()
+            .announced
+            .as_ref()
+            .filter(|announced| announced.seq == seq)?
+            .items
+            .get(item)?
+            .iter()
+            .find(|(kind, _)| kind == uti)
+            .map(|(_, bytes)| bytes.clone())
     }
 
-    /// The local path of the file or folder item `item` of this Mac's offer `seq` names, for the
-    /// other Mac that pastes it; `None` as for [`Self::serve`], or when the item names no file.
-    /// Reads the board: call it off the runtime's threads.
+    /// The local path of the file item `item` of this Mac's offer `seq` names, for the other Mac;
+    /// `None` as for [`Self::serve`], or when the item names no file.
     #[must_use]
     pub fn serve_file(&self, seq: u64, item: usize) -> Option<PathBuf> {
         path_of_url(&self.serve(seq, item, FILE_URL_TYPE)?)
-    }
-
-    /// Clears the board if it still holds the other Mac's offer with promises not kept, so the
-    /// system does not ask for every one of them as the process quits. `true` when it cleared.
-    pub fn shutdown(&self) -> bool {
-        let state = self.0.state.lock();
-        let Some(written) = state.written.as_ref() else {
-            return false;
-        };
-        if written.unkept.load(Ordering::Acquire) == 0 {
-            return false;
-        }
-        self.0.board.clear_if(written.count).is_some()
     }
 
     /// Empties the file cache but for `keep`: no history is kept.
@@ -624,16 +613,16 @@ fn visible(followed: Option<&str>, subscriber: Option<&str>) -> bool {
 #[derive(Default)]
 struct Read {
     items: Vec<ClipboardItem>,
-    /// Per offer item: its index on the board and the types offered.
-    index: Vec<(usize, Vec<String>)>,
+    /// Per offer item: each type offered and its bytes.
+    held: Vec<Vec<(String, Bytes)>>,
 }
 
-/// What may leave of the board's contents; `None` when nothing may.
+/// What may leave of the board's contents, read now; `None` when nothing may.
 ///
 /// A privacy marker keeps the whole copy home, whichever item it sits on: a password manager
-/// may write it as an item of its own. `free` reads each type's bytes for its size and the
-/// inline fast path; otherwise only the types are read, which never prompts.
-fn read_board(board: &dyn Board, settings: ClipboardSettings, free: bool) -> Option<Read> {
+/// may write it as an item of its own. Items that name files leave only when the files do
+/// ([`files_travel`]), and each type only while the copy is within [`SEND_MAX`].
+fn read_board(board: &dyn Board, settings: ClipboardSettings) -> Option<Read> {
     let all = board.items();
     let marked = |kind: &str| all.iter().flatten().any(|t| t == kind);
     if marked(ORIGIN_TYPE)
@@ -644,91 +633,69 @@ fn read_board(board: &dyn Board, settings: ClipboardSettings, free: bool) -> Opt
     {
         return None;
     }
+    let files = files_travel(board, &all);
+    let mut left = SEND_MAX;
     let mut read = Read::default();
     for (n, kinds) in all.iter().enumerate() {
+        if !files && kinds.iter().any(|t| t == FILE_URL_TYPE) {
+            continue;
+        }
         let mut types = Vec::new();
-        let mut names: Vec<String> = Vec::new();
+        let mut held: Vec<(String, Bytes)> = Vec::new();
         for uti in kinds.iter().filter(|t| carried(t)) {
-            if names.contains(uti) {
+            if held.iter().any(|(t, _)| t == uti) {
                 continue;
             }
-            let mut offered = ClipboardType {
-                uti: uti.clone(),
-                size: 0,
-                inline: None,
-                file_size: None,
-            };
-            if free {
-                match board.data_within(n, uti, INLINE_MAX) {
-                    Some(Capped::Data(bytes)) => {
-                        offered.size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
-                        if uti == FILE_URL_TYPE {
-                            offered.file_size = file_size(&bytes);
-                        }
-                        offered.inline = Some(Inline(bytes));
-                    }
-                    Some(Capped::TooBig(size)) => offered.size = size,
-                    None => continue,
+            let bytes = match board.data_within(n, uti, left) {
+                Some(Capped::Data(bytes)) => bytes,
+                Some(Capped::TooBig(size)) => {
+                    tracing::debug!(uti, size, "a type past the clipboard's cap stays home");
+                    continue;
                 }
-            }
-            names.push(uti.clone());
-            types.push(offered);
+                None => continue,
+            };
+            let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+            left = left.saturating_sub(size);
+            types.push(ClipboardType {
+                uti: uti.clone(),
+                size,
+                inline: (size <= INLINE_MAX).then(|| Inline(bytes.clone())),
+                file_size: if uti == FILE_URL_TYPE {
+                    file_size(&bytes)
+                } else {
+                    None
+                },
+            });
+            held.push((uti.clone(), Bytes::from(bytes)));
         }
         if !types.is_empty() {
             read.items.push(ClipboardItem { types });
-            read.index.push((n, names));
+            read.held.push(held);
         }
     }
     (!read.items.is_empty()).then_some(read)
 }
 
-/// The other Mac's offer as it is written here.
-struct Plan {
-    items: Vec<Item>,
-    /// How many types are promised.
-    promised: usize,
-    /// Per offer item, whether it names a file ([`Files::sources`]).
-    files: Vec<bool>,
-}
-
-impl Plan {
-    fn of(offer: &ClipboardOffer) -> Self {
-        let mut plan = Self {
-            items: Vec::with_capacity(offer.items.len()),
-            promised: 0,
-            files: Vec::with_capacity(offer.items.len()),
-        };
-        for item in &offer.items {
-            let mut data = vec![(ORIGIN_TYPE.to_owned(), offer.origin.clone().into_bytes())];
-            let mut promised: Vec<String> = Vec::new();
-            let mut file = false;
-            // The other Mac cannot plant a marker: only types that travel are written.
-            for kind in item.types.iter().filter(|t| carried(&t.uti)) {
-                if promised.contains(&kind.uti) || data.iter().any(|(t, _)| *t == kind.uti) {
-                    continue;
-                }
-                if kind.uti == FILE_URL_TYPE {
-                    // The origin's path means nothing here: the file is fetched on paste.
-                    file = true;
-                    promised.push(kind.uti.clone());
-                } else if let Some(Inline(bytes)) = &kind.inline {
-                    data.push((kind.uti.clone(), bytes.clone()));
-                } else {
-                    promised.push(kind.uti.clone());
-                }
-            }
-            plan.promised = plan.promised.saturating_add(promised.len());
-            plan.items.push(Item { data, promised });
-            plan.files.push(file);
-        }
-        plan
-    }
-}
-
-/// Whether `offer`'s files are fetched before any paste ([`PREFETCH_MAX`]).
-fn prefetches(offer: &ClipboardOffer) -> bool {
+/// Whether the files the copy on `board` names travel: each a regular file, together no more
+/// than [`FILES_MAX`]. A folder's size needs a walk, so a copy with one stays home.
+fn files_travel(board: &dyn Board, all: &[Vec<String>]) -> bool {
     let mut total = 0_u64;
-    let mut any = false;
+    for (n, kinds) in all.iter().enumerate() {
+        if !kinds.iter().any(|t| t == FILE_URL_TYPE) {
+            continue;
+        }
+        let Some(size) = board.data(n, FILE_URL_TYPE).and_then(|url| file_size(&url)) else {
+            return false;
+        };
+        total = total.saturating_add(size);
+    }
+    total <= FILES_MAX
+}
+
+/// Whether the files `offer` names may be fetched: each a regular file of known size, together
+/// no more than [`FILES_MAX`]; true of an offer of none.
+fn files_fit(offer: &ClipboardOffer) -> bool {
+    let mut total = 0_u64;
     for kind in offer
         .items
         .iter()
@@ -738,46 +705,132 @@ fn prefetches(offer: &ClipboardOffer) -> bool {
         let Some(size) = kind.file_size else {
             return false;
         };
-        any = true;
         total = total.saturating_add(size);
     }
-    any && total <= PREFETCH_MAX
+    total <= FILES_MAX
 }
 
-/// The promises of a written offer: each type fetched from its origin when pasted, files on
-/// streams of their own, within their deadlines.
-fn provider(
-    clipboard: Weak<Inner>,
-    offer: Arc<ClipboardOffer>,
-    files: Arc<Files>,
-    unkept: Arc<AtomicUsize>,
-) -> Provide {
-    Arc::new(move |item, uti| {
-        let inner = clipboard.upgrade()?;
-        let got = if uti == FILE_URL_TYPE {
-            let files = Arc::clone(&files);
-            wait(&inner.runtime, FILE_DEADLINE, files.url(item))
-        } else {
-            let peers = Arc::clone(&inner.peers);
-            let offer = Arc::clone(&offer);
-            let uti = uti.to_owned();
-            wait(&inner.runtime, FETCH_DEADLINE, async move {
-                match peers.fetch(&offer.origin, offer.seq, item, &uti).await {
-                    Ok(bytes) => Some(bytes),
-                    Err(error) => {
-                        tracing::debug!(origin = %offer.origin, %uti, %error, "clipboard fetch failed");
-                        None
-                    }
+/// One type of the other Mac's offer, as it is written here.
+enum Rep {
+    /// Its bytes, here.
+    Here(Vec<u8>),
+    /// Its bytes, to fetch from the origin.
+    Fetch,
+    /// The file it names, to fetch into the cache: written as the local copy's URL.
+    File,
+}
+
+/// The other Mac's offer as it is written here.
+struct Plan {
+    /// Per item written: its place in the offer and its types, in the origin's order.
+    items: Vec<(usize, Vec<(String, Rep)>)>,
+}
+
+impl Plan {
+    fn of(offer: &ClipboardOffer) -> Self {
+        let files = files_fit(offer);
+        let mut items = Vec::with_capacity(offer.items.len());
+        for (n, item) in offer.items.iter().enumerate() {
+            if !files && item.types.iter().any(|t| t.uti == FILE_URL_TYPE) {
+                continue;
+            }
+            let mut reps: Vec<(String, Rep)> = Vec::new();
+            // The other Mac cannot plant a marker: only types that travel are written.
+            for kind in item.types.iter().filter(|t| carried(&t.uti)) {
+                if reps.iter().any(|(t, _)| *t == kind.uti) {
+                    continue;
                 }
-            })
-        };
-        if got.is_some() {
-            let _kept = unkept.try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                Some(n.saturating_sub(1))
-            });
+                let rep = if kind.uti == FILE_URL_TYPE {
+                    // The origin's path means nothing here: the file comes into the cache.
+                    Rep::File
+                } else if let Some(Inline(bytes)) = &kind.inline {
+                    Rep::Here(bytes.clone())
+                } else {
+                    Rep::Fetch
+                };
+                reps.push((kind.uti.clone(), rep));
+            }
+            if !reps.is_empty() {
+                items.push((n, reps));
+            }
         }
-        got
-    })
+        Self { items }
+    }
+
+    /// Whether every type is here.
+    fn whole(&self) -> bool {
+        self.items
+            .iter()
+            .flat_map(|(_, reps)| reps)
+            .all(|(_, rep)| matches!(rep, Rep::Here(_)))
+    }
+
+    /// The items to write, `origin`'s marker on each; a type not here is left out.
+    fn written(self, origin: &str) -> Vec<Item> {
+        self.items
+            .into_iter()
+            .map(|(_, reps)| {
+                let mut data = vec![(ORIGIN_TYPE.to_owned(), origin.as_bytes().to_vec())];
+                data.extend(reps.into_iter().filter_map(|(uti, rep)| match rep {
+                    Rep::Here(bytes) => Some((uti, bytes)),
+                    Rep::Fetch | Rep::File => None,
+                }));
+                Item::data(data)
+            })
+            .collect()
+    }
+}
+
+/// Fetches from `offer`'s origin every type and file of `plan` not here yet, files into `dir`.
+///
+/// # Errors
+///
+/// The origin is gone or has moved on, a file did not land, or the bytes went past
+/// [`SEND_MAX`].
+async fn gather(
+    peers: &dyn Peers,
+    offer: &ClipboardOffer,
+    plan: &mut Plan,
+    dir: &Path,
+) -> Result<(), String> {
+    let named: Vec<usize> = plan
+        .items
+        .iter()
+        .filter(|(_, reps)| reps.iter().any(|(_, rep)| matches!(rep, Rep::File)))
+        .map(|(n, _)| *n)
+        .collect();
+    let mut urls = if named.is_empty() {
+        Vec::new()
+    } else {
+        files::fetch(peers, &offer.origin, offer.seq, dir, &named).await?
+    };
+    let mut fetched = 0_u64;
+    for (n, reps) in &mut plan.items {
+        for (uti, rep) in reps.iter_mut() {
+            match rep {
+                Rep::Here(_) => {}
+                Rep::Fetch => {
+                    let bytes = peers
+                        .fetch(&offer.origin, offer.seq, *n, uti.as_str())
+                        .await?;
+                    let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+                    fetched = fetched.saturating_add(size);
+                    if fetched > SEND_MAX {
+                        return Err("the copy is past the cap".to_owned());
+                    }
+                    *rep = Rep::Here(bytes);
+                }
+                Rep::File => {
+                    let at = urls
+                        .iter()
+                        .position(|(item, _)| *item == *n)
+                        .ok_or_else(|| "a file did not land".to_owned())?;
+                    *rep = Rep::Here(urls.swap_remove(at).1);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -806,7 +859,7 @@ mod tests {
     }
 
     #[test]
-    fn small_regular_files_prefetch_and_folders_wait() {
+    fn small_regular_files_travel_and_folders_stay() {
         let offer = |sizes: &[Option<u64>]| ClipboardOffer {
             origin: "a".into(),
             seq: 1,
@@ -823,9 +876,11 @@ mod tests {
                 })
                 .collect(),
         };
-        assert!(prefetches(&offer(&[Some(1 << 20), Some(2 << 20)])));
-        assert!(!prefetches(&offer(&[Some(PREFETCH_MAX), Some(1)])));
-        assert!(!prefetches(&offer(&[Some(1), None])), "a folder");
-        assert!(!prefetches(&offer(&[])), "no files");
+        assert!(files_fit(&offer(&[Some(1 << 20), Some(2 << 20)])));
+        assert!(files_fit(&offer(&[Some(FILES_MAX)])));
+        assert!(!files_fit(&offer(&[Some(FILES_MAX), Some(1)])));
+        assert!(!files_fit(&offer(&[Some(1), None])), "a folder");
+        assert!(files_fit(&offer(&[])), "no files: nothing held back");
+        assert!(Plan::of(&offer(&[Some(1), None])).items.is_empty());
     }
 }

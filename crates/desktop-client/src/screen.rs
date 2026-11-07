@@ -159,8 +159,6 @@ struct Parked {
     ltr_token: Option<u64>,
     /// A keyframe or an LTR refresh: the frame that restarts decoding.
     restarts: bool,
-    /// Nothing later refers to it: failing on it leaves every reference intact.
-    discardable: bool,
     coded: Coded,
 }
 
@@ -172,8 +170,6 @@ struct Inflight {
     /// Tokens of frames the decoder returned a picture for, not yet given to the reassembler.
     acks: Vec<u64>,
     failed: Option<Failed>,
-    /// Failures on frames nothing refers to, which need no refresh.
-    failed_discardable: u64,
     /// Frames refused as they were submitted, since the task last looked.
     refused: u64,
     /// The refresh those refusals ask for, `Some(keyframe)` ([`refresh_after_refusal`]).
@@ -227,15 +223,10 @@ impl Inflight {
         Some((parked.arrived, parked.coded))
     }
 
-    /// The decoder returned no picture for this frame: its token is never acknowledged. A frame
-    /// nothing refers to, failed with the session intact, asks for nothing.
+    /// The decoder returned no picture for this frame: its token is never acknowledged.
     fn failed(&mut self, pts_us: u64, status: i32, session_lost: bool) {
         self.status = Some(Status(Some(status)));
         let parked = self.take(pts_us);
-        if parked.is_some_and(|p| p.discardable) && !session_lost {
-            self.failed_discardable = self.failed_discardable.saturating_add(1);
-            return;
-        }
         let restarts = parked.is_some_and(|p| p.restarts);
         let before = self.failed.unwrap_or(Failed {
             pts_us: 0,
@@ -253,13 +244,11 @@ impl Inflight {
 
     /// The frame with this timestamp was refused as it was submitted: it is forgotten, and
     /// `refresh` is what it asks for.
-    fn refused(&mut self, pts_us: u64, status: Option<i32>, refresh: Option<bool>) {
+    fn refused(&mut self, pts_us: u64, status: Option<i32>, keyframe: bool) {
         let _gone = self.take(pts_us);
         self.status = Some(Status(status));
         self.refused = self.refused.saturating_add(1);
-        if let Some(keyframe) = refresh {
-            self.refusal_refresh = Some(self.refusal_refresh.unwrap_or(false) || keyframe);
-        }
+        self.refusal_refresh = Some(self.refusal_refresh.unwrap_or(false) || keyframe);
     }
 }
 
@@ -290,8 +279,6 @@ pub struct ScreenStats {
     pub frames_retransmit: u64,
     /// Frames given up on.
     pub frames_lost: u64,
-    /// Frames nothing refers to that were skipped instead of repaired.
-    pub frames_skipped: u64,
     /// Data fragments that never arrived.
     pub datagrams_lost: u64,
     /// Datagrams that arrived and were dropped before this stream read them (a full queue, or
@@ -857,7 +844,6 @@ struct Submit {
     pts_us: u64,
     /// Its number on the wire, for the log.
     frame: u32,
-    discardable: bool,
     restarts: bool,
 }
 
@@ -1084,18 +1070,18 @@ fn decode_one<D: VideoDecode>(
     let Err(Refused { status }) = result else {
         return true;
     };
-    let refresh = refresh_after_refusal(submit.discardable, ready, submit.restarts);
+    let keyframe = refresh_after_refusal(ready, submit.restarts);
     tracing::debug!(
         stream = media.0,
         frame = submit.frame,
         ?status,
-        ?refresh,
+        keyframe,
         "decode refused"
     );
     outcomes
         .inflight
         .lock()
-        .refused(submit.pts_us, status, refresh);
+        .refused(submit.pts_us, status, keyframe);
     outcomes.failed();
     true
 }
@@ -1404,13 +1390,11 @@ impl<D: VideoDecode> Worker<D> {
             let pts = capture_clock.widen(frame.info.capture_ts_us);
             // Parked before submitting: the decoder may call back before `decode` returns.
             let restarts = frame.info.keyframe || frame.info.ltr_refresh;
-            let discardable = frame.info.discardable;
             lane.outcomes.inflight.lock().park(Parked {
                 pts_us: pts,
                 arrived: frame.arrived,
                 ltr_token: frame.info.ltr_token,
                 restarts,
-                discardable,
                 coded: Coded {
                     stripes: frame.info.stripes,
                     build: frame.info.build,
@@ -1428,7 +1412,6 @@ impl<D: VideoDecode> Worker<D> {
                 data: frame.data,
                 pts_us: pts,
                 frame: frame.info.frame,
-                discardable,
                 restarts,
             };
             match lane.decoder.submit(submit) {
@@ -1487,12 +1470,11 @@ impl<D: VideoDecode> Worker<D> {
             if !lane.outcomes.news.swap(false, Ordering::Acquire) {
                 continue;
             }
-            let (acks, failed, failed_discardable, status, refused, refusal_refresh) = {
+            let (acks, failed, status, refused, refusal_refresh) = {
                 let mut inflight = lane.outcomes.inflight.lock();
                 (
                     std::mem::take(&mut inflight.acks),
                     inflight.failed.take(),
-                    std::mem::take(&mut inflight.failed_discardable),
                     inflight.status.take(),
                     std::mem::take(&mut inflight.refused),
                     inflight.refusal_refresh.take(),
@@ -1504,10 +1486,7 @@ impl<D: VideoDecode> Worker<D> {
             if let Some(Status(status)) = status {
                 counters.decode_failure = status;
             }
-            counters.decode_errors = counters
-                .decode_errors
-                .saturating_add(failed_discardable)
-                .saturating_add(refused);
+            counters.decode_errors = counters.decode_errors.saturating_add(refused);
             if let Some(keyframe) = refusal_refresh {
                 tracing::debug!(
                     stream = lane.media.0,
@@ -1626,7 +1605,6 @@ impl<D: VideoDecode> Worker<D> {
         c.frames_lost = stats.frames_lost.saturating_add(lower.frames_lost);
         c.refreshes = stats.refreshes.saturating_add(lower.refreshes);
         c.refresh_repeats = stats.refresh_repeats.saturating_add(lower.refresh_repeats);
-        c.frames_skipped = stats.frames_skipped.saturating_add(lower.frames_skipped);
         c.datagrams_lost = stats.datagrams_lost.saturating_add(lower.datagrams_lost);
         c.parity_permille = observed_parity(stats);
         c.data_shards = stats.data_shards.saturating_add(lower.data_shards);
@@ -1707,15 +1685,10 @@ impl<D: VideoDecode> Worker<D> {
     }
 }
 
-/// What the decoder refusing a frame as it was submitted asks for: nothing for a frame nothing
-/// refers to while the session holds; otherwise a refresh, a keyframe when no session is left
-/// or the refused frame was itself a restart.
-const fn refresh_after_refusal(discardable: bool, ready: bool, restarts: bool) -> Option<bool> {
-    if discardable && ready {
-        None
-    } else {
-        Some(!ready || restarts)
-    }
+/// Whether the refresh a frame the decoder refused as it was submitted asks for is a keyframe:
+/// when no session is left or the refused frame was itself a restart.
+const fn refresh_after_refusal(ready: bool, restarts: bool) -> bool {
+    !ready || restarts
 }
 
 /// The refresh a decode failure asks for, `Some(keyframe)`; `None` when the last restart, sent

@@ -23,19 +23,12 @@ use crate::router::ScreenRouter;
 
 const STREAM: StreamId = StreamId(5);
 
-fn parked(
-    pts_us: u64,
-    arrived: Instant,
-    ltr_token: Option<u64>,
-    restarts: bool,
-    discardable: bool,
-) -> Parked {
+fn parked(pts_us: u64, arrived: Instant, ltr_token: Option<u64>, restarts: bool) -> Parked {
     Parked {
         pts_us,
         arrived,
         ltr_token,
         restarts,
-        discardable,
         coded: Coded::default(),
     }
 }
@@ -48,7 +41,7 @@ fn a_parked_arrival_comes_back_with_its_frame_and_clears_the_older_ones() {
     let at = |ms: u64| epoch + Duration::from_millis(ms);
     let mut arrivals = Inflight::default();
     for i in 0..4_u64 {
-        arrivals.park(parked(i * 1_000, at(i * 16), None, false, false));
+        arrivals.park(parked(i * 1_000, at(i * 16), None, false));
     }
     assert_eq!(arrivals.decoded(2_000), Some((at(32), Coded::default())));
     assert_eq!(arrivals.decoded(1_000), None, "older frames went with it");
@@ -62,10 +55,10 @@ fn a_parked_arrival_comes_back_with_its_frame_and_clears_the_older_ones() {
 fn a_token_is_acknowledged_by_its_picture_and_a_failure_is_kept() {
     let epoch = Instant::now();
     let mut inflight = Inflight::default();
-    inflight.park(parked(1, epoch, Some(11), false, false));
-    inflight.park(parked(2, epoch, Some(12), false, false));
-    inflight.park(parked(3, epoch, None, false, false));
-    inflight.park(parked(4, epoch, Some(14), false, false));
+    inflight.park(parked(1, epoch, Some(11), false));
+    inflight.park(parked(2, epoch, Some(12), false));
+    inflight.park(parked(3, epoch, None, false));
+    inflight.park(parked(4, epoch, Some(14), false));
     assert!(inflight.acks.is_empty(), "submitted is not decoded");
     inflight.failed(1, -12_909, false);
     assert_eq!(inflight.decoded(2), Some((epoch, Coded::default())));
@@ -91,8 +84,8 @@ fn a_token_is_acknowledged_by_its_picture_and_a_failure_is_kept() {
 fn a_failed_refresh_asks_for_a_keyframe() {
     let epoch = Instant::now();
     let mut inflight = Inflight::default();
-    inflight.park(parked(10, epoch, None, true, false));
-    inflight.park(parked(11, epoch, None, false, false));
+    inflight.park(parked(10, epoch, None, true));
+    inflight.park(parked(11, epoch, None, false));
     inflight.failed(10, -12_909, false);
     let failed = inflight.failed.take().unwrap();
     assert_eq!(
@@ -103,8 +96,8 @@ fn a_failed_refresh_asks_for_a_keyframe() {
     inflight.failed(11, -12_909, false);
     let failed = inflight.failed.take().unwrap();
     assert_eq!(refresh_for(failed, Some(10), true), Some(false));
-    inflight.park(parked(13, epoch, None, true, false));
-    inflight.park(parked(14, epoch, None, false, false));
+    inflight.park(parked(13, epoch, None, true));
+    inflight.park(parked(14, epoch, None, false));
     inflight.failed(13, -12_909, false);
     inflight.failed(14, -12_909, false);
     let failed = inflight.failed.take().unwrap();
@@ -113,7 +106,7 @@ fn a_failed_refresh_asks_for_a_keyframe() {
         Some(true),
         "the refresh was among them"
     );
-    inflight.park(parked(12, epoch, None, false, false));
+    inflight.park(parked(12, epoch, None, false));
     inflight.failed(12, -12_909, false);
     let failed = inflight.failed.take().unwrap();
     assert_eq!(
@@ -130,32 +123,9 @@ fn a_failed_refresh_asks_for_a_keyframe() {
 
 #[test]
 fn a_refused_frame_asks_by_what_it_was_and_what_is_left() {
-    assert_eq!(refresh_after_refusal(true, true, false), None);
-    assert_eq!(refresh_after_refusal(true, false, false), Some(true));
-    assert_eq!(refresh_after_refusal(false, true, false), Some(false));
-    assert_eq!(refresh_after_refusal(false, true, true), Some(true));
-    assert_eq!(refresh_after_refusal(false, false, false), Some(true));
-}
-
-#[test]
-fn a_failed_frame_nothing_refers_to_asks_for_nothing_unless_the_session_went() {
-    let epoch = Instant::now();
-    let mut inflight = Inflight::default();
-    inflight.park(parked(1, epoch, Some(11), false, true));
-    inflight.failed(1, -12_909, false);
-    assert_eq!((inflight.failed, inflight.failed_discardable), (None, 1));
-    assert!(inflight.acks.is_empty());
-    inflight.park(parked(2, epoch, None, false, true));
-    inflight.failed(2, -12_903, true);
-    assert_eq!(
-        inflight.failed,
-        Some(Failed {
-            pts_us: 2,
-            session_lost: true,
-            restart: false,
-            count: 1
-        })
-    );
+    assert!(!refresh_after_refusal(true, false));
+    assert!(refresh_after_refusal(true, true));
+    assert!(refresh_after_refusal(false, false));
 }
 
 #[test]
@@ -164,7 +134,7 @@ fn the_ring_forgets_the_oldest_arrivals() {
     let mut arrivals = Inflight::default();
     let bound = u64::try_from(ARRIVALS).unwrap();
     for i in 0..bound + 10 {
-        arrivals.park(parked(i, epoch, None, false, false));
+        arrivals.park(parked(i, epoch, None, false));
     }
     assert_eq!(arrivals.parked.len(), ARRIVALS);
     assert_eq!(arrivals.decoded(0), None);
@@ -530,7 +500,6 @@ fn cut(packetizer: &mut Packetizer, frame: &Cut) -> Vec<Bytes> {
         keyframe: frame.keyframe,
         ltr_token: frame.ltr_token,
         ltr_refresh: false,
-        discardable: false,
         capture_ts_us: frame.capture_ts_us,
         stripes: frame.stripes,
     };

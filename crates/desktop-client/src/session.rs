@@ -447,7 +447,6 @@ enum Command {
         height: u32,
         scale: Option<f32>,
     },
-    Focused(StreamId, bool),
     Control(bool),
     Sound(bool),
     Curtain(bool),
@@ -567,11 +566,6 @@ impl<D: VideoDecode> DesktopSession<D> {
             height,
             scale,
         });
-    }
-
-    /// Whether the view of `stream` has the keyboard.
-    pub fn focused(&self, stream: StreamId, focused: bool) {
-        self.send(Command::Focused(stream, focused));
     }
 
     /// Take the controls, or give them up.
@@ -731,7 +725,7 @@ impl<D: VideoDecode> Task<D> {
             Command::Sound(on) => self.join.sound = on,
             Command::Clipboard(hub) => self.clipboard = hub,
             Command::ClipboardFocus(focused) => self.clipboard_focused = focused,
-            Command::Input(..) | Command::Focused(..) | Command::Curtain(_) => {}
+            Command::Input(..) | Command::Curtain(_) => {}
             Command::Shutdown => return Some("shut down".into()),
         }
         None
@@ -949,13 +943,7 @@ impl<D: VideoDecode> Task<D> {
     }
 
     fn sound(&self, linked: &Linked) -> Sound {
-        Sound::spawn(
-            &self.runtime,
-            &linked.router,
-            sound::platform_player,
-            false,
-            link::feedback(&linked.link),
-        )
+        Sound::spawn(&self.runtime, &linked.router, sound::platform_player, false)
     }
 
     /// Act on a view's ask over the link. `Some` when the session ends or the link is gone.
@@ -986,9 +974,6 @@ impl<D: VideoDecode> Task<D> {
                     height,
                     scale,
                 })
-            }
-            Command::Focused(stream, focused) => {
-                Up::Screen(ScreenRequest::Focused { stream, focused })
             }
             Command::Control(take) => {
                 self.join.control = take;

@@ -66,14 +66,11 @@ impl Line for FakeLine {
 
     async fn fetch(&self, fetch: Fetch) -> Result<Vec<u8>, String> {
         let other = self.other().ok_or("the link is gone")?;
-        let served = tokio::task::spawn_blocking(move || other.serve(&fetch))
-            .await
-            .map_err(|e| e.to_string())?;
-        match served {
+        match other.serve(&fetch) {
             Some(Served::Bytes(bytes)) => {
                 self.fetched
                     .fetch_add(bytes.len() as u64, Ordering::Relaxed);
-                Ok(bytes)
+                Ok(bytes.to_vec())
             }
             Some(Served::Path(_)) | None => Err("refused".to_owned()),
         }
@@ -154,19 +151,7 @@ fn copy(board: &Held, reps: &[(&str, &[u8])]) {
             .map(|(kind, bytes)| ((*kind).to_owned(), bytes.to_vec()))
             .collect(),
     );
-    board.write(&[item], None).unwrap();
-}
-
-/// A paste on `board`, as an app reads it: from a thread of its own, which waits on a promise
-/// while the runtime fetches.
-async fn paste(board: &Arc<Held>, kind: &str) -> Option<Vec<u8>> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    let board = Arc::clone(board);
-    let kind = kind.to_owned();
-    std::thread::spawn(move || {
-        let _sent = tx.send(board.data(0, &kind));
-    });
-    rx.await.unwrap()
+    board.write(&[item]).unwrap();
 }
 
 /// Lets the watchers look and the clips land: a few polls of the paused clock, until `done`.
@@ -179,8 +164,8 @@ async fn settle(done: impl Fn() -> bool) {
     }
 }
 
-/// The session's clipboard both ways: text inline, a big picture only on paste, a concealed copy
-/// never, no echo after a write, and the newest copy on both Macs.
+/// The session's clipboard both ways: text inline, a big picture fetched at once and written
+/// whole, a concealed copy never, no echo after a write, and the newest copy on both Macs.
 #[tokio::test(start_paused = true)]
 async fn the_clipboard_follows_the_focused_window_both_ways() {
     let pair = Pair::new();
@@ -208,7 +193,7 @@ async fn the_clipboard_follows_the_focused_window_both_ways() {
         Some(&b"before focus"[..])
     );
 
-    // Text round-trips inline: written at once, no fetch, and never announced back.
+    // Text rides inline: written at once, no fetch, and never announced back.
     copy(&viewer.board, &[(TEXT, b"hello")]);
     settle(|| host.board.data(0, TEXT).as_deref() == Some(&b"hello"[..])).await;
     assert_eq!(host.board.data(0, TEXT).as_deref(), Some(&b"hello"[..]));
@@ -216,26 +201,20 @@ async fn the_clipboard_follows_the_focused_window_both_ways() {
         host.board.data(0, ORIGIN_TYPE).as_deref(),
         Some(&b"viewer"[..])
     );
-    assert_eq!(host.board.promised(), vec![Vec::<String>::new()]);
-    assert_eq!(host.line.fetched(), 0, "the paste took no fetch");
+    assert_eq!(host.line.fetched(), 0, "no fetch");
     tokio::time::sleep(POLL * 6).await;
     assert_eq!(host.line.offers(), 0, "no echo after the write");
     assert_eq!(viewer.line.offers(), 2);
 
-    // A big picture on the host is promised, and moves only when the viewer pastes it.
+    // A big picture on the host is fetched by the viewer at once, and written whole.
     let picture: Vec<u8> = (0..5_000_000_u32).map(|n| (n % 251) as u8).collect();
     copy(&host.board, &[(PNG, &picture), (TEXT, b"caption")]);
-    settle(|| viewer.board.promised() == vec![vec![PNG.to_owned()]]).await;
-    assert_eq!(viewer.board.promised(), vec![vec![PNG.to_owned()]]);
+    settle(|| viewer.board.data(0, PNG).is_some()).await;
+    assert_eq!(viewer.board.data(0, PNG), Some(picture));
+    assert_eq!(viewer.board.data(0, TEXT).as_deref(), Some(&b"caption"[..]));
+    assert_eq!(viewer.line.fetched(), 5_000_000, "the caption rode inline");
     tokio::time::sleep(POLL * 6).await;
-    assert_eq!(viewer.line.fetched(), 0, "no byte before the paste");
-    assert_eq!(
-        paste(&viewer.board, TEXT).await.as_deref(),
-        Some(&b"caption"[..])
-    );
-    assert_eq!(viewer.line.fetched(), 0, "the caption rode inline");
-    assert_eq!(paste(&viewer.board, PNG).await, Some(picture));
-    assert_eq!(viewer.line.fetched(), 5_000_000);
+    assert_eq!(viewer.line.fetched(), 5_000_000, "fetched once");
     assert_eq!(viewer.line.offers(), 2, "the viewer echoed nothing back");
 
     // A password manager's copy never leaves.

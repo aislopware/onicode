@@ -106,6 +106,14 @@ pub fn guide_open(pane: Pane, before_exit: impl FnOnce() + Send + 'static) -> Re
     if pane == Pane::PasteFromOtherApps {
         // Read again every few seconds by the clipboard (`crate::clipboard`): nothing to restart.
         drop(before_exit);
+        // desktopd reads no copy before it may, so one never asked is not in the list yet: the
+        // person's click raises the one prompt that lists it. The prompt waits for its answer,
+        // so it is not raised on the caller's thread.
+        if !onicode_grants::paste::behavior().listed() {
+            let _asking = std::thread::Builder::new()
+                .name("onicode-paste-ask".to_owned())
+                .spawn(onicode_grants::paste::ask_once);
+        }
         tracing::info!("the guide to Paste from Other Apps is open");
         return Ok(());
     }

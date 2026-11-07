@@ -1,25 +1,23 @@
 //! Both ends of a client's feedback.
 //!
 //! On the host, NACKs are answered from the packetizer's history, receiver reports are folded
-//! into the bitrate controller and the parity ratio, sound reports into the audio copies, and
-//! clock probes are echoed; on the client, the echoes are placed on its clock.
+//! into the bitrate controller and the parity ratio, and clock probes are echoed; on the
+//! client, the echoes are placed on its clock.
 //!
 //! Every field is the peer's to choose. A retransmission must be a datagram of the frame asked
 //! for, a data fragment of it, marked as a retransmission; the bitrate must stay between the
-//! floor and the client's ceiling; the parity ratio and the audio copies must stay within their
-//! bounds. A probe's echo must read back as sent, and whatever echoes come, the clock estimate
-//! must keep its drift within what it follows and never state a bound tighter than half the
-//! fastest round trip.
+//! floor and the client's ceiling; the parity ratio must stay within its bounds. A probe's echo
+//! must read back as sent, and whatever echoes come, the clock estimate must keep its drift within
+//! what it follows and never state a bound tighter than half the fastest round trip.
 
 use std::time::{Duration, Instant};
 
 use arbitrary::{Arbitrary, Unstructured};
 use onicode_desktop_media::wire::{
-    ClockEcho, Feedback, Kind, MediaHeader, ReceiverReport, SoundReport, StreamId, flags,
+    ClockEcho, Feedback, Kind, MediaHeader, ReceiverReport, StreamId, flags,
 };
 use onicode_desktop_media::{
-    AudioCopies, ClockSync, EncodedFrame, MAX_AUDIO_COPIES, Packetizer, PathSample, RateController,
-    Redundancy,
+    ClockSync, EncodedFrame, Packetizer, PathSample, RateController, Redundancy,
 };
 
 const STREAM: StreamId = StreamId(3);
@@ -48,8 +46,6 @@ enum Op {
         datagrams_sent: u32,
         rtt_ns: Option<(u64, u64)>,
     },
-    /// A report of the host's sound, as its fields.
-    Sound { received: u16, lost: u16 },
     /// The client's ceiling moves.
     Ceiling(u32),
     /// A media datagram reaches the client `arrived_us` after its clock's epoch: a clock echo
@@ -121,9 +117,6 @@ struct Host {
     rate: RateController,
     ceiling: u32,
     redundancy: Redundancy,
-    audio: AudioCopies,
-    /// Sound reports taken, each a 50 ms report period on the audio copies' clock.
-    reports: u64,
     /// The client's clock estimate, and the moment its probes are stamped from.
     clock: ClockSync,
     epoch: Instant,
@@ -139,8 +132,6 @@ impl Host {
             rate: RateController::new(plan.max_bps),
             ceiling: plan.max_bps.max(MIN_BPS),
             redundancy: Redundancy::default(),
-            audio: AudioCopies::default(),
-            reports: 0,
             clock: ClockSync::new(epoch),
             epoch,
         }
@@ -156,7 +147,6 @@ impl Host {
                     ltr_token: None,
                     ltr_refresh: false,
                     capture_ts_us: 0,
-                    discardable: false,
                     stripes: 0,
                 };
                 let _sent = self.packetizer.packetize(&frame, 0, |_| {});
@@ -176,7 +166,6 @@ impl Host {
                     } => self.nack(frame, &fragments),
                     Feedback::Clock { stream, sent_us } => Self::echo(stream, sent_us),
                     Feedback::Report { report, .. } => self.report(&report, 0, None),
-                    Feedback::Sound(sound) => self.sound(sound),
                     Feedback::Refresh { .. } => {}
                 }
             }
@@ -209,12 +198,6 @@ impl Host {
                 });
                 self.report(&ReceiverReport::from(report), *datagrams_sent, path);
             }
-            Op::Sound { received, lost } => {
-                self.sound(SoundReport {
-                    received: *received,
-                    lost: *lost,
-                });
-            }
             Op::Ceiling(max) => {
                 self.rate.set_max(*max);
                 self.ceiling = (*max).max(MIN_BPS);
@@ -237,15 +220,6 @@ impl Host {
             (Redundancy::MIN..=Redundancy::MAX).contains(&permille),
             "parity ratio {permille}‰ outside its bounds"
         );
-    }
-
-    /// A sound report reaches the audio copies, which stay in bounds.
-    fn sound(&mut self, report: SoundReport) {
-        self.reports = self.reports.saturating_add(1);
-        let copies = self
-            .audio
-            .on_report(report, self.reports.saturating_mul(50_000));
-        assert!(copies <= MAX_AUDIO_COPIES, "{copies} audio copies");
     }
 
     /// The host answers a probe, and the client reads the echo back as it was sent.

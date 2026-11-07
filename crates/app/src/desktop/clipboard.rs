@@ -4,10 +4,10 @@
 //! The app keeps one [`Hub`] on the general pasteboard, started with the first desktop window
 //! on the desktop runtime. Each session follows it ([`attach`]); while a window is key, its
 //! session follows the Mac it shows both ways: this Mac's pasteboard is watched and its copies
-//! offered to that Mac, and that Mac's copies are written here at once, small ones as bytes and
-//! the rest as pasteboard item providers that fetch only when something pastes them. The app
-//! reads its own pasteboard only while it is in front, which macOS does not prompt for; the
-//! host's reads are gated by Paste from Other Apps there, which [`paste_banner`] explains.
+//! sent to that Mac, and that Mac's copies are written here whole once they arrive (small ones
+//! inside the offer, the rest fetched at once, up to the clipboard's caps). The app reads its own
+//! pasteboard only while it is in front, which macOS does not prompt for; the host's reads are
+//! gated by Paste from Other Apps there, which [`paste_banner`] explains.
 
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
@@ -54,14 +54,14 @@ fn cache_dir() -> PathBuf {
         .join("Library/Caches/Onicode/clipboard")
 }
 
-/// The banner that says why copies on `host` wait for a paste or stay there, while its
-/// Paste from Other Apps for Onicode Desktop is not Allow; `None` once it is.
+/// The banner that says why copies on `host` stay there, while its Paste from Other Apps for
+/// Onicode Desktop is not Allow; `None` once it is.
 pub(super) fn paste_banner(paste: Option<PasteAccess>, host: &str) -> Option<String> {
     match paste? {
         PasteAccess::Ungated | PasteAccess::Allowed => None,
         PasteAccess::NotAsked | PasteAccess::Ask => Some(format!(
-            "{host} asks before Onicode Desktop sends its copies: allow the paste there, then set \
-             Onicode Desktop to Allow in Paste from Other Apps."
+            "Copies on {host} stay there until Onicode Desktop is set to Allow in Paste from \
+             Other Apps there."
         )),
         PasteAccess::Denied => Some(format!(
             "Paste from Other Apps is off for Onicode Desktop on {host}, so copies there stay \

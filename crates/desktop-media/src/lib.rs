@@ -24,7 +24,6 @@ mod audio;
 mod clock;
 mod cursor;
 mod heartbeat;
-mod layers;
 mod pacing;
 mod packetize;
 mod rate;
@@ -33,13 +32,10 @@ mod redundancy;
 mod refine;
 pub mod wire;
 
-pub use audio::{
-    AudioCopies, AudioPackets, MAX_AUDIO_COPIES, SoundCount, audio_datagram, parse_audio,
-};
+pub use audio::{audio_datagram, parse_audio};
 pub use clock::{CLOCK_WINDOW, ClockAnchor, ClockEstimate, ClockSync};
 pub use cursor::{cursor_datagram, parse_cursor};
 pub use heartbeat::{HEARTBEAT_AFTER, heartbeat_datagram};
-pub use layers::LayerGate;
 pub use pacing::{
     CaptureClock, Captured, Clock, FrameStamp, GlassStats, Offer, PAINT_WINDOW, Pacer, PacingStats,
     PaintRate, RING, Spread, SystemClock, percentile,

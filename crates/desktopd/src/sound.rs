@@ -3,13 +3,12 @@
 //!
 //! A client that asks for sound (`Up::Join { sound }`, `Up::Sound`) gets the whole Mac's sound,
 //! this process's own left out, once however many displays it streams: one capture, one Opus
-//! encoder, 10 ms packets on the [`SOUND`] stream. Each packet carries copies of the one or two
-//! before it while the client reports loss ([`AudioCopies`]), and the video of the client's
-//! streams goes through their lane while the sound is live, so a keyframe never queues in front
-//! of it ([`crate::pipeline::lane`]). Silence past [`AUDIO_HOLD_US`] sends nothing.
+//! encoder, 10 ms packets on the [`SOUND`] stream, one a datagram. A lost packet is not sent
+//! again: the client fades over the gap. Silence past [`AUDIO_HOLD_US`] sends nothing.
 
+use std::marker::PhantomData;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -17,8 +16,8 @@ use onicode_desktop_capture::{
     AUDIO_CHANNELS, AUDIO_RATE, CaptureError, CaptureSource as _, CapturedAudio, Heard,
 };
 use onicode_desktop_codec::AudioEncoder as _;
-use onicode_desktop_media::wire::{SOUND, SoundReport};
-use onicode_desktop_media::{AudioCopies, MAX_AUDIO_COPIES, audio_datagram};
+use onicode_desktop_media::audio_datagram;
+use onicode_desktop_media::wire::SOUND;
 use parking_lot::Mutex;
 use tokio::sync::{Notify, oneshot};
 
@@ -36,32 +35,6 @@ const RETRY: Duration = Duration::from_secs(2);
 type Capture<P> = <P as Platform>::Capture;
 type Running<P> = <Capture<P> as onicode_desktop_capture::CaptureSource>::Sound;
 
-/// When the sound last went out, which the client's streams read to keep their video behind it.
-#[derive(Debug, Default)]
-pub struct SoundClock {
-    last_us: AtomicU64,
-    packets: AtomicU64,
-}
-
-impl SoundClock {
-    /// The capture clock's time of the last packet sent; `0` before one.
-    #[must_use]
-    pub fn last_us(&self) -> u64 {
-        self.last_us.load(Ordering::Relaxed)
-    }
-
-    /// Packets sent.
-    #[must_use]
-    pub fn packets(&self) -> u64 {
-        self.packets.load(Ordering::Relaxed)
-    }
-
-    /// A packet went out at `now_us`.
-    pub fn sent_at(&self, now_us: u64) {
-        self.last_us.store(now_us.max(1), Ordering::Relaxed);
-    }
-}
-
 /// The encoder and its packets' numbers.
 struct AudioState<A> {
     encoder: Option<A>,
@@ -75,9 +48,6 @@ struct AudioState<A> {
 struct Voice<P: Platform> {
     sink: Arc<dyn DatagramSink>,
     audio: Mutex<AudioState<P::Audio>>,
-    copies: Mutex<AudioCopies>,
-    sent: Mutex<[Bytes; MAX_AUDIO_COPIES]>,
-    clock: Arc<SoundClock>,
 }
 
 impl<P: Platform> Voice<P> {
@@ -90,9 +60,6 @@ impl<P: Platform> Voice<P> {
                 last_loud_us: 0,
                 refused: false,
             }),
-            copies: Mutex::new(AudioCopies::default()),
-            sent: Mutex::new(Default::default()),
-            clock: Arc::default(),
         }
     }
 
@@ -101,37 +68,16 @@ impl<P: Platform> Voice<P> {
         let Some(packets) = self.encode(&chunk.samples, now) else {
             return;
         };
-        let datagrams = self.datagrams(&packets, now);
+        let datagrams: Vec<Bytes> = packets
+            .iter()
+            .filter_map(|(seq, packet)| audio_datagram(SOUND, *seq, send_ms_lo(now), packet))
+            .collect();
         if datagrams.is_empty() {
             return;
         }
-        self.clock.sent_at(now);
-        if self.sink.send(&datagrams).is_ok() {
-            let n = u64::try_from(datagrams.len()).unwrap_or(u64::MAX);
-            self.clock.packets.fetch_add(n, Ordering::Relaxed);
+        if let Err(refused) = self.sink.send(&datagrams) {
+            tracing::debug!(?refused, "sound datagrams not sent");
         }
-    }
-
-    /// Each packet as its datagram, with the copies in force of the ones before it.
-    fn datagrams(&self, packets: &[(u32, Bytes)], now: u64) -> Vec<Bytes> {
-        let copies = self.copies.lock().copies();
-        let mut sent = self.sent.lock();
-        let mut datagrams = Vec::with_capacity(packets.len());
-        for (seq, packet) in packets {
-            let earlier: Vec<&[u8]> = sent.iter().take(copies).map(|b| &b[..]).collect();
-            datagrams.extend(audio_datagram(
-                SOUND,
-                *seq,
-                send_ms_lo(now),
-                packet,
-                &earlier,
-            ));
-            sent.rotate_right(1);
-            if let Some(nearest) = sent.first_mut() {
-                nearest.clone_from(packet);
-            }
-        }
-        datagrams
     }
 
     fn encode(&self, samples: &[f32], now: u64) -> Option<Vec<(u32, Bytes)>> {
@@ -191,7 +137,7 @@ struct Wish {
 /// A client's sound: on while it asks for it. Dropping it stops the capture.
 pub struct Sound<P: Platform> {
     wish: Arc<Wish>,
-    voice: Arc<Voice<P>>,
+    platform: PhantomData<fn() -> P>,
 }
 
 impl<P: Platform> std::fmt::Debug for Sound<P> {
@@ -207,9 +153,12 @@ impl<P: Platform> Sound<P> {
     #[must_use]
     pub fn new(sink: Arc<dyn DatagramSink>) -> Self {
         let wish = Arc::new(Wish::default());
-        let voice = Arc::new(Voice::new(sink));
-        tokio::spawn(follow::<P>(Arc::clone(&wish), Arc::clone(&voice)));
-        Self { wish, voice }
+        let voice = Arc::new(Voice::<P>::new(sink));
+        tokio::spawn(follow::<P>(Arc::clone(&wish), voice));
+        Self {
+            wish,
+            platform: PhantomData,
+        }
     }
 
     /// Turn the sound on or off.
@@ -223,26 +172,6 @@ impl<P: Platform> Sound<P> {
     #[must_use]
     pub fn on(&self) -> bool {
         self.wish.on.load(Ordering::Acquire)
-    }
-
-    /// The client's report of what its player heard: the copies follow its losses.
-    pub fn report(&self, report: SoundReport) {
-        let (was, copies) = {
-            let mut control = self.voice.copies.lock();
-            (
-                control.copies(),
-                control.on_report(report, Capture::<P>::now_us()),
-            )
-        };
-        if copies != was {
-            tracing::debug!(was, copies, lost = report.lost, "audio copies");
-        }
-    }
-
-    /// When the sound last went out.
-    #[must_use]
-    pub fn clock(&self) -> Arc<SoundClock> {
-        Arc::clone(&self.voice.clock)
     }
 }
 

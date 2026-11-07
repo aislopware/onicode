@@ -3,11 +3,12 @@
 //!
 //! A session follows the other end while the viewer's window has focus. The viewer says so
 //! ([`Session::focus`], which tells the host with [`Clip::Focus`]); the host hears it
-//! ([`Session::heard`]) and tells back whether it may read its pasteboard unasked
-//! ([`Clip::Access`]), again whenever that changes. While it follows, each end's copies go to
-//! the other as offers, and the other end's offers are applied here, newest wins. A paste fetches
-//! through the session the offer came on ([`Line`]); a fetch from the other end is served only for
-//! the offer this session sent ([`Session::serve`]).
+//! ([`Session::heard`]) and tells back whether it may read its pasteboard without a prompt
+//! ([`Clip::Access`]), again whenever that changes: until it may, the host's copies stay there.
+//! While it follows, each end's copies go to the other as offers, and the other end's offers are
+//! taken here, newest wins: what did not ride inline is fetched at once through the session the
+//! offer came on ([`Line`]); a fetch from the other end is served only for the offer this session
+//! sent ([`Session::serve`]).
 //!
 //! [`Line`] is the seam to the link: `crate::link::LinkLine` on QUIC, an in-memory pair in tests.
 
@@ -18,6 +19,7 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use futures::StreamExt as _;
 use onicode_desktop_proto::clipboard::{Clip, Fetch, PasteAccess};
 use parking_lot::Mutex;
@@ -27,7 +29,8 @@ use tokio::task::JoinHandle;
 use crate::board::Board;
 use crate::sync::{Access, Clipboard, ClipboardSettings, Clock, Config, Peers, Received};
 
-/// How often a following host reads its pasteboard access again, to tell the viewer a change.
+/// How often a following host reads its pasteboard access again, to tell the viewer a change:
+/// set to Allow, the copies there start to travel within this.
 pub const ACCESS_EVERY: Duration = Duration::from_secs(2);
 
 /// One desktop link, as the clipboard reaches the other end.
@@ -40,10 +43,10 @@ pub trait Line: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// The link is gone, the other end refused, or past [`crate::FETCH_MAX`].
+    /// The link is gone, the other end refused, or past [`crate::SEND_MAX`].
     async fn fetch(&self, fetch: Fetch) -> Result<Vec<u8>, String>;
 
-    /// The file or folder `fetch` (a [`Fetch::Files`]) names, copied from the other end into
+    /// The file `fetch` (a [`Fetch::Files`]) names, copied from the other end into
     /// `into` under its own name; its local path once all of it is there.
     ///
     /// # Errors
@@ -248,7 +251,7 @@ impl Session {
                 // Writing may wait on the pasteboard server: off the runtime's threads.
                 let _task = self.hub.runtime.spawn_blocking(move || {
                     let received = clipboard.receive(offer);
-                    if received != Received::Applied {
+                    if !matches!(received, Received::Applied | Received::Fetching) {
                         tracing::debug!(?received, "a clipboard offer not applied");
                     }
                 });
@@ -259,8 +262,7 @@ impl Session {
     }
 
     /// The bytes or the path a fetch from the other end names: only for the offer this session
-    /// sent, and only while the board holds it. Reads the board: call it off the runtime's
-    /// threads.
+    /// sent, and only while it is this Mac's newest.
     #[must_use]
     pub fn serve(&self, fetch: &Fetch) -> Option<Served> {
         let offered = *self.shared.offered.lock();
@@ -341,7 +343,7 @@ impl Drop for Session {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Served {
     /// A type's bytes.
-    Bytes(Vec<u8>),
-    /// The local path of a copied file or folder, to send as entries.
+    Bytes(Bytes),
+    /// The local path of a copied file, to send as entries.
     Path(PathBuf),
 }

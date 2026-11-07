@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "VideoToolbox HEVC/H.264 encode (macOS) and decode (macOS, iOS) with length-prefixed framing, two-stripe coding, the SPS conformance window, and Opus audio"
+description = "VideoToolbox HEVC encode (macOS) and decode (macOS, iOS) with length-prefixed framing, two-stripe coding, the SPS conformance window, and Opus audio"
 
 # The two deep lanes slopty ran: the audio ring model-checked on loom's atomics
 # (`--cfg onicode_loom`), and the render callback under RealtimeSanitizer (`--cfg onicode_rtsan`,

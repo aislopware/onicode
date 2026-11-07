@@ -84,27 +84,11 @@ mod tests {
         }
 
         fn send(&mut self, data: &[u8], keyframe: bool, ltr_refresh: bool) -> SentFrame {
-            self.send_frame(data, keyframe, ltr_refresh, false)
-        }
-
-        /// A frame of the encoder's temporal layer 1: nothing later refers to it.
-        fn send_discardable(&mut self, data: &[u8]) -> SentFrame {
-            self.send_frame(data, false, false, true)
-        }
-
-        fn send_frame(
-            &mut self,
-            data: &[u8],
-            keyframe: bool,
-            ltr_refresh: bool,
-            discardable: bool,
-        ) -> SentFrame {
             let frame = EncodedFrame {
                 data,
                 keyframe,
                 ltr_token: keyframe.then_some(0xabcd),
                 ltr_refresh,
-                discardable,
                 capture_ts_us: 1_000,
                 stripes: 0,
             };
@@ -203,7 +187,6 @@ mod tests {
             keyframe: true,
             ltr_token: None,
             ltr_refresh: false,
-            discardable: false,
             capture_ts_us: 1_000,
             stripes: 0b10,
         };
@@ -602,231 +585,6 @@ mod tests {
         assert_eq!(
             h.rx.ingest(&s1.datagrams[0], h.now),
             Ingest::Ignored(Ignored::Stale)
-        );
-    }
-
-    /// A frame nothing refers to that lost every fragment costs no refresh: the next frame's
-    /// datagrams say what it was, and once that frame is complete delivery steps over it.
-    #[test]
-    fn a_frame_nothing_refers_to_that_never_arrives_is_skipped_without_a_refresh() {
-        let mut h = Harness::new();
-        let s0 = h.send(&frame_bytes(1, 2_000), true, false);
-        let _s1 = h.send_discardable(&frame_bytes(2, 3_000));
-        let s2 = h.send(&frame_bytes(3, 3_000), false, false);
-        h.deliver(&s0.datagrams);
-        h.drain();
-        h.deliver(&s2.datagrams);
-        let out = h.drain();
-        assert_eq!(
-            out.iter().map(|f| f.info.frame).collect::<Vec<_>>(),
-            vec![2],
-            "no wait"
-        );
-        assert!(!out[0].info.discardable);
-        h.advance(nack_delay() + RTT * 4 + cfg().grace);
-        assert!(
-            h.tick().is_empty(),
-            "nothing asked for: no NACK, no refresh"
-        );
-        assert!(!h.rx.awaiting_refresh());
-        let stats = h.rx.stats();
-        assert_eq!(
-            (stats.frames_skipped, stats.frames_lost, stats.refreshes),
-            (1, 0, 0)
-        );
-        assert!(stats.datagrams_lost >= 1, "the loss is still counted");
-    }
-
-    /// A frame whose fragments that arrived did not say it may be skipped learns it from the
-    /// next frame's bit, and is stepped over as soon as that frame is whole.
-    #[test]
-    fn a_partial_frame_learns_it_may_be_skipped_from_the_next_frame() {
-        use onicode_desktop_media::wire::flags::DISCARDABLE;
-        use zerocopy::FromBytes as _;
-        let mut h = Harness::new();
-        h.tx.set_parity_permille(0);
-        let s0 = h.send(&frame_bytes(1, 2_000), true, false);
-        h.deliver(&s0.datagrams);
-        h.drain();
-        let s1 = h.send_discardable(&frame_bytes(2, 5_000));
-        let mut first = s1.datagrams[0].to_vec();
-        let (header, _) = MediaHeader::mut_from_prefix(&mut first).unwrap();
-        header.flags &= !DISCARDABLE;
-        h.deliver(&[Bytes::from(first)]);
-        let s2 = h.send(&frame_bytes(3, 2_000), false, false);
-        h.deliver(&s2.datagrams);
-        let out = h.drain();
-        assert_eq!(
-            out.iter().map(|f| f.info.frame).collect::<Vec<_>>(),
-            vec![2],
-            "no wait"
-        );
-        h.advance(nack_delay() + RTT * 4 + cfg().grace);
-        assert_eq!(h.tick(), []);
-        let stats = h.rx.stats();
-        assert_eq!((stats.frames_skipped, stats.refreshes), (1, 0));
-    }
-
-    /// A frame nothing refers to that is missing a fragment is asked for once, and a
-    /// retransmission that comes before a later picture is ready still shows it.
-    #[test]
-    fn a_frame_nothing_refers_to_is_nacked_once_and_shown_when_repaired_in_time() {
-        let mut h = Harness::new();
-        h.tx.set_parity_permille(0);
-        let s0 = h.send(&frame_bytes(1, 2_000), true, false);
-        h.deliver(&s0.datagrams);
-        h.drain();
-        let p1 = frame_bytes(2, 5_000);
-        let s1 = h.send_discardable(&p1);
-        h.deliver_except(&s1, &[2]);
-        h.advance(nack_delay());
-        assert_eq!(
-            h.tick(),
-            vec![Action::Nack {
-                frame: 1,
-                fragments: vec![2]
-            }]
-        );
-        h.advance(RTT + nack_delay());
-        let s2 = h.send(&frame_bytes(3, 2_000), false, false);
-        h.deliver_except(&s2, &[0]);
-        assert!(
-            h.tick().is_empty(),
-            "asked once only, where any other frame is asked twice"
-        );
-        let resent = h.tx.retransmit(1, &[2]);
-        h.deliver(&resent);
-        let out = h.drain();
-        assert_eq!(
-            out.iter().map(|f| f.info.frame).collect::<Vec<_>>(),
-            vec![1]
-        );
-        assert!(out[0].info.discardable);
-        assert_eq!(out[0].data, p1);
-        assert_eq!(h.rx.stats().frames_skipped, 0);
-    }
-
-    /// Once a later picture is complete, a frame nothing refers to is not waited for: it is
-    /// skipped at once, and a NACK that has not gone out never does.
-    #[test]
-    fn a_frame_nothing_refers_to_is_not_waited_for_behind_a_complete_one() {
-        let mut h = Harness::new();
-        h.tx.set_parity_permille(0);
-        let s0 = h.send(&frame_bytes(1, 2_000), true, false);
-        h.deliver(&s0.datagrams);
-        h.drain();
-        let s1 = h.send_discardable(&frame_bytes(2, 5_000));
-        let s2 = h.send(&frame_bytes(3, 2_000), false, false);
-        h.deliver_except(&s1, &[4]);
-        h.deliver(&s2.datagrams);
-        let out = h.drain();
-        assert_eq!(
-            out.iter().map(|f| f.info.frame).collect::<Vec<_>>(),
-            vec![2]
-        );
-        h.advance(nack_delay());
-        assert!(h.tick().is_empty(), "the skipped frame is not asked for");
-        assert_eq!(
-            h.rx.ingest(&s1.datagrams[4], h.now),
-            Ingest::Ignored(Ignored::Stale)
-        );
-        let stats = h.rx.stats();
-        assert_eq!(
-            (stats.frames_skipped, stats.nacks, stats.refreshes),
-            (1, 0, 0)
-        );
-    }
-
-    /// A frame nothing refers to that is still missing at its deadline is skipped, with no
-    /// refresh; a lost frame the next one refers to still asks for one.
-    #[test]
-    fn at_its_deadline_a_frame_nothing_refers_to_is_skipped_and_any_other_refreshed() {
-        let mut h = Harness::new();
-        h.tx.set_parity_permille(0);
-        let s0 = h.send(&frame_bytes(1, 2_000), true, false);
-        h.deliver(&s0.datagrams);
-        h.drain();
-        let s1 = h.send_discardable(&frame_bytes(2, 5_000));
-        h.deliver_except(&s1, &[1]);
-        h.advance(nack_delay());
-        assert_eq!(
-            h.tick(),
-            vec![Action::Nack {
-                frame: 1,
-                fragments: vec![1]
-            }]
-        );
-        // The link keeps moving, so the deadline counts.
-        let flowing = |h: &mut Harness, by: Duration| {
-            let mut actions = Vec::new();
-            for beat in 0..by.as_millis() / 5 {
-                h.advance(Duration::from_millis(5));
-                let stamp = h.send_ms_lo();
-                let dg = heartbeat_datagram(STREAM, u32::try_from(beat).unwrap(), stamp);
-                assert_eq!(h.rx.ingest(&dg, h.now), Ingest::Heartbeat);
-                actions.extend(h.tick());
-            }
-            actions
-        };
-        let deadline = nack_delay() + (RTT + nack_delay()) * 2 + cfg().grace;
-        let actions = flowing(&mut h, deadline);
-        assert!(
-            actions.is_empty(),
-            "frame 1 is skipped, never refreshed: {actions:?}"
-        );
-        assert_eq!(h.rx.stats().frames_skipped, 1);
-        let s2 = h.send(&frame_bytes(3, 5_000), false, false);
-        h.deliver_except(&s2, &[1]);
-        let actions = flowing(&mut h, deadline + nack_delay());
-        assert!(
-            actions.contains(&Action::RequestRefresh {
-                last_good_frame: 0,
-                keyframe: false
-            }),
-            "frame 2 is referred to: its loss asks for a refresh: {actions:?}"
-        );
-        assert_eq!(
-            (h.rx.stats().frames_lost, h.rx.stats().frames_skipped),
-            (1, 1)
-        );
-    }
-
-    /// Every datagram of a frame nothing refers to says so, and so does every datagram of the
-    /// frame after it; a keyframe or a refresh never does, whatever it is handed.
-    #[test]
-    fn the_layer_bits_ride_the_frame_and_the_one_after_it() {
-        use onicode_desktop_media::wire::flags::{DISCARDABLE, PREV_DISCARDABLE};
-        let mut h = Harness::new();
-        let bits = |sent: &SentFrame| -> Vec<u8> {
-            sent.datagrams
-                .iter()
-                .map(|d| MediaHeader::parse(d).unwrap().0.flags & (DISCARDABLE | PREV_DISCARDABLE))
-                .collect()
-        };
-        let data = frame_bytes(1, 3_000);
-        let key = h.send_frame(&data, true, false, true);
-        assert!(
-            bits(&key).iter().all(|&b| b == 0),
-            "a keyframe is never skipped"
-        );
-        let layer1 = h.send_discardable(&data);
-        assert!(
-            bits(&layer1).iter().all(|&b| b == DISCARDABLE),
-            "data and parity alike"
-        );
-        let base = h.send(&data, false, false);
-        assert!(bits(&base).iter().all(|&b| b == PREV_DISCARDABLE));
-        let refresh = h.send_frame(&data, false, true, true);
-        assert!(
-            bits(&refresh).iter().all(|&b| b == 0),
-            "a refresh restarts a receiver"
-        );
-        let resent = h.tx.retransmit(layer1.frame, &[]);
-        let (hdr, _) = MediaHeader::parse(&resent[0]).unwrap();
-        assert_eq!(
-            hdr.flags & DISCARDABLE,
-            DISCARDABLE,
-            "a retransmission keeps the bit"
         );
     }
 
@@ -1626,11 +1384,10 @@ mod tests {
     fn audio_is_parsed_and_a_malformed_one_refused() {
         let mut h = Harness::new();
         for seq in [5, 6, 9, 8] {
-            let audio =
-                onicode_desktop_media::audio_datagram(STREAM, seq, 0, &[7; 64], &[]).unwrap();
+            let audio = onicode_desktop_media::audio_datagram(STREAM, seq, 0, &[7; 64]).unwrap();
             assert!(matches!(h.rx.ingest(&audio, h.now), Ingest::Audio { seq: s, .. } if s == seq));
         }
-        let mut bad = onicode_desktop_media::audio_datagram(STREAM, 10, 0, &[7; 64], &[])
+        let mut bad = onicode_desktop_media::audio_datagram(STREAM, 10, 0, &[7; 64])
             .unwrap()
             .to_vec();
         bad[std::mem::offset_of!(MediaHeader, data_count)] = 9;
@@ -1643,14 +1400,12 @@ mod tests {
     #[test]
     fn audio_and_cursor_pass_through() {
         let mut h = Harness::new();
-        let audio =
-            onicode_desktop_media::audio_datagram(STREAM, 5, 0, &[7; 64], &[&[6; 60]]).unwrap();
+        let audio = onicode_desktop_media::audio_datagram(STREAM, 5, 0, &[7; 64]).unwrap();
         assert_eq!(
             h.rx.ingest(&audio, h.now),
             Ingest::Audio {
                 seq: 5,
                 payload: Bytes::from(vec![7; 64]),
-                earlier: [Some(Bytes::from(vec![6; 60])), None],
             }
         );
         let cursor = onicode_desktop_media::cursor_datagram(STREAM, 6, 0, 10, 20, true);
@@ -2321,7 +2076,6 @@ mod tests {
                 keyframe: true,
                 ltr_token: None,
                 ltr_refresh: false,
-                discardable: false,
                 capture_ts_us: 0,
                 stripes: 0,
             };

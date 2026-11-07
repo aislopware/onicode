@@ -61,28 +61,6 @@ pub mod hevc {
     }
 }
 
-/// H.264 NAL unit types that carry parameter sets.
-pub mod h264 {
-    /// Sequence parameter set.
-    pub const SPS: u8 = 7;
-    /// Picture parameter set.
-    pub const PPS: u8 = 8;
-    /// IDR slice.
-    pub const IDR: u8 = 5;
-
-    /// The type of an H.264 NAL unit: low five bits of the first header byte.
-    #[must_use]
-    pub fn nal_type(nal: &[u8]) -> Option<u8> {
-        nal.first().map(|b| b & 0x1f)
-    }
-
-    /// True for SPS/PPS.
-    #[must_use]
-    pub fn is_parameter_set(nal: &[u8]) -> bool {
-        matches!(nal_type(nal), Some(SPS | PPS))
-    }
-}
-
 /// The 4-byte length in front of a NAL unit.
 const PREFIX: usize = 4;
 
@@ -309,17 +287,13 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn hevc_and_h264_types() {
+    fn hevc_types() {
         assert_eq!(hevc::nal_type(&[0x40, 1]), Some(hevc::VPS));
         assert_eq!(hevc::nal_type(&[0x42, 1]), Some(hevc::SPS));
         assert_eq!(hevc::nal_type(&[0x44, 1]), Some(hevc::PPS));
         assert_eq!(hevc::nal_type(&[0x26, 1]), Some(hevc::IDR_W_RADL));
         assert!(hevc::is_parameter_set(&[0x44]));
         assert!(!hevc::is_parameter_set(&[0x26]));
-        assert_eq!(h264::nal_type(&[0x67]), Some(h264::SPS));
-        assert_eq!(h264::nal_type(&[0x68]), Some(h264::PPS));
-        assert_eq!(h264::nal_type(&[0x65]), Some(h264::IDR));
-        assert!(h264::is_parameter_set(&[0x68]));
         assert_eq!(hevc::nal_type(&[]), None);
     }
 

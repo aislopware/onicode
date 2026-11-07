@@ -1,19 +1,18 @@
-//! The clipboard on a desktop link: [`LinkLine`] fetches from the other end on file streams of
-//! their own, and [`serve_streams`] answers the other end's fetches.
+//! The clipboard on a desktop link: [`LinkLine`] fetches the other end's copy on file streams of
+//! their own as soon as its offer lands, and [`serve_streams`] answers the other end's fetches.
 //!
 //! A fetch opens a [`StreamKind::File`] stream named by [`Fetch::name`] and sends nothing after
-//! its head. The origin answers a type with its bytes, raw, and a file or folder with
-//! [`FileEntry`] frames, each entry a JSON frame and a file's bytes in frames after it; then it
-//! finishes the stream. A refused fetch is a reset ([`REFUSED`]). These streams never touch the
-//! control stream, so a big paste holds up no input or cursor, and they are sent at the file
-//! kind's priority, behind the picture's datagrams.
+//! its head. The origin answers a type with its bytes, raw, and a file with [`FileEntry`] frames,
+//! each entry a JSON frame and its bytes in frames after it; then it finishes the stream. A
+//! refused fetch is a reset ([`REFUSED`]). These streams never touch the control stream, so a big
+//! copy holds up no input or cursor, and they are sent at the file kind's priority, behind the
+//! picture's datagrams.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use onicode_desktop_proto::clipboard::{Clip, Fetch, FileEntry, REFUSED};
 use onicode_net::stream::frame;
 use onicode_net::{Link, StreamHead, StreamKind, StreamRx, StreamTx};
@@ -21,7 +20,7 @@ use tokio::io::AsyncWriteExt as _;
 
 use crate::files::{CHUNK, Packed, landing, pack};
 use crate::session::{Line, Served, Session};
-use crate::sync::FETCH_MAX;
+use crate::sync::{FILES_MAX, SEND_MAX};
 
 /// How long a stream the other end opens has to say what it is.
 const HEAD_WITHIN: Duration = Duration::from_secs(10);
@@ -77,9 +76,10 @@ impl Line for LinkLine {
         let mut rx = self.open(&fetch).await?;
         let mut bytes = Vec::new();
         while let Some(chunk) = rx.chunk().await.map_err(|e| e.to_string())? {
-            if bytes.len().saturating_add(chunk.len()) > FETCH_MAX {
+            let size = u64::try_from(bytes.len().saturating_add(chunk.len())).unwrap_or(u64::MAX);
+            if size > SEND_MAX {
                 rx.stop(REFUSED);
-                return Err("the copy is too big to paste".to_owned());
+                return Err("the copy is past the cap".to_owned());
             }
             bytes.extend_from_slice(&chunk);
         }
@@ -93,9 +93,11 @@ impl Line for LinkLine {
     }
 }
 
-/// Reads [`FileEntry`] frames off `rx` into `into`; the local path of the copy's top entry.
+/// Reads [`FileEntry`] frames off `rx` into `into`, no more than [`FILES_MAX`] in all; the local
+/// path of the copy's top entry.
 async fn unpack(rx: &mut StreamRx, into: &Path) -> Result<PathBuf, String> {
     let mut root: Option<String> = None;
+    let mut total = 0_u64;
     while let Some(head) = rx.frame().await.map_err(|e| e.to_string())? {
         let entry: FileEntry = serde_json::from_slice(&head).map_err(|e| e.to_string())?;
         let at = landing(into, root.as_deref(), &entry)
@@ -109,6 +111,11 @@ async fn unpack(rx: &mut StreamRx, into: &Path) -> Result<PathBuf, String> {
                 .map_err(|e| format!("{}: {e}", at.display()))?;
             continue;
         };
+        total = total.saturating_add(size);
+        if total > FILES_MAX {
+            rx.stop(REFUSED);
+            return Err("the copy is past the cap".to_owned());
+        }
         let mut file = tokio::fs::File::create(&at)
             .await
             .map_err(|e| format!("{}: {e}", at.display()))?;
@@ -168,15 +175,11 @@ async fn serve_stream(tx: StreamTx, mut rx: StreamRx, session: Weak<Session>) {
     let Some(fetch) = fetch else {
         return tx.reset(REFUSED);
     };
-    // An accepted stream starts at the top priority; a paste's bytes go behind the picture.
+    // An accepted stream starts at the top priority; a copy's bytes go behind the picture.
     tx.set_priority(StreamKind::File.priority());
-    let served = tokio::task::spawn_blocking(move || session.upgrade()?.serve(&fetch))
-        .await
-        .ok()
-        .flatten();
+    let served = session.upgrade().and_then(|session| session.serve(&fetch));
     match served {
         Some(Served::Bytes(bytes)) => {
-            let bytes = Bytes::from(bytes);
             let mut at = 0;
             while at < bytes.len() {
                 let end = at.saturating_add(CHUNK).min(bytes.len());
@@ -191,7 +194,7 @@ async fn serve_stream(tx: StreamTx, mut rx: StreamRx, session: Weak<Session>) {
     }
 }
 
-/// Sends the file or folder at `path` as entries, read on a blocking thread that waits for
+/// Sends the file at `path` as entries, read on a blocking thread that waits for
 /// room on the link between frames.
 async fn serve_tree(tx: StreamTx, path: PathBuf) {
     let runtime = tokio::runtime::Handle::current();

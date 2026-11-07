@@ -11,11 +11,11 @@
 //!   ([`seat`]), the screen requests, the feedback datagrams and the numbered input copies.
 //! - [`pipeline`]: one capture and encode per client and stream (per-viewer encodes): slopty's
 //!   whole-display pipeline with its repair loop, long-term references, rate control, chroma gate,
-//!   temporal layers, refinement, the lane that keeps sound ahead of video, the cursor and the
-//!   heartbeat. [`stripes`] and [`engines`] share the two encode engines between streams.
-//! - [`sized`] and [`holder`]: displays made for a client at its own size, held by a process of
-//!   their own so a restart of desktopd moves no window.
-//! - [`sound`]: a client's one sound, Opus in 10 ms packets with copies while the path loses.
+//!   refinement, the cursor and the heartbeat. [`stripes`] says which streams are large enough to
+//!   code on both encode engines.
+//! - [`sized`]: displays made for a client at its own size, kept ten minutes after its last stream
+//!   so it takes them back with their windows in place.
+//! - [`sound`]: a client's one sound, Opus in 10 ms packets, one a datagram.
 //! - [`clipboard`]: the Mac's general pasteboard, followed by the owner's viewer while its window
 //!   has focus (`onicode-clipboard`), read unasked only once Paste from Other Apps allows it.
 //! - [`curtain`]: the curtain over the Mac's own screens while the controller drives it: a black
@@ -34,9 +34,7 @@
 pub mod clipboard;
 pub mod ctl;
 pub mod curtain;
-pub mod engines;
 pub mod grants;
-pub mod holder;
 pub mod pipeline;
 pub mod platform;
 pub mod seat;

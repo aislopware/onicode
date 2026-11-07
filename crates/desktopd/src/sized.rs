@@ -8,7 +8,8 @@
 //! The last stream letting go keeps the display for its linger ([`LINGER`], ten minutes), and
 //! the same key asking again within it takes the display back, windows where they were. A
 //! phone that roams between networks, or a laptop whose lid closes, would otherwise have macOS
-//! move every window on it to a physical display and leave them there.
+//! move every window on it to a physical display and leave them there. The displays live in
+//! desktopd's process: a restart of desktopd ends them, and macOS moves their windows.
 //!
 //! macOS picks its own mode for a new display and may restore a saved one seconds later, so a
 //! display is enforced ([`Factory::enforce`]) every [`ENFORCE_EVERY`] until it settles, and again
@@ -42,7 +43,7 @@ pub const SETTLE_WITHIN: Duration = Duration::from_secs(5);
 /// How long a display made for a client is kept after its last stream ends: ten minutes.
 ///
 /// The same client takes it back with its windows in place, after roaming between networks or
-/// with its lid closed for a while. desktopd sets it at start ([`Displays::set_linger`]).
+/// with its lid closed for a while. [`on_main_queue`] sets it ([`Displays::set_linger`]).
 pub const LINGER: Duration = Duration::from_mins(10);
 
 /// What makes, changes and checks displays: CoreGraphics on a desktopd ([`Cg`]), a fake in tests.
@@ -50,12 +51,12 @@ pub const LINGER: Duration = Duration::from_mins(10);
 pub trait Factory: 'static {
     /// A display, alive as long as the value.
     type Display;
-    /// Make the display `plan` describes, for the client that asked with `key`.
+    /// Make the display `plan` describes.
     ///
     /// # Errors
     ///
     /// Why it could not be made.
-    fn create(&mut self, key: DisplayKey, plan: &Plan) -> Result<Self::Display, DisplayError>;
+    fn create(&mut self, plan: &Plan) -> Result<Self::Display, DisplayError>;
     /// Put `display` in `plan`'s mode, keeping it.
     ///
     /// # Errors
@@ -70,16 +71,6 @@ pub trait Factory: 'static {
     fn enforce(&mut self, display: &Self::Display) -> Result<Enforced, DisplayError>;
     /// Its `CGDirectDisplayID`.
     fn id(&self, display: &Self::Display) -> u32;
-    /// End `display`. A display only dropped is let go of without ending, where the factory
-    /// can keep it: the display holder's outlive desktopd ([`crate::holder`]).
-    fn release(&mut self, display: Self::Display) {
-        drop(display);
-    }
-    /// The displays the factory holds already, each with its key and plan: those a display
-    /// holder kept through the last desktopd's end ([`Displays::adopt`]).
-    fn held(&mut self) -> Vec<(DisplayKey, Plan, Self::Display)> {
-        Vec::new()
-    }
 }
 
 /// A job for the main thread, handed the state that lives there.
@@ -236,8 +227,8 @@ impl<F: Factory> Displays<F> {
         }
     }
 
-    /// Keep a display `linger` after its last lease from now on, for its key to take back: the
-    /// desktopd sets [`LINGER`] at start. A linger already running keeps the length it started
+    /// Keep a display `linger` after its last lease from now on, for its key to take back:
+    /// [`on_main_queue`] sets [`LINGER`]. A linger already running keeps the length it started
     /// with.
     pub fn set_linger(&self, linger: Duration) {
         self.main
@@ -280,7 +271,7 @@ impl<F: Factory> Displays<F> {
                     }
                     return Ok(());
                 }
-                let display = registry.factory.create(key, &plan).map_err(|e| {
+                let display = registry.factory.create(&plan).map_err(|e| {
                     tracing::info!(error = %e, "no virtual display");
                     why(&e)
                 })?;
@@ -301,34 +292,6 @@ impl<F: Factory> Displays<F> {
         };
         // A display shared with another stream takes this stream's shape as well.
         lease.resize(shape).await.map(|_resized| lease)
-    }
-
-    /// Hand `job` the factory, on the main thread.
-    pub fn with_factory(&self, job: impl FnOnce(&mut F) + Send + 'static) {
-        self.main
-            .run(Box::new(move |registry| job(&mut registry.factory)));
-    }
-
-    /// Take the displays the factory holds already ([`Factory::held`]) as kept for their
-    /// clients: each lingers as if its last lease had just let go, so its client takes it back
-    /// within the linger, windows where they were. desktopd does this at start, after
-    /// [`Self::set_linger`].
-    pub fn adopt(&self) {
-        let this = self.clone();
-        self.main.run(Box::new(move |registry| {
-            for (key, plan, display) in registry.factory.held() {
-                if registry.displays.contains_key(&key) {
-                    continue;
-                }
-                let id = registry.factory.id(&display);
-                tracing::info!(id, mode = ?plan.mode, "virtual display kept from before");
-                registry
-                    .displays
-                    .insert(key, Entry::new(display, plan, 1, Vec::new()));
-                this.let_go(registry, key);
-                this.enforce_soon(registry, key);
-            }
-        }));
     }
 
     /// The displays were reconfigured: every display is enforced again, until it settles.
@@ -447,7 +410,7 @@ impl<F: Factory> Displays<F> {
                 id = registry.factory.id(&gone.display),
                 "virtual display released"
             );
-            registry.factory.release(gone.display);
+            drop(gone.display);
         }
     }
 }
@@ -547,12 +510,12 @@ impl<F: Factory> Lease<F> {
                                 waiting,
                                 ..
                             }) => {
-                                factory.release(display);
+                                drop(display);
                                 (users, waiting)
                             }
                             None => (1, Vec::new()),
                         };
-                        let display = factory.create(key, &plan).map_err(|e| why(&e))?;
+                        let display = factory.create(&plan).map_err(|e| why(&e))?;
                         displays.insert(key, Entry::new(display, plan, users, waiting));
                         this.enforce_soon(registry, key);
                         return Ok(Resized::Remade);
@@ -590,7 +553,7 @@ pub struct Cg;
 impl Factory for Cg {
     type Display = onicode_desktop_vdisplay::VirtualDisplay;
 
-    fn create(&mut self, _key: DisplayKey, plan: &Plan) -> Result<Self::Display, DisplayError> {
+    fn create(&mut self, plan: &Plan) -> Result<Self::Display, DisplayError> {
         onicode_desktop_vdisplay::VirtualDisplay::create(plan)
     }
 
@@ -660,10 +623,8 @@ impl<S: 'static> Main<S> for MainQueue<S> {
     }
 }
 
-/// desktopd's displays on the main queue, made by `factory`.
-///
-/// The factory is the display holder ([`crate::holder::Remote`]). Every display is enforced again
-/// on each display reconfiguration, with no linger until desktopd gives them its own.
+/// desktopd's displays on the main queue, made by `factory` ([`Cg`]), each kept for [`LINGER`]
+/// after its last lease and enforced again on each display reconfiguration.
 ///
 /// `None` off the main thread or where no display can be made, and desktopd then answers
 /// every `OpenDisplay` with a physical display.
@@ -674,6 +635,7 @@ pub fn on_main_queue<F: Factory>(factory: F) -> Option<Displays<F>> {
     }
     let main = MainQueue::new(Registry::new(factory))?;
     let displays = Displays::new(Arc::new(main), SETTLE_WITHIN);
+    displays.set_linger(LINGER);
     let notified = displays.clone();
     if let Err(e) = onicode_desktop_vdisplay::on_reconfiguration(move || notified.reconfigured()) {
         tracing::warn!(error = %e, "no display reconfiguration notices; enforcing on changes only");

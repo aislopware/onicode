@@ -1,13 +1,13 @@
-//! Files on the clipboard: a copied file or folder travels as [`FileEntry`] frames on a stream of
-//! its own and lands in a cache folder of the offer's; the pasted URL names the local copy.
+//! Files on the clipboard: a copied file travels as [`FileEntry`] frames on a stream of its own
+//! and lands in a cache folder of the offer's before the copy is written; the written URL names
+//! the local copy. Only regular files of [`crate::FILES_MAX`] or less in all travel.
 //!
-//! The origin serves only what its offer still names ([`crate::Clipboard::serve_file`]), so a
+//! The origin serves only what its newest offer names ([`crate::Clipboard::serve_file`]), so a
 //! fetch can reach no other path on that Mac.
 
 use std::fs::File;
 use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
 
 use onicode_desktop_proto::clipboard::FileEntry;
 
@@ -182,54 +182,30 @@ pub fn landing(into: &Path, root: Option<&str>, entry: &FileEntry) -> Option<Pat
     Some(into.join(path))
 }
 
-/// The files of one received offer, fetched once for every item that pastes them.
-pub(crate) struct Files {
-    pub(crate) peers: Arc<dyn Peers>,
-    pub(crate) origin: String,
-    pub(crate) seq: u64,
-    /// Where they land: `<cache>/<origin>-<seq>/<item>/`, one folder per item, so two files of
-    /// one name from two folders both land.
-    pub(crate) dir: PathBuf,
-    /// Per offer item: whether it names a file.
-    pub(crate) sources: Vec<bool>,
-    /// The local URL of each item's file, once fetched. A failed fetch is not kept: the next
-    /// paste tries again.
-    pub(crate) done: tokio::sync::OnceCell<Vec<Option<Vec<u8>>>>,
-}
-
-impl Files {
-    /// The local file URL of `item`'s file, fetching every file of the offer the first time.
-    pub(crate) async fn url(self: Arc<Self>, item: usize) -> Option<Vec<u8>> {
-        let urls = match self.done.get_or_try_init(|| self.fetch()).await {
-            Ok(urls) => urls,
-            Err(error) => {
-                tracing::debug!(origin = %self.origin, seq = self.seq, %error, "clipboard files not fetched");
-                return None;
-            }
-        };
-        urls.get(item)?.clone()
+/// Fetches the file each of `items` of `origin`'s offer `seq` names into `dir`, one folder per
+/// item (`<dir>/<item>/`, so two files of one name from two folders both land); each item's local
+/// file URL.
+///
+/// # Errors
+///
+/// The origin is gone, no longer holds the offer, or a copy failed.
+pub(crate) async fn fetch(
+    peers: &dyn Peers,
+    origin: &str,
+    seq: u64,
+    dir: &Path,
+    items: &[usize],
+) -> Result<Vec<(usize, Vec<u8>)>, String> {
+    let mut urls = Vec::with_capacity(items.len());
+    for &item in items {
+        let into = dir.join(item.to_string());
+        tokio::fs::create_dir_all(&into)
+            .await
+            .map_err(|e| format!("{}: {e}", into.display()))?;
+        let landed = peers.fetch_file(origin, seq, item, &into).await?;
+        urls.push((item, url_of_path(&landed).into_bytes()));
     }
-
-    async fn fetch(&self) -> Result<Vec<Option<Vec<u8>>>, String> {
-        let mut urls = vec![None; self.sources.len()];
-        for (item, &file) in self.sources.iter().enumerate() {
-            if !file {
-                continue;
-            }
-            let into = self.dir.join(item.to_string());
-            tokio::fs::create_dir_all(&into)
-                .await
-                .map_err(|e| format!("{}: {e}", into.display()))?;
-            let landed = self
-                .peers
-                .fetch_file(&self.origin, self.seq, item, &into)
-                .await?;
-            if let Some(slot) = urls.get_mut(item) {
-                *slot = Some(url_of_path(&landed).into_bytes());
-            }
-        }
-        Ok(urls)
-    }
+    Ok(urls)
 }
 
 #[cfg(test)]

@@ -10,7 +10,7 @@
 //! * [`conformance`] — the SPS conformance window that shows a picture coded at a padded size at
 //!   its true one.
 //! * [`stripes`] — one picture coded as two stripes on the two encode engines: the layout both ends
-//!   share, and on macOS the stripe pictures and the gate that says whether they pay.
+//!   share, and on macOS the stripe pictures.
 //! * [`video`] — the host's encoder seam, [`VideoEncoder`] and [`AudioEncoder`], on every platform;
 //!   `VideoToolbox` and `Opus` implement it on macOS.
 //! * `Encoder` (macOS) — a `VTCompressionSession` tuned for interactive streaming: low-latency rate

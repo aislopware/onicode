@@ -8,12 +8,10 @@
 //! reference the client acknowledged where it has one, [`ltr::LtrBook`]), keyframes (deferred
 //! while the link could not drain one, [`fit::keyframe_fits`]) and refines a still picture
 //! while there is budget. The client's reports drive the rate ([`RateController`]), the parity
-//! ([`Redundancy`]), the chroma ([`ChromaGate`]), the temporal layers ([`LayerGate`]) and the
-//! frame rate ([`Cadence`], [`EncoderWatch`]); the two encode engines are shared with the
-//! other streams ([`crate::engines`]) and a large picture is coded as two stripes when that pays
-//! ([`crate::stripes`]). While the client's sound is live, video goes through a lane that keeps
-//! the datagram queue short in front of it ([`lane::Lane`]). A heartbeat fills silences, the
-//! cursor goes as its own datagrams at 120 Hz, and its shape as events.
+//! ([`Redundancy`]), the chroma ([`ChromaGate`]) and the frame rate ([`Cadence`],
+//! [`EncoderWatch`]), and a picture of [`crate::stripes::STRIPED_FROM`] pixels or more is coded
+//! as two stripes on the two encode engines ([`crate::stripes`]). A heartbeat fills silences,
+//! the cursor goes as its own datagrams at 120 Hz, and its shape as events.
 //!
 //! Every datagram goes to a [`DatagramSink`]: the client's link in [`crate::session`].
 //!
@@ -37,36 +35,31 @@ use onicode_desktop_input::{InputError, InputSink as _, Pointer, PointerChanges,
 pub use onicode_desktop_media::PathSample;
 use onicode_desktop_media::wire::{ClockEcho, MAX_DATAGRAM};
 use onicode_desktop_media::{
-    Cadence, ChromaGate, Decision, EncodedFrame, EncoderWatch, Fed, HEARTBEAT_AFTER, LayerGate,
-    MediaError, Pace, Packetizer, RateController, Redundancy, Refine, cursor_datagram,
-    heartbeat_datagram, slower_rung,
+    Cadence, ChromaGate, Decision, EncodedFrame, EncoderWatch, Fed, HEARTBEAT_AFTER, MediaError,
+    Pace, Packetizer, RateController, Redundancy, Refine, cursor_datagram, heartbeat_datagram,
 };
 use onicode_desktop_proto::screen::{
     CaptureTarget, Chroma, CursorShape, DisplayInfo, Quality, ReceiverReport, ScreenEvent,
-    ScreenFailure, ScreenInput, Stripe, VideoCodec,
+    ScreenFailure, ScreenInput, Stripe,
 };
 use onicode_desktop_proto::{DisplayId, StreamId};
 use parking_lot::{Condvar, Mutex};
 use tokio::sync::{Notify, oneshot};
 use tokio::task::JoinHandle;
 
-use crate::engines::{self, ENGINES};
 use crate::platform::Platform;
-use crate::sound::SoundClock;
 use crate::{instant, stripes};
 
 pub mod fit;
-pub mod lane;
 pub mod ltr;
 pub mod source;
 #[cfg(test)]
 mod tests;
 
 use fit::{
-    Asks, KEYFRAME_IN_FLIGHT_US, KEYFRAME_VALVE_US, LAYERS_AFTER_FRAMES, REFINE_BUDGET_MS,
-    encoder_bps, frame_fits, keyframe_estimate, keyframe_fits, period_us, repair_at, send_ms_lo,
+    Asks, KEYFRAME_IN_FLIGHT_US, KEYFRAME_VALVE_US, REFINE_BUDGET_MS, encoder_bps, frame_fits,
+    keyframe_estimate, keyframe_fits, period_us, repair_at, send_ms_lo,
 };
-use lane::{LANE_AUDIO_HOLD_US, LANE_TICK, Lane};
 use ltr::LtrBook;
 use source::SourceTracker;
 
@@ -122,7 +115,7 @@ const SOURCE_PERIOD: Duration = Duration::from_millis(250);
 pub const QUEUE_DEPTH: u8 = 3;
 /// The multiple an HEVC stream's sides are padded to: the low-latency encoder copies any other
 /// size into a padded buffer of its own and queues it (MEASUREMENTS.md, "Stream sides padded
-/// to 16"). H.264 keeps the picture's even size.
+/// to 16").
 pub const HEVC_ALIGN: u32 = 16;
 /// How long the encode thread waits for a capture before it looks whether the stream closed.
 const ENCODE_THREAD_IDLE: Duration = Duration::from_millis(500);
@@ -195,8 +188,6 @@ pub struct Opening {
     pub sink: Arc<dyn DatagramSink>,
     /// Where its events go.
     pub events: Arc<dyn Fn(StreamEvent) + Send + Sync>,
-    /// The client's sound, which the lane keeps ahead of video while it is live.
-    pub sound: Option<Arc<SoundClock>>,
 }
 
 impl std::fmt::Debug for Opening {
@@ -449,10 +440,8 @@ struct Counters {
     encoder_bps: AtomicU64,
     repaired: AtomicU64,
     refined: AtomicU64,
-    laned: AtomicU64,
     ltr_offered: AtomicU64,
     ltr_acked: AtomicU64,
-    video_bytes: AtomicU64,
     inputs: AtomicU64,
 }
 
@@ -481,8 +470,6 @@ pub struct Stats {
     pub repaired: u64,
     /// Refinements of a still picture.
     pub refined: u64,
-    /// Video datagrams the lane held back.
-    pub laned: u64,
     /// References offered, and acknowledged.
     pub ltr_offered: u64,
     /// References acknowledged.
@@ -495,8 +482,6 @@ pub struct Stats {
 #[derive(Clone, Copy, Debug)]
 struct Desired {
     quality: Quality,
-    /// The stripes' gate says stripes.
-    stripes: bool,
 }
 
 /// A stream's state, shared by its threads and tasks.
@@ -504,7 +489,6 @@ struct Shared<P: Platform> {
     id: StreamId,
     sink: Arc<dyn DatagramSink>,
     events: Arc<dyn Fn(StreamEvent) + Send + Sync>,
-    sound: Option<Arc<SoundClock>>,
     coders: [Coder; Stripe::MAX],
     coding: Mutex<Coding<P::Video>>,
     desired: Mutex<Desired>,
@@ -519,31 +503,19 @@ struct Shared<P: Platform> {
     held_us: AtomicU64,
     owed: AtomicBool,
     rate: Mutex<RateController>,
-    layers: Mutex<LayerGate>,
-    layers_wanted: AtomicBool,
-    layers_on: AtomicBool,
-    encoder_dropped: AtomicU64,
-    dropped_reported: AtomicU64,
     chroma: Mutex<ChromaGate>,
     watch: Mutex<EncoderWatch>,
     cadence: Mutex<Cadence>,
-    gate: Mutex<stripes::Gate>,
-    knob: stripes::Knob,
     fps: AtomicU16,
     fps_ceiling: AtomicU16,
     fps_asked: AtomicU16,
     fed_fps: AtomicU16,
-    focused: AtomicBool,
-    give_way_until_us: AtomicU64,
     last_push_us: AtomicU64,
     last_encoded_us: AtomicU64,
     pace_us: AtomicU64,
-    session_frames: AtomicU64,
     encoder_lost: AtomicU64,
     repair: Notify,
     rebuild: Notify,
-    lane: Mutex<Lane>,
-    lane_wake: Notify,
     bounds: Mutex<Option<Rect>>,
     /// Stream pixels a display point, as `f64` bits.
     pixels_per_point: AtomicU64,
@@ -572,23 +544,6 @@ fn scaled_side(px: u32, scale: f64) -> u32 {
     v.next_multiple_of(2)
 }
 
-/// The multiple a stream of `codec` pads its sides to.
-const fn align(codec: VideoCodec) -> u32 {
-    match codec {
-        VideoCodec::Hevc => HEVC_ALIGN,
-        VideoCodec::H264 => 2,
-    }
-}
-
-/// The chroma the client may have: full only with HEVC.
-fn asked_chroma(quality: &Quality) -> Chroma {
-    if quality.codec == VideoCodec::Hevc {
-        quality.chroma
-    } else {
-        Chroma::Subsampled
-    }
-}
-
 const fn capture_format(chroma: Chroma) -> PixelFormat {
     match chroma {
         Chroma::Subsampled => PixelFormat::Nv12Full,
@@ -597,7 +552,7 @@ const fn capture_format(chroma: Chroma) -> PixelFormat {
 }
 
 /// The capture and the encoder for a display `native` pixels in size, refreshing at
-/// `refresh_hz`, at `quality` with `chroma`: the capture padded to the codec's multiple, which
+/// `refresh_hz`, at `quality` with `chroma`: the capture padded to [`HEVC_ALIGN`], which
 /// the encoder codes and the keyframes' parameter sets crop away.
 fn configs(
     native: (u32, u32),
@@ -621,7 +576,7 @@ fn configs(
     let capture = CaptureConfig {
         width,
         height,
-        align: align(quality.codec),
+        align: HEVC_ALIGN,
         fps: if display.is_some() { 0 } else { fps },
         format: capture_format(chroma),
         queue_depth: QUEUE_DEPTH,
@@ -638,24 +593,10 @@ fn configs(
     (capture, encoder)
 }
 
-/// The stripes a stream of `capture` is coded as, if any.
-fn striping<P: Platform>(
-    knob: stripes::Knob,
-    spend: Option<bool>,
-    capture: &CaptureConfig,
-    chroma: Chroma,
-    may_time: bool,
-) -> Option<[CodedStripe; 2]> {
+/// The stripes a stream of `capture` is coded as, if any ([`stripes::striped`]).
+fn striping(capture: &CaptureConfig) -> Option<[CodedStripe; 2]> {
     let (width, height) = capture.surface();
-    let wanted = match knob {
-        stripes::Knob::On => true,
-        stripes::Knob::Off => false,
-        stripes::Knob::Auto => {
-            spend.unwrap_or(true)
-                && stripes::pays::<P::Video>(width, height, chroma, may_time) == Some(true)
-        }
-    };
-    if wanted {
+    if stripes::striped(width, height) {
         onicode_desktop_codec::stripes::layout(height)
     } else {
         None
@@ -712,10 +653,7 @@ fn retire<P: Platform>(old: Option<Arc<P::Video>>) {
     }
     let spawned = std::thread::Builder::new()
         .name("onicode-retire-encoder".to_owned())
-        .spawn(move || {
-            let _inside = ENGINES.enter();
-            drop(old);
-        });
+        .spawn(move || drop(old));
     if let Err(e) = spawned {
         tracing::warn!(error = %e, "no thread to retire an encoder session on: dropped in place");
     }
@@ -787,7 +725,6 @@ impl<P: Platform> Pipeline<P> {
             quality,
             sink,
             events,
-            sound,
         } = opening;
         let content = enumerate::<P>().await?;
         let resolved = Source::<P>::resolve(&content, target)?;
@@ -796,12 +733,11 @@ impl<P: Platform> Pipeline<P> {
         let point_scale = f64::from(Source::<P>::point_scale(&resolved));
         let refresh_hz = Source::<P>::refresh_hz(target);
         let (capture, encoder) = configs(native, &quality, refresh_hz, Chroma::Subsampled);
-        let knob = stripes::Knob::from_env();
         let shared = Arc::new(Shared::<P>::new(
             id,
             target,
             quality,
-            (sink, events, sound),
+            (sink, events),
             Coding {
                 sessions: [None, None],
                 layout: None,
@@ -810,12 +746,8 @@ impl<P: Platform> Pipeline<P> {
                 native,
                 point_scale,
             },
-            knob,
         ));
-        let as_contender: Arc<dyn engines::Contender> = shared.clone();
-        let contender: Weak<dyn engines::Contender> = Arc::downgrade(&as_contender);
-        ENGINES.join(contender);
-        let built = shared.build(true).await?;
+        let built = shared.build().await?;
         let capture_config = shared.coding.lock().capture;
         let encoder = start_encoder(&shared)?;
         let (running, started) = start_capture(&shared, &resolved, &capture_config)?;
@@ -838,7 +770,6 @@ impl<P: Platform> Pipeline<P> {
         let mut tasks = vec![
             tokio::spawn(repair_loop(Arc::clone(&shared))),
             tokio::spawn(beat_loop(Arc::clone(&shared))),
-            tokio::spawn(lane_loop(Arc::clone(&shared))),
             tokio::spawn(cursor_loop(Arc::clone(&shared))),
             tokio::spawn(shape_loop(Arc::clone(&shared))),
             tokio::spawn(source_loop(Arc::clone(&shared))),
@@ -890,14 +821,6 @@ impl<P: Platform> Pipeline<P> {
     /// The client's clock probe, sent at `sent_us` on its clock, arrived at `arrived`.
     pub fn echo_clock(&self, sent_us: u64, arrived: Instant) {
         self.shared.echo_clock(sent_us, arrived);
-    }
-
-    /// The client's tile of this stream gained or lost its focus.
-    pub fn set_focused(&self, focused: bool) {
-        let was = self.shared.focused.swap(focused, Ordering::Relaxed);
-        if was && !focused {
-            ENGINES.unfocused();
-        }
     }
 
     /// The client asks for another quality: the rate and frame rate follow at once, a new
@@ -1137,7 +1060,6 @@ fn open_session<P: Platform>(
         }
         shared.on_session_packet(index, session, &packet);
     };
-    let _inside = ENGINES.enter();
     match stripe {
         None => <P::Video as onicode_desktop_codec::VideoEncoder>::new(config, sink),
         Some(stripe) => {
@@ -1149,11 +1071,10 @@ fn open_session<P: Platform>(
 /// A live coder: its index, the encoder and its size.
 type LiveCoder<V> = (usize, Arc<V>, (u32, u32));
 
-/// Where a stream's datagrams, events and sound go.
+/// Where a stream's datagrams and events go.
 type Outlets = (
     Arc<dyn DatagramSink>,
     Arc<dyn Fn(StreamEvent) + Send + Sync>,
-    Option<Arc<SoundClock>>,
 );
 
 impl<P: Platform> Shared<P> {
@@ -1161,29 +1082,24 @@ impl<P: Platform> Shared<P> {
         id: StreamId,
         target: CaptureTarget,
         quality: Quality,
-        (sink, events, sound): Outlets,
+        (sink, events): Outlets,
         coding: Coding<P::Video>,
-        knob: stripes::Knob,
     ) -> Self {
         let fps = coding.encoder.fps;
         let size = (coding.encoder.width, coding.encoder.height);
         let rate = RateController::new(quality.bitrate_bps.max(100_000));
-        let chroma = ChromaGate::new(asked_chroma(&quality), size, rate.target_bps());
+        let chroma = ChromaGate::new(quality.chroma, size, rate.target_bps());
         let scale = coding.point_scale * scale_of(&quality);
         Self {
             id,
             sink,
             events,
-            sound,
             coders: [
                 Coder::new(Stripe::media_of(id, 0)),
                 Coder::new(Stripe::media_of(id, 1)),
             ],
             coding: Mutex::new(coding),
-            desired: Mutex::new(Desired {
-                quality,
-                stripes: true,
-            }),
+            desired: Mutex::new(Desired { quality }),
             target: Mutex::new(target),
             capture: Mutex::new(None),
             sessions: AtomicU64::new(0),
@@ -1194,31 +1110,19 @@ impl<P: Platform> Shared<P> {
             held_us: AtomicU64::new(0),
             owed: AtomicBool::new(false),
             rate: Mutex::new(rate),
-            layers: Mutex::new(LayerGate::default()),
-            layers_wanted: AtomicBool::new(false),
-            layers_on: AtomicBool::new(false),
-            encoder_dropped: AtomicU64::new(0),
-            dropped_reported: AtomicU64::new(0),
             chroma: Mutex::new(chroma),
             watch: Mutex::new(EncoderWatch::default()),
             cadence: Mutex::new(Cadence::new(fps)),
-            gate: Mutex::new(stripes::Gate::new(true)),
-            knob,
             fps: AtomicU16::new(fps),
             fps_ceiling: AtomicU16::new(fps),
             fps_asked: AtomicU16::new(fps),
             fed_fps: AtomicU16::new(fps),
-            focused: AtomicBool::new(false),
-            give_way_until_us: AtomicU64::new(0),
             last_push_us: AtomicU64::new(0),
             last_encoded_us: AtomicU64::new(0),
             pace_us: AtomicU64::new(0),
-            session_frames: AtomicU64::new(0),
             encoder_lost: AtomicU64::new(0),
             repair: Notify::new(),
             rebuild: Notify::new(),
-            lane: Mutex::new(Lane::default()),
-            lane_wake: Notify::new(),
             bounds: Mutex::new(Source::<P>::target_bounds(target)),
             pixels_per_point: AtomicU64::new(scale.to_bits()),
             input: Mutex::new(<P::Input as onicode_desktop_input::InputSink>::new(
@@ -1252,7 +1156,6 @@ impl<P: Platform> Shared<P> {
             bitrate_bps: load(&c.bitrate_bps),
             repaired: load(&c.repaired),
             refined: load(&c.refined),
-            laned: load(&c.laned),
             ltr_offered: load(&c.ltr_offered),
             ltr_acked: load(&c.ltr_acked),
             inputs: load(&c.inputs),
@@ -1269,9 +1172,6 @@ impl<P: Platform> Shared<P> {
             retire::<P>(session);
         }
         self.input.lock().release_all();
-        if self.focused.swap(false, Ordering::Relaxed) {
-            ENGINES.unfocused();
-        }
     }
 
     fn post(&self, frame: Frame<P>) {
@@ -1302,13 +1202,9 @@ impl<P: Platform> Shared<P> {
         self.encode_turn(fresh, now)
     }
 
-    fn held_bytes(&self) -> usize {
-        self.sink.held().saturating_add(self.lane.lock().bytes)
-    }
-
     fn frame_fits(&self) -> bool {
         frame_fits(
-            self.held_bytes(),
+            self.sink.held(),
             self.sink.cwnd(),
             self.counters.bitrate_bps.load(Ordering::Relaxed),
             self.fed_fps.load(Ordering::Relaxed),
@@ -1364,7 +1260,7 @@ impl<P: Platform> Shared<P> {
         if coding == 0 {
             return Attempt::Nothing;
         }
-        if refining && self.held_bytes() > 0 {
+        if refining && self.sink.held() > 0 {
             return Attempt::NoRoom;
         }
         let at = if is_fresh { frame.capture_ts_us } else { now };
@@ -1450,7 +1346,6 @@ impl<P: Platform> Shared<P> {
                 at_us: now,
                 stripes,
             });
-            ENGINES.busy(now);
             if options
                 .get(i)
                 .and_then(Option::as_ref)
@@ -1461,11 +1356,9 @@ impl<P: Platform> Shared<P> {
                     .store(now.max(1), Ordering::Relaxed);
             }
         }
-        self.follow_layers_now(&sessions);
         let (image, captured) = (frame.image.clone(), frame.capture_ts_us);
         drop(held);
         drop(replaced);
-        let inside = ENGINES.enter();
         let outcomes: Vec<Option<Result<(), CodecError>>> = sessions
             .iter()
             .zip(&options)
@@ -1476,7 +1369,6 @@ impl<P: Platform> Shared<P> {
                     .map(|(s, (o, _))| s.encode(&image, pts, o))
             })
             .collect();
-        drop(inside);
         let mut stale = false;
         let mut failed = false;
         for (((i, coder), outcome), asked) in self.coders(count).zip(outcomes).zip(&options) {
@@ -1532,32 +1424,6 @@ impl<P: Platform> Shared<P> {
             self.fed(fps);
         }
         Attempt::Sent
-    }
-
-    /// Turn the temporal layers to what the link asks, once the sessions coded enough frames.
-    fn follow_layers_now(&self, sessions: &[Option<Arc<P::Video>>; Stripe::MAX]) {
-        let wanted = self.layers_wanted.load(Ordering::Relaxed);
-        if wanted == self.layers_on.load(Ordering::Relaxed)
-            || (wanted && self.session_frames.load(Ordering::Relaxed) < LAYERS_AFTER_FRAMES)
-        {
-            return;
-        }
-        let mut took_all = true;
-        for session in sessions.iter().flatten() {
-            match session.set_temporal_layers(wanted) {
-                Ok(took) => took_all &= took,
-                Err(e) => {
-                    tracing::debug!(stream = %self.id, error = %e, "temporal layers refused");
-                    took_all = false;
-                }
-            }
-        }
-        let on = wanted && took_all;
-        self.layers_on.store(on, Ordering::Relaxed);
-        if wanted && !on {
-            // Refused: not asked again of these sessions.
-            self.layers_wanted.store(false, Ordering::Relaxed);
-        }
     }
 
     fn refine_due(&self, coder: &Coder, count: usize) -> Option<u64> {
@@ -1625,7 +1491,6 @@ impl<P: Platform> Shared<P> {
                 .lock()
                 .returned(packet.pts_us, packet.mse.map(|mse| mse.luma), bytes);
         let returned = coder.returned(packet.pts_us, now);
-        ENGINES.busy(now);
         let (took, stripes) =
             returned.map_or((None, 0), |(took, frame)| (Some(took), frame.stripes));
         if let Some(took) = took.filter(|_| !packet.keyframe) {
@@ -1633,9 +1498,6 @@ impl<P: Platform> Shared<P> {
         }
         self.repair.notify_one();
         if refined_at.is_none() {
-            self.counters
-                .video_bytes
-                .fetch_add(bytes, Ordering::Relaxed);
             let whole = if stripes.count_ones() > 1 {
                 self.join
                     .lock()
@@ -1648,7 +1510,6 @@ impl<P: Platform> Shared<P> {
                     self.watch_encoder(took, keyframe);
                 }
                 self.counters.encoded.fetch_add(1, Ordering::Relaxed);
-                self.session_frames.fetch_add(1, Ordering::Relaxed);
             }
         }
         if packet.keyframe {
@@ -1671,7 +1532,6 @@ impl<P: Platform> Shared<P> {
             keyframe: packet.keyframe,
             ltr_token: packet.ltr_token,
             ltr_refresh: packet.ltr_refresh,
-            discardable: packet.discardable,
             capture_ts_us,
             stripes,
         };
@@ -1683,7 +1543,7 @@ impl<P: Platform> Shared<P> {
         packetizer.set_max_datagram(max);
         let cut = packetizer
             .packetize(&frame, send_ms_lo(now), |datagrams| {
-                self.send_video(datagrams, now);
+                let _sent = self.send(datagrams);
             })
             .map(drop);
         drop(packetizer);
@@ -1706,38 +1566,6 @@ impl<P: Platform> Shared<P> {
             Ordering::Relaxed,
         );
         datagrams.iter().map(Bytes::len).sum()
-    }
-
-    /// Video: straight into the queue, or through the lane while the sound is live.
-    fn send_video(&self, datagrams: &[Bytes], now: u64) {
-        let mut lane = self.lane.lock();
-        let last_audio = self.sound.as_ref().map_or(0, |sound| sound.last_us());
-        let audio = last_audio != 0 && now.saturating_sub(last_audio) < LANE_AUDIO_HOLD_US;
-        if lane.queue.is_empty() && !audio {
-            let held = self.sink.held();
-            lane.observe(held, now);
-            lane.expected = held.saturating_add(self.send(datagrams));
-            return;
-        }
-        lane.push(datagrams);
-        self.pump(&mut lane, now);
-        let waiting = lane.queue.len().min(datagrams.len());
-        drop(lane);
-        if waiting > 0 {
-            self.counters.laned.fetch_add(
-                u64::try_from(waiting).unwrap_or(u64::MAX),
-                Ordering::Relaxed,
-            );
-            self.lane_wake.notify_one();
-        }
-    }
-
-    fn pump(&self, lane: &mut Lane, now: u64) {
-        let held = self.sink.held();
-        lane.observe(held, now);
-        let floor = self.counters.bitrate_bps.load(Ordering::Relaxed) / 8;
-        let batch = lane.take(held, lane.budget(floor));
-        lane.expected = lane.expected.saturating_add(self.send(&batch));
     }
 
     /// A client's report on coder `index`: references, parity, and (coder 0's only) the rate.
@@ -1771,7 +1599,6 @@ impl<P: Platform> Shared<P> {
             coder.packetizer.lock().set_parity_permille(permille);
             return None;
         }
-        self.follow_layers(permille > Redundancy::MIN);
         let parity_moved = {
             let mut packetizer = coder.packetizer.lock();
             let moved = packetizer.parity_permille() != permille;
@@ -1779,7 +1606,6 @@ impl<P: Platform> Shared<P> {
             moved
         };
         let decision = self.rate.lock().on_report(report, sent, path);
-        self.observe_spend();
         let Some(decision) = decision else {
             if parity_moved {
                 let target = self.rate.lock().target_bps();
@@ -1812,33 +1638,6 @@ impl<P: Platform> Shared<P> {
         Some(decision)
     }
 
-    /// The stripes' spend gate takes the encoder's output so far; a flip rebuilds.
-    fn observe_spend(&self) {
-        if self.knob != stripes::Knob::Auto {
-            return;
-        }
-        let bytes = self.counters.video_bytes.load(Ordering::Relaxed);
-        let target = self.counters.encoder_bps.load(Ordering::Relaxed);
-        let on = self.gate.lock().observe(instant(), bytes, target);
-        let mut desired = self.desired.lock();
-        if desired.stripes != on {
-            desired.stripes = on;
-            drop(desired);
-            tracing::info!(stream = %self.id, on, "the stripes follow the spend");
-            self.rebuild.notify_one();
-        }
-    }
-
-    fn follow_layers(&self, lossy: bool) {
-        let total = self.encoder_dropped.load(Ordering::Relaxed);
-        let dropped = total.saturating_sub(self.dropped_reported.swap(total, Ordering::Relaxed));
-        let Some(on) = self.layers.lock().update(lossy, dropped) else {
-            return;
-        };
-        self.layers_wanted.store(on, Ordering::Relaxed);
-        tracing::debug!(stream = %self.id, on, lossy, dropped, "temporal layers follow the link");
-    }
-
     /// Set the encoders' rate from the stream's target, less what parity takes.
     fn apply_bitrate(&self, target_bps: u32) {
         let parity = self.coders[0].packetizer.lock().parity_permille();
@@ -1866,15 +1665,6 @@ impl<P: Platform> Shared<P> {
                 tracing::debug!(stream = %self.id, i, error = %e, "bitrate refused");
             }
         }
-        self.encoder_dropped.store(
-            self.coding
-                .lock()
-                .live()
-                .iter()
-                .map(|(_i, s)| s.frames_dropped())
-                .sum(),
-            Ordering::Relaxed,
-        );
     }
 
     /// Move to the frame rate `target_bps` affords, under the ceiling.
@@ -1927,14 +1717,9 @@ impl<P: Platform> Shared<P> {
     fn watch_encoder(&self, took: u64, keyframe: bool) {
         let fps = self.fps.load(Ordering::Relaxed);
         let slower = self.watch.lock().returned(took, fps, keyframe);
-        let Some(slower) = slower else { return };
-        if self.focused.load(Ordering::Relaxed) {
-            match ENGINES.contended(now::<P>()) {
-                engines::Claim::Gave | engines::Claim::Settling => return,
-                engines::Claim::Spent => {}
-            }
+        if let Some(slower) = slower {
+            self.lower_ceiling(slower, "the encoder fell behind");
         }
-        self.lower_ceiling(slower, "the encoder fell behind");
     }
 
     /// A fresh capture went into the encoder at `fps`.
@@ -1949,9 +1734,7 @@ impl<P: Platform> Shared<P> {
         let current = self.fps_ceiling.load(Ordering::Relaxed);
         if now < current {
             self.lower_ceiling(now, "the encoder is fed less than the rung");
-        } else if now > current
-            && self.give_way_until_us.load(Ordering::Relaxed) <= self::now::<P>()
-        {
+        } else if now > current {
             self.raise_ceiling(now);
         }
     }
@@ -1972,7 +1755,7 @@ impl<P: Platform> Shared<P> {
     fn standalone_fits(&self, coder: &Coder, now: u64) -> bool {
         if keyframe_fits(
             coder.keyframe_bytes.load(Ordering::Relaxed),
-            self.held_bytes(),
+            self.sink.held(),
             self.counters.bitrate_bps.load(Ordering::Relaxed),
         ) {
             coder.keyframe_deferred_us.store(0, Ordering::Relaxed);
@@ -2032,7 +1815,7 @@ impl<P: Platform> Shared<P> {
         if datagrams.is_empty() {
             tracing::debug!(stream = %coder.media, frame, "a nack for a frame outside the history");
         }
-        self.send_video(&datagrams, now::<P>());
+        let _sent = self.send(&datagrams);
     }
 
     fn set_quality(&self, quality: Quality) {
@@ -2058,11 +1841,7 @@ impl<P: Platform> Shared<P> {
             let was = gate.chroma();
             (
                 was,
-                gate.ask(
-                    asked_chroma(&quality),
-                    (encoder.width, encoder.height),
-                    target,
-                ),
+                gate.ask(quality.chroma, (encoder.width, encoder.height), target),
             )
         };
         let reshaped = before.codec != quality.codec
@@ -2090,25 +1869,21 @@ impl<P: Platform> Shared<P> {
             .store(scale.to_bits(), Ordering::Relaxed);
     }
 
-    /// Build sessions for what is desired now, at the open (`opening`) or after a change, and
-    /// install them. Returns the stripes as the client is told them.
-    async fn build(self: &Arc<Self>, opening: bool) -> Result<Vec<Stripe>, ScreenError> {
-        let (native, quality, spend) = {
-            let desired = *self.desired.lock();
-            (self.coding.lock().native, desired.quality, desired.stripes)
-        };
+    /// Build sessions for what is desired now, at the open or after a change, and install them.
+    /// Returns the stripes as the client is told them.
+    async fn build(self: &Arc<Self>) -> Result<Vec<Stripe>, ScreenError> {
+        let quality = self.desired.lock().quality;
+        let native = self.coding.lock().native;
         let refresh_hz = Source::<P>::refresh_hz(*self.target.lock());
         let target = self.rate.lock().target_bps();
         let chroma = {
             let (_c, e) = configs(native, &quality, refresh_hz, Chroma::Subsampled);
             self.chroma
                 .lock()
-                .ask(asked_chroma(&quality), (e.width, e.height), target)
+                .ask(quality.chroma, (e.width, e.height), target)
         };
         let (mut capture, mut encoder) = configs(native, &quality, refresh_hz, chroma);
-        let may_time = stripes::time_at_open() || ENGINES.quiet(now::<P>());
-        let spend = (!opening).then_some(spend);
-        let mut layout = striping::<P>(self.knob, spend, &capture, encoder.chroma, may_time);
+        let mut layout = striping(&capture);
         let first = self
             .try_build(encoder, (capture.width, capture.height), layout)
             .await;
@@ -2117,7 +1892,7 @@ impl<P: Platform> Shared<P> {
                 tracing::warn!(stream = %self.id, error = %e, "no 4:4:4 session here: 4:2:0");
                 self.chroma.lock().refuse();
                 (capture, encoder) = configs(native, &quality, refresh_hz, Chroma::Subsampled);
-                layout = striping::<P>(self.knob, spend, &capture, encoder.chroma, false);
+                layout = striping(&capture);
                 self.try_build(encoder, (capture.width, capture.height), layout)
                     .await?
             }
@@ -2141,8 +1916,6 @@ impl<P: Platform> Shared<P> {
             coder.session.store(session, Ordering::Relaxed);
             coder.rebuilt();
         }
-        self.session_frames.store(0, Ordering::Relaxed);
-        self.layers_on.store(false, Ordering::Relaxed);
         self.encoder_lost.store(0, Ordering::Relaxed);
         for session in old {
             retire::<P>(session);
@@ -2195,7 +1968,7 @@ impl<P: Platform> Shared<P> {
     /// configuration and sessions. Returns the `Geometry` to tell.
     async fn reconfigure(self: &Arc<Self>) -> Result<ScreenEvent, ScreenError> {
         let before = self.coding.lock().capture;
-        let stripes = self.build(false).await?;
+        let stripes = self.build().await?;
         let capture = self.coding.lock().capture;
         let updated = (capture != before)
             .then(|| {
@@ -2220,27 +1993,6 @@ impl<P: Platform> Shared<P> {
             height: capture.height,
             stripes,
         })
-    }
-}
-
-impl<P: Platform> engines::Contender for Shared<P> {
-    fn focused(&self) -> bool {
-        self.focused.load(Ordering::Relaxed)
-    }
-
-    fn give_way(&self, until_us: u64) -> bool {
-        self.give_way_until_us.store(until_us, Ordering::Relaxed);
-        if until_us == 0 {
-            self.raise_ceiling(self.fps_asked.load(Ordering::Relaxed));
-            return false;
-        }
-        let ceiling = self.fps_ceiling.load(Ordering::Relaxed);
-        let slower = slower_rung(ceiling);
-        if slower >= ceiling {
-            return false;
-        }
-        self.lower_ceiling(slower, "a focused stream's encoder fell behind: giving way");
-        true
     }
 }
 
@@ -2292,19 +2044,6 @@ async fn beat_loop<P: Platform>(shared: Arc<Shared<P>>) {
         shared.counters.heartbeats.fetch_add(1, Ordering::Relaxed);
         let next_frame = shared.coders[0].packetizer.lock().next_frame();
         let _sent = shared.send(&[heartbeat_datagram(shared.id, next_frame, send_ms_lo(now))]);
-    }
-}
-
-/// Tops the datagram queue up from the lane while it holds video.
-async fn lane_loop<P: Platform>(shared: Arc<Shared<P>>) {
-    while !shared.sink.is_closed() && !shared.closed.load(Ordering::Acquire) {
-        if shared.lane.lock().queue.is_empty() {
-            shared.lane_wake.notified().await;
-            continue;
-        }
-        tokio::time::sleep(LANE_TICK).await;
-        let mut lane = shared.lane.lock();
-        shared.pump(&mut lane, now::<P>());
     }
 }
 

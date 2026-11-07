@@ -8,9 +8,6 @@
 /// larger than two frames is never refused below it.
 pub const HELD_FRAMES: u64 = 2;
 
-/// Frames coded at the ceiling before temporal layers may turn on.
-pub const LAYERS_AFTER_FRAMES: u64 = 300;
-
 /// What refining a still picture may spend: half a second of the encoder's rate.
 pub const REFINE_BUDGET_MS: u64 = 500;
 

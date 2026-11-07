@@ -4,10 +4,11 @@
 //! desktopd follows the general pasteboard for the owner's viewer whose window has focus
 //! ([`crate::session`] gives each owner's link a clipboard session). It reads the pasteboard
 //! on the Mac the person is not sitting at, which macOS 15.4 and later gate behind "Paste from
-//! Other Apps" for Onicode Desktop. Until that is set to Allow, an offer carries types alone and
-//! desktopd reads a copy's bytes only when the viewer pastes it, so nothing prompts that the
-//! person did not cause; denied, copies on this Mac stay here. The viewer hears which it is
-//! ([`onicode_clipboard::Clip::Access`]) and offers the guide to Paste from Other Apps.
+//! Other Apps" for Onicode Desktop. Until that is set to Allow, desktopd reads nothing, so
+//! nothing prompts, and copies on this Mac stay here; the viewer's copies still land. The viewer
+//! hears which it is ([`onicode_clipboard::Clip::Access`]) and offers the guide to Paste from
+//! Other Apps, which raises the one prompt that lists desktopd there when it was never asked
+//! ([`crate::grants::guide_open`]).
 
 use onicode_clipboard::{Hub, PasteAccess};
 
@@ -89,12 +90,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_allow_reads_freely_and_deny_stops() {
+    fn only_allow_reads_freely() {
         assert!(paste_access(PasteBehavior::AlwaysAllow).reads_freely());
-        for asks in [PasteBehavior::Default, PasteBehavior::Ask] {
-            let access = paste_access(asks);
-            assert!(!access.reads_freely() && !access.stops(), "{asks:?}");
+        for stays in [
+            PasteBehavior::Default,
+            PasteBehavior::Ask,
+            PasteBehavior::AlwaysDeny,
+        ] {
+            assert!(!paste_access(stays).reads_freely(), "{stays:?}");
         }
-        assert!(paste_access(PasteBehavior::AlwaysDeny).stops());
     }
 }

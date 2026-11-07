@@ -14,11 +14,12 @@ use zerocopy::little_endian::{I32, U16, U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 /// The wire's version, carried when a desktop stream opens; bumped with every change to the
-/// pinned encoding.
-pub const VERSION: u8 = 1;
+/// pinned encoding. 3: the temporal layers' `DISCARDABLE` and `PREV_DISCARDABLE` flags, the
+/// sound report (`Feedback::Sound`) and an audio datagram's copies are gone.
+pub const VERSION: u8 = 3;
 
 /// The datagram channels this wire uses: a datagram's first byte, as `onicode_net::Link` sends
-/// and reads it. Channel 1 is the terminal copies'.
+/// and reads it.
 pub mod channel {
     /// Host to client: video fragments and parity, audio, cursor moves, heartbeats and clock
     /// echoes, told apart by [`super::Kind`]. `onicode_net`'s `channel::MEDIA`.
@@ -111,15 +112,6 @@ pub mod flags {
     pub const LTR_REFRESH: u8 = 1 << 2;
     /// This datagram is a retransmission (NACK reply).
     pub const RETRANSMIT: u8 = 1 << 3;
-    /// Nothing later refers to this frame (a temporal layer-1 frame).
-    ///
-    /// A receiver that cannot repair it skips it instead of asking for a refresh. Set on every
-    /// datagram of the frame, data and parity; never on a keyframe, an LTR refresh or a
-    /// long-term reference.
-    pub const DISCARDABLE: u8 = 1 << 4;
-    /// The frame numbered one below this one was [`DISCARDABLE`]. Set on every datagram of the
-    /// frame after it, so a receiver that lost that frame whole still knows it may skip it.
-    pub const PREV_DISCARDABLE: u8 = 1 << 5;
 }
 
 /// The fixed header at the front of every media datagram.
@@ -322,8 +314,6 @@ const _: () = assert!(
 pub enum VideoCodec {
     /// HEVC: Main, 8-bit 4:2:0, or Main 4:4:4 10 for a [`Chroma::Full`] stream.
     Hevc = 0,
-    /// H.264 High (fallback only).
-    H264 = 1,
 }
 
 impl VideoCodec {
@@ -332,7 +322,6 @@ impl VideoCodec {
     pub const fn from_u8(v: u8) -> Option<Self> {
         match v {
             0 => Some(Self::Hevc),
-            1 => Some(Self::H264),
             _ => None,
         }
     }
@@ -344,10 +333,10 @@ impl VideoCodec {
 )]
 #[repr(u8)]
 pub enum Chroma {
-    /// 4:2:0, one colour sample per 2×2 pixels: HEVC Main or H.264 High, fed full-range NV12.
+    /// 4:2:0, one colour sample per 2×2 pixels: HEVC Main, fed full-range NV12.
     #[default]
     Subsampled = 0,
-    /// 4:4:4, colour at every pixel: HEVC Main 4:4:4 10, HEVC only, captured as full-range
+    /// 4:4:4, colour at every pixel: HEVC Main 4:4:4 10, captured as full-range
     /// 10-bit bi-planar 4:4:4 (`xf44`).
     Full = 1,
 }
@@ -535,16 +524,6 @@ impl ReceiverReport {
     }
 }
 
-/// What the client's one player of a host's sound ([`SOUND`]) heard since its last report.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct SoundReport {
-    /// Audio packets that arrived in the window.
-    pub received: u16,
-    /// Audio packets missing from the sequence in the window, whether or not a copy an audio
-    /// datagram carried recovered them: the loss the host sizes those copies by.
-    pub lost: u16,
-}
-
 /// Most fragments one NACK names: what fits in a datagram behind its stream and frame.
 pub const MAX_NACK_FRAGMENTS: usize = (MAX_DATAGRAM - 9) / 2;
 
@@ -596,8 +575,6 @@ pub enum Feedback {
         /// The report.
         report: ReceiverReport,
     },
-    /// The sound player's report.
-    Sound(SoundReport),
 }
 
 impl Feedback {
@@ -605,7 +582,6 @@ impl Feedback {
     const NACK: u8 = 0;
     const REFRESH: u8 = 1;
     const REPORT: u8 = 3;
-    const SOUND: u8 = 4;
 
     /// The datagram's bytes, after the channel byte.
     #[must_use]
@@ -645,11 +621,6 @@ impl Feedback {
                 out.put_u8(Self::REPORT);
                 out.put_u32_le(stream.0);
                 out.put_slice(report.to_wire().as_bytes());
-            }
-            Self::Sound(sound) => {
-                out.put_u8(Self::SOUND);
-                out.put_u16_le(sound.received);
-                out.put_u16_le(sound.lost);
             }
         }
         out.freeze()
@@ -704,14 +675,6 @@ impl Feedback {
                     stream,
                     report: ReceiverReport::from_wire(report),
                 })
-            }
-            Self::SOUND => {
-                let &[r0, r1, l0, l1] = rest else {
-                    return None;
-                };
-                let received = u16::from_le_bytes([r0, r1]);
-                let lost = u16::from_le_bytes([l0, l1]);
-                Some(Self::Sound(SoundReport { received, lost }))
             }
             _ => None,
         }
@@ -782,15 +745,12 @@ mod tests {
         out.extend_from_slice(header.as_bytes());
         out.extend([
             flags::RETRANSMIT,
-            flags::DISCARDABLE,
-            flags::PREV_DISCARDABLE,
             Kind::VideoData as u8,
             Kind::Audio as u8,
             Kind::Cursor as u8,
             Kind::Heartbeat as u8,
             Kind::Clock as u8,
             VideoCodec::Hevc as u8,
-            VideoCodec::H264 as u8,
             Chroma::Subsampled as u8,
             Chroma::Full as u8,
             RateVerdict::Cut as u8,
@@ -838,10 +798,6 @@ mod tests {
                 stream: StreamId(1),
                 report: report(),
             },
-            Feedback::Sound(SoundReport {
-                received: 0x0102,
-                lost: 3,
-            }),
         ] {
             out.extend_from_slice(&feedback.encode());
         }
@@ -854,7 +810,7 @@ mod tests {
     fn the_wire_is_pinned() {
         let pinned = concat!(
             // version, channels, MAX_DATAGRAM, the five layout sizes
-            "010203",
+            "030203",
             "9d04",
             "1014180c4a",
             // media header
@@ -867,9 +823,9 @@ mod tests {
             "07",
             "ab",
             // flags, kinds, codec, chroma, verdicts, source states
-            "081020",
+            "08",
             "0002030405",
-            "0001",
+            "00",
             "0001",
             "00010203",
             "00010203",
@@ -930,10 +886,6 @@ mod tests {
             "1700",
             "11",
             "02",
-            // sound
-            "04",
-            "0201",
-            "0300",
         );
         assert_eq!(hex(&canonical()), pinned);
     }
@@ -1019,10 +971,6 @@ mod tests {
                 stream: StreamId(3),
                 report: report(),
             },
-            Feedback::Sound(SoundReport {
-                received: 4,
-                lost: 1,
-            }),
         ];
         for feedback in all {
             let bytes = feedback.encode();
