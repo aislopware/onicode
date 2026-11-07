@@ -37,7 +37,7 @@ libc = "0.2"
 rquickjs = "0.14.0"
 # The file editor's native syntax: incremental parses, highlights, folds and
 # syntax errors. Languages without a grammar here use the QuickJS fallback.
-tree-sitter = "0.26"
+tree-sitter = "0.27.1"
 tree-sitter-language = "0.1"
 streaming-iterator = "0.1"
 similar.workspace = true
