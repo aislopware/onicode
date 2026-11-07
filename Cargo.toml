@@ -221,6 +221,9 @@ zerocopy = { version = "0.8.63", features = ["derive"] }
 noq = { version = "~1.4.0", default-features = false, features = ["runtime-tokio"] }
 noq-proto = { version = "1.4.0", default-features = false }
 bytes = "1.12"
+# Held at 0.12: 0.13 measured slower with two to four threads on one lock (two threads, 200k short
+# critical sections each: 18 ms against 5.7 ms for a Mutex), faster only from eight threads up, and
+# would sit beside the 0.12 that tokio, gpui and alacritty_terminal lock.
 parking_lot = "0.12.5"
 # `all`: binding a socket to the tailnet's interface (`bind_device_by_index_v4`/`_v6`).
 socket2 = { version = "0.6.5", features = ["all"] }
