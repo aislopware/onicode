@@ -1001,7 +1001,7 @@ pub async fn download_release_file(
     out.flush().await.context("flushing download")?;
     drop(out);
     if let Some(expected) = expected {
-        let actual = format!("{:x}", hasher.finalize());
+        let actual = base16ct::lower::encode_string(&hasher.finalize());
         if !actual.eq_ignore_ascii_case(expected.trim()) {
             tokio::fs::remove_file(&partial).await.ok();
             bail!("checksum mismatch for {file}: expected {expected}, got {actual}");
@@ -3149,7 +3149,7 @@ mod tests {
             files: [(
                 headless_artifact("9.9.9"),
                 FileMeta {
-                    sha256: Some(format!("{:x}", Sha256::digest(bytes))),
+                    sha256: Some(base16ct::lower::encode_string(&Sha256::digest(bytes))),
                 },
             )]
             .into(),
@@ -3216,7 +3216,7 @@ mod tests {
             files: [(
                 "blob".to_owned(),
                 FileMeta {
-                    sha256: Some(format!("{:x}", Sha256::digest(&body))),
+                    sha256: Some(base16ct::lower::encode_string(&Sha256::digest(&body))),
                 },
             )]
             .into(),

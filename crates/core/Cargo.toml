@@ -14,15 +14,19 @@ serde_json = { workspace = true, features = ["float_roundtrip"] }
 rusqlite.workspace = true
 async-channel = "2"
 url = "2"
-base64 = "0.22"
+base64 = "0.23.1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
-sha2 = "0.10"
-rand = "0.9"
+sha2.workspace = true
+base16ct.workspace = true
+rand = "0.10.3"
 regex = "1"
 zstd = "0.14.3"
-toml = "0.8"
-ureq = "2.12"
-webpki-roots = "0.26.11"
+# Codex's config.toml under TOML 1.1; parse only, nothing writes TOML.
+toml = { version = "1.2.1", default-features = false, features = ["std", "serde", "parse"] }
+ureq = "3.5.1"
+# The OpenCode event stream's own TLS socket, on the provider and roots ureq uses.
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1.0.11"
 onicode-mobile-link = { path = "../mobile-link" }
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "macros"] }
@@ -36,15 +40,21 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 rquickjs = "0.14.0"
 tempfile = "3"
 
+# The desktop's mobile identity in the OS credential store. keyring 4 is keyring-core's API plus
+# one crate per store, and its own docs send applications to those directly: its `v1` shim would
+# put the zbus Secret Service on Linux, whose RustCrypto is a generation past gpui_linux's oo7.
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+keyring-core = "1.0.1"
+
 [target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3.6", default-features = false, features = ["apple-native"] }
+apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }
 
 [target.'cfg(windows)'.dependencies]
-keyring = { version = "3.6", default-features = false, features = ["windows-native"] }
+windows-native-keyring-store = "1.1.0"
 tempfile = "3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3.6", default-features = false, features = ["linux-native-sync-persistent", "crypto-rust"] }
+dbus-secret-service-keyring-store = { version = "1.0.1", features = ["crypto-rust"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

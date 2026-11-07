@@ -114,10 +114,7 @@ impl Server {
     }
 }
 fn token(secret: &str, session: i64) -> String {
-    Sha256::digest(format!("{secret}:{session}").as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    base16ct::lower::encode_string(&Sha256::digest(format!("{secret}:{session}").as_bytes()))
 }
 fn serve(
     mut stream: TcpStream,

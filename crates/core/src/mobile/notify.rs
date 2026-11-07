@@ -24,25 +24,26 @@ pub struct Notice {
 /// Sends `notice` to each token. Returns the tokens Expo says no longer reach
 /// a phone, to forget.
 pub fn send(tokens: &[String], notice: &Notice) -> Result<Vec<String>, String> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(std::time::Duration::from_secs(5))
-        .timeout(std::time::Duration::from_secs(15))
-        .build();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(std::time::Duration::from_secs(5)))
+        .timeout_global(Some(std::time::Duration::from_secs(15)))
+        // Expo explains a rejected batch in the body.
+        .http_status_as_error(false)
+        .build()
+        .into();
     let mut gone = Vec::new();
     for batch in tokens.chunks(MAX_BATCH) {
         let messages: Vec<Value> = batch.iter().map(|to| message(to, notice)).collect();
         let response = agent
             .post(ENDPOINT)
-            .set("Accept", "application/json")
-            .set("Content-Type", "application/json")
-            .send_string(&Value::from(messages).to_string());
-        let response = match response {
-            Ok(response) | Err(ureq::Error::Status(_, response)) => response,
-            Err(error) => return Err(format!("Could not reach Expo push: {error}")),
-        };
-        let status = response.status();
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .send(Value::from(messages).to_string())
+            .map_err(|error| format!("Could not reach Expo push: {error}"))?;
+        let status = response.status().as_u16();
         let mut bytes = Vec::new();
         response
+            .into_body()
             .into_reader()
             .take(MAX_RESPONSE_BYTES)
             .read_to_end(&mut bytes)

@@ -37,15 +37,16 @@ fn installed(kind: Kind) -> Result<String, String> {
 }
 pub fn latest_version(kind: Kind) -> Result<String, String> {
     let package = package(kind).ok_or("No update feed for harness")?;
-    let text = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(10))
+    let text = ureq::get(format!("https://registry.npmjs.org/{package}/latest"))
+        .config()
+        .timeout_global(Some(Duration::from_secs(10)))
         .build()
-        .get(&format!("https://registry.npmjs.org/{package}/latest"))
-        .set("User-Agent", "Onicode")
-        .set("Accept", "application/json")
+        .header("User-Agent", "Onicode")
+        .header("Accept", "application/json")
         .call()
         .map_err(|e| e.to_string())?
-        .into_string()
+        .into_body()
+        .read_to_string()
         .map_err(|e| e.to_string())?;
     let body: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
     parse_version(body["version"].as_str().unwrap_or(""))

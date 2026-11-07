@@ -119,10 +119,7 @@ pub fn validate_operator(action: &str, input: &Value) -> Result<(), String> {
 }
 
 pub fn content_hash(text: &str) -> String {
-    Sha256::digest(text.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    base16ct::lower::encode_string(&Sha256::digest(text.as_bytes()))
 }
 
 pub fn text(input: &Value, key: &str, max: usize) -> Result<String, String> {

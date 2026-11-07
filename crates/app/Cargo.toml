@@ -21,7 +21,7 @@ futures.workspace = true
 onicode-update = { path = "../update" }
 tokio.workspace = true
 log = "0.4"
-pulldown-cmark = "0.13.5"
+pulldown-cmark.workspace = true
 mermaid-rs-renderer = { version = "0.3.1", default-features = false }
 syntect = { version = "5.3", default-features = false, features = ["parsing", "default-syntaxes", "regex-fancy"] }
 gpui.workspace = true
@@ -29,7 +29,7 @@ gpui_platform = { workspace = true, features = ["font-kit", "runtime_shaders"] }
 unicode-segmentation = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 async-channel = "2"
-base64 = "0.22"
+base64 = "0.23.1"
 # Attachment chips build their thumbnail sprites directly.
 image = { version = "0.25", default-features = false }
 # The terminal dock: PTY, VT parser and grid (as Zed's terminal uses).
@@ -38,10 +38,10 @@ libc = "0.2"
 rquickjs = "0.14.0"
 # The file editor's native syntax: incremental parses, highlights, folds and
 # syntax errors. Languages without a grammar here use the QuickJS fallback.
-tree-sitter = "0.26"
+tree-sitter = "0.27.1"
 tree-sitter-language = "0.1"
 streaming-iterator = "0.1"
-similar = "2.7"
+similar.workspace = true
 tree-sitter-javascript = "0.25"
 tree-sitter-typescript = "0.23"
 tree-sitter-json = "0.24"

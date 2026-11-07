@@ -18,9 +18,14 @@ impl Client {
             directory,
             v2,
             password,
-            agent: ureq::AgentBuilder::new()
-                .timeout_connect(Duration::from_secs(15))
-                .build(),
+            agent: ureq::Agent::config_builder()
+                .timeout_connect(Some(Duration::from_secs(15)))
+                // OpenCode's error statuses carry its reason in the body.
+                .http_status_as_error(false)
+                // Reached directly, as its event stream is.
+                .proxy(None)
+                .build()
+                .into(),
         }
     }
 
@@ -32,22 +37,38 @@ impl Client {
         }
     }
 
-    fn wire(&self, method: &str, path: &str) -> ureq::Request {
-        let mut request = self.agent.request(
-            method,
-            &format!("{}{}", self.url.trim_end_matches('/'), path),
-        );
+    /// A call to `path`, carrying the directory and the password.
+    fn wire(&self, method: &str, path: &str) -> Result<ureq::http::request::Builder, String> {
+        let mut url = url::Url::parse(&format!("{}{}", self.url.trim_end_matches('/'), path))
+            .map_err(|e| format!("Invalid OpenCode URL: {e}"))?;
+        let mut request = ureq::http::Request::builder().method(method);
         if !self.directory.is_empty() {
-            request = request
-                .query("directory", &self.directory)
-                .set("x-opencode-directory", &encode(&self.directory));
+            url.query_pairs_mut()
+                .append_pair("directory", &self.directory);
+            request = request.header("x-opencode-directory", encode(&self.directory));
         }
         if let Some(password) = &self.password {
             let auth =
                 base64::engine::general_purpose::STANDARD.encode(format!("opencode:{password}"));
-            request = request.set("Authorization", &format!("Basic {auth}"));
+            request = request.header("Authorization", format!("Basic {auth}"));
         }
-        request
+        Ok(request.uri(url.as_str()))
+    }
+
+    fn run(
+        &self,
+        request: Result<ureq::http::Request<impl ureq::AsSendBody>, ureq::http::Error>,
+        timeout: Duration,
+    ) -> Result<ureq::http::Response<ureq::Body>, String> {
+        let request = request.map_err(|e| format!("Invalid OpenCode request: {e}"))?;
+        let request = self
+            .agent
+            .configure_request(request)
+            .timeout_global(Some(timeout))
+            .build();
+        self.agent
+            .run(request)
+            .map_err(|error| format!("OpenCode HTTP request failed: {error}"))
     }
 
     pub fn request(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
@@ -61,22 +82,24 @@ impl Client {
         body: Option<Value>,
         timeout: Duration,
     ) -> Result<Value, String> {
-        let wire = self.wire(method, path).timeout(timeout);
-        let response = if let Some(body) = body {
-            wire.set("Content-Type", "application/json")
-                .send_string(&body.to_string())
-        } else {
-            wire.call()
+        let wire = self.wire(method, path)?;
+        let mut response = match body {
+            Some(body) => self.run(
+                wire.header("Content-Type", "application/json")
+                    .body(body.to_string()),
+                timeout,
+            )?,
+            None => self.run(wire.body(()), timeout)?,
         };
-        let response = match response {
-            Ok(response) => response,
-            Err(ureq::Error::Status(code, response)) => {
-                let body = response.into_string().unwrap_or_default();
-                return Err(format!("OpenCode HTTP {code}: {body}"));
-            }
-            Err(error) => return Err(format!("OpenCode HTTP request failed: {error}")),
-        };
-        let text = response.into_string().map_err(|e| e.to_string())?;
+        let code = response.status().as_u16();
+        if code >= 400 {
+            let body = response.body_mut().read_to_string().unwrap_or_default();
+            return Err(format!("OpenCode HTTP {code}: {body}"));
+        }
+        let text = response
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| e.to_string())?;
         if text.trim().is_empty() {
             return Ok(Value::Null);
         }
@@ -181,24 +204,24 @@ impl Client {
         let mut socket = if url.scheme() == "https" {
             // Match ureq's default TLS backend and trust roots, keeping normal
             // certificate and hostname verification for the local service.
-            let roots = ureq::rustls::RootCertStore {
+            let roots = rustls::RootCertStore {
                 roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
             };
-            let config = ureq::rustls::ClientConfig::builder_with_provider(
-                ureq::rustls::crypto::ring::default_provider().into(),
+            let config = rustls::ClientConfig::builder_with_provider(
+                rustls::crypto::ring::default_provider().into(),
             )
-            .with_protocol_versions(&[&ureq::rustls::version::TLS12, &ureq::rustls::version::TLS13])
+            .with_protocol_versions(&[&rustls::version::TLS12, &rustls::version::TLS13])
             .map_err(|e| format!("Could not configure OpenCode event TLS: {e}"))?
             .with_root_certificates(roots)
             .with_no_client_auth();
-            let name = ureq::rustls::pki_types::ServerName::try_from(host.to_owned())
+            let name = rustls::pki_types::ServerName::try_from(host.to_owned())
                 .map_err(|e| format!("Invalid OpenCode event TLS hostname: {e}"))?;
-            let mut connection = ureq::rustls::ClientConnection::new(Arc::new(config), name)
-                .map_err(|e| e.to_string())?;
+            let mut connection =
+                rustls::ClientConnection::new(Arc::new(config), name).map_err(|e| e.to_string())?;
             connection
                 .complete_io(&mut socket)
                 .map_err(|e| format!("OpenCode event TLS handshake failed: {e}"))?;
-            EventSocket::Tls(Box::new(ureq::rustls::StreamOwned::new(connection, socket)))
+            EventSocket::Tls(Box::new(rustls::StreamOwned::new(connection, socket)))
         } else {
             EventSocket::Plain(socket)
         };
@@ -619,7 +642,7 @@ fn parts(request: &Request) -> Result<Vec<Value>, String> {
 
 enum EventSocket {
     Plain(std::net::TcpStream),
-    Tls(Box<ureq::rustls::StreamOwned<ureq::rustls::ClientConnection, std::net::TcpStream>>),
+    Tls(Box<rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>>),
 }
 impl EventSocket {
     fn socket(&self) -> &std::net::TcpStream {

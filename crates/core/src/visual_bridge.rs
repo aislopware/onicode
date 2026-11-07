@@ -368,11 +368,9 @@ fn serve(mut stream: TcpStream, hub: &Hub) -> Result<(), String> {
         if wire.request_id.is_empty() || wire.request_id.len() > 128 {
             return Err("Invalid request id".into());
         }
-        let signature =
-            Sha256::digest(serde_json::to_vec(&wire.document).map_err(|e| e.to_string())?)
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>();
+        let signature = base16ct::lower::encode_string(&Sha256::digest(
+            serde_json::to_vec(&wire.document).map_err(|e| e.to_string())?,
+        ));
         {
             let sessions = hub
                 .sessions
@@ -508,11 +506,7 @@ fn publish_with_environment(
     if request_id.is_empty() || request_id.len() > 128 {
         return Err("Request id must contain 1–128 bytes".into());
     }
-    let document_id = Sha256::digest(request_id.as_bytes())
-        .iter()
-        .take(16)
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let document_id = base16ct::lower::encode_string(&Sha256::digest(request_id.as_bytes())[..16]);
     let document = VisualDocument {
         id: input["id"]
             .as_str()

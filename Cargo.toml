@@ -221,6 +221,9 @@ zerocopy = { version = "0.8.63", features = ["derive"] }
 noq = { version = "~1.4.0", default-features = false, features = ["runtime-tokio"] }
 noq-proto = { version = "1.4.0", default-features = false }
 bytes = "1.12"
+# Held at 0.12: 0.13 measured slower with two to four threads on one lock (two threads, 200k short
+# critical sections each: 18 ms against 5.7 ms for a Mutex), faster only from eight threads up, and
+# would sit beside the 0.12 that tokio, gpui and alacritty_terminal lock.
 parking_lot = "0.12.5"
 # `all`: binding a socket to the tailnet's interface (`bind_device_by_index_v4`/`_v6`).
 socket2 = { version = "0.6.5", features = ["all"] }
@@ -239,7 +242,7 @@ arbitrary = { version = "1.5.0", features = ["derive"] }
 serde-reflection = "=0.6.0"
 
 # diffs
-similar = "2"
+similar = "3.2.1"
 
 # async / net
 tokio = { version = "1", features = ["full"] }
@@ -282,10 +285,15 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
-sha2 = "0.10"
+# Digests; sha2 0.11 is the one p256 already locks.
+sha2 = "0.11.1"
+# A digest as lowercase hex: digest 0.11's output no longer formats with `{:x}`, and p256 already
+# locks base16ct.
+base16ct = { version = "1.0.0", features = ["alloc"] }
 notify = "7"
 alacritty_terminal = "0.26"
-pulldown-cmark = "0.12"
+# Markdown parsing only: no HTML writer, no CLI options.
+pulldown-cmark = { version = "0.13.6", default-features = false }
 unicode-segmentation = "1"
 unicode-width = "0.2"
 # Packaged GUI apps do not inherit shell proxy variables; honor the macOS

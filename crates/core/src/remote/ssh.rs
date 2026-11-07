@@ -769,14 +769,15 @@ mod tests {
         let environment = required("ONICODE_TEST_ENVIRONMENT");
         for _ in 0..2 {
             let tunnel = Tunnel::start_with_command(&target, None, None, make_command()).unwrap();
-            let response = ureq::post(&format!("http://127.0.0.1:{}/rpc", tunnel.port))
-                .set(
+            let response = ureq::post(format!("http://127.0.0.1:{}/rpc", tunnel.port))
+                .header(
                     "Authorization",
-                    &format!("Bearer {}", required("ONICODE_TEST_TOKEN")),
+                    format!("Bearer {}", required("ONICODE_TEST_TOKEN")),
                 )
-                .send_string(r#"{"version":1,"method":"environment.describe"}"#)
+                .send(r#"{"version":1,"method":"environment.describe"}"#)
                 .unwrap();
-            let value: serde_json::Value = serde_json::from_reader(response.into_reader()).unwrap();
+            let value: serde_json::Value =
+                serde_json::from_reader(response.into_body().into_reader()).unwrap();
             assert_eq!(value["result"]["environmentId"], environment);
             drop(tunnel);
             // A client disappearing must not kill the independently owned host.

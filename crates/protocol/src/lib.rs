@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod agents;
 pub mod app_access;
+pub mod b64;
 pub mod engine;
 pub mod engine_settings;
 pub mod files;

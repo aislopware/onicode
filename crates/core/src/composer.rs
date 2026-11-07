@@ -35,7 +35,7 @@ pub fn image_data(path: &Path) -> Result<String, String> {
     if data.len() as u64 > MAX_EMBED_BYTES {
         return Err("Image is larger than 20 MB.".into());
     }
-    Ok(base64::engine::general_purpose::STANDARD.encode(data))
+    Ok(crate::b64::STANDARD.encode(data))
 }
 /// Decode a saved desktop image attachment off the UI thread.
 pub fn decode_image_data(data: &str) -> Result<Vec<u8>, String> {
@@ -50,7 +50,7 @@ pub fn decode_image_data(data: &str) -> Result<Vec<u8>, String> {
     if data.len() as u64 > MAX_EMBED_BYTES.div_ceil(3) * 4 {
         return Err("Image is larger than 20 MB.".into());
     }
-    let bytes = base64::engine::general_purpose::STANDARD
+    let bytes = crate::b64::STANDARD
         .decode(data)
         .map_err(|error| error.to_string())?;
     if bytes.len() as u64 > MAX_EMBED_BYTES {

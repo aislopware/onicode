@@ -167,7 +167,7 @@ fn read_remote_bytes(path: &Path) -> Result<Vec<u8>, String> {
     use base64::Engine;
     let encoded: String =
         super::remote::command("read_binary_file", serde_json::json!({"path":path}))?;
-    let bytes = base64::engine::general_purpose::STANDARD
+    let bytes = crate::b64::STANDARD
         .decode(encoded)
         .map_err(|error| format!("Invalid remote file content: {error}"))?;
     if bytes.len() > 10 * 1024 * 1024 {

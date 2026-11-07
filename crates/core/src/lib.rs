@@ -36,5 +36,6 @@ pub mod visual_bridge;
 pub mod worktree_management;
 
 pub use onicode_protocol::{
-    agent, context, diff, new_id, orchestration, response, session_filters, time, tool, user_links,
+    agent, b64, context, diff, new_id, orchestration, response, session_filters, time, tool,
+    user_links,
 };

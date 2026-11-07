@@ -223,20 +223,21 @@ pub unsafe extern "C" fn monocode_link_free(output: *mut c_char) {
         drop(CString::from_raw(output));
     }
 }
+/// The Expo module's `nativeCall(input: String): String`: the JSON call in, the JSON reply out.
+/// A JNI failure (an unreadable string, no memory for the reply) is thrown as a RuntimeException;
+/// `call` itself never panics past its own catch_unwind.
 #[cfg(target_os = "android")]
-#[no_mangle]
-pub extern "system" fn Java_expo_modules_monocodelink_MonocodeLinkModule_nativeCall(
-    mut env: jni::JNIEnv,
-    _: jni::objects::JObject,
-    input: jni::objects::JString,
-) -> jni::sys::jstring {
-    let output = env
-        .get_string(&input)
-        .map(|v| call(&String::from(v)))
-        .unwrap_or_else(|_| call(""));
-    env.new_string(output)
-        .map(|s| s.into_raw())
-        .unwrap_or(std::ptr::null_mut())
+#[jni::jni_mangle("expo.modules.monocodelink.MonocodeLinkModule")]
+pub extern "system" fn native_call<'local>(
+    mut env: jni::EnvUnowned<'local>,
+    _: jni::objects::JObject<'local>,
+    input: jni::objects::JString<'local>,
+) -> jni::objects::JString<'local> {
+    env.with_env(|env| -> jni::errors::Result<_> {
+        let input = input.try_to_string(env)?;
+        env.new_string(call(&input))
+    })
+    .resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
 #[cfg(test)]

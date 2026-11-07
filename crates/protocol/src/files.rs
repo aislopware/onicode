@@ -135,7 +135,7 @@ pub struct Bytes(pub Vec<u8>);
 impl Serialize for Bytes {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use base64::Engine as _;
-        serializer.serialize_str(&base64::engine::general_purpose::STANDARD.encode(&self.0))
+        serializer.serialize_str(&crate::b64::STANDARD.encode(&self.0))
     }
 }
 
@@ -143,7 +143,7 @@ impl<'de> Deserialize<'de> for Bytes {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         use base64::Engine as _;
         let text = String::deserialize(deserializer)?;
-        base64::engine::general_purpose::STANDARD
+        crate::b64::STANDARD
             .decode(text)
             .map(Self)
             .map_err(serde::de::Error::custom)

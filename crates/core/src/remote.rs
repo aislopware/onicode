@@ -6,7 +6,7 @@ mod ssh;
 pub mod ssh_askpass;
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
@@ -202,21 +202,25 @@ fn rpc(
     method: &str,
     params: Value,
 ) -> Result<Value, String> {
-    let agent = ureq::AgentBuilder::new()
-        .redirects(0)
-        .timeout_connect(std::time::Duration::from_secs(5))
-        .timeout(std::time::Duration::from_secs(30))
-        .build();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .max_redirects(0)
+        .timeout_connect(Some(std::time::Duration::from_secs(5)))
+        .timeout_global(Some(std::time::Duration::from_secs(30)))
+        // The host's error statuses carry its reason in the body.
+        .http_status_as_error(false)
+        // The endpoint is the tunnel's loopback listener.
+        .proxy(None)
+        .build()
+        .into();
     let payload = json!({ "version": 1, "environmentId": environment_id, "method": method, "params": params });
     let response = agent
-        .post(&format!("{endpoint}/rpc"))
-        .set("Authorization", &format!("Bearer {token}"))
-        .set("Content-Type", "application/json")
-        .send_string(&payload.to_string());
+        .post(format!("{endpoint}/rpc"))
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Content-Type", "application/json")
+        .send(payload.to_string());
     let response = match response {
         Ok(response) => response,
-        Err(ureq::Error::Status(_, response)) => response,
-        Err(ureq::Error::Transport(error)) if connection_refused(&error) => {
+        Err(error) if connection_refused(&error) => {
             return Err(
                 "Machine is unreachable. Check the host and SSH tunnel, then reconnect.".into(),
             );
@@ -225,16 +229,17 @@ fn rpc(
             return Err("The host request did not complete. Retry to confirm its result.".into());
         }
     };
-    let status = response.status();
-    let mut bytes = Vec::new();
-    response
-        .into_reader()
-        .take(MAX_RESPONSE_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > MAX_RESPONSE_BYTES {
-        return Err("Host response is too large".into());
-    }
+    let status = response.status().as_u16();
+    let bytes = match response
+        .into_body()
+        .into_with_config()
+        .limit(MAX_RESPONSE_BYTES)
+        .read_to_vec()
+    {
+        Ok(bytes) => bytes,
+        Err(ureq::Error::BodyExceedsLimit(_)) => return Err("Host response is too large".into()),
+        Err(error) => return Err(error.to_string()),
+    };
     let value: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid host response")?;
     if let Some(error) = value.get("error").and_then(Value::as_str) {
         return Err(format!("Host rejected request: {error}"));
@@ -250,18 +255,8 @@ fn rpc(
 
 // Only a refused connection proves the local forwarding listener is gone.
 // A slow request or an interrupted response says nothing about SSH health.
-fn connection_refused(error: &ureq::Transport) -> bool {
-    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
-    while let Some(error) = source {
-        if error
-            .downcast_ref::<std::io::Error>()
-            .is_some_and(|e| e.kind() == std::io::ErrorKind::ConnectionRefused)
-        {
-            return true;
-        }
-        source = error.source();
-    }
-    false
+fn connection_refused(error: &ureq::Error) -> bool {
+    matches!(error, ureq::Error::Io(error) if error.kind() == std::io::ErrorKind::ConnectionRefused)
 }
 
 impl Connections {
@@ -680,6 +675,8 @@ impl Connections {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
+
     use super::*;
     struct ReceivedRequest {
         headers: String,
@@ -794,11 +791,13 @@ mod tests {
         assert_eq!(requests.len(), 4);
         for request in &requests {
             assert!(request.headers.starts_with("POST /rpc HTTP/1.1"));
-            assert!(
-                request
-                    .headers
-                    .contains(&format!("Authorization: Bearer {token}"))
-            );
+            // Header names are case-insensitive; ureq sends them in lowercase.
+            assert!(request.headers.lines().any(|line| {
+                line.split_once(':').is_some_and(|(name, value)| {
+                    name.eq_ignore_ascii_case("authorization")
+                        && value.trim() == format!("Bearer {token}")
+                })
+            }));
             assert_eq!(request.payload["version"], 1);
         }
         assert_eq!(requests[0].payload["environmentId"], Value::Null);
@@ -898,20 +897,21 @@ mod tests {
             thread::sleep(Duration::from_millis(200));
         });
         let error = ureq::get(&url)
-            .timeout(Duration::from_millis(50))
+            .config()
+            .timeout_global(Some(Duration::from_millis(50)))
+            .proxy(None)
+            .build()
             .call()
             .unwrap_err();
-        let ureq::Error::Transport(error) = error else {
-            panic!("Expected a timeout")
-        };
+        assert!(
+            matches!(error, ureq::Error::Timeout(_)),
+            "Expected a timeout, got {error}"
+        );
         assert!(!connection_refused(&error));
         server.join().unwrap();
         // A freed ephemeral port can be claimed by another parallel fixture.
         // Exercise ureq's actual wrapped I/O source without that port race.
         let error = ureq::Error::from(std::io::Error::from(std::io::ErrorKind::ConnectionRefused));
-        let ureq::Error::Transport(error) = error else {
-            panic!("Expected a refused connection")
-        };
         assert!(connection_refused(&error));
     }
 
