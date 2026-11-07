@@ -33,7 +33,7 @@ const CHECKOUT: &str = "/w";
 type Stream = BoxStream<'static, Item<GitStatus, GitEvent>>;
 
 fn store() -> Database {
-    Arc::new(Mutex::new(Store::open(Path::new(":memory:")).unwrap()))
+    Arc::new(Mutex::new(Store::in_memory().unwrap()))
 }
 
 /// A status with `count` changed files, on a branch named after `seed`.

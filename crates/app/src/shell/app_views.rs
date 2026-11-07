@@ -289,14 +289,8 @@ impl Shell {
             self.app_view_events
                 .push(cx.observe(&view, |this, inbox, cx| {
                     if let Some(automations) = &this.automations {
-                        let connections = inbox
-                            .read(cx)
-                            .connection_statuses()
-                            .into_iter()
-                            .map(|(provider, (connected, _))| (provider, connected))
-                            .collect();
-                        automations
-                            .update(cx, |view, cx| view.set_trigger_connections(connections, cx));
+                        let connected = inbox.read(cx).connection_status().is_some_and(|s| s.0);
+                        automations.update(cx, |view, cx| view.set_github_connected(connected, cx));
                     }
                     this.invalidate_chrome(cx);
                     this.sync_settings(cx);
@@ -343,15 +337,12 @@ impl Shell {
             let projects = self.workspace.projects.clone();
             view.update(cx, |view, cx| {
                 view.set_appearances(self.workspace.project_appearance.clone(), cx);
-                let connections = self
+                let connected = self
                     .inbox
                     .as_ref()
-                    .map(|inbox| inbox.read(cx).connection_statuses())
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|(provider, (connected, _))| (provider, connected))
-                    .collect();
-                view.set_trigger_connections(connections, cx);
+                    .and_then(|inbox| inbox.read(cx).connection_status())
+                    .is_some_and(|(connected, _)| connected);
+                view.set_github_connected(connected, cx);
                 view.set_context(cwd, projects, cx);
                 view.refresh(cx);
             });
@@ -397,7 +388,6 @@ impl Shell {
             &cwd,
             title,
             onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
-            Vec::new(),
             cx,
         );
         cx.spawn(async move |this, cx| {
@@ -487,7 +477,6 @@ impl Shell {
                     &cwd,
                     Some(title),
                     onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
-                    Vec::new(),
                     cx,
                 )
             }) else {

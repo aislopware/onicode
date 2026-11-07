@@ -278,8 +278,6 @@ impl<'a> SendStream<'a> {
         }
 
         let limit = self.state.write_limit();
-        let flow_limit = self.state.max_data - self.state.data_sent;
-        let exempt = self.state.window_exempt;
 
         let max_send_data = self.state.max_send_data(self.id);
 
@@ -289,13 +287,6 @@ impl<'a> SendStream<'a> {
             .get_mut(&self.id)
             .map(get_or_insert_send(max_send_data))
             .ok_or(WriteError::ClosedStream)?;
-        // A stream at the unpaced priority is held by the peer's flow control alone, never by
-        // the local send window other streams have filled.
-        let limit = if exempt.is_some_and(|p| stream.priority >= p) {
-            flow_limit
-        } else {
-            limit
-        };
 
         if limit == 0 {
             trace!(

@@ -15,7 +15,7 @@ use crate::agent::{AccessMode, Settings};
 use crate::automations::DueAutomationRun;
 use crate::notes::{Note, NoteUpsert, ResponseNote};
 use crate::search::Hit;
-use crate::sessions::{Groups, Orchestration, Reminder, Session, TextModel, WorkItem};
+use crate::sessions::{Groups, Reminder, Session, TextModel, WorkItem};
 use crate::{Call, Cursor, OpId, Outcome, SessionId, Watch};
 
 /// One session as the sidebar lists it.
@@ -31,8 +31,6 @@ pub struct SessionSummary {
     pub worktree: Option<String>,
     /// The composer holds a saved draft.
     pub draft: bool,
-    /// The session an operator thread started it from.
-    pub started_by: Option<i64>,
     /// The automation whose runs it holds.
     pub automation: Option<String>,
     /// A turn is running in the engine.
@@ -42,8 +40,6 @@ pub struct SessionSummary {
     /// The model its saved settings name, as the provider's native id: what the sidebar shows of
     /// a session no viewer has opened.
     pub model: Option<String>,
-    /// The store keeps it off the sidebar (an operator's hidden child session).
-    pub hidden: bool,
 }
 
 /// A project the engine has sessions or folders in.
@@ -51,13 +47,6 @@ pub struct SessionSummary {
 pub struct Project {
     pub path: String,
     pub groups: Groups,
-}
-
-/// An orchestration lead's last run, which the sidebar lists its agents from.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Lead {
-    pub lead: i64,
-    pub summary: Orchestration,
 }
 
 /// The workspace as of a [`Cursor`]: what a watcher starts from.
@@ -69,8 +58,6 @@ pub struct WorkspaceState {
     pub projects: Vec<Project>,
     /// By due time, then session.
     pub reminders: Vec<Reminder>,
-    /// By lead.
-    pub orchestrations: Vec<Lead>,
     /// How many notes there are.
     pub notes: usize,
     /// Automation runs the scheduler claimed that no viewer has started yet
@@ -90,7 +77,6 @@ pub enum WorkspaceEvent {
     /// Every reminder, after any change to one. A reminder whose `fired_at` became set is due
     /// now: viewers announce it.
     Reminders(Vec<Reminder>),
-    Orchestration(Lead),
     Notes(usize),
     /// The scheduler claimed a run.
     AutomationDue(Box<DueAutomationRun>),
@@ -138,14 +124,14 @@ pub enum NewSession {
     Bare,
     /// Exactly these settings.
     Settings(Box<Settings>),
-    /// The project's saved defaults for the provider, with the viewer's choices over them.
+    /// The viewer's choices from its preferences.
     Defaults(SessionDefaults),
 }
 
 /// The choices a new chat starts from, as the viewer read them from its preferences.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionDefaults {
-    /// A model chosen over the saved one; it drops the saved model's controls.
+    /// The model the session starts on; `None` keeps the provider's default.
     pub model: Option<String>,
     pub account: Profile,
     pub access: AccessMode,
@@ -161,13 +147,6 @@ pub struct CreateSession {
     pub cwd: String,
     pub title: Option<String>,
     pub start: NewSession,
-    /// The session an operator thread starts it from.
-    pub started_by: Option<i64>,
-    /// The files an orchestrated worker's assignment names, under its checkout (the start's
-    /// `worktree_cwd`, else `cwd`). The engine whose disk holds them checks that none escapes it,
-    /// existing symlinked parents included, and refuses the session (`Denied`) when one does:
-    /// a project on another machine is checked there. Empty for every other session.
-    pub scope: Vec<String>,
 }
 workspace_call!(CreateSession, agent: true, reply: Created);
 
@@ -284,14 +263,6 @@ pub struct MarkSeen {
     pub session: i64,
 }
 workspace_call!(MarkSeen, agent: false, reply: Outcome);
-
-/// Keep a lead's orchestration summary.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SaveOrchestration {
-    pub lead: i64,
-    pub summary: Orchestration,
-}
-workspace_call!(SaveOrchestration, agent: false, reply: Outcome);
 
 /// Name the session's title from its first prompt: `seed` stands in at once (replacing
 /// `placeholder` unless the person renamed it), and the generated title replaces `seed` when it

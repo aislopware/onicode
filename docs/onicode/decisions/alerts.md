@@ -20,8 +20,7 @@ deny, reply or stop from the notification. There is no relay and no push service
   never replayed, so a flicker never rings.
 - One alert per chat or terminal, under one identifier (`onicode-alert:{row}`), so a newer one replaces it.
   What already stood when the engine first saw a chat or terminal (at start, after a resync) seeds silently.
-- Side chats (archived, an operator's hidden child, a chat another chat started, an orchestration worker)
-  never alert.
+- Archived chats never alert.
 - A turn that ended on "Ready" while it still waited on its owner was stopped, not finished, and does not
   ring.
 - Terminal programs are outside code: their words are plain text, their alerts carry no buttons, and they

@@ -12,7 +12,6 @@ members = [
     "crates/rpc",
     "crates/update",
     "crates/launch",
-    "crates/notify",
     # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
     "crates/net",
     "crates/net-sim",
@@ -204,8 +203,8 @@ objc2-core-audio = { version = "=0.3.2", default-features = false, features = ["
 objc2-core-audio-types = { version = "=0.3.2", default-features = false, features = ["std"] }
 # Caps Lock through the HID system's parameter connection (`onicode_desktop_input::backend`).
 objc2-io-kit = { version = "=0.3.2", default-features = false, features = ["std", "hidsystem", "libc"] }
-# Agent alerts with buttons and a reply field (`onicode_notify::center`); the version gpui-fast
-# already locks.
+# The engine's own banners (`onicode_engine::alerts::SystemBanners`); the version gpui-fast already
+# locks.
 objc2-user-notifications = { version = "=0.3.2", default-features = false, features = ["std"] }
 block2 = "=0.6.2"
 # The audio ring model-checked over every interleaving (`onicode-desktop-codec`, `--cfg
@@ -268,10 +267,10 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # atlas clear, group fades, whole blurs ordered as monocode's marker, cached views snapped from their bounds,
 # first runs shaped at next_up; its FORK.md "Onicode"), so the app draws as monocode's patched GPUI snapshot did
 # (docs/onicode/golden.md).
-gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "1fcc79a521504b9db0f4c08907b7de4e649ead63", default-features = false }
-gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "1fcc79a521504b9db0f4c08907b7de4e649ead63", default-features = false }
+gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "617af6301e406b7ccf0061c47b6df56dad503061", default-features = false }
+gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "617af6301e406b7ccf0061c47b6df56dad503061", default-features = false }
 # The headless Metal renderer, the CoreText text system and the GPU memory snapshot.
-gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "1fcc79a521504b9db0f4c08907b7de4e649ead63" }
+gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "617af6301e406b7ccf0061c47b6df56dad503061" }
 
 # storage
 # `bundled`: one SQLite on every platform, not whichever the OS ships. `hooks`: a search a newer
@@ -302,7 +301,7 @@ notify = "8.2.1"
 # Terminal emulation (docs/onicode/decisions/terminal.md): aislopware/libghostty-rs, which pins the
 # aislopware/ghostty commit whose libghostty-vt it builds. Pinned by rev: the engine's host and the
 # app's mirror must run the same snapshot format.
-libghostty-vt = { git = "https://github.com/aislopware/libghostty-rs", rev = "41ed872408fb5e419b4972b2ab8c32528c67129d" }
+libghostty-vt = { git = "https://github.com/aislopware/libghostty-rs", rev = "899d642661e40530716f80a25ffac586f0db1e98" }
 # Markdown parsing only: no HTML writer, no CLI options.
 pulldown-cmark = { version = "0.13.6", default-features = false }
 unicode-segmentation = "1"

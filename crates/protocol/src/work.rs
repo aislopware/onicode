@@ -1,9 +1,9 @@
-//! The Work group: what a person's trackers and schedules hand an engine to work on. The Inbox
-//! lists the issues and pull requests of every connected tracker and acts on them; Automations
+//! The Work group: what GitHub and schedules hand an engine to work on. The Inbox lists the
+//! GitHub issues and pull requests of a person's projects and acts on them; Automations
 //! are the runs an engine starts on a schedule or on an Inbox event; linked activity is what
 //! changed on the GitHub items sessions are linked to.
 //!
-//! Every tracker, credential and `gh` call stays in the engine: a viewer names what it shows
+//! Every `gh` call stays in the engine: a viewer names what it shows
 //! (the projects, the item) and renders what comes back. The mutating calls travel with an
 //! [`OpId`](crate::OpId) in their [`Routed`](crate::Routed), and a repeat of the op is answered
 //! with the first reply.
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::automations::{Automation, AutomationRun, AutomationUpsert, DueAutomationRun};
 use crate::files::Bytes;
-use crate::inbox::{Checks, Details, Diff, Item, OptionRow, Status, Thread, ViewState};
+use crate::inbox::{Checks, Details, Diff, Item, Status, Thread, ViewState};
 use crate::sessions::{Groups, Session, WorkItem};
 use crate::{Call, Outcome};
 
@@ -29,7 +29,7 @@ macro_rules! work_call {
     };
 }
 
-/// List every connected tracker's items for `projects`, as `state`'s filters ask. `cwd` is the
+/// List the GitHub items of `projects`, as `state`'s filters ask. `cwd` is the
 /// checkout `gh` runs in, and goes first when two checkouts share a repository.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InboxList {
@@ -38,17 +38,13 @@ pub struct InboxList {
     pub state: ViewState,
 }
 
-/// [`InboxList`]'s reply: the items, each tracker's connection and failure, the pickers' rows,
-/// and the engine's sessions, which the Inbox matches items against.
+/// [`InboxList`]'s reply: the items, GitHub's connection and why the fetch failed, and the
+/// engine's sessions, which the Inbox matches items against.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct InboxListing {
     pub items: Vec<Item>,
-    /// A tracker's failure, by provider.
-    pub errors: BTreeMap<String, String>,
-    /// Each tracker's connection, by provider.
-    pub connections: BTreeMap<String, Status>,
-    pub linear_teams: Vec<OptionRow>,
-    pub jira_projects: Vec<OptionRow>,
+    pub error: Option<String>,
+    pub connection: Status,
     pub sessions: Vec<Session>,
 }
 work_call!(InboxList, reply: InboxListing);
@@ -86,7 +82,7 @@ pub struct ReadInboxChecks {
 work_call!(ReadInboxChecks, reply: Checks);
 
 /// Comment on an item, or reply to the comment `reply_to` names (empty for none). The reply is
-/// the tracker's word on it.
+/// GitHub's word on it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PostInboxComment {
     pub cwd: PathBuf,
@@ -95,18 +91,6 @@ pub struct PostInboxComment {
     pub reply_to: String,
 }
 work_call!(PostInboxComment, reply: String);
-
-/// Connect a tracker with what its form asks: an instance URL, an email and a token, each empty
-/// where the tracker takes none. The engine keeps them; the reply is the tracker's connection.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ConnectInbox {
-    pub cwd: PathBuf,
-    pub provider: String,
-    pub url: String,
-    pub email: String,
-    pub token: String,
-}
-work_call!(ConnectInbox, reply: Status);
 
 /// Run one of an item's actions (merge, close, reopen, …); the reply is the item after it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -222,35 +206,6 @@ pub struct LinkedActivity {
     pub seen: BTreeMap<i64, i64>,
 }
 work_call!(LinkedActivity, reply: Vec<LinkedCard>);
-
-/// A process an engine's agent runs: the provider's own, or a tool it started.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct AgentProcess {
-    pub pid: u32,
-    /// What names the process apart from a later one with the same pid: [`StopAgentTool`] stops
-    /// it only while it still says so.
-    pub identity: String,
-    /// The session whose agent runs it.
-    pub session: i64,
-    pub command: String,
-    pub cpu_percent: f64,
-    pub memory_bytes: u64,
-    /// The provider process itself, rather than a tool it started.
-    pub agent: bool,
-}
-
-/// Every live agent process and the tools they started, busiest first.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentProcesses {}
-work_call!(AgentProcesses, reply: Vec<AgentProcess>);
-
-/// Stop a tool an agent started, if `pid` is still the process `identity` names.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StopAgentTool {
-    pub pid: u32,
-    pub identity: String,
-}
-work_call!(StopAgentTool, reply: Outcome);
 
 /// A GitHub issue or pull request a transcript links to, read with `gh` in `cwd`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

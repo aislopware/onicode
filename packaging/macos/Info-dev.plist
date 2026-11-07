@@ -29,8 +29,6 @@
          the same isolated development instance. -->
     <key>LSEnvironment</key>
     <dict>
-        <key>ONICODE_AUTO_UPDATE</key>
-        <string>0</string>
         <key>ONICODE_DATA_DIR</key>
         <string>__DATA_DIR__</string>
     </dict>

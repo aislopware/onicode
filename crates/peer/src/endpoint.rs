@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use noq::VarInt;
-use onicode_net::admission::{Admission, Admitted, Cidr, Verdict};
+use onicode_net::admission::{Admission, Admitted, Verdict};
 use onicode_net::hello::{self, HANDSHAKE_TIMEOUT, HELLO_TIMEOUT};
 use onicode_net::transport::{self, PORT};
 use onicode_net::{Hello, NetError, Role, Session, close};
@@ -67,8 +67,6 @@ pub struct PeerConfig {
     pub ephemeral: bool,
     /// Draws every random choice the endpoints make, so a simulated run repeats.
     pub seed: Option<u64>,
-    /// Ranges let in without the tailnet's word, besides loopback (a test bench's LAN).
-    pub allow: Vec<Cidr>,
     /// What this node's hello says it can do beyond the wire's baseline (desktopd's
     /// `onicode_desktop_link::CAP_DESKTOP`).
     pub caps: Vec<String>,
@@ -84,7 +82,6 @@ impl PeerConfig {
             port: PORT,
             ephemeral: false,
             seed: None,
-            allow: Vec::new(),
             caps: Vec::new(),
         }
     }
@@ -177,7 +174,7 @@ impl PeerEndpoint {
         Ok(Arc::new(Self {
             endpoints,
             port: config.port,
-            admission: Admission::new(Some(tailnet), config.allow),
+            admission: Admission::new(Some(tailnet)),
             hello: Hello {
                 caps: config.caps,
                 ..Hello::new(config.device_id, config.role)

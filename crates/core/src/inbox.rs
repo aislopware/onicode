@@ -1,14 +1,10 @@
-//! Native Inbox services. Provider adapters preserve the Tauri API's requests,
-//! validation, response parsers and credential file formats.
+//! Native Inbox services: the GitHub issues and pull requests of a person's projects, read and
+//! acted on through the GitHub CLI.
 mod avatar;
 mod media;
-pub use media::png as media_png;
-pub mod azure_devops;
 pub use avatar::png as avatar_png;
+pub use media::png as media_png;
 mod github;
-pub mod gitlab;
-pub mod jira;
-pub mod linear;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -18,70 +14,9 @@ pub use onicode_protocol::inbox::*;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::desktop_preferences::DesktopPreferences;
-use crate::store::Store;
-
-/// A [`ViewState`] kept in the engine's store.
-pub trait ViewStateExt: Sized {
-    fn load(store: &Store) -> Self;
-    fn save(&self, store: &Store) -> Result<(), String>;
-}
-
-impl ViewStateExt for ViewState {
-    fn load(store: &Store) -> Self {
-        if let Some(state) = store
-            .setting("native-inbox-state")
-            .ok()
-            .flatten()
-            .and_then(|s| serde_json::from_str(&s).ok())
-        {
-            return state;
-        }
-        let desktop = store
-            .data_dir()
-            .map(DesktopPreferences::load)
-            .unwrap_or_default();
-        let mut state = Self::default();
-        if let Some(source) = desktop
-            .get("onicode.inboxSource")
-            .filter(|s| PROVIDERS.contains(s))
-        {
-            state.source = source.into();
-        }
-        if let Some(filters) = desktop
-            .json("onicode.inboxFilters")
-            .and_then(|v| serde_json::from_value(v).ok())
-        {
-            state.filters = filters;
-        }
-        if let Some(seen) = desktop.json("onicode.inboxSeen") {
-            state.seen = serde_json::from_value(seen.clone()).unwrap_or_else(|_| Seen {
-                seeded: true,
-                items: serde_json::from_value(seen).unwrap_or_default(),
-            });
-        }
-        state.hidden_linear_teams = desktop
-            .json("onicode.linearHiddenTeams")
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default();
-        state.hidden_jira_projects = desktop
-            .json("onicode.jiraHiddenProjects")
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default();
-        state
-    }
-
-    fn save(&self, store: &Store) -> Result<(), String> {
-        store.save_setting(
-            "native-inbox-state",
-            &serde_json::to_string(self).map_err(|e| e.to_string())?,
-        )
-    }
-}
-
+/// Where an Inbox call runs: the checkout `gh` runs in.
 #[derive(Clone)]
 pub struct Service {
-    pub data_dir: PathBuf,
     pub cwd: PathBuf,
 }
 /// Pairs each repository with one checkout to fetch it through. Several
@@ -110,210 +45,34 @@ fn convert<T: Serialize, U: DeserializeOwned>(value: T) -> Result<U, String> {
         .map_err(|e| e.to_string())
 }
 impl Service {
-    pub fn status(&self, provider: &str) -> Result<Status, String> {
-        match provider {
-            "linear" => convert(linear::linear_status(self.data_dir.clone())?),
-            "jira" => convert(jira::jira_status(self.data_dir.clone())?),
-            "gitlab" => convert(gitlab::gitlab_status(self.data_dir.clone())?),
-            "azuredevops" => convert(azure_devops::azure_devops_status(self.data_dir.clone())?),
-            _ => {
-                let installed = crate::scm::resolve_gui_binary("gh").is_some();
-                let authenticated = installed
-                    && run_gh(
-                        &self.cwd,
-                        &["auth", "status", "--active", "--hostname", "github.com"],
-                        true,
-                    )
-                    .is_ok();
-                Ok(Status {
-                    installed,
-                    authenticated,
-                    connected: authenticated,
-                    ..Default::default()
-                })
-            }
-        }
-    }
-
-    pub fn connect(
-        &self,
-        provider: &str,
-        url: String,
-        email: String,
-        token: String,
-    ) -> Result<Status, String> {
-        match provider {
-            "linear" => convert(linear::linear_set_token(self.data_dir.clone(), token)?),
-            "jira" => convert(jira::jira_set_config(
-                self.data_dir.clone(),
-                url,
-                email,
-                token,
-            )?),
-            "gitlab" => convert(gitlab::gitlab_set_config(
-                self.data_dir.clone(),
-                url,
-                token,
-            )?),
-            "azuredevops" => convert(azure_devops::azure_devops_set_config(
-                self.data_dir.clone(),
-                url,
-                token,
-            )?),
-            _ => self.status("github"),
+    /// GitHub's connection: whether `gh` is installed and signed in to github.com.
+    pub fn status(&self) -> Status {
+        let installed = crate::scm::resolve_gui_binary("gh").is_some();
+        let authenticated = installed
+            && run_gh(
+                &self.cwd,
+                &["auth", "status", "--active", "--hostname", "github.com"],
+                true,
+            )
+            .is_ok();
+        Status {
+            installed,
+            authenticated,
+            connected: authenticated,
         }
     }
 
     pub fn list(&self, projects: &[PathBuf], state: &ViewState) -> Snapshot {
-        let mut snapshot = Snapshot::default();
-        let limit = if state.filters.fetch_state() == "all" {
-            100
-        } else {
-            40
+        let mut snapshot = Snapshot {
+            connection: self.status(),
+            ..Snapshot::default()
         };
-        for provider in PROVIDERS {
-            let status = match self.status(provider) {
-                Ok(status) => status,
-                Err(error) => {
-                    snapshot.errors.insert(provider.into(), error);
-                    continue;
-                }
-            };
-            let connected = status.connected;
-            snapshot.connections.insert(provider.into(), status);
-            if !connected {
-                continue;
-            }
-            let result: Result<Vec<Item>, String> = (|| {
-                if provider == "linear" {
-                    let teams = linear::linear_list_teams(self.data_dir.clone())?;
-                    let visible = teams
-                        .iter()
-                        .filter(|t| !state.hidden_linear_teams.contains(&t.id))
-                        .map(|t| t.id.clone())
-                        .collect::<Vec<_>>();
-                    snapshot.linear_teams = convert(teams)?;
-                    if !state.hidden_linear_teams.is_empty() && visible.is_empty() {
-                        return Ok(vec![]);
-                    }
-                    return convert(linear::linear_list_issues(
-                        self.data_dir.clone(),
-                        state.filters.assigned_to_me,
-                        state.filters.fetch_state().into(),
-                        if state.hidden_linear_teams.is_empty() {
-                            vec![]
-                        } else {
-                            visible
-                        },
-                        Some(limit),
-                    )?);
-                }
-                if provider == "jira" {
-                    let projects = jira::jira_list_projects(self.data_dir.clone())?;
-                    let visible = projects
-                        .iter()
-                        .filter(|p| !state.hidden_jira_projects.contains(&p.id))
-                        .map(|p| p.id.clone())
-                        .collect::<Vec<_>>();
-                    snapshot.jira_projects = convert(projects)?;
-                    if !state.hidden_jira_projects.is_empty() && visible.is_empty() {
-                        return Ok(vec![]);
-                    }
-                    return convert(jira::jira_list_issues(
-                        self.data_dir.clone(),
-                        state.filters.assigned_to_me,
-                        state.filters.fetch_state().into(),
-                        if state.hidden_jira_projects.is_empty() {
-                            vec![]
-                        } else {
-                            visible
-                        },
-                        Some(limit),
-                    )?);
-                }
-                let mut items = Vec::new();
-                if state.filters.assigned_to_me && provider != "github" {
-                    for kind in ["issue", "pr"] {
-                        let rows: Vec<Item> = if provider == "gitlab" {
-                            convert(gitlab::gitlab_list_todos(
-                                self.data_dir.clone(),
-                                kind.into(),
-                                Some(limit),
-                            )?)?
-                        } else {
-                            convert(azure_devops::azure_devops_list_todos(
-                                self.data_dir.clone(),
-                                kind.into(),
-                                Some(limit),
-                            )?)?
-                        };
-                        items.extend(rows.into_iter().map(|mut item| {
-                            item.provider = provider.into();
-                            item
-                        }));
-                    }
-                    return Ok(items);
-                }
-                let checkouts = repo_checkouts(projects, &self.cwd, |project| {
-                    match provider {
-                        "github" => github::git_github_repositories_for(project),
-                        "gitlab" => gitlab::gitlab_repo(
-                            self.data_dir.clone(),
-                            project.to_string_lossy().into_owned(),
-                        )
-                        .map(|r| vec![r]),
-                        _ => azure_devops::azure_devops_repo(
-                            self.data_dir.clone(),
-                            project.to_string_lossy().into_owned(),
-                        )
-                        .map(|r| vec![r]),
-                    }
-                    .ok()
-                });
-                for (project, repo) in checkouts {
-                    for kind in ["issue", "pr"] {
-                        let rows: Vec<Item> = match provider {
-                            "github" => convert(github::git_github_work_items_for(
-                                project,
-                                &repo,
-                                kind,
-                                state.filters.assigned_to_me,
-                                state.filters.fetch_state(),
-                                "",
-                                limit,
-                            )?)?,
-                            "gitlab" => convert(gitlab::gitlab_list_work_items(
-                                self.data_dir.clone(),
-                                project.to_string_lossy().into_owned(),
-                                kind.into(),
-                                false,
-                                state.filters.fetch_state().into(),
-                                Some(limit),
-                            )?)?,
-                            _ => convert(azure_devops::azure_devops_list_work_items(
-                                self.data_dir.clone(),
-                                project.to_string_lossy().into_owned(),
-                                kind.into(),
-                                false,
-                                state.filters.fetch_state().into(),
-                                Some(limit),
-                            )?)?,
-                        };
-                        items.extend(rows.into_iter().map(|mut item| {
-                            item.provider = provider.into();
-                            item.project_path = project.to_string_lossy().into_owned();
-                            item
-                        }));
-                    }
-                }
-                Ok(items)
-            })();
-            match result {
-                Ok(items) => snapshot.items.extend(items),
-                Err(error) => {
-                    snapshot.errors.insert(provider.into(), error);
-                }
-            }
+        if !snapshot.connection.connected {
+            return snapshot;
+        }
+        match self.items(projects, state) {
+            Ok(items) => snapshot.items = items,
+            Err(error) => snapshot.error = Some(error),
         }
         snapshot.items.sort_by(|a, b| {
             b.updated_ms()
@@ -325,35 +84,44 @@ impl Service {
         snapshot
     }
 
-    pub fn details(&self, item: &Item) -> Result<Details, String> {
-        match item.provider.as_str() {
-            "linear" => convert(linear::linear_issue_details(
-                self.data_dir.clone(),
-                item.id.clone(),
-            )?),
-            "jira" => convert(jira::jira_issue_details(
-                self.data_dir.clone(),
-                item.identifier.clone(),
-            )?),
-            "gitlab" => convert(gitlab::gitlab_work_item_details(
-                self.data_dir.clone(),
-                item.repo.clone(),
-                item.kind.clone(),
-                item.number,
-            )?),
-            "azuredevops" => convert(azure_devops::azure_devops_work_item_details(
-                self.data_dir.clone(),
-                item.repo.clone(),
-                item.kind.clone(),
-                item.number,
-            )?),
-            _ => convert(github::git_github_work_item_details_for(
-                self.project(item),
-                &item.repo,
-                &item.kind,
-                item.number,
-            )?),
+    /// The issues and pull requests of every repository `projects` check out, each fetched once.
+    fn items(&self, projects: &[PathBuf], state: &ViewState) -> Result<Vec<Item>, String> {
+        let limit = if state.filters.fetch_state() == "all" {
+            100
+        } else {
+            40
+        };
+        let mut items = Vec::new();
+        let checkouts = repo_checkouts(projects, &self.cwd, |project| {
+            github::git_github_repositories_for(project).ok()
+        });
+        for (project, repo) in checkouts {
+            for kind in ["issue", "pr"] {
+                let rows: Vec<Item> = convert(github::git_github_work_items_for(
+                    project,
+                    &repo,
+                    kind,
+                    state.filters.assigned_to_me,
+                    state.filters.fetch_state(),
+                    "",
+                    limit,
+                )?)?;
+                items.extend(rows.into_iter().map(|mut item| {
+                    item.project_path = project.to_string_lossy().into_owned();
+                    item
+                }));
+            }
         }
+        Ok(items)
+    }
+
+    pub fn details(&self, item: &Item) -> Result<Details, String> {
+        convert(github::git_github_work_item_details_for(
+            self.project(item),
+            &item.repo,
+            &item.kind,
+            item.number,
+        )?)
     }
 
     fn project<'a>(&'a self, item: &'a Item) -> &'a Path {
@@ -365,93 +133,32 @@ impl Service {
     }
 
     pub fn thread(&self, item: &Item) -> Result<Thread, String> {
-        match item.provider.as_str() {
-            "linear" => convert(linear::linear_issue_thread(
-                self.data_dir.clone(),
-                item.id.clone(),
-            )?),
-            "jira" => convert(jira::jira_issue_thread(
-                self.data_dir.clone(),
-                item.identifier.clone(),
-            )?),
-            "gitlab" => convert(gitlab::gitlab_work_item_thread(
-                self.data_dir.clone(),
-                item.repo.clone(),
-                item.kind.clone(),
-                item.number,
-            )?),
-            "azuredevops" => convert(azure_devops::azure_devops_work_item_thread(
-                self.data_dir.clone(),
-                item.repo.clone(),
-                item.kind.clone(),
-                item.number,
-            )?),
-            _ => convert(github::git_github_work_item_thread_for(
-                self.project(item),
-                &item.repo,
-                &item.kind,
-                item.number,
-            )?),
-        }
+        convert(github::git_github_work_item_thread_for(
+            self.project(item),
+            &item.repo,
+            &item.kind,
+            item.number,
+        )?)
     }
 
     pub fn comment(&self, item: &Item, body: String, reply_to: String) -> Result<String, String> {
-        match item.provider.as_str() {
-            "linear" => {
-                linear::linear_issue_comment(self.data_dir.clone(), item.id.clone(), body, reply_to)
-            }
-            "jira" => {
-                jira::jira_issue_comment(self.data_dir.clone(), item.identifier.clone(), body)
-            }
-            "gitlab" => gitlab::gitlab_work_item_comment(
-                self.data_dir.clone(),
-                item.repo.clone(),
-                item.kind.clone(),
-                item.number,
-                body,
-            ),
-            "azuredevops" => azure_devops::azure_devops_work_item_comment(
-                self.data_dir.clone(),
-                item.repo.clone(),
-                item.kind.clone(),
-                item.number,
-                body,
-            ),
-            _ => github::git_github_work_item_comment_for(
-                self.project(item),
-                &item.repo,
-                &item.kind,
-                item.number,
-                &body,
-                &reply_to,
-            ),
-        }
+        github::git_github_work_item_comment_for(
+            self.project(item),
+            &item.repo,
+            &item.kind,
+            item.number,
+            &body,
+            &reply_to,
+        )
     }
 
     pub fn diff(&self, item: &Item) -> Result<Diff, String> {
-        self.diff_context(item, false)
-    }
-
-    pub fn diff_context(&self, item: &Item, full_context: bool) -> Result<Diff, String> {
-        match item.provider.as_str() {
-            "gitlab" => convert(gitlab::gitlab_mr_diff(
-                self.data_dir.clone(),
-                item.repo.clone(),
-                item.number,
-            )?),
-            "azuredevops" => convert(azure_devops::azure_devops_mr_diff(
-                self.data_dir.clone(),
-                item.repo.clone(),
-                item.number,
-            )?),
-            "github" => convert(github::git_github_pr_diff_for(
-                self.project(item),
-                &item.repo,
-                item.number,
-                full_context,
-            )?),
-            _ => Err("This issue has no pull request diff".into()),
-        }
+        convert(github::git_github_pr_diff_for(
+            self.project(item),
+            &item.repo,
+            item.number,
+            false,
+        )?)
     }
 
     pub fn checks(&self, item: &Item) -> Result<Checks, String> {
@@ -469,7 +176,6 @@ impl Service {
             item.number,
             action,
         )?)?;
-        updated.provider = item.provider.clone();
         updated.project_path = item.project_path.clone();
         Ok(updated)
     }
@@ -480,14 +186,12 @@ pub(super) fn run_git(root: &Path, args: &[&str]) -> Result<String, String> {
 /// githubWorkItem: one GitHub issue or pull request a message links to,
 /// looked up with `gh` from `cwd` (any folder, when the session's is gone).
 pub fn github_work_item(cwd: &Path, repo: &str, kind: &str, number: i64) -> Result<Item, String> {
-    let mut item: Item = convert(github::git_github_work_item_for(
+    convert(github::git_github_work_item_for(
         &gh_root(cwd),
         repo,
         kind,
         number,
-    )?)?;
-    item.provider = "github".into();
-    Ok(item)
+    )?)
 }
 /// githubWorkItemDetails for [`github_work_item`]'s item.
 pub fn github_work_item_details(
@@ -560,13 +264,11 @@ fn run_command(
 mod notification_tests {
     use super::*;
 
-    fn item(number: i64, provider: &str) -> Item {
+    fn item(number: i64) -> Item {
         Item {
-            provider: provider.into(),
             kind: "issue".into(),
             repo: "acme/app".into(),
             number,
-            id: number.to_string(),
             updated_at: "2026-10-21T10:00:00Z".into(),
             ..Item::default()
         }
@@ -583,38 +285,35 @@ mod notification_tests {
         let mut tracker = NotificationTracker::default();
         assert!(
             tracker
-                .observe(&snapshot(vec![item(1, "github")]), "scope".into())
+                .observe(&snapshot(vec![item(1)]), "scope".into())
                 .is_empty()
         );
-        let mut updated = item(1, "github");
+        let mut updated = item(1);
         updated.updated_at = "2026-10-21T11:00:00Z".into();
-        let appeared = tracker.observe(&snapshot(vec![updated, item(2, "github")]), "scope".into());
+        let appeared = tracker.observe(&snapshot(vec![updated, item(2)]), "scope".into());
         assert_eq!(
             appeared.iter().map(|i| i.number).collect::<Vec<_>>(),
             vec![2]
         );
         assert!(
             tracker
-                .observe(&snapshot(vec![item(2, "github")]), "scope".into())
+                .observe(&snapshot(vec![item(2)]), "scope".into())
                 .is_empty()
         );
     }
 
     #[test]
-    fn failed_provider_has_its_own_successful_baseline() {
+    fn a_failed_fetch_sets_no_baseline() {
         let mut tracker = NotificationTracker::default();
-        let mut failed = snapshot(vec![item(1, "linear")]);
-        failed.errors.insert("linear".into(), "offline".into());
+        let mut failed = snapshot(vec![item(1)]);
+        failed.error = Some("offline".into());
         assert!(tracker.observe(&failed, "scope".into()).is_empty());
         assert!(
             tracker
-                .observe(&snapshot(vec![item(2, "linear")]), "scope".into())
+                .observe(&snapshot(vec![item(2)]), "scope".into())
                 .is_empty()
         );
-        let appeared = tracker.observe(
-            &snapshot(vec![item(2, "linear"), item(3, "linear")]),
-            "scope".into(),
-        );
+        let appeared = tracker.observe(&snapshot(vec![item(2), item(3)]), "scope".into());
         assert_eq!(appeared.len(), 1);
         assert_eq!(appeared[0].number, 3);
     }
@@ -624,25 +323,22 @@ mod notification_tests {
         let mut tracker = NotificationTracker::default();
         assert!(
             tracker
-                .observe(&snapshot(vec![item(1, "github")]), "one".into())
+                .observe(&snapshot(vec![item(1)]), "one".into())
                 .is_empty()
         );
         assert!(
             tracker
-                .observe(&snapshot(vec![item(2, "github")]), "two".into())
+                .observe(&snapshot(vec![item(2)]), "two".into())
                 .is_empty()
         );
         assert!(
             tracker
-                .observe(
-                    &snapshot(vec![item(1, "github"), item(2, "github")]),
-                    "two".into()
-                )
+                .observe(&snapshot(vec![item(1), item(2)]), "two".into())
                 .is_empty()
         );
         assert_eq!(
             tracker
-                .observe(&snapshot(vec![item(3, "github")]), "two".into())
+                .observe(&snapshot(vec![item(3)]), "two".into())
                 .len(),
             1
         );
@@ -650,13 +346,11 @@ mod notification_tests {
 
     #[test]
     fn seen_keys_match_desktop_identity_rules() {
-        let mut github = item(12, "github");
+        let mut github = item(12);
         github.url = "https://GitHub.com/Acme/App/pull/12/".into();
-        assert_eq!(github.key(), "github:acme/app:issue:12");
-        let mut linear = item(7, "linear");
-        linear.id = "stable-id".into();
-        linear.identifier = "MON-7".into();
-        assert_eq!(linear.key(), "linear:mon-7");
+        assert_eq!(github.key(), "acme/app:issue:12");
+        github.repo.clear();
+        assert_eq!(github.key(), "https://github.com/acme/app/pull/12/");
     }
 
     #[test]

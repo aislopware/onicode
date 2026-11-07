@@ -2,9 +2,7 @@
 use serde::{Deserialize, Serialize};
 mod presentation;
 pub mod tasks;
-pub use presentation::{
-    CommandStep, ToolPresentation, VisualStep, app_activity, app_cli_action, visual_tool,
-};
+pub use presentation::{CommandStep, ToolPresentation};
 
 /// The app's own step while a conversation carries over from another model.
 pub const HANDOFF: &str = "providerHandoff";
@@ -72,11 +70,6 @@ impl ToolCall {
             }
             self.output = format!("… earlier output omitted …\n{}", &self.output[at..]);
         }
-    }
-
-    /// One of Onicode's own visual tools, under any provider's naming.
-    pub fn visual_step(&self) -> Option<VisualStep> {
-        visual_tool(&self.name)
     }
 
     pub fn summary(&self) -> (String, String) {

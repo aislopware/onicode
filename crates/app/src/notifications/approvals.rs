@@ -31,7 +31,6 @@ pub(crate) struct SessionInputs {
     /// Approvals in transcript order, followed by the pending question(s).
     pub pending: Vec<PendingInput>,
     pub inbox_ask: bool,
-    pub orchestration_worker: bool,
     /// Active tab, focused pane, and focused composer must all match.
     pub conversation_focused: bool,
 }
@@ -139,7 +138,7 @@ impl ApprovalNotices {
         self.track_pending(sessions);
         let previous = std::mem::take(&mut self.notices);
         for session in sessions {
-            if session.inbox_ask || session.orchestration_worker || session.conversation_focused {
+            if session.inbox_ask || session.conversation_focused {
                 continue;
             }
             let Some(input) = session.notice() else {

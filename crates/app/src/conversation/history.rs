@@ -39,16 +39,8 @@ impl Conversation {
         // taking any files the user attached while history was restoring.
         let attachments = std::mem::take(&mut self.attachments);
         self.attachments = std::mem::take(&mut self.settings.attachments);
-        let mode = if self.settings.orchestrator {
-            Some("orchestrator")
-        } else if self.settings.plan {
-            Some("plan")
-        } else if self.settings.operator {
-            Some("operator")
-        } else {
-            None
-        };
-        self.enqueue_follow_up(prompt, mode.map(str::to_owned), cx);
+        let mode = self.settings.plan.then(|| "plan".to_owned());
+        self.enqueue_follow_up(prompt, mode, cx);
         self.attachments = attachments;
     }
 
@@ -76,9 +68,6 @@ impl Conversation {
             || self.status != "Ready"
             || self.account_switching
             || self.preparing_worktree
-            || self.planning_orchestration
-            || self.orchestration_plan.is_some()
-            || self.orchestration_progress.is_some()
             || self.settings.usage_limit.is_some()
             || !self.history_actions.is_empty()
             || self.controls.is_some()
@@ -253,7 +242,6 @@ mod tests {
             );
             assert_eq!(chat.input.read(cx).content, "Unsent draft");
             assert_eq!(chat.history_actions.len(), 1);
-            assert!(!chat.ready_for_external(cx));
             assert!(chat.transcript.read(cx).source_rows().is_empty());
             // Replace the launch intent with observable, provider-free work to
             // verify FIFO actions cannot run against the empty suspended view.

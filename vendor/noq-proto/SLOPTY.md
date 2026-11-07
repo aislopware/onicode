@@ -1,10 +1,12 @@
-# noq-proto, vendored with twenty-four patches
+# noq-proto, vendored with twenty-two patches
 
 The published `noq-proto` 1.4.0 (crates.io, upstream tag `noq-proto-v1.4.0`, commit
 `34f75c49f` of <https://github.com/n0-computer/noq>) with these commits on top. Patches 1 to 20
 keep the numbers they had on 1.3.0; 21 was 33 there, 22 undoes one of 1.4.0's changes, and
-1.3.0's 21 to 32 are 1.4.0's own ("The sync to 1.4.0", below). Patch 23 is Axolotty's, on top
-of Slopty's copy as it stood on 2026-11-03. Patch 24 is onicode's, its Apple-only sweep.
+1.3.0's 21 to 32 are 1.4.0's own ("The sync to 1.4.0", below). Patch 24 is onicode's, its
+Apple-only sweep. Patches 8 and 23 (the unpaced priority: a terminal echo's stream past the pacer
+and the send window) went on 2026-11-07 with the echo lane they served, which onicode never used;
+the other numbers stand.
 
 onicode took this copy from axolotty's `axquic` on 2026-11-06, unchanged. The patches were
 written and measured in slopty and axolotty, so the measurements, `docs/` pages and test paths
@@ -15,8 +17,8 @@ and its seeded simulations (`crates/net/tests/sim.rs`) re-run axquic's.
 
    With `Some(t)`, a packet takes the STREAM frames of streams at priority `t` or above before
    its DATAGRAM frames, then the rest; `None` (the default) keeps noq's order, datagrams first.
-   onicode sets it so control, RPC and terminal streams go ahead of datagrams, and tunnels and file
-   transfers stay behind it (docs/decisions/transport.md, docs/MEASUREMENTS.md "an echo ahead
+   onicode sets it so control and RPC streams go ahead of datagrams, and file transfers stay
+   behind it (docs/decisions/transport.md, docs/MEASUREMENTS.md "an echo ahead
    of the datagrams").
 
 2. `fix(proto): Clear BBR3's ACK-aggregation count on a restart from idle`
@@ -79,19 +81,6 @@ and its seeded simulations (`crates/net/tests/sim.rs`) re-run axquic's.
    failed three gates with another job on every performance core (docs/decisions/testing.md).
    This crate's own tests do not run in the workspace's gate, so patch 6's unit test cannot guard it
    there.
-
-8. `feat(proto): Add TransportConfig::stream_priority_unpaced`
-
-   With `Some(t)`, a datagram is started without the pacing check while a stream at priority
-   `t` or above has data pending. The congestion window still applies, and the pacer is charged
-   for the packet as usual. The pacer's timer runs on the runtime's clock, and tokio's is a
-   millisecond wheel that macOS coalesces on top, so a packet the rate earns in half a
-   millisecond waited one or two. onicode sets it to the echo's priority, so an echo behind paced
-   video leaves at once: p90 1.4 ms fell to 0.25 ms at 20 Mbit/s (docs/MEASUREMENTS.md, "an
-   echo behind paced video"). Tests: `stream_priority_unpaced_skips_the_pacer`,
-   `stream_priority_unpaced_below_the_stream_waits`,
-   `stream_priority_unpaced_off_waits_for_the_pacer`. Slopty's gate held it through
-   `an_echo_does_not_wait_for_the_pacer` (`crates/slopty-net/tests/pacer_wait.rs`).
 
 9. `feat(proto): Add Bbr3Config::probe_rng_seed`
 
@@ -292,18 +281,6 @@ and its seeded simulations (`crates/net/tests/sim.rs`) re-run axquic's.
    floor so holds 15 full packets in flight, and BBR3's four-packet floor three. Test:
    `a_packet_never_fills_the_window_to_the_byte` (upstream's `full_initial_window`, the other way
    round).
-
-23. `feat(proto): A stream at the unpaced priority writes past the send window` (Axolotty)
-
-   `TransportConfig::stream_priority_unpaced` also exempts its streams from `send_window`: they are
-   held by the peer's flow control alone. Slopty's sessions send frames two at a time, so its
-   send buffer never fills. Axolotty sends a pane's raw output, and twelve panes streaming a
-   build log filled noq's 10 MB send window. An echo's write then waited until acknowledgements
-   freed room, and the flood's twelve writers took that room as fast as it came. On a simulated
-   5 MB/s Wi-Fi link (`Rust/axquic/tests/sim.rs`), the echo beside that flood had a p99 of
-   100–450 ms in half of 30 seeds, with nothing lost and nothing overflowed. Exempt, every one
-   of 100 seeds kept the echo within 20 ms of the idle link's. Tests:
-   `stream_priority_unpaced_writes_past_a_full_send_window`, and the two the other way round.
 
 24. Apple-only (macOS on Apple silicon, iOS, 27.2): non-Apple platform code removed, 2026-11-07
 

@@ -32,7 +32,7 @@ const DIRS: [&str; 4] = ["/r", "/r/a", "/r/b", "/r/a/c"];
 type Stream = BoxStream<'static, Item<Listing, DirEvent>>;
 
 fn store() -> Database {
-    Arc::new(Mutex::new(Store::open(Path::new(":memory:")).unwrap()))
+    Arc::new(Mutex::new(Store::in_memory().unwrap()))
 }
 
 /// `count` files in `dir`, named after `seed` so two listings rarely match.

@@ -1,5 +1,5 @@
 //! One shared clock for decorative loops: spinners, mascots, avatars and the
-//! composer runner.
+//! empty session's ink.
 //!
 //! A view that paints a loop leases the clock for itself. Each tick notifies
 //! every leased view together, so all loops land in one frame instead of one

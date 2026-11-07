@@ -3,11 +3,11 @@
 use std::cell::Cell;
 use std::sync::Arc;
 
-use gpui::{AnyElement, Task};
+use gpui::AnyElement;
 
 use super::*;
-use crate::editor_analysis::Analysis;
 use crate::editor_scrollbar::{Metrics, WIDTH};
+use crate::editor_syntax::Analysis;
 
 const TOP_PADDING: f32 = 8.;
 const BOTTOM_PADDING: f32 = 32.;
@@ -23,15 +23,9 @@ struct MarkerHit {
 pub(super) struct Code {
     hovered_change: Option<usize>,
     can_stage: bool,
-    suppress_completion: bool,
     diff: bool,
-    deleted_rows: Vec<(f32, f32, String, usize, Vec<crate::editor_analysis::Token>)>,
-    path: String,
-    completions: Vec<crate::editor_analysis::Completion>,
-    completion_index: usize,
-    completion_task: Option<Task<()>>,
-    completion_source: Option<(SharedString, usize)>,
-    folded: Vec<crate::editor_analysis::Fold>,
+    deleted_rows: Vec<(f32, f32, String, usize, Vec<crate::editor_syntax::Token>)>,
+    folded: Vec<crate::editor_syntax::Fold>,
     search_matches: Vec<Range<usize>>,
     offsets: Vec<usize>,
     visible: Vec<(usize, WrappedLine)>,
@@ -57,14 +51,8 @@ impl Code {
         Self {
             hovered_change: None,
             can_stage: false,
-            suppress_completion: false,
             diff: false,
             deleted_rows: Vec::new(),
-            path: String::new(),
-            completions: Vec::new(),
-            completion_index: 0,
-            completion_task: None,
-            completion_source: None,
             folded: Vec::new(),
             search_matches: Vec::new(),
             offsets: vec![0],
@@ -93,7 +81,7 @@ impl Code {
             .saturating_sub(1)
     }
 
-    fn fold_at(&self, row: usize) -> Option<&crate::editor_analysis::Fold> {
+    fn fold_at(&self, row: usize) -> Option<&crate::editor_syntax::Fold> {
         self.folded.iter().find(|f| self.row(f.from) == row)
     }
 
@@ -194,12 +182,6 @@ impl Input {
         }
     }
 
-    pub(crate) fn set_editor_path(&mut self, path: String) {
-        if let Some(code) = &mut self.code {
-            code.path = path;
-        }
-    }
-
     pub(crate) fn selection_range(&self) -> Range<usize> {
         self.selection.clone()
     }
@@ -227,9 +209,6 @@ impl Input {
         self.selection = at..at;
         self.reversed = false;
         self.code_changed();
-        if let Some(code) = &mut self.code {
-            code.suppress_completion = true;
-        }
         cx.emit(Changed);
         cx.notify();
     }
@@ -256,262 +235,6 @@ impl Input {
             code.search_matches = matches;
         }
         cx.notify();
-    }
-
-    pub(crate) fn schedule_completion(&mut self, explicit: bool, cx: &mut Context<Self>) {
-        if self.is_composing() || !self.selection.is_empty() {
-            return;
-        }
-        let at = self.cursor();
-        if !explicit
-            && !self.content[..at]
-                .chars()
-                .next_back()
-                .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.')
-        {
-            return;
-        }
-        let Some(code) = &mut self.code else {
-            return;
-        };
-        if !explicit && std::mem::take(&mut code.suppress_completion) {
-            return;
-        }
-        let source = self.content.clone();
-        let path = code.path.clone();
-        code.completion_source = Some((source.clone(), at));
-        code.completion_task = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(if explicit {
-                    0
-                } else {
-                    100
-                }))
-                .await;
-            let text = source.clone();
-            let result = cx
-                .background_executor()
-                .spawn(async move { crate::editor_analysis::complete(&path, &text, at, explicit) })
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                if this.content == source
-                    && this.cursor() == at
-                    && !this.is_composing()
-                    && let Some(code) = &mut this.code
-                    && code.completion_source.as_ref() == Some(&(source, at))
-                {
-                    code.completions = result.unwrap_or_default();
-                    code.completion_index = 0;
-                    cx.notify();
-                }
-            });
-        }));
-    }
-
-    pub(super) fn clear_completion(&mut self) {
-        if let Some(code) = &mut self.code {
-            code.completions.clear();
-            code.completion_task = None;
-            code.completion_source = None;
-        }
-    }
-
-    pub(super) fn start_completion(
-        &mut self,
-        _: &Complete,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.schedule_completion(true, cx);
-    }
-
-    pub(super) fn accept_completion(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(code) = &self.code else {
-            return false;
-        };
-        if self.is_composing()
-            || code.completion_source.as_ref() != Some(&(self.content.clone(), self.cursor()))
-        {
-            return false;
-        }
-        let Some(option) = code.completions.get(code.completion_index).cloned() else {
-            return false;
-        };
-        self.replace_bytes(option.from..option.to, &option.insert, option.cursor, cx);
-        true
-    }
-
-    pub(super) fn completion_step(&mut self, backwards: bool, cx: &mut Context<Self>) -> bool {
-        let Some(code) = &mut self.code else {
-            return false;
-        };
-        if code.completions.is_empty() {
-            return false;
-        }
-        code.completion_index = (code.completion_index
-            + code.completions.len()
-            + if backwards {
-                code.completions.len() - 1
-            } else {
-                1
-            })
-            % code.completions.len();
-        cx.notify();
-        true
-    }
-
-    pub(super) fn dismiss_completion(
-        &mut self,
-        _: &DismissCompletion,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(code) = &mut self.code else {
-            cx.propagate();
-            return;
-        };
-        if code.completions.is_empty() && code.completion_task.is_none() {
-            cx.propagate();
-            return;
-        }
-        code.completions.clear();
-        code.completion_task = None;
-        code.completion_source = None;
-        cx.notify();
-    }
-
-    fn expand_emmet(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(code) = &self.code else {
-            return false;
-        };
-        let path = code.path.clone();
-        // Expansion is requested explicitly with Tab. The same bounded worker
-        // service is used here, and stale results never replace newer typing.
-        let source = self.content.clone();
-        let at = self.cursor();
-        if !matches!(
-            std::path::Path::new(&path)
-                .extension()
-                .and_then(|s| s.to_str()),
-            Some("html" | "htm" | "jsx" | "tsx" | "md" | "mdx" | "markdown")
-        ) {
-            return false;
-        }
-        let token = source[..at].split_whitespace().last().unwrap_or("");
-        if token.is_empty() || token.contains(['<', '=', ';', '"', '\'']) {
-            return false;
-        }
-        cx.spawn(async move |this, cx| {
-            let text = source.clone();
-            let result = cx
-                .background_executor()
-                .spawn(async move { crate::editor_analysis::emmet(&path, &text, at) })
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                if this.content == source && this.cursor() == at && !this.is_composing() {
-                    if let Ok(Some(result)) = result {
-                        this.replace_bytes(0..source.len(), &result.formatted, result.cursor, cx);
-                    } else {
-                        this.replace_bytes(at..at, "  ", 2, cx);
-                    }
-                }
-            });
-        })
-        .detach();
-        true
-    }
-
-    pub(super) fn completion_popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let code = self.code.as_ref()?;
-        if code.completions.is_empty()
-            || code.completion_source.as_ref() != Some(&(self.content.clone(), self.cursor()))
-        {
-            return None;
-        }
-        let p = self.code_position(self.cursor());
-        let gutter = code.gutter();
-        let height = (code.completions.len().min(10) as f32 * 22.).min(240.);
-        let viewport = self.bounds.map_or(400., |b| b.size.height.as_f32());
-        let y = (p.y - self.scroll_y).as_f32();
-        let top = if y + self.line_height + height > viewport {
-            (y - height).max(0.)
-        } else {
-            y + self.line_height
-        };
-        let first = code.completion_index.saturating_sub(9);
-        let viewport_width = self.bounds.map_or(400., |b| b.size.width.as_f32() + gutter);
-        let width = code
-            .completions
-            .iter()
-            .map(|o| (o.label.chars().count() + o.detail.chars().count()) as f32 * 7.2 + 44.)
-            .fold(180., f32::max)
-            .min(400.)
-            .min((viewport_width - 8.).max(1.));
-        let left = (gutter + (p.x - self.scroll_x).as_f32())
-            .clamp(4., (viewport_width - width - 4.).max(4.));
-        Some(
-            div()
-                .id("editor-completions")
-                .role(Role::List)
-                .aria_label("Autocomplete")
-                .absolute()
-                .left(px(left))
-                .top(px(top))
-                .w(px(width))
-                .rounded(px(6.))
-                .border_1()
-                .border_color(crate::theme::content(0.12))
-                .bg(crate::theme::shell_fill().opacity(1.))
-                .shadow_md()
-                .overflow_hidden()
-                .py_1()
-                .children(
-                    code.completions
-                        .iter()
-                        .enumerate()
-                        .skip(first)
-                        .take(10)
-                        .map(|(n, option)| {
-                            div()
-                                .id(("completion", n))
-                                .role(Role::ListItem)
-                                .aria_label(option.label.clone())
-                                .px_2()
-                                .h(px(22.))
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .text_size(px(12.))
-                                .text_color(crate::theme::content(1.))
-                                .when(n == code.completion_index, |d| {
-                                    d.bg(crate::theme::accent_color().opacity(0.25))
-                                })
-                                .child(div().text_color(crate::theme::content(0.5)).child(
-                                    match option.kind.as_str() {
-                                        "function" => "ƒ",
-                                        "keyword" => "k",
-                                        "variable" => "v",
-                                        _ => "·",
-                                    },
-                                ))
-                                .child(option.label.clone())
-                                .child(div().flex_1())
-                                .child(
-                                    div()
-                                        .text_color(crate::theme::content(0.5))
-                                        .child(option.detail.clone()),
-                                )
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    if let Some(code) = &mut this.code {
-                                        code.completion_index = n;
-                                    }
-                                    this.accept_completion(cx);
-                                }))
-                        }),
-                )
-                .into_any_element(),
-        )
     }
 
     fn toggle_fold_row(&mut self, row: usize, cx: &mut Context<Self>) {
@@ -750,9 +473,6 @@ impl Input {
 
     pub(super) fn code_changed(&mut self) {
         if let Some(code) = &mut self.code {
-            code.completions.clear();
-            code.completion_task = None;
-            code.completion_source = None;
             code.deleted_rows.clear();
             code.hovered_change = None;
             code.offsets = std::iter::once(0)
@@ -768,7 +488,7 @@ impl Input {
             // Carry the last results through the edit until fresh analysis
             // lands; clearing them would flash the whole buffer uncoloured.
             let previous = std::mem::replace(&mut code.text, self.content.clone());
-            if let Some(edit) = crate::editor_analysis::Edit::between(&previous, &self.content) {
+            if let Some(edit) = crate::editor_syntax::Edit::between(&previous, &self.content) {
                 code.analysis = Arc::new(code.analysis.remapped(edit));
             }
             code.markers.clear();
@@ -848,13 +568,7 @@ impl Input {
             cx.propagate();
             return;
         }
-        if self.accept_completion(cx) {
-            return;
-        }
         if self.selection.is_empty() {
-            if self.expand_emmet(cx) {
-                return;
-            }
             self.replace_text_in_range(None, "  ", w, cx);
         } else {
             self.indent_lines(false, w, cx);
@@ -1430,7 +1144,7 @@ fn plain_line(
 }
 fn token_line(
     text: &str,
-    tokens: &[crate::editor_analysis::Token],
+    tokens: &[crate::editor_syntax::Token],
     width: Option<Pixels>,
     font_size: f32,
     w: &mut Window,
@@ -1730,7 +1444,7 @@ impl Element for CodeElement {
                                         .tokens
                                         .iter()
                                         .filter(|t| t.to > offset && t.from < offset + text.len())
-                                        .map(|t| crate::editor_analysis::Token {
+                                        .map(|t| crate::editor_syntax::Token {
                                             from: t.from.saturating_sub(offset),
                                             to: t.to.min(offset + text.len()) - offset,
                                             kind: t.kind.clone(),
@@ -2254,7 +1968,7 @@ mod tests {
     fn overview_markers_jump_and_the_thumb_drags_without_editing_or_selecting(
         cx: &mut TestAppContext,
     ) {
-        use crate::editor_analysis::{Change, Diagnostic};
+        use crate::editor_syntax::{Change, Diagnostic};
         let window = cx.update(|cx| {
             bind(cx);
             cx.open_window(
@@ -2531,7 +2245,13 @@ mod feature_tests {
             .update(cx, |i, _, cx| {
                 i.set_text(source.into(), cx);
                 i.set_editor_analysis(
-                    crate::editor_analysis::analyze("a.js", source, None).unwrap(),
+                    crate::editor_syntax::analyze(
+                        &std::sync::Mutex::new(None),
+                        "a.js",
+                        source,
+                        None,
+                    )
+                    .unwrap(),
                     cx,
                 );
                 i.toggle_fold_row(0, cx);
@@ -2565,35 +2285,19 @@ mod feature_tests {
             .unwrap();
     }
     #[gpui::test]
-    fn autocomplete_accepts_with_tab_and_deleted_diff_rows_remain_outside_the_document(
-        cx: &mut TestAppContext,
-    ) {
+    fn deleted_diff_rows_remain_outside_the_document(cx: &mut TestAppContext) {
         let window = editor(cx);
         window
             .update(cx, |i, _, cx| {
-                i.set_editor_path("a.ts".into());
-                i.set_text("cons".into(), cx);
-                i.schedule_completion(true, cx);
-            })
-            .unwrap();
-        cx.run_until_parked();
-        window
-            .update(cx, |i, w, cx| {
-                let code = i.code.as_mut().unwrap();
-                code.completion_index = code
-                    .completions
-                    .iter()
-                    .position(|c| c.label == "const")
-                    .unwrap();
-                i.indent(&Indent, w, cx);
-                assert_eq!(i.content.as_ref(), "const");
-                i.undo(&Undo, w, cx);
-                assert_eq!(i.content.as_ref(), "cons");
                 i.set_text("const value = 2;\n".into(), cx);
                 i.set_editor_diff(true, true);
-                let analysis =
-                    crate::editor_analysis::analyze("a.ts", &i.content, Some("const value = 1;\n"))
-                        .unwrap();
+                let analysis = crate::editor_syntax::analyze(
+                    &std::sync::Mutex::new(None),
+                    "a.ts",
+                    &i.content,
+                    Some("const value = 1;\n"),
+                )
+                .unwrap();
                 i.set_editor_analysis(analysis, cx);
             })
             .unwrap();

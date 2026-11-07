@@ -25,7 +25,6 @@ pub(crate) fn row_text(row: &MarkdownRow) -> String {
             .join("\n"),
         Part::Math(text) => text.clone(),
         Part::Mermaid { fence } => fence.code.to_string(),
-        Part::Visual { caption, .. } => caption.clone(),
         Part::Rule => String::new(),
     }
 }

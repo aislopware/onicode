@@ -1,6 +1,5 @@
 mod accounts;
 mod actions;
-mod app_commands;
 mod app_views;
 mod automation_runs;
 mod classic_sidebar;
@@ -21,7 +20,6 @@ mod new_chat_choice;
 #[cfg(test)]
 mod new_chat_choice_tests;
 mod notifications;
-mod orchestration;
 mod peer_projects;
 mod peer_sessions;
 mod picker_preferences;
@@ -78,7 +76,6 @@ use crate::popover::{
     Align, Anchor, AnchorSlot, Flyout, Menu, MenuAction, MenuEvent, MenuItem, MenuStyle, Side,
     menu_popover, popover,
 };
-use crate::resource_pressure::{ResourceMonitor, StopSession};
 use crate::response_actions::Transfer;
 use crate::right_panel::{PanelEvent, RightPanel};
 use crate::session_mark::{SessionMark, State as MarkState};
@@ -554,19 +551,7 @@ struct SessionPreview {
 pub(crate) struct Shell {
     quick_open: Option<quick_open::Open>,
     image_lightbox: Option<(Entity<crate::image_lightbox::ImageLightbox>, Subscription)>,
-    app_bridge: Option<onicode_core::app_access::bridge::Server>,
-    app_results: HashMap<(i64, String), (String, Result<serde_json::Value, String>)>,
-    app_pending: HashSet<(i64, String)>,
-    orchestrations: HashMap<i64, onicode_engine::workspace::orchestration::Run>,
-    /// Each lead's last orchestration, whose agents hang under it in the sidebar.
-    orchestration_summaries: HashMap<i64, onicode_protocol::orchestration::Summary>,
-    /// Sessions an /operator thread started, by the session that started them.
-    started_by: HashMap<i64, i64>,
-    /// The sidebar rails under orchestrators and /operator threads.
-    rails: rails::Rails,
     usage_footer: Entity<UsageFooter>,
-    /// The footer's high-usage chip and its running-work dialog.
-    resources: Entity<ResourceMonitor>,
     sidebar_frame: Entity<Chrome>,
     projects_frame: Entity<Chrome>,
     project_rail_list: project_rail::ProjectRailList,
@@ -711,7 +696,6 @@ pub(crate) struct Shell {
     worktree_focus: HashMap<String, crate::worktree_switcher::WorktreeFocus>,
     session_worktrees: HashMap<i64, Option<String>>,
     session_details: HashMap<i64, onicode_protocol::sessions::MobileSessionMetadata>,
-    sidebar_hidden_sessions: HashSet<i64>,
     worktree_returns: HashMap<(String, String), i64>,
     tab_drag: Option<TabDrag>,
     /// Tabs sliding between slots: neighbours making room for a drag and,
@@ -885,13 +869,6 @@ impl Shell {
                 }
             }
         });
-        let resources = cx.new(ResourceMonitor::new);
-        let resource_observation = cx.observe(&resources, |_, _, cx| cx.notify());
-        let resource_stops = cx.subscribe(&resources, |this, _, StopSession(id), cx| {
-            if let Some(session) = this.sessions.get(id) {
-                session.update(cx, |session, cx| session.stop_if_busy(cx));
-            }
-        });
         let worktree_focus = workspace.worktree_focus.clone();
         let session_worktrees = sidebar_metadata.worktrees;
         let notification_state = notifications::State::new(&workspace, engine.clone(), cx);
@@ -906,15 +883,7 @@ impl Shell {
         let mut this = Self {
             quick_open: None,
             image_lightbox: None,
-            app_bridge: None,
-            app_results: HashMap::new(),
-            app_pending: HashSet::new(),
-            orchestrations: HashMap::new(),
-            orchestration_summaries: sidebar_metadata.orchestrations,
-            started_by: sidebar_metadata.started_by,
-            rails: Default::default(),
             usage_footer: cx.new(|cx| UsageFooter::new(active_kind, cx)),
-            resources,
             sidebar_frame,
             projects_frame,
             project_rail_list: project_rail::ProjectRailList::new(cx),
@@ -1033,7 +1002,6 @@ impl Shell {
             worktree_focus,
             session_worktrees,
             session_details: sidebar_metadata.details,
-            sidebar_hidden_sessions: sidebar_metadata.sidebar_hidden,
             worktree_returns: HashMap::new(),
             tab_drag: None,
             tab_shifts: HashMap::new(),
@@ -1083,13 +1051,7 @@ impl Shell {
             live_mark: None,
             viewport_width: 1200.,
             viewport_height: 800.,
-            observations: vec![
-                git_observation,
-                git_changes,
-                resource_observation,
-                resource_stops,
-                classic_search_subscription,
-            ],
+            observations: vec![git_observation, git_changes, classic_search_subscription],
             render_passes: 0,
         };
         if !cfg!(test) {
@@ -1098,7 +1060,6 @@ impl Shell {
         this.observe_accounts(cx);
         this.observe_picker_preferences(cx);
         this.bind_notices(cx);
-        this.init_app_bridge(cx);
         for summary in summaries {
             this.order.push(summary.id);
             this.session_summaries.insert(summary.id, summary);
@@ -1194,9 +1155,6 @@ impl Shell {
             // the indexed working directory so those events cannot erase it.
             view.restore_worktree(worktree, None, cx);
             view.draft_hint = self.draft_sessions.contains(&id);
-            if let Some(bridge) = &self.app_bridge {
-                view.set_app_environment(bridge.environment(id));
-            }
             view.set_project_appearance(appearance, cx);
             view.transcript.update(cx, |transcript, cx| {
                 transcript.apply_preferences(&self.workspace.preferences, cx)
@@ -1215,7 +1173,6 @@ impl Shell {
                     this.git.update(cx, |git, cx| git.reload(cx));
                 }
                 this.sync_search_session(id, cx);
-                this.orchestration_session_changed(id, cx);
                 this.automation_session_changed(id, cx);
                 this.sync_review_locks(cx);
                 this.refresh_session_mark(id, cx);
@@ -1280,7 +1237,6 @@ impl Shell {
                     });
                 }
             }));
-        self.observe_orchestration(&view, id, cx);
         self.observe_session_folders(&view, id, cx);
         self.sessions.insert(id, view);
         if !self.order.contains(&id) {
@@ -1434,7 +1390,6 @@ impl Shell {
             &transfer.cwd,
             Some(title),
             onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
-            Vec::new(),
             cx,
         );
         cx.spawn(async move |this, cx| {
@@ -3446,7 +3401,7 @@ impl Shell {
                 })
         });
         let (provider, start) = defaults.start(worktree.as_ref().map(|f| f.path.clone()));
-        let work = self.create_in_engine(provider, &cwd, None, start, Vec::new(), cx);
+        let work = self.create_in_engine(provider, &cwd, None, start, cx);
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| match result {
@@ -4415,7 +4370,7 @@ impl Shell {
         let navigation_revision = self.navigation_revision;
         let defaults = session_loading::NewSessionDefaults::read(choice, &cwd, cx);
         let (provider, start) = defaults.start(copy.as_ref().map(|f| f.path.clone()));
-        let work = self.create_in_engine(provider, &cwd, None, start, Vec::new(), cx);
+        let work = self.create_in_engine(provider, &cwd, None, start, cx);
         let previous = self.new_tab_task.take();
         self.new_tab_task = Some(cx.spawn(async move |this, cx| {
             let result = work.await;
@@ -5848,73 +5803,28 @@ impl Shell {
         now: &crate::inbox::RelativeNow,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        self.session_row_with(id, false, None, now, cx)
+        self.session_row_with(id, false, now, cx)
     }
 
-    /// SessionCard, dense: `nested` for a session on another's rail; `rail`
-    /// for a thread with one under it, and whether it is open.
+    /// SessionCard, dense: `nested` for a folder member on the folder's rail.
     fn session_row_with(
         &self,
         id: i64,
         nested: bool,
-        rail: Option<(&rails::Rail, bool)>,
         now: &crate::inbox::RelativeNow,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if let Some(row) = self.rename_row(&session_groups::RenameTarget::Session(id), cx) {
             return row;
         }
-        // A collapsed thread shows a chevron in its mark's place on hover:
-        // selecting it opens the rail below.
-        let expandable = rail.is_some_and(|(_, open)| !open);
-        let mode = rail.map(|(rail, _)| match rail {
-            rails::Rail::Agents(summary) => (
-                "share",
-                // fuchsia-200/90
-                gpui::Hsla::from(rgb(0xf5d0fe)).opacity(0.9),
-                format!(
-                    "Orchestrator, {} {}",
-                    summary.tasks.len(),
-                    if summary.tasks.len() == 1 {
-                        "agent"
-                    } else {
-                        "agents"
-                    }
-                ),
-            ),
-            rails::Rail::Started(children) => (
-                "cursor-magic",
-                // sky-200/90
-                gpui::Hsla::from(rgb(0xbae6fd)).opacity(0.9),
-                format!(
-                    "Operator, started {} {}",
-                    children.len(),
-                    if children.len() == 1 {
-                        "session"
-                    } else {
-                        "sessions"
-                    }
-                ),
-            ),
-        });
-        // startedInView: one of its sessions is the one in view or chosen,
-        // so the thread keeps its hover fill as the group's head.
-        let started_in_view = match rail {
-            Some((rails::Rail::Started(children), _)) => children.iter().any(|c| {
-                self.selected_sessions.contains(c)
-                    || (self.workspace.active == Some(*c) && !self.app_view_open())
-            }),
-            _ => false,
-        };
         let compact = nested || self.workspace.compact_session_cards;
         let side = if nested || !compact { 14. } else { 16. };
         if let Some(mark) = self.session_marks.get(&id) {
             mark.update(cx, |mark, cx| mark.set_size(side, cx));
         }
         let work_item = self.work_item_badge(id, compact, cx);
-        let has_badges = work_item.is_some()
-            || mode.is_some()
-            || self.automation_state.session_automations.contains_key(&id);
+        let has_badges =
+            work_item.is_some() || self.automation_state.session_automations.contains_key(&id);
         let session = self.session_metadata(id, cx);
         let active = self.selected_sessions.contains(&id)
             || (self.workspace.active == Some(id) && !self.app_view_open());
@@ -5984,29 +5894,7 @@ impl Shell {
                 .items_center()
                 .justify_center()
                 .when(nested, |d| d.overflow_hidden())
-                .child(
-                    div()
-                        .size_full()
-                        .when(expandable, |d| {
-                            d.group_hover("session-row", |s| s.opacity(0.))
-                        })
-                        .child(mark),
-                )
-                .when(expandable, |d| {
-                    d.child(
-                        div()
-                            .absolute()
-                            .top_0()
-                            .left_0()
-                            .size_full()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .opacity(0.)
-                            .group_hover("session-row", |s| s.opacity(1.))
-                            .child(icon("chevron-down", 14.).text_color(content(0.6))),
-                    )
-                })
+                .child(div().size_full().child(mark))
         };
         let title = div()
             .debug_selector(move || format!("session-title-{id}"))
@@ -6040,22 +5928,7 @@ impl Shell {
             .when(
                 self.automation_state.session_automations.contains_key(&id),
                 |row| row.child(icon("zap", 12.).text_color(content(0.35))),
-            )
-            // Marked on the right like a linked issue or PR, in its mode's colour.
-            .when_some(mode, |d, (glyph, color, label)| {
-                d.child(
-                    div()
-                        .id(("session-mode", id as usize))
-                        .role(Role::Image)
-                        .aria_label(label)
-                        .size(px(16.))
-                        .flex_shrink_0()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(icon(glyph, 12.).text_color(color)),
-                )
-            });
+            );
         let suffix = self.session_suffix(id, &session, compact, now, cx);
         let body = if compact {
             div()
@@ -6181,7 +6054,6 @@ impl Shell {
             .flex()
             .items_center()
             .when(active, |d| d.bg(content(0.1)))
-            .when(started_in_view && !active, |d| d.bg(content(0.05)))
             .hover(|s| s.bg(content(if active { 0.1 } else { 0.05 })))
             .when(
                 self.sidebar_drop == Some(session_groups::ListDrop::Session(id)),
@@ -6364,15 +6236,8 @@ impl Shell {
             let s = self.session_metadata(id, cx);
             s.summary.cwd == self.workspace.project
                 && s.summary.has_messages
-                && !self.orchestration_worker(id)
                 && self.in_sidebar_worktree_scope(id, cx)
         };
-        let shown: HashSet<_> = self
-            .order
-            .iter()
-            .copied()
-            .filter(|id| !self.sidebar_hidden_sessions.contains(id) && listable(*id))
-            .collect();
         let mut ids: Vec<_> = self
             .order
             .iter()
@@ -6380,11 +6245,6 @@ impl Shell {
             .filter(|id| {
                 let s = self.session_metadata(*id, cx);
                 listable(*id)
-                    && (!self.sidebar_hidden_sessions.contains(id)
-                        || self
-                            .started_by
-                            .get(id)
-                            .is_some_and(|caller| shown.contains(caller)))
                     && self.filter_session(*id, start, cx)
                     && (self.query.is_empty()
                         || if self.workspace.classic_layout {
@@ -8924,7 +8784,6 @@ impl Render for Shell {
             .children(self.background_modal(window, cx))
             .children(self.link_modal(window, cx))
             .children(self.action_modal(window, cx))
-            .children(self.resource_modal(window, cx))
             .children(self.quick_open_modal(window, cx))
             .children(self.search_modal(window, cx))
             .children(self.peer_project_modal(window, cx))
@@ -9005,12 +8864,14 @@ mod tests {
             .unwrap();
         cx.refresh().unwrap();
         let visual = &mut gpui::VisualTestContext::from_window(window.into(), cx);
-        let row = visual.debug_bounds("sidebar-session-1").unwrap();
+        let row = visual
+            .debug_bounds(Box::leak(format!("sidebar-session-{a}").into_boxed_str()))
+            .unwrap();
         visual.simulate_mouse_move(row.center(), None, Default::default());
         visual.run_until_parked();
         visual.refresh().unwrap();
         let archive = visual
-            .debug_bounds("archive-session-1")
+            .debug_bounds(Box::leak(format!("archive-session-{a}").into_boxed_str()))
             .expect("hover reveals Archive");
         visual.simulate_click(archive.center(), Default::default());
         visual.run_until_parked();
@@ -9151,12 +9012,19 @@ mod tests {
             .unwrap();
         cx.refresh().unwrap();
         let visual = &mut gpui::VisualTestContext::from_window(window.into(), cx);
-        let first = visual
-            .debug_bounds(Box::leak(format!("sidebar-session-{b}").into_boxed_str()))
-            .unwrap();
-        let second = visual
-            .debug_bounds(Box::leak(format!("sidebar-session-{a}").into_boxed_str()))
-            .unwrap();
+        let row = |id: i64, visual: &mut gpui::VisualTestContext| {
+            visual
+                .debug_bounds(Box::leak(format!("sidebar-session-{id}").into_boxed_str()))
+                .unwrap()
+        };
+        // Both sessions can share a creation millisecond, and then their order is their
+        // handles', which are hashes: take the rows in the order the sidebar drew them.
+        let (mut b, mut a) = (b, a);
+        if row(a, visual).top() < row(b, visual).top() {
+            std::mem::swap(&mut a, &mut b);
+        }
+        let first = row(b, visual);
+        let second = row(a, visual);
         assert_eq!(first.size.height, px(32.));
         assert_eq!(
             second.top() - first.bottom(),
@@ -9221,36 +9089,6 @@ mod tests {
                 );
             })
             .unwrap();
-    }
-    #[gpui::test]
-    fn high_usage_chip_opens_running_work_and_escape_closes_it(cx: &mut TestAppContext) {
-        let (window, _, _) = window(cx);
-        cx.update(crate::popover::bind);
-        let visual = &mut gpui::VisualTestContext::from_window(window.into(), cx);
-        visual.run_until_parked();
-        assert!(visual.debug_bounds("resource-pressure-chip").is_none());
-        window
-            .update(visual, |shell, _, cx| {
-                shell
-                    .resources
-                    .update(cx, |monitor, cx| monitor.saturate(cx));
-            })
-            .unwrap();
-        visual.run_until_parked();
-        let chip = visual.debug_bounds("resource-pressure-chip").unwrap();
-        let viewport = window.update(visual, |_, w, _| w.viewport_size()).unwrap();
-        assert!(
-            viewport.height - chip.bottom() < px(10.),
-            "the chip sits in the footer"
-        );
-        visual.simulate_click(chip.center(), Default::default());
-        visual.run_until_parked();
-        let dialog = visual.debug_bounds("resource-dialog").unwrap();
-        assert_eq!(dialog.size.width, px(418.));
-        visual.simulate_keystrokes("escape");
-        visual.run_until_parked();
-        assert!(visual.debug_bounds("resource-dialog").is_none());
-        assert!(visual.debug_bounds("resource-pressure-chip").is_some());
     }
     #[gpui::test]
     fn usage_footer_follows_active_tabs_and_provider_changes(cx: &mut TestAppContext) {
@@ -11514,11 +11352,15 @@ mod tests {
         // (this session has none) for the Onicode one.
         cx.simulate_keystrokes(window.into(), "down down right down enter");
         cx.run_until_parked();
-        window
-            .update(cx, |shell, _, _| assert!(shell.menu.is_none()))
+        let original = window
+            .update(cx, |shell, _, _| {
+                assert!(shell.menu.is_none());
+                // The Onicode ID is the one the database keeps, not the sidebar's handle.
+                shell.engine.seed().persisted_session_id(a).unwrap()
+            })
             .unwrap();
         let copied = cx.update(|cx| cx.read_from_clipboard().and_then(|c| c.text()));
-        assert_eq!(copied, Some(a.to_string()));
+        assert_eq!(copied, Some(original));
     }
     #[gpui::test]
     fn desktop_database_sessions_load_and_copy_their_original_ids(cx: &mut TestAppContext) {

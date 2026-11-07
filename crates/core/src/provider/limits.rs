@@ -1,5 +1,6 @@
-//! Keep Claude's reset time through its terminal error, even when its synthetic
-//! assistant frame ends the transport before the result frame can arrive.
+//! A turn's account limit from the provider's structured report. Claude's reset time is kept
+//! through its terminal error, even when its synthetic assistant frame ends the transport before
+//! the result frame can arrive.
 use super::*;
 use crate::usage::Limit;
 
@@ -18,21 +19,24 @@ impl Protocol {
             .or_else(|| frame.get("quotaLimits"))
             .or_else(|| frame["apiErrorParams"].get("rate_limit_info"));
         if let Some(limit) = info.and_then(Limit::from_claude_info) {
-            self.claude_usage_limit = Some(limit);
+            self.usage_limit = Some(limit);
         }
-        if self.claude_usage_limit.is_none() {
-            self.claude_usage_limit = Limit::from_error(error).or_else(|| {
-                frame["errors"]
-                    .as_array()?
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .find_map(Limit::from_error)
-            });
+        // SDKAssistantMessage's published error code for a spent account, which can arrive before
+        // the result frame. An ordinary transient HTTP 429 has no code and stays retryable.
+        if self.usage_limit.is_none() && error.trim() == "rate_limit" {
+            self.usage_limit = Some(Limit::default());
         }
-        if self.claude_usage_limit.is_some() {
+        if self.usage_limit.is_some() {
             "Claude Code reached its usage limit. Choose another available model or retry when the limit resets.".into()
         } else {
             error.into()
+        }
+    }
+
+    /// Codex marks a turn failed by a spent account with `codexErrorInfo: "usageLimitExceeded"`.
+    pub(super) fn note_codex_limit(&mut self, error: &Value) {
+        if error["codexErrorInfo"] == "usageLimitExceeded" {
+            self.usage_limit = Some(Limit::default());
         }
     }
 }
@@ -74,17 +78,16 @@ mod tests {
             .unwrap_err();
         assert!(error.contains("usage limit"));
         assert_eq!(
-            p.claude_usage_limit.as_ref().unwrap().resets_at,
+            p.usage_limit.as_ref().unwrap().resets_at,
             Some(1_792_600_200_000)
         );
-        assert!(!p.claude_usage_limit.unwrap().resume_at_reset);
+        assert!(!p.usage_limit.unwrap().resume_at_reset);
     }
 
     #[test]
     fn claude_limit_result_and_embedded_error_info_work_without_a_rate_event() {
         for frame in [
             json!({"type":"result","is_error":true,"result":"rate_limit"}),
-            json!({"type":"result","is_error":true,"errors":["You've hit your usage limit."]}),
             json!({"type":"assistant","error":"rate_limit","apiErrorParams":{
                 "rate_limit_info":{"status":"rejected","resetsAt":"1792600200000"}
             }}),
@@ -95,7 +98,37 @@ mod tests {
                     .unwrap_err()
                     .contains("usage limit")
             );
-            assert!(p.claude_usage_limit.is_some());
+            assert!(p.usage_limit.is_some());
+        }
+    }
+
+    #[test]
+    fn limit_wording_without_a_structured_report_is_an_ordinary_error() {
+        let mut p = protocol();
+        let error = p
+            .frame(
+                json!({"type":"result","is_error":true,"errors":["You've hit your usage limit."]}),
+                &mut Vec::new(),
+            )
+            .unwrap_err();
+        assert!(!error.contains("Claude Code reached its usage limit"));
+        assert!(p.usage_limit.is_none());
+    }
+
+    #[test]
+    fn codex_usage_limit_is_read_from_its_error_info() {
+        for (info, limited) in [("usageLimitExceeded", true), ("other", false)] {
+            let mut p = protocol();
+            p.request.kind = Kind::Codex;
+            let error = p
+                .frame(
+                    json!({"method":"turn/completed","params":{"turn":{"status":"failed",
+                        "error":{"message":"You've hit your usage limit.","codexErrorInfo":info}}}}),
+                    &mut Vec::new(),
+                )
+                .unwrap_err();
+            assert_eq!(error, "You've hit your usage limit.");
+            assert_eq!(p.usage_limit.is_some(), limited, "{info}");
         }
     }
 
@@ -108,13 +141,13 @@ mod tests {
             json!({"status":"rejected","isUsingOverage":true}),
             json!({"status":"rejected","rateLimitType":"overage"}),
         ] {
-            p.claude_usage_limit = Some(Limit::default());
+            p.usage_limit = Some(Limit::default());
             p.frame(
                 json!({"type":"rate_limit_event","rate_limit_info":info}),
                 &mut out,
             )
             .unwrap();
-            assert!(p.claude_usage_limit.is_none());
+            assert!(p.usage_limit.is_none());
         }
         p.frame(
             json!({"type":"rate_limit_event","parent_tool_use_id":"child",
@@ -123,7 +156,7 @@ mod tests {
             &mut out,
         )
         .unwrap();
-        assert!(p.claude_usage_limit.is_none());
+        assert!(p.usage_limit.is_none());
         assert_eq!(
             p.frame(
                 json!({"type":"assistant","error":"authentication_failed"}),
@@ -132,7 +165,7 @@ mod tests {
             .unwrap_err(),
             "authentication_failed"
         );
-        assert!(p.claude_usage_limit.is_none());
+        assert!(p.usage_limit.is_none());
     }
 
     #[test]
@@ -155,7 +188,7 @@ mod tests {
         ] {
             p.frame(frame, &mut out).unwrap();
         }
-        assert!(p.claude_usage_limit.is_none());
+        assert!(p.usage_limit.is_none());
         let snapshot = crate::usage::observed(Kind::Claude, &account)
             .unwrap()
             .unwrap();

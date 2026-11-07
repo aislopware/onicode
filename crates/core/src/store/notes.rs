@@ -350,28 +350,6 @@ impl Store {
         } else {
             Vec::new()
         };
-        // Keep early native prototype notes accessible without modifying data on read.
-        if self.shared.is_none() {
-            for note in self.legacy_notes()? {
-                let id = format!("gpui-note-{}", note.id);
-                if notes.iter().any(|saved| saved.id == id) {
-                    continue;
-                }
-                notes.push(Note {
-                    id,
-                    slug: format!("note-{}", note.id),
-                    title: note.title,
-                    body: note.body,
-                    tags: note.tags,
-                    source_session_id: (note.source_session != 0)
-                        .then(|| note.source_session.to_string()),
-                    source_cwd: (!note.source_cwd.is_empty()).then_some(note.source_cwd),
-                    slug_pending: false,
-                    created_at: note.id.min(i64::MAX as u64) as i64,
-                    updated_at: note.id.min(i64::MAX as u64) as i64,
-                });
-            }
-        }
         notes.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(a.id.cmp(&b.id)));
         Ok(notes)
     }
@@ -408,31 +386,17 @@ impl Store {
         {
             valid_id(id)?;
         }
-        if self.shared.is_some() {
-            self.shared_writable()?;
-        }
+        self.shared_writable()?;
         ensure_notes_table(&self.conn).map_err(|e| e.to_string())?;
         upsert_note(&self.conn, note).map_err(|e| e.to_string())
     }
 
     pub fn delete_note(&self, id: &str) -> Result<(), String> {
         valid_id(id)?;
-        if self.shared.is_some() {
-            self.shared_writable()?;
-        }
+        self.shared_writable()?;
         if super::shared::has_table(&self.conn, "notes")? {
             ensure_notes_table(&self.conn).map_err(|e| e.to_string())?;
             delete_note(&self.conn, id).map_err(|e| e.to_string())?;
-        }
-        if self.shared.is_none() {
-            if let Some(id) = id.strip_prefix("gpui-note-") {
-                self.conn
-                    .execute(
-                        "DELETE FROM native_settings WHERE key=?1",
-                        [format!("note:{id}")],
-                    )
-                    .map_err(|e| e.to_string())?;
-            }
         }
         // A deleted row stays deleted even if best-effort asset cleanup fails.
         if let Some(root) = self.data_dir() {
@@ -486,12 +450,10 @@ impl Store {
             source_cwd: (!note.source_cwd.is_empty()).then(|| note.source_cwd.clone()),
             finalize_slug: true,
         };
-        // The legacy facade also edits older note rows carrying an artifact
+        // The response-note facade also edits older note rows carrying an artifact
         // subtype. Preserve it instead of reclassifying or duplicating the row.
         if existing.is_some() && super::shared::has_table(&self.conn, "notes")? {
-            if self.shared.is_some() {
-                self.shared_writable()?;
-            }
+            self.shared_writable()?;
             ensure_notes_table(&self.conn).map_err(|e| e.to_string())?;
             let subtype: Option<String> = self
                 .conn
@@ -513,9 +475,7 @@ impl Store {
 
     pub fn save_note_image(&self, note_id: &str, source: &Path) -> Result<NoteImageAsset, String> {
         valid_id(note_id)?;
-        if self.shared.is_some() {
-            self.shared_writable()?;
-        }
+        self.shared_writable()?;
         if self.get_note(note_id)?.is_none() {
             return Err("Note no longer exists".into());
         }
@@ -578,7 +538,7 @@ mod tests {
     use super::*;
 
     fn store() -> Store {
-        Store::open(Path::new(":memory:")).unwrap()
+        Store::in_memory().unwrap()
     }
     fn input(id: &str, title: &str, body: &str) -> NoteUpsert {
         NoteUpsert {
@@ -599,7 +559,7 @@ mod tests {
             "design-notes".into(),
             "Rust".into(),
         ];
-        request.source_session_id = Some(session.id.to_string());
+        request.source_session_id = Some(store.persisted_session_id(session.id).unwrap());
         request.source_cwd = Some("/project".into());
         let saved = store.upsert_note(&request).unwrap();
         assert_eq!(saved.title, "A title");
@@ -700,7 +660,7 @@ mod tests {
     }
 
     #[test]
-    fn response_note_facade_and_legacy_settings_share_one_saved_identity() {
+    fn response_note_facade_keeps_one_saved_identity() {
         let store = store();
         let session = store.create("codex", "/project").unwrap();
         let mut response = crate::response::ResponseNote {
@@ -711,14 +671,6 @@ mod tests {
             source_session: session.id,
             source_cwd: "/project".into(),
         };
-        store
-            .conn
-            .execute(
-                "INSERT INTO native_settings(key,value) VALUES('note:123',?1)",
-                [serde_json::to_string(&response).unwrap()],
-            )
-            .unwrap();
-        assert_eq!(store.list_notes().unwrap().len(), 1);
         store.save_note(&response).unwrap();
         response.body = "Edited response".into();
         store.save_note(&response).unwrap();
@@ -735,7 +687,7 @@ mod tests {
     #[test]
     fn shared_response_bridge_preserves_original_identity_slug_and_subtype() {
         let directory = tempfile::tempdir().unwrap();
-        let store = Store::open_monocode(&directory.path().join("monocode.db")).unwrap();
+        let store = Store::open(&directory.path().join("monocode.db")).unwrap();
         store.conn.execute("INSERT INTO notes(id,slug,title,body,created_at,updated_at,artifact_kind) VALUES('source-id','stable','Saved','Body',1,2,'document')", []).unwrap();
         let mut compatible = store.notes().unwrap().pop().unwrap();
         compatible.body = "Changed".into();

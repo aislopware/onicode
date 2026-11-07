@@ -791,7 +791,6 @@ pub(crate) fn start_turn(
         turn_model: settings.turn_model.take(),
         environment: std::mem::take(&mut settings.environment),
         queued: settings.mono_message_id.clone(),
-        internal: settings.internal_message,
         summary,
         settings,
     };
@@ -1989,8 +1988,6 @@ pub(crate) fn create_for_test(engine: &Engine, provider: &str, cwd: &str, _: &mu
             cwd: cwd.into(),
             title: None,
             start: NewSession::Bare,
-            started_by: None,
-            scope: Vec::new(),
         },
     ))
     .expect("the engine creates the session");

@@ -44,9 +44,8 @@ pub(super) struct SidebarList {
     indexed_minute: u64,
     #[cfg(test)]
     structural_rebuilds: usize,
-    /// Only anchors constructed for the last viewport, including nested rails.
+    /// Only anchors constructed for the last viewport.
     visible_anchors: RefCell<Vec<AnchorSlot>>,
-    visible_rows: RefCell<Vec<usize>>,
 }
 
 impl SidebarList {
@@ -72,7 +71,6 @@ impl SidebarList {
             #[cfg(test)]
             structural_rebuilds: 0,
             visible_anchors: RefCell::new(Vec::new()),
-            visible_rows: RefCell::new(Vec::new()),
         }
     }
 
@@ -188,7 +186,6 @@ impl Shell {
                 self.sidebar_list.structural_rebuilds += 1;
             }
             let ids = self.sidebar_session_ids(cx);
-            self.sync_rails(&ids, cx);
             let entries = self.session_entries(&ids, cx);
             let listed: HashSet<_> = ids.iter().copied().collect();
             self.session_row_bounds.retain(|id, _| listed.contains(id));
@@ -208,7 +205,6 @@ impl Shell {
             }
             self.prepare_sidebar_list(&entries, now, cx);
         }
-        self.sync_sidebar_list_visibility();
         self.sidebar_list.clear_bounds();
     }
 
@@ -243,12 +239,7 @@ impl Shell {
                         folders = false;
                     }
                     rows.push(Row::Pinned);
-                    rows.extend(
-                        sessions
-                            .iter()
-                            .filter(|id| !self.rails.children.contains(id))
-                            .map(|id| Row::Session(*id)),
-                    );
+                    rows.extend(sessions.iter().map(|id| Row::Session(*id)));
                     rows.push(Row::Gap);
                     continue;
                 }
@@ -267,11 +258,6 @@ impl Shell {
             }
             rows.push(Row::Group(entry.clone()));
             if !collapsed || !self.query.is_empty() {
-                let members: Vec<_> = members
-                    .iter()
-                    .copied()
-                    .filter(|id| !self.rails.children.contains(id))
-                    .collect();
                 rows.extend(
                     members
                         .iter()
@@ -293,9 +279,6 @@ impl Shell {
             let Entry::Session(id) = entry else {
                 continue;
             };
-            if self.rails.children.contains(id) {
-                continue;
-            }
             let label = age_label(self.session_metadata(*id, cx).summary.updated_at, now);
             if previous != Some(label) {
                 rows.push(Row::Heading { label, first });
@@ -370,23 +353,6 @@ impl Shell {
         self.sidebar_list.update(self.sidebar_scope(), rows);
     }
 
-    fn sync_sidebar_list_visibility(&mut self) {
-        // Open rails have variable height. Remeasure only materialized rows,
-        // rather than scanning every session in the project every frame.
-        for ix in self.sidebar_list.visible_rows.borrow_mut().drain(..) {
-            if let Some(
-                Row::Session(id)
-                | Row::GroupedSession { id, .. }
-                | Row::ClassicGroupMember { id, .. },
-            ) = self.sidebar_list.rows.get(ix)
-                && (self.rails.started.contains_key(id)
-                    || self.orchestration_summaries.contains_key(id))
-            {
-                self.sidebar_list.state.remeasure_items(ix..ix + 1);
-            }
-        }
-    }
-
     pub(super) fn virtual_sidebar(&mut self, cx: &mut Context<Self>) -> AnyElement {
         div()
             .id("sidebar-scroll")
@@ -420,7 +386,6 @@ impl Shell {
         let Some(row) = self.sidebar_list.rows.get(ix).cloned() else {
             return div().into_any();
         };
-        self.sidebar_list.visible_rows.borrow_mut().push(ix);
         let content = match row {
             Row::Navigation => return self.sidebar_navigation(cx),
             Row::Machines => return self.machines_section(cx),
@@ -840,15 +805,20 @@ mod tests {
     use super::super::*;
     use super::age_label;
 
-    /// A reply saved in a session's transcript, so the store lists it with messages.
-    fn saved_answer() -> onicode_protocol::transcript::Row {
-        onicode_protocol::transcript::Row {
-            role: "assistant".into(),
-            text: "A saved answer".into(),
+    /// A prompt and its reply saved in a session's transcript, so the store lists it with
+    /// messages (a session counts once it holds a prompt).
+    fn saved_exchange() -> [onicode_protocol::transcript::Row; 2] {
+        let row = |role: &str, text: &str| onicode_protocol::transcript::Row {
+            role: role.into(),
+            text: text.into(),
             first: true,
             sent_at: None,
             id: None,
-        }
+        };
+        [
+            row("user", "A saved prompt"),
+            row("assistant", "A saved answer"),
+        ]
     }
 
     #[gpui::test]
@@ -946,7 +916,7 @@ mod tests {
             let id = store.create("codex", "/work/monocode").unwrap().id;
             let title = "A detailed session with a long title that must stay inside its card";
             store.title(id, title).unwrap();
-            store.write_rows(id, 0, &[saved_answer()]).unwrap();
+            store.write_rows(id, 0, &saved_exchange()).unwrap();
             id
         });
         let loaded = window
@@ -1231,16 +1201,17 @@ mod tests {
     fn large_project_only_lays_out_nearby_session_cards(cx: &mut TestAppContext) {
         let started = std::time::Instant::now();
         // The engine lists them with their messages and titles; none is loaded.
-        let (window, _, _, (first, last)) = super::super::tests::seeded_window(cx, |store| {
+        let (window, _, _, (first, next, last)) = super::super::tests::seeded_window(cx, |store| {
             let mut ids = Vec::new();
             for i in 0..1000 {
                 let id = store.create("codex", "/work/many-sessions").unwrap().id;
                 let title = format!("Session {i}: {}", "A long conversation title 🙂 ".repeat(4));
                 store.title(id, &title).unwrap();
-                store.write_rows(id, 0, &[saved_answer()]).unwrap();
+                store.write_rows(id, 0, &saved_exchange()).unwrap();
                 ids.push(id);
             }
-            (*ids.last().unwrap(), ids[0])
+            // Newest first: the last made, the one made before it, the oldest.
+            (ids[999], ids[998], ids[0])
         });
         window
             .update(cx, |shell, window, cx| {
@@ -1324,7 +1295,7 @@ mod tests {
             .update(cx, |shell, window, cx| {
                 // Resolve scroll_to_end's end sentinel before checking selection.
                 let offset = shell.sidebar_list.state.logical_scroll_top();
-                shell.open(first - 1, window, cx);
+                shell.open(next, window, cx);
                 offset
             })
             .unwrap();
@@ -1338,7 +1309,7 @@ mod tests {
                     (after.item_ix, after.offset_in_item),
                     (offset.item_ix, offset.offset_in_item)
                 );
-                assert!(shell.session_row_bounds[&(first - 1)].get().is_none());
+                assert!(shell.session_row_bounds[&next].get().is_none());
             })
             .unwrap();
     }

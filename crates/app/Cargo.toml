@@ -36,9 +36,10 @@ image = { version = "0.25", default-features = false }
 onicode-term.workspace = true
 # The memory log's `proc_pid_rusage`.
 libc = "0.2"
-rquickjs = "0.14.0"
-# The file editor's native syntax: incremental parses, highlights, folds and
-# syntax errors. Languages without a grammar here use the QuickJS fallback.
+# The file editor's Find and Replace: CodeMirror's query semantics on Rust regexes.
+regex = "1"
+# The file editor's syntax: incremental parses, highlights, folds and syntax
+# errors. Languages without a grammar here show plain text.
 tree-sitter = "0.27.1"
 tree-sitter-language = "0.1"
 streaming-iterator = "0.1"

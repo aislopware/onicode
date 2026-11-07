@@ -124,9 +124,6 @@ pub struct StreamsState {
     ///
     /// Note this may be less than `unacked_data` if the user has set a new value.
     pub(super) send_window: u64,
-    /// Streams at this priority or above write past `send_window` (`TransportConfig::
-    /// stream_priority_unpaced`): an echo is never held for buffer space a flood has taken.
-    pub(super) window_exempt: Option<i32>,
     /// Configured upper bound for how much unacked data the peer can send us per stream
     pub(super) stream_receive_window: u64,
 
@@ -178,7 +175,6 @@ impl StreamsState {
             data_recvd: 0,
             unacked_data: 0,
             send_window,
-            window_exempt: None,
             stream_receive_window: stream_receive_window.into(),
             initial_max_stream_data_uni: 0u32.into(),
             initial_max_stream_data_bidi_local: 0u32.into(),
@@ -389,13 +385,6 @@ impl StreamsState {
                 }
             }
         }
-    }
-
-    /// Whether the stream of the highest priority with data queued is at `min_priority` or above
-    pub(crate) fn has_pending_at(&self, min_priority: i32) -> bool {
-        self.pending
-            .peek()
-            .is_some_and(|stream| stream.priority >= min_priority)
     }
 
     /// Whether any stream data is queued, regardless of control frames
@@ -839,10 +828,6 @@ impl StreamsState {
 
     pub(crate) fn set_send_window(&mut self, send_window: u64) {
         self.send_window = send_window;
-    }
-
-    pub(crate) fn set_window_exempt(&mut self, priority: Option<i32>) {
-        self.window_exempt = priority;
     }
 
     /// Set the receive_window and returns whether the receive_window has been

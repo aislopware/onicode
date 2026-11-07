@@ -19,7 +19,7 @@ fn row(role: &str, text: &str, first: bool) -> Row {
 
 #[test]
 fn desktop_title_prefixes_are_hidden_before_search_highlighting() {
-    let store = Store::open_monocode(std::path::Path::new(":memory:")).unwrap();
+    let store = Store::in_memory().unwrap();
     let mut session = store.create("codex", "/project").unwrap();
     session.title = "codex · Café repair".into();
     let hits = titles(&[session.clone()], "café");
@@ -90,7 +90,7 @@ fn saved_search_rejoins_messages_is_literal_and_survives_reopening() {
 
 #[test]
 fn cancelled_session_search_does_not_interrupt_later_store_operations() {
-    let mut store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let mut store = Store::in_memory().unwrap();
     let s = store.create("claude", "/a").unwrap();
     store
         .write_rows(s.id, 0, &[row("user", "needle", true)])
@@ -115,7 +115,7 @@ fn cancelled_session_search_does_not_interrupt_later_store_operations() {
 
 #[test]
 fn live_search_finds_split_phrases_tools_and_skips_reasoning() {
-    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let store = Store::in_memory().unwrap();
     let s = store.create("codex", "/a").unwrap();
     let mut transcript = Transcript::default();
     transcript.begin("assistant");
@@ -146,7 +146,7 @@ fn live_search_finds_split_phrases_tools_and_skips_reasoning() {
 
 #[test]
 fn grouping_matches_react_limits_order_and_live_deduplication() {
-    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let store = Store::in_memory().unwrap();
     let mut s = store.create("codex", "/a").unwrap();
     s.title = "Search parity".into();
     let mut hits = titles(&[s.clone()], "search");

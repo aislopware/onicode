@@ -162,6 +162,9 @@ impl WorkspaceModel {
 
     pub(super) fn set_reminder(&mut self, rows: &[i64], change: &ReminderChange) -> Outcome {
         match *change {
+            ReminderChange::At(0) | ReminderChange::Snooze { due_at: 0, .. } => {
+                Outcome::Rejected(Rejection::Denied(super::hub::NO_TIME.into()))
+            }
             ReminderChange::At(due) => {
                 for row in rows {
                     self.shown.reminders.insert(*row, (due, None));

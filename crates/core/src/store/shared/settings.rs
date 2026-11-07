@@ -1,28 +1,20 @@
-//! Native metadata lives separately from the desktop schema. Updating one key
+//! Settings live in a sidecar beside the sessions database. Updating one key
 //! must not clone, serialize and fsync every cached app result under the Store
 //! mutex. SQLite commits only the changed key and retains durable receipts.
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior};
 
-use super::{parse, sql};
+use super::sql;
 
 type Snapshot = BTreeMap<String, String>;
-
-fn legacy(path: &Path) -> Result<Snapshot, String> {
-    match std::fs::read_to_string(path) {
-        Ok(raw) => parse(&raw),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
-        Err(error) => Err(error.to_string()),
-    }
-}
 
 /// The sidecar's newest `user_version`.
 const LATEST: i64 = 3;
 
-/// Brings a writable sidecar from version 1 to [`LATEST`], one step per version, each in its own
-/// writer transaction so a second window waiting on the lock sees the step already done.
+/// Brings a writable sidecar from version 0 (new) to [`LATEST`], one step per version, each in its
+/// own writer transaction so a second window waiting on the lock sees the step already done.
 fn migrate(conn: &Connection) -> Result<(), String> {
     loop {
         let tx = sql(Transaction::new_unchecked(
@@ -31,6 +23,10 @@ fn migrate(conn: &Connection) -> Result<(), String> {
         ))?;
         let version: i64 = sql(tx.query_row("PRAGMA user_version", [], |row| row.get(0)))?;
         match version {
+            0 => sql(tx.execute_batch(
+                "CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 PRAGMA user_version=1;",
+            ))?,
             // 2: the engine's protocol ids for the desktop schema's sessions, whose own ids are
             // never altered, and its ledger of processed mutating calls (engine.md "Ids").
             1 => sql(tx.execute_batch(
@@ -64,12 +60,11 @@ pub(super) fn open(
     }
     let name = database.file_name().unwrap_or_default().to_string_lossy();
     let path = database.with_file_name(format!("{name}.gpui.sqlite3"));
-    let old_path = database.with_file_name(format!("{name}.gpui.json"));
     if read_only && !path.exists() {
-        return Ok((legacy(&old_path)?, None));
+        return Ok((BTreeMap::new(), None));
     }
     if !read_only {
-        // Match the old metadata file's permissions before storing any values.
+        // Private to the user before any value is stored.
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         {
@@ -94,39 +89,11 @@ pub(super) fn open(
         return Err(format!("Unsupported native settings version: {version}"));
     }
     if read_only && version == 0 {
-        // An interrupted initial import has not replaced the legacy snapshot.
-        return Ok((legacy(&old_path)?, None));
+        // A writer has not created the table yet: nothing is saved.
+        return Ok((BTreeMap::new(), None));
     }
     if !read_only {
         sql(conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;"))?;
-        if version == 0 {
-            // Another native window may have finished the import while this
-            // connection waited. Acquire the writer before checking its marker.
-            let tx = sql(Transaction::new_unchecked(
-                &conn,
-                TransactionBehavior::Immediate,
-            ))?;
-            let version: i64 = sql(tx.query_row("PRAGMA user_version", [], |row| row.get(0)))?;
-            if version == 0 {
-                let values = legacy(&old_path)?;
-                sql(tx.execute_batch(
-                    "CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);",
-                ))?;
-                {
-                    let mut insert =
-                        sql(tx.prepare("INSERT INTO settings(key,value) VALUES(?1,?2)"))?;
-                    for (key, value) in &values {
-                        sql(insert.execute(params![key, value]))?;
-                    }
-                }
-                // The marker and all imported keys commit together. Keep the old
-                // file untouched as a backup, but never re-import stale values.
-                sql(tx.execute_batch("PRAGMA user_version=1;"))?;
-                sql(tx.commit())?;
-                migrate(&conn)?;
-                return Ok((values, Some(conn)));
-            }
-        }
         migrate(&conn)?;
     }
     let values = {
@@ -143,41 +110,27 @@ mod tests {
     use crate::store::Store;
 
     #[test]
-    fn legacy_settings_and_large_receipts_import_once_without_changing_desktop_data() {
+    fn settings_survive_restart_in_a_private_sidecar_without_touching_the_database() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("monocode.db");
-        drop(Store::open_monocode(&path).unwrap());
-        // Exercise a legacy installation, before the sidecar existed.
-        std::fs::remove_file(dir.path().join("monocode.db.gpui.sqlite3")).unwrap();
-        let old = dir.path().join("monocode.db.gpui.json");
         let receipt = "large result".repeat(100_000);
-        let values = BTreeMap::from([
-            ("workspace", "saved tabs"),
-            ("operator-app-receipt:1:request", receipt.as_str()),
-        ]);
-        let original = serde_json::to_vec(&values).unwrap();
-        std::fs::write(&old, &original).unwrap();
-        let desktop = std::fs::read(&path).unwrap();
-        let store = Store::open_monocode(&path).unwrap();
-        assert_eq!(
-            store.setting("workspace").unwrap().as_deref(),
-            Some("saved tabs")
-        );
-        assert_eq!(
-            store.setting("operator-app-receipt:1:request").unwrap(),
-            Some(receipt.clone())
-        );
+        let store = Store::open(&path).unwrap();
+        store
+            .save_setting("cached-result:1:request", &receipt)
+            .unwrap();
+        drop(store);
+        let database = std::fs::read(&path).unwrap();
+        let store = Store::open(&path).unwrap();
         store.save_setting("workspace", "new tabs").unwrap();
         drop(store);
-        assert_eq!(std::fs::read(&old).unwrap(), original);
-        assert_eq!(std::fs::read(&path).unwrap(), desktop);
-        let reopened = Store::open_monocode(&path).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), database);
+        let reopened = Store::open(&path).unwrap();
         assert_eq!(
             reopened.setting("workspace").unwrap().as_deref(),
             Some("new tabs")
         );
         assert_eq!(
-            reopened.setting("operator-app-receipt:1:request").unwrap(),
+            reopened.setting("cached-result:1:request").unwrap(),
             Some(receipt)
         );
         {
@@ -196,11 +149,11 @@ mod tests {
     #[test]
     fn small_updates_do_not_rewrite_large_cached_results_and_unchanged_saves_do_not_write() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open_monocode(&dir.path().join("monocode.db")).unwrap();
+        let store = Store::open(&dir.path().join("monocode.db")).unwrap();
         store
-            .save_setting("operator-app-receipt:1:large", &"x".repeat(10_000_000))
+            .save_setting("cached-result:1:large", &"x".repeat(10_000_000))
             .unwrap();
-        let conn = store.shared.as_ref().unwrap().extras_db.as_ref().unwrap();
+        let conn = store.shared.extras_db.as_ref().unwrap();
         conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
             .unwrap();
         let wal = dir.path().join("monocode.db.gpui.sqlite3-wal");
@@ -218,9 +171,9 @@ mod tests {
     #[test]
     fn failed_save_preserves_the_committed_cache_and_can_be_retried() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open_monocode(&dir.path().join("monocode.db")).unwrap();
+        let store = Store::open(&dir.path().join("monocode.db")).unwrap();
         store.save_setting("workspace", "old").unwrap();
-        let conn = store.shared.as_ref().unwrap().extras_db.as_ref().unwrap();
+        let conn = store.shared.extras_db.as_ref().unwrap();
         conn.execute_batch("PRAGMA query_only=ON").unwrap();
         assert!(store.save_setting("workspace", "new").is_err());
         assert_eq!(store.setting("workspace").unwrap().as_deref(), Some("old"));
@@ -230,44 +183,26 @@ mod tests {
     }
 
     #[test]
-    fn read_only_legacy_access_does_not_create_or_import_settings() {
+    fn read_only_access_without_a_sidecar_creates_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("monocode.db");
-        let old = dir.path().join("monocode.db.gpui.json");
-        std::fs::write(&old, r#"{"workspace":"saved"}"#).unwrap();
         let (values, conn) = open(&path, true).unwrap();
-        assert_eq!(values["workspace"], "saved");
+        assert!(values.is_empty());
         assert!(conn.is_none());
         assert!(!dir.path().join("monocode.db.gpui.sqlite3").exists());
-        assert_eq!(
-            std::fs::read_to_string(&old).unwrap(),
-            r#"{"workspace":"saved"}"#
-        );
     }
 
     #[test]
     fn read_only_reopen_sees_current_settings_and_refuses_writes() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("monocode.db");
-        let store = Store::open_monocode(&path).unwrap();
+        let store = Store::open(&path).unwrap();
         store.save_setting("workspace", "current").unwrap();
-        let reader = Store::read_monocode(&path).unwrap();
+        let reader = Store::open_read_only(&path).unwrap();
         assert_eq!(
             reader.setting("workspace").unwrap().as_deref(),
             Some("current")
         );
         assert!(reader.save_setting("workspace", "wrong").is_err());
-    }
-
-    #[test]
-    fn failed_import_is_retryable_without_losing_legacy_data() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("monocode.db");
-        let old = dir.path().join("monocode.db.gpui.json");
-        std::fs::write(&old, "invalid JSON").unwrap();
-        assert!(open(&path, false).is_err());
-        assert_eq!(std::fs::read_to_string(&old).unwrap(), "invalid JSON");
-        std::fs::write(&old, r#"{"workspace":"recovered"}"#).unwrap();
-        assert_eq!(open(&path, false).unwrap().0["workspace"], "recovered");
     }
 }

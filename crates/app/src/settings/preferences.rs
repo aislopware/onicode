@@ -74,11 +74,9 @@ pub(crate) struct Preferences {
     pub follow_up: String,
     pub model_controls: String,
     pub autocorrect: bool,
-    pub format_on_save: bool,
     pub autosave: bool,
     pub diff_view: String,
-    pub composer_mascot: bool,
-    /// What fills an empty session: "ink", "games" or "none".
+    /// What fills an empty session: "ink" or "none".
     pub empty_session: String,
     // Providers
     pub show_remaining_usage: bool,
@@ -147,10 +145,8 @@ impl Default for Preferences {
             follow_up: "steer".into(),
             model_controls: "menu".into(),
             autocorrect: false,
-            format_on_save: true,
             autosave: false,
             diff_view: "editor".into(),
-            composer_mascot: true,
             empty_session: "ink".into(),
             show_remaining_usage: false,
             mask_emails: true,

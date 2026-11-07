@@ -11,10 +11,10 @@ fn children() -> &'static Mutex<Children> {
 }
 pub(crate) struct Tracked(u32);
 pub(crate) fn track(pid: u32, kind: Kind, profile: &Profile) -> Tracked {
-    children().lock().unwrap_or_else(|e| e.into_inner()).insert(
-        pid,
-        (kind, profile.clone(), crate::resources::identity(pid)),
-    );
+    children()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(pid, (kind, profile.clone(), crate::process::identity(pid)));
     Tracked(pid)
 }
 impl Drop for Tracked {
@@ -35,7 +35,7 @@ pub fn stop_processes(kind: Kind, profile: &Profile) {
         .map(|(pid, (_, _, id))| (*pid, id.clone()))
         .collect();
     for (pid, identity) in targets {
-        if identity.is_some() && crate::resources::identity(pid) != identity {
+        if identity.is_some() && crate::process::identity(pid) != identity {
             continue;
         }
         unsafe {

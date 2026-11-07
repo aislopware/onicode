@@ -19,8 +19,8 @@ use crate::popover::{
 use crate::theme::*;
 
 pub(crate) const CATEGORIES: [(&str, &str); 5] = [
-    ("pullRequests", "Pull requests / Merge requests"),
-    ("issues", "Issues and Linear tasks"),
+    ("pullRequests", "Pull requests"),
+    ("issues", "Issues"),
     ("agentFinished", "Agent finished"),
     ("agentInput", "Agent approvals and questions"),
     ("reminders", "Reminders"),
@@ -204,7 +204,7 @@ fn valid_project(p: &Value) -> bool {
         .all(|key| p[*key].is_string())
         && p["kind"]
             .as_str()
-            .is_some_and(|kind| ["repository", "local", "linear", "jira"].contains(&kind))
+            .is_some_and(|kind| ["repository", "local"].contains(&kind))
         && p["paths"]
             .as_array()
             .is_some_and(|paths| paths.iter().all(Value::is_string))
@@ -721,10 +721,8 @@ impl SettingsView {
             let muted = self.prefs.project_muted(&id, now);
             let categories: Vec<_> = CATEGORIES
                 .iter()
-                .filter(|(cat, _)| match project.kind.as_str() {
-                    "linear" | "jira" => *cat == "issues",
-                    "local" => !["pullRequests", "issues"].contains(cat),
-                    _ => true,
+                .filter(|(cat, _)| {
+                    project.kind != "local" || !["pullRequests", "issues"].contains(cat)
                 })
                 .collect();
             let enabled_count = categories

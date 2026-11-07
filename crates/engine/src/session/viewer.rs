@@ -196,9 +196,8 @@ impl Viewer {
             SessionEvent::Commands(commands) => self.pending.commands = Some(commands.clone()),
             SessionEvent::Handoff(handoff) => self.pending.handoff = Some(handoff.clone()),
             SessionEvent::Receipt { op, outcome } => self.receipt(*op, outcome),
-            SessionEvent::Queue { .. }
-            | SessionEvent::TurnFinished { .. }
-            | SessionEvent::BtwText { .. } => {}
+            SessionEvent::TurnFinished { info, .. } => self.pending.git.clone_from(&info.git),
+            SessionEvent::Queue { .. } | SessionEvent::BtwText { .. } => {}
         }
         apply(&mut self.state, event);
         finished

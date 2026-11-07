@@ -1,9 +1,9 @@
 //! Commit pill turns ("Stage your changes", …). While the agent works, one
-//! line follows its Git steps; once it settles, a card read from the commands
-//! it ran leads its Markdown reply.
+//! line says what it is doing; once it settles, a card leads its Markdown reply
+//! with what the turn did to the checkout, as the engine read it from Git when
+//! the turn ended (the turn receipt's [`TurnGit`]).
 use gpui::{AnyElement, Div};
-use onicode_protocol::git::report::{Report, Run, Step};
-use onicode_protocol::git::{CommitFile, report};
+use onicode_protocol::git::{CommitFile, TurnGit};
 
 use super::*;
 use crate::conversation::git_actions::GitAction;
@@ -14,72 +14,33 @@ const FILES: usize = 4;
 
 pub(super) struct GitCard {
     action: GitAction,
-    /// The step the running turn is on; `None` once it settled.
-    live: Option<Step>,
-    report: Report,
+    /// The turn is still running: the card is its one status line.
+    live: bool,
+    git: TurnGit,
     /// The reply the card sits above.
     pub(super) answer: Option<usize>,
 }
 impl GitCard {
     pub(super) fn live(&self) -> bool {
-        self.live.is_some()
+        self.live
     }
 }
 
 /// Commit-loaded file lists, by hash; `None` while one loads.
 pub(super) type CommitFiles = HashMap<String, Option<Arc<Vec<CommitFile>>>>;
 
-/// The shell commands of `rows`' tool calls, with output and success.
-fn runs(rows: &[Row]) -> Vec<(String, String, bool)> {
-    rows.iter()
-        .filter(|row| row.role == "tool")
-        .filter_map(|row| serde_json::from_str::<ToolCall>(&row.text).ok())
-        .filter_map(|tool| {
-            let shown = tool.presentation();
-            if shown.action != "Run" && shown.command.is_none() {
-                return None;
-            }
-            let command = shown.command.unwrap_or(shown.target);
-            Some((command, tool.output, tool.state == ToolState::Completed))
-        })
-        .collect()
-}
-
-fn report_of(runs: &[(String, String, bool)]) -> Report {
-    let runs: Vec<_> = runs
-        .iter()
-        .map(|(command, output, ok)| Run {
-            command,
-            output,
-            ok: *ok,
-        })
-        .collect();
-    report::report(&runs)
-}
-
-/// The hash of the session's most recent commit, from any turn.
-pub(crate) fn latest_commit(rows: &[Row]) -> Option<String> {
-    rows.iter()
-        .rev()
-        .filter(|row| row.role == "tool" && row.text.contains("commit"))
-        .find_map(|row| {
-            report_of(&runs(std::slice::from_ref(row)))
-                .commits
-                .pop()
-                .map(|commit| commit.hash)
-        })
-}
-
-fn live_label(action: GitAction, step: Step) -> &'static str {
-    match step {
-        Step::Push => "Pushing…",
-        Step::Commit => "Committing…",
-        Step::Stage => "Staging…",
-        Step::Review => match action {
-            GitAction::Push => "Getting ready to push…",
-            _ => "Checking your changes…",
-        },
+fn live_label(action: GitAction) -> &'static str {
+    match action {
+        GitAction::Stage => "Staging…",
+        GitAction::Commit => "Committing…",
+        GitAction::CommitPush => "Committing and pushing…",
+        GitAction::Push => "Pushing…",
     }
+}
+
+/// A commit's hash as the card shows it.
+fn short(hash: &str) -> &str {
+    hash.get(..7).unwrap_or(hash)
 }
 
 fn plural(count: usize, one: &str, many: &str) -> String {
@@ -107,16 +68,24 @@ fn counts(additions: u64, deletions: u64) -> Div {
         )
 }
 
-/// One file of the card: what changed and how much.
+/// One file of the card: what changed and how much; `None` for binary files.
 struct FileLine {
     path: String,
     counts: Option<(u64, u64)>,
-    lines: Option<u64>,
 }
 
 impl TranscriptView {
+    /// The hash of the session's most recent commit, from any turn.
+    pub(crate) fn latest_commit(&self) -> Option<String> {
+        self.turns
+            .iter()
+            .filter_map(|(turn, info)| Some((*turn, info.git.as_ref()?.commits.last()?)))
+            .max_by_key(|(turn, _)| *turn)
+            .map(|(_, commit)| commit.hash.clone())
+    }
+
     /// The card for the pill turn at `turn`, or `None` for other turns and
-    /// for settled ones whose commands show nothing to present.
+    /// for settled ones whose receipt shows nothing the action did.
     pub(super) fn git_card(
         &self,
         turn: usize,
@@ -132,33 +101,29 @@ impl TranscriptView {
             .map(|row| row.text.as_str())
             .collect();
         let action = GitAction::from_message(&prompt)?;
-        let runs = runs(&self.source[turn..turn_end]);
         if self.streaming && turn_end == self.source.len() {
-            let step = runs
-                .last()
-                .map_or(Step::Review, |(command, _, _)| report::step(command));
             return Some(Arc::new(GitCard {
                 action,
-                live: Some(step),
-                report: Report::default(),
+                live: true,
+                git: TurnGit::default(),
                 answer: None,
             }));
         }
         let answer = final_answer?;
-        let report = report_of(&runs);
+        let git = self.turns.get(&turn)?.git.clone()?;
         let shown = match action {
-            GitAction::Stage => !report.staged.is_empty() || !report.commits.is_empty(),
-            GitAction::Commit => !report.commits.is_empty(),
-            GitAction::CommitPush => !report.commits.is_empty() || report.push.is_some(),
-            GitAction::Push => report.push.is_some(),
+            GitAction::Stage => !git.staged.is_empty() || !git.commits.is_empty(),
+            GitAction::Commit => !git.commits.is_empty(),
+            GitAction::CommitPush => !git.commits.is_empty() || git.push.is_some(),
+            GitAction::Push => git.push.is_some(),
         };
         if !shown {
             return None;
         }
         Some(Arc::new(GitCard {
             action,
-            live: None,
-            report,
+            live: false,
+            git,
             answer: Some(answer),
         }))
     }
@@ -169,44 +134,34 @@ impl TranscriptView {
         message_start: usize,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        if let Some(step) = card.live {
-            return self.git_live_line(card.action, step, message_start, cx);
+        if card.live {
+            return self.git_live_line(card.action, message_start, cx);
         }
-        let report = &card.report;
-        let commit = report.commits.last();
-        let push = report.push.as_ref();
-        let push_failed = push.is_some_and(|push| !push.ok);
+        let git = &card.git;
+        let commit = git.commits.last();
+        let push = git.push.as_ref();
+        // Asked to push, the turn left commits the upstream lacks.
+        let push_failed = matches!(card.action, GitAction::CommitPush | GitAction::Push)
+            && push.is_none()
+            && git.ahead > 0;
         let files = self.git_card_files(card, message_start, cx);
         let (additions, deletions) = if commit.is_some() {
-            report.commits.iter().fold((0, 0), |(a, d), commit| {
+            git.commits.iter().fold((0, 0), |(a, d), commit| {
                 (a + commit.additions, d + commit.deletions)
             })
         } else {
-            report
-                .staged_totals
-                .map_or((0, 0), |(_, additions, deletions)| (additions, deletions))
+            git.staged.iter().fold((0, 0), |(a, d), file| {
+                (
+                    a + file.additions.unwrap_or(0),
+                    d + file.deletions.unwrap_or(0),
+                )
+            })
         };
         let has_counts = additions + deletions > 0;
         let title: SharedString = match (commit, push) {
             (Some(commit), _) => commit.subject.clone().into(),
-            (None, Some(push)) if push.up_to_date => "Already up to date".into(),
-            (None, Some(push)) if !push.ok => "Push didn’t go through".into(),
-            (None, Some(push)) => push
-                .branch
-                .as_ref()
-                .map_or_else(|| "Pushed".into(), |branch| format!("Pushed {branch}"))
-                .into(),
-            (None, None) => format!(
-                "Staged {}",
-                plural(
-                    report
-                        .staged_totals
-                        .map_or(report.staged.len(), |(files, _, _)| files as usize),
-                    "file",
-                    "files"
-                )
-            )
-            .into(),
+            (None, Some(push)) => format!("Pushed {}", push.upstream).into(),
+            (None, None) => format!("Staged {}", plural(git.staged.len(), "file", "files")).into(),
         };
 
         let dot = || div().text_color(content(0.25)).child("·");
@@ -233,7 +188,7 @@ impl TranscriptView {
                     .aria_label(if copied {
                         "Copied the commit hash".to_string()
                     } else {
-                        format!("Copy commit {}", commit.hash)
+                        format!("Copy commit {}", short(&commit.hash))
                     })
                     .flex_shrink_0()
                     .flex()
@@ -253,7 +208,9 @@ impl TranscriptView {
                             .text_color(rgb(DIFF_ADD))
                             .into_any_element()
                     } else {
-                        div().child(commit.hash.clone()).into_any_element()
+                        div()
+                            .child(short(&commit.hash).to_owned())
+                            .into_any_element()
                     })
                     .when(copied, |d| d.child("Copied"))
                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -277,7 +234,7 @@ impl TranscriptView {
                     })),
             );
             parts += 1;
-            if !commit.branch.is_empty() {
+            if let Some(branch) = &git.branch {
                 subtitle = subtitle.child(dot()).child(
                     div()
                         .min_w_0()
@@ -285,50 +242,51 @@ impl TranscriptView {
                         .items_center()
                         .gap(px(4.))
                         .child(icon("git-branch", 12.).text_color(content(0.4)))
-                        .child(div().truncate().child(commit.branch.clone())),
+                        .child(div().truncate().child(branch.clone())),
                 );
             }
-            if report.commits.len() > 1 {
+            if git.commits.len() > 1 {
                 subtitle = subtitle
                     .child(dot())
                     .child(div().flex_shrink_0().child(plural(
-                        report.commits.len(),
+                        git.commits.len(),
                         "commit",
                         "commits",
                     )));
             }
         }
-        if let Some(push) = push {
+        if push.is_some() || push_failed {
             if parts > 0 {
                 subtitle = subtitle.child(dot());
             }
             parts += 1;
-            subtitle = subtitle.child(
-                div()
-                    .min_w_0()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .when(push_failed, |d| d.text_color(rgb(0xf87171)))
-                    .child(
-                        icon(if push_failed { "close" } else { "cloud-upload" }, 12.).text_color(
-                            if push_failed {
-                                rgb(0xf87171).into()
-                            } else {
-                                content(0.4)
-                            },
-                        ),
-                    )
-                    .child(div().truncate().child(if push_failed {
-                        "Push rejected".to_string()
-                    } else if commit.is_none() {
-                        push.repo.clone().unwrap_or_else(|| "Remote updated".into())
-                    } else {
-                        push.repo
-                            .as_ref()
-                            .map_or_else(|| "Pushed".into(), |repo| format!("Pushed to {repo}"))
-                    })),
-            );
+            subtitle =
+                subtitle.child(
+                    div()
+                        .min_w_0()
+                        .flex()
+                        .items_center()
+                        .gap(px(4.))
+                        .when(push_failed, |d| d.text_color(rgb(0xf87171)))
+                        .child(
+                            icon(if push_failed { "close" } else { "cloud-upload" }, 12.)
+                                .text_color(if push_failed {
+                                    rgb(0xf87171).into()
+                                } else {
+                                    content(0.4)
+                                }),
+                        )
+                        .child(div().truncate().child(match push {
+                            None => "Not pushed".to_string(),
+                            Some(push) if commit.is_none() => {
+                                push.repo.clone().unwrap_or_else(|| "Remote updated".into())
+                            }
+                            Some(push) => push.repo.as_ref().map_or_else(
+                                || "Pushed".into(),
+                                |repo| format!("Pushed to {repo}"),
+                            ),
+                        })),
+                );
         }
         if commit.is_none() && push.is_none() {
             parts += 1;
@@ -341,22 +299,16 @@ impl TranscriptView {
             subtitle = subtitle.child(counts(additions, deletions));
         }
 
-        // A new branch's pull request beats a link to the commit.
-        let link = push.filter(|push| push.ok).and_then(|push| {
-            push.pull_request
-                .clone()
-                .map(|url| ("Open pull request", "git-pull-request", url))
-                .or_else(|| {
-                    let web = push.web.as_ref()?;
-                    let commit = commit?;
-                    web.starts_with("https://github.com/").then(|| {
-                        (
-                            "View commit",
-                            "external-link",
-                            format!("{web}/commit/{}", commit.hash),
-                        )
-                    })
-                })
+        let link = push.and_then(|push| {
+            let web = push.web.as_ref()?;
+            let commit = commit?;
+            web.starts_with("https://github.com/").then(|| {
+                (
+                    "View commit",
+                    "external-link",
+                    format!("{web}/commit/{}", commit.hash),
+                )
+            })
         });
 
         let (badge, badge_color) = if push_failed {
@@ -484,17 +436,8 @@ impl TranscriptView {
                         .text_size(px(12.))
                         .child(file.path.clone()),
                 )
-                .map(|d| match (file.counts, file.lines) {
-                    (Some((additions, deletions)), _) => d.child(counts(additions, deletions)),
-                    (None, Some(lines)) => d.child(
-                        div()
-                            .flex_shrink_0()
-                            .text_size(px(11.))
-                            .font_features(tabular())
-                            .text_color(content(0.45))
-                            .child(plural(lines as usize, "line", "lines")),
-                    ),
-                    (None, None) => d,
+                .when_some(file.counts, |d, (additions, deletions)| {
+                    d.child(counts(additions, deletions))
                 })
                 .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(move |_, window, cx| {
@@ -555,11 +498,10 @@ impl TranscriptView {
     fn git_live_line(
         &self,
         action: GitAction,
-        step: Step,
         message_start: usize,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let label = live_label(action, step).to_owned();
+        let label = live_label(action).to_owned();
         let still = cx.reduce_motion();
         div()
             .id(("git-live", message_start))
@@ -600,28 +542,27 @@ impl TranscriptView {
             .into_any_element()
     }
 
-    /// The files to list: a commit's own numbers once Git has read them, or
-    /// the staged `--stat` lines.
+    /// The files to list: the commits' own numbers once Git has read them,
+    /// or the staged files.
     fn git_card_files(
         &mut self,
         card: &GitCard,
         message_start: usize,
         cx: &mut Context<Self>,
     ) -> Vec<FileLine> {
-        if card.report.commits.is_empty() {
+        if card.git.commits.is_empty() {
             return card
-                .report
+                .git
                 .staged
                 .iter()
                 .map(|file| FileLine {
                     path: file.path.clone(),
-                    counts: None,
-                    lines: file.changes,
+                    counts: file.additions.zip(file.deletions),
                 })
                 .collect();
         }
         let mut files: Vec<FileLine> = Vec::new();
-        for commit in &card.report.commits {
+        for commit in &card.git.commits {
             match self.commit_files.get(&commit.hash) {
                 Some(Some(loaded)) => {
                     for file in loaded.iter() {
@@ -634,7 +575,6 @@ impl TranscriptView {
                             None => files.push(FileLine {
                                 path: file.path.clone(),
                                 counts,
-                                lines: None,
                             }),
                         }
                     }
@@ -671,17 +611,19 @@ impl TranscriptView {
 }
 
 fn title_text(card: &GitCard) -> String {
-    card.report
+    card.git
         .commits
         .last()
         .map(|commit| commit.subject.clone())
-        .or_else(|| card.report.push.as_ref().and_then(|p| p.branch.clone()))
-        .unwrap_or_else(|| plural(card.report.staged.len(), "file", "files"))
+        .or_else(|| card.git.push.as_ref().map(|push| push.upstream.clone()))
+        .unwrap_or_else(|| plural(card.git.staged.len(), "file", "files"))
 }
 
 #[cfg(test)]
 mod tests {
     use gpui::TestAppContext;
+    use onicode_protocol::agent::TurnInfo;
+    use onicode_protocol::git::{TurnCommit, TurnPush};
 
     use super::*;
 
@@ -695,12 +637,29 @@ mod tests {
         }
     }
 
-    fn bash(command: &str, output: &str, state: ToolState) -> String {
+    fn bash(command: &str, state: ToolState) -> String {
         let mut call = ToolCall::new(command, "Bash");
         call.input = serde_json::json!({ "command": command }).to_string();
-        call.output = output.into();
         call.state = state;
         serde_json::to_string(&call).unwrap()
+    }
+
+    fn committed(hash: &str, push: Option<TurnPush>) -> TurnInfo {
+        TurnInfo {
+            git: Some(TurnGit {
+                branch: Some("main".into()),
+                commits: vec![TurnCommit {
+                    hash: hash.into(),
+                    subject: "Center the jump button".into(),
+                    files: 1,
+                    additions: 2,
+                    deletions: 1,
+                }],
+                push,
+                ..TurnGit::default()
+            }),
+            ..TurnInfo::default()
+        }
     }
 
     fn cards(view: &TranscriptView) -> Vec<Arc<GitCard>> {
@@ -714,7 +673,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn pill_turns_show_one_live_step_then_a_card_for_the_reply(cx: &mut TestAppContext) {
+    fn pill_turns_show_one_live_line_then_a_card_from_the_receipt(cx: &mut TestAppContext) {
         cx.update(|cx| cx.set_reduce_motion(true));
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {
@@ -730,11 +689,8 @@ mod tests {
                     0,
                     vec![
                         row("user", "Commit and push your changes".into()),
-                        row(
-                            "tool",
-                            bash("git status --short", " M a.rs\n", ToolState::Completed),
-                        ),
-                        row("tool", bash(commit, "", ToolState::Running)),
+                        row("tool", bash("git status --short", ToolState::Completed)),
+                        row("tool", bash(commit, ToolState::Running)),
                     ],
                     cx,
                 );
@@ -746,7 +702,7 @@ mod tests {
             .update(visual, |view, _, _| {
                 let cards = cards(view);
                 assert_eq!(cards.len(), 1, "one line for the whole running turn");
-                assert_eq!(cards[0].live, Some(Step::Commit));
+                assert!(cards[0].live());
                 assert!(
                     !view
                         .rows
@@ -758,33 +714,28 @@ mod tests {
             .unwrap();
         assert!(visual.debug_bounds("git-live-1").is_some());
 
+        let hash = "3bb0c42d0e7a5b1c9f8e6d4c2b0a9f8e7d6c5b4a";
         window
             .update(visual, |view, _, cx| {
                 view.patch(
                     2,
                     vec![
-                        row(
-                            "tool",
-                            bash(
-                                commit,
-                                "[main 3bb0c42] Center the jump button\n 1 file changed, 2 insertions(+), 1 deletion(-)\n",
-                                ToolState::Completed,
-                            ),
-                        ),
-                        row(
-                            "tool",
-                            bash(
-                                "git push",
-                                "To github.com:o/r.git\n   43b1107..3bb0c42  main -> main\n",
-                                ToolState::Completed,
-                            ),
-                        ),
-                        row(
-                            "assistant",
-                            "Committed `3bb0c42` and pushed it.\n\n- a.rs".into(),
-                        ),
+                        row("tool", bash(commit, ToolState::Completed)),
+                        row("tool", bash("git push", ToolState::Completed)),
+                        row("assistant", "Committed and pushed it.\n\n- a.rs".into()),
                     ],
                     cx,
+                );
+                view.turns.insert(
+                    1,
+                    committed(
+                        hash,
+                        Some(TurnPush {
+                            upstream: "origin/main".into(),
+                            repo: Some("o/r".into()),
+                            web: Some("https://github.com/o/r".into()),
+                        }),
+                    ),
                 );
                 view.streaming(false, cx);
             })
@@ -795,8 +746,9 @@ mod tests {
                 let cards = cards(view);
                 assert_eq!(cards.len(), 1);
                 assert!(!cards[0].live());
-                assert_eq!(cards[0].report.commits[0].hash, "3bb0c42");
-                assert!(cards[0].report.push.as_ref().unwrap().ok);
+                assert_eq!(cards[0].git.commits[0].hash, hash);
+                assert_eq!(short(&cards[0].git.commits[0].hash), "3bb0c42");
+                assert!(cards[0].git.push.is_some());
                 let card = view
                     .rows
                     .iter()
@@ -824,18 +776,12 @@ mod tests {
         });
         window
             .update(cx, |view, _, cx| {
+                view.turns.insert(1, committed("abc1234", None));
                 view.patch(
                     0,
                     vec![
                         row("user", "Please commit".into()),
-                        row(
-                            "tool",
-                            bash(
-                                "git commit -m x",
-                                "[main abc1234] x\n",
-                                ToolState::Completed,
-                            ),
-                        ),
+                        row("tool", bash("git commit -m x", ToolState::Completed)),
                         row("assistant", "Done".into()),
                         row("user", "Commit your changes".into()),
                         row("assistant", "I changed nothing in this session.".into()),
@@ -844,7 +790,7 @@ mod tests {
                 );
                 assert!(cards(view).is_empty());
                 assert_eq!(
-                    latest_commit(view.source_rows()).as_deref(),
+                    view.latest_commit().as_deref(),
                     Some("abc1234"),
                     "any turn's commit can still be pushed"
                 );

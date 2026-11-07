@@ -4,7 +4,6 @@
 //! the later snapshot, and a repeated op must get its first receipt and change nothing again.
 //! Then the move out of monocode's saved preferences, which runs once.
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -19,14 +18,14 @@ use onicode_protocol::engine_settings::{
 use onicode_protocol::{Cursor, Item, OpId, Outcome};
 use proptest::prelude::*;
 
-use super::{Effects, KEY, LEGACY_WORKSPACE, SettingsFeed, SettingsHub, VIEWER_KEYS};
+use super::{Effects, KEY, SettingsFeed, SettingsHub};
 use crate::feed::{Feed, Limits};
 use crate::turn::Database;
 
 type Stream = BoxStream<'static, Item<EngineSettings, EngineSettingsEvent>>;
 
 fn store() -> Database {
-    Arc::new(Mutex::new(Store::open(Path::new(":memory:")).unwrap()))
+    Arc::new(Mutex::new(Store::in_memory().unwrap()))
 }
 
 /// Counts what the settings changed outside the hub.
@@ -303,128 +302,10 @@ fn snapshot_plus_events_is_the_later_snapshot() {
     assert!(!state.claude_hooks);
 }
 
-/// The store a monocode build left: its whole layout and preferences under `workspace`, and the
-/// app's markers beside them.
-fn monocode_store() -> Database {
-    let store = store();
-    let workspace = serde_json::json!({
-        "sidebarWidth": 312,
-        "preferences": {
-            "theme": "dark",
-            "idle_agents": 5,
-            "claude_hooks": false,
-            "keep_awake_while_agents_run": false,
-            "binary_paths": { "claude": "/opt/claude" },
-            "hidden_providers": ["pi"],
-            "background_model": { "provider": "codex", "model": "gpt-5.6-luna" },
-            "provider_efforts": { "codex": "high" },
-            // The wrong shape: it keeps its default, and the others still move.
-            "default_models": ["not", "a", "map"],
-            "sound": true,
-        },
-    });
-    {
-        let store = store.lock().unwrap();
-        store
-            .save_setting(LEGACY_WORKSPACE, &workspace.to_string())
-            .unwrap();
-        store
-            .save_setting("native-inbox-state", "{\"seen\":[1]}")
-            .unwrap();
-        store
-            .save_setting("onicode.updateReportSeen", "0.4.1")
-            .unwrap();
-    }
-    store
-}
-
-#[test]
-fn monocode_preferences_move_once() {
-    let store = monocode_store();
-    let (hub, effects) = hub(&store, Limits::default());
-    let moved = hub.current();
-    assert_eq!(moved.idle_agents, 5);
-    assert!(!moved.claude_hooks);
-    assert!(!moved.keep_awake_while_agents_run);
-    assert_eq!(
-        moved.binary_paths.get("claude").map(String::as_str),
-        Some("/opt/claude")
-    );
-    assert_eq!(moved.hidden_providers, vec!["pi".to_owned()]);
-    assert_eq!(
-        moved.background_model,
-        Some(ModelChoice {
-            provider: "codex".into(),
-            model: Some("gpt-5.6-luna".into()),
-        })
-    );
-    assert_eq!(
-        moved.provider_efforts.get("codex").map(String::as_str),
-        Some("high")
-    );
-    assert!(
-        moved.default_models.is_empty(),
-        "a malformed value keeps its default"
-    );
-    assert_eq!(
-        effects.last.lock().unwrap().as_ref(),
-        Some(&moved),
-        "the moved settings take effect at once"
-    );
-    assert!(store.lock().unwrap().setting(KEY).unwrap().is_some());
-
-    // A later launch reads its own key: the saved preferences no longer count, and a change
-    // made since stays.
-    block_on(hub.set(
-        None,
-        SetEngineSetting {
-            setting: EngineSetting::IdleAgents(2),
-        },
-    ))
-    .unwrap();
-    let (again, _) = hub_again(&store);
-    assert_eq!(again.current().idle_agents, 2);
-    assert_eq!(again.current(), hub.current());
-}
-
 #[test]
 fn an_empty_store_starts_from_the_defaults() {
     let store = store();
     let (hub, _) = hub(&store, Limits::default());
     assert_eq!(hub.current(), EngineSettings::default());
     assert!(store.lock().unwrap().setting(KEY).unwrap().is_some());
-}
-
-#[test]
-fn the_viewer_state_is_handed_over_once() {
-    let store = monocode_store();
-    let (hub, _) = hub(&store, Limits::default());
-    let op = OpId::new();
-    let taken = block_on(hub.take_viewer_state(Some(op))).unwrap();
-    assert!(taken.values.contains_key(LEGACY_WORKSPACE));
-    assert_eq!(
-        taken
-            .values
-            .get("onicode.updateReportSeen")
-            .map(String::as_str),
-        Some("0.4.1")
-    );
-    assert_eq!(taken.values.len(), 3, "only the keys the store held");
-    for key in VIEWER_KEYS {
-        assert_eq!(
-            store.lock().unwrap().setting(key).unwrap(),
-            None,
-            "{key} is forgotten"
-        );
-    }
-    // The settings moved before the hand-over and stay.
-    assert_eq!(hub.current().idle_agents, 5);
-    // A repeat of the op gets the same values; a new take finds nothing.
-    assert_eq!(block_on(hub.take_viewer_state(Some(op))).unwrap(), taken);
-    assert!(
-        block_on(hub.take_viewer_state(Some(OpId::new())))
-            .unwrap()
-            .values
-            .is_empty()
-    );
 }

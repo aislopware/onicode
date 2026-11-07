@@ -324,7 +324,7 @@ impl AutomationTrigger {
 
     pub fn label(&self) -> String {
         if self.kind != "time" {
-            return event_label(&self.kind, &self.event);
+            return event_label(&self.event);
         }
         match self.schedule_kind.as_str() {
             "hourly" => format!("Hourly at :{:02}", self.minute),
@@ -391,20 +391,15 @@ impl AutomationTrigger {
     }
 }
 
-pub fn event_label(kind: &str, event: &str) -> String {
-    match (kind, event) {
-        ("jira", "issue_created") => "Issue appeared",
-        (_, "draft_opened") => "Draft opened",
-        (_, "pull_request_opened") => "Pull request opened",
-        (_, "issue_opened") => "Issue opened",
-        (_, "merge_request_opened") => "Merge request opened",
-        (_, "issue_created") => "Issue created",
-        (_, "pull_request_appeared") => "Pull request appeared",
-        (_, "work_item_appeared") => "Work item appeared",
-        (_, "pull_request_merged") => "Pull request merged",
-        (_, "pull_request_review_requested") => "Review requested",
-        (_, "issue_assigned") => "Issue assigned",
-        (_, "check_failed") => "Check failed",
+pub fn event_label(event: &str) -> String {
+    match event {
+        "draft_opened" => "Draft opened",
+        "pull_request_opened" => "Pull request opened",
+        "issue_opened" => "Issue opened",
+        "pull_request_merged" => "Pull request merged",
+        "pull_request_review_requested" => "Review requested",
+        "issue_assigned" => "Issue assigned",
+        "check_failed" => "Check failed",
         _ => event,
     }
     .to_owned()

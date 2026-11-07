@@ -26,15 +26,15 @@ impl Asset for Avatar {
     }
 }
 
+/// A GitHub person's avatar: `url`, or their profile picture when it is empty.
 pub(crate) fn image(
-    provider: &str,
     name: &str,
     url: &str,
     side: f32,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
-    let url = if url.trim().is_empty() && provider == "github" && !name.trim().is_empty() {
+    let url = if url.trim().is_empty() && !name.trim().is_empty() {
         format!("https://github.com/{}.png?size=64", name.trim())
     } else {
         url.trim().to_string()
@@ -72,14 +72,13 @@ pub(crate) fn image(
 }
 
 pub(super) fn person(
-    provider: &str,
     name: &str,
     url: &str,
     side: f32,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
-    let avatar = image(provider, name, url, side, window, cx);
+    let avatar = image(name, url, side, window, cx);
     div()
         .min_w_0()
         .flex()

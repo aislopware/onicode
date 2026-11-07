@@ -1,5 +1,5 @@
-//! Inbox: the original provider rail and work-item detail surface, backed by
-//! the native adapters and the desktop app's existing credential files.
+//! Inbox: the GitHub issues and pull requests of the open projects and their detail surface,
+//! read through the engine's `gh`.
 mod avatar;
 mod diff;
 mod document;
@@ -15,8 +15,8 @@ use gpui::{
 use onicode_protocol::inbox::{Checks, Details, Diff, Item, Snapshot, Thread, ViewState};
 use onicode_protocol::sessions::Session;
 use onicode_protocol::work::{
-    ConnectInbox, InboxList, PostInboxComment, ReadInboxChecks, ReadInboxDetails, ReadInboxDiff,
-    ReadInboxThread, RunInboxAction,
+    InboxList, PostInboxComment, ReadInboxChecks, ReadInboxDetails, ReadInboxDiff, ReadInboxThread,
+    RunInboxAction,
 };
 use onicode_protocol::{OpId, inbox as model};
 pub(crate) use ui::{RelativeNow, relative_time, start_relative_clock};
@@ -41,19 +41,21 @@ enum Tab {
     Checks,
 }
 
-/// Where the viewer keeps the Inbox's source, filters, read marks and width.
+/// Where the viewer keeps the Inbox's filters, read marks and width.
 const STATE_KEY: &str = "native-inbox-state";
 
 pub(crate) struct Inbox {
     engine: Engine,
     ui_state: crate::ui_state::UiState,
-    /// The checkout the Inbox was opened from: its trackers' calls run there.
+    /// The checkout the Inbox was opened from: its `gh` calls run there.
     cwd: PathBuf,
     projects: Vec<PathBuf>,
     appearances:
         std::collections::HashMap<String, onicode_protocol::project_appearance::ProjectAppearance>,
     state: ViewState,
     snapshot: Snapshot,
+    /// Whether a fetch has answered, so `snapshot.connection` is known.
+    checked: bool,
     sessions: Vec<Session>,
     focus: FocusHandle,
     search: Entity<Input>,
@@ -92,13 +94,10 @@ pub(crate) struct Inbox {
     detail_generation: u64,
     extra_request: u64,
     filters_open: bool,
-    connections_open: bool,
     filter_anchor: AnchorSlot,
-    connection_anchor: AnchorSlot,
-    connect_provider: Option<String>,
-    connect_url: Entity<Input>,
-    connect_email: Entity<Input>,
-    connect_token: Entity<Input>,
+    /// Whether GitHub's connection sheet is open.
+    connect_open: bool,
+    /// Whether "Check again" waits on a fetch.
     connecting: bool,
     connect_error: Option<String>,
     start_project: PathBuf,
@@ -183,10 +182,6 @@ impl Inbox {
         state.filters.hidden_projects = other_projects(&projects, &cwd);
         let search = cx.new(|cx| Input::field("Filter inbox", "Filter inbox", content(0.4), cx));
         let comment = cx.new(Input::inbox_comment);
-        let connect_url = cx.new(|cx| Input::field("Instance URL", "https://", content(0.4), cx));
-        let connect_email = cx.new(|cx| Input::field("Email", "you@example.com", content(0.4), cx));
-        let connect_token =
-            cx.new(|cx| Input::field("API token", "Personal access token", content(0.4), cx));
         let diff_view = cx.new(DiffView::new);
         let subscriptions = vec![
             cx.subscribe(&search, |_, _, _: &input::Changed, cx| cx.notify()),
@@ -254,6 +249,7 @@ impl Inbox {
             appearances: Default::default(),
             state,
             snapshot: Snapshot::default(),
+            checked: false,
             sessions: vec![],
             focus: cx.focus_handle(),
             search,
@@ -291,13 +287,8 @@ impl Inbox {
             detail_generation: 0,
             extra_request: 0,
             filters_open: false,
-            connections_open: false,
             filter_anchor: AnchorSlot::default(),
-            connection_anchor: AnchorSlot::default(),
-            connect_provider: None,
-            connect_url,
-            connect_email,
-            connect_token,
+            connect_open: false,
             connecting: false,
             connect_error: None,
             start_project: cwd,
@@ -393,32 +384,15 @@ impl Inbox {
             .count()
     }
 
-    pub(crate) fn connection_statuses(&self) -> std::collections::HashMap<String, (bool, String)> {
-        let mut statuses = self
-            .snapshot
-            .connections
-            .iter()
-            .map(|(provider, status)| {
-                let description = if !status.connected {
-                    "Not connected".into()
-                } else if !status.site.is_empty() {
-                    status.site.clone()
-                } else if !status.url.is_empty() {
-                    status.url.clone()
-                } else if !status.organization.is_empty() {
-                    status.organization.clone()
-                } else {
-                    "Connected".into()
-                };
-                (provider.clone(), (status.connected, description))
-            })
-            .collect::<std::collections::HashMap<_, _>>();
-        for (provider, error) in &self.snapshot.errors {
-            if !statuses.contains_key(provider) {
-                statuses.insert(provider.clone(), (false, error.clone()));
-            }
-        }
-        statuses
+    /// Whether GitHub is connected and how to say so, once a fetch has answered.
+    pub(crate) fn connection_status(&self) -> Option<(bool, String)> {
+        let connected = self.snapshot.connection.connected;
+        let description = match &self.snapshot.error {
+            Some(error) if !connected => error.clone(),
+            _ if connected => "Connected".into(),
+            _ => "Not connected".into(),
+        };
+        self.checked.then_some((connected, description))
     }
 
     pub(crate) fn refresh(&mut self, cx: &mut Context<Self>) {
@@ -446,20 +420,15 @@ impl Inbox {
                 Ok(listing) => (
                     Snapshot {
                         items: listing.items,
-                        errors: listing.errors,
-                        connections: listing.connections,
-                        linear_teams: listing.linear_teams,
-                        jira_projects: listing.jira_projects,
+                        error: listing.error,
+                        connection: listing.connection,
                     },
                     Some(listing.sessions),
                 ),
-                // An engine that cannot answer fails every tracker: their last rows stay.
+                // An engine that cannot answer fails the fetch: the last rows stay.
                 Err(error) => (
                     Snapshot {
-                        errors: model::PROVIDERS
-                            .iter()
-                            .map(|provider| ((*provider).to_owned(), error.clone()))
-                            .collect(),
+                        error: Some(error),
                         ..Snapshot::default()
                     },
                     None,
@@ -476,21 +445,16 @@ impl Inbox {
                     return;
                 }
                 let appeared = this.notifications.observe(&snapshot, scope);
-                // A temporary outage must not erase the last usable provider list.
-                for provider in snapshot.errors.keys() {
-                    snapshot.items.extend(
-                        this.snapshot
-                            .items
-                            .iter()
-                            .filter(|i| &i.provider == provider)
-                            .cloned(),
-                    );
+                // A temporary outage must not erase the last usable list.
+                if snapshot.error.is_some() {
+                    snapshot.items.extend(this.snapshot.items.iter().cloned());
                 }
                 snapshot
                     .items
                     .sort_by_key(|item| std::cmp::Reverse(item.updated_ms()));
                 this.state.seen.seed(&snapshot.items);
                 this.snapshot = snapshot;
+                this.checked = true;
                 if let Some(sessions) = sessions {
                     this.sessions = sessions;
                 }
@@ -499,27 +463,9 @@ impl Inbox {
                 {
                     this.state.seen.mark(&item);
                 }
-                if !this
-                    .snapshot
-                    .connections
-                    .get(&this.state.source)
-                    .is_some_and(|s| s.connected)
-                    && let Some(source) = model::PROVIDERS.into_iter().find(|p| {
-                        this.snapshot
-                            .connections
-                            .get(*p)
-                            .is_some_and(|s| s.connected)
-                    })
-                {
-                    this.state.source = source.into();
-                }
                 this.save();
                 cx.emit(Event::ItemsChanged(appeared));
-                if this.selected.is_some()
-                    && this
-                        .item()
-                        .is_none_or(|item| item.provider != this.state.source)
-                {
+                if this.selected.is_some() && this.item().is_none() {
                     this.deselect(cx);
                 }
                 if this.active
@@ -530,6 +476,17 @@ impl Inbox {
                 }
                 if std::mem::take(&mut this.refresh_queued) {
                     this.refresh(cx);
+                } else if std::mem::take(&mut this.connecting) {
+                    if this.snapshot.connection.connected {
+                        this.connect_open = false;
+                    } else {
+                        this.connect_error =
+                            Some(this.snapshot.error.clone().unwrap_or_else(|| {
+                                "GitHub is not connected. Run gh auth login in a terminal, then \
+                             check again."
+                                    .into()
+                            }));
+                    }
                 }
                 cx.notify();
             });
@@ -560,10 +517,7 @@ impl Inbox {
         self.snapshot
             .items
             .iter()
-            .filter(|item| self.state.filters.matches(item, &self.state.source, search))
-            .filter(|item| {
-                item.provider != "linear" || !self.state.hidden_linear_teams.contains(&item.team_id)
-            })
+            .filter(|item| self.state.filters.matches(item, search))
             .cloned()
             .collect()
     }
@@ -634,21 +588,6 @@ impl Inbox {
         self.action_menu = false;
         self.comment
             .update(cx, |input, cx| input.set_text(String::new(), cx));
-    }
-
-    fn change_source(&mut self, source: String, cx: &mut Context<Self>) {
-        self.state.source = source;
-        self.selected = None;
-        self.details = None;
-        self.document = None;
-        self.comments.clear();
-        self.search
-            .update(cx, |input, cx| input.set_text(String::new(), cx));
-        if let Some(item) = self.visible_items(cx).first() {
-            self.select(item.key(), cx);
-        }
-        self.save();
-        cx.notify();
     }
 
     fn load_detail(&mut self, clear: bool, cx: &mut Context<Self>) {
@@ -908,89 +847,22 @@ impl Inbox {
         }
     }
 
-    pub(crate) fn open_connection(&mut self, provider: String, cx: &mut Context<Self>) {
-        self.connections_open = false;
+    /// Opens GitHub's connection sheet.
+    pub(crate) fn open_connection(&mut self, cx: &mut Context<Self>) {
         self.connect_error = None;
-        let status = self
-            .snapshot
-            .connections
-            .get(&provider)
-            .cloned()
-            .unwrap_or_default();
-        let url = if !status.site.is_empty() {
-            status.site
-        } else if !status.url.is_empty() {
-            status.url
-        } else if !status.organization.is_empty() {
-            status.organization
-        } else if provider == "gitlab" {
-            "https://gitlab.com".into()
-        } else {
-            String::new()
-        };
-        self.connect_url
-            .update(cx, |input, cx| input.set_text(url, cx));
-        self.connect_email
-            .update(cx, |input, cx| input.set_text(status.email, cx));
-        self.connect_token
-            .update(cx, |input, cx| input.set_text(String::new(), cx));
-        self.connect_provider = Some(provider);
+        self.connect_open = true;
         cx.notify();
     }
 
-    fn connect(&mut self, disconnect: bool, cx: &mut Context<Self>) {
+    /// "Check again": a fetch re-reads whether `gh` is installed and signed in; the sheet closes
+    /// once it is.
+    fn check_connection(&mut self, cx: &mut Context<Self>) {
         if self.connecting {
-            return;
-        }
-        let Some(provider) = self.connect_provider.clone() else {
-            return;
-        };
-        let url = self.connect_url.read(cx).content.to_string();
-        let email = self.connect_email.read(cx).content.to_string();
-        let token = if disconnect {
-            String::new()
-        } else {
-            self.connect_token.read(cx).content.to_string()
-        };
-        if provider != "github" && !disconnect && token.trim().is_empty() {
-            self.connect_error = Some("Enter an API token".into());
-            cx.notify();
             return;
         }
         self.connecting = true;
         self.connect_error = None;
-        let task = call::<ConnectInbox>(
-            &self.engine,
-            Some(OpId::new()),
-            ConnectInbox {
-                cwd: self.cwd.clone(),
-                provider: provider.clone(),
-                url,
-                email,
-                token,
-            },
-            cx,
-        );
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let _ = this.update(cx, |this, cx| {
-                this.connecting = false;
-                match result {
-                    Ok(status) => {
-                        let connected = status.connected;
-                        this.snapshot.connections.insert(provider.clone(), status);
-                        this.connect_token.update(cx, |input, cx| input.set_text(String::new(), cx));
-                        if connected || disconnect {
-                            this.connect_provider = None;
-                            if connected { this.change_source(provider, cx); }
-                            this.refresh(cx);
-                        } else { this.connect_error = Some("GitHub is not connected. Run gh auth login in a terminal, then check again.".into()); }
-                    }
-                    Err(error) => this.connect_error = Some(error),
-                }
-                cx.notify();
-            });
-        }).detach();
+        self.refresh(cx);
         cx.notify();
     }
 

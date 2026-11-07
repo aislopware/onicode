@@ -1,4 +1,4 @@
-//! UI batches stay responsive while the shared JSON transcript is saved at a
+//! UI batches stay responsive while the JSON transcript is saved at a
 //! bounded cadence. Delivery receipts and settled turns always flush immediately.
 use std::time::{Duration, Instant};
 
@@ -6,27 +6,21 @@ use super::*;
 
 // Match the desktop's routine-save window. Accepted messages and settled turns
 // still commit immediately, independently of this streaming debounce.
-const SHARED_SAVE_INTERVAL: Duration = Duration::from_millis(650);
+const SAVE_INTERVAL: Duration = Duration::from_millis(650);
 
 pub(super) struct PendingSave {
     from: Option<usize>,
     context_dirty: bool,
     last_flush: Instant,
-    interval: Duration,
     context_owner: Option<(String, String)>,
 }
 
 impl PendingSave {
-    pub(super) fn new(shared: bool, now: Instant) -> Self {
+    pub(super) fn new(now: Instant) -> Self {
         Self {
             from: None,
             context_dirty: false,
             last_flush: now,
-            interval: if shared {
-                SHARED_SAVE_INTERVAL
-            } else {
-                Duration::ZERO
-            },
             context_owner: None,
         }
     }
@@ -45,7 +39,7 @@ impl PendingSave {
 
     pub(super) fn due(&self, boundary: bool, now: Instant) -> bool {
         (self.from.is_some() || self.context_dirty)
-            && (boundary || now.saturating_duration_since(self.last_flush) >= self.interval)
+            && (boundary || now.saturating_duration_since(self.last_flush) >= SAVE_INTERVAL)
     }
 
     pub(super) fn flush(
@@ -129,7 +123,7 @@ mod tests {
     use super::*;
 
     fn conversation() -> (Database, i64, Transcript) {
-        let mut store = Store::open_monocode(std::path::Path::new(":memory:")).unwrap();
+        let mut store = Store::in_memory().unwrap();
         let session = store.create("codex", "/project").unwrap();
         let mut transcript = Transcript::default();
         transcript.begin("user");
@@ -143,14 +137,14 @@ mod tests {
     fn token_batches_coalesce_but_final_stop_flush_preserves_all_pending_rows() {
         let (store, id, mut transcript) = conversation();
         let now = Instant::now();
-        let mut pending = PendingSave::new(true, now);
+        let mut pending = PendingSave::new(now);
         for text in ["One ", "two ", "three"] {
             pending.changed(transcript.append(text));
         }
         assert!(!pending.due(false, now + Duration::from_millis(200)));
         assert!(!pending.due(false, now + Duration::from_millis(600)));
         assert!(pending.due(true, now + Duration::from_millis(200)));
-        assert!(pending.due(false, now + SHARED_SAVE_INTERVAL));
+        assert!(pending.due(false, now + SAVE_INTERVAL));
         assert!(
             locked(&store).unwrap().load(id).unwrap().rows[1]
                 .text
@@ -188,7 +182,7 @@ mod tests {
             )
             .unwrap();
         let now = Instant::now();
-        let mut pending = PendingSave::new(true, now);
+        let mut pending = PendingSave::new(now);
         pending.changed(transcript.append("Still streaming"));
         let from = transcript.begin("user");
         transcript.append("Next");
@@ -204,14 +198,6 @@ mod tests {
                 .unwrap(),
             Some("1".into())
         );
-    }
-
-    #[test]
-    fn legacy_row_store_keeps_incremental_save_behavior() {
-        let now = Instant::now();
-        let mut pending = PendingSave::new(false, now);
-        pending.changed(0);
-        assert!(pending.due(false, now));
     }
 
     #[test]
@@ -351,7 +337,7 @@ mod tests {
                 String::from_utf8_lossy(&result.stderr)
             );
         }
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let store = Store::in_memory().unwrap();
         let mut summary = store.create("codex", repo.to_str().unwrap()).unwrap();
         summary.provider = "invalid-test-provider".into();
         let id = summary.id;

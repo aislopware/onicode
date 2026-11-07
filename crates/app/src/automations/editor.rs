@@ -41,16 +41,6 @@ pub(super) fn events(kind: &str) -> Vec<(String, String)> {
             ("pull_request_opened", "Pull request opened"),
             ("issue_opened", "Issue opened"),
         ],
-        "gitlab" => &[
-            ("merge_request_opened", "Merge request opened"),
-            ("issue_opened", "Issue opened"),
-        ],
-        "linear" => &[("issue_created", "Issue created")],
-        "jira" => &[("issue_created", "Issue appeared")],
-        "azuredevops" => &[
-            ("pull_request_appeared", "Pull request appeared"),
-            ("work_item_appeared", "Work item appeared"),
-        ],
         _ => &[],
     })
 }
@@ -408,7 +398,7 @@ impl Automations {
             sentence = sentence
                 .child(self.select_control(
                     ("trigger-event", index),
-                    automations::event_label(&trigger.kind, &trigger.event),
+                    automations::event_label(&trigger.event),
                     Choice::TriggerEvent(id.clone()),
                     events(&trigger.kind),
                     cx,
@@ -1087,10 +1077,7 @@ impl Automations {
                 let trigger = if run.trigger == "manual" {
                     "Test run".into()
                 } else if run.trigger == "event" {
-                    automations::event_label(
-                        run.event_kind.as_deref().unwrap_or(""),
-                        run.event.as_deref().unwrap_or(""),
-                    )
+                    automations::event_label(run.event.as_deref().unwrap_or(""))
                 } else {
                     self.editor
                         .as_ref()

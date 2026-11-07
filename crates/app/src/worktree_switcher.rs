@@ -606,9 +606,7 @@ mod tests {
         assert!(rows("/repo/project", Some(&state), "new-copy").is_empty());
     }
     #[gpui::test]
-    fn cached_worktrees_show_at_once_and_membership_never_loads_full_settings(
-        cx: &mut TestAppContext,
-    ) {
+    fn cached_worktrees_show_at_once_with_their_tab_memberships(cx: &mut TestAppContext) {
         let cwd = "/nonexistent/monocode-cached-worktree-menu";
         let feature = format!("{cwd}-feature");
         crate::git_cache::remember(
@@ -633,17 +631,14 @@ mod tests {
         let engine = cx.update(crate::engine_client::Engine::memory);
         let seed = engine.seed();
         let session = seed.create("codex", cwd).unwrap();
-        // Membership remains readable even when full turn metadata cannot be
-        // deserialized. The old per-session agent_settings call fails here.
-        seed.save_setting(
-            &format!("agent:{}", session.id),
-            &serde_json::json!({
-                "worktree_cwd": feature, "turns": "not a turn map"
-            })
-            .to_string(),
+        seed.save_agent_settings(
+            session.id,
+            &onicode_core::agent::Settings {
+                worktree_cwd: Some(feature.clone()),
+                ..Default::default()
+            },
         )
         .unwrap();
-        assert!(seed.agent_settings(session.id).is_err());
         // The shell hands the switcher what its mirror of the engine's workspace holds.
         let memberships = engine
             .workspace_now()
@@ -677,10 +672,7 @@ mod tests {
                 view.state.is_some(),
                 "a Git refresh failure keeps the cached worktrees"
             );
-            assert!(
-                view.error.is_none(),
-                "membership needs no full agent settings"
-            );
+            assert!(view.error.is_none(), "the cached worktrees show no error");
             assert_eq!(view.tabs[&path_key(&feature)].tabs.len(), 1);
             assert!(view.tabs[&path_key(&feature)].busy);
         });

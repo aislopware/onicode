@@ -7,8 +7,8 @@ use futures::StreamExt;
 use onicode_protocol::workspace::{
     Archive, ClaimInboxEvents, CreateNote, CreateSession, Delete, DeleteNote, FinishAutomationRun,
     GenerateTitle, ListNotes, MarkSeen, NameWorktree, Pin, PrepareAutomationRun, PreviewSession,
-    Rename, SaveGroups, SaveOrchestration, SaveResponseNote, SearchSessions, SetReminder,
-    SetWorkItem, UpsertNote, WatchWorkspace,
+    Rename, SaveGroups, SaveResponseNote, SearchSessions, SetReminder, SetWorkItem, UpsertNote,
+    WatchWorkspace,
 };
 use onicode_protocol::{Call, OpId, Routed, Watch};
 use onicode_rpc::{RpcError, RpcReply, RpcService, parse_params};
@@ -34,7 +34,7 @@ impl WorkspaceService {
 }
 
 /// Every method this service serves.
-const METHODS: [&str; 23] = [
+const METHODS: [&str; 22] = [
     WatchWorkspace::NAME,
     CreateSession::NAME,
     Rename::NAME,
@@ -47,7 +47,6 @@ const METHODS: [&str; 23] = [
     SearchSessions::NAME,
     PreviewSession::NAME,
     MarkSeen::NAME,
-    SaveOrchestration::NAME,
     GenerateTitle::NAME,
     NameWorktree::NAME,
     ListNotes::NAME,
@@ -141,10 +140,6 @@ impl RpcService for WorkspaceService {
             MarkSeen::NAME => {
                 let (op, body) = routed(params)?;
                 reply(hub.mark_seen(op, body).await)
-            }
-            SaveOrchestration::NAME => {
-                let (op, body) = routed(params)?;
-                reply(hub.save_orchestration(op, body).await)
             }
             GenerateTitle::NAME => {
                 let (op, body) = routed(params)?;

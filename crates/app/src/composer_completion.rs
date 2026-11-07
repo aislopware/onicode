@@ -49,7 +49,6 @@ impl Choice {
             Some("compact") => ("command-compact", 0xc4b5fd, 0x6d28d9),
             Some("stage") => (GitAction::Stage.icon(), 0xbbf7d0, 0x15803d),
             Some("commit") => (GitAction::Commit.icon(), 0xfed7aa, 0xc2410c),
-            Some("visualize") => return ("command-visualize", accent_color()),
             _ => {
                 return (
                     if self.insertion.starts_with("@note/") {
@@ -158,20 +157,10 @@ impl Completion {
             selected_mcp: Vec::new(),
             mcp_open: false,
             disabled_paths: Vec::new(),
-            known: [
-                "/plan",
-                "/operator",
-                "/orchestrator",
-                "/compact",
-                "/mcp",
-                "/btw",
-                "/stage",
-                "/commit",
-                "/visualize",
-            ]
-            .map(str::to_owned)
-            .into_iter()
-            .collect(),
+            known: ["/plan", "/compact", "/mcp", "/btw", "/stage", "/commit"]
+                .map(str::to_owned)
+                .into_iter()
+                .collect(),
             files: Vec::new(),
             short_mentions: Default::default(),
             choices: Vec::new(),
@@ -245,20 +234,10 @@ impl Completion {
         self.files.clear();
         self.short_mentions.clear();
         self.notes.clear();
-        self.known = [
-            "/plan",
-            "/operator",
-            "/orchestrator",
-            "/compact",
-            "/mcp",
-            "/btw",
-            "/stage",
-            "/commit",
-            "/visualize",
-        ]
-        .map(str::to_owned)
-        .into_iter()
-        .collect();
+        self.known = ["/plan", "/compact", "/mcp", "/btw", "/stage", "/commit"]
+            .map(str::to_owned)
+            .into_iter()
+            .collect();
         self.loaded = None;
         self.loading = false;
         self.token = None;
@@ -580,34 +559,24 @@ impl Completion {
                     Err(error) => this.error = Some(error),
                 }
                 this.short_mentions = short_mentions(&this.files);
-                this.known = [
-                    "/plan",
-                    "/operator",
-                    "/orchestrator",
-                    "/compact",
-                    "/mcp",
-                    "/btw",
-                    "/stage",
-                    "/commit",
-                    "/visualize",
-                ]
-                .map(str::to_owned)
-                .into_iter()
-                .chain(
-                    this.native_commands
-                        .iter()
-                        .map(|c| format!("/{}", c.invocation)),
-                )
-                .chain(this.selected_mcp.iter().map(|(token, _)| token.clone()))
-                .chain(this.skills.iter().map(|s| format!("/{}", s.name)))
-                .chain(
-                    this.files
-                        .iter()
-                        .map(|f| composer::mention_text(&f.relative)),
-                )
-                .chain(this.short_mentions.keys().cloned())
-                .chain(this.notes.iter().map(|n| format!("@note/{}", n.slug)))
-                .collect();
+                this.known = ["/plan", "/compact", "/mcp", "/btw", "/stage", "/commit"]
+                    .map(str::to_owned)
+                    .into_iter()
+                    .chain(
+                        this.native_commands
+                            .iter()
+                            .map(|c| format!("/{}", c.invocation)),
+                    )
+                    .chain(this.selected_mcp.iter().map(|(token, _)| token.clone()))
+                    .chain(this.skills.iter().map(|s| format!("/{}", s.name)))
+                    .chain(
+                        this.files
+                            .iter()
+                            .map(|f| composer::mention_text(&f.relative)),
+                    )
+                    .chain(this.short_mentions.keys().cloned())
+                    .chain(this.notes.iter().map(|n| format!("@note/{}", n.slug)))
+                    .collect();
                 this.highlight(cx);
                 this.rank();
                 cx.notify();
@@ -716,12 +685,6 @@ impl Completion {
                     "Draft",
                     "Save this message without starting the agent",
                 ),
-                (
-                    "orchestrator",
-                    "Orchestrator",
-                    "Plan and coordinate agent work",
-                ),
-                ("operator", "Operator", "Give this thread access to Onicode"),
                 ("plan", "Plan mode", "Review a plan before building"),
                 (
                     "btw",
@@ -744,11 +707,6 @@ impl Completion {
                     "commit",
                     "Commit",
                     "Stage and commit this session's changes",
-                ),
-                (
-                    "visualize",
-                    "Visualize",
-                    "Create an inline visual of this topic or a specific request",
                 ),
             ]
             .into_iter()
@@ -781,11 +739,8 @@ impl Completion {
                             detail: detail.into(),
                             insertion: format!("/{id}"),
                             builtin: Some(id),
-                            mode: (!matches!(
-                                id,
-                                "compact" | "btw" | "stage" | "commit" | "visualize"
-                            ))
-                            .then_some(id),
+                            mode: (!matches!(id, "compact" | "btw" | "stage" | "commit"))
+                                .then_some(id),
                             file: false,
                             server: None,
                         },
@@ -838,8 +793,6 @@ impl Completion {
                     "plan"
                         | "compact"
                         | "mcp"
-                        | "operator"
-                        | "orchestrator"
                         | "add-to-folder"
                         | "draft"
                         | "btw"
@@ -1243,8 +1196,6 @@ mod tests {
                     commands,
                     [
                         "/draft",
-                        "/orchestrator",
-                        "/operator",
                         "/plan",
                         "/btw",
                         "/compact",
@@ -1252,7 +1203,6 @@ mod tests {
                         "/mcp",
                         "/stage",
                         "/commit",
-                        "/visualize",
                         "/alpha",
                         "/zebra",
                     ]
@@ -1271,14 +1221,14 @@ mod tests {
         window
             .update(cx, |view, _, cx| {
                 view.input
-                    .update(cx, |input, cx| input.set_text("/o".into(), cx));
+                    .update(cx, |input, cx| input.set_text("/c".into(), cx));
             })
             .unwrap();
         cx.run_until_parked();
         window
             .update(cx, |view, _, _| {
-                assert_eq!(view.choices[0].insertion, "/operator");
-                assert_eq!(view.choices[1].insertion, "/orchestrator");
+                assert_eq!(view.choices[0].insertion, "/commit");
+                assert_eq!(view.choices[1].insertion, "/compact");
             })
             .unwrap();
     }
@@ -1342,30 +1292,6 @@ mod tests {
             })
             .unwrap();
         assert_eq!(submitted.get(), 0);
-    }
-    #[gpui::test]
-    fn visualize_completion_inserts_a_command_without_selecting_a_mode(cx: &mut TestAppContext) {
-        let window = window(cx);
-        window
-            .update(cx, |view, _, cx| {
-                view.input
-                    .update(cx, |input, cx| input.set_text("/vis".into(), cx));
-            })
-            .unwrap();
-        cx.run_until_parked();
-        window
-            .update(cx, |view, _, _| {
-                assert_eq!(view.choices[0].insertion, "/visualize");
-                assert_eq!(view.choices[0].mode, None);
-            })
-            .unwrap();
-        cx.simulate_keystrokes(window.into(), "enter");
-        cx.run_until_parked();
-        window
-            .update(cx, |view, _, cx| {
-                assert_eq!(view.input.read(cx).content, "/visualize ");
-            })
-            .unwrap();
     }
     #[gpui::test]
     fn compact_completion_inserts_a_local_command_without_mode_selection(cx: &mut TestAppContext) {

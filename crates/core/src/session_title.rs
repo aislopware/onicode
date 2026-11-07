@@ -51,28 +51,3 @@ pub fn generate_for(
     .ok()?;
     parse(&output, message)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn saved_manual_names_and_deleted_sessions_reject_late_results() {
-        let db = crate::store::Store::open(Path::new(":memory:")).unwrap();
-        let session = db.create("codex", "/tmp").unwrap();
-        assert!(
-            db.replace_title(session.id, &session.title, "Initial prompt")
-                .unwrap()
-        );
-        db.title(session.id, "Manual name").unwrap();
-        assert!(
-            !db.replace_title(session.id, "Initial prompt", "Generated name")
-                .unwrap()
-        );
-        assert!(
-            !db.replace_title(99_999, "Initial prompt", "Generated name")
-                .unwrap()
-        );
-        assert_eq!(db.sessions().unwrap()[0].title, "Manual name");
-    }
-}

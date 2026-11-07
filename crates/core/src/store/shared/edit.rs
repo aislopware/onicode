@@ -45,7 +45,7 @@ impl Store {
         turn_id: Option<&str>,
     ) -> Result<EditSnapshot, String> {
         self.shared_writable()?;
-        self.edit_queue_empty(id)?;
+        self.shared_edit_queue_empty(id)?;
         let session = self
             .sessions()?
             .into_iter()
@@ -127,10 +127,7 @@ impl Store {
             }
         }
         let start = blocks::project(&blocks[..first])?.len();
-        let mut prompt = block["text"].as_str().unwrap_or("").to_owned();
-        if block["onicode"] == true {
-            prompt = format!("/operator {prompt}");
-        }
+        let prompt = block["text"].as_str().unwrap_or("").to_owned();
         let attachments = block["attachments"]
             .as_array()
             .into_iter()
@@ -142,9 +139,6 @@ impl Store {
                     .ok_or("An original attachment cannot be restored safely".to_owned())
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if attachments.is_empty() && super::super::edit::untracked_attachment_tail(&prompt) {
-            return Err("This message has attachment links without a saved attachment manifest and cannot be edited safely".into());
-        }
         if prompt.trim().is_empty() && attachments.is_empty() {
             return Err("No editable prompt text or attachments".into());
         }
@@ -157,7 +151,7 @@ impl Store {
             account_id: settings.account.id,
             cwd: settings.worktree_cwd.unwrap_or(session.cwd),
             rows,
-            blocks: Some(blocks),
+            blocks,
             block_start: first,
             provider: session.provider,
         })
@@ -172,17 +166,13 @@ impl Store {
         self.shared_writable()?;
         let tx = sql(self.conn.unchecked_transaction())?;
         self.validate_edit_last_turn(id, edit)?;
-        let blocks = edit
-            .blocks
-            .as_ref()
-            .ok_or("Missing source revision for edit")?;
-        let next = &blocks[..edit.block_start];
+        let next = &edit.blocks[..edit.block_start];
         self.shared_store_blocks(id, next)?;
         self.shared_patch(
             id,
             &[
                 ("provider_session_id", json!(provider_id)),
-                ("updated_at", json!(crate::time::now_ms())),
+                ("updated_at", json!(self.stamp())),
                 (
                     "has_user_message",
                     json!(next.iter().any(|b| b["role"] == "user"
@@ -200,8 +190,6 @@ impl Store {
         self.save_context_usage(id, &Default::default())?;
         sql(tx.commit())?;
         self.shared
-            .as_ref()
-            .unwrap()
             .snapshots
             .borrow_mut()
             .insert(id, HistoryRevision::of(next));
@@ -214,7 +202,7 @@ mod tests {
     use super::*;
 
     fn fixture(blocks: Value) -> (Store, i64) {
-        let store = Store::open_monocode(Path::new(":memory:")).unwrap();
+        let store = Store::in_memory().unwrap();
         let session = store.create("codex", "/project").unwrap();
         store.provider_id(session.id, "thread").unwrap();
         store

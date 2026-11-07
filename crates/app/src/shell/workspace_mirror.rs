@@ -1,7 +1,7 @@
 //! The shell's mirror of the engine's `WatchWorkspace` (engine.md, migration step 4), as
 //! `session::Viewer` is the conversation's of its session. The sidebar, history and workspace
 //! views keep reading the shell's own maps; the engine's snapshot and events fill the parts it
-//! owns (session summaries, folders, reminders, orchestration summaries and the note count), and
+//! owns (session summaries, folders, reminders and the note count), and
 //! the shell changes them only through calls under ops it mints. A call's effect is echoed in
 //! the same frame and laid over every update until the engine's receipt for its op arrives.
 //!
@@ -151,12 +151,6 @@ pub(super) fn sidebar_metadata(
         if summary.draft {
             metadata.drafts.insert(row);
         }
-        if summary.hidden {
-            metadata.sidebar_hidden.insert(row);
-        }
-        if let Some(lead) = summary.started_by {
-            metadata.started_by.insert(row, lead);
-        }
         if summary.model.is_some() {
             metadata
                 .details
@@ -168,11 +162,6 @@ pub(super) fn sidebar_metadata(
         .projects
         .into_iter()
         .map(|project| (project.path, project.groups))
-        .collect();
-    metadata.orchestrations = state
-        .orchestrations
-        .into_iter()
-        .map(|lead| (lead.lead, lead.summary))
         .collect();
     metadata.reminders = state.reminders;
     metadata
@@ -373,16 +362,13 @@ impl Shell {
             self.session_worktrees
                 .entry(row)
                 .or_insert_with(|| summary.worktree.clone());
-            if let Some(lead) = summary.started_by {
-                self.started_by.insert(row, lead);
-            }
             if let Some(automation) = &summary.automation {
                 self.automation_state
                     .session_automations
                     .insert(row, automation.clone());
             }
-            // The saved model and the hidden mark when the engine's value of them moved; a
-            // session new to the mirror only adds them, since the shell may have set them first.
+            // The saved model when the engine's value of it moved; a session new to the mirror
+            // only adds it, since the shell may have set it first.
             let model = match prior {
                 Some(prior) if prior.model != summary.model => Some(summary.model.clone()),
                 None if summary.model.is_some() => Some(summary.model.clone()),
@@ -393,19 +379,6 @@ impl Shell {
                     .entry(row)
                     .or_insert_with(|| saved_details(None, summary.worktree.clone()))
                     .model = model;
-            }
-            match prior {
-                Some(prior) if prior.hidden != summary.hidden => {
-                    if summary.hidden {
-                        self.sidebar_hidden_sessions.insert(row);
-                    } else {
-                        self.sidebar_hidden_sessions.remove(&row);
-                    }
-                }
-                None if summary.hidden => {
-                    self.sidebar_hidden_sessions.insert(row);
-                }
-                _ => {}
             }
         }
     }
@@ -423,7 +396,7 @@ impl Shell {
         self.show_workspace(cx);
     }
 
-    /// Lays the engines' folders, reminders, orchestration summaries and note count over the
+    /// Lays the engines' folders, reminders and note count over the
     /// shell's maps (the app's own engine's, then each followed machine's in its projects), then
     /// the echoes still in flight.
     pub(super) fn show_workspace(&mut self, cx: &mut Context<Self>) {
@@ -433,10 +406,6 @@ impl Shell {
                     .insert(project.path.clone(), project.groups.clone());
             }
             self.reminders.clone_from(&state.reminders);
-            for lead in &state.orchestrations {
-                self.orchestration_summaries
-                    .insert(lead.lead, lead.summary.clone());
-            }
             if self.note_count != Some(state.notes) {
                 self.note_count = Some(state.notes);
                 self.notify_sidebar(cx);
@@ -625,16 +594,13 @@ impl Shell {
 
     /// Creates a session in the engine under a new id, answering with its stored summary and,
     /// unless it starts `Bare`, the settings it starts with, in the app's spelling. A project on
-    /// another machine creates it there, its checkout named as that machine names it. `scope`
-    /// is an orchestrated worker's files: the engine holding its checkout refuses the session
-    /// when one escapes it (empty for every other session).
+    /// another machine creates it there, its checkout named as that machine names it.
     pub(super) fn create_in_engine(
         &mut self,
         provider: &str,
         cwd: &str,
         title: Option<String>,
         mut start: NewSession,
-        scope: Vec<String>,
         cx: &mut Context<Self>,
     ) -> gpui::Task<Result<(Session, Option<Settings>), String>> {
         let (engine, cwd) = self.engine.for_path(cwd);
@@ -652,8 +618,6 @@ impl Shell {
             cwd,
             title,
             start,
-            started_by: None,
-            scope,
         };
         let call = engine_client::call::<CreateSession>(&engine, Some(OpId::new()), body, cx);
         cx.spawn(async move |this, cx| {

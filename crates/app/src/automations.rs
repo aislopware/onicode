@@ -33,19 +33,9 @@ mod trigger_menu;
 
 /// Event providers and schedules are separate from agent harness branding.
 fn trigger_mark(kind: &str, side: f32) -> AnyElement {
-    if kind == "gitlab" {
-        return gpui::img("inbox-gitlab-color.svg")
-            .size(px(side))
-            .flex_shrink_0()
-            .object_fit(gpui::ObjectFit::Contain)
-            .into_any_element();
-    }
     let (path, color) = match kind {
         "time" => ("clock", content(0.45)),
         "github" => ("inbox-github", content(0.65)),
-        "linear" => ("inbox-linear", content(0.65)),
-        "jira" => ("inbox-jira", rgb(0x2684ff).into()),
-        "azuredevops" => ("inbox-azuredevops", content(0.65)),
         _ => ("zap", content(0.45)),
     };
     icon(path, side).text_color(color).into_any_element()
@@ -141,7 +131,7 @@ pub(crate) struct Automations {
     trigger_anchor: AnchorSlot,
     trigger_menu: Option<Entity<trigger_menu::TriggerMenu>>,
     trigger_subscription: Option<Subscription>,
-    trigger_connections: HashMap<String, bool>,
+    github_connected: bool,
     request_generation: u64,
 }
 impl EventEmitter<Event> for Automations {}
@@ -195,7 +185,7 @@ impl Automations {
             trigger_anchor: AnchorSlot::default(),
             trigger_menu: None,
             trigger_subscription: None,
-            trigger_connections: HashMap::new(),
+            github_connected: false,
             request_generation: 0,
         };
         this.refresh(cx);

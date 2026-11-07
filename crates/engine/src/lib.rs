@@ -12,7 +12,6 @@
 //! returns; [`machines`] lists every machine it knows.
 pub mod accounts;
 pub mod alerts;
-pub mod app_access;
 pub mod desktop;
 mod feed;
 pub mod files;

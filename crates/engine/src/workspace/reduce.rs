@@ -28,15 +28,6 @@ pub fn apply(state: &mut WorkspaceState, event: &WorkspaceEvent) {
             }
         }
         WorkspaceEvent::Reminders(reminders) => state.reminders.clone_from(reminders),
-        WorkspaceEvent::Orchestration(lead) => {
-            match state
-                .orchestrations
-                .binary_search_by_key(&lead.lead, |known| known.lead)
-            {
-                Ok(at) => state.orchestrations[at] = lead.clone(),
-                Err(at) => state.orchestrations.insert(at, lead.clone()),
-            }
-        }
         WorkspaceEvent::Notes(count) => state.notes = *count,
         WorkspaceEvent::AutomationDue(due) => {
             if !state
@@ -61,7 +52,6 @@ enum Key<'a> {
     Session(i64),
     Project(&'a str),
     Reminders,
-    Orchestration(i64),
     Notes,
 }
 
@@ -71,7 +61,6 @@ fn key(event: &WorkspaceEvent) -> Option<Key<'_>> {
         WorkspaceEvent::Removed(row) => Key::Session(*row),
         WorkspaceEvent::Project(project) => Key::Project(&project.path),
         WorkspaceEvent::Reminders(_) => Key::Reminders,
-        WorkspaceEvent::Orchestration(lead) => Key::Orchestration(lead.lead),
         WorkspaceEvent::Notes(_) => Key::Notes,
         WorkspaceEvent::AutomationDue(_)
         | WorkspaceEvent::AutomationTaken(_)

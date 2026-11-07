@@ -182,8 +182,6 @@ impl Conversation {
         self.summary.has_messages = true;
         self.follow_ups.draft_selected = false;
         self.settings.plan = false;
-        self.settings.operator = false;
-        self.settings.orchestrator = false;
         self.save_settings(cx);
         self.follow_ups.state.draft = Some(message.clone());
         self.transcript
@@ -381,17 +379,8 @@ impl Conversation {
     /// The user's next composer selection must not change a message already
     /// queued, and the message must not take the composer's.
     pub(super) fn launch_message(&mut self, message: Message, cx: &mut Context<Self>) {
-        let previous = (
-            self.settings.plan,
-            self.settings.operator,
-            self.settings.orchestrator,
-        );
+        let previous = self.settings.plan;
         self.settings.plan = message.mode.as_deref() == Some("plan");
-        self.settings.operator = message.mode.as_deref() == Some("operator");
-        self.settings.orchestrator = message.mode.as_deref() == Some("orchestrator");
-        self.planning_orchestration = self.settings.orchestrator;
-        self.orchestration_plan = None;
-        self.orchestration_error = None;
         let composer_attachments = std::mem::take(&mut self.attachments);
         self.settings.attachments = message.attachments;
         let previous_prepared = self.settings.prepared_prompt.take();
@@ -400,11 +389,7 @@ impl Conversation {
         self.settings.prepared_prompt = previous_prepared;
         self.attachments = composer_attachments;
         self.settings.attachments.clear();
-        (
-            self.settings.plan,
-            self.settings.operator,
-            self.settings.orchestrator,
-        ) = previous;
+        self.settings.plan = previous;
     }
 
     fn resume_queue(&mut self, cx: &mut Context<Self>) {
@@ -709,55 +694,50 @@ mod tests {
     }
 
     #[gpui::test]
-    fn submitted_modes_clear_after_queueing_and_do_not_leak_into_the_next_message(
+    fn a_submitted_plan_clears_after_queueing_and_does_not_leak_into_the_next_message(
         cx: &mut TestAppContext,
     ) {
-        for mode in ["operator", "orchestrator", "plan"] {
-            let window = conversation(cx);
-            cx.run_until_parked();
-            window
-                .update(cx, |view, _, cx| {
-                    view.busy = true;
-                    view.follow_ups.state.paused = true;
-                    view.toggle_mode(mode, cx);
-                    let selected = view.input.read(cx).content.clone();
-                    view.send(cx);
-                    assert_eq!(
-                        view.input.read(cx).content,
-                        selected,
-                        "an empty submission keeps its mode"
-                    );
-                    view.input
-                        .update(cx, |i, cx| i.set_text(format!("/{mode} first message"), cx));
-                    view.send(cx);
-                    assert!(view.input.read(cx).content.is_empty());
-                    assert!(
-                        !view.settings.plan
-                            && !view.settings.operator
-                            && !view.settings.orchestrator
-                    );
-                    view.input
-                        .update(cx, |i, cx| i.set_text("ordinary follow-up".into(), cx));
-                    view.send(cx);
-                    let messages = &view.follow_ups.state.messages;
-                    assert_eq!(messages[0].mode.as_deref(), Some(mode));
-                    assert_eq!(messages[0].text, "first message");
-                    assert_eq!(messages[1].mode, None);
-                    assert_eq!(messages[1].text, "ordinary follow-up");
-                })
-                .unwrap();
-            cx.run_until_parked();
-            window
-                .update(cx, |view, _, _| {
-                    let seed = view.engine.seed();
-                    let saved = seed.agent_settings(view.summary.id).unwrap().unwrap();
-                    assert!(!saved.plan && !saved.operator && !saved.orchestrator);
-                    let queue = seed.follow_ups(view.summary.id).unwrap();
-                    assert_eq!(queue.messages[0].mode.as_deref(), Some(mode));
-                    assert_eq!(queue.messages[1].mode, None);
-                })
-                .unwrap();
-        }
+        let mode = "plan";
+        let window = conversation(cx);
+        cx.run_until_parked();
+        window
+            .update(cx, |view, _, cx| {
+                view.busy = true;
+                view.follow_ups.state.paused = true;
+                view.toggle_mode(mode, cx);
+                let selected = view.input.read(cx).content.clone();
+                view.send(cx);
+                assert_eq!(
+                    view.input.read(cx).content,
+                    selected,
+                    "an empty submission keeps its mode"
+                );
+                view.input
+                    .update(cx, |i, cx| i.set_text(format!("/{mode} first message"), cx));
+                view.send(cx);
+                assert!(view.input.read(cx).content.is_empty());
+                assert!(!view.settings.plan);
+                view.input
+                    .update(cx, |i, cx| i.set_text("ordinary follow-up".into(), cx));
+                view.send(cx);
+                let messages = &view.follow_ups.state.messages;
+                assert_eq!(messages[0].mode.as_deref(), Some(mode));
+                assert_eq!(messages[0].text, "first message");
+                assert_eq!(messages[1].mode, None);
+                assert_eq!(messages[1].text, "ordinary follow-up");
+            })
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |view, _, _| {
+                let seed = view.engine.seed();
+                let saved = seed.agent_settings(view.summary.id).unwrap().unwrap();
+                assert!(!saved.plan);
+                let queue = seed.follow_ups(view.summary.id).unwrap();
+                assert_eq!(queue.messages[0].mode.as_deref(), Some(mode));
+                assert_eq!(queue.messages[1].mode, None);
+            })
+            .unwrap();
     }
 
     #[gpui::test]

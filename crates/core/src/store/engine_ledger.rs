@@ -2,9 +2,8 @@
 //! protocol id a session is known by, and the ledger of processed mutating calls, so a repeated
 //! op is answered with its first receipt.
 //!
-//! The native schema keeps the id in `native_sessions.uid` (unique) and the ledger in `ops`. The
-//! desktop schema is never altered, so its sessions' ids and the ledger live in the settings
-//! sidecar (`session_uids` and `ops`, sidecar version 2); a `:memory:` store keeps them in memory.
+//! The sessions schema is never altered, so the ids and the ledger live in the settings sidecar
+//! (`session_uids` and `ops`, sidecar version 2); a `:memory:` store keeps them in memory.
 use std::collections::HashMap;
 
 use rusqlite::{OptionalExtension, params};
@@ -35,30 +34,7 @@ impl Store {
     /// The session's protocol id (`SessionId`), minted (UUIDv7) the first time it is asked for
     /// and kept from then on.
     pub fn session_uid(&self, id: i64) -> Result<Uuid, String> {
-        let Some(shared) = &self.shared else {
-            let saved: Option<Option<String>> = sql(self
-                .conn
-                .query_row("SELECT uid FROM native_sessions WHERE id=?1", [id], |row| {
-                    row.get(0)
-                })
-                .optional())?;
-            match saved {
-                None => return Err("Session no longer exists".into()),
-                Some(Some(uid)) => return parse_uid(&uid),
-                Some(None) => {}
-            }
-            // `uid IS NULL` keeps a racing writer's uid, which the read below then returns.
-            sql(self.conn.execute(
-                "UPDATE native_sessions SET uid=?2 WHERE id=?1 AND uid IS NULL",
-                params![id, Uuid::now_v7().to_string()],
-            ))?;
-            let uid: String = sql(self.conn.query_row(
-                "SELECT uid FROM native_sessions WHERE id=?1",
-                [id],
-                |row| row.get(0),
-            ))?;
-            return parse_uid(&uid);
-        };
+        let shared = &self.shared;
         let session = self.persisted_session_id(id)?;
         let Some(conn) = &shared.extras_db else {
             let mut ledger = shared.ledger.borrow_mut();
@@ -79,13 +55,7 @@ impl Store {
     /// Gives a session without a uid the one its creator minted (`CreateSession`), and returns
     /// the uid the session holds: an earlier uid stands.
     pub fn adopt_session_uid(&self, id: i64, uid: Uuid) -> Result<Uuid, String> {
-        let Some(shared) = &self.shared else {
-            sql(self.conn.execute(
-                "UPDATE native_sessions SET uid=?2 WHERE id=?1 AND uid IS NULL",
-                params![id, uid.to_string()],
-            ))?;
-            return self.session_uid(id);
-        };
+        let shared = &self.shared;
         let session = self.persisted_session_id(id)?;
         match &shared.extras_db {
             Some(conn) => {
@@ -109,16 +79,7 @@ impl Store {
     /// The session known by `uid`, if it still exists.
     pub fn session_by_uid(&self, uid: Uuid) -> Result<Option<i64>, String> {
         let uid = uid.to_string();
-        let Some(shared) = &self.shared else {
-            return sql(self
-                .conn
-                .query_row(
-                    "SELECT id FROM native_sessions WHERE uid=?1",
-                    [uid],
-                    |row| row.get(0),
-                )
-                .optional());
-        };
+        let shared = &self.shared;
         let session = match &shared.extras_db {
             Some(conn) => sql(conn
                 .query_row(
@@ -140,19 +101,14 @@ impl Store {
 
     /// The receipt first recorded for `op`, if it was processed.
     pub fn op_receipt(&self, op: &str) -> Result<Option<String>, String> {
-        let conn = match &self.shared {
-            None => &self.conn,
-            Some(shared) => match &shared.extras_db {
-                Some(conn) => conn,
-                None => {
-                    return Ok(shared
-                        .ledger
-                        .borrow()
-                        .ops
-                        .get(op)
-                        .map(|(_, receipt, _)| receipt.clone()));
-                }
-            },
+        let Some(conn) = &self.shared.extras_db else {
+            return Ok(self
+                .shared
+                .ledger
+                .borrow()
+                .ops
+                .get(op)
+                .map(|(_, receipt, _)| receipt.clone()));
         };
         sql(conn
             .query_row("SELECT receipt FROM ops WHERE op=?1", [op], |row| {
@@ -170,20 +126,14 @@ impl Store {
         at_ms: u64,
     ) -> Result<(), String> {
         let at = at_ms.min(i64::MAX as u64) as i64;
-        let conn = match &self.shared {
-            None => &self.conn,
-            Some(shared) => match &shared.extras_db {
-                Some(conn) => conn,
-                None => {
-                    shared
-                        .ledger
-                        .borrow_mut()
-                        .ops
-                        .entry(op.into())
-                        .or_insert_with(|| (session, receipt.into(), at_ms));
-                    return Ok(());
-                }
-            },
+        let Some(conn) = &self.shared.extras_db else {
+            self.shared
+                .ledger
+                .borrow_mut()
+                .ops
+                .entry(op.into())
+                .or_insert_with(|| (session, receipt.into(), at_ms));
+            return Ok(());
         };
         sql(conn.execute(
             "INSERT OR IGNORE INTO ops(op,session,receipt,at) VALUES(?1,?2,?3,?4)",
@@ -195,17 +145,11 @@ impl Store {
     /// Forgets the ops recorded before `before_ms`; returns how many.
     pub fn prune_ops(&self, before_ms: u64) -> Result<usize, String> {
         let before = before_ms.min(i64::MAX as u64) as i64;
-        let conn = match &self.shared {
-            None => &self.conn,
-            Some(shared) => match &shared.extras_db {
-                Some(conn) => conn,
-                None => {
-                    let mut ledger = shared.ledger.borrow_mut();
-                    let count = ledger.ops.len();
-                    ledger.ops.retain(|_, (_, _, at)| *at >= before_ms);
-                    return Ok(count - ledger.ops.len());
-                }
-            },
+        let Some(conn) = &self.shared.extras_db else {
+            let mut ledger = self.shared.ledger.borrow_mut();
+            let count = ledger.ops.len();
+            ledger.ops.retain(|_, (_, _, at)| *at >= before_ms);
+            return Ok(count - ledger.ops.len());
         };
         sql(conn.execute("DELETE FROM ops WHERE at<?1", [before]))
     }
@@ -217,10 +161,8 @@ mod tests {
 
     fn stores(dir: &std::path::Path) -> Vec<Store> {
         vec![
-            Store::open(std::path::Path::new(":memory:")).unwrap(),
-            Store::open(&dir.join("native.db")).unwrap(),
-            Store::open_monocode(std::path::Path::new(":memory:")).unwrap(),
-            Store::open_monocode(&dir.join("monocode.db")).unwrap(),
+            Store::in_memory().unwrap(),
+            Store::open(&dir.join("monocode.db")).unwrap(),
         ]
     }
 
@@ -257,18 +199,14 @@ mod tests {
     #[test]
     fn uids_survive_reopening() {
         let dir = tempfile::tempdir().unwrap();
-        type Open = fn(&std::path::Path) -> Result<Store, String>;
-        let opens: [Open; 2] = [Store::open, Store::open_monocode];
-        for open in opens {
-            let path = dir.path().join(format!("reopen-{}.db", Uuid::now_v7()));
-            let store = open(&path).unwrap();
-            let session = store.create("codex", "/project").unwrap();
-            let uid = store.session_uid(session.id).unwrap();
-            drop(store);
-            let store = open(&path).unwrap();
-            assert_eq!(store.session_uid(session.id).unwrap(), uid);
-            assert_eq!(store.session_by_uid(uid).unwrap(), Some(session.id));
-        }
+        let path = dir.path().join("monocode.db");
+        let store = Store::open(&path).unwrap();
+        let session = store.create("codex", "/project").unwrap();
+        let uid = store.session_uid(session.id).unwrap();
+        drop(store);
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.session_uid(session.id).unwrap(), uid);
+        assert_eq!(store.session_by_uid(uid).unwrap(), Some(session.id));
     }
 
     #[test]

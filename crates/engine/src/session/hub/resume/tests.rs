@@ -2,7 +2,6 @@
 //! waits longer after each refusal, and stops once the limit window has passed. The scheduler's
 //! clock is the test's: every beat names its time, and a scripted runner stands in for the
 //! provider, so each turn ends exactly as the test says.
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use futures::executor::LocalPool;
@@ -84,7 +83,7 @@ struct World {
 
 impl World {
     fn armed() -> Self {
-        let mut store = Store::open(Path::new(":memory:")).unwrap();
+        let mut store = Store::in_memory().unwrap();
         let id = store.create("codex", "/project").unwrap().id;
         store
             .write_rows(

@@ -14,9 +14,6 @@ mod handoff;
 #[cfg(test)]
 mod handoff_tests;
 mod persistence;
-mod visual_discovery;
-#[cfg(test)]
-mod visual_tests;
 use persistence::PendingSave;
 pub type Database = Arc<Mutex<Store>>;
 pub(crate) struct TurnInput {
@@ -53,6 +50,9 @@ pub struct Update {
     pub questions: Vec<onicode_core::agent::Question>,
     pub questions_resolved: Vec<String>,
     pub handoff: Option<Option<onicode_core::agent::Handoff>>,
+    /// What the finished turn did to its checkout, from its receipt: a viewer folds it in from
+    /// `TurnFinished`, while the turn's own updates leave it to the receipt it saves.
+    pub git: Option<onicode_core::git::turn::TurnGit>,
     pub status: String,
     pub finished: bool,
 }
@@ -127,21 +127,20 @@ pub(crate) fn run_turn_using(
     let user_request = prompt.clone();
     let mut transcript = Transcript::default();
     let mut history_loaded = false;
-    let shared = locked(&store)
-        .map(|s| s.uses_monocode_schema())
-        .unwrap_or(false);
-    let mut pending = PendingSave::new(shared, std::time::Instant::now());
+    let mut pending = PendingSave::new(std::time::Instant::now());
     pending.own_context(&summary.provider, &source_account);
     let mut initial_delivery = None;
     let mut accepted_messages = Vec::new();
     let mut provider_id = summary.provider_id.clone();
     let mut turn_start = 0;
     let mut turn_receipt: Option<(usize, onicode_core::agent::TurnInfo)> = None;
-    let mut visual_introduction = None;
     let mut prepared_handoff = None;
     let mut handoff_accepted = false;
     // SessionReview's recorded turn: its project and id, once the baseline is taken.
     let mut checkpoint: Option<(String, String)> = None;
+    // Where the checkout's HEAD, upstream and index stood when the turn started: the receipt
+    // reports what moved (`onicode_core::git::turn`).
+    let mut git_mark: Option<(String, onicode_core::git::turn::Mark)> = None;
     let mut created_worktree = None;
     let mut context = locked(&store)
         .ok()
@@ -167,18 +166,11 @@ pub(crate) fn run_turn_using(
         transcript = locked(&store)?.load(summary.id)?;
         history_loaded = true;
         turn_start = transcript.rows.len();
-        settings.operator_enabled |= settings.operator;
         let mut persisted = settings.clone();
         persisted.handoff = None;
-        // These modes belong to this turn, not the next composer draft.
+        // Plan belongs to this turn, not the next composer draft.
         persisted.plan = false;
-        persisted.operator = false;
-        persisted.orchestrator = false;
-        let start = transcript.begin(if settings.internal_message {
-            "mono-system"
-        } else {
-            "user"
-        });
+        let start = transcript.begin("user");
         if let Some(at) = settings
             .turn_model
             .as_ref()
@@ -247,6 +239,7 @@ pub(crate) fn run_turn_using(
                 questions: Vec::new(),
                 questions_resolved: Vec::new(),
                 handoff: None,
+                git: None,
                 status: if creating_worktree {
                     "Creating worktree…"
                 } else if settings.pending_provider_switch.is_some() {
@@ -302,6 +295,7 @@ pub(crate) fn run_turn_using(
                     questions: Vec::new(),
                     questions_resolved: Vec::new(),
                     handoff: None,
+                    git: None,
                     status: "Connecting…".into(),
                     finished: false,
                 },
@@ -348,6 +342,7 @@ pub(crate) fn run_turn_using(
                     questions: Vec::new(),
                     questions_resolved: Vec::new(),
                     handoff: None,
+                    git: None,
                     status: "Preparing handoff…".into(),
                     finished: false,
                 },
@@ -408,6 +403,7 @@ pub(crate) fn run_turn_using(
                     questions: Vec::new(),
                     questions_resolved: Vec::new(),
                     handoff: Some(Some(prepared)),
+                    git: None,
                     status: "Connecting…".into(),
                     finished: false,
                 },
@@ -465,6 +461,10 @@ pub(crate) fn run_turn_using(
             });
             checkpoint = Some((cwd.to_owned(), id));
         }
+        if cwd != "~" {
+            git_mark = onicode_core::git::turn::mark(std::path::Path::new(cwd))
+                .map(|mark| (cwd.to_owned(), mark));
+        }
         let mut prompt = provider::prepare_prompt(kind, &prompt, cwd, &settings.attachments)?;
         if !raw_native_command && prompt.contains("@note:") {
             let notes = locked(&store)?.notes()?;
@@ -484,44 +484,6 @@ pub(crate) fn run_turn_using(
                 }
             }
         }
-        if !raw_native_command && settings.orchestrator {
-            prompt = format!(
-                "{}\n\nUser request:\n{prompt}",
-                onicode_core::orchestration::INSTRUCTIONS
-            );
-        }
-        if !raw_native_command && settings.operator_enabled {
-            let cli = std::env::current_exe().map_err(|e| e.to_string())?;
-            prompt = format!(
-                "You have Onicode app access for this project. Use the CLI: {} app ACTION --json JSON. Supported actions: models.list {{}}, sessions.list {{}}, sessions.read {{sessionId}}, sessions.start {{prompt,harness?,model?,title?,draft?,reveal?}}, sessions.send/draft {{sessionId,prompt}}, sessions.stop {{sessionId}}, folders.list {{}}, folders.move {{sessionId,folderId?,newFolderName?}}, notes.list {{}}, notes.read {{id}}, notes.write {{id?,title,body}}, worktrees.list {{}}. Scope is this thread's project. App credentials are in the environment; never print them. Respect the user’s request and selected access policy.\n\n{prompt}",
-                shlex_quote(&cli.to_string_lossy())
-            );
-        }
-        // Every foreground session receives an independent visual capability.
-        // This happens after configuration was persisted, and Settings' env is
-        // transport-only, so credentials never enter saved conversation settings.
-        let visual_bridge = if !settings.text_only && !raw_native_command {
-            Some(onicode_core::visual_bridge::Server::start(summary.id)?)
-        } else {
-            None
-        };
-        if let Some(visual_bridge) = &visual_bridge {
-            let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-            settings
-                .environment
-                .extend(visual_bridge.environment(&executable));
-            visual_introduction = visual_discovery::Discovery::prepare(
-                &*locked(&store)?,
-                summary.id,
-                kind,
-                &settings.account.id,
-                provider_id.as_deref(),
-                &executable,
-            )?;
-            if let Some(discovery) = &visual_introduction {
-                prompt = discovery.prepend(prompt);
-            }
-        }
         let request = Request {
             kind,
             binary,
@@ -536,19 +498,15 @@ pub(crate) fn run_turn_using(
             settings,
         };
         let mut tool_rows = std::collections::HashMap::new();
-        // The running-work list attributes the provider and its tools to this session.
-        let result = onicode_core::process::owned_by(summary.id, || {
+        // A provider parked after this turn is kept for this session alone.
+        onicode_core::process::owned_by(summary.id, || {
             provider::run_with_controls(request, cancel.clone(), Some(controls), |events| {
                 // Cancellation freezes the transcript, even while the native
                 // provider drains its interrupt acknowledgement.
                 if cancel.load(Ordering::Relaxed) {
                     return Err("Stopped".into());
                 }
-                let publications = visual_bridge
-                    .as_ref()
-                    .map(|bridge| bridge.drain())
-                    .unwrap_or_default();
-                if events.is_empty() && publications.is_empty() {
+                if events.is_empty() {
                     return Ok(());
                 }
                 let mut start = transcript.rows.len();
@@ -793,70 +751,44 @@ pub(crate) fn run_turn_using(
                         }
                     }
                 }
-                for publication in &publications {
-                    let document =
-                        serde_json::to_string(&publication.document).map_err(|e| e.to_string())?;
-                    let at = transcript.begin("visual");
-                    transcript.append(&document);
-                    start = start.min(at);
-                    pending.changed(at);
-                    boundary = true;
-                }
                 let now = std::time::Instant::now();
-                let publication_result = (|| {
-                    if pending.due(boundary, now) {
-                        pending.flush(&store, summary.id, &transcript, &context, now)?;
-                    }
-                    publish(
-                        &tx,
-                        &cancel,
-                        Update {
-                            worktree_cwd: None,
-                            commands,
-                            provider_turn_id,
-                            turn_ready,
-                            follow_up_delivered,
-                            follow_up_errors,
-                            delivered: None,
-                            start,
-                            rows: transcript.rows[start..].to_vec(),
-                            provider_id: changed_id,
-                            model,
-                            config_model,
-                            config_settings,
-                            title: None,
-                            context: context_changed.then_some(context),
-                            metrics,
-                            usage_limit: None,
-                            background,
-                            approvals,
-                            approvals_resolved,
-                            questions,
-                            questions_resolved,
-                            handoff,
-                            status,
-                            finished: false,
-                        },
-                    )
-                })();
-                // A tool succeeds only after both durable storage and the live
-                // transcript update have accepted the visual.
-                for publication in publications {
-                    let result = publication_result.as_ref().map(|_| {
-                        serde_json::json!({"id":publication.document.id,"title":publication.document.title,"saved":true})
-                    }).map_err(Clone::clone);
-                    let _ = publication.reply.send(result);
+                if pending.due(boundary, now) {
+                    pending.flush(&store, summary.id, &transcript, &context, now)?;
                 }
-                publication_result
+                publish(
+                    &tx,
+                    &cancel,
+                    Update {
+                        worktree_cwd: None,
+                        commands,
+                        provider_turn_id,
+                        turn_ready,
+                        follow_up_delivered,
+                        follow_up_errors,
+                        delivered: None,
+                        start,
+                        rows: transcript.rows[start..].to_vec(),
+                        provider_id: changed_id,
+                        model,
+                        config_model,
+                        config_settings,
+                        title: None,
+                        context: context_changed.then_some(context),
+                        metrics,
+                        usage_limit: None,
+                        background,
+                        approvals,
+                        approvals_resolved,
+                        questions,
+                        questions_resolved,
+                        handoff,
+                        git: None,
+                        status,
+                        finished: false,
+                    },
+                )
             })
-        });
-        if result.is_ok()
-            && !cancel.load(Ordering::Relaxed)
-            && let Some(discovery) = &visual_introduction
-        {
-            discovery.remember(&*locked(&store)?, provider_id.as_deref())?;
-        }
-        result
+        })
     })();
     let cancelled =
         cancel.load(Ordering::Relaxed) || result.as_ref().is_err_and(|error| error == "Stopped");
@@ -982,6 +914,10 @@ pub(crate) fn run_turn_using(
         info.duration_ms = info.started_at.map_or(0, |at| completed.saturating_sub(at));
         info.duration_known = true;
         info.completed_at = info.started_at.map(|_| completed);
+        // The provider has exited, so the checkout's Git state is the turn's settled result.
+        info.git = git_mark.as_ref().and_then(|(cwd, mark)| {
+            onicode_core::git::turn::turn_git(std::path::Path::new(cwd), mark)
+        });
         if let Err(error) = persistence::save_turn_receipt(&store, summary.id, turn, info) {
             status = format!("{status} · Saving turn metadata failed: {error}");
         }
@@ -1017,6 +953,7 @@ pub(crate) fn run_turn_using(
         questions: Vec::new(),
         questions_resolved: Vec::new(),
         handoff,
+        git: None,
         status,
         finished: true,
     });
@@ -1063,16 +1000,6 @@ pub fn edited_paths(rows: &[Row]) -> Vec<String> {
         }
     }
     paths
-}
-
-fn shlex_quote(text: &str) -> String {
-    format!(
-        "\"{}\"",
-        text.replace('\\', "\\\\")
-            .replace('\"', "\\\"")
-            .replace('$', "\\$")
-            .replace('`', "\\`")
-    )
 }
 
 #[cfg(test)]

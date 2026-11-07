@@ -21,9 +21,10 @@ https://github.com/hardbeat920/monocode at 1de99e7b, under the MIT License:
 > CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 > DEALINGS IN THE SOFTWARE.
 
-monocode's own notices (GPUI under Apache-2.0, mermaid-rs-renderer under MIT, the embedded icon sets and editor
-bundles) are in `docs/monocode/NOTICE` and `docs/monocode/native/LICENSE-*`, and their license files sit beside
-the assets in `crates/app/assets/`. monocode's GPUI snapshot is no longer vendored: the app draws with
+monocode's own notices (GPUI under Apache-2.0, mermaid-rs-renderer under MIT, the embedded icon sets) are in
+`docs/monocode/NOTICE` and `docs/monocode/native/LICENSE-*`, and their license files sit beside the assets in
+`crates/app/assets/`. Its JavaScript bundles (CodeMirror analysis, Prettier, the arcade) are gone, so none of
+their code ships. monocode's GPUI snapshot is no longer vendored: the app draws with
 aislopware/gpui-fast (below).
 
 ## GPUI

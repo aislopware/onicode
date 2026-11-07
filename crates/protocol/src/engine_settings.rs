@@ -225,23 +225,3 @@ impl Call for SetEngineSetting {
 
     const NAME: &'static str = "SetEngineSetting";
 }
-
-/// What the engine's store kept for a viewer before viewers kept their own: the saved layout and
-/// preferences (`workspace`), and the markers the app kept beside them. The engine hands them over
-/// once and forgets them, so a viewer moves them into its own state at its first launch and a
-/// later launch finds nothing to move. A repeat of the op gets the same reply.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TakeViewerState {}
-
-/// [`TakeViewerState`]'s reply: each kept value under the key the store held it by.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ViewerState {
-    pub values: BTreeMap<String, String>,
-}
-
-impl Call for TakeViewerState {
-    type Params = Self;
-    type Reply = ViewerState;
-
-    const NAME: &'static str = "TakeViewerState";
-}

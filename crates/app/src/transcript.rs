@@ -19,7 +19,6 @@ pub(crate) mod selection;
 pub(crate) mod tasks;
 mod tools;
 mod user_links;
-mod visuals;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
@@ -34,8 +33,6 @@ use onicode_protocol::tool::tasks::Panel;
 use onicode_protocol::tool::{ToolCall, ToolState};
 use onicode_protocol::transcript::Row;
 use onicode_protocol::user_links::{UserMessageLink, parse_user_message_link};
-#[cfg(test)]
-pub(crate) use visuals::placements;
 
 use crate::markdown::{self, Fence, MarkdownRow, Part};
 use crate::markdown_model::MarkdownParser;
@@ -104,7 +101,6 @@ struct RenderedBlock {
 enum Body {
     SavedDraft,
     Markdown(Arc<MarkdownRow>),
-    Visual(Arc<onicode_protocol::visual::VisualDocument>),
     Plain(SharedString),
     Interjection(onicode_protocol::transcript::Interjection),
     /// A commit pill turn's status line, then its card.
@@ -375,11 +371,6 @@ pub(crate) struct TranscriptView {
     source: Vec<Row>,
     source_bytes: usize,
     attachment_images: HashMap<String, gpui::Entity<attachments::Photo>>,
-    visuals: HashMap<usize, visuals::CachedVisual>,
-    /// Visual ids the answers place in their prose.
-    placed: HashSet<String>,
-    /// Placed visuals by id: their message's start and document.
-    published: HashMap<String, (usize, Arc<onicode_protocol::visual::VisualDocument>)>,
     history_position: Option<history::HistoryPosition>,
     prepared_parsers: HashMap<usize, MarkdownParser>,
     turn_groups: std::cell::RefCell<HashMap<usize, usize>>,
@@ -454,7 +445,7 @@ pub(crate) struct TranscriptView {
     viewport: Bounds<Pixels>,
     anchor_turn: Option<usize>,
     prompt_rise: Option<(usize, Instant)>,
-    /// The mode or /visualize burst inside a just-sent prompt.
+    /// The mode burst inside a just-sent prompt.
     burst: Option<burst::Burst>,
     prompt_rise_pending: bool,
     introduced_prompt: Option<usize>,
@@ -464,7 +455,6 @@ pub(crate) struct TranscriptView {
     /// The conversation's git action pill holds the column's left end, so the
     /// jump button moves from the center to the right end.
     jump_beside_pill: bool,
-    jump_anchor: crate::popover::AnchorSlot,
     scroll_bound: bool,
     fold_targets: HashMap<usize, Option<usize>>,
     step_queue: HashMap<usize, Instant>,
@@ -1381,9 +1371,6 @@ impl TranscriptView {
             source: Vec::new(),
             source_bytes: 0,
             attachment_images: HashMap::new(),
-            visuals: HashMap::new(),
-            placed: HashSet::new(),
-            published: HashMap::new(),
             history_position: None,
             prepared_parsers: HashMap::new(),
             turn_groups: Default::default(),
@@ -1452,7 +1439,6 @@ impl TranscriptView {
             commit_files: HashMap::new(),
             copied_commit: None,
             jump_beside_pill: false,
-            jump_anchor: Default::default(),
             scroll_bound: false,
             fold_targets: HashMap::new(),
             step_queue: HashMap::new(),
@@ -1722,11 +1708,7 @@ impl TranscriptView {
         cx: &mut Context<Self>,
     ) {
         let mut submitted = onicode_protocol::transcript::Transcript::default();
-        submitted.begin(if settings.internal_message {
-            "mono-system"
-        } else {
-            "user"
-        });
+        submitted.begin("user");
         submitted.rows[0].sent_at = settings
             .turn_model
             .as_ref()
@@ -1744,9 +1726,8 @@ impl TranscriptView {
             });
         }
         submitted.begin("assistant");
-        if !settings.internal_message && self.visible && !cx.reduce_motion() {
-            self.burst = burst::Kind::from_prompt(prompt, settings)
-                .map(|kind| burst::Burst::new(self.source.len(), kind, cx.frame_time()));
+        if settings.plan && self.visible && !cx.reduce_motion() {
+            self.burst = Some(burst::Burst::new(self.source.len(), cx.frame_time()));
         }
         self.patch(self.source.len(), submitted.rows, cx);
     }
@@ -1775,22 +1756,6 @@ impl TranscriptView {
             }
             self.source_bytes = self.source_bytes.saturating_add(bytes);
         }
-        self.visuals.retain(|&start, _| {
-            self.source
-                .get(start)
-                .is_some_and(|row| row.role == "visual")
-        });
-        if start == 0 {
-            self.placed.clear();
-        }
-        self.published.retain(|_, (at, _)| *at < start);
-        let placed = self.placed.len();
-        for row in &self.source[start..] {
-            if row.role == "assistant" {
-                visuals::placements(&row.text, &mut self.placed);
-            }
-        }
-        let placed = self.placed.len() != placed;
         if self.streaming
             && let Some(id) = self.active_provider_turn_id.clone()
             && let Some(turn) = self.active_turn()
@@ -1861,16 +1826,6 @@ impl TranscriptView {
             }
         }
         self.outline.patched(&self.source, start);
-        // A newly placed visual leaves its own row earlier in the turn, so the
-        // whole turn rebuilds rather than just the changed suffix.
-        let start = if placed {
-            self.source[..start]
-                .iter()
-                .rposition(|r| r.is_prompt())
-                .map_or(0, |i| i + 1)
-        } else {
-            start
-        };
         self.rebuild(start, cx);
     }
 
@@ -2113,10 +2068,7 @@ impl TranscriptView {
             if !self.document
                 && !is_prompt
                 && !stopped_notice
-                && !matches!(
-                    role.as_str(),
-                    "visual" | onicode_protocol::transcript::attachments::ROLE
-                )
+                && role != onicode_protocol::transcript::attachments::ROLE
                 && (at == 0
                     || self.source[..at]
                         .iter()
@@ -2216,33 +2168,6 @@ impl TranscriptView {
                     self.rows.push(UiRow {
                         key: (0, 0),
                         body: Body::Interjection(note),
-                        message,
-                        first: false,
-                        last: false,
-                        work: false,
-                        work_tail: false,
-                        thought_phase: None,
-                    });
-                }
-            } else if role == "visual" {
-                let document =
-                    serde_json::from_str::<onicode_protocol::visual::VisualDocument>(&text)
-                        .ok()
-                        .filter(|document| document.validate().is_ok());
-                // An answer that places the visual draws it in its prose. While
-                // the turn runs, the call that published it stands for it, so
-                // it never appears above the answer and then jumps into it.
-                let elsewhere = document.as_ref().is_some_and(|document| {
-                    self.placed.contains(&document.id) || (self.streaming && at >= self.live_start)
-                });
-                if !elsewhere {
-                    let body = match document {
-                        Some(document) => Body::Visual(Arc::new(document)),
-                        None => Body::Plain("This visual could not be loaded.".into()),
-                    };
-                    self.rows.push(UiRow {
-                        key: (0, 0),
-                        body,
                         message,
                         first: false,
                         last: false,
@@ -2422,7 +2347,6 @@ impl TranscriptView {
                 row.work = self.fold_work
                     && has_work
                     && ready
-                    && role != "visual"
                     && !activity.pinned.contains(&at)
                     && final_answer.is_some_and(|answer| at < answer)
                     && !matches!(row.body, Body::WorkLine { .. });
@@ -3347,7 +3271,6 @@ impl TranscriptView {
         );
         let body = match row.body {
             Body::GitAction(card) => self.git_card_row(&card, message_start, cx),
-            Body::Visual(document) => self.visual_row(message_start, document, cx),
             Body::Interjection(ref note) => {
                 let open = self.expanded.contains(&message_start);
                 let long = note.text.lines().count() > 4 || note.text.len() > 300;
@@ -3677,7 +3600,7 @@ impl TranscriptView {
                         div()
                             .when(tiled, |d| d.min_w_0().flex_1())
                             .opacity(step_opacity)
-                            .child(self.tool(*call, message_start, tiled, cx)),
+                            .child(self.tool(*call, message_start, cx)),
                     )
                     .into_any_element()
             }
@@ -3726,8 +3649,6 @@ impl TranscriptView {
                 let md = &prepared.row;
                 let body = if let Part::Code { fence, lines } = &md.part {
                     self.code(fence.clone(), lines.clone(), ix, cx)
-                } else if let Part::Visual { id, caption } = &md.part {
-                    self.placed_visual(id, caption, cx)
                 } else {
                     markdown::body_selected(
                         md,
@@ -3780,7 +3701,6 @@ impl TranscriptView {
                 let burst = self.burst.filter(|burst| {
                     user && first && burst.prompt == message_start && burst.active(self.frame_now)
                 });
-                let now = self.frame_now;
                 // UserLinkPreview: the prompt's first link, drawn in its chunk.
                 let message_link = self.messages[row.message].user_link.clone();
                 let link = message_link
@@ -3819,7 +3739,7 @@ impl TranscriptView {
                             .child(
                                 canvas(
                                     |_, _, _| {},
-                                    move |bounds, _, window, cx| {
+                                    move |bounds, _, window, _| {
                                         // Match React's measured single-line bubble, including
                                         // when a window resize makes the same text wrap.
                                         let radius =
@@ -3838,10 +3758,6 @@ impl TranscriptView {
                                             gpui::fill(bounds, user_bubble_fill())
                                                 .corner_radii(corners),
                                         );
-                                        if let Some(burst) = burst.filter(burst::Burst::behind_text)
-                                        {
-                                            burst.paint(bounds, corners, now, window, cx);
-                                        }
                                     },
                                 )
                                 .absolute()
@@ -3899,7 +3815,7 @@ impl TranscriptView {
                             )
                         })
                     })
-                    .children(burst.filter(|burst| !burst.behind_text()).map(|burst| {
+                    .children(burst.map(|burst| {
                         let now = self.frame_now;
                         canvas(
                             |_, _, _| {},
@@ -4235,10 +4151,6 @@ impl TranscriptView {
         }
     }
 
-    pub(crate) fn jump_bounds(&self) -> Option<gpui::Bounds<gpui::Pixels>> {
-        self.show_jump.then(|| self.jump_anchor.get()).flatten()
-    }
-
     fn jump_to_bottom(&mut self, cx: &mut Context<Self>) {
         self.follow = Follow::default();
         self.list.set_follow_mode(FollowMode::Tail);
@@ -4480,7 +4392,7 @@ impl Render for TranscriptView {
                                 .child(
                                     div()
                                         .id("jump-to-bottom")
-                                        .child(self.jump_anchor.probe())
+                                        .debug_selector(|| "jump-to-bottom".into())
                                         .role(Role::Button)
                                         .aria_label("Scroll to bottom")
                                         .relative()
@@ -5622,12 +5534,13 @@ mod scroll_tests {
         window
             .update(cx, |view, window, _| {
                 assert!(view.show_jump);
-                assert!(
-                    view.jump_bounds().is_some(),
-                    "the button is drawn without waiting for another frame"
-                );
                 assert_eq!(window.take_retained_check_reports(), Vec::<String>::new());
             })
             .unwrap();
+        let visual = &mut gpui::VisualTestContext::from_window(window.into(), cx);
+        assert!(
+            visual.debug_bounds("jump-to-bottom").is_some(),
+            "the button is drawn without waiting for another frame"
+        );
     }
 }

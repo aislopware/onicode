@@ -177,8 +177,6 @@ pub struct TurnContext {
     pub environment: HashMap<String, String>,
     /// The queued message this turn sends, by its id.
     pub queued: Option<String>,
-    /// A message the app sent on the person's behalf, shown as such.
-    pub internal: bool,
 }
 
 /// Steer the running turn with a message, without stopping it.

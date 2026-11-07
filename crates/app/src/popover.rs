@@ -578,20 +578,6 @@ pub(crate) fn paint_glass(
     };
     window.paint_quad(quad.corner_radii(corners));
 }
-/// A whole popover surface painted directly, for cards drawn inside a
-/// canvas such as chart readouts: shadow, glass (or the light theme's opaque
-/// card) and the 10% border, at the popover's radius.
-pub(crate) fn paint_surface(bounds: Bounds<Pixels>, window: &mut Window) {
-    let corners = Corners::all(px(RADIUS));
-    window.paint_drop_shadows(bounds, corners, &shadow());
-    paint_glass(bounds, corners, tint(), window);
-    window.paint_quad(
-        gpui::fill(bounds, gpui::transparent_black())
-            .corner_radii(corners)
-            .border_widths(px(1.))
-            .border_color(content(0.1)),
-    );
-}
 /// The default popover glass tint.
 pub(crate) fn glass_tint() -> Hsla {
     tint()
@@ -826,13 +812,11 @@ pub(crate) struct MenuAction {
     pub description: Option<SharedString>,
     pub shortcut: Option<SharedString>,
     pub icon: Option<&'static str>,
-    pub icon_artwork: Option<&'static str>,
     pub image: Option<&'static str>,
     pub icon_color: Option<Hsla>,
     /// A provider logo shown with `value`, as the model row's harness icon.
     pub value_image: Option<&'static str>,
     pub value: Option<SharedString>,
-    pub badge: Option<SharedString>,
     pub disabled: bool,
     pub danger: bool,
     pub checked: bool,
@@ -867,12 +851,6 @@ impl MenuAction {
         self
     }
 
-    pub(crate) fn icon_artwork(mut self, path: &'static str) -> Self {
-        self.icon = None;
-        self.icon_artwork = Some(path);
-        self
-    }
-
     pub(crate) fn image(mut self, provider: &'static str) -> Self {
         self.image = Some(provider);
         self
@@ -890,11 +868,6 @@ impl MenuAction {
 
     pub(crate) fn value_image(mut self, provider: &'static str) -> Self {
         self.value_image = Some(provider);
-        self
-    }
-
-    pub(crate) fn badge(mut self, text: impl Into<SharedString>) -> Self {
-        self.badge = Some(text.into());
         self
     }
 
@@ -1411,14 +1384,6 @@ impl Menu {
                         .when(rich, |i| i.mt(px(2.))),
                 )
             })
-            .when_some(action.icon_artwork, |d, path| {
-                d.child(
-                    gpui::img(path)
-                        .size(px(icon_size))
-                        .flex_shrink_0()
-                        .object_fit(gpui::ObjectFit::Contain),
-                )
-            })
             .when_some(action.image, |d, provider| {
                 d.child(provider_icon(provider, icon_size))
             })
@@ -1569,34 +1534,7 @@ impl Menu {
                 )
                 .child(text)
         });
-        div()
-            .flex_1()
-            .min_w_0()
-            .child(match &action.badge {
-                // The Orchestrator row's "v1" pill beside its title.
-                Some(badge) => div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .child(title)
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .mb(px(1.))
-                            .px(px(6.))
-                            .py(px(2.))
-                            .rounded_full()
-                            .bg(gpui::hsla(0.82, 1., 0.83, 0.1))
-                            .text_size(px(9.))
-                            .line_height(px(9.))
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(gpui::hsla(0.81, 1., 0.9, 0.55))
-                            .child(badge.clone()),
-                    )
-                    .into_any(),
-                None => title.into_any(),
-            })
-            .children(hint)
+        div().flex_1().min_w_0().child(title).children(hint)
     }
 }
 impl Render for Menu {

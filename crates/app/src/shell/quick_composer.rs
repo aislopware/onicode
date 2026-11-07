@@ -192,7 +192,6 @@ impl Shell {
             &choice.cwd,
             None,
             onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
-            Vec::new(),
             cx,
         );
         let staged = choice.staged_attachments;

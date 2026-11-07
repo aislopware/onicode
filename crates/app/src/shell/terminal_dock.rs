@@ -1151,12 +1151,12 @@ impl Shell {
     }
 }
 
-/// The space between the footer's right-hand buttons: the resource chip,
-/// Actions, and Terminal or the running-terminals chip.
-pub(super) const FOOTER_GAP: f32 = 4.;
+/// The space between the footer's right-hand buttons: Actions, and Terminal or the
+/// running-terminals chip.
+const FOOTER_GAP: f32 = 4.;
 
-/// A short hairline between footer controls: High usage, actions, Terminal.
-pub(super) fn footer_separator() -> gpui::Div {
+/// A short hairline between footer controls: actions, Terminal.
+fn footer_separator() -> gpui::Div {
     div()
         .debug_selector(|| "footer-separator".into())
         .flex_shrink_0()

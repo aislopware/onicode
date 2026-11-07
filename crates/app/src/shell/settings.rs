@@ -61,11 +61,10 @@ impl Shell {
         }
         SettingsContext {
             quick_error: self.quick.error.clone(),
-            inbox_connections: self
+            inbox_connection: self
                 .inbox
                 .as_ref()
-                .map(|inbox| inbox.read(cx).connection_statuses())
-                .unwrap_or_default(),
+                .and_then(|inbox| inbox.read(cx).connection_status()),
             sessions: self
                 .order
                 .iter()
@@ -120,10 +119,10 @@ impl Shell {
             window,
             |this, _, event: &SettingsEvent, window, cx| match event {
                 SettingsEvent::Section(section) => this.select_settings(*section, cx),
-                SettingsEvent::ManageInboxProvider(provider) => {
+                SettingsEvent::ManageInboxConnection => {
                     this.open_inbox(window, cx);
                     if let Some(inbox) = &this.inbox {
-                        inbox.update(cx, |inbox, cx| inbox.open_connection(provider.clone(), cx));
+                        inbox.update(cx, |inbox, cx| inbox.open_connection(cx));
                     }
                 }
                 SettingsEvent::WhatsNew => {

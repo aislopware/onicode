@@ -510,7 +510,6 @@ impl SessionHub {
                         turn_model,
                         environment,
                         queued,
-                        internal,
                     } = *turn;
                     if summary.id != live.id {
                         return Err("The turn names another session".into());
@@ -519,7 +518,6 @@ impl SessionHub {
                     settings.turn_model = turn_model;
                     settings.environment = environment;
                     settings.mono_message_id = queued;
-                    settings.internal_message = internal;
                     (summary, settings)
                 }
                 None => {
@@ -625,12 +623,7 @@ impl SessionHub {
         // A turn that ends at a usage limit leaves the engine holding it.
         let reported = update.usage_limit.is_some();
         let limited = (update.finished && !cancelled)
-            .then(|| {
-                update
-                    .usage_limit
-                    .clone()
-                    .or_else(|| onicode_core::usage::Limit::from_error(&update.status))
-            })
+            .then(|| update.usage_limit.clone())
             .flatten();
         let delivered = std::mem::take(&mut update.follow_up_delivered);
         let failed = std::mem::take(&mut update.follow_up_errors);
@@ -790,11 +783,7 @@ impl SessionHub {
             settings.account.root = store.data_dir().map(Path::to_path_buf);
         }
         drop(store);
-        let mode = message.mode.as_deref();
-        settings.orchestrator = mode == Some("orchestrator");
-        settings.plan = mode == Some("plan") || settings.orchestrator;
-        settings.operator = mode == Some("operator");
-        settings.operator_enabled |= settings.operator;
+        settings.plan = message.mode.as_deref() == Some("plan");
         Ok(TurnContext {
             summary,
             settings,
@@ -1689,8 +1678,6 @@ impl SessionHub {
                     cwd: summary.cwd.clone(),
                     title: Some(summary.title.clone()),
                     start: NewSession::Settings(Box::new(settings)),
-                    started_by: None,
-                    scope: Vec::new(),
                 },
             )
             .await?;

@@ -142,14 +142,6 @@ pub(crate) struct Workspace {
     pub session_filters: onicode_protocol::session_filters::Filters,
     pub project_appearance:
         HashMap<String, onicode_protocol::project_appearance::ProjectAppearance>,
-    /// Last desktop source values, used to reconcile subsequent desktop changes
-    /// while retaining deliberate native project and preference edits.
-    pub desktop_project_preferences: Option<serde_json::Value>,
-    /// Unmodified desktop viewport metadata, including pane types and explicit
-    /// tab-group assignments that do not yet have a native representation.
-    pub desktop_workspace_snapshot: Option<serde_json::Value>,
-    /// Exact source strings retained for preferences with no native equivalent.
-    pub desktop_preferences_metadata: Option<serde_json::Value>,
 }
 
 /// A saved command the footer runs in a terminal with one click.
@@ -361,70 +353,10 @@ impl Default for Workspace {
             preferences: crate::settings::Preferences::default(),
             session_filters: Default::default(),
             project_appearance: Default::default(),
-            desktop_project_preferences: None,
-            desktop_workspace_snapshot: None,
-            desktop_preferences_metadata: None,
         }
     }
 }
 impl Workspace {
-    /// Seed original-rail concepts from the exact desktop preference strings.
-    /// Native edits then live in their own persisted fields.
-    pub(crate) fn restore_project_rail_metadata(&mut self) {
-        let Some(metadata) = self.desktop_preferences_metadata.as_ref() else {
-            return;
-        };
-        let read = |key: &str| -> Option<serde_json::Value> {
-            metadata
-                .get(key)?
-                .as_str()
-                .and_then(|s| serde_json::from_str(s).ok())
-        };
-        if self.classic_sidebar_tab_order.is_empty()
-            && let Some(value) = read("onicode.sidebarTabOrder")
-        {
-            self.classic_sidebar_tab_order = serde_json::from_value::<Vec<String>>(value)
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|tab| ["sessions", "files", "changes"].contains(&tab.as_str()))
-                .collect();
-        }
-        if self.classic_sidebar_tabs.is_empty()
-            && let Some(value) = read("onicode.projectSidebarTabs.v1")
-        {
-            self.classic_sidebar_tabs = serde_json::from_value::<HashMap<String, String>>(value)
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|(_, tab)| ["sessions", "files", "changes"].contains(&tab.as_str()))
-                .collect();
-        }
-        if let Some(value) = read("onicode.projectRailPinned") {
-            self.project_rail_pinned = serde_json::from_value(value).unwrap_or_default();
-        }
-        if let Some(value) = read("onicode.projectGroups") {
-            self.project_rail_groups = serde_json::from_value(value).unwrap_or_default();
-        }
-        if let Some(value) = read("onicode.projectGroupAssignments") {
-            self.project_rail_assignments = serde_json::from_value(value).unwrap_or_default();
-        }
-        if let Some(value) = read("onicode.projectRailOrder")
-            && let Ok(order) = serde_json::from_value::<Vec<String>>(value)
-        {
-            let mut projects: Vec<_> = order
-                .into_iter()
-                .filter(|p| self.projects.contains(p))
-                .collect();
-            projects.extend(
-                self.projects
-                    .iter()
-                    .filter(|p| !projects.contains(p))
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            );
-            self.projects = projects;
-        }
-    }
-
     pub fn boxy_layout(&self) -> bool {
         self.classic_layout || self.new_layout_boxy
     }
@@ -435,25 +367,11 @@ impl Workspace {
             .unwrap_or_default();
         // Before the project rail returned, "classic" meant the boxy version
         // of the single-sidebar layout. Keep that appearance for existing users.
-        if let Some(saved) = saved.and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()) {
-            if saved.get("new_layout_boxy").is_none() {
-                state.new_layout_boxy = state.classic_layout;
-                state.classic_layout = false;
-            }
-            // Keep the native empty-session choice when upgrading from the
-            // old games toggle. An explicitly saved new choice always wins.
-            let preferences = &saved["preferences"];
-            if preferences.get("empty_session").is_none()
-                && let Some(games) = preferences["empty_session_games"].as_bool()
-            {
-                state.preferences.empty_session = if games { "games" } else { "none" }.into();
-            }
-        }
-        let has_rail_state = saved
-            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-            .is_some_and(|value| value.get("project_rail_pinned").is_some());
-        if !has_rail_state {
-            state.restore_project_rail_metadata();
+        if let Some(saved) = saved.and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            && saved.get("new_layout_boxy").is_none()
+        {
+            state.new_layout_boxy = state.classic_layout;
+            state.classic_layout = false;
         }
         // Hidden project navigation is retired; collapsed always means icons.
         state.preferences.collapsed_project_rail = "compact".into();
@@ -516,21 +434,6 @@ impl Workspace {
         }
         state.prune_terminal_panes();
         state.normalize_title_order();
-        if state
-            .desktop_project_preferences
-            .as_ref()
-            .and_then(|source| source.get("projects"))
-            .is_some()
-            && state.active.is_some_and(|id| {
-                sessions.iter().any(|(known, path)| {
-                    *known == state.session_for_pane(id) && !state.projects.contains(path)
-                })
-            })
-        {
-            // An old native sidecar could focus an internal session folder.
-            // It must not restore that folder as a remembered user project.
-            state.active = None;
-        }
         if state.active.is_none_or(|id| state.tab_of(id).is_none()) {
             state.active = state
                 .project_focus
@@ -1151,33 +1054,6 @@ pub(crate) fn project_name(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn legacy_empty_session_choices_survive_upgrade_and_new_choices_take_precedence() {
-        for (preferences, expected) in [
-            (serde_json::json!({}), "ink"),
-            (serde_json::json!({"empty_session_games": false}), "none"),
-            (serde_json::json!({"empty_session_games": true}), "games"),
-            (
-                serde_json::json!({"empty_session_games": false, "empty_session": "games"}),
-                "games",
-            ),
-            (
-                serde_json::json!({"empty_session_games": true, "empty_session": "none"}),
-                "none",
-            ),
-        ] {
-            let saved =
-                serde_json::json!({"preferences": preferences, "sidebar_width": 280.}).to_string();
-            let state = super::Workspace::restore(Some(&saved), &[], "/project");
-            assert_eq!(state.preferences.empty_session, expected);
-            assert_eq!(state.sidebar_width, 280.);
-            let saved = serde_json::to_string(&state).unwrap();
-            assert!(!saved.contains("empty_session_games"));
-            let reopened = super::Workspace::restore(Some(&saved), &[], "/project");
-            assert_eq!(reopened.preferences.empty_session, expected);
-        }
-    }
-
-    #[test]
     fn rail_moves_stay_inside_their_section_and_follow_the_drawn_order() {
         let mut state = super::Workspace {
             classic_layout: true,
@@ -1449,28 +1325,32 @@ mod tests {
     }
     #[test]
     fn restoring_history_keeps_only_remembered_or_selected_projects() {
-        let saved = serde_json::json!({
-            "project": "/code/app",
-            "projects": ["/code/app", "/code/other"],
-            "tabs": [2],
-            "active": 2,
-            "desktop_project_preferences": {"projects": ["/code/app", "/code/other"]}
-        })
-        .to_string();
+        let saved = |active: i64| {
+            serde_json::json!({
+                "project": "/code/app",
+                "projects": ["/code/app", "/code/other"],
+                "tabs": [1, 2],
+                "active": active
+            })
+            .to_string()
+        };
         let sessions = vec![
             (1, "/code/app".into()),
-            (2, "/tmp/internal-chat".into()),
+            (2, "/tmp/scratch".into()),
             (3, "/private/var/folders/temporary".into()),
         ];
-        let restored = Workspace::restore(Some(&saved), &sessions, "/code/app");
+        // History in folders the person never added stays out of the rail.
+        let restored = Workspace::restore(Some(&saved(1)), &sessions, "/code/app");
         assert_eq!(restored.projects, ["/code/app", "/code/other"]);
         assert_eq!(restored.project, "/code/app");
-        assert_eq!(restored.active, None);
-        let serialized = serde_json::to_value(restored).unwrap();
+        // The chat that was selected brings its folder back with it.
+        let restored = Workspace::restore(Some(&saved(2)), &sessions, "/code/app");
         assert_eq!(
-            serialized["desktop_project_preferences"]["projects"],
-            serde_json::json!(["/code/app", "/code/other"])
+            restored.projects,
+            ["/code/app", "/code/other", "/tmp/scratch"]
         );
+        assert_eq!(restored.project, "/tmp/scratch");
+        assert_eq!(restored.active, Some(2));
     }
     #[test]
     fn restore_prunes_stale_tabs_and_preserves_an_intentionally_empty_workspace() {
@@ -1496,34 +1376,5 @@ mod tests {
             s.sidebar_activity_visible,
             "older workspaces keep the activity card visible"
         );
-    }
-    #[test]
-    fn desktop_snapshot_translation_deserializes_and_retains_unported_metadata() {
-        let source = serde_json::json!({
-            "projectCwd":"/work", "activeTabId":"tab",
-            "tabs":[{"id":"tab", "focusedId":"b", "groupId":"assigned", "editorPanes":[], "layout":{"type":"split", "dir":"down", "children":[{"type":"leaf","id":"a"},{"type":"leaf","id":"b"}], "sizes":[0.4,0.6]}}],
-            "projectTerminals":[{"projectPath":"/work", "side":"bottom", "size":240, "open":false, "pane":{"activeFileId":"term", "files":[{"id":"term", "terminal":true, "cwd":"/work/sub"}]}}]
-        });
-        let mapped = onicode_core::desktop_preferences::DesktopPreferences::workspace_snapshot(
-            &source,
-            |id| match id {
-                "a" => Some(1),
-                "b" => Some(2),
-                _ => None,
-            },
-        );
-        let saved = mapped.to_string();
-        let restored = Workspace::restore(
-            Some(&saved),
-            &[(1, "/work".into()), (2, "/work".into())],
-            "/work",
-        );
-        assert_eq!(restored.tabs, [1]);
-        assert_eq!(restored.active, Some(2));
-        assert!(restored.layouts[&1].is_split());
-        assert_eq!(restored.focused[&1], 2);
-        assert_eq!(restored.docks["/work"].terminals, ["/work/sub"]);
-        assert!(!restored.docks["/work"].open);
-        assert_eq!(restored.desktop_workspace_snapshot.as_ref(), Some(&source));
     }
 }

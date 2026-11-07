@@ -3,18 +3,11 @@
 //! engine's one `Topic`. `SetEngineSetting` replaces one typed key's value; a repeat of its op
 //! gets the first reply and changes nothing again. The settings take effect in the engine
 //! ([`Effects`]): the provider CLIs' paths and how many idle agents stay parked.
-//!
-//! The store once kept the app's whole saved layout and preferences (`workspace`) and a few app
-//! markers beside them. At its first open after that, the hub moves the engine's part of those
-//! preferences into its own key, and `TakeViewerState` hands the rest to the viewer once and
-//! forgets it, so neither move runs twice.
-use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::stream::BoxStream;
 use onicode_protocol::engine_settings::{
-    EngineSettings, EngineSettingsEvent, SetEngineSetting, TakeViewerState, ViewerState,
-    WatchEngineSettings,
+    EngineSettings, EngineSettingsEvent, SetEngineSetting, WatchEngineSettings,
 };
 use onicode_protocol::{Call, Item, OpId, Outcome, Watch};
 use onicode_rpc::{RpcError, RpcReply, RpcService};
@@ -29,16 +22,6 @@ mod tests;
 
 /// The store key the settings live under.
 pub(crate) const KEY: &str = "engine-settings";
-/// The store key monocode's app kept its layout and preferences under.
-pub(crate) const LEGACY_WORKSPACE: &str = "workspace";
-/// What the store kept for the app beside its layout: handed to the viewer with it, once.
-pub(crate) const VIEWER_KEYS: [&str; 5] = [
-    LEGACY_WORKSPACE,
-    "native-inbox-state",
-    "onicode.updateReportSeen",
-    "onicode.installedUpdate",
-    "linked-work-item-seen",
-];
 
 /// What the settings change outside the hub. A seam, so the model tests count it instead of
 /// reconfiguring the provider runners.
@@ -171,72 +154,18 @@ impl SettingsHub {
             })
             .await
     }
-
-    /// `TakeViewerState`: what the store kept for the viewer, handed over and forgotten.
-    pub async fn take_viewer_state(&self, op: Option<OpId>) -> Result<ViewerState, String> {
-        self.ledger
-            .once(op, async {
-                let store = locked(&self.store)?;
-                let mut values = BTreeMap::new();
-                for key in VIEWER_KEYS {
-                    if let Some(value) = store.setting(key)? {
-                        values.insert(key.to_owned(), value);
-                    }
-                }
-                for key in values.keys() {
-                    store.delete_setting(key)?;
-                }
-                Ok(ViewerState { values })
-            })
-            .await
-    }
 }
 
-/// The settings saved under [`KEY`]; at the first open, the engine's part of monocode's saved
-/// preferences, saved under it at once so the move never runs again.
+/// The settings saved under [`KEY`], or the defaults (saved at once) in a new store.
 fn load(store: &Database) -> Result<EngineSettings, String> {
-    let (saved, workspace) = {
-        let store = locked(store)?;
-        (store.setting(KEY)?, store.setting(LEGACY_WORKSPACE)?)
-    };
+    let saved = locked(store)?.setting(KEY)?;
     if let Some(raw) = saved {
         return serde_json::from_str(&raw)
             .map_err(|error| format!("Cannot read engine settings: {error}"));
     }
-    let settings = workspace
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-        .and_then(|workspace| workspace.get("preferences").cloned())
-        .map(|preferences| legacy(&preferences))
-        .unwrap_or_default();
+    let settings = EngineSettings::default();
     save(store, &settings)?;
     Ok(settings)
-}
-
-/// The engine's settings among monocode's preferences, which use the same names. Each is read on
-/// its own, so a value of the wrong shape keeps its default instead of losing the others.
-pub(crate) fn legacy(preferences: &serde_json::Value) -> EngineSettings {
-    let mut settings = EngineSettings::default();
-    let names: Vec<String> = serde_json::to_value(&settings)
-        .ok()
-        .and_then(|value| {
-            value
-                .as_object()
-                .map(|fields| fields.keys().cloned().collect())
-        })
-        .unwrap_or_default();
-    for name in names {
-        let Some(value) = preferences.get(&name) else {
-            continue;
-        };
-        let mut one = serde_json::Map::new();
-        one.insert(name, value.clone());
-        if let Ok(read) = serde_json::from_value::<EngineSettings>(serde_json::Value::Object(one)) {
-            for setting in read.changes_from(&EngineSettings::default()) {
-                settings.apply(&setting);
-            }
-        }
-    }
-    settings
 }
 
 fn save(store: &Database, settings: &EngineSettings) -> Result<(), String> {
@@ -256,11 +185,7 @@ impl SettingsService {
     }
 }
 
-const METHODS: [&str; 3] = [
-    WatchEngineSettings::NAME,
-    SetEngineSetting::NAME,
-    TakeViewerState::NAME,
-];
+const METHODS: [&str; 2] = [WatchEngineSettings::NAME, SetEngineSetting::NAME];
 
 impl Group for SettingsService {
     fn serves(&self, method: &str) -> bool {
@@ -279,10 +204,6 @@ impl RpcService for SettingsService {
             SetEngineSetting::NAME => {
                 let (op, body) = routed(params)?;
                 reply(self.hub.set(op, body).await)
-            }
-            TakeViewerState::NAME => {
-                let (op, TakeViewerState {}) = routed(params)?;
-                reply(self.hub.take_viewer_state(op).await)
             }
             _ => Err(RpcError::UnknownMethod(method.into())),
         }

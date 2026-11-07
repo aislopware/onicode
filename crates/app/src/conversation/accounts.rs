@@ -1,4 +1,3 @@
-use gpui::App;
 use onicode_protocol::accounts::Profile;
 use onicode_protocol::agents::{ForgetThread, TransferThread};
 use onicode_protocol::session::ResetThread;
@@ -115,12 +114,7 @@ impl Conversation {
     }
 
     pub(super) fn detect_usage_limit(&mut self, cx: &mut Context<Self>) {
-        if let Some(limit) = self
-            .settings
-            .usage_limit
-            .clone()
-            .or_else(|| Limit::from_error(&self.status))
-        {
+        if let Some(limit) = self.settings.usage_limit.clone() {
             if let Some(pending) = &mut self.settings.pending_provider_switch {
                 pending.skip_outgoing_recap = true;
             }
@@ -140,24 +134,10 @@ impl Conversation {
         }
     }
 
-    /// Account recovery also works for saved conversations from before native
-    /// limit metadata was recorded, and after dismissing the banner. Inspect
-    /// only the final error/notice: an older limit must not affect a later turn.
-    pub(crate) fn account_recovery_limit(&self, cx: &App) -> Option<Limit> {
-        self.settings
-            .usage_limit
-            .clone()
-            .or_else(|| Limit::from_error(&self.status))
-            .or_else(|| {
-                let rows = self.transcript.read(cx).source_rows();
-                let last = rows.last()?;
-                if !matches!(last.role.as_str(), "error" | "system") {
-                    return None;
-                }
-                let start = rows.iter().rposition(|row| row.first).unwrap_or(0);
-                let text: String = rows[start..].iter().map(|row| row.text.as_str()).collect();
-                Limit::from_error(&text)
-            })
+    /// The usage limit account recovery offers a way past: the one the provider reported for
+    /// this session's last turn.
+    pub(crate) fn account_recovery_limit(&self) -> Option<Limit> {
+        self.settings.usage_limit.clone()
     }
 
     /// Follows the engine's hold on this session's usage limit while it shows one: the reset the
@@ -224,11 +204,7 @@ impl Conversation {
         {
             return;
         }
-        let limit = self.account_recovery_limit(cx);
-        let limited = limit.is_some();
-        if limited {
-            self.settings.usage_limit = limit;
-        }
+        let limited = self.account_recovery_limit().is_some();
         let from = self.settings.account.clone();
         let thread = self.summary.provider_id.clone();
         let expected = thread.clone();
@@ -598,65 +574,23 @@ mod tests {
     use super::*;
 
     #[gpui::test]
-    fn account_recovery_uses_the_terminal_limit_without_reviving_an_older_failure(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        use onicode_protocol::transcript::Row;
+    fn a_reported_limit_opens_recovery_and_keeps_its_reset(cx: &mut gpui::TestAppContext) {
         let engine = cx.update(crate::engine_client::Engine::memory);
         let summary = engine.seed().create("claude", "/fixture").unwrap();
         let view = cx.new(|cx| Conversation::new(summary, engine, cx));
         view.update(cx, |view, cx| {
-            let row = |role: &str, text: &str| Row {
-                role: role.into(),
-                text: text.into(),
-                first: true,
-                sent_at: None,
-                id: None,
-            };
-            for role in ["error", "system"] {
-                view.transcript.update(cx, |v, cx| {
-                    v.patch(
-                        0,
-                        vec![row("user", "Keep going"), row(role, "rate_limit")],
-                        cx,
-                    );
-                });
-                assert!(view.account_recovery_limit(cx).is_some());
-            }
-            view.transcript.update(cx, |v, cx| {
-                v.patch(
-                    2,
-                    vec![row("user", "Try again"), row("assistant", "Completed")],
-                    cx,
-                );
-            });
-            assert!(view.account_recovery_limit(cx).is_none());
-            view.transcript.update(cx, |v, cx| {
-                v.patch(4, vec![row("system", "Network timeout")], cx);
-            });
-            assert!(view.account_recovery_limit(cx).is_none());
-        });
-    }
-
-    #[gpui::test]
-    fn claude_limit_code_opens_recovery_and_preserves_the_reported_reset(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let engine = cx.update(crate::engine_client::Engine::memory);
-        let summary = engine.seed().create("claude", "/fixture").unwrap();
-        let view = cx.new(|cx| Conversation::new(summary, engine, cx));
-        view.update(cx, |view, cx| {
-            view.status = "rate_limit".into();
+            // Limit wording alone is an ordinary error: only the provider's report is a limit.
+            view.status = "You've hit your usage limit".into();
             view.detect_usage_limit(cx);
-            assert!(view.settings.usage_limit.is_some());
-            assert!(view.follow_ups.state.paused);
+            assert!(view.account_recovery_limit().is_none());
             let reported = Limit {
                 resets_at: Some(usage::now_ms() + 3_600_000),
                 resume_at_reset: false,
             };
             view.settings.usage_limit = Some(reported.clone());
             view.detect_usage_limit(cx);
-            assert_eq!(view.settings.usage_limit, Some(reported));
+            assert!(view.follow_ups.state.paused);
+            assert_eq!(view.account_recovery_limit(), Some(reported));
         });
     }
 

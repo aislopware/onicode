@@ -97,7 +97,7 @@ impl Shell {
         // An idle conversation moves to the account in place, limited or not.
         // Only a running turn falls through to a fresh session.
         if !current.busy {
-            if current.summary.has_messages || current.account_recovery_limit(cx).is_some() {
+            if current.summary.has_messages || current.account_recovery_limit().is_some() {
                 view.update(cx, |v, cx| v.switch_account(profile, cx));
             } else {
                 view.update(cx, |v, cx| v.set_blank_account(profile, cx));
@@ -110,7 +110,6 @@ impl Shell {
         settings.usage_limit = None;
         settings.handoff = None;
         settings.turns.clear();
-        settings.operator_enabled = false;
         settings.revision = 0;
         let cwd = current.summary.cwd.clone();
         let revision = self.navigation_revision;
@@ -119,7 +118,6 @@ impl Shell {
             &cwd,
             None,
             onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
-            Vec::new(),
             cx,
         );
         cx.spawn(async move |this, cx| {
@@ -177,7 +175,7 @@ mod tests {
                 let target = book.add(Kind::Claude, "Available").unwrap();
                 script_book(shell, &book, cx);
                 let source = center.read(cx).profile(&source.id);
-                let mut rows = vec![
+                let rows = vec![
                     Row {
                         role: "user".into(),
                         text: "Finish the integration".into(),
@@ -193,17 +191,6 @@ mod tests {
                         id: None,
                     },
                 ];
-                if limited {
-                    // Older native saves persisted this as a system notice and
-                    // have no structured usage_limit setting.
-                    rows.push(Row {
-                        role: "system".into(),
-                        text: "rate_limit".into(),
-                        first: true,
-                        sent_at: None,
-                        id: None,
-                    });
-                }
                 let seed = shell.engine.seed();
                 seed.provider_id(id, "saved-thread").unwrap();
                 seed.write_rows(id, 0, &rows).unwrap();
@@ -222,10 +209,15 @@ mod tests {
                         }
                         v.patch(0, rows, cx);
                     });
-                    assert!(view.settings.usage_limit.is_none());
                     if cold {
                         assert!(view.unload_history(cx));
                     }
+                    // The limit the provider reported lives in the session's settings, not its
+                    // history: an unloaded session still carries it.
+                    view.settings.usage_limit = limited.then(|| onicode_protocol::usage::Limit {
+                        resets_at: Some(onicode_protocol::usage::now_ms() + 3_600_000),
+                        resume_at_reset: false,
+                    });
                 });
                 let state = (
                     target.id.clone(),

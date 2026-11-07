@@ -1,5 +1,4 @@
 mod accounts;
-mod app_launch;
 mod approvals;
 mod attachment_drop;
 mod background_tasks;
@@ -88,8 +87,6 @@ const ACCESS_MODES: &[(&str, &str, &str, &str)] = &[
 ];
 // Tailwind v4 accents the composer menus tint their icons with.
 const YELLOW_300: u32 = 0xffdf20;
-const SKY_300: u32 = 0x74d4ff;
-const FUCHSIA_300: u32 = 0xf4a8ff;
 const AMBER_400: u32 = 0xffb900;
 fn tint(color: u32, alpha: f32) -> gpui::Hsla {
     let mut c: gpui::Hsla = gpui::rgb(color).into();
@@ -154,13 +151,6 @@ pub(crate) struct Conversation {
     attaching: bool,
     file_drag: bool,
     attachment_error: Option<String>,
-    app_environment: std::collections::HashMap<String, String>,
-    /// The running turn's policy, independent of the next composer's mode.
-    pub(crate) app_read_only: bool,
-    planning_orchestration: bool,
-    pub(crate) orchestration_plan: Option<onicode_protocol::orchestration::Plan>,
-    orchestration_error: Option<String>,
-    pub(crate) orchestration_progress: Option<String>,
     status: String,
     loaded: bool,
     history_unloaded: bool,
@@ -226,9 +216,7 @@ pub(crate) struct Conversation {
     // A split or review pane sits beside this chat; only then does a narrow
     // pane rest the composer where it docks.
     beside_pane: bool,
-    arcade: Option<Entity<crate::arcade::Arcade>>,
     ink: Option<Entity<crate::ink_field::InkField>>,
-    runner: Option<Entity<crate::composer_runner::Runner>>,
     cancel: Arc<AtomicBool>,
     /// The engine is naming this session's new checkout.
     naming_worktree: bool,
@@ -628,12 +616,6 @@ impl Conversation {
             attaching: false,
             file_drag: false,
             attachment_error: None,
-            app_environment: Default::default(),
-            app_read_only: false,
-            planning_orchestration: false,
-            orchestration_plan: None,
-            orchestration_error: None,
-            orchestration_progress: None,
             status: "Loading conversation…".into(),
             loaded: false,
             history_unloaded: false,
@@ -689,9 +671,7 @@ impl Conversation {
             composer_motion: ComposerMotion::default(),
             narrow: false,
             beside_pane: false,
-            arcade: None,
             ink: None,
-            runner: None,
             cancel: Arc::new(AtomicBool::new(false)),
             naming_worktree: false,
             edit_recovery: None,
@@ -931,15 +911,7 @@ impl Conversation {
         }
         self.completion
             .update(cx, |completion, cx| completion.dismiss(cx));
-        let mode = if self.settings.orchestrator {
-            Some("orchestrator")
-        } else if self.settings.plan {
-            Some("plan")
-        } else if self.settings.operator {
-            Some("operator")
-        } else {
-            None
-        };
+        let mode = self.settings.plan.then_some("plan");
         if self.settings.pending_provider_switch.is_some() && self.busy {
             // Picking a provider only arms the change. Sending is what stops
             // the outgoing provider and commits the handoff.
@@ -968,9 +940,6 @@ impl Conversation {
             }
             return;
         }
-        self.planning_orchestration = self.settings.orchestrator;
-        self.orchestration_plan = None;
-        self.orchestration_error = None;
         self.launch_prompt(prompt, cx);
         if self.busy && mode.is_some() {
             self.clear_submitted_mode(cx);
@@ -998,9 +967,8 @@ impl Conversation {
         {
             return None;
         }
-        let mode = self.settings.orchestrator || self.settings.plan || self.settings.operator;
         Some(
-            if self.busy && !mode && self.steers_follow_up(alternate, cx) {
+            if self.busy && !self.settings.plan && self.steers_follow_up(alternate, cx) {
                 ("Steer", "queue-steer")
             } else {
                 ("Queue", "queue-list")
@@ -1010,16 +978,8 @@ impl Conversation {
 
     fn launch_prompt(&mut self, prompt: String, cx: &mut Context<Self>) {
         if self.stopping {
-            let mode = if self.settings.orchestrator {
-                Some("orchestrator")
-            } else if self.settings.plan {
-                Some("plan")
-            } else if self.settings.operator {
-                Some("operator")
-            } else {
-                None
-            };
-            self.enqueue_follow_up(prompt, mode.map(str::to_owned), cx);
+            let mode = self.settings.plan.then(|| "plan".to_owned());
+            self.enqueue_follow_up(prompt, mode, cx);
             if let Some(id) = self
                 .follow_ups
                 .state
@@ -1083,12 +1043,6 @@ impl Conversation {
         self.cancel = Arc::new(AtomicBool::new(false));
         let summary = self.summary.clone();
         let cancel = self.cancel.clone();
-        // Composer modes reset after Send; the thread grant and running turn's
-        // access policy must outlive that reset and edits to the next draft.
-        self.settings.operator_enabled |= self.settings.operator;
-        self.app_read_only = self.settings.plan
-            || self.settings.orchestrator
-            || self.settings.access == AccessMode::ReadOnly;
         let mut settings = self.settings.clone();
         if let Some(model) = self.model_info() {
             for control in &model.controls {
@@ -1115,7 +1069,6 @@ impl Conversation {
             }
         }
         settings.model = self.model.clone();
-        settings.environment.extend(self.app_environment.clone());
         settings
             .attachments
             .extend(std::mem::take(&mut self.attachments));
@@ -1126,11 +1079,6 @@ impl Conversation {
         }
         self.transcript
             .update(cx, |view, cx| view.submit_prompt(&prompt, &settings, cx));
-        if settings.orchestrator {
-            settings.plan = true;
-            settings.operator = false;
-            self.settings.orchestrator = false;
-        }
         if self.settings.handoff.take().is_some() {
             self.save_settings(cx);
         }
@@ -1465,7 +1413,16 @@ impl Conversation {
                             this.approvals.clear();
                             this.questions.clear();
                             this.controls = None;
-                            this.transcript.update(cx, |v, cx| v.streaming(false, cx));
+                            let git = update.git;
+                            this.transcript.update(cx, |view, cx| {
+                                // The commit card reads what the turn did from its receipt.
+                                if let Some(git) = git
+                                    && let Some(turn) = view.active_turn()
+                                {
+                                    view.turns.entry(turn).or_default().git = Some(git);
+                                }
+                                view.streaming(false, cx);
+                            });
                             let model_id = turn_model_id.clone();
                             this.transcript.update(cx, |view, _| {
                                 if let Some(turn) = view.active_turn()
@@ -1474,12 +1431,6 @@ impl Conversation {
                                     info.model_id = model_id;
                                 }
                             });
-                            if stopping {
-                                this.planning_orchestration = false;
-                                this.orchestration_progress = None;
-                            } else {
-                                this.finish_orchestration_plan(cx);
-                            }
                             this.settings.turns = this.transcript.read(cx).window_turns();
                             this.save_settings(cx);
                             this.refresh_git(cx);
@@ -1526,8 +1477,6 @@ impl EventEmitter<SessionChanged> for Conversation {}
 impl EventEmitter<ChooseFolder> for Conversation {}
 impl EventEmitter<OpenSessionChanges> for Conversation {}
 impl EventEmitter<Transfer> for Conversation {}
-impl EventEmitter<composer_features::StartOrchestration> for Conversation {}
-impl EventEmitter<composer_features::StopOrchestration> for Conversation {}
 
 impl Conversation {
     pub(crate) fn install_transfer(
@@ -2094,7 +2043,7 @@ impl Conversation {
                 "thinking" => {
                     self.settings.thinking = Some(!self.settings.thinking.unwrap_or(false))
                 }
-                "plan" | "operator" | "orchestrator" | "draft" => {
+                "plan" | "draft" => {
                     self.toggle_mode(id, cx);
                     return;
                 }
@@ -2579,15 +2528,6 @@ impl Conversation {
                             .icon("ai-idea")
                             .icon_color(tint(YELLOW_300, 0.8))
                             .description("Review a plan before building"),
-                        MenuAction::new("operator", "Operator")
-                            .icon("cursor-magic")
-                            .icon_color(tint(SKY_300, 0.8))
-                            .description("Give this thread access to Onicode"),
-                        MenuAction::new("orchestrator", "Orchestrator")
-                            .icon("share")
-                            .icon_color(tint(FUCHSIA_300, 0.65))
-                            .badge("v1")
-                            .description("Plan and coordinate agent work"),
                         MenuAction::new("draft", "Draft")
                             .icon("circle-dashed-hi")
                             .description("Save this message without starting the agent")
@@ -2598,8 +2538,6 @@ impl Conversation {
                         let checked = match action.id.as_ref() {
                             "plan" => self.settings.plan,
                             "draft" => self.draft_active(cx),
-                            "operator" => self.settings.operator,
-                            "orchestrator" => self.settings.orchestrator,
                             _ => false,
                         };
                         action.checked(checked).into()
@@ -2791,44 +2729,17 @@ impl Conversation {
 
     // Composer.tsx in the inset layout: a frosted, rounded box holding the
     // field and its toolbar, with the workspace bar sitting under it.
-    fn composer_runner(
-        &mut self,
-        cx: &mut Context<Self>,
-    ) -> Option<Entity<crate::composer_runner::Runner>> {
-        if cx
-            .try_global::<crate::settings::Preferences>()
-            .is_some_and(|p| !p.composer_mascot)
-        {
-            return None;
-        }
-        if self.busy && self.runner.is_none() {
-            let transcript = self.transcript.clone();
-            self.runner = Some(cx.new(|cx| crate::composer_runner::Runner::new(transcript, cx)));
-        }
-        let runner = self.runner.clone()?;
-        let name = onicode_protocol::project_appearance::MASCOTS
-            [self.project_appearance.mascot(&self.summary.cwd)];
-        let color = self.project_appearance.color(&self.summary.cwd);
-        runner.update(cx, |r, cx| r.configure(self.busy, name, color, cx));
-        Some(runner)
-    }
-
     fn composer(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let radius = COMPOSER_RADIUS;
         let command = if self.follow_ups.draft_selected {
             Some(input::Command::Draft)
-        } else if self.settings.orchestrator {
-            Some(input::Command::Orchestrator)
         } else if self.settings.plan {
             Some(input::Command::Plan)
-        } else if self.settings.operator {
-            Some(input::Command::Operator)
         } else {
             None
         };
         self.input
             .update(cx, |input, cx| input.selected_command(command, cx));
-        let runner = self.composer_runner(cx);
         let beside = cx
             .try_global::<crate::settings::Preferences>()
             .is_some_and(|p| p.model_controls == "beside");
@@ -2872,7 +2783,6 @@ impl Conversation {
             .child(self.composer_anchor.probe())
             .children(menu)
             .children(self.model_list_popover(cx))
-            .children(self.orchestration_card(cx))
             .children(self.usage_notice(window, cx))
             .child(self.changes_shelf(window, cx))
             .child(self.background_shelf(window, cx))
@@ -3088,9 +2998,6 @@ impl Conversation {
                     )
                     .children(self.attachment_drop_overlay(12.)),
             )
-            .children(runner.map(|runner| {
-                runner.cached(crate::composer_runner::Runner::placement())
-            }))
             .child(self.workspace_bar(cx))
             .into_any_element()
     }
@@ -3390,12 +3297,6 @@ impl Conversation {
                 }
             });
         let canvas_fill: Option<AnyElement> = match fill {
-            "games" => Some(
-                self.arcade
-                    .get_or_insert_with(|| cx.new(crate::arcade::Arcade::new))
-                    .clone()
-                    .into_any_element(),
-            ),
             "ink" if !cx.reduce_motion() => Some(
                 self.ink
                     .get_or_insert_with(|| cx.new(crate::ink_field::InkField::new))
@@ -4641,11 +4542,9 @@ mod menu_tests {
                     .update(cx, |i, cx| i.set_text("Review this".into(), cx));
                 c.toggle_mode("plan", cx);
                 assert_eq!(c.input.read(cx).content, "/plan Review this");
-                c.toggle_mode("operator", cx);
-                assert_eq!(c.input.read(cx).content, "/operator Review this");
-                c.toggle_mode("orchestrator", cx);
-                assert_eq!(c.input.read(cx).content, "/orchestrator Review this");
-                c.toggle_mode("orchestrator", cx);
+                c.toggle_mode("draft", cx);
+                assert_eq!(c.input.read(cx).content, "/draft Review this");
+                c.toggle_mode("draft", cx);
                 assert_eq!(c.input.read(cx).content, "Review this");
                 c.toggle_mode("plan", cx);
             })
@@ -4655,7 +4554,7 @@ mod menu_tests {
             .update(cx, |c, w, cx| {
                 c.input.update(cx, |i, cx| {
                     i.select_range(0..i.content.len(), cx);
-                    i.replace_text_in_range(None, "/operator New draft", w, cx);
+                    i.replace_text_in_range(None, "/draft New draft", w, cx);
                 });
             })
             .unwrap();
@@ -4663,8 +4562,8 @@ mod menu_tests {
         window
             .update(cx, |c, _, cx| {
                 assert!(!c.settings.plan);
-                assert_eq!(c.input.read(cx).content, "/operator New draft");
-                c.enable_mode("operator", cx);
+                assert_eq!(c.input.read(cx).content, "/draft New draft");
+                c.enable_mode("draft", cx);
                 c.input.update(cx, |i, cx| i.select_range(1..1, cx));
             })
             .unwrap();
@@ -4672,50 +4571,44 @@ mod menu_tests {
         cx.run_until_parked();
         window
             .update(cx, |c, _, cx| {
-                assert!(!c.settings.operator);
-                assert_eq!(c.input.read(cx).content, "operator New draft");
+                assert!(!c.follow_ups.draft_selected);
+                assert_eq!(c.input.read(cx).content, "draft New draft");
             })
             .unwrap();
     }
 
     #[gpui::test]
-    fn submitted_modes_clear_for_a_started_turn_and_stay_cleared_after_completion(
+    fn a_submitted_plan_clears_for_a_started_turn_and_stays_cleared_after_completion(
         cx: &mut TestAppContext,
     ) {
-        for mode in ["operator", "orchestrator", "plan"] {
-            let window = conversation(cx);
-            window
-                .update(cx, |view, _, cx| {
-                    // An unsupported synthetic provider stops before any CLI I/O.
-                    view.summary.provider = "fixture".into();
-                    view.loaded = true;
-                    view.input
-                        .update(cx, |i, cx| i.set_text("check the composer".into(), cx));
-                    view.toggle_mode(mode, cx);
-                    view.send(cx);
-                    assert!(view.busy);
-                    assert!(view.input.read(cx).content.is_empty());
-                    assert!(
-                        !view.settings.plan
-                            && !view.settings.operator
-                            && !view.settings.orchestrator
-                    );
-                })
-                .unwrap();
-            cx.run_until_parked();
-            window
-                .update(cx, |view, _, cx| {
-                    let saved = view
-                        .engine
-                        .seed()
-                        .agent_settings(view.summary.id)
-                        .unwrap()
-                        .unwrap();
-                    assert!(!saved.plan && !saved.operator && !saved.orchestrator);
-                    assert!(view.input.read(cx).content.is_empty());
-                })
-                .unwrap();
-        }
+        let window = conversation(cx);
+        window
+            .update(cx, |view, _, cx| {
+                // An unsupported synthetic provider stops before any CLI I/O.
+                view.summary.provider = "fixture".into();
+                view.loaded = true;
+                view.input
+                    .update(cx, |i, cx| i.set_text("check the composer".into(), cx));
+                view.toggle_mode("plan", cx);
+                view.send(cx);
+                assert!(view.busy);
+                assert!(view.input.read(cx).content.is_empty());
+                assert!(!view.settings.plan);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |view, _, cx| {
+                let saved = view
+                    .engine
+                    .seed()
+                    .agent_settings(view.summary.id)
+                    .unwrap()
+                    .unwrap();
+                assert!(!saved.plan);
+                assert!(view.input.read(cx).content.is_empty());
+            })
+            .unwrap();
     }
 
     #[gpui::test]

@@ -22,8 +22,9 @@ viewers of engines over one protocol, `onicode-protocol`, carried by `onicode-rp
 - `EngineId` is the tailnet device id bound at admission (`transport.md`). `SessionId`, `MessageId`, `OpId` and
   `TerminalId` are UUIDv7, minted by whoever creates the thing, usually the viewer, so a new chat, a sent prompt
   or a queued message has its final id before any byte leaves.
-- The store's `i64` rowids stay inside the engine, and `native_sessions` gains a unique `uid`. Prompt rows carry
-  their `MessageId` (`transcript::Row` gains `id`), so a viewer's echo is replaced in place.
+- The store's `i64` session handles stay inside the engine, and each session gets a unique `uid` in the settings
+  sidecar (`session_uids`). Prompt rows carry their `MessageId` (`transcript::Row` gains `id`), so a viewer's
+  echo is replaced in place.
 - A session elsewhere is `SessionKey {engine, session}`, and a project is `ProjectRef {engine, path}`. Together
   they replace the `remote://` cwd scheme and its 82 call sites.
 - Every mutating call carries an `OpId`. The host keeps a processed-op ledger (`ops` table, pruned after
@@ -72,7 +73,7 @@ first port is a translation, not a redesign.
 | Terminal | `WatchTerminal {terminal, viewer, since}` (a libghostty snapshot of the host's screen through READY, its scrollback as an unnumbered `History` right after it, then output, resizes, clipboard writes, OSC 7501 `Status` and exit; `terminal.md`) | `OpenTerminal {terminal, viewer, cwd, size, colors}`, `ListTerminals` (with each terminal's status), `ResizeTerminal {viewer}`, `CloseTerminal`, `TerminalInput {viewer, Key, Text, Paste, Wheel}`, `ReadForeground`, `StopForeground`. The PTY takes the size of the viewer that typed last. |
 | Agents | `WatchAccounts` (accounts with usage from the streams) | `Catalog`, `Skills`, `Commands`, `AddAccount`, `Login`, `Logout`, `SetProviderEnabled`, MCP servers, `HarnessUpdates` |
 | Engine settings | `WatchEngineSettings` | `SetEngineSetting` (typed keys: keep-awake, worktree defaults, title generation, hooks) |
-| Work | `WatchAutomations`, `WatchInbox` | automation upsert, delete and run now; inbox sources and refresh; `LinkWorkItem` |
+| Work | `WatchAutomations`, `WatchInbox` | automation upsert, delete and run now; inbox refresh; `LinkWorkItem` |
 | Alerts | `WatchAlerts` (`alerts.md`) | `SetViewportFocus` |
 | Desktop | none | `OpenDesktop`, `DesktopGrants`, `DesktopOpenGuide`: the engine brokers its Mac's desktopd and carries no media (`remote-desktop.md`) |
 
@@ -112,7 +113,7 @@ app-owned, its steers sent as `Steer` with the queued message staged whole; `Sen
 `EditLastTurn`, `Rewind`, `Fork`, `Btw` and `SwitchProvider` answer "not served yet" until step 4.
 
 **Step 4 as built.** The engine's `WorkspaceHub` holds the workspace (every session's summary, the projects'
-folders, reminders, orchestration summaries, the note count and the automation runs waiting to start) and serves
+folders, reminders, the note count and the automation runs waiting to start) and serves
 it as `WatchWorkspace` with a session's seq, ring and backpressure. Only the Workspace calls change it, each
 answered from the ledger on repeat; a created session takes the viewer's `SessionId`. A session created that
 way which no turn has started in is removed when its last session watcher leaves, once the store shows no rows and
@@ -124,7 +125,7 @@ until `SessionKey`; `SessionSummary.key` is the id other tools know a session by
 automation schedulers on its own clock (a beat at start, then every 30 s in process; tests beat in virtual time),
 recovers runs an earlier engine claimed, keeps and retries Inbox event claims, generates titles and worktree branch
 names, stores notes under the id the viewer minted (`CreateNote` refuses a taken one, so a new note opens in the
-frame it is made) and keeps orchestration summaries; a plan's dispatch is the pure `orchestration::Run`. A session's
+frame it is made). A session's
 summary marks a saved draft as `SaveQueue` stores or clears it. The shell mirrors the watch into the maps its views
 already read, moving only the fields whose engine value changed (a title, pin or draft mark the app set stays until
 the engine moves that field), and echoes each call in the same frame until its receipt; a refused echo returns to
@@ -138,10 +139,9 @@ naming, so no provider or `gh` runs for it after it goes; closing the conversati
 `StopBtw`, as monocode's drop did. `Rewind`, `Fork` and `SwitchProvider` stay unserved until the
 composer and accounts move (step 6).
 App-side for now: a run's prompt still goes through the conversation, since the composer and accounts move in step
-6 (the engine claims the run, creates its session and records its end); the Inbox view still fetches from its
-providers and reports what appeared (`ClaimInboxEvents`) until the providers' fetch moves with a watch of its own;
-the Automations view edits definitions, and the app bridge (`sessions.create`, `sessions.read`, notes actions,
-receipts) uses the store, until settings move (step 6); the layout and seen markers are preferences (step 6); note
+6 (the engine claims the run, creates its session and records its end); the Inbox view still fetches from
+GitHub and reports what appeared (`ClaimInboxEvents`) until that fetch moves with a watch of its own;
+the Automations view edits definitions until settings move (step 6); the layout and seen markers are preferences (step 6); note
 images, attachments, worktree removal and session search are files and search (step 5). `PROTOCOL` is 4; the golden
 file is re-recorded with `ONICODE_GOLDEN=record`.
 
@@ -202,10 +202,9 @@ for the project menu's branch label. `PROTOCOL` is 6.
 usage, model catalogs, skills, native commands, MCP servers, the provider CLIs and their updates, one-off text
 (`Generate`, `StopGenerate`) and the idle agents, with `WatchAccounts` (the book, each account's sign-in and each
 usage read, an event replacing what it names). Engine settings (`engine_settings.rs`) serves `WatchEngineSettings`,
-`SetEngineSetting` (one typed key) and `TakeViewerState`. Work serves the Inbox, automations, linked activity,
-agent processes and `ReadWorkItem(Details)`; App access serves the Operator bridge's store reads; Settings pages
-serves `ReadWorktreeMarks`. Every hub publishes on the generic `Topic`, every mutating call runs once per `OpId`
-through the ledger, and the provider CLIs, `gh` and the trackers sit behind seams (`AgentProbe`, `Gh`,
+`SetEngineSetting` (one typed key). Work serves the Inbox, automations, linked activity
+and `ReadWorkItem(Details)`; Settings pages serves `ReadWorktreeMarks`. Every hub publishes on the generic `Topic`, every mutating call runs once per `OpId`
+through the ledger, and the provider CLIs, `gh` and the Inbox's GitHub calls sit behind seams (`AgentProbe`, `Gh`,
 `Trackers`) that the tests script. Who an account is comes only from the CLIs' published doors: `claude auth
 status --json` (an `oauth_token` sign-in on the first-party API with no `subscriptionType`, a setup token, reads
 as "Claude subscription") and Codex's `account/read`; the engine never reads a credential file. A model's limits
@@ -231,16 +230,16 @@ prompt and sends it again, but never one the provider already spoke in. That is 
 resume reused an id derived from the limit, so after a restart the ledger answered the retry with the old receipt
 and the resume never came back.
 The preferences split in two (`ui-state.md`): the engine's part (`EngineSettings`) lives in the store under
-`engine-settings`, moved once from monocode's `workspace` key; the app's part lives in its own `ui.sqlite3`,
-handed over once by `TakeViewerState`. The app opens no engine database: `main.rs` opens an `Engine` over
+`engine-settings`; the app's part lives in its own `ui.sqlite3`. Neither reads what an earlier build or monocode
+kept under `workspace`: there is no migration before release. The app opens no engine database: `main.rs` opens an `Engine` over
 `onicode_engine::Local`, and `crates/app/clippy.toml` holds the boundary with `disallowed-types` (`Store`,
 `rusqlite::Connection`, `notify`) and `disallowed-methods` (`Store::open`, the provider runs and CLI lookups,
 `catalog::models_for`, `std::process::Command::new`). Each exception is an `#[expect]` naming why: `ui_state.rs`,
 test git fixtures, commands that act on the viewer's own Mac (screenshots, sounds, System Settings, the hang
 sampler), the terminal (step 7), the SSH remote (step 10) and the phone host and its Changes page (step 11).
 The app still depends on `onicode-core` for those files and for viewer-side work core holds beside its IO: image
-decoding and thumbnails, attachment checks, the visual runtime, the app bridge's socket, process teardown, the
-external editors, resource pressure, and a few path helpers (`worktree_management::default_root`,
+decoding and thumbnails, attachment checks, process teardown, the
+external editors, and a few path helpers (`worktree_management::default_root`,
 `files::document`, `git::naming`). Pure types come from `onicode_protocol`. `PROTOCOL` is 7.
 
 **Step 8 as built.** `onicode-engine` (`crates/engine/src/bin`, `host.rs`) makes its data dir `0700`, takes
@@ -312,7 +311,7 @@ and the path is absolute, as engines name folders); plain paths are the app's ow
 `engine_client::for_project`, turns either spelling into the engine that serves it (`Engine::on` for a
 peer) and the path as that engine names it, and every view that reads or changes a project's files,
 checkouts, terminals, searches or worktrees goes through it; `Engine::app_path` spells what an engine
-answers back in the app's way. Settings, accounts, the inbox, harness updates and resource pressure stay
+answers back in the app's way. Settings, accounts, the inbox and harness updates stay
 on the app's own engine; a project's skills and MCP servers are its engine's (below). The app's engine lists only its own sessions, so the shell follows the
 workspace of every engine a `peer://` project names (`shell/peer_sessions.rs`) and lays that project's
 sessions over its maps like its own. The shell keys sessions by row, and two engines' rows collide, so a
@@ -322,8 +321,8 @@ rows and the panes' negative ids. `Engine::adopt` tells the client which row and
 there, so session calls, turns and the row-bearing workspace calls (`Engine::row`) reach it; its
 conversation is handed `Engine::on(peer)`. Each followed workspace is kept in `viewer-cache.json` beside
 the app's own, so an offline engine's rows show as last seen across launches, and a turn for one is
-refused with the status its engine gives. A peer project's folders, its sessions' reminders and orchestration
-summaries are that engine's too: the shell lays them over its maps in the app's spelling (URI, app rows) and
+refused with the status its engine gives. A peer project's folders and its sessions' reminders
+are that engine's too: the shell lays them over its maps in the app's spelling (URI, app rows) and
 announces a reminder that engine fires, and every change to them, as to a pin, title or link, is a call to that
 engine naming its own rows (`Shell::split_by_engine`, `groups_call`). Its echo stays until the receipt arrives on
 that engine's watch; a call that fails (the engine offline) or that it refuses takes the echo back at once and
@@ -353,9 +352,7 @@ attachments as that engine names them: a file from this Mac (dropped, chosen, pa
 quick composer, whose staging folder a peer project does not adopt from) is read here and its bytes go to
 `SaveAttachments`, whose `NewAttachment` now carries a file's `name` (kept, in a folder of its own); a file of that
 engine already, dragged from its project's explorer, is named as it names it; the engine checks the composer's
-limits against everything the composer holds, and its chips and lightbox read through it. An orchestrated
-worker's files travel in `CreateSession`'s `scope`, and the engine holding the checkout runs the symlink-aware
-check on its own disk before it creates the worker (`Denied` with the file that escapes); `create_in_engine`
+limits against everything the composer holds, and its chips and lightbox read through it. `create_in_engine`
 names a start's `worktree_cwd` as that engine does and spells the settings it answers in the app's way.
 Settings' Skills and MCP pages, the composer's skills and MCP picker, MCP health, sign-in, adding and removing a
 server and creating a skill ask the project's engine (that machine's personal and project skills and servers,
@@ -366,6 +363,14 @@ what that engine answered. A path under `~` in a peer session's transcript (a li
 an attachment) stays home-relative, `peer://<engine>/~/…` (a macOS root holds no folder `~`, so no absolute path
 reads that way), and that engine reads it under its own home: `Read` and `Write` expand `~` as they did, and
 `Stat` now does too. `PROTOCOL` is 12.
+
+A turn's commit card comes from Git, not from the agent's commands. The turn marks where its checkout's HEAD,
+upstream and index stand when it starts (`onicode_core::git::turn`), and when it ends it reads what moved with
+`git log --numstat` over the commits HEAD gained, `git diff --cached --numstat -z` and `git status --porcelain=v2
+--branch` under `LC_ALL=C`: the commits (hash, subject, files, additions, deletions), the staged files, ahead and
+behind, and a push when the upstream moved to HEAD. That `TurnGit` rides in the turn receipt (`TurnInfo::git`,
+sent in `TurnFinished` and saved with the receipt) and the card renders only it, so a locale, an alias or a
+wrapper script cannot change what it shows. `PROTOCOL` is 13.
 
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,
@@ -408,19 +413,18 @@ ratchets down; wall-clock numbers run as Mac benches.
 ## Plan
 
 **Boundary.** `crates/core` becomes the engine's library whole. From `crates/app/src` into `crates/engine/src`:
-- **Turns:** `runtime.rs` with `runtime/{persistence,handoff,visual_discovery}.rs` and their tests, going to
+- **Turns:** `runtime.rs` with `runtime/{persistence,handoff}.rs` and their tests, going to
   `engine::turn`. The turn launch and update merge in `conversation.rs` (~1000-1300) become a `SessionHub` that
   turns `Update` into `SessionEvent`s.
 - **Store and run parts of the conversation modules:**
   `conversation/{follow_up,edit_last_turn,btw,title,worktree_naming}.rs`, and the account-switch decision in
   `conversation/accounts.rs`.
-- **Schedulers:** `shell/automation_runs.rs` (`claim_due`), the reminder tick in `shell/session_groups.rs:722`,
-  and plan execution in `shell/orchestration.rs`.
+- **Schedulers:** `shell/automation_runs.rs` (`claim_due`) and the reminder tick in
+  `shell/session_groups.rs:722`.
 - **Inbox:** the polling in `inbox.rs`. **Filesystem and git:** `fs_watch.rs`, the git command side of
   `git_status.rs` and `git_cache.rs`, and checkpoint runs in `session_review.rs`.
 - **Search:** the search back ends behind `project_search.rs` and `search.rs`.
-- **Terminals:** the PTY and shell in `terminal.rs` (moved: `crates/term` and `TerminalHub`). **Agent bridges:** `visual-mcp` and `app_access`
-  from `main.rs`.
+- **Terminals:** the PTY and shell in `terminal.rs` (moved: `crates/term` and `TerminalHub`).
 
 These are deleted: `runtime/remote.rs`, `conversation/{remote,remote_plans,mobile}.rs`,
 `shell/{remote_sessions,mobile_host}.rs`, `mobile/`, `core/src/{remote,mobile}*`, `store/remote*.rs`,
@@ -443,9 +447,9 @@ after it.
    `onicode_engine::turn::run_turn`.
 3. `SessionHub`: seq, epoch, ring and the `Update`→`SessionEvent` mapping. The engine serves session watches and
    commands as an `RpcService`. The app's `Conversation` drives turns through `EngineClient` over
-   `memory_client` on a tokio thread, with echo by `MessageId` and receipts. `native_sessions.uid` and the
+   `memory_client` on a tokio thread, with echo by `MessageId` and receipts. Session `uid`s and the
    `ops` table land here, along with the session model test.
-4. Workspace, sidebar and history on `WatchWorkspace`. Reminders, automations, orchestration, title and worktree
+4. Workspace, sidebar and history on `WatchWorkspace`. Reminders, automations, title and worktree
    naming, btw, notes and inbox polling move into the engine. `locked(&store)` leaves `shell/*` and
    `conversation/*` (241 sites today).
 5. Files, git, search, worktrees and checkpoints: `WatchDir` (from `fs_watch.rs`), `WatchGit` and the calls,

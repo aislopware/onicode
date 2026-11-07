@@ -21,11 +21,10 @@ use onicode_core::session_groups::WorkItem;
 use onicode_core::store::{Session, Store};
 use onicode_protocol::workspace::{
     Archive, ClaimInboxEvents, CreateNote, CreateSession, Created, Delete, DeleteNote,
-    FinishAutomationRun, GenerateTitle, Lead, MarkSeen, NameWorktree, Named, NewSession, Pin,
+    FinishAutomationRun, GenerateTitle, MarkSeen, NameWorktree, Named, NewSession, Pin,
     PrepareAutomationRun, Preview, PreviewSession, Project, ReminderChange, Rename, SaveGroups,
-    SaveOrchestration, SaveResponseNote, SearchResults, SearchSessions, SessionDefaults,
-    SessionSummary, SetReminder, SetWorkItem, UpsertNote, WatchWorkspace, WorkspaceEvent,
-    WorkspaceState,
+    SaveResponseNote, SearchResults, SearchSessions, SessionDefaults, SessionSummary, SetReminder,
+    SetWorkItem, UpsertNote, WatchWorkspace, WorkspaceEvent, WorkspaceState,
 };
 use onicode_protocol::{Cursor, Item, OpId, Outcome, Rejection, SessionId};
 use serde::Serialize;
@@ -43,6 +42,8 @@ use crate::turn::{Database, locked};
 
 /// How long the ledger keeps a processed op (engine.md "Ids").
 const OP_RETENTION_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+/// Why a reminder at time 0 is refused.
+pub(super) const NO_TIME: &str = "A reminder needs a time";
 /// The ledger is pruned after every this many recorded ops.
 const PRUNE_EVERY: u64 = 256;
 /// Where Inbox items whose event claim failed wait for the next tick, across restarts.
@@ -286,42 +287,19 @@ impl WorkspaceHub {
         .await
     }
 
-    /// `CreateSession`: a session under the viewer's id, with its starting settings. A worker
-    /// whose assignment's files escape its checkout on this disk is refused (`Denied`).
+    /// `CreateSession`: a session under the viewer's id, with its starting settings.
     pub async fn create_session(
         &self,
         op: Option<OpId>,
         body: CreateSession,
     ) -> Result<Created, String> {
-        // Read off the disk before the workspace is locked.
-        let escapes = if body.scope.is_empty() {
-            None
-        } else {
-            let checkout = match &body.start {
-                NewSession::Settings(settings) => settings.worktree_cwd.clone(),
-                NewSession::Defaults(defaults) => defaults.worktree_cwd.clone(),
-                NewSession::Bare => None,
-            }
-            .unwrap_or_else(|| body.cwd.clone());
-            super::orchestration::check_scope(&checkout, &body.scope).err()
-        };
         self.mutate(op, move |inner, store| {
-            if let Some(reason) = escapes {
-                let refused = Created {
-                    outcome: Outcome::Rejected(Rejection::Denied(reason.clone())),
-                    session: None,
-                    settings: None,
-                };
-                return Ok(rejected(refused, Rejection::Denied(reason)));
-            }
             let CreateSession {
                 session,
                 provider,
                 cwd,
                 title,
                 start,
-                started_by,
-                scope: _,
             } = body;
             let mut stored = store.create(&provider, &cwd)?;
             let row = stored.id;
@@ -336,19 +314,13 @@ impl WorkspaceHub {
                     store.save_agent_settings(row, &settings)?;
                     Some(*settings)
                 }
-                NewSession::Defaults(defaults) => {
-                    Some(start_with_defaults(store, &provider, &cwd, row, defaults)?)
-                }
+                NewSession::Defaults(defaults) => Some(start_with_defaults(store, row, defaults)?),
             };
-            if let Some(caller) = started_by {
-                store.save_started_link(row, caller)?;
-            }
             let summary = SessionSummary {
                 id,
                 key: persisted_key(store, row),
                 worktree: settings.as_ref().and_then(|s| s.worktree_cwd.clone()),
                 draft: false,
-                started_by,
                 automation: None,
                 busy: false,
                 unread: false,
@@ -356,7 +328,6 @@ impl WorkspaceHub {
                     .as_ref()
                     .and_then(|s| s.model.as_deref())
                     .and_then(|model| onicode_core::store::native_model(model, &provider)),
-                hidden: false,
                 session: stored,
             };
             inner.unprompted.insert(row);
@@ -464,8 +435,7 @@ impl WorkspaceHub {
     }
 
     /// Session `row` was made or changed in the store by a path that does not go through the
-    /// engine yet (the app bridge's launches, engine.md migration step 6): its summary is read
-    /// again, and watchers get it if it differs.
+    /// workspace's own calls: its summary is read again, and watchers get it if it differs.
     pub fn refresh_session(&self, row: i64) {
         let mut inner = self.lock();
         if !inner.loaded {
@@ -474,15 +444,9 @@ impl WorkspaceHub {
         let Ok(store) = locked(&self.store) else {
             return;
         };
-        let Some(mut summary) = read_summary(&store, &inner, row) else {
+        let Some(summary) = read_summary(&store, &inner, row) else {
             return;
         };
-        if summary.started_by.is_none() {
-            summary.started_by = store
-                .started_links()
-                .ok()
-                .and_then(|links| links.get(&row).copied());
-        }
         let project = new_project(&inner, &store, &summary.session.cwd);
         drop(store);
         if inner.topic.state().sessions.contains(&summary) {
@@ -546,7 +510,7 @@ impl WorkspaceHub {
         .await
     }
 
-    /// `SetReminder`.
+    /// `SetReminder`. A reminder at time 0 is refused: [`NO_TIME`].
     pub async fn set_reminder(
         &self,
         op: Option<OpId>,
@@ -554,6 +518,10 @@ impl WorkspaceHub {
     ) -> Result<Outcome, String> {
         self.mutate(op, move |_, store| {
             let outcome = match body.change {
+                // The store keeps only real times; 0 is no time at all.
+                ReminderChange::At(0) | ReminderChange::Snooze { due_at: 0, .. } => {
+                    Outcome::Rejected(Rejection::Denied(NO_TIME.into()))
+                }
                 ReminderChange::At(due_at) => {
                     store.set_reminders(&body.sessions, due_at)?;
                     Outcome::Applied
@@ -604,23 +572,6 @@ impl WorkspaceHub {
             };
             summary.unread = false;
             Ok(applied(summary))
-        })
-        .await
-    }
-
-    /// `SaveOrchestration`.
-    pub async fn save_orchestration(
-        &self,
-        op: Option<OpId>,
-        body: SaveOrchestration,
-    ) -> Result<Outcome, String> {
-        self.mutate(op, move |_, store| {
-            store.save_orchestration_summary(body.lead, &body.summary)?;
-            let events = vec![WorkspaceEvent::Orchestration(Lead {
-                lead: body.lead,
-                summary: body.summary,
-            })];
-            Ok((Outcome::Applied, Outcome::Applied, events))
         })
         .await
     }
@@ -920,14 +871,12 @@ impl WorkspaceHub {
                         key: persisted_key(store, row),
                         worktree: settings.worktree_cwd.clone(),
                         draft: false,
-                        started_by: None,
                         automation: Some(due.automation.id.clone()),
                         busy: inner.busy.contains(&row),
                         unread: inner.unread.contains(&row),
                         model: settings.model.as_deref().and_then(|model| {
                             onicode_core::store::native_model(model, &stored.provider)
                         }),
-                        hidden: false,
                         session: stored,
                     };
                     service(&mut inner.automations, store)?.update_run(
@@ -1206,11 +1155,9 @@ fn read_summary(store: &Store, inner: &Inner, row: i64) -> Option<SessionSummary
         draft: store
             .draft_sessions()
             .is_ok_and(|drafts| drafts.contains(&row)),
-        started_by: previous.and_then(|known| known.started_by),
         automation: previous.and_then(|known| known.automation.clone()),
         busy: inner.busy.contains(&row),
         unread: inner.unread.contains(&row),
-        hidden: previous.is_some_and(|known| known.hidden),
         session,
     })
 }
@@ -1302,7 +1249,6 @@ fn load(
                 key: persisted_key(store, row),
                 worktree: metadata.worktrees.get(&row).cloned().flatten(),
                 draft: metadata.drafts.contains(&row),
-                started_by: metadata.started_by.get(&row).copied(),
                 automation: automations.get(&row).cloned(),
                 busy: busy.contains(&row),
                 unread: unread.contains(&row),
@@ -1310,7 +1256,6 @@ fn load(
                     .details
                     .get(&row)
                     .and_then(|details| details.model.clone()),
-                hidden: metadata.sidebar_hidden.contains(&row),
                 session,
             }
         })
@@ -1322,50 +1267,19 @@ fn load(
             path,
         })
         .collect();
-    let mut orchestrations: Vec<Lead> = store
-        .orchestration_summaries()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(lead, summary)| Lead { lead, summary })
-        .collect();
-    orchestrations.sort_by_key(|lead| lead.lead);
     Ok(WorkspaceState {
         sessions,
         projects,
         reminders: store.reminders()?,
-        orchestrations,
         notes: store.list_notes().map_or(0, |notes| notes.len()),
         automations: Vec::new(),
     })
 }
 
-/// Settings a model override starts fresh from: the source's controls belong to its model.
-#[must_use]
-pub fn new_session_settings(source: Option<Settings>, model: Option<String>) -> Settings {
-    let mut settings = source.unwrap_or_default();
-    if let Some(model) = model {
-        if settings
-            .model
-            .as_ref()
-            .is_some_and(|source| source != &model)
-        {
-            settings.effort = None;
-            settings.fast = false;
-            settings.thinking = None;
-            settings.service_tier = None;
-            settings.model_settings.clear();
-        }
-        settings.model = Some(model);
-    }
-    settings
-}
-
-/// A new session's settings from the project's saved defaults and the viewer's choices, saved
-/// when they differ from a bare session's.
+/// A new session's settings from the viewer's choices, saved when they differ from a bare
+/// session's.
 fn start_with_defaults(
     store: &Store,
-    provider: &str,
-    cwd: &str,
     row: i64,
     defaults: SessionDefaults,
 ) -> Result<Settings, String> {
@@ -1376,30 +1290,19 @@ fn start_with_defaults(
         effort,
         worktree_cwd,
     } = defaults;
-    let mut settings = new_session_settings(
-        store
-            .desktop_preferences()
-            .and_then(|preferences| preferences.session_defaults(provider, cwd)),
+    let settings = Settings {
         model,
-    );
-    settings.access = access;
-    if let Some(effort) = effort {
-        settings.model_settings.retain(|key, _| {
-            !matches!(
-                key.as_str(),
-                "effort" | "reasoning" | "reasoningEffort" | "reasoning_effort"
-            )
-        });
-        settings.effort = Some(effort);
-    }
-    settings.account = account;
-    settings.worktree_cwd = worktree_cwd;
+        access,
+        effort,
+        account,
+        worktree_cwd,
+        ..Settings::default()
+    };
     if settings.model.is_some()
         || settings.effort.is_some()
-        || !settings.model_settings.is_empty()
         || settings.worktree_cwd.is_some()
         || settings.account.id != onicode_core::accounts::DEFAULT
-        || access != AccessMode::default()
+        || settings.access != AccessMode::default()
     {
         store.save_agent_settings(row, &settings)?;
     }

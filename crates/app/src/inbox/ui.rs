@@ -395,15 +395,8 @@ fn message(text: impl Into<SharedString>) -> Div {
 fn error(text: impl Into<SharedString>) -> Div {
     message(text).text_color(rgb(0xf87171))
 }
-fn provider_mark(provider: &str) -> gpui::Svg {
-    let (path, color) = match provider {
-        "linear" => ("inbox-linear", content(0.8)),
-        "jira" => ("inbox-jira", rgb(0x2684ff).into()),
-        "gitlab" => ("inbox-gitlab", rgb(0xfc6d26).into()),
-        "azuredevops" => ("inbox-azuredevops", content(0.8)),
-        _ => ("inbox-github", content(0.8)),
-    };
-    icon(path, 14.).text_color(color)
+fn github_mark() -> gpui::Svg {
+    icon("inbox-github", 14.).text_color(content(0.8))
 }
 fn status_color(item: &Item) -> Hsla {
     match item.status() {
@@ -421,41 +414,6 @@ fn status_icon(item: &Item) -> &'static str {
     } else {
         "circle-dot"
     }
-}
-fn attention_label(reason: &str) -> String {
-    let reason = reason.trim().to_lowercase();
-    match reason.as_str() {
-        "assigned" => "Assigned to you",
-        "mentioned" | "directly_addressed" => "Mentioned you",
-        "review_requested" => "Review requested",
-        "review_submitted" => "Review submitted",
-        "approval_required" => "Approval required",
-        "build_failed" => "Pipeline failed",
-        "unmergeable" => "Cannot be merged",
-        "merge_train_removed" => "Removed from merge train",
-        "member_access_requested" => "Access requested",
-        "marked" => "Added to your to-dos",
-        _ => {
-            return reason
-                .split('_')
-                .filter(|word| !word.is_empty())
-                .enumerate()
-                .map(|(ix, word)| {
-                    if ix == 0 {
-                        let mut chars = word.chars();
-                        chars
-                            .next()
-                            .map(|c| c.to_uppercase().to_string() + chars.as_str())
-                            .unwrap_or_default()
-                    } else {
-                        word.to_string()
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(" ");
-        }
-    }
-    .into()
 }
 fn toggle(list: &mut Vec<String>, key: String) {
     if list.contains(&key) {
@@ -517,88 +475,8 @@ impl Inbox {
 
     fn list_view(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let now = RelativeNow::read(window, cx);
-        let connected = model::PROVIDERS
-            .into_iter()
-            .filter(|provider| {
-                self.snapshot
-                    .connections
-                    .get(*provider)
-                    .is_some_and(|s| s.connected)
-            })
-            .collect::<Vec<_>>();
+        let connected = self.snapshot.connection.connected;
         let items = self.visible_items(cx);
-        let sources = div()
-            .h(px(36.))
-            .px(px(8.))
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            .gap(px(1.))
-            .border_b_1()
-            .border_color(content(0.07))
-            .children(connected.iter().map(|provider| {
-                let source = provider.to_string();
-                div()
-                    .id(SharedString::from(format!("inbox-source-{provider}")))
-                    .role(Role::Tab)
-                    .aria_label(model::provider_label(provider))
-                    .flex_1()
-                    .min_w_0()
-                    .h(px(24.))
-                    .px(px(8.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .gap(px(6.))
-                    .rounded(px(6.))
-                    .text_size(px(12.))
-                    .text_color(content(if self.state.source == *provider {
-                        1.
-                    } else {
-                        0.5
-                    }))
-                    .when(self.state.source == *provider, |d| d.bg(content(0.1)))
-                    .hover(|s| s.bg(content(0.05)))
-                    .child(provider_mark(provider))
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .child(model::provider_label(provider)),
-                    )
-                    .on_click(
-                        cx.listener(move |this, _, _, cx| this.change_source(source.clone(), cx)),
-                    )
-            }))
-            .child(
-                div()
-                    .id("inbox-add-connection")
-                    .role(Role::Button)
-                    .aria_label("Add connection")
-                    .relative()
-                    .h(px(24.))
-                    .flex_1()
-                    .min_w_0()
-                    .px(px(6.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .gap(px(6.))
-                    .rounded(px(6.))
-                    .text_size(px(12.))
-                    .text_color(content(0.4))
-                    .hover(|s| s.bg(content(0.05)))
-                    .child(self.connection_anchor.probe())
-                    .child(icon("plus", 14.))
-                    .when(connected.len() < 2, |d| {
-                        d.child(div().truncate().child("Add connection"))
-                    })
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.connections_open = !this.connections_open;
-                        this.filters_open = false;
-                        cx.notify();
-                    })),
-            );
         let tools = div()
             .h(px(36.))
             .px(px(8.))
@@ -629,7 +507,6 @@ impl Inbox {
                     })
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.filters_open = !this.filters_open;
-                        this.connections_open = false;
                         cx.notify();
                     })),
             )
@@ -637,9 +514,7 @@ impl Inbox {
                 icon_button("inbox-read-all", "Mark all as read", "check-2").on_click(cx.listener(
                     |this, _, _, cx| {
                         for item in &this.snapshot.items {
-                            if item.provider == this.state.source {
-                                this.state.seen.mark(item);
-                            }
+                            this.state.seen.mark(item);
                         }
                         this.save();
                         cx.notify();
@@ -657,18 +532,17 @@ impl Inbox {
                     this.load_detail(false, cx);
                 })),
             );
-        let empty = if connected.is_empty() && !self.loading {
-            "Add a connection to start using the Inbox.".into()
+        let disconnected = self.checked && !connected && !self.loading;
+        let empty = if disconnected {
+            "Connect GitHub to start using the Inbox.".into()
         } else if self.loading && self.snapshot.items.is_empty() {
             "Loading inbox…".into()
-        } else if let Some(error) = self.snapshot.errors.get(&self.state.source) {
+        } else if let Some(error) = &self.snapshot.error {
             error.clone()
-        } else if self.projects.is_empty() && !model::is_tracker(&self.state.source) {
+        } else if self.projects.is_empty() {
             "Open a project to fill the inbox".into()
         } else if self.filters_active() || !self.search.read(cx).content.is_empty() {
             "No items match these filters".into()
-        } else if model::is_tracker(&self.state.source) {
-            format!("No {} issues", model::provider_label(&self.state.source))
         } else {
             "No matching issues or pull requests".into()
         };
@@ -679,24 +553,16 @@ impl Inbox {
                 let active = self.selected.as_ref() == Some(&key);
                 let unread = self.state.seen.unseen(&item);
                 let sessions = self.related_sessions(&item).len();
-                let tracker = model::is_tracker(&item.provider);
                 let kind = if item.kind == "pr" {
-                    if item.provider == "gitlab" {
-                        "Merge request"
-                    } else {
-                        "Pull request"
-                    }
+                    "Pull request"
                 } else {
                     "Issue"
                 };
-                let source = if tracker && !item.team_name.is_empty() {
-                    item.team_name.clone()
-                } else if !item.repo.is_empty() {
-                    item.repo.clone()
-                } else {
+                let source = if item.repo.is_empty() {
                     self.project_label(&item.project_path)
+                } else {
+                    item.repo.clone()
                 };
-                let attention = attention_label(&item.attention_reason);
                 div()
                     .id(SharedString::from(format!("inbox-item-{key}")))
                     .role(Role::Button)
@@ -716,17 +582,15 @@ impl Inbox {
                             .gap(px(6.))
                             .text_size(px(11.))
                             .text_color(content(0.5))
-                            .child(provider_mark(&item.provider))
+                            .child(github_mark())
                             .child(icon(status_icon(&item), 12.).text_color(status_color(&item)))
-                            .child(div().min_w_0().flex_1().truncate().child(format!(
-                                "{kind} · {}{}",
-                                item.reference(),
-                                if attention.is_empty() {
-                                    String::new()
-                                } else {
-                                    format!(" · {attention}")
-                                }
-                            )))
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .flex_1()
+                                    .truncate()
+                                    .child(format!("{kind} · {}", item.reference())),
+                            )
                             .when(sessions > 0, |d| {
                                 d.child(
                                     div()
@@ -775,7 +639,7 @@ impl Inbox {
                                     .gap(px(6.))
                                     .text_size(px(11.))
                                     .text_color(content(0.45))
-                                    .when(!tracker && !item.project_path.is_empty(), |d| {
+                                    .when(!item.project_path.is_empty(), |d| {
                                         d.child(self.project_mark(&item.project_path, 12.))
                                     })
                                     .child(div().min_w_0().truncate().child(source)),
@@ -799,8 +663,7 @@ impl Inbox {
             .border_color(content(0.07))
             .flex()
             .flex_col()
-            .child(sources)
-            .when(!connected.is_empty(), |d| d.child(tools))
+            .when(connected, |d| d.child(tools))
             .child(
                 div()
                     .id("inbox-list-scroll")
@@ -814,6 +677,15 @@ impl Inbox {
                     .flex_col()
                     .gap(px(2.))
                     .when(rows.is_empty(), |d| d.child(message(empty)))
+                    .when(rows.is_empty() && disconnected, |d| {
+                        d.child(
+                            div().px(px(12.)).child(
+                                action("inbox-connect-github", "Connect GitHub").on_click(
+                                    cx.listener(|this, _, _, cx| this.open_connection(cx)),
+                                ),
+                            ),
+                        )
+                    })
                     .children(rows),
             )
             .child(
@@ -921,16 +793,8 @@ impl Inbox {
                             .gap(px(8.))
                             .text_size(px(12.))
                             .text_color(content(0.5))
-                            .child(provider_mark(&item.provider))
-                            .child(if is_pr {
-                                if item.provider == "gitlab" {
-                                    "Merge request"
-                                } else {
-                                    "Pull request"
-                                }
-                            } else {
-                                "Issue"
-                            })
+                            .child(github_mark())
+                            .child(if is_pr { "Pull request" } else { "Issue" })
                             .child(item.reference())
                             .child(
                                 div()
@@ -944,20 +808,7 @@ impl Inbox {
                                     )
                                     .child(item.status()),
                             )
-                            .when(!item.attention_reason.is_empty(), |d| {
-                                d.child(
-                                    div()
-                                        .text_color(accent_color())
-                                        .child(attention_label(&item.attention_reason)),
-                                )
-                            })
-                            .child(div().min_w_0().truncate().child(
-                                if item.team_name.is_empty() {
-                                    item.repo.clone()
-                                } else {
-                                    item.team_name.clone()
-                                },
-                            )),
+                            .child(div().min_w_0().truncate().child(item.repo.clone())),
                     )
                     .child(
                         div()
@@ -979,7 +830,6 @@ impl Inbox {
                             .text_color(content(0.5))
                             .when(!details.author.is_empty(), |d| {
                                 d.child(avatar::person(
-                                    &item.provider,
                                     &details.author,
                                     &details.author_avatar_url,
                                     16.,
@@ -990,7 +840,6 @@ impl Inbox {
                             .when(!assignees.is_empty(), |d| {
                                 d.child("·").children(assignees.iter().map(|person| {
                                     avatar::person(
-                                        &item.provider,
                                         &person.login,
                                         &person.avatar_url,
                                         16.,
@@ -999,14 +848,9 @@ impl Inbox {
                                     )
                                 }))
                             })
-                            .when(
-                                item.assignees.is_empty()
-                                    && matches!(
-                                        item.provider.as_str(),
-                                        "github" | "gitlab" | "azuredevops"
-                                    ),
-                                |d| d.child("·").child("Unassigned"),
-                            )
+                            .when(item.assignees.is_empty(), |d| {
+                                d.child("·").child("Unassigned")
+                            })
                             .when(!item.created_at.is_empty(), |d| d.child("·").child(created))
                             .when(!item.updated_at.is_empty(), |d| d.child("·").child(updated))
                             .when(!base_ref.is_empty() && !head_ref.is_empty(), |d| {
@@ -1123,18 +967,16 @@ impl Inbox {
                                     )),
                                 )
                             })
-                            .when(is_pr && item.provider == "github", |d| {
-                                d.child(self.pr_actions(&item, cx))
-                            })
+                            .when(is_pr, |d| d.child(self.pr_actions(&item, cx)))
                             .child(self.copy_link_button(&item, cx))
                             .child(
                                 icon_action(
                                     "inbox-open-external",
-                                    &format!(
-                                        "{} {}",
-                                        if is_pr { "Review on" } else { "Open in" },
-                                        model::provider_label(&item.provider)
-                                    ),
+                                    if is_pr {
+                                        "Review on GitHub"
+                                    } else {
+                                        "Open in GitHub"
+                                    },
                                     "external-link",
                                 )
                                 .when(item.url.is_empty(), |d| d.opacity(0.4))
@@ -1165,9 +1007,6 @@ impl Inbox {
                                         (Tab::Checks, "Checks"),
                                     ]
                                     .into_iter()
-                                    .filter(|(tab, _)| {
-                                        *tab != Tab::Checks || item.provider == "github"
-                                    })
                                     .map(|(tab, label)| {
                                         plain_action(format!("inbox-tab-{label}"), label)
                                             .role(Role::Tab)
@@ -1386,7 +1225,6 @@ impl Inbox {
 
     fn comment_card(
         &self,
-        item: &Item,
         comment: &model::Comment,
         style: CommentStyle,
         width: Pixels,
@@ -1403,13 +1241,7 @@ impl Inbox {
         } else {
             &comment.author
         };
-        let reply_id = if item.provider == "linear" {
-            comment.id.clone()
-        } else if item.provider == "github" {
-            comment.thread_id.clone()
-        } else {
-            String::new()
-        };
+        let reply_id = comment.thread_id.clone();
         let state = comment.state.trim().to_uppercase();
         let review_color = if state == "APPROVED" {
             rgb(0x4ade80).into()
@@ -1451,14 +1283,7 @@ impl Inbox {
                     .child(if timeline {
                         div().child(author.to_string()).into_any_element()
                     } else {
-                        avatar::person(
-                            &item.provider,
-                            author,
-                            &comment.author_avatar_url,
-                            20.,
-                            window,
-                            cx,
-                        )
+                        avatar::person(author, &comment.author_avatar_url, 20., window, cx)
                     }),
             )
             .when(!state.is_empty(), |d| {
@@ -1582,7 +1407,6 @@ impl Inbox {
                                 .py(px(10.))
                                 .when(ix > 0, |d| d.border_t_1().border_color(content(0.07)))
                                 .child(self.comment_card(
-                                    item,
                                     reply,
                                     CommentStyle::Reply,
                                     (width - px(26.)).max(px(1.)),
@@ -1629,9 +1453,7 @@ impl Inbox {
         let Some(thread) = &self.thread else {
             return;
         };
-        let timeline = self
-            .item()
-            .is_some_and(|item| item.kind == "pr" && item.provider == "github");
+        let timeline = self.item().is_some_and(|item| item.kind == "pr");
         if timeline {
             let mut entries = thread
                 .comments
@@ -1689,7 +1511,7 @@ impl Inbox {
     ) -> AnyElement {
         let entry = self.activity[ix].clone();
         let now = RelativeNow::read(window, cx);
-        let timeline = item.kind == "pr" && item.provider == "github";
+        let timeline = item.kind == "pr";
         let width = self.summary_body_width();
         if !timeline {
             let Activity::Comment(comment) = entry else {
@@ -1701,7 +1523,7 @@ impl Inbox {
                 } else {
                     8.
                 }))
-                .child(self.comment_card(item, &comment, CommentStyle::Plain, width, window, cx))
+                .child(self.comment_card(&comment, CommentStyle::Plain, width, window, cx))
                 .into_any_element();
         }
         let first = ix == 0;
@@ -1732,14 +1554,7 @@ impl Inbox {
                     .text_color(color)
                     .into_any_element()
                 } else {
-                    avatar::image(
-                        &item.provider,
-                        &comment.author,
-                        &comment.author_avatar_url,
-                        20.,
-                        window,
-                        cx,
-                    )
+                    avatar::image(&comment.author, &comment.author_avatar_url, 20., window, cx)
                 };
                 let body = if event {
                     let verb = match state.as_str() {
@@ -1752,7 +1567,6 @@ impl Inbox {
                         .into_any_element()
                 } else {
                     self.comment_card(
-                        item,
                         &comment,
                         CommentStyle::Timeline,
                         (width - px(32.)).max(px(1.)),
@@ -1782,7 +1596,7 @@ impl Inbox {
                     .last()
                     .map(|commit| commit.committed_date.clone())
                     .unwrap_or_default();
-                let node = avatar::image(&item.provider, &author, "", 20., window, cx);
+                let node = avatar::image(&author, "", 20., window, cx);
                 activity.push(
                     div()
                         .min_w_0()
@@ -1899,7 +1713,7 @@ impl Inbox {
         if thread.comments.is_empty() && thread.commits.is_empty() && !thread.truncated {
             return None;
         }
-        let timeline = item.kind == "pr" && item.provider == "github";
+        let timeline = item.kind == "pr";
         let count = thread
             .comments
             .iter()
@@ -1951,10 +1765,7 @@ impl Inbox {
                             ))
                         })
                         .when(thread.truncated, |d| {
-                            d.child(format!(
-                                "Latest comments · more on {}",
-                                model::provider_label(&item.provider)
-                            ))
+                            d.child("Latest comments · more on GitHub")
                         }),
                 )
                 .when_some(self.thread_error.clone(), |d, text| d.child(error(text)))
@@ -2256,15 +2067,12 @@ impl Inbox {
         let f = &self.state.filters;
         f.assigned_to_me
             || !f.hidden_projects.is_empty()
-            || !f.hidden_linear_projects.is_empty()
             || !f.hidden_kinds.is_empty()
             || f.time != "all"
             || f.status.open
             || f.status.draft
             || f.status.closed
             || f.status.merged
-            || (self.state.source == "linear" && !self.state.hidden_linear_teams.is_empty())
-            || (self.state.source == "jira" && !self.state.hidden_jira_projects.is_empty())
     }
 
     fn filters_changed(&mut self, refetch: bool, cx: &mut Context<Self>) {
@@ -2283,23 +2091,14 @@ impl Inbox {
     fn filters_menu(&self, cx: &mut Context<Self>) -> AnyElement {
         let weak = cx.entity().downgrade();
         let f = &self.state.filters;
-        let tracker = model::is_tracker(&self.state.source);
         let mut rows = vec![
             caption("FILTER INBOX").into_any_element(),
-            menu_row(
-                "inbox-assigned",
-                if matches!(self.state.source.as_str(), "gitlab" | "azuredevops") {
-                    "Needs my attention"
-                } else {
-                    "Assigned to me"
-                },
-                f.assigned_to_me,
-            )
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.state.filters.assigned_to_me = !this.state.filters.assigned_to_me;
-                this.filters_changed(true, cx);
-            }))
-            .into_any_element(),
+            menu_row("inbox-assigned", "Assigned to me", f.assigned_to_me)
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.state.filters.assigned_to_me = !this.state.filters.assigned_to_me;
+                    this.filters_changed(true, cx);
+                }))
+                .into_any_element(),
             caption("UPDATED").into_any_element(),
         ];
         for (time, label) in [
@@ -2318,10 +2117,7 @@ impl Inbox {
             );
         }
         rows.push(caption("STATUS").into_any_element());
-        for status in ["Open", "Draft", "Closed", "Merged"]
-            .into_iter()
-            .filter(|s| !tracker || matches!(*s, "Open" | "Closed"))
-        {
+        for status in ["Open", "Draft", "Closed", "Merged"] {
             let checked = match status {
                 "Open" => f.status.open,
                 "Draft" => f.status.draft,
@@ -2343,126 +2139,37 @@ impl Inbox {
                     .into_any_element(),
             );
         }
-        if !tracker {
-            rows.push(caption("TYPE").into_any_element());
-            for (kind, label) in [
-                ("issue", "Issues"),
-                (
-                    "pr",
-                    if self.state.source == "gitlab" {
-                        "Merge requests"
-                    } else {
-                        "Pull requests"
-                    },
-                ),
-            ] {
-                rows.push(
-                    menu_row(
-                        format!("inbox-kind-{kind}"),
-                        label,
-                        !f.hidden_kinds.iter().any(|k| k == kind),
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        toggle(&mut this.state.filters.hidden_kinds, kind.into());
-                        this.filters_changed(false, cx);
-                    }))
-                    .into_any_element(),
-                );
-            }
-            rows.push(caption("PROJECTS").into_any_element());
-            for (ix, project) in self.projects.iter().enumerate() {
-                let key = project.to_string_lossy().into_owned();
-                rows.push(
-                    menu_row(
-                        format!("inbox-project-filter-{ix}"),
-                        self.project_label(&key),
-                        !f.hidden_projects.contains(&key),
-                    )
-                    .child(self.project_mark(&key, 12.))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        toggle(&mut this.state.filters.hidden_projects, key.clone());
-                        this.filters_changed(false, cx);
-                    }))
-                    .into_any_element(),
-                );
-            }
-        }
-        let provider_options = if self.state.source == "linear" {
-            &self.snapshot.linear_teams
-        } else {
-            &self.snapshot.jira_projects
-        };
-        if tracker && !provider_options.is_empty() {
+        rows.push(caption("TYPE").into_any_element());
+        for (kind, label) in [("issue", "Issues"), ("pr", "Pull requests")] {
             rows.push(
-                caption(if self.state.source == "linear" {
-                    "TEAMS"
-                } else {
-                    "PROJECTS"
-                })
+                menu_row(
+                    format!("inbox-kind-{kind}"),
+                    label,
+                    !f.hidden_kinds.iter().any(|k| k == kind),
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    toggle(&mut this.state.filters.hidden_kinds, kind.into());
+                    this.filters_changed(false, cx);
+                }))
                 .into_any_element(),
             );
-            for (ix, option) in provider_options.iter().enumerate() {
-                let id = option.id.clone();
-                let hidden = if self.state.source == "linear" {
-                    &self.state.hidden_linear_teams
-                } else {
-                    &self.state.hidden_jira_projects
-                };
-                rows.push(
-                    menu_row(
-                        format!("inbox-tracker-filter-{ix}"),
-                        option.name.clone(),
-                        !hidden.contains(&id),
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if this.state.source == "linear" {
-                            toggle(&mut this.state.hidden_linear_teams, id.clone());
-                        } else {
-                            toggle(&mut this.state.hidden_jira_projects, id.clone());
-                        }
-                        this.filters_changed(true, cx);
-                    }))
-                    .into_any_element(),
-                );
-            }
         }
-        if self.state.source == "linear" {
-            let mut projects = std::collections::BTreeMap::new();
-            for item in self
-                .snapshot
-                .items
-                .iter()
-                .filter(|i| i.provider == "linear")
-            {
-                projects
-                    .entry(if item.project_id.is_empty() {
-                        "~none".into()
-                    } else {
-                        item.project_id.clone()
-                    })
-                    .or_insert_with(|| {
-                        if item.project_name.is_empty() {
-                            "No project".into()
-                        } else {
-                            item.project_name.clone()
-                        }
-                    });
-            }
-            rows.push(caption("LINEAR PROJECTS").into_any_element());
-            for (ix, (id, name)) in projects.into_iter().enumerate() {
-                rows.push(
-                    menu_row(
-                        format!("inbox-linear-project-{ix}"),
-                        name,
-                        !f.hidden_linear_projects.contains(&id),
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        toggle(&mut this.state.filters.hidden_linear_projects, id.clone());
-                        this.filters_changed(false, cx);
-                    }))
-                    .into_any_element(),
-                );
-            }
+        rows.push(caption("PROJECTS").into_any_element());
+        for (ix, project) in self.projects.iter().enumerate() {
+            let key = project.to_string_lossy().into_owned();
+            rows.push(
+                menu_row(
+                    format!("inbox-project-filter-{ix}"),
+                    self.project_label(&key),
+                    !f.hidden_projects.contains(&key),
+                )
+                .child(self.project_mark(&key, 12.))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    toggle(&mut this.state.filters.hidden_projects, key.clone());
+                    this.filters_changed(false, cx);
+                }))
+                .into_any_element(),
+            );
         }
         rows.push(
             action("inbox-clear-filters", "Clear filters")
@@ -2471,8 +2178,6 @@ impl Inbox {
                 .mt(px(8.))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.state.filters = model::Filters::default();
-                    this.state.hidden_linear_teams.clear();
-                    this.state.hidden_jira_projects.clear();
                     this.filters_changed(true, cx);
                 }))
                 .into_any_element(),
@@ -2500,81 +2205,14 @@ impl Inbox {
         .into_any_element()
     }
 
-    fn connection_menu(&self, cx: &mut Context<Self>) -> AnyElement {
-        let weak = cx.entity().downgrade();
-        popover(
-            "inbox-connections-menu",
-            Anchor::Slot(self.connection_anchor.clone()),
-        )
-        .width(272.)
-        .padding(4.)
-        .on_dismiss(move |_, cx| {
-            let _ = weak.update(cx, |this, cx| {
-                this.connections_open = false;
-                cx.notify();
-            });
-        })
-        .child(caption("CONNECTIONS"))
-        .children(model::PROVIDERS.into_iter().map(|provider| {
-            let connected = self
-                .snapshot
-                .connections
-                .get(provider)
-                .is_some_and(|s| s.connected);
-            let label = format!(
-                "{} {}",
-                if connected { "Manage" } else { "Connect" },
-                model::provider_label(provider)
-            );
-            div()
-                .id(SharedString::from(format!("inbox-connect-{provider}")))
-                .role(Role::Button)
-                .aria_label(label.clone())
-                .w_full()
-                .h(px(28.))
-                .px(px(10.))
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .rounded(px(6.))
-                .text_size(px(12.))
-                .text_color(content(0.7))
-                .cursor_pointer()
-                .hover(|s| s.bg(content(0.07)).text_color(content(1.)))
-                .child(provider_mark(provider))
-                .child(label)
-                .on_click(
-                    cx.listener(move |this, _, _, cx| this.open_connection(provider.into(), cx)),
-                )
-        }))
-        .into_any_element()
-    }
-
     fn connection_dialog(&self, cx: &mut Context<Self>) -> AnyElement {
-        let provider = self.connect_provider.clone().unwrap_or_default();
-        let connected = self
-            .snapshot
-            .connections
-            .get(&provider)
-            .is_some_and(|s| s.connected);
-        let title = format!(
-            "{} {}",
-            if connected { "Manage" } else { "Connect" },
-            model::provider_label(&provider)
-        );
-        let hint = match provider.as_str() {
-            "github" => {
-                "Install GitHub CLI, then run gh auth login in a terminal. Check again when signed in."
-            }
-            "linear" => "Create a personal API key in Linear → Settings → Security & Access.",
-            "jira" => "Connect your Jira Cloud site with your Atlassian email and an API token.",
-            "gitlab" => {
-                "Connect GitLab.com or your GitLab instance with a personal access token with API access."
-            }
-            _ => {
-                "Connect your ADO organization using a personal access token with Boards and Repos read & write access."
-            }
+        let title = if self.snapshot.connection.connected {
+            "Manage GitHub"
+        } else {
+            "Connect GitHub"
         };
+        let hint =
+            "Install GitHub CLI, then run gh auth login in a terminal. Check again when signed in.";
         div()
             .absolute()
             .inset_0()
@@ -2601,7 +2239,7 @@ impl Inbox {
                             .flex()
                             .items_center()
                             .gap(px(8.))
-                            .child(provider_mark(&provider))
+                            .child(github_mark())
                             .child(
                                 div()
                                     .flex_1()
@@ -2614,10 +2252,7 @@ impl Inbox {
                                 icon_button("inbox-close-connect", "Close connection", "close")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         if !this.connecting {
-                                            this.connect_provider = None;
-                                            this.connect_token.update(cx, |input, cx| {
-                                                input.set_text(String::new(), cx)
-                                            });
+                                            this.connect_open = false;
                                             cx.notify();
                                         }
                                     })),
@@ -2630,61 +2265,16 @@ impl Inbox {
                             .text_color(content(0.5))
                             .child(hint),
                     )
-                    .when(provider != "github" && provider != "linear", |d| {
-                        d.child(
-                            div()
-                                .px(px(10.))
-                                .py(px(8.))
-                                .rounded(px(6.))
-                                .border_1()
-                                .border_color(content(0.1))
-                                .child(self.connect_url.clone()),
-                        )
-                    })
-                    .when(provider == "jira", |d| {
-                        d.child(
-                            div()
-                                .px(px(10.))
-                                .py(px(8.))
-                                .rounded(px(6.))
-                                .border_1()
-                                .border_color(content(0.1))
-                                .child(self.connect_email.clone()),
-                        )
-                    })
-                    .when(provider != "github", |d| {
-                        d.child(
-                            div()
-                                .px(px(10.))
-                                .py(px(8.))
-                                .rounded(px(6.))
-                                .border_1()
-                                .border_color(content(0.1))
-                                .child(self.connect_token.clone()),
-                        )
-                    })
                     .when_some(self.connect_error.clone(), |d, text| d.child(error(text)))
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap(px(8.))
-                            .when(connected && provider != "github", |d| {
-                                d.child(
-                                    action("inbox-disconnect", "Disconnect")
-                                        .text_color(rgb(0xf87171))
-                                        .on_click(
-                                            cx.listener(|this, _, _, cx| this.connect(true, cx)),
-                                        ),
-                                )
-                            })
-                            .when(provider == "github", |d| {
-                                d.child(
-                                    action("inbox-gh-guide", "Installation guide").on_click(
-                                        |_, _, cx| cx.open_url("https://cli.github.com/"),
-                                    ),
-                                )
-                            })
+                            .child(
+                                action("inbox-gh-guide", "Installation guide")
+                                    .on_click(|_, _, cx| cx.open_url("https://cli.github.com/")),
+                            )
                             .child(div().flex_1())
                             .child(
                                 crate::modal::disabled(
@@ -2692,15 +2282,13 @@ impl Inbox {
                                         "inbox-connect-submit",
                                         if self.connecting {
                                             "Connecting…"
-                                        } else if provider == "github" {
-                                            "Check again"
                                         } else {
-                                            "Connect"
+                                            "Check again"
                                         },
                                     ),
                                     self.connecting,
                                 )
-                                .on_click(cx.listener(|this, _, _, cx| this.connect(false, cx))),
+                                .on_click(cx.listener(|this, _, _, cx| this.check_connection(cx))),
                             ),
                     ),
             ))
@@ -3001,17 +2589,12 @@ impl gpui::Render for Inbox {
             .flex_col()
             .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {
-                    if this.connect_provider.is_some() && !this.connecting {
-                        this.connect_provider = None;
+                    if this.connect_open && !this.connecting {
+                        this.connect_open = false;
                     } else if this.confirm_action.is_some() && !this.acting {
                         this.confirm_action = None;
-                    } else if this.filters_open
-                        || this.connections_open
-                        || this.project_picker
-                        || this.action_menu
-                    {
+                    } else if this.filters_open || this.project_picker || this.action_menu {
                         this.filters_open = false;
-                        this.connections_open = false;
                         this.project_picker = false;
                         this.action_menu = false;
                     } else {
@@ -3061,10 +2644,9 @@ impl gpui::Render for Inbox {
             )
             .when_some(self.error.clone(), |d, text| d.child(error(text)))
             .when(self.filters_open, |d| d.child(self.filters_menu(cx)))
-            .when(self.connections_open, |d| d.child(self.connection_menu(cx)))
             .when(self.project_picker, |d| d.child(self.project_menu(cx)))
             .when(self.action_menu, |d| d.child(self.action_menu_view(cx)))
-            .when(self.connect_provider.is_some(), |d| {
+            .when(self.connect_open, |d| {
                 d.child(crate::modal::window_overlay(
                     window,
                     self.connection_dialog(cx),
@@ -3106,7 +2688,7 @@ mod tests {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(px(0.), px(0.)), size(px(1100.), px(700.))))),
             ..Default::default()
         }, |_, cx| cx.new(|cx| {
-            let item = Item { provider: "github".into(), kind: "pr".into(), state: "open".into(), number: 7, ..Default::default() };
+            let item = Item { kind: "pr".into(), state: "open".into(), number: 7, ..Default::default() };
             let inbox = cx.new(|cx| {
                 let engine = crate::engine_client::Engine::memory(cx);
                 let mut view = Inbox::new_inner(engine, vec![], PathBuf::from("/private/tmp/inbox-regression"), false, cx);
@@ -3167,7 +2749,6 @@ mod tests {
                 fixture.inbox.update(cx, |inbox, cx| {
                     let (a, b) = (PathBuf::from("/work/a"), PathBuf::from("/work/b"));
                     let item = |number, project: &PathBuf| Item {
-                        provider: "github".into(),
                         kind: "pr".into(),
                         state: "open".into(),
                         repo: format!("acme/app-{number}"),
@@ -3175,7 +2756,7 @@ mod tests {
                         project_path: project.to_string_lossy().into_owned(),
                         ..Default::default()
                     };
-                    // Keep the list fetch queued instead of reaching real providers.
+                    // Keep the list fetch queued instead of reaching GitHub.
                     inbox.loading = true;
                     inbox.snapshot.items = vec![item(1, &a), item(2, &b)];
                     inbox.set_context(vec![a.clone(), b.clone()], a.clone(), cx);
@@ -3313,44 +2894,41 @@ mod tests {
             .unwrap();
     }
     #[gpui::test]
-    fn linear_team_filters_hide_cached_issues_before_refresh(cx: &mut TestAppContext) {
+    fn kind_filters_hide_cached_items_before_refresh(cx: &mut TestAppContext) {
         let window = fixture(cx);
         window
             .update(cx, |fixture, _, cx| {
                 fixture.inbox.update(cx, |inbox, cx| {
-                    inbox.state.source = "linear".into();
                     inbox.state.filters = model::Filters::default();
-                    inbox.snapshot.items = ["web", "mobile"]
+                    inbox.snapshot.items = ["issue", "pr"]
                         .into_iter()
-                        .map(|team| Item {
-                            provider: "linear".into(),
-                            identifier: format!("{team}-1"),
-                            team_id: team.into(),
+                        .map(|kind| Item {
+                            kind: kind.into(),
+                            repo: "acme/app".into(),
+                            number: 1,
                             ..Default::default()
                         })
                         .collect();
-                    let visible_teams = |inbox: &Inbox, cx: &App| {
+                    let visible_kinds = |inbox: &Inbox, cx: &App| {
                         inbox
                             .visible_items(cx)
                             .into_iter()
-                            .map(|item| item.team_id)
+                            .map(|item| item.kind)
                             .collect::<Vec<_>>()
                     };
-                    assert_eq!(visible_teams(inbox, cx), ["web", "mobile"]);
-                    toggle(&mut inbox.state.hidden_linear_teams, "web".into());
-                    assert_eq!(visible_teams(inbox, cx), ["mobile"]);
-                    let mobile = inbox.visible_items(cx).remove(0);
-                    inbox.selected = Some(mobile.key());
+                    assert_eq!(visible_kinds(inbox, cx), ["issue", "pr"]);
+                    toggle(&mut inbox.state.filters.hidden_kinds, "issue".into());
+                    assert_eq!(visible_kinds(inbox, cx), ["pr"]);
+                    let pr = inbox.visible_items(cx).remove(0);
+                    inbox.selected = Some(pr.key());
                     inbox.filters_changed(false, cx);
-                    assert_eq!(inbox.item().map(|item| item.team_id), Some("mobile".into()));
-                    toggle(&mut inbox.state.hidden_linear_teams, "mobile".into());
+                    assert_eq!(inbox.item().map(|item| item.kind), Some("pr".into()));
+                    toggle(&mut inbox.state.filters.hidden_kinds, "pr".into());
                     assert!(inbox.visible_items(cx).is_empty());
                     inbox.filters_changed(false, cx);
                     assert!(inbox.item().is_none());
-                    toggle(&mut inbox.state.hidden_linear_teams, "web".into());
-                    assert_eq!(visible_teams(inbox, cx), ["web"]);
-                    inbox.state.hidden_linear_teams.clear();
-                    assert_eq!(visible_teams(inbox, cx), ["web", "mobile"]);
+                    inbox.state.filters.hidden_kinds.clear();
+                    assert_eq!(visible_kinds(inbox, cx), ["issue", "pr"]);
                 });
             })
             .unwrap();

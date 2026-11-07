@@ -1,10 +1,10 @@
 //! What every stream opens with, and the frames after it.
 //!
 //! A stream's opener writes a [`StreamHead`] first: the [`StreamKind`] byte, then a big-endian
-//! `u16` length and the stream's name (`chat-1` for `doc/chat-1`, a terminal's id). Everything
-//! after is the kind's own: most kinds send `u32` big-endian length-prefixed frames
-//! ([`frame`]); a tunnel or a file sends raw bytes. Datagrams start with a channel byte
-//! ([`channel`]) (slopty's framing, its transport decisions).
+//! `u16` length and the stream's name (a file fetch's). Everything after is the kind's own:
+//! control and RPC send `u32` big-endian length-prefixed frames ([`frame`]); a file sends raw
+//! bytes. Datagrams start with a channel byte ([`channel`]) (slopty's framing, its transport
+//! decisions).
 
 use bytes::{Buf as _, BufMut as _, Bytes, BytesMut};
 
@@ -12,8 +12,8 @@ use crate::NetError;
 
 /// The longest stream name read.
 pub const MAX_NAME: usize = 1024;
-/// The longest frame a stream takes unless its kind says otherwise: a document's update batch
-/// is at most 256 KB, an RPC reply rarely more than a few MB.
+/// The longest frame a stream takes unless its kind says otherwise: an RPC reply is rarely more
+/// than a few MB.
 pub const MAX_FRAME: usize = 64 << 20;
 
 /// What a stream carries, and so how it is sent (§3.2 of the transport design).
@@ -24,15 +24,7 @@ pub enum StreamKind {
     Control = 0,
     /// One RPC call: the request, then the reply or a subscription's items.
     Rpc = 1,
-    /// A session document's version-vector sync, named by its chat.
-    Doc = 2,
-    /// The registry's replication, one per link.
-    Registry = 3,
-    /// A terminal's frames, named by its id.
-    Terminal = 4,
-    /// One TCP connection through a preview tunnel.
-    Tunnel = 5,
-    /// A file, an attachment or an update artifact.
+    /// A file: a clipboard fetch.
     File = 6,
 }
 
@@ -43,23 +35,17 @@ impl StreamKind {
         Some(match byte {
             0 => Self::Control,
             1 => Self::Rpc,
-            2 => Self::Doc,
-            3 => Self::Registry,
-            4 => Self::Terminal,
-            5 => Self::Tunnel,
             6 => Self::File,
             _ => return None,
         })
     }
 
-    /// The send priority the kind starts at: everything interactive at 0, ahead of datagrams;
-    /// tunnels behind them at −1 and files at −2. A terminal is raised to
-    /// [`crate::transport::ECHO_PRIORITY`] while it carries an echo.
+    /// The send priority the kind starts at: control and RPC at 0, ahead of datagrams; files
+    /// behind them at −2.
     #[must_use]
     pub const fn priority(self) -> i32 {
         match self {
-            Self::Control | Self::Rpc | Self::Doc | Self::Registry | Self::Terminal => 0,
-            Self::Tunnel => -1,
+            Self::Control | Self::Rpc => 0,
             Self::File => -2,
         }
     }
@@ -67,9 +53,6 @@ impl StreamKind {
 
 /// The datagram channels: a datagram's first byte.
 pub mod channel {
-    /// A copy of a terminal's input or small output, sent a moment after the stream copy; the
-    /// receiver keeps whichever comes first, by sequence number.
-    pub const TERMINAL_COPY: u8 = 1;
     /// Remote desktop, host to client: video, audio, cursor and clock
     /// (`onicode_desktop_media::wire`).
     pub const MEDIA: u8 = 2;
@@ -85,7 +68,7 @@ pub mod channel {
 pub struct StreamHead {
     /// What it carries.
     pub kind: StreamKind,
-    /// Which one (a chat, a terminal); empty for a kind with one per link or none.
+    /// Which one (a file fetch); empty for a kind with one per link or none.
     pub name: String,
 }
 
@@ -192,7 +175,7 @@ mod tests {
 
     #[test]
     fn a_head_reads_back_whole_and_waits_for_its_end() {
-        let head = StreamHead::new(StreamKind::Doc, "chat-1");
+        let head = StreamHead::new(StreamKind::File, "fetch-1");
         let wire = head.encode();
         for cut in 0..wire.len() {
             let mut part = BytesMut::from(&wire[..cut]);
@@ -209,7 +192,7 @@ mod tests {
             StreamHead::take(&mut long).is_err(),
             "a name past the limit"
         );
-        let cut = StreamHead::new(StreamKind::Terminal, "é".repeat(MAX_NAME)).encode();
+        let cut = StreamHead::new(StreamKind::File, "é".repeat(MAX_NAME)).encode();
         assert!(cut.len() <= MAX_NAME + 3);
         assert!(
             StreamHead::take(&mut BytesMut::from(&cut[..]))
@@ -244,8 +227,9 @@ mod tests {
         ));
         assert_eq!(StreamKind::File.priority(), -2);
         assert_eq!(
-            StreamKind::from_byte(StreamKind::Registry as u8),
-            Some(StreamKind::Registry)
+            StreamKind::from_byte(StreamKind::File as u8),
+            Some(StreamKind::File)
         );
+        assert_eq!(StreamKind::from_byte(2), None, "a retired kind");
     }
 }

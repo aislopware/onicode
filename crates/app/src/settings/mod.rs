@@ -58,14 +58,16 @@ pub(crate) struct SettingsContext {
     pub sessions: Vec<(i64, String, bool)>,
     pub quick_error: Option<String>,
     pub catalogs: HashMap<String, Vec<(String, String)>>,
-    pub inbox_connections: HashMap<String, (bool, String)>,
+    /// Whether GitHub is connected and how to say so, once the Inbox has checked.
+    pub inbox_connection: Option<(bool, String)>,
 }
 
 pub(crate) enum SettingsEvent {
     WhatsNew,
     CheckAppUpdates,
     CheckHarnessUpdates,
-    ManageInboxProvider(String),
+    /// Open the Inbox's GitHub connection sheet.
+    ManageInboxConnection,
     Changed(Box<Preferences>),
     /// The Appearance page's Layout picker: true for Focused, false for Classic.
     NewLayout(bool),

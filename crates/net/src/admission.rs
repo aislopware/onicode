@@ -6,8 +6,6 @@
 //! other end. A peer is let in when it is:
 //!
 //! * on loopback, as the owner;
-//! * in a range the settings list (a plain VPN), as the owner, since an address is all such a
-//!   network says;
 //! * a node of the tailnet the local Tailscale vouches for: the user's own machines as the owner,
 //!   another user's or a tagged node in the roles a tailnet grant gives it
 //!   (`onicode_tailnet::policy`).
@@ -24,108 +22,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use onicode_tailnet::{Grant, Tailnet, WhoIs};
-use parking_lot::{Mutex, RwLock};
-use serde::{Deserialize, Serialize};
+use parking_lot::Mutex;
 use tokio::time::Instant;
-
-/// An address range in CIDR notation (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`); a bare address
-/// is a range of one.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct Cidr {
-    net: IpAddr,
-    prefix: u8,
-}
-
-/// A range that does not parse.
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("{0}")]
-pub struct BadRange(String);
-
-impl Cidr {
-    /// `net/prefix`, with the host bits of `net` cleared.
-    ///
-    /// # Errors
-    ///
-    /// A prefix past the family's bits.
-    pub fn new(net: IpAddr, prefix: u8) -> Result<Self, BadRange> {
-        let bits = if net.is_ipv4() { 32 } else { 128 };
-        if prefix > bits {
-            return Err(BadRange(format!("{net}/{prefix}: prefix past {bits}")));
-        }
-        let net = match net {
-            IpAddr::V4(v4) => IpAddr::V4((u32::from(v4) & mask32(prefix)).into()),
-            IpAddr::V6(v6) => IpAddr::V6((u128::from(v6) & mask128(prefix)).into()),
-        };
-        Ok(Self { net, prefix })
-    }
-
-    /// Whether `ip` falls in the range. An IPv4-mapped IPv6 address counts as its IPv4 self.
-    #[must_use]
-    pub fn contains(&self, ip: IpAddr) -> bool {
-        match (self.net, ip.to_canonical()) {
-            (IpAddr::V4(net), IpAddr::V4(ip)) => {
-                u32::from(ip) & mask32(self.prefix) == u32::from(net)
-            }
-            (IpAddr::V6(net), IpAddr::V6(ip)) => {
-                u128::from(ip) & mask128(self.prefix) == u128::from(net)
-            }
-            (IpAddr::V4(_), IpAddr::V6(_)) | (IpAddr::V6(_), IpAddr::V4(_)) => false,
-        }
-    }
-}
-
-fn mask32(prefix: u8) -> u32 {
-    u32::MAX
-        .checked_shl(32_u32.saturating_sub(u32::from(prefix)))
-        .unwrap_or(0)
-}
-
-fn mask128(prefix: u8) -> u128 {
-    u128::MAX
-        .checked_shl(128_u32.saturating_sub(u32::from(prefix)))
-        .unwrap_or(0)
-}
-
-impl fmt::Display for Cidr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}/{}", self.net, self.prefix)
-    }
-}
-
-impl std::str::FromStr for Cidr {
-    type Err = BadRange;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.trim();
-        let bad = || BadRange(format!("{s:?}: not an address range"));
-        let (net, prefix) = if let Some((net, prefix)) = s.split_once('/') {
-            let net: IpAddr = net.parse().map_err(|_ip| bad())?;
-            (net, prefix.parse::<u8>().map_err(|_n| bad())?)
-        } else {
-            let net: IpAddr = s.parse().map_err(|_ip| bad())?;
-            (net, if net.is_ipv4() { 32 } else { 128 })
-        };
-        Self::new(net, prefix)
-    }
-}
-
-impl TryFrom<String> for Cidr {
-    type Error = BadRange;
-
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        s.parse()
-    }
-}
-
-impl From<Cidr> for String {
-    fn from(c: Cidr) -> Self {
-        c.to_string()
-    }
-}
-
-/// Tailscale's addresses: its CGNAT block and its IPv6 ULA prefix.
-pub const TAILNET: &[&str] = &["100.64.0.0/10", "fd7a:115c:a1e0::/48"];
 
 /// How long the local node's owner, and a caller's whois, are taken as read before they are
 /// asked again.
@@ -136,7 +34,7 @@ pub const WHOIS_TTL: Duration = Duration::from_secs(60);
 pub struct Admitted {
     /// The roles it may take.
     pub grant: Grant,
-    /// Its tailnet node's stable id; empty for loopback and a listed range, which name none.
+    /// Its tailnet node's stable id; empty for loopback, which names none.
     pub node: String,
     /// Its `MagicDNS` name, for the log; empty where `node` is.
     pub name: String,
@@ -153,12 +51,11 @@ pub enum Verdict {
     Refuse(&'static str),
 }
 
-/// Who may connect: loopback always, the listed ranges, and the tailnet by its word.
+/// Who may connect: loopback always, and the tailnet by its word.
 ///
-/// Its clones share one list of ranges and one whois cache.
+/// Its clones share one whois cache.
 #[derive(Clone)]
 pub struct Admission {
-    allow: Arc<RwLock<Vec<Cidr>>>,
     tailnet: Option<Arc<dyn Tailnet>>,
     owner: Arc<Mutex<Option<Owner>>>,
     whois: Arc<Mutex<HashMap<IpAddr, Cached>>>,
@@ -167,7 +64,6 @@ pub struct Admission {
 impl fmt::Debug for Admission {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Admission")
-            .field("allow", &*self.allow.read())
             .field("tailnet", &self.tailnet.is_some())
             .finish_non_exhaustive()
     }
@@ -187,27 +83,14 @@ struct Cached {
 }
 
 impl Admission {
-    /// Loopback, the ranges in `allow`, and the tailnet through `tailnet`; without one, no
-    /// tailnet peer.
+    /// Loopback, and the tailnet through `tailnet`; without one, no tailnet peer.
     #[must_use]
-    pub fn new(tailnet: Option<Arc<dyn Tailnet>>, allow: Vec<Cidr>) -> Self {
+    pub fn new(tailnet: Option<Arc<dyn Tailnet>>) -> Self {
         Self {
-            allow: Arc::new(RwLock::new(allow)),
             tailnet,
             owner: Arc::default(),
             whois: Arc::default(),
         }
-    }
-
-    /// The ranges let in by address besides loopback and the tailnet.
-    #[must_use]
-    pub fn ranges(&self) -> Vec<Cidr> {
-        self.allow.read().clone()
-    }
-
-    /// Let in `allow` by address from now on, in place of the ranges before, on every clone.
-    pub fn set_ranges(&self, allow: Vec<Cidr>) {
-        *self.allow.write() = allow;
     }
 
     /// Forgets every whois and the owner read so far: the tailnet changed (a grant, a node's
@@ -222,7 +105,7 @@ impl Admission {
     /// on the same LAN could forge.
     pub async fn check(&self, peer: SocketAddr) -> Verdict {
         let ip = peer.ip().to_canonical();
-        if ip.is_loopback() || self.allow.read().iter().any(|c| c.contains(ip)) {
+        if ip.is_loopback() {
             return Verdict::Admit(Admitted {
                 grant: Grant::OWNER,
                 node: String::new(),
@@ -230,7 +113,7 @@ impl Admission {
             });
         }
         if !on_tailnet(ip) {
-            return Verdict::Refuse("outside the tailnet and the allowed ranges");
+            return Verdict::Refuse("outside the tailnet");
         }
         let Some(tailnet) = &self.tailnet else {
             return Verdict::Refuse("no Tailscale this process can read to say who is calling");
@@ -318,13 +201,14 @@ impl Admission {
     }
 }
 
-/// Whether `ip` is one of Tailscale's addresses.
+/// Whether `ip` is one of Tailscale's addresses: its CGNAT block `100.64.0.0/10` or its IPv6 ULA
+/// prefix `fd7a:115c:a1e0::/48`. An IPv4-mapped IPv6 address counts as its IPv4 self.
 #[must_use]
 pub fn on_tailnet(ip: IpAddr) -> bool {
-    TAILNET
-        .iter()
-        .filter_map(|c| c.parse::<Cidr>().ok())
-        .any(|c| c.contains(ip))
+    match ip.to_canonical() {
+        IpAddr::V4(v4) => u32::from(v4) & 0xffc0_0000 == 0x6440_0000,
+        IpAddr::V6(v6) => u128::from(v6) >> 80 == 0xfd7a_115c_a1e0,
+    }
 }
 
 #[cfg(test)]
@@ -343,12 +227,12 @@ mod tests {
         SocketAddr::new(ip(s), 5000)
     }
 
-    /// With no Tailscale to ask, loopback and a listed range get in and nothing else does: not
-    /// the tailnet by its address alone, and not the LAN.
+    /// With no Tailscale to ask, loopback gets in and nothing else does: not the tailnet by its
+    /// address alone, and not the LAN.
     #[tokio::test]
-    async fn without_a_daemon_only_loopback_and_the_listed_ranges_get_in() {
-        let a = Admission::new(None, vec!["10.0.0.0/8".parse().unwrap()]);
-        for yes in ["127.0.0.1", "::1", "::ffff:127.0.0.1", "10.1.2.3"] {
+    async fn without_a_daemon_only_loopback_gets_in() {
+        let a = Admission::new(None);
+        for yes in ["127.0.0.1", "::1", "::ffff:127.0.0.1"] {
             assert!(
                 matches!(a.check(at(yes)).await, Verdict::Admit(ref ad) if ad.grant == Grant::OWNER),
                 "{yes}"
@@ -358,6 +242,7 @@ mod tests {
             "100.64.0.3",
             "::ffff:100.101.102.103",
             "fd7a:115c:a1e0:ab12::1",
+            "10.1.2.3",
             "192.168.1.9",
             "fd00::1",
             "fe80::1",
@@ -381,7 +266,7 @@ mod tests {
         let vps = tailnet.add(NodeSpec::tagged("vps", "tag:onicode"));
         let bare = tailnet.add(NodeSpec::tagged("ci", "tag:ci"));
         tailnet.grant(vps, me, &["engine"]);
-        let a = Admission::new(Some(tailnet.local_api(me)), Vec::new());
+        let a = Admission::new(Some(tailnet.local_api(me)));
         let peer = |n| SocketAddr::new(ipv4(n), 7433);
         let Verdict::Admit(mine) = a.check(peer(laptop)).await else {
             panic!("the owner's laptop")
@@ -425,30 +310,25 @@ mod tests {
     }
 
     #[test]
-    fn ranges_parse_normalise_and_refuse_nonsense() {
-        let c: Cidr = "10.1.2.3/8".parse().unwrap();
-        assert_eq!(c.to_string(), "10.0.0.0/8", "host bits cleared");
-        assert_eq!(
-            "fd7a:115c:a1e0::5/48".parse::<Cidr>().unwrap().to_string(),
-            "fd7a:115c:a1e0::/48"
-        );
-        assert_eq!("1.2.3.4".parse::<Cidr>().unwrap().to_string(), "1.2.3.4/32");
-        let everything: Cidr = "0.0.0.0/0".parse().unwrap();
-        assert!(everything.contains(ip("8.8.8.8")) && !everything.contains(ip("::1")));
-        for bad in [
-            "",
-            "10.0.0.0/33",
-            "::/129",
-            "10.0.0/8",
-            "peer",
-            "10.0.0.0/x",
-            "/8",
+    fn tailscale_s_addresses_are_its_cgnat_block_and_ula_prefix() {
+        for yes in [
+            "100.64.0.0",
+            "100.127.255.254",
+            "::ffff:100.64.0.1",
+            "fd7a:115c:a1e0::1",
+            "fd7a:115c:a1e0:ffff:ffff:ffff:ffff:ffff",
         ] {
-            assert!(bad.parse::<Cidr>().is_err(), "{bad:?}");
+            assert!(on_tailnet(ip(yes)), "{yes}");
         }
-        let json = serde_json::to_string(&c).unwrap();
-        assert_eq!(serde_json::from_str::<Cidr>(&json).unwrap(), c);
-        assert!(on_tailnet(ip("100.127.255.254")) && !on_tailnet(ip("100.128.0.0")));
-        assert!(on_tailnet(ip("::ffff:100.64.0.1")) && !on_tailnet(ip("100.63.255.255")));
+        for no in [
+            "100.63.255.255",
+            "100.128.0.0",
+            "10.1.2.3",
+            "fd7a:115c:a1e1::1",
+            "fd7a:115c:a1df:ffff::1",
+            "::1",
+        ] {
+            assert!(!on_tailnet(ip(no)), "{no}");
+        }
     }
 }

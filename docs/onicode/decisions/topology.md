@@ -21,11 +21,7 @@ discovers the other engines through `PeerDirectory`, and serves its own RPC to t
 calls and subscriptions take that link. Links are admitted by tailscale whois alone. Tests and fixtures never join the real
 tailnet: they run engines over `onicode-net-sim`, whose seeded tailnet gives each engine its own node.
 
-Terminals and previews ride the same links. A viewer attaches a terminal on a `terminal/{id}` stream carrying
-term-link frames: input is numbered and held until the host acknowledges it, and a stream lost with its link is
-reopened as the link comes back and resumes after the last event shown, so nothing is lost or repeated. Keys, and
-output within 100 ms of one, also go as datagram copies, taken only when the copy's number is the next one owed,
-so a lost packet costs no retransmission round trip; the link pings at the interactive rate while a terminal is
-attached. Each preview TCP connection is one `Tunnel` stream of raw bytes, sent behind terminals, with resets
-carried both ways, and each pair of engines keeps a `catalog` stream for the services listed. WebRTC, its
-signaling room, STUN and the relayed terminal path are gone.
+Terminals ride the same links as every other call: a viewer watches another engine's terminal with
+`WatchTerminal` and types with `TerminalInput`, each on its own RPC stream (`engine.md`, `terminal.md`). A link
+carries control, RPC and file streams only, and its datagrams are remote desktop's. WebRTC, its signaling room,
+STUN and the relayed terminal path are gone.

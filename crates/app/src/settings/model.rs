@@ -139,9 +139,7 @@ impl Section {
                 "tools servers connections oauth authenticate login claude codex cursor opencode"
             }
             Section::Skills => "skill instructions prompt",
-            Section::Inbox => {
-                "github gitlab linear jira atlassian azure devops connect token integration"
-            }
+            Section::Inbox => "github gh cli connect pull request issue integration",
             Section::Archive => "archived restore delete hidden",
             Section::Worktrees => "git branch worktree working copy project create delete",
         }
@@ -385,18 +383,6 @@ pub(crate) const INDEX: &[(&str, Section, &str, &str)] = &[
         "spelling spell check autocorrect typo macos composer",
     ),
     (
-        "composer-mascot",
-        Section::Chat,
-        "Composer mascot",
-        "runner animation coin fun",
-    ),
-    (
-        "format-on-save",
-        Section::Chat,
-        "Format on save",
-        "prettier quotes editor save format",
-    ),
-    (
         "diff-view",
         Section::Chat,
         "Diff view",
@@ -406,7 +392,7 @@ pub(crate) const INDEX: &[(&str, Section, &str, &str)] = &[
         "empty-session",
         Section::Chat,
         "Empty session",
-        "ink dither trails ripple games pacman snake arcade fun",
+        "ink dither trails ripple fun",
     ),
     (
         "agent-clis",
@@ -461,30 +447,6 @@ pub(crate) const INDEX: &[(&str, Section, &str, &str)] = &[
         Section::Inbox,
         "GitHub",
         "gh cli connect pull request sign in",
-    ),
-    (
-        "gitlab",
-        Section::Inbox,
-        "GitLab",
-        "token self-managed merge request connect",
-    ),
-    (
-        "azuredevops",
-        Section::Inbox,
-        "ADO",
-        "azure devops boards repos pull request pat organization connect",
-    ),
-    (
-        "jira",
-        Section::Inbox,
-        "Jira",
-        "atlassian cloud site email api token issues projects connect",
-    ),
-    (
-        "linear",
-        Section::Inbox,
-        "Linear",
-        "api key issues teams connect",
     ),
     (
         "show-archived",

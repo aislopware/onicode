@@ -101,24 +101,39 @@ pub(crate) fn retire_pid(pid: u32, after: impl FnOnce()) {
 }
 
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
-/// A provider child that belongs to a session, for the running-work list.
-#[derive(Clone, Debug)]
-pub struct Agent {
-    pub session: i64,
-    pub pid: u32,
-    /// Birth stamp at spawn; a reused PID no longer matches it.
-    pub identity: Option<String>,
-}
-fn active() -> &'static Mutex<HashMap<u32, Option<Agent>>> {
-    static ACTIVE: OnceLock<Mutex<HashMap<u32, Option<Agent>>>> = OnceLock::new();
-    ACTIVE.get_or_init(|| Mutex::new(HashMap::new()))
+/// Live provider children, for [`shutdown_all`].
+fn active() -> &'static Mutex<HashSet<u32>> {
+    static ACTIVE: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
+    ACTIVE.get_or_init(|| Mutex::new(HashSet::new()))
 }
 thread_local! {
     static OWNER: Cell<Option<i64>> = const { Cell::new(None) };
 }
-/// Children spawned by `run` on this thread are attributed to `session`.
+/// The kernel's birth stamp of `pid`: a reused PID no longer matches it.
+pub(crate) fn identity(pid: u32) -> Option<String> {
+    unsafe {
+        let mut info: libc::proc_bsdinfo = std::mem::zeroed();
+        let size = std::mem::size_of_val(&info) as i32;
+        if libc::proc_pidinfo(
+            pid as i32,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            &mut info as *mut _ as *mut _,
+            size,
+        ) != size
+        {
+            return None;
+        }
+        Some(format!(
+            "{}:{}:{}",
+            pid, info.pbi_start_tvsec, info.pbi_start_tvusec
+        ))
+    }
+}
+/// Children spawned by `run` on this thread belong to `session`: parked providers are kept and
+/// reused per session.
 pub fn owned_by<T>(session: i64, run: impl FnOnce() -> T) -> T {
     struct Restore(Option<i64>);
     impl Drop for Restore {
@@ -129,44 +144,15 @@ pub fn owned_by<T>(session: i64, run: impl FnOnce() -> T) -> T {
     let _restore = Restore(OWNER.replace(Some(session)));
     run()
 }
-/// Live provider children that belong to a session.
-pub fn agents() -> Vec<Agent> {
-    active()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .values()
-        .flatten()
-        .cloned()
-        .collect()
-}
 pub(crate) fn owner() -> Option<i64> {
     OWNER.get()
 }
-pub(crate) fn mark_idle(pid: u32, idle: bool) {
-    let mut processes = active().lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(slot) = processes.get_mut(&pid) {
-        *slot = if idle {
-            None
-        } else {
-            OWNER.get().map(|session| Agent {
-                session,
-                pid,
-                identity: crate::resources::identity(pid),
-            })
-        };
-    }
-}
 pub(crate) struct Registration(u32);
 pub(crate) fn register(pid: u32) -> Registration {
-    let agent = OWNER.get().map(|session| Agent {
-        session,
-        pid,
-        identity: crate::resources::identity(pid),
-    });
     active()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .insert(pid, agent);
+        .insert(pid);
     Registration(pid)
 }
 impl Drop for Registration {
@@ -187,7 +173,7 @@ pub fn shutdown_all() {
         active()
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .keys()
+            .iter()
             .copied()
             .collect()
     };

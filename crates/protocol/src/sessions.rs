@@ -1,11 +1,10 @@
-//! What the sidebar shows of a session: its stored summary, folders, reminders, linked work
-//! item and orchestration, and the model background chores such as titles run on.
+//! What the sidebar shows of a session: its stored summary, folders, reminders and linked work
+//! item, and the model background chores such as titles run on.
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
 use crate::agent::AccessMode;
-pub use crate::orchestration::{Summary as Orchestration, SummaryTask};
 pub use crate::session_groups::{Folder, Groups, WorkItem};
 pub use crate::session_title::TextModel;
 
@@ -39,9 +38,6 @@ pub struct SessionSidebarMetadata {
     pub worktrees: HashMap<i64, Option<String>>,
     pub details: HashMap<i64, MobileSessionMetadata>,
     pub drafts: HashSet<i64>,
-    pub sidebar_hidden: HashSet<i64>,
-    pub started_by: HashMap<i64, i64>,
-    pub orchestrations: HashMap<i64, Orchestration>,
     pub groups: HashMap<String, Groups>,
     pub reminders: Vec<Reminder>,
 }

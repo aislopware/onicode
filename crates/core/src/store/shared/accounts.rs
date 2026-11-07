@@ -1,33 +1,8 @@
 use super::*;
-use crate::accounts::{Account, Book, DEFAULT, DesktopOverrides};
+use crate::accounts::{Account, Book, DEFAULT};
 
 impl Store {
-    fn shared_desktop_accounts(&self) -> Option<Book> {
-        let preferences = self.desktop_preferences()?;
-        if !preferences.is_available() {
-            return None;
-        }
-        Book::from_desktop(
-            &preferences
-                .json("onicode.providerAccounts.v1")
-                .unwrap_or(json!({})),
-            &preferences
-                .json("onicode.providerAccountSelections.v1")
-                .unwrap_or(json!({})),
-        )
-    }
-
     pub(in crate::store) fn shared_accounts(&self) -> Result<Book, String> {
-        if let Some(mut desktop) = self.shared_desktop_accounts() {
-            *self.shared.as_ref().unwrap().account_source.borrow_mut() = Some(desktop.clone());
-            if let Some(raw) = self.shared_setting("provider-account-overrides")? {
-                desktop.apply_desktop_overrides(parse::<DesktopOverrides>(&raw)?);
-            }
-            // The desktop registry is authoritative. Old profile folders can
-            // survive removing an account and must not recreate it in the UI.
-            return Ok(desktop);
-        }
-
         let mut book: Book = self
             .shared_setting("provider-accounts")?
             .map(|raw| parse(&raw))
@@ -74,22 +49,7 @@ impl Store {
     }
 
     pub(in crate::store) fn shared_save_accounts(&self, book: &Book) -> Result<(), String> {
-        let source = self
-            .shared
-            .as_ref()
-            .unwrap()
-            .account_source
-            .borrow()
-            .clone()
-            .or_else(|| self.shared_desktop_accounts());
-        if let Some(source) = source {
-            self.shared_save_setting(
-                "provider-account-overrides",
-                &encode(&book.desktop_overrides(&source))?,
-            )
-        } else {
-            self.shared_save_setting("provider-accounts", &encode(book)?)
-        }
+        self.shared_save_setting("provider-accounts", &encode(book)?)
     }
 }
 
@@ -102,14 +62,13 @@ mod tests {
     fn isolated_account_names_and_selections_survive_restart() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("monocode.db");
-        let store = Store::open_monocode(&path).unwrap();
-        assert!(store.shared_desktop_accounts().is_none());
+        let store = Store::open(&path).unwrap();
         let mut book = Book::default();
         let account = book.add(Kind::Codex, "My development account").unwrap();
         book.select(Kind::Codex, "/project", &account.id).unwrap();
         store.save_provider_accounts(&book).unwrap();
         drop(store);
-        let store = Store::open_monocode(&path).unwrap();
+        let store = Store::open(&path).unwrap();
         let book = store.provider_accounts().unwrap();
         assert_eq!(book.list(Kind::Codex)[1].label, "My development account");
         assert_eq!(book.selected(Kind::Codex, "/project"), account.id);

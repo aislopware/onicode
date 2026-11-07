@@ -1,21 +1,19 @@
 //! The Work group's hub (`docs/onicode/decisions/engine.md`, migration step 6): the Inbox's
-//! trackers, the automations the workspace hub schedules, and the GitHub activity of the items
-//! sessions link to, with the processes the engine's agents run. Every tracker, credential,
-//! network, process and `gh` call runs here, off the caller's thread, behind the [`Trackers`] and
-//! [`Gh`] seams the tests script.
-use std::path::{Path, PathBuf};
+//! GitHub items, the automations the workspace hub schedules, and the GitHub activity of the
+//! items sessions link to. Every network and `gh` call runs here, off the caller's thread, behind
+//! the [`Trackers`] and [`Gh`] seams the tests script.
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use onicode_core::automations::{Automation, AutomationRun, DueAutomationRun};
-use onicode_core::inbox::{Checks, Details, Diff, Item, Snapshot, Status, Thread, ViewState};
+use onicode_core::inbox::{Checks, Details, Diff, Item, Snapshot, Thread, ViewState};
 use onicode_protocol::files::Bytes;
 use onicode_protocol::sessions::Groups;
 use onicode_protocol::work::{
-    AgentProcess, AgentProcesses, AutomationRuns, ConnectInbox, DeleteAutomation,
-    HasEventAutomations, InboxAvatar, InboxList, InboxListing, InboxMedia, LinkedActivity,
-    LinkedCard, ListAutomations, PostInboxComment, ProjectGroups, ReadInboxChecks,
-    ReadInboxDetails, ReadInboxDiff, ReadInboxThread, ReadWorkItem, ReadWorkItemDetails,
-    RunAutomationNow, RunInboxAction, SetAutomationEnabled, StopAgentTool, UpsertAutomation,
+    AutomationRuns, DeleteAutomation, HasEventAutomations, InboxAvatar, InboxList, InboxListing,
+    InboxMedia, LinkedActivity, LinkedCard, ListAutomations, PostInboxComment, ProjectGroups,
+    ReadInboxChecks, ReadInboxDetails, ReadInboxDiff, ReadInboxThread, ReadWorkItem,
+    ReadWorkItemDetails, RunAutomationNow, RunInboxAction, SetAutomationEnabled, UpsertAutomation,
 };
 use onicode_protocol::{Call, OpId, Outcome};
 use onicode_rpc::{RpcError, RpcReply, RpcService};
@@ -32,12 +30,11 @@ mod tests;
 
 pub use linked::{CliGh, Gh};
 
-/// Where a tracker call runs: the engine's data directory, which keeps the trackers' connections,
-/// and the checkout `gh` runs in.
+/// Where an Inbox call runs: the checkout `gh` runs in.
 pub type Place = onicode_core::inbox::Service;
 
-/// The trackers behind the Inbox, the media they link to and the agents' processes. A seam, so
-/// the tests script them with no network, process or `gh`.
+/// GitHub behind the Inbox and the media its items link to. A seam, so the tests script them
+/// with no network or `gh`.
 pub trait Trackers: Send + Sync + 'static {
     fn list(&self, at: &Place, projects: &[PathBuf], state: &ViewState) -> Snapshot;
     fn details(&self, at: &Place, item: &Item) -> Result<Details, String>;
@@ -51,23 +48,11 @@ pub trait Trackers: Send + Sync + 'static {
         body: String,
         reply_to: String,
     ) -> Result<String, String>;
-    fn connect(
-        &self,
-        at: &Place,
-        provider: &str,
-        url: String,
-        email: String,
-        token: String,
-    ) -> Result<Status, String>;
     fn action(&self, at: &Place, item: &Item, action: &str) -> Result<Item, String>;
     /// An image or video an item links to, as a PNG.
     fn media(&self, url: &str) -> Result<Vec<u8>, String>;
     /// A public avatar, as a PNG.
     fn avatar(&self, url: &str) -> Result<Vec<u8>, String>;
-    /// Every live agent process and its tools, busiest first.
-    fn processes(&self) -> Result<Vec<AgentProcess>, String>;
-    /// Stops a tool an agent started, if `pid` is still the process `identity` names.
-    fn stop_tool(&self, pid: u32, identity: &str) -> Result<(), String>;
 }
 
 /// Trackers that never reach a network: an empty Inbox, and every action refused. What a test
@@ -101,17 +86,6 @@ impl Trackers for OfflineTrackers {
         Err(OFFLINE.into())
     }
 
-    fn connect(
-        &self,
-        _: &Place,
-        _: &str,
-        _: String,
-        _: String,
-        _: String,
-    ) -> Result<Status, String> {
-        Err(OFFLINE.into())
-    }
-
     fn action(&self, _: &Place, _: &Item, _: &str) -> Result<Item, String> {
         Err(OFFLINE.into())
     }
@@ -121,14 +95,6 @@ impl Trackers for OfflineTrackers {
     }
 
     fn avatar(&self, _: &str) -> Result<Vec<u8>, String> {
-        Err(OFFLINE.into())
-    }
-
-    fn processes(&self) -> Result<Vec<AgentProcess>, String> {
-        Ok(Vec::new())
-    }
-
-    fn stop_tool(&self, _: u32, _: &str) -> Result<(), String> {
         Err(OFFLINE.into())
     }
 }
@@ -142,7 +108,7 @@ impl Gh for OfflineGh {
     }
 }
 
-/// The trackers' own adapters, over the connections kept in the data directory.
+/// The Inbox's own GitHub adapter, over `gh`.
 pub struct CoreTrackers;
 
 impl Trackers for CoreTrackers {
@@ -176,17 +142,6 @@ impl Trackers for CoreTrackers {
         at.comment(item, body, reply_to)
     }
 
-    fn connect(
-        &self,
-        at: &Place,
-        provider: &str,
-        url: String,
-        email: String,
-        token: String,
-    ) -> Result<Status, String> {
-        at.connect(provider, url, email, token)
-    }
-
     fn action(&self, at: &Place, item: &Item, action: &str) -> Result<Item, String> {
         at.action(item, action)
     }
@@ -197,25 +152,6 @@ impl Trackers for CoreTrackers {
 
     fn avatar(&self, url: &str) -> Result<Vec<u8>, String> {
         onicode_core::inbox::avatar_png(url)
-    }
-
-    fn processes(&self) -> Result<Vec<AgentProcess>, String> {
-        Ok(onicode_core::resources::processes()?
-            .into_iter()
-            .map(|process| AgentProcess {
-                pid: process.pid,
-                identity: process.identity,
-                session: process.session,
-                command: process.command,
-                cpu_percent: process.cpu_percent,
-                memory_bytes: process.memory_bytes,
-                agent: process.agent,
-            })
-            .collect())
-    }
-
-    fn stop_tool(&self, pid: u32, identity: &str) -> Result<(), String> {
-        onicode_core::resources::stop_tool(pid, identity)
     }
 }
 
@@ -281,26 +217,18 @@ impl WorkHub {
             .map_err(|_| "The engine stopped before this call finished".to_owned())?
     }
 
-    /// Where a tracker call for `cwd` runs. An engine in memory keeps the connections in `cwd`.
-    fn place(&self, cwd: PathBuf) -> Result<Place, String> {
-        let data_dir = locked(&self.store)?
-            .data_dir()
-            .map_or_else(|| cwd.clone(), Path::to_path_buf);
-        Ok(Place { data_dir, cwd })
-    }
-
-    /// Runs a tracker call off the caller's thread.
+    /// Runs an Inbox call for `cwd` off the caller's thread.
     async fn tracker<T, W>(&self, cwd: PathBuf, work: W) -> Result<T, String>
     where
         T: Send + 'static,
         W: FnOnce(&dyn Trackers, &Place) -> Result<T, String> + Send + 'static,
     {
-        let at = self.place(cwd)?;
+        let at = Place { cwd };
         let trackers = self.trackers.clone();
         self.blocking(move || work(&*trackers, &at)).await
     }
 
-    /// `InboxList`: every connected tracker's items, and the sessions they are matched against.
+    /// `InboxList`: GitHub's items, and the sessions they are matched against.
     pub async fn inbox_list(&self, body: InboxList) -> Result<InboxListing, String> {
         let InboxList {
             cwd,
@@ -315,10 +243,8 @@ impl WorkHub {
         let sessions = locked(&self.store)?.sessions().unwrap_or_default();
         Ok(InboxListing {
             items: snapshot.items,
-            errors: snapshot.errors,
-            connections: snapshot.connections,
-            linear_teams: snapshot.linear_teams,
-            jira_projects: snapshot.jira_projects,
+            error: snapshot.error,
+            connection: snapshot.connection,
             sessions,
         })
     }
@@ -369,25 +295,6 @@ impl WorkHub {
             .await
     }
 
-    /// `ConnectInbox`, once per op. The token stays with the tracker's adapter.
-    pub async fn connect(&self, op: Option<OpId>, body: ConnectInbox) -> Result<Status, String> {
-        let ConnectInbox {
-            cwd,
-            provider,
-            url,
-            email,
-            token,
-        } = body;
-        self.ledger
-            .once(
-                op,
-                self.tracker(cwd, move |trackers, at| {
-                    trackers.connect(at, &provider, url, email, token)
-                }),
-            )
-            .await
-    }
-
     /// `RunInboxAction`, once per op.
     pub async fn action(&self, op: Option<OpId>, body: RunInboxAction) -> Result<Item, String> {
         let RunInboxAction { cwd, item, action } = body;
@@ -408,29 +315,6 @@ impl WorkHub {
     pub async fn avatar(&self, body: InboxAvatar) -> Result<Bytes, String> {
         let trackers = self.trackers.clone();
         self.blocking(move || trackers.avatar(&body.url).map(Bytes))
-            .await
-    }
-
-    pub async fn processes(&self) -> Result<Vec<AgentProcess>, String> {
-        let trackers = self.trackers.clone();
-        self.blocking(move || trackers.processes()).await
-    }
-
-    /// `StopAgentTool`, once per op.
-    pub async fn stop_tool(
-        &self,
-        op: Option<OpId>,
-        body: StopAgentTool,
-    ) -> Result<Outcome, String> {
-        let trackers = self.trackers.clone();
-        self.ledger
-            .once(
-                op,
-                self.blocking(move || {
-                    trackers.stop_tool(body.pid, &body.identity)?;
-                    Ok(Outcome::Applied)
-                }),
-            )
             .await
     }
 
@@ -567,14 +451,13 @@ impl WorkService {
     }
 }
 
-const METHODS: [&str; 23] = [
+const METHODS: [&str; 20] = [
     InboxList::NAME,
     ReadInboxDetails::NAME,
     ReadInboxThread::NAME,
     ReadInboxDiff::NAME,
     ReadInboxChecks::NAME,
     PostInboxComment::NAME,
-    ConnectInbox::NAME,
     RunInboxAction::NAME,
     InboxMedia::NAME,
     InboxAvatar::NAME,
@@ -587,8 +470,6 @@ const METHODS: [&str; 23] = [
     HasEventAutomations::NAME,
     ProjectGroups::NAME,
     LinkedActivity::NAME,
-    AgentProcesses::NAME,
-    StopAgentTool::NAME,
     ReadWorkItem::NAME,
     ReadWorkItemDetails::NAME,
 ];
@@ -627,10 +508,6 @@ impl RpcService for WorkService {
             PostInboxComment::NAME => {
                 let (op, body) = routed(params)?;
                 reply(hub.comment(op, body).await)
-            }
-            ConnectInbox::NAME => {
-                let (op, body) = routed(params)?;
-                reply(hub.connect(op, body).await)
             }
             RunInboxAction::NAME => {
                 let (op, body) = routed(params)?;
@@ -679,14 +556,6 @@ impl RpcService for WorkService {
             LinkedActivity::NAME => {
                 let (_, body) = routed(params)?;
                 reply(hub.linked_activity(body).await)
-            }
-            AgentProcesses::NAME => {
-                let (_, AgentProcesses {}) = routed(params)?;
-                reply(hub.processes().await)
-            }
-            StopAgentTool::NAME => {
-                let (op, body) = routed(params)?;
-                reply(hub.stop_tool(op, body).await)
             }
             ReadWorkItem::NAME => reply(hub.work_item(routed(params)?.1).await),
             ReadWorkItemDetails::NAME => reply(hub.work_item_details(routed(params)?.1).await),

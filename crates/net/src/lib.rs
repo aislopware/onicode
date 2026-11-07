@@ -18,8 +18,8 @@
 //! * `udp`: the UDP socket under every endpoint, which finishes a send that went out in part.
 //!
 //! One QUIC connection per device pair carries a control stream (bidirectional, opened by the
-//! dialer), one bidirectional stream per RPC call, document, terminal, tunnel or file, and
-//! datagrams for keystroke and echo copies.
+//! dialer), one bidirectional stream per RPC call or file, and datagrams for remote desktop
+//! media, feedback and input copies.
 
 #![deny(unsafe_code)]
 

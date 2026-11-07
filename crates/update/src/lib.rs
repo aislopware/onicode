@@ -1,7 +1,6 @@
-//! onicode-update — release checking and self-update, shared by the engine (the
-//! background checker + `ApplyUpdate`), the CLI (`onicode update`), and the UI
-//! (its own report-only checker, the "Check for Updates…" menu item, the
-//! sidebar update strip, and the desktop install paths).
+//! onicode-update — release checking and self-update for the desktop app: the
+//! "Check for Updates…" menu item, the sidebar update row, and the install
+//! paths.
 //!
 //! Release layout: the release feed (`ONICODE_UPDATE_FEED`, or
 //! `ONICODE_RELEASES_URL` for its `releases` directory itself) serves
@@ -11,8 +10,7 @@
 //!
 //! Install kinds and their update paths:
 //! - **MacApp** (running out of an app bundle): download the app tarball, swap the bundle
-//!   directory, relaunch, driven by the UI; or, asked from another device, the engine's own trial
-//!   of it ([`transaction`]).
+//!   directory, relaunch, driven by the UI.
 //! - **Unmanaged** (source builds, hand-copied binaries): report only — the UI's advisory strip
 //!   links to [`RELEASES_PAGE`].
 //!
@@ -22,22 +20,17 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use anyhow::{Context as _, bail};
 use futures::StreamExt as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt as _;
-use tokio::sync::watch;
 
 pub mod channel;
 pub mod desktop;
-pub mod transaction;
 pub use channel::Channel;
-pub use transaction::{UpdateReport, UpdateState};
 
 /// The version compiled into this binary (the workspace version).
 pub const fn current_version() -> &'static str {
@@ -84,29 +77,6 @@ fn feed_from(runtime: Option<&str>, built: Option<&str>) -> Option<String> {
 /// says. Called from the download's task, once per chunk.
 pub type Progress<'a> = &'a (dyn Fn(u64, Option<u64>) + Send + Sync);
 
-/// A [`Progress`] for callers that show none.
-pub fn no_progress(_done: u64, _total: Option<u64>) {}
-
-/// Successful checks repeat this often. The feed is a sub-kilobyte
-/// document, so hourly polling is free and bounds how long a
-/// long-running app can sit on a stale release.
-const CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60);
-/// Failed checks (offline boot, captive portal, transient feed error) back off
-/// through these delays, then stay at the last one.
-const CHECK_RETRY: [Duration; 4] = [
-    Duration::from_secs(60),
-    Duration::from_secs(5 * 60),
-    Duration::from_secs(15 * 60),
-    Duration::from_secs(30 * 60),
-];
-/// Check deadlines are wall-clock times: a monotonic sleep stops counting
-/// while the machine sleeps, so a laptop closed overnight used to push its
-/// next check out by the whole night. The loop re-reads the clock this often.
-const SCHEDULE_TICK: Duration = Duration::from_secs(60);
-/// The engine's first check waits out engine boot (room joins, doc re-sync).
-const ENGINE_INITIAL_DELAY: Duration = Duration::from_secs(20);
-/// The desktop checker only needs the window on screen first.
-const DESKTOP_INITIAL_DELAY: Duration = Duration::from_secs(2);
 /// A staged binary must answer `--version` within this window.
 const STAGED_VERSION_TIMEOUT: Duration = Duration::from_secs(30);
 /// Release metadata is tiny. Bound both its buffered size and total transfer
@@ -603,14 +573,6 @@ impl InstallKind {
     /// effect at the next launch ("install on quit"). Either way the caller
     /// must quit after this succeeds.
     pub fn apply_desktop(&self, staged: &Path, relaunch: bool) -> anyhow::Result<()> {
-        // The engine is trying a new version out (asked from another device), and
-        // going back from that needs the installed app to stay as it was.
-        if channel::data_dir()
-            .and_then(transaction::read)
-            .is_some_and(|update| update.in_progress())
-        {
-            bail!("An update is already in progress on this device.");
-        }
         match self {
             Self::MacApp { bundle } => {
                 apply_mac_app(staged, bundle)?;
@@ -670,105 +632,13 @@ fn dir_writable(dir: &Path) -> bool {
     }
 }
 
-/// How this copy of Onicode is installed, as `UpdateStatus` reports it. A client
-/// shows what the device can do from this and `can_apply_remotely`, rather
-/// than guessing from its platform.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum InstallMethod {
-    /// The macOS app.
-    MacApp,
-    /// Built from source or copied by hand.
-    Unmanaged,
-    /// A newer engine's method this client doesn't know.
-    #[serde(other)]
-    Unknown,
-}
-
-/// What a device can do about its own updates, for `UpdateStatus`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpdateAbility {
-    pub install: InstallMethod,
-    /// `ApplyUpdate` works from another device.
-    pub can_apply_remotely: bool,
-    /// Why it doesn't, in words for the person.
-    pub cannot_apply_reason: Option<String>,
-}
-
-impl UpdateAbility {
-    fn refused(install: InstallMethod, reason: impl Into<String>) -> Self {
-        Self {
-            install,
-            can_apply_remotely: false,
-            cannot_apply_reason: Some(reason.into()),
-        }
-    }
-
-    /// `supervised`: something starts this engine again once it stops (see
-    /// [`running_as_installed_service`]). `blocker`: why the installation can't
-    /// replace itself right now.
-    fn decide(kind: &InstallKind, supervised: bool, blocker: Option<UpdateBlocker>) -> Self {
-        match kind {
-            // The app's background engine can carry out an update itself. One
-            // run any other way has nothing to bring it back.
-            InstallKind::MacApp { .. } => Self::desktop(
-                InstallMethod::MacApp,
-                "This Onicode wasn't started by the app, so nothing would bring it back after an \
-                 update. Update it from the Onicode app on that Mac.",
-                supervised,
-                blocker,
-            ),
-            InstallKind::Unmanaged => Self::refused(
-                InstallMethod::Unmanaged,
-                "This copy of Onicode wasn't installed by the installer, so it can't replace itself.",
-            ),
-        }
-    }
-
-    fn desktop(
-        install: InstallMethod,
-        unsupervised: &str,
-        supervised: bool,
-        blocker: Option<UpdateBlocker>,
-    ) -> Self {
-        match blocker {
-            _ if !supervised => Self::refused(install, unsupervised),
-            Some(blocker) => Self::refused(install, blocker.to_string()),
-            None => Self {
-                install,
-                can_apply_remotely: true,
-                cannot_apply_reason: None,
-            },
-        }
-    }
-
-    /// This process's: how it's installed, and whether it can update from afar.
-    pub fn current() -> Self {
-        let kind = detect_install();
-        Self::decide(
-            &kind,
-            running_as_installed_service(),
-            kind.desktop_update_blocker(),
-        )
-    }
-}
-
-/// Set on a new version on trial: the installation it's running in place of
-/// (the macOS app bundle).
-pub const INSTALLED_AT_ENV: &str = "ONICODE_INSTALLED_AT";
-
 /// Where this process was installed from, resolved once: an update moves
-/// the running image aside, and a long-running engine must still recognise
+/// the running image aside, and a long-running app must still recognise
 /// the installation it belongs to.
 pub fn detect_install() -> InstallKind {
     static INSTALL: std::sync::OnceLock<InstallKind> = std::sync::OnceLock::new();
     INSTALL
         .get_or_init(|| {
-            // A new version on trial runs from beside the installation it's
-            // going to become.
-            if let Some(installed) = std::env::var_os(INSTALLED_AT_ENV).map(PathBuf::from) {
-                return InstallKind::MacApp { bundle: installed };
-            }
             let Ok(exe) = std::env::current_exe() else {
                 return InstallKind::Unmanaged;
             };
@@ -790,23 +660,11 @@ fn detect_install_from(exe: &Path) -> InstallKind {
     InstallKind::Unmanaged
 }
 
-/// The version currently installed on disk for `kind`, read without executing
-/// anything. A long-running process compares it with its own version to notice
-/// that something else (the desktop app) has already replaced its binary.
-pub fn installed_version(kind: &InstallKind) -> Option<String> {
-    let version = match kind {
-        InstallKind::MacApp { bundle } => bundle_engine_version(bundle)?,
-        InstallKind::Unmanaged => return None,
-    };
-    parse_version(&version).map(|_| version)
-}
-
 /// The engine a macOS app bundle carries: its Info.plist's `OnicodeEngineVersion`
 /// (packaging writes it; a beta app's engine is stable's, older than the app),
 /// else `CFBundleShortVersionString` (bundles from before the key, whose
-/// engine was always the app's own version). An engine compares this with
-/// its own to restart into a newer one; comparing the app's version would
-/// restart a beta's engine forever.
+/// engine was always the app's own version). Leaving beta weighs it against
+/// stable's engine ([`offer`]).
 pub fn bundle_engine_version(bundle: &Path) -> Option<String> {
     let plist = std::fs::read_to_string(bundle.join("Contents/Info.plist")).ok()?;
     plist_string(&plist, "OnicodeEngineVersion")
@@ -930,74 +788,6 @@ async fn verify_staged_binary(binary: &Path, version: &str) -> anyhow::Result<()
 }
 
 // ---------------------------------------------------------------------------
-// The engine's restart
-// ---------------------------------------------------------------------------
-
-type ManagedRestart = Box<dyn Fn() -> anyhow::Result<()> + Send + Sync>;
-
-static MANAGED_RESTART: std::sync::OnceLock<ManagedRestart> = std::sync::OnceLock::new();
-
-/// This process is the desktop app's background engine, which no service
-/// manager supervises: `restart` relaunches it (the replacement waits for
-/// this one to let go of the data directory) and stops this one. With it set,
-/// [`Updater::restart_when_superseded`] restarts into a newer installed
-/// version once nothing is running, exactly as for an installed service.
-pub fn set_managed_restart(restart: impl Fn() -> anyhow::Result<()> + Send + Sync + 'static) {
-    let _ = MANAGED_RESTART.set(Box::new(restart));
-}
-
-type ManagedRestartReady = Box<dyn Fn() -> bool + Send + Sync>;
-static MANAGED_RESTART_READY: std::sync::OnceLock<ManagedRestartReady> = std::sync::OnceLock::new();
-
-/// When the background engine may restart into a newer installed version,
-/// on top of nothing running (e.g. only while the app that starts it runs).
-/// Checked on every pass, so a restart it holds back happens on a later one.
-pub fn set_managed_restart_ready(ready: impl Fn() -> bool + Send + Sync + 'static) {
-    let _ = MANAGED_RESTART_READY.set(Box::new(ready));
-}
-
-fn managed_restart_ready() -> bool {
-    MANAGED_RESTART_READY.get().is_none_or(|ready| ready())
-}
-
-/// Whether this process is the engine service [`restart_service`] manages:
-/// the desktop app's background engine ([`set_managed_restart`]), or the job
-/// launchd names in `XPC_SERVICE_NAME`.
-pub fn running_as_installed_service() -> bool {
-    MANAGED_RESTART.get().is_some()
-        || std::env::var("XPC_SERVICE_NAME").is_ok_and(|label| label == "dev.aislopware.onicode")
-}
-
-/// The systemd unit this engine runs as. `ONICODE_SERVICE_UNIT` names another, so
-/// a test install beside a real one can never restart the real one.
-pub fn service_unit() -> String {
-    std::env::var("ONICODE_SERVICE_UNIT")
-        .ok()
-        .filter(|unit| !unit.trim().is_empty())
-        .unwrap_or_else(|| "onicode.service".to_owned())
-}
-
-/// Restart the installed engine: the desktop app's background engine through
-/// [`set_managed_restart`], a launchd job through `launchctl`. Called once a
-/// newer version is in place. Only queues the restart: the caller may be the
-/// service itself, which must stay responsive to the stop signal that follows.
-pub fn restart_service() -> anyhow::Result<()> {
-    if let Some(restart) = MANAGED_RESTART.get() {
-        return restart();
-    }
-    let output = std::process::Command::new("id").arg("-u").output()?;
-    let uid = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    run(
-        "launchctl",
-        &[
-            "kickstart",
-            "-k",
-            &format!("gui/{uid}/dev.aislopware.onicode"),
-        ],
-    )
-}
-
-// ---------------------------------------------------------------------------
 // macOS app-bundle installs — the desktop path
 // ---------------------------------------------------------------------------
 
@@ -1107,14 +897,6 @@ pub fn prune_retired_mac_bundles(bundle: &Path) {
     };
     let name = name.to_string_lossy();
     let (old, new) = (format!(".{name}.old-"), format!(".{name}.new-"));
-    // An update waiting to be tried needs its copy.
-    let waiting = channel::data_dir()
-        .and_then(transaction::read)
-        .filter(|update| update.in_progress())
-        .map(|update| {
-            let transaction::Layout::MacBundle { incoming, .. } = update.layout;
-            incoming
-        });
     let Ok(entries) = std::fs::read_dir(parent) else {
         return;
     };
@@ -1122,35 +904,11 @@ pub fn prune_retired_mac_bundles(bundle: &Path) {
         let file_name = entry.file_name();
         let file_name = file_name.to_string_lossy();
         if (file_name.starts_with(&old) || file_name.starts_with(&new))
-            && waiting.as_deref() != Some(entry.path().as_path())
             && !process_runs_from(&entry.path())
         {
             let _ = std::fs::remove_dir_all(entry.path());
         }
     }
-}
-
-/// Exchange two bundles in one step: `incoming` becomes `bundle` and the old one
-/// is left under the retired name. Nothing ever finds `bundle` missing.
-pub(crate) fn swap_mac_bundles(incoming: &Path, bundle: &Path) -> anyhow::Result<()> {
-    use std::os::unix::ffi::OsStrExt as _;
-    let c = |path: &Path| std::ffi::CString::new(path.as_os_str().as_bytes());
-    let (from, to) = (c(incoming)?, c(bundle)?);
-    // SAFETY: both are NUL-terminated paths.
-    if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_SWAP) } != 0 {
-        return Err(std::io::Error::last_os_error()).context("swapping in the new app");
-    }
-    let parent = bundle
-        .parent()
-        .context("app bundle has no parent directory")?;
-    let name = bundle
-        .file_name()
-        .context("app bundle has no name")?
-        .to_string_lossy();
-    let retired = parent.join(format!(".{name}.old-{}", std::process::id()));
-    // If this is lost to a crash, it's tidied up under the name it has.
-    let _ = std::fs::rename(incoming, &retired);
-    Ok(())
 }
 
 /// Swap the installed bundle for the staged one: `ditto` the staged copy next to
@@ -1185,8 +943,8 @@ pub fn apply_mac_app(staged: &Path, bundle: &Path) -> anyhow::Result<()> {
         let _ = std::fs::remove_dir_all(&fresh);
         return Err(err).context("installing the new app bundle");
     }
-    // Not deleted: the background engine, this very app, or an update's trial may
-    // still be running from it. Gone once nothing is (#1037).
+    // Not deleted: the background engine or this very app may still be running
+    // from it. Gone once nothing is (#1037).
     prune_retired_mac_bundles(bundle);
     Ok(())
 }
@@ -1217,730 +975,9 @@ if [ -n "$3" ]; then exec "$2" "$3"; else exec "$2"; fi"#;
     }
 }
 
-// ---------------------------------------------------------------------------
-// Background checker
-// ---------------------------------------------------------------------------
-
-/// What the checker reports (the engine's `UpdateStatus` stream, the desktop
-/// strip). Version facts only — download/apply progress is owned by whoever
-/// drives the update (UI or CLI).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateStatus {
-    pub current_version: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub latest_version: Option<String>,
-    #[serde(default)]
-    pub update_available: bool,
-    /// Epoch ms of the last successful check.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub checked_at: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    /// The channel the check followed (`stable` | `beta`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub channel: Option<String>,
-    /// `latest_version` exists but can't be installed here, and why (an
-    /// older macOS; a beta's engine newer than stable's).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub held: Option<String>,
-    /// Installing `latest_version` leaves this build's channel and may go
-    /// back a version (beta → stable).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub switch: bool,
-    /// How this copy is installed. Absent from older engines and from the
-    /// desktop app's own checker: unknown, so don't guess.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub install: Option<InstallMethod>,
-    /// Whether another device can install the update (`ApplyUpdate`). Absent
-    /// from older engines: they don't say. An older engine refuses
-    /// `ApplyUpdate` itself when it can't, so treat absent as "try, and show
-    /// its refusal", never as a promise.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub can_apply_remotely: Option<bool>,
-    /// Why it can't, in words for the person.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cannot_apply_reason: Option<String>,
-    /// The latest update asked of this engine and how it went. Match its `id`
-    /// with `ApplyUpdate`'s `updateId`: reconnecting doesn't say whether the
-    /// update worked or went back. Absent from older engines, which only have
-    /// `currentVersion` to go by.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub update: Option<UpdateReport>,
-    /// On a macOS app install, the installed app's version, which is what
-    /// `latestVersion` is compared with. It isn't `currentVersion` on a beta,
-    /// whose engine is stable's. Absent elsewhere and from older engines.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub app_version: Option<String>,
-}
-
-impl UpdateStatus {
-    fn initial(version: &str) -> Self {
-        Self {
-            current_version: version.to_string(),
-            latest_version: None,
-            update_available: false,
-            checked_at: None,
-            error: None,
-            channel: None,
-            held: None,
-            switch: false,
-            install: None,
-            can_apply_remotely: None,
-            cannot_apply_reason: None,
-            update: None,
-            app_version: None,
-        }
-    }
-
-    fn with_ability(mut self, ability: UpdateAbility) -> Self {
-        self.install = Some(ability.install);
-        self.can_apply_remotely = Some(ability.can_apply_remotely);
-        self.cannot_apply_reason = ability.cannot_apply_reason;
-        self
-    }
-}
-
-/// `ONICODE_AUTO_UPDATE=0|false|no` — the desktop app then only reports: no
-/// background download and no install on quit. Unset means on.
-pub fn desktop_auto_update_enabled() -> bool {
-    std::env::var("ONICODE_AUTO_UPDATE")
-        .map(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "0" | "false" | "no"))
-        .unwrap_or(true)
-}
-
-/// "Nothing would be interrupted by a restart right now" — wired by the engine
-/// to its live-run and open-terminal registries. `None` = no gate.
-pub type QuiescentCheck = Arc<dyn Fn() -> bool + Send + Sync>;
-
-/// Who runs the checker — decides what it may do beyond reporting.
-enum Role {
-    /// The engine: a service daemon restarts into a binary someone else installed.
-    Engine { quiescent: Option<QuiescentCheck> },
-    /// The desktop app: report only — downloading and installing are UI
-    /// decisions (see `crates/app/src/notifications/updater.rs`).
-    Desktop,
-}
-
-/// Background release checker: polls `{feed}/releases` hourly on a wall-clock
-/// schedule (so sleep/wake cannot stretch it), backs off on failure, and
-/// publishes [`UpdateStatus`] over a watch channel. In the engine, a service
-/// restarts into a newer installed version only in a quiet window: while
-/// `quiescent` reports activity, the restart defers.
-#[derive(Clone)]
-pub struct Updater {
-    feed_url: String,
-    role: Arc<Role>,
-    /// The version releases are compared with: the engine's own, or the app's
-    /// ([`app_version`]).
-    version: Arc<str>,
-    status_tx: Arc<watch::Sender<UpdateStatus>>,
-    /// Wakes the loop; `forced` says whether the wake demands a check or only
-    /// a fresh look at the wall clock.
-    wake_tx: Arc<watch::Sender<u64>>,
-    forced: Arc<AtomicBool>,
-    /// Set by the engine (`onicode-engine`): this process is the installed service
-    /// and may restart itself into a newer installed binary.
-    service: Arc<AtomicBool>,
-    /// Flips to true exactly once; the check loop selects against it so
-    /// cancellation lands at any await point (no tokio-util in this crate).
-    shutdown_tx: Arc<watch::Sender<bool>>,
-    check_task: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
-}
-
-impl Updater {
-    /// Spawn the engine's check loop (must run on a tokio runtime).
-    pub fn spawn(feed_url: String, quiescent: Option<QuiescentCheck>) -> Self {
-        Self::spawn_role(feed_url, Role::Engine { quiescent })
-    }
-
-    /// Spawn the desktop app's report-only check loop (must run on a tokio
-    /// runtime).
-    pub fn spawn_desktop(feed_url: String) -> Self {
-        Self::spawn_role(feed_url, Role::Desktop)
-    }
-
-    fn spawn_role(feed_url: String, role: Role) -> Self {
-        let initial_delay = match role {
-            Role::Engine { .. } => ENGINE_INITIAL_DELAY,
-            Role::Desktop => DESKTOP_INITIAL_DELAY,
-        };
-        let version: Arc<str> = match role {
-            Role::Engine { .. } => current_version().into(),
-            Role::Desktop => app_version().into(),
-        };
-        let initial = UpdateStatus::initial(&version);
-        let initial = match role {
-            Role::Engine { .. } => UpdateStatus {
-                update: channel::data_dir().and_then(transaction::report),
-                app_version: installed_app_version(),
-                ..initial.with_ability(UpdateAbility::current())
-            },
-            Role::Desktop => initial,
-        };
-        let (status_tx, _) = watch::channel(initial);
-        let (wake_tx, _) = watch::channel(0);
-        let (shutdown_tx, _) = watch::channel(false);
-        let updater = Self {
-            feed_url,
-            role: Arc::new(role),
-            version,
-            status_tx: Arc::new(status_tx),
-            wake_tx: Arc::new(wake_tx),
-            forced: Arc::new(AtomicBool::new(false)),
-            service: Arc::new(AtomicBool::new(false)),
-            shutdown_tx: Arc::new(shutdown_tx),
-            check_task: Arc::new(std::sync::Mutex::new(None)),
-        };
-        // Subscribe before spawning so an immediate `check_now` cannot land
-        // before the background task first polls and be lost behind the
-        // initial delay.
-        let wakes = updater.wake_tx.subscribe();
-        let for_loop = updater.clone();
-        let task = tokio::spawn(async move { for_loop.check_loop(wakes, initial_delay).await });
-        *updater.check_task.lock().unwrap() = Some(task);
-        updater
-    }
-
-    /// Stop the check loop and wait for it to exit — a replaced runtime must
-    /// not keep polling `{feed}/releases` (or auto-applying) in the background.
-    /// Idempotent, and callable from any clone.
-    pub async fn shutdown(&self) {
-        let _ = self.shutdown_tx.send(true);
-        let task = self
-            .check_task
-            .lock()
-            .unwrap_or_else(|err| err.into_inner())
-            .take();
-        if let Some(task) = task {
-            let _ = task.await;
-        }
-    }
-
-    pub fn watch(&self) -> watch::Receiver<UpdateStatus> {
-        self.status_tx.subscribe()
-    }
-
-    /// Check immediately, for example when authentication recovers after the
-    /// process started offline.
-    pub fn check_now(&self) {
-        self.forced.store(true, Ordering::SeqCst);
-        self.wake_tx
-            .send_modify(|epoch| *epoch = epoch.wrapping_add(1));
-    }
-
-    /// Re-read the wall clock now (window activation, system wake): checks
-    /// only if one is due, so frequent pokes cost nothing.
-    pub fn poke(&self) {
-        self.wake_tx
-            .send_modify(|epoch| *epoch = epoch.wrapping_add(1));
-    }
-
-    /// Called by the engine (`onicode-engine`): when this process is the installed
-    /// engine service and something else installs a newer binary, restart into it
-    /// at the next quiet moment. A hand-started `onicode-engine` is left alone —
-    /// restarting the service unit would start a second engine beside it.
-    pub fn restart_when_superseded(&self) {
-        if !running_as_installed_service() {
-            return;
-        }
-        self.service.store(true, Ordering::SeqCst);
-        self.poke();
-    }
-
-    /// One user-requested check, awaited: publishes the result like a
-    /// scheduled check and returns it.
-    pub async fn check(&self) -> anyhow::Result<UpdateStatus> {
-        match fetch_latest(&self.feed_url).await {
-            Ok(manifest) => {
-                self.publish(manifest);
-                Ok(self.status_tx.borrow().clone())
-            }
-            Err(err) => {
-                self.status_tx
-                    .send_modify(|s| s.error = Some(format!("{err:#}")));
-                Err(err)
-            }
-        }
-    }
-
-    fn quiescent_now(&self) -> bool {
-        match &*self.role {
-            Role::Engine { quiescent } => quiescent.as_ref().is_none_or(|check| check()),
-            Role::Desktop => true,
-        }
-    }
-
-    async fn check_loop(&self, mut wakes: watch::Receiver<u64>, initial_delay: Duration) {
-        let mut shutdown = self.shutdown_tx.subscribe();
-        // Shutdown must cut the loop at ANY await point — including mid
-        // `check_once()` / `auto_apply_when_idle()` HTTP — so the whole body
-        // races the flag rather than checking it between iterations.
-        tokio::select! {
-            _ = shutdown.wait_for(|stop| *stop) => {}
-            _ = async {
-                tokio::select! {
-                    _ = tokio::time::sleep(initial_delay) => {}
-                    _ = wakes.changed() => {}
-                }
-                let mut schedule = Schedule::default();
-                let mut superseded = SupersededRestart::default();
-                loop {
-                    let forced = self.forced.swap(false, Ordering::SeqCst);
-                    if forced || schedule.due(SystemTime::now()) {
-                        let ok = self.check_once().await;
-                        schedule.record(SystemTime::now(), ok);
-                    }
-                    if self.service.load(Ordering::SeqCst) {
-                        superseded.poll(|| self.quiescent_now());
-                    }
-                    let wait = schedule.wait(SystemTime::now());
-                    tokio::select! {
-                        _ = tokio::time::sleep(wait) => {}
-                        _ = wakes.changed() => {}
-                    }
-                }
-            } => {}
-        }
-    }
-
-    fn publish(&self, manifest: Manifest) {
-        // A macOS app's bundle carries the engine a switch must not go below, and
-        // its own version is what releases are compared with: a beta's engine is
-        // stable's, so by the engine's version a newer beta looks like nothing new.
-        let bundle = match detect_install() {
-            InstallKind::MacApp { bundle } => Some(bundle),
-            _ => None,
-        };
-        let running_engine = bundle.as_deref().and_then(bundle_engine_version);
-        let app_version = bundle.as_deref().and_then(bundle_app_version);
-        let running = match &*self.role {
-            Role::Engine { .. } => app_version.as_deref().unwrap_or(&self.version),
-            Role::Desktop => &self.version,
-        };
-        let offer = offer(
-            &manifest,
-            running,
-            manifest.channel,
-            running_engine.as_deref(),
-            channel::macos_version(),
-        );
-        let status = UpdateStatus {
-            current_version: self.version.to_string(),
-            update_available: offer.installs(),
-            latest_version: Some(manifest.version.clone()),
-            checked_at: Some(now_ms()),
-            error: None,
-            channel: Some(manifest.channel.as_str().to_owned()),
-            held: match &offer {
-                Offer::Held(why) => Some(why.clone()),
-                _ => None,
-            },
-            switch: offer == Offer::Switch,
-            install: None,
-            can_apply_remotely: None,
-            cannot_apply_reason: None,
-            update: None,
-            app_version: None,
-        };
-        let status = match &*self.role {
-            Role::Engine { .. } => UpdateStatus {
-                update: channel::data_dir().and_then(transaction::report),
-                app_version,
-                ..status.with_ability(UpdateAbility::current())
-            },
-            Role::Desktop => status,
-        };
-        if status.update_available {
-            tracing::info!(
-                latest = status.latest_version.as_deref().unwrap_or(""),
-                current = %status.current_version,
-                "update available"
-            );
-        }
-        self.status_tx.send_replace(status);
-    }
-
-    /// One check; returns false on fetch failure (retry sooner).
-    async fn check_once(&self) -> bool {
-        if let InstallKind::MacApp { bundle } = detect_install() {
-            prune_retired_mac_bundles(&bundle);
-        }
-        match fetch_latest(&self.feed_url).await {
-            Ok(manifest) => {
-                self.publish(manifest);
-                true
-            }
-            Err(err) => {
-                tracing::debug!(error = %err, "update check failed");
-                self.status_tx
-                    .send_modify(|s| s.error = Some(format!("{err:#}")));
-                false
-            }
-        }
-    }
-
-    /// Publish the update's latest state, after something settled it.
-    pub fn refresh_update_report(&self) {
-        let update = channel::data_dir().and_then(transaction::report);
-        let app_version = installed_app_version();
-        self.status_tx.send_modify(|status| {
-            status.update = update;
-            status.current_version = self.version.to_string();
-            status.app_version = app_version;
-        });
-    }
-
-    /// Stage the newest release on THIS device and restart into a trial of it.
-    /// The answer goes out first: the restart waits a moment so that it can.
-    /// What became of the update is `UpdateStatus`'s `update`, under the id
-    /// answered here.
-    pub async fn apply(&self) -> anyhow::Result<AppliedUpdate> {
-        let ability = UpdateAbility::current();
-        if !ability.can_apply_remotely {
-            bail!("{}", ability.cannot_apply_reason.unwrap_or_default());
-        }
-        let data_dir = channel::data_dir()
-            .context("this engine has no data directory")?
-            .to_path_buf();
-        if transaction::read(&data_dir).is_some_and(|last| last.in_progress()) {
-            bail!("An update is already in progress on this device.");
-        }
-        let manifest = fetch_latest(&self.feed_url).await?;
-        let Some(prepared) = prepare_this_install(&self.feed_url, &manifest, &data_dir).await?
-        else {
-            bail!("already up to date ({})", current_version());
-        };
-        // Already on disk as `current`: there's nothing to try out, only to
-        // restart into.
-        let update_id = match prepared.layout {
-            None => None,
-            Some(layout) => {
-                let requested = transaction::request(
-                    &data_dir,
-                    layout,
-                    &prepared.from,
-                    &manifest.version,
-                    if MANAGED_RESTART.get().is_some() {
-                        transaction::RestartMode::Relaunch
-                    } else {
-                        transaction::RestartMode::Service {
-                            unit: service_unit(),
-                        }
-                    },
-                )?;
-                self.refresh_update_report();
-                Some(requested.id)
-            }
-        };
-        let updater = self.clone();
-        let restarting = update_id.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(800)).await;
-            if let Err(err) = restart_service() {
-                tracing::warn!(error = %err, "service restart failed — restart the engine to finish the update");
-                if let (Some(id), Some(data_dir)) = (&restarting, channel::data_dir()) {
-                    transaction::fail_request(
-                        data_dir,
-                        id,
-                        "Onicode couldn't restart to install the update, so nothing changed."
-                            .into(),
-                    );
-                    updater.refresh_update_report();
-                }
-            }
-        });
-        Ok(AppliedUpdate {
-            version: manifest.version,
-            update_id,
-        })
-    }
-}
-
-/// The installed macOS app's own version.
-fn installed_app_version() -> Option<String> {
-    match detect_install() {
-        InstallKind::MacApp { bundle } => bundle_app_version(&bundle),
-        _ => None,
-    }
-}
-
-/// A release ready to try.
-struct PreparedInstall {
-    from: String,
-    /// `None`: it's already what's installed.
-    layout: Option<transaction::Layout>,
-}
-
-/// Whatever this kind of install needs done before anything stops. `None`: nothing
-/// newer to install. A release that isn't installable here is an error, in words
-/// for the person.
-async fn prepare_this_install(
-    feed_url: &str,
-    manifest: &Manifest,
-    data_dir: &Path,
-) -> anyhow::Result<Option<PreparedInstall>> {
-    match detect_install() {
-        InstallKind::MacApp { bundle } => {
-            // The engine's version isn't the app's (a beta carries stable's).
-            let from =
-                bundle_app_version(&bundle).context("reading the installed app's version")?;
-            match offer(
-                manifest,
-                &from,
-                manifest.channel,
-                bundle_engine_version(&bundle).as_deref(),
-                channel::macos_version(),
-            ) {
-                Offer::Newer | Offer::Switch => {}
-                Offer::Held(why) => bail!(why),
-                Offer::Current => return Ok(None),
-            }
-            let parent = bundle
-                .parent()
-                .context("app bundle has no parent directory")?;
-            let download = artifact_size(feed_url, manifest, &mac_app_artifact(&manifest.version))
-                .await
-                .unwrap_or(transaction::UNKNOWN_ARTIFACT_BYTES);
-            // A staged copy and the one beside the installed app.
-            if let Err(why) = transaction::ensure_room(data_dir, parent, download.saturating_mul(2))
-            {
-                bail!(why);
-            }
-            let staged = stage_mac_app(feed_url, manifest, data_dir, &no_progress).await?;
-            let name = bundle
-                .file_name()
-                .context("app bundle has no name")?
-                .to_string_lossy();
-            let incoming = parent.join(format!(".{name}.new-{}", transaction::new_id()));
-            // Everything that can fail about installing it happens here, with
-            // nothing stopped: it's a plain copy, and then one atomic swap.
-            if let Err(err) = run(
-                "ditto",
-                &[&staged.to_string_lossy(), &incoming.to_string_lossy()],
-            ) {
-                let _ = std::fs::remove_dir_all(&incoming);
-                return Err(err).context("copying the new app into place");
-            }
-            if let Some(version_dir) = staged.parent()
-                && !process_runs_from(version_dir)
-            {
-                let _ = std::fs::remove_dir_all(version_dir);
-            }
-            Ok(Some(PreparedInstall {
-                from,
-                layout: Some(transaction::Layout::MacBundle { bundle, incoming }),
-            }))
-        }
-        InstallKind::Unmanaged => bail!("this install doesn't update itself"),
-    }
-}
-
-/// What `ApplyUpdate` answers.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AppliedUpdate {
-    pub version: String,
-    /// `UpdateStatus`'s `update.id`, to find out how it went. Absent when the
-    /// version was already installed and only needed a restart.
-    pub update_id: Option<String>,
-}
-
-/// What the feed says the release's download weighs, if it says.
-async fn artifact_size(feed_url: &str, manifest: &Manifest, file: &str) -> Option<u64> {
-    let base = manifest.channel.base(&release_base(feed_url).ok()?);
-    let url = format!("{base}/{file}");
-    let response = http_client().ok()?.head(&url).send().await.ok()?;
-    response
-        .status()
-        .is_success()
-        .then(|| response.content_length())?
-}
-
-/// Wall-clock check deadlines with failure backoff.
-#[derive(Debug, Default)]
-struct Schedule {
-    /// `None` until the first check: due immediately.
-    next_due: Option<SystemTime>,
-    failures: usize,
-}
-
-impl Schedule {
-    fn due(&self, now: SystemTime) -> bool {
-        match self.next_due {
-            None => true,
-            Some(due) => match due.duration_since(now) {
-                Err(_) => true,
-                // A deadline further out than any interval means the clock
-                // jumped backwards; don't wait for it to catch up.
-                Ok(remaining) => remaining.is_zero() || remaining > CHECK_INTERVAL,
-            },
-        }
-    }
-
-    fn record(&mut self, now: SystemTime, ok: bool) {
-        let delay = if ok {
-            self.failures = 0;
-            CHECK_INTERVAL
-        } else {
-            let delay = CHECK_RETRY[self.failures.min(CHECK_RETRY.len() - 1)];
-            self.failures = self.failures.saturating_add(1);
-            delay
-        };
-        self.next_due = Some(now + delay);
-    }
-
-    /// Monotonic sleep until the next look at the clock.
-    fn wait(&self, now: SystemTime) -> Duration {
-        self.next_due
-            .and_then(|due| due.duration_since(now).ok())
-            .unwrap_or(Duration::ZERO)
-            .clamp(Duration::from_secs(1), SCHEDULE_TICK)
-    }
-}
-
-/// Restarts a service daemon into a newer binary that is already installed
-/// (the desktop app swapped the bundle).
-/// Waits for quiescence, and tries at most once per installed version so a
-/// broken service manager cannot turn into a restart loop.
-#[derive(Debug, Default)]
-struct SupersededRestart {
-    attempted: Option<String>,
-    deferred_logged: bool,
-}
-
-impl SupersededRestart {
-    fn poll(&mut self, quiescent: impl Fn() -> bool) {
-        let Some(installed) = installed_version(&detect_install()) else {
-            return;
-        };
-        self.poll_installed(
-            &installed,
-            current_version(),
-            || quiescent() && managed_restart_ready(),
-            restart_service,
-        );
-    }
-
-    fn poll_installed(
-        &mut self,
-        installed: &str,
-        running: &str,
-        quiescent: impl Fn() -> bool,
-        restart: impl FnOnce() -> anyhow::Result<()>,
-    ) {
-        if !version_newer(installed, running) || self.attempted.as_deref() == Some(installed) {
-            return;
-        }
-        if !quiescent() {
-            if !self.deferred_logged {
-                self.deferred_logged = true;
-                tracing::info!(
-                    installed,
-                    running,
-                    "newer version installed; restart deferred: sessions or terminals active, or waiting for the app"
-                );
-            }
-            return;
-        }
-        self.attempted = Some(installed.to_owned());
-        tracing::info!(
-            installed,
-            running,
-            "newer version installed; restarting service"
-        );
-        if let Err(err) = restart() {
-            tracing::warn!(error = %err, "service restart failed — restart the engine to finish the update");
-        }
-    }
-}
-
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn what_cant_update_from_afar_says_why() {
-        let bundle = InstallKind::MacApp {
-            bundle: PathBuf::from("/Applications/Onicode.app"),
-        };
-        let mac = UpdateAbility::decide(&bundle, true, None);
-        assert_eq!(mac.install, InstallMethod::MacApp);
-        assert!(mac.can_apply_remotely, "the app's background engine can");
-        assert_eq!(mac.cannot_apply_reason, None);
-        let mac_by_hand = UpdateAbility::decide(&bundle, false, None);
-        assert!(!mac_by_hand.can_apply_remotely);
-        assert!(mac_by_hand.cannot_apply_reason.unwrap().contains("Mac"));
-        let mac_translocated =
-            UpdateAbility::decide(&bundle, true, Some(UpdateBlocker::Translocated));
-        assert!(!mac_translocated.can_apply_remotely);
-        assert!(
-            mac_translocated
-                .cannot_apply_reason
-                .unwrap()
-                .contains("Applications")
-        );
-        let read_only = UpdateAbility::decide(
-            &bundle,
-            true,
-            Some(UpdateBlocker::NotWritable(PathBuf::from("/opt/onicode"))),
-        );
-        assert!(!read_only.can_apply_remotely);
-        assert!(
-            read_only
-                .cannot_apply_reason
-                .unwrap()
-                .contains("/opt/onicode")
-        );
-
-        let source = UpdateAbility::decide(&InstallKind::Unmanaged, true, None);
-        assert_eq!(source.install, InstallMethod::Unmanaged);
-        assert!(!source.can_apply_remotely);
-    }
-
-    /// An older engine's report has none of the fields; a newer engine's
-    /// method this build doesn't know is `Unknown`, not a parse failure that
-    /// would lose the whole report.
-    #[test]
-    fn older_and_newer_engines_reports_still_read() {
-        let older: UpdateStatus = serde_json::from_value(serde_json::json!({
-            "currentVersion": "0.2.100",
-            "latestVersion": "0.2.136",
-            "updateAvailable": true,
-        }))
-        .unwrap();
-        assert_eq!(older.install, None);
-        assert_eq!(older.can_apply_remotely, None);
-        assert_eq!(older.cannot_apply_reason, None);
-
-        let newer: UpdateStatus = serde_json::from_value(serde_json::json!({
-            "currentVersion": "0.2.200",
-            "install": "somethingNew",
-            "canApplyRemotely": false,
-        }))
-        .unwrap();
-        assert_eq!(newer.install, Some(InstallMethod::Unknown));
-        assert_eq!(newer.can_apply_remotely, Some(false));
-    }
-
-    #[test]
-    fn the_report_names_its_fields_for_clients() {
-        let status = UpdateStatus::initial("1.0.0").with_ability(UpdateAbility::decide(
-            &InstallKind::Unmanaged,
-            false,
-            None,
-        ));
-        let value = serde_json::to_value(&status).unwrap();
-        assert_eq!(value["install"], "unmanaged");
-        assert_eq!(value["canApplyRemotely"], false);
-        assert!(value["cannotApplyReason"].is_string());
-    }
 
     #[tokio::test]
     async fn stalled_update_headers_and_body_time_out_but_progressing_body_survives() {
@@ -2203,64 +1240,6 @@ mod tests {
     }
 
     #[test]
-    fn schedule_is_wall_clock_with_failure_backoff() {
-        let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-        let mut schedule = Schedule::default();
-        assert!(schedule.due(start), "the first check is due immediately");
-
-        schedule.record(start, true);
-        assert!(!schedule.due(start + Duration::from_secs(59 * 60)));
-        // A machine that slept through the deadline is due the moment it
-        // looks at the clock again — no monotonic remainder to wait out.
-        assert!(schedule.due(start + Duration::from_secs(9 * 60 * 60)));
-        assert_eq!(schedule.wait(start), SCHEDULE_TICK);
-        // A clock that jumped backwards does not postpone checks.
-        assert!(schedule.due(start - Duration::from_secs(24 * 60 * 60)));
-
-        let mut backoff = Vec::new();
-        for _ in 0..6 {
-            schedule.record(start, false);
-            backoff.push(schedule.next_due.unwrap().duration_since(start).unwrap());
-        }
-        assert_eq!(
-            backoff,
-            [
-                CHECK_RETRY[0],
-                CHECK_RETRY[1],
-                CHECK_RETRY[2],
-                CHECK_RETRY[3],
-                CHECK_RETRY[3],
-                CHECK_RETRY[3]
-            ]
-        );
-        schedule.record(start, true);
-        assert_eq!(schedule.failures, 0);
-    }
-
-    #[test]
-    fn superseded_service_restarts_once_when_quiet() {
-        let restarts = std::cell::Cell::new(0);
-        let restart = || {
-            restarts.set(restarts.get() + 1);
-            Ok(())
-        };
-        let mut superseded = SupersededRestart::default();
-        // Same or older installed versions never restart.
-        superseded.poll_installed("0.2.0", "0.2.0", || true, restart);
-        superseded.poll_installed("0.1.9", "0.2.0", || true, restart);
-        assert_eq!(restarts.get(), 0);
-        // Busy: deferred, not attempted.
-        superseded.poll_installed("0.2.1", "0.2.0", || false, restart);
-        assert_eq!(restarts.get(), 0);
-        // Quiet: exactly one attempt per installed version.
-        superseded.poll_installed("0.2.1", "0.2.0", || true, restart);
-        superseded.poll_installed("0.2.1", "0.2.0", || true, restart);
-        assert_eq!(restarts.get(), 1);
-        superseded.poll_installed("0.2.2", "0.2.0", || true, restart);
-        assert_eq!(restarts.get(), 2);
-    }
-
-    #[test]
     fn bundle_version_reads_the_packaged_plist() {
         let template = include_str!("../../../packaging/macos/Info.plist");
         let plist = template.replace("__VERSION__", "0.3.1");
@@ -2285,17 +1264,12 @@ mod tests {
         let bundle = tmp.path().join("Onicode.app");
         std::fs::create_dir_all(bundle.join("Contents")).unwrap();
         let write = |body: &str| std::fs::write(bundle.join("Contents/Info.plist"), body).unwrap();
-        // A beta: the app is 0.2.136-beta.1, its engine stable's 0.2.135. An
-        // engine weighing the app's version would restart forever.
+        // A beta: the app is 0.2.136, its engine stable's 0.2.135.
         write(
             "<plist><dict><key>CFBundleShortVersionString</key><string>0.2.136</string>\
              <key>OnicodeEngineVersion</key><string>0.2.135</string></dict></plist>",
         );
         assert_eq!(bundle_engine_version(&bundle).as_deref(), Some("0.2.135"));
-        let mac = InstallKind::MacApp {
-            bundle: bundle.clone(),
-        };
-        assert_eq!(installed_version(&mac).as_deref(), Some("0.2.135"));
         // A bundle from before the key.
         write(
             "<plist><dict><key>CFBundleShortVersionString</key><string>0.2.134</string></dict></plist>",
@@ -2484,23 +1458,6 @@ mod tests {
     }
 
     #[test]
-    fn installed_version_follows_the_bundle() {
-        let tmp = tempfile::tempdir().unwrap();
-        let bundle = tmp.path().join("Onicode.app");
-        std::fs::create_dir_all(bundle.join("Contents")).unwrap();
-        std::fs::write(
-            bundle.join("Contents/Info.plist"),
-            include_str!("../../../packaging/macos/Info.plist").replace("__VERSION__", "0.4.1"),
-        )
-        .unwrap();
-        assert_eq!(
-            installed_version(&InstallKind::MacApp { bundle }).as_deref(),
-            Some("0.4.1")
-        );
-        assert_eq!(installed_version(&InstallKind::Unmanaged), None);
-    }
-
-    #[test]
     fn mac_bundles_that_cannot_replace_themselves_are_explained() {
         let writable = |_: &Path| true;
         let read_only = |_: &Path| false;
@@ -2562,20 +1519,6 @@ mod tests {
             }
         });
         (base, server)
-    }
-
-    #[tokio::test]
-    async fn desktop_checker_reports_a_newer_release_on_demand() {
-        let (base, server) = serve_forever(br#"{"version":"999.0.0","files":{}}"#.to_vec()).await;
-        let updater = Updater::spawn_desktop(base);
-        let status = updater.check().await.unwrap();
-        assert!(status.update_available);
-        assert_eq!(status.latest_version.as_deref(), Some("999.0.0"));
-        assert_eq!(status.current_version, current_version());
-        assert!(status.checked_at.is_some());
-        assert_eq!(*updater.watch().borrow(), status);
-        updater.shutdown().await;
-        server.abort();
     }
 
     #[test]

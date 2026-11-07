@@ -81,7 +81,6 @@ impl TranscriptView {
         self.phases.retain(|&start, _| start < len);
         self.phase_layouts.clear();
         self.attachment_images.clear();
-        self.visuals.clear();
         self.reveals.clear();
         self.markdown_cache = Default::default();
         self.measurements = Default::default();
@@ -113,12 +112,6 @@ impl TranscriptView {
             )
             .saturating_add(self.highlight_bytes)
             .saturating_add(self.markdown_cache.retained_bytes())
-            // Charge each retained interpreter's cap to the inactive cache.
-            .saturating_add(
-                self.visuals
-                    .len()
-                    .saturating_mul(onicode_protocol::visual::MEMORY_LIMIT_BYTES),
-            )
     }
 
     pub(crate) fn suspend_history(&mut self, cx: &mut Context<Self>) -> bool {
@@ -143,7 +136,6 @@ impl TranscriptView {
         self.prepared_parsers = HashMap::new();
         self.turn_groups = Default::default();
         self.attachment_images = HashMap::new();
-        self.visuals = HashMap::new();
         self.messages = Vec::new();
         self.rows = Vec::new();
         self.reveals = HashMap::new();

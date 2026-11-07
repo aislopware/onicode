@@ -3,7 +3,7 @@ use gpui::{EntityInputHandler, TestAppContext};
 use super::*;
 
 #[gpui::test]
-fn replace_is_one_undo_and_autosave_formats_with_original_encoding(cx: &mut TestAppContext) {
+fn replace_is_one_undo_and_autosave_keeps_the_original_encoding(cx: &mut TestAppContext) {
     let path =
         std::env::temp_dir().join(format!("onicode-editor-parity-{}.json", std::process::id()));
     let original = "\u{feff}{\"word\":\"hello\",\"other\":\"hello\"}\r\n";
@@ -68,7 +68,7 @@ fn replace_is_one_undo_and_autosave_formats_with_original_encoding(cx: &mut Test
     cx.run_until_parked();
     assert_eq!(
         std::fs::read_to_string(&path).unwrap(),
-        "\u{feff}{ \"word\": \"world\", \"other\": \"world\" }\r\n"
+        "\u{feff}{\"word\":\"world\",\"other\":\"world\"}\r\n"
     );
     window
         .update(cx, |e, _, _| assert!(!e.dirty && !e.saving))
@@ -115,34 +115,5 @@ fn autosave_refuses_external_edits_even_before_the_file_poll(cx: &mut TestAppCon
         })
         .unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "external\n");
-    std::fs::remove_file(path).unwrap();
-}
-
-#[gpui::test]
-fn saving_a_clean_file_still_applies_the_format_on_save_preference(cx: &mut TestAppContext) {
-    let path =
-        std::env::temp_dir().join(format!("onicode-clean-format-{}.json", std::process::id()));
-    std::fs::write(&path, "{\"value\":1}").unwrap();
-    cx.update(|cx| cx.set_global(crate::settings::Preferences::default()));
-    let window = cx.update(|cx| {
-        cx.open_window(Default::default(), |_, cx| {
-            let git = cx
-                .new(|cx| ProjectGit::new(std::env::temp_dir().to_string_lossy().into_owned(), cx));
-            cx.new(|cx| FileEditor::new(path.to_string_lossy().into_owned(), git, cx))
-        })
-        .unwrap()
-    });
-    cx.run_until_parked();
-    window
-        .update(cx, |e, _, cx| {
-            assert!(!e.dirty);
-            e.save(cx);
-        })
-        .unwrap();
-    cx.run_until_parked();
-    assert_eq!(
-        std::fs::read_to_string(&path).unwrap(),
-        "{ \"value\": 1 }\n"
-    );
     std::fs::remove_file(path).unwrap();
 }

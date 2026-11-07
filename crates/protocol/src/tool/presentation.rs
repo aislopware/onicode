@@ -105,31 +105,6 @@ pub(super) fn present(call: &ToolCall, fallback_cwd: Option<&str>) -> ToolPresen
             steps: Vec::new(),
         };
     }
-    if let Some(step) = visual_tool(&call.name) {
-        let running = call.state == ToolState::Running;
-        let input = serde_json::from_str::<Value>(&call.input).unwrap_or(Value::Null);
-        let title = string(&input, &["title"]).unwrap_or_else(|| "a chart".into());
-        let (action, target) = match step {
-            VisualStep::Docs => (
-                if running { "Planning" } else { "Planned" },
-                "a chart".into(),
-            ),
-            VisualStep::Check => (
-                if running { "Checking" } else { "Checked" },
-                "a chart".into(),
-            ),
-            VisualStep::Show => (if running { "Drawing" } else { "Drew" }, title),
-        };
-        return ToolPresentation {
-            action: action.into(),
-            target,
-            file_path: None,
-            start_line: None,
-            command: None,
-            description: None,
-            steps: Vec::new(),
-        };
-    }
     let mut input = serde_json::from_str::<Value>(&call.input).unwrap_or(Value::Null);
     normalize_inputs(&mut input, 0);
     let desktop = call.display.as_ref().unwrap_or(&input["__desktop"]);
@@ -249,12 +224,6 @@ pub(super) fn present(call: &ToolCall, fallback_cwd: Option<&str>) -> ToolPresen
             }
             return shown;
         }
-        if let Some(action) = shown.command.as_deref().and_then(app_cli_action) {
-            let (action, target) = app_activity(action, call.state == ToolState::Running);
-            shown.action = action.into();
-            shown.target = target.into();
-            return shown;
-        }
         if let Some(intent) = shown.command.as_deref().and_then(shell_intent) {
             shown.action = intent.action.into();
             shown.target = if intent.action == "Find" {
@@ -323,67 +292,6 @@ pub(super) fn present(call: &ToolCall, fallback_cwd: Option<&str>) -> ToolPresen
     shown.target = shown.target.lines().next().unwrap_or("").into();
     shown
 }
-/// A step of Onicode's own visual tools.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum VisualStep {
-    Docs,
-    Check,
-    Show,
-}
-
-/// Recognizes Onicode's visual tools however a provider names an MCP tool:
-/// `visual_show`, `onicode_visual:visual_show`,
-/// `mcp__onicode_visual__visual_show` or `onicode_visual.visual_show`.
-pub fn visual_tool(name: &str) -> Option<VisualStep> {
-    let (server, tool) = name
-        .rsplit_once("__")
-        .or_else(|| name.rsplit_once(':'))
-        .or_else(|| name.rsplit_once('.'))
-        .unwrap_or(("", name));
-    if !server.is_empty() && !server.contains("onicode_visual") {
-        return None;
-    }
-    match tool {
-        "visual_docs" => Some(VisualStep::Docs),
-        "visual_check" => Some(VisualStep::Check),
-        "visual_show" => Some(VisualStep::Show),
-        _ => None,
-    }
-}
-
-/// The action of an Operator app CLI call in a shell command:
-/// `'/Applications/Onicode.app/…/onicode' app sessions.start --json …`.
-pub fn app_cli_action(command: &str) -> Option<&str> {
-    let words: Vec<&str> = command.split_whitespace().collect();
-    words.windows(3).find_map(|w| {
-        let binary = w[0].trim_matches(|c| c == '\'' || c == '"');
-        let name = binary.rsplit('/').next().unwrap_or(binary);
-        (w[1] == "app" && name.to_ascii_lowercase().starts_with("onicode") && w[2].contains('.'))
-            .then_some(w[2])
-    })
-}
-
-/// A caption for an app action: what it is doing while running, what it did
-/// once done, and what to.
-pub fn app_activity(action: &str, running: bool) -> (&'static str, &'static str) {
-    let (doing, done, target) = match action {
-        "sessions.start" => ("Starting", "Started", "a session"),
-        "sessions.send" | "sessions.draft" => ("Messaging", "Messaged", "a session"),
-        "sessions.list" | "sessions.read" => ("Checking", "Checked", "sessions"),
-        "sessions.stop" | "sessions.archive" | "sessions.delete" => {
-            ("Updating", "Updated", "a session")
-        }
-        "notes.write" => ("Writing", "Wrote", "a note"),
-        "notes.list" | "notes.read" => ("Reading", "Read", "notes"),
-        "models.list" => ("Checking", "Checked", "models"),
-        a if a.starts_with("worktrees.") || a.starts_with("folders.") => {
-            ("Organizing", "Organized", "the project")
-        }
-        _ => ("Using", "Used", "the app"),
-    };
-    (if running { doing } else { done }, target)
-}
-
 fn location(value: &Value) -> Option<&Value> {
     let locations = value.get("locations").or_else(|| value.get("location"))?;
     locations
@@ -808,29 +716,6 @@ mod tests {
     }
 
     #[test]
-    fn operator_app_calls_read_as_what_they_do() {
-        assert_eq!(
-            app_cli_action(
-                r#"'/Applications/Onicode.app/Contents/MacOS/onicode' app sessions.start --json '{"prompt":"x"}'"#
-            ),
-            Some("sessions.start")
-        );
-        assert_eq!(app_cli_action("git log app sessions.start"), None);
-        assert_eq!(app_cli_action("onicode-gpui app help"), None);
-
-        let mut done = call(
-            "Bash",
-            json!({"command":"/opt/onicode app notes.write --json '{\"body\":\"x\"}'"}),
-        );
-        done.state = ToolState::Completed;
-        let shown = done.presentation();
-        assert_eq!(
-            (shown.action.as_str(), shown.target.as_str()),
-            ("Wrote", "a note")
-        );
-    }
-
-    #[test]
     fn search_pills_separate_simple_regex_alternatives() {
         for (name, input) in [
             (
@@ -1024,32 +909,5 @@ mod tests {
         let shown = call("Bash", json!({"command":"cd src && cat a.rs"})).presentation();
         assert_eq!(shown.action, "Read");
         assert!(shown.steps.is_empty());
-    }
-}
-
-#[cfg(test)]
-mod visual_tests {
-    use super::*;
-
-    #[test]
-    fn visual_tools_read_as_chart_steps_under_every_provider_name() {
-        for name in [
-            "visual_show",
-            "onicode_visual:visual_show",
-            "mcp__onicode_visual__visual_show",
-            "onicode_visual.visual_show",
-        ] {
-            assert_eq!(visual_tool(name), Some(VisualStep::Show), "{name}");
-        }
-        assert_eq!(visual_tool("other_server:visual_show"), None);
-        assert_eq!(visual_tool("visual_publish"), None);
-        let mut call = ToolCall::new("1", "onicode_visual:visual_show");
-        call.input = r#"{"title":"Stars per week","source":"return () => null"}"#.into();
-        call.state = ToolState::Completed;
-        let shown = call.presentation();
-        assert_eq!(
-            (shown.action.as_str(), shown.target.as_str()),
-            ("Drew", "Stars per week")
-        );
     }
 }

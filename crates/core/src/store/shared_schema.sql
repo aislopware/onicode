@@ -10,13 +10,11 @@ CREATE TABLE sessions (
  linked_work_item_json TEXT, provider_account_id TEXT,
  worktree_removed INTEGER NOT NULL DEFAULT 0, is_draft INTEGER NOT NULL DEFAULT 0,
  automation_id TEXT, queued_messages_json TEXT NOT NULL DEFAULT '[]',
- queue_status TEXT, sidebar_hidden INTEGER NOT NULL DEFAULT 0, inbox_ask TEXT
+ queue_status TEXT, inbox_ask TEXT
 );
 CREATE INDEX sessions_cwd_updated_idx ON sessions(cwd,updated_at DESC);
 CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
 INSERT INTO schema_migrations VALUES(19,0);
-CREATE TABLE workspace_snapshot(id INTEGER PRIMARY KEY CHECK(id=1),
- snapshot_json TEXT NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE in_flight_sessions(session_id TEXT PRIMARY KEY,cwd TEXT NOT NULL,sort_index INTEGER NOT NULL);
 CREATE TABLE notes(id TEXT PRIMARY KEY,slug TEXT NOT NULL UNIQUE,title TEXT NOT NULL,
  body TEXT NOT NULL DEFAULT '',tags_json TEXT NOT NULL DEFAULT '[]',source_session_id TEXT,

@@ -114,12 +114,7 @@ pub enum Event {
 }
 
 fn codex_error(error: &Value, fallback: &str) -> String {
-    let message = error["message"].as_str().unwrap_or(fallback);
-    if error["codexErrorInfo"] == "usageLimitExceeded" {
-        format!("Usage limit reached: {message}")
-    } else {
-        message.into()
-    }
+    error["message"].as_str().unwrap_or(fallback).into()
 }
 
 /// GUI apps may not inherit the login shell PATH. Try the same common user and
@@ -231,7 +226,9 @@ struct Protocol {
     interrupt_id: Option<String>,
     claude_prompt_sent: bool,
     claude_result_seen: bool,
-    claude_usage_limit: Option<crate::usage::Limit>,
+    /// The account limit the turn ran into, as the provider reported it: Claude's rate-limit
+    /// info or `rate_limit` error code, Codex's `usageLimitExceeded`.
+    usage_limit: Option<crate::usage::Limit>,
     claude_resume_at: Option<Instant>,
     follow_up_ready: bool,
     steering: HashMap<String, (crate::follow_up::Message, Instant)>,
@@ -275,7 +272,7 @@ impl Protocol {
             interrupt_id: None,
             claude_prompt_sent: false,
             claude_result_seen: false,
-            claude_usage_limit: None,
+            usage_limit: None,
             claude_resume_at: None,
             follow_up_ready: false,
             steering: HashMap::new(),
@@ -475,6 +472,7 @@ impl Protocol {
         match self.request.kind {
             Kind::Codex => {
                 if let Some(error) = v.get("error").filter(|e| !e.is_null()) {
+                    self.note_codex_limit(error);
                     let message = codex_error(error, "RPC request failed");
                     if v["id"] == 2
                         && self.request.provider_id.is_some()
@@ -494,16 +492,6 @@ impl Protocol {
                         let (policy, sandbox, sandbox_policy, reviewer) = self.codex_access();
                         let mut params = json!({"cwd":self.request.cwd,"approvalPolicy":policy,"sandbox":sandbox,"sandboxPolicy":sandbox_policy,"approvalsReviewer":reviewer,
                             "developerInstructions":format!("You are the coding agent in Onicode. Use the available tools to inspect and work in the supplied cwd. Do not ask the user to paste files or git output you can inspect yourself. Respect the selected access policy and request approval when required. {}", if self.request.settings.plan { "This is a planning turn: inspect and propose a plan without changing files." } else { "" })});
-                        if let Some(instructions) = crate::visual_bridge::instructions(
-                            &self.request.settings.environment,
-                            false,
-                        ) {
-                            params["developerInstructions"] = format!(
-                                "{}\n\n{instructions}",
-                                params["developerInstructions"].as_str().unwrap_or_default()
-                            )
-                            .into();
-                        }
                         if self.request.settings.text_only {
                             params["ephemeral"] = true.into();
                             params["developerInstructions"] = "Answer the supplied text request directly. Do not call tools or inspect the workspace.".into();
@@ -566,12 +554,6 @@ impl Protocol {
                         }
                         if self.request.settings.plan {
                             params["sandboxPolicy"] = json!({"type":"readOnly"});
-                            if self.request.settings.operator
-                                || self.request.settings.operator_enabled
-                                || self.request.settings.orchestrator
-                            {
-                                params["sandboxPolicy"]["networkAccess"] = true.into();
-                            }
                             params["approvalPolicy"] = "never".into();
                         }
                         if let Some(model) = self
@@ -689,6 +671,7 @@ impl Protocol {
                         }
                         let status = p["turn"]["status"].as_str().unwrap_or("completed");
                         if status == "failed" {
+                            self.note_codex_limit(&p["turn"]["error"]);
                             return Err(codex_error(&p["turn"]["error"], "Codex turn failed"));
                         }
                         let interrupted =
@@ -716,6 +699,7 @@ impl Protocol {
                         self.done = true;
                     }
                     "error" if p["willRetry"] != true => {
+                        self.note_codex_limit(&p["error"]);
                         return Err(codex_error(&p["error"], "Codex stream error"));
                     }
                     "error" => {
@@ -776,7 +760,7 @@ impl Protocol {
                     "rate_limit_event" => {
                         // Only the parent's rejection stops this turn.
                         if v["parent_tool_use_id"].is_null() {
-                            self.claude_usage_limit =
+                            self.usage_limit =
                                 crate::usage::Limit::from_claude_info(&v["rate_limit_info"]);
                         }
                     }
@@ -975,7 +959,7 @@ impl Protocol {
                         }
                     }
                     // A limit reported for the replay must not carry over to the real turn.
-                    "result" => self.claude_usage_limit = None,
+                    "result" => self.usage_limit = None,
                     "control_request" => {
                         let request = &v["request"];
                         if request["subtype"] == "can_use_tool" {
@@ -1412,7 +1396,6 @@ fn run_operation(
     match request.kind {
         Kind::Codex => {
             command.arg("app-server");
-            crate::visual_bridge::configure_codex(&mut command, &request.settings.environment);
         }
         Kind::Claude => {
             command.args([
@@ -1444,30 +1427,10 @@ fn run_operation(
                     "{\"mcpServers\":{}}",
                 ]);
             }
-            let visual_server = (!settings.text_only)
-                .then(|| crate::visual_bridge::mcp_server(&settings.environment))
-                .flatten();
             let mut allowed = Vec::new();
             if !settings.text_only && settings.access == AccessMode::ReadOnly {
                 command.args(["--tools", "Read,Glob,Grep,Bash"]);
                 allowed.push("Read,Glob,Grep,Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Bash(pwd),Bash(ls *),Bash(rg *)");
-            }
-            let mut servers = serde_json::Map::new();
-            let mut system = Vec::new();
-            if let Some(server) = visual_server {
-                servers.insert("onicode_visual".into(), server);
-                allowed.push(crate::visual_bridge::CLAUDE_ALLOWED_TOOLS);
-                if let Some(instructions) =
-                    crate::visual_bridge::instructions(&settings.environment, true)
-                {
-                    system.push(instructions);
-                }
-            }
-            if !system.is_empty() {
-                command.args(["--append-system-prompt", &system.join("\n\n")]);
-            }
-            if !servers.is_empty() {
-                command.args(["--mcp-config", &json!({"mcpServers":servers}).to_string()]);
             }
             if !allowed.is_empty() {
                 command.args(["--allowedTools", &allowed.join(",")]);
@@ -1787,11 +1750,6 @@ fn run_operation(
                 pending_bytes = 0;
                 last_emit = Instant::now();
             }
-            // A visual publication may arrive while the provider is waiting
-            // for its tool result and therefore emits no stream events.
-            if crate::visual_bridge::configured(&protocol.request.settings.environment) {
-                emit(Vec::new())?;
-            }
             if protocol.done {
                 if interrupted {
                     stop_confirmed = true;
@@ -1826,7 +1784,7 @@ fn run_operation(
         stop_confirmed = true;
     }
     if result.is_err() && !cancel.load(Ordering::Relaxed) {
-        if let Some(limit) = protocol.claude_usage_limit.take() {
+        if let Some(limit) = protocol.usage_limit.take() {
             pending.push(Event::UsageLimited(limit));
         }
     }
@@ -1880,29 +1838,6 @@ mod tests {
         assert_eq!(input["paths"], json!(["/repo/a.rs", "/repo/b.rs"]));
     }
     #[test]
-    fn operator_thread_access_keeps_the_codex_app_bridge_reachable_on_later_turns() {
-        for plan in [false, true] {
-            let mut p = protocol(Kind::Codex);
-            p.request.settings.operator_enabled = true;
-            p.request.settings.plan = plan;
-            assert!(!p.request.settings.operator);
-            assert_eq!(p.codex_access().2["networkAccess"], true);
-            let mut out = Vec::new();
-            p.frame(json!({"id":1,"result":{}}), &mut out).unwrap();
-            p.frame(json!({"id":2,"result":{"thread":{"id":"saved"}}}), &mut out)
-                .unwrap();
-            let started: Value = String::from_utf8_lossy(&out)
-                .lines()
-                .map(|line| serde_json::from_str::<Value>(line).unwrap())
-                .find(|message| message["method"] == "turn/start")
-                .unwrap();
-            assert_eq!(started["params"]["sandboxPolicy"]["networkAccess"], true);
-            if plan {
-                assert_eq!(started["params"]["sandboxPolicy"]["type"], "readOnly");
-            }
-        }
-    }
-    #[test]
     fn context_reports_use_the_latest_request_and_include_cached_tokens() {
         let mut codex = protocol(Kind::Codex);
         let events = codex.frame(json!({"method":"thread/tokenUsage/updated","params":{"tokenUsage":{"last":{"totalTokens":4200},"total":{"totalTokens":99000},"modelContextWindow":272000}}}),&mut Vec::new()).unwrap();
@@ -1950,9 +1885,9 @@ mod tests {
     fn claude_replayed_task_notification_result_drops_its_usage_limit() {
         let mut claude = protocol(Kind::Claude);
         claude.frame(json!({"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1}}), &mut Vec::new()).unwrap();
-        assert!(claude.claude_usage_limit.is_some());
+        assert!(claude.usage_limit.is_some());
         claude.frame(json!({"type":"result","num_turns":0,"result":"","origin":{"kind":"task-notification"}}), &mut Vec::new()).unwrap();
-        assert!(claude.claude_usage_limit.is_none());
+        assert!(claude.usage_limit.is_none());
         let error = claude.frame(json!({"type":"result","is_error":true,"num_turns":1,"result":"Something else went wrong"}), &mut Vec::new()).unwrap_err();
         assert_eq!(error, "Something else went wrong");
     }

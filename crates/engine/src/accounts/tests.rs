@@ -5,7 +5,6 @@
 //! nothing again. Then what `claude auth status --json` and Codex's `account/read` print, read as
 //! sign-ins, and the probe's other answers. No provider CLI runs.
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -227,7 +226,7 @@ struct Harness {
 
 impl Harness {
     fn new(limits: Limits) -> Self {
-        let store: Database = Arc::new(Mutex::new(Store::open(Path::new(":memory:")).unwrap()));
+        let store: Database = Arc::new(Mutex::new(Store::in_memory().unwrap()));
         let settings =
             SettingsHub::with(store.clone(), Arc::new(Quiet), Limits::default()).unwrap();
         let probe = Arc::new(Scripted::default());

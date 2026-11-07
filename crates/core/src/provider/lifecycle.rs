@@ -157,15 +157,7 @@ impl Protocol {
     }
 
     pub(super) fn codex_access(&self) -> (Value, &'static str, Value, &'static str) {
-        let (policy, sandbox, mut sandbox_policy, reviewer) = self.request.settings.access.codex();
-        if (self.request.settings.operator
-            || self.request.settings.operator_enabled
-            || self.request.settings.orchestrator)
-            && sandbox_policy["type"] != "dangerFullAccess"
-        {
-            sandbox_policy["networkAccess"] = true.into();
-        }
-        (policy, sandbox, sandbox_policy, reviewer)
+        self.request.settings.access.codex()
     }
 }
 

@@ -103,7 +103,7 @@ struct Harness {
 
 impl Harness {
     fn new(limits: Limits) -> Self {
-        let store = Store::open(Path::new(":memory:")).unwrap();
+        let store = Store::in_memory().unwrap();
         Self::over(Arc::new(Mutex::new(store)), limits, 0)
     }
 
@@ -151,8 +151,6 @@ impl Harness {
                 cwd: PROJECT.into(),
                 title,
                 start: NewSession::Bare,
-                started_by: None,
-                scope: Vec::new(),
             },
         ))
         .unwrap()
@@ -656,8 +654,6 @@ fn a_created_session_keeps_the_viewers_id() {
             cwd: PROJECT.into(),
             title: None,
             start: NewSession::Bare,
-            started_by: None,
-            scope: Vec::new(),
         },
     ))
     .unwrap();
@@ -667,55 +663,6 @@ fn a_created_session_keeps_the_viewers_id() {
     assert_eq!(
         store.session_by_uid(id.0).unwrap(),
         Some(summary.session.id)
-    );
-}
-
-/// An orchestrated worker is checked on the disk that holds its checkout: one whose files stay
-/// inside is created there, and one whose file escapes through a symlinked folder is refused
-/// with the reason, creating nothing.
-#[test]
-fn a_worker_whose_files_escape_its_checkout_is_refused_on_its_engine() {
-    let dir = tempfile::tempdir().unwrap();
-    let checkout = dir.path().join("app");
-    std::fs::create_dir_all(checkout.join("src")).unwrap();
-    std::os::unix::fs::symlink(dir.path(), checkout.join("out")).unwrap();
-    let harness = Harness::new(Limits::default());
-    let worker = |files: &[&str]| CreateSession {
-        session: SessionId::new(),
-        provider: "codex".into(),
-        cwd: PROJECT.into(),
-        title: None,
-        start: NewSession::Settings(Box::new(onicode_core::agent::Settings {
-            worktree_cwd: Some(checkout.to_string_lossy().into_owned()),
-            ..Default::default()
-        })),
-        started_by: None,
-        scope: files.iter().map(|file| (*file).to_owned()).collect(),
-    };
-    let inside = block_on(
-        harness
-            .hub
-            .create_session(Some(OpId::new()), worker(&["src/main.rs", "docs"])),
-    )
-    .unwrap();
-    assert_eq!(inside.outcome, Outcome::Applied);
-    let escaping = block_on(
-        harness
-            .hub
-            .create_session(Some(OpId::new()), worker(&["out/secret.txt"])),
-    )
-    .unwrap();
-    match escaping.outcome {
-        Outcome::Rejected(Rejection::Denied(reason)) => {
-            assert!(reason.contains("out/secret.txt"), "{reason}");
-        }
-        other => panic!("refused, not {other:?}"),
-    }
-    assert!(escaping.session.is_none());
-    assert_eq!(
-        harness.state().sessions.len(),
-        1,
-        "nothing more was created"
     );
 }
 
@@ -949,29 +896,6 @@ fn automations_come_due_in_virtual_time_once_and_return_after_a_restart() {
 }
 
 #[test]
-fn remembered_controls_survive_the_mapped_native_model_default() {
-    let remembered = onicode_core::agent::Settings {
-        model: Some("model-a".into()),
-        effort: Some("high".into()),
-        model_settings: [("reasoningEffort".into(), "high".into())].into(),
-        ..Default::default()
-    };
-    let selected = super::new_session_settings(Some(remembered.clone()), Some("model-a".into()));
-    assert_eq!(selected.effort.as_deref(), Some("high"));
-    assert_eq!(
-        selected
-            .model_settings
-            .get("reasoningEffort")
-            .map(String::as_str),
-        Some("high")
-    );
-    let changed = super::new_session_settings(Some(remembered), Some("model-b".into()));
-    assert_eq!(changed.model.as_deref(), Some("model-b"));
-    assert!(changed.effort.is_none());
-    assert!(changed.model_settings.is_empty());
-}
-
-#[test]
 fn a_session_nobody_prompted_goes_when_its_last_viewer_closes_it() {
     let harness = Harness::new(Limits::default());
     let mut viewer = Viewer::join(&harness.hub);
@@ -1153,8 +1077,6 @@ fn a_new_worktree_is_named_and_a_deleted_session_gets_no_late_name() {
                 cwd: root.clone(),
                 title: None,
                 start: NewSession::Bare,
-                started_by: None,
-                scope: Vec::new(),
             },
         ))
         .unwrap();

@@ -111,10 +111,7 @@ fn validate_upsert(input: &AutomationUpsert, now: i64) -> Result<(), String> {
     ) {
         return Err("Invalid automation run mode.".into());
     }
-    if !matches!(
-        input.trigger_kind.as_str(),
-        "time" | "github" | "linear" | "jira" | "gitlab" | "azuredevops"
-    ) {
+    if !matches!(input.trigger_kind.as_str(), "time" | "github") {
         return Err("Invalid automation trigger.".into());
     }
     if input.trigger_event.len() > 200 {
@@ -150,10 +147,7 @@ fn validate_upsert(input: &AutomationUpsert, now: i64) -> Result<(), String> {
 }
 
 fn validate_trigger(trigger: &AutomationTrigger) -> Result<(), String> {
-    if !matches!(
-        trigger.kind.as_str(),
-        "time" | "github" | "linear" | "jira" | "gitlab" | "azuredevops"
-    ) {
+    if !matches!(trigger.kind.as_str(), "time" | "github") {
         return Err("Invalid automation trigger.".into());
     }
     if trigger.event.len() > 200
@@ -623,10 +617,7 @@ impl Service {
     ) -> Result<Option<DueAutomationRun>, String> {
         validate_id(automation_id, "automation")?;
         validate_event_key(&claim.event_key)?;
-        if !matches!(
-            claim.event_kind.as_str(),
-            "github" | "linear" | "jira" | "gitlab" | "azuredevops"
-        ) {
+        if claim.event_kind != "github" {
             return Err("Invalid automation trigger.".into());
         }
         if claim.event.is_empty() || claim.event.len() > 200 {
@@ -802,31 +793,13 @@ pub fn claim_inbox_events_retry(
     let mut claimed = Vec::new();
     let mut retry = Vec::new();
     for item in items {
-        let event = match (item.provider.as_str(), item.kind.as_str(), item.draft) {
-            ("github", "pr", true) => "draft_opened",
-            ("github", "pr", false) => "pull_request_opened",
-            ("github" | "gitlab", "issue", _) => "issue_opened",
-            ("gitlab", "pr", _) => "merge_request_opened",
-            ("linear" | "jira", _, _) => "issue_created",
-            ("azuredevops", "pr", _) => "pull_request_appeared",
-            ("azuredevops", "issue", _) => "work_item_appeared",
+        let event = match (item.kind.as_str(), item.draft) {
+            ("pr", true) => "draft_opened",
+            ("pr", false) => "pull_request_opened",
+            ("issue", _) => "issue_opened",
             _ => continue,
         };
-        let identity = if crate::inbox::is_tracker(&item.provider) {
-            let id = if !item.id.is_empty() {
-                item.id.clone()
-            } else if !item.identifier.is_empty() {
-                item.identifier.clone()
-            } else {
-                item.number.to_string()
-            };
-            format!("{}:issue:{id}", item.provider)
-        } else {
-            format!(
-                "{}:{}:{}:{}",
-                item.provider, item.kind, item.repo, item.number
-            )
-        };
+        let identity = format!("github:{}:{}:{}", item.kind, item.repo, item.number);
         let event_key = identity
             .trim()
             .to_lowercase()
@@ -844,8 +817,6 @@ pub fn claim_inbox_events_retry(
             if !automation.enabled {
                 continue;
             }
-            let tracker_without_project =
-                crate::inbox::is_tracker(&item.provider) && item.project_path.trim().is_empty();
             let path_key = |path: &str| {
                 let normalized = path.trim().replace('\\', "/");
                 let normalized = normalized.trim_end_matches('/');
@@ -860,12 +831,11 @@ pub fn claim_inbox_events_retry(
                     normalized.to_string()
                 }
             };
-            if !tracker_without_project && path_key(&item.project_path) != path_key(&automation.cwd)
-            {
+            if path_key(&item.project_path) != path_key(&automation.cwd) {
                 continue;
             }
             let trigger = automation.triggers().into_iter().find(|trigger| {
-                if trigger.kind != item.provider || trigger.event != event {
+                if trigger.kind != "github" || trigger.event != event {
                     return false;
                 }
                 let actor = trigger.actor.trim();
@@ -887,34 +857,19 @@ pub fn claim_inbox_events_retry(
             let Some(trigger) = trigger else {
                 continue;
             };
-            let provider = crate::inbox::provider_label(&item.provider);
-            let kind = if crate::inbox::is_tracker(&item.provider) || item.kind != "pr" {
-                "issue"
-            } else if item.provider == "gitlab" {
-                "merge request"
-            } else {
+            let kind = if item.kind == "pr" {
                 "pull request"
-            };
-            let reference = if crate::inbox::is_tracker(&item.provider) {
-                if item.identifier.trim().is_empty() {
-                    format!("{provider} #{}", item.number)
-                } else {
-                    item.identifier.trim().to_string()
-                }
             } else {
-                format!("#{}", item.number)
+                "issue"
             };
+            let reference = format!("#{}", item.number);
             let title = if item.title.trim().is_empty() {
-                if crate::inbox::is_tracker(&item.provider) {
-                    reference.clone()
-                } else {
-                    format!("{provider} {kind} #{}", item.number)
-                }
+                format!("GitHub {kind} #{}", item.number)
             } else {
                 item.title.trim().to_string()
             };
             let mut prompt = format!(
-                "{}\n\nWork on this {provider} {kind}:\n\n{reference} {title}",
+                "{}\n\nWork on this GitHub {kind}:\n\n{reference} {title}",
                 automation.prompt.trim()
             );
             if !item.url.trim().is_empty() {
@@ -978,7 +933,6 @@ mod tests {
     }
     fn item(number: i64) -> crate::inbox::Item {
         crate::inbox::Item {
-            provider: "github".into(),
             kind: "pr".into(),
             repo: "acme/app".into(),
             project_path: "/repo".into(),

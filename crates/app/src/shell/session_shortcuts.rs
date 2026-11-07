@@ -19,7 +19,6 @@ impl Shell {
             || self.link_dialog.is_some()
             || self.action_dialog.is_some()
             || self.background_dialog.is_some()
-            || self.resources.read(cx).is_open()
             || self.review_focused
             || self.dock_focused(window, cx).is_some()
         {

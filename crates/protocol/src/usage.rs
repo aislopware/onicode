@@ -147,17 +147,6 @@ impl Limit {
         self.resets_at.is_some_and(|at| at > now)
     }
 
-    pub fn from_error(message: &str) -> Option<Self> {
-        // Claude's synthetic assistant errors use this code before the result
-        // frame arrives. Ordinary transient HTTP 429s must remain retryable.
-        if message.trim().eq_ignore_ascii_case("rate_limit") {
-            return Some(Self::default());
-        }
-        static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-        let pattern=PATTERN.get_or_init(||regex::Regex::new(r"(?i)(?:usage|spending|monthly|weekly|daily)[ _]limit[ _](?:reached|exceeded)|(?:quota|credits?) (?:exceeded|exhausted|depleted)|insufficient[_ ](?:quota|credits)|hit your (?:(?:usage|session) )?limit|credit balance is too low|reached (?:its|your) usage limit").unwrap());
-        pattern.is_match(message).then(Self::default)
-    }
-
     /// Extra-usage refusals fall back to the subscription and do not stop a turn.
     pub fn from_claude_info(info: &Value) -> Option<Self> {
         (info["status"] == "rejected"

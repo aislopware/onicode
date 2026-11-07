@@ -57,7 +57,7 @@ impl StateExt for State {
 
 impl crate::store::Store {
     pub fn follow_ups(&self, session: i64) -> Result<State, String> {
-        let mut state: State = if self.uses_monocode_schema() && session >= 0 {
+        let mut state: State = if session >= 0 {
             self.shared_follow_ups(session)?
         } else {
             self.setting(&format!("follow-up:{session}"))?
@@ -89,7 +89,7 @@ impl crate::store::Store {
     }
 
     pub fn save_follow_ups(&self, session: i64, state: &State) -> Result<(), String> {
-        if self.uses_monocode_schema() && session >= 0 {
+        if session >= 0 {
             return self.shared_save_follow_ups(session, state);
         }
         let key = format!("follow-up:{session}");
@@ -147,7 +147,7 @@ mod tests {
     }
     #[test]
     fn recovery_preserves_attachments_and_edits_but_never_replays_delivered_messages() {
-        let mut store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let mut store = Store::in_memory().unwrap();
         let session = store.create("codex", "/tmp").unwrap();
         let message = Message {
             id: "first".into(),

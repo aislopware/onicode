@@ -590,27 +590,6 @@ fn toast() {
     });
 }
 
-/// A bare popover surface: drop shadow outside the card, glass, hairline border.
-#[test]
-#[ignore = "golden images: scripts/dev/golden.sh"]
-fn glass_card() {
-    fn overlay() -> AnyElement {
-        canvas(
-            |_, _, _| {},
-            |bounds, _, window, _| crate::popover::paint_surface(bounds, window),
-        )
-        .absolute()
-        .top(px(180.))
-        .left(px(380.))
-        .w(px(300.))
-        .h(px(180.))
-        .into_any_element()
-    }
-    run("glass-card", |cx, look| {
-        Fixture::new(cx, look, SHELL, |_| {}, Some(overlay)).handle()
-    });
-}
-
 /// A saved draft: the dashed bubble at the end of the chat.
 #[test]
 #[ignore = "golden images: scripts/dev/golden.sh"]

@@ -146,7 +146,7 @@ fn project_content(block: &Value) -> Result<Vec<Row>, String> {
         }
         t.begin(match role {
             "user" if block["internal"] == true => "mono-system",
-            "user" | "assistant" | "reasoning" | "error" | "visual" => role,
+            "user" | "assistant" | "reasoning" | "error" => role,
             "system" if block["notice"] == "error" => "error",
             "plan" | "tasks" => "assistant",
             _ => "system",
@@ -489,36 +489,6 @@ mod notice_tests {
 mod panel_tests {
     use super::*;
     use crate::tool::tasks::{AgentRun, AgentStep, Panel, TaskList};
-    #[test]
-    fn native_visuals_survive_chunking_storage_and_later_messages() {
-        let document = crate::visual::VisualDocument {
-            id: "visual-plot".into(),
-            title: "Results 🙂".into(),
-            source: format!(
-                "// {}\nreturn () => visual.text('Ready');",
-                "sample ".repeat(800)
-            ),
-        };
-        let mut transcript = Transcript::default();
-        transcript.begin("visual");
-        transcript.append(&serde_json::to_string(&document).unwrap());
-        assert!(transcript.rows.len() > 1);
-        let saved = merge(&[], 0, &transcript.rows).unwrap();
-        assert_eq!(saved.len(), 1);
-        assert_eq!(saved[0]["role"], "visual");
-        let rows = project(&saved).unwrap();
-        assert_eq!(rows, transcript.rows);
-        let loaded: crate::visual::VisualDocument =
-            serde_json::from_str(&rows.iter().map(|row| row.text.as_str()).collect::<String>())
-                .unwrap();
-        assert_eq!(loaded.source, document.source);
-        assert_eq!(loaded.title, document.title);
-        let start = transcript.rows.len();
-        transcript.begin("assistant");
-        transcript.append("The interactive results are ready.");
-        let saved = merge(&saved, start, &transcript.rows[start..]).unwrap();
-        assert_eq!(project(&saved).unwrap(), transcript.rows);
-    }
     fn row(call: &ToolCall) -> Row {
         Row {
             role: "tool".into(),

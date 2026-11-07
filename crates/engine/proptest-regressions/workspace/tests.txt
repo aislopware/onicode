@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc dd2c9f354463d532c8e5593f79f306a9467d7c838998043124797f1cd1e2fe5c # shrinks to steps = [Create(None), Remind { at: 0, change: 234, due: 0 }]

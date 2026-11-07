@@ -1,45 +1,10 @@
 use super::*;
 
 #[test]
-fn desktop_operator_access_restores_only_from_submitted_user_messages() {
-    for (block, enabled) in [
-        (
-            json!({"role":"user", "text":"Start a session", "onicode":true}),
-            true,
-        ),
-        (json!({"role":"user", "text":"/mono Start a session"}), true),
-        (
-            json!({"role":"user", "text":"/onicode Start a session"}),
-            true,
-        ),
-        (
-            json!({"role":"user", "text":"Start a session", "onicode":true, "draft":true}),
-            false,
-        ),
-        (
-            json!({"role":"user", "text":"Start a session", "onicode":true, "internal":true}),
-            false,
-        ),
-        (
-            json!({"role":"assistant", "text":"/mono Start a session", "onicode":true}),
-            false,
-        ),
-        (json!({"role":"user", "text":"Start a session"}), false),
-    ] {
-        let store = Store::open_monocode(Path::new(":memory:")).unwrap();
-        let (id, _) = saved(&store, json!([block]));
-        assert_eq!(
-            store.agent_settings(id).unwrap().unwrap().operator_enabled,
-            enabled
-        );
-    }
-}
-
-#[test]
 fn saved_turn_metrics_reload_with_the_same_revision() {
     // Without exact float parsing these reload one ULP away, and the next
     // save reports the conversation as changed in another window.
-    let store = Store::open_monocode(Path::new(":memory:")).unwrap();
+    let store = Store::in_memory().unwrap();
     let id = store.create("codex", "/project").unwrap().id;
     let blocks = [95.12525746447635, 99.55200675204587, 98.15813953488373]
         .map(|percent| {
@@ -52,32 +17,13 @@ fn saved_turn_metrics_reload_with_the_same_revision() {
 }
 
 #[test]
-fn desktop_sidebar_recovers_only_hidden_launches_of_listed_callers_without_history_reads() {
+fn desktop_sidebar_lists_sessions_but_inbox_asks_without_history_reads() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("monocode.db");
-    let store = Store::open_monocode(&path).unwrap();
-    store.conn.execute_batch("CREATE TABLE orchestration_workers(session_id TEXT PRIMARY KEY, lead_id TEXT NOT NULL)").unwrap();
-    for (id, cwd, hidden, user) in [
-        ("listed-caller", "/project", false, true),
-        ("app-listed-caller-review-task", "/project", true, true),
-        ("app-listed-caller-other-project", "/other", true, true),
-        ("hidden-caller", "/project", true, true),
-        ("app-hidden-caller-task", "/project", true, true),
-        ("blank-caller", "/project", false, false),
-        ("app-blank-caller-task", "/project", true, true),
-        ("worker", "/project", false, true),
-        ("app-worker-task", "/project", true, true),
-        ("inbox", "/project", false, true),
-    ] {
-        store.conn.execute("INSERT INTO sessions(id,cwd,harness,model,runtime_mode,title,blocks_json,created_at,updated_at,has_user_message,sidebar_hidden) VALUES(?1,?2,'codex','codex:model','supervised',?1,'not JSON',1,2,?3,?4)", params![id,cwd,user,hidden]).unwrap();
+    let store = Store::open(&path).unwrap();
+    for (id, user) in [("listed", true), ("blank", false), ("inbox", true)] {
+        store.conn.execute("INSERT INTO sessions(id,cwd,harness,model,runtime_mode,title,blocks_json,created_at,updated_at,has_user_message) VALUES(?1,'/project','codex','codex:model','supervised',?1,'not JSON',1,2,?2)", params![id,user]).unwrap();
     }
-    store
-        .conn
-        .execute(
-            "INSERT INTO orchestration_workers VALUES('worker','listed-caller')",
-            [],
-        )
-        .unwrap();
     store
         .conn
         .execute("UPDATE sessions SET inbox_ask='ask' WHERE id='inbox'", [])
@@ -88,27 +34,13 @@ fn desktop_sidebar_recovers_only_hidden_launches_of_listed_callers_without_histo
         .unwrap();
     drop(store);
     let original = std::fs::read(&path).unwrap();
-    let store = Store::read_monocode(&path).unwrap();
+    let store = Store::open_read_only(&path).unwrap();
     let sessions = store.sessions().unwrap();
     let ids: HashSet<_> = sessions
         .iter()
         .map(|s| store.persisted_session_id(s.id).unwrap())
         .collect();
-    assert_eq!(
-        ids,
-        HashSet::from([
-            "listed-caller".into(),
-            "app-listed-caller-review-task".into(),
-            "blank-caller".into()
-        ])
-    );
-    let metadata = store.session_sidebar_metadata(&["/project".into()]);
-    let child = store
-        .resolve_existing_session_id("app-listed-caller-review-task")
-        .unwrap();
-    let parent = store.resolve_existing_session_id("listed-caller").unwrap();
-    assert!(metadata.sidebar_hidden.contains(&child));
-    assert_eq!(metadata.started_by[&child], parent);
+    assert_eq!(ids, HashSet::from(["listed".into(), "blank".into()]));
     assert_eq!(
         store
             .conn
@@ -117,52 +49,29 @@ fn desktop_sidebar_recovers_only_hidden_launches_of_listed_callers_without_histo
         schema_version
     );
     assert_eq!(std::fs::read(&path).unwrap(), original);
-    assert!(!path.with_file_name("monocode.db.gpui.json").exists());
 }
 
 #[test]
-fn desktop_workspace_snapshot_restores_existing_ids_and_keeps_native_override() {
-    let store = Store::open_monocode(Path::new(":memory:")).unwrap();
+fn only_persisted_ids_resolve_and_the_workspace_round_trips() {
+    let store = Store::in_memory().unwrap();
     let session = store.create("codex", "/project").unwrap();
     let original = store.persisted_session_id(session.id).unwrap();
-    let source = json!({"projectCwd":"/project","activeTabId":"saved-tab","tabs":[
-        {"id":"saved-tab","focusedId":original,"layout":{"type":"leaf","id":original}},
-        {"id":"stale-tab","layout":{"type":"leaf","id":"999999"}}
-    ]});
-    store
-        .conn
-        .execute(
-            "INSERT INTO workspace_snapshot VALUES(1,?1,1)",
-            [source.to_string()],
-        )
-        .unwrap();
     assert_eq!(
         store.resolve_existing_session_id(&original),
         Some(session.id)
     );
     assert_eq!(store.resolve_existing_session_id("999999"), None);
-    let workspace: Value = parse(&store.ui_state().unwrap().unwrap()).unwrap();
-    assert_eq!(workspace["tabs"], json!([session.id]));
-    assert_eq!(workspace["active"], session.id);
-    assert_eq!(workspace["desktop_workspace_snapshot"], source);
-    store
-        .save_ui_state(r#"{"project":"/native","tabs":[]}"#)
-        .unwrap();
-    let workspace: Value = parse(&store.ui_state().unwrap().unwrap()).unwrap();
-    assert_eq!(workspace["project"], "/native");
-    assert_eq!(workspace["tabs"], json!([]));
-    assert_eq!(workspace["desktop_workspace_snapshot"], source);
+    assert_eq!(store.ui_state().unwrap(), None);
+    let saved = r#"{"project":"/native","tabs":[]}"#;
+    store.save_ui_state(saved).unwrap();
+    assert_eq!(store.ui_state().unwrap().as_deref(), Some(saved));
 }
 
 #[test]
-fn search_connections_share_the_same_read_only_preference_snapshot() {
+fn search_connections_are_read_only() {
     let directory = tempfile::tempdir().unwrap();
-    let store = Store::open_monocode(&directory.path().join("monocode.db")).unwrap();
+    let store = Store::open(&directory.path().join("monocode.db")).unwrap();
     let reader = store.search_reader().unwrap().unwrap();
-    assert!(std::ptr::eq(
-        store.desktop_preferences().unwrap(),
-        reader.desktop_preferences().unwrap()
-    ));
     assert!(reader.create("codex", "/project").is_err());
 }
 
@@ -170,18 +79,17 @@ fn search_connections_share_the_same_read_only_preference_snapshot() {
 fn desktop_open_uses_existing_records_and_does_not_rewrite_the_database() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("monocode.db");
-    let store = Store::open_monocode(&path).unwrap();
+    let store = Store::open(&path).unwrap();
     let row = store.create("codex", "/project").unwrap();
     let id = store.persisted_session_id(row.id).unwrap();
     assert!(id.parse::<i64>().is_err());
     assert_eq!(store.sessions().unwrap().len(), 1);
     drop(store);
     let original = std::fs::read(&path).unwrap();
-    let store = Store::open_monocode(&path).unwrap();
+    let store = Store::open(&path).unwrap();
     assert_eq!(store.sessions().unwrap()[0].id, row.id);
     assert_eq!(store.persisted_session_id(row.id).unwrap(), id);
     assert_eq!(std::fs::read(&path).unwrap(), original);
-    assert!(!has_table(&store.conn, "native_sessions").unwrap());
 }
 
 fn saved(store: &Store, blocks: Value) -> (i64, String) {
@@ -202,7 +110,7 @@ fn saved(store: &Store, blocks: Value) -> (i64, String) {
 
 #[test]
 fn desktop_model_and_effort_decode_and_round_trip_without_rewriting_the_title() {
-    let store = Store::open_monocode(Path::new(":memory:")).unwrap();
+    let store = Store::in_memory().unwrap();
     let (id, source) = saved(&store, json!([]));
     store.conn.execute(
         "UPDATE sessions SET model='codex:gpt-6.1-sol',model_settings=?2,title='codex · Fix sidebar' WHERE id=?1",
@@ -235,7 +143,7 @@ fn desktop_model_and_effort_decode_and_round_trip_without_rewriting_the_title() 
 fn writes_are_visible_in_desktop_tables_and_preserve_rich_history() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("monocode.db");
-    let mut store = Store::open_monocode(&path).unwrap();
+    let mut store = Store::open(&path).unwrap();
     let original = json!([
         {"id":"prompt","role":"user","text":"Original 🙂","startedAt":100,
             "attachments":[{"id":"a","path":"/image.png","mimeType":"image/png","kind":"image","size":50}],
@@ -293,7 +201,7 @@ fn writes_are_visible_in_desktop_tables_and_preserve_rich_history() {
     assert_eq!(controls["futureSetting"], "keep");
     assert_eq!(controls["reasoningEffort"], "low");
     drop(store);
-    let store = Store::open_monocode(&path).unwrap();
+    let store = Store::open(&path).unwrap();
     assert_eq!(store.persisted_session_id(id).unwrap(), source);
     assert_eq!(
         store
@@ -311,7 +219,7 @@ fn writes_are_visible_in_desktop_tables_and_preserve_rich_history() {
 fn concurrent_desktop_changes_are_never_overwritten() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("monocode.db");
-    let mut store = Store::open_monocode(&path).unwrap();
+    let mut store = Store::open(&path).unwrap();
     let (id, source) = saved(&store, json!([{"id":"u","role":"user","text":"Original"}]));
     let t = store.load(id).unwrap();
     let other = Connection::open(&path).unwrap();
@@ -333,7 +241,7 @@ fn concurrent_desktop_changes_are_never_overwritten() {
 
 #[test]
 fn configuring_the_same_provider_preserves_its_resume_id() {
-    let store = Store::open_monocode(Path::new(":memory:")).unwrap();
+    let store = Store::in_memory().unwrap();
     let (id, _) = saved(&store, json!([]));
     let settings = store.agent_settings(id).unwrap().unwrap();
     store.configure_agent(id, "codex", &settings).unwrap();
@@ -357,7 +265,7 @@ fn configuring_the_same_provider_preserves_its_resume_id() {
 fn concurrent_queue_changes_are_preserved_and_transaction_is_rolled_back() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("monocode.db");
-    let store = Store::open_monocode(&path).unwrap();
+    let store = Store::open(&path).unwrap();
     let (id, source) = saved(&store, json!([]));
     let mut state = store.follow_ups(id).unwrap();
     state.revision += 1;
@@ -394,7 +302,7 @@ fn concurrent_queue_changes_are_preserved_and_transaction_is_rolled_back() {
 fn drafts_queues_and_receipts_keep_desktop_metadata_and_do_not_replay() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("monocode.db");
-    let mut store = Store::open_monocode(&path).unwrap();
+    let mut store = Store::open(&path).unwrap();
     let (id, source) = saved(
         &store,
         json!([
@@ -436,7 +344,7 @@ fn drafts_queues_and_receipts_keep_desktop_metadata_and_do_not_replay() {
         .write_rows_with_message(id, from, &t.rows[from..], Some("queued"))
         .unwrap();
     drop(store);
-    let store = Store::open_monocode(&path).unwrap();
+    let store = Store::open(&path).unwrap();
     assert!(store.follow_ups(id).unwrap().messages.is_empty());
     let raw: String = store
         .conn
@@ -459,7 +367,7 @@ fn drafts_queues_and_receipts_keep_desktop_metadata_and_do_not_replay() {
 fn notes_reminders_search_and_read_only_connections_use_the_same_data() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("monocode.db");
-    let mut store = Store::open_monocode(&path).unwrap();
+    let mut store = Store::open(&path).unwrap();
     let (id, source) = saved(
         &store,
         json!([{"id":"u","role":"user","text":"A searchable message"}]),
@@ -542,7 +450,7 @@ fn history_revision_ignores_object_key_order_and_source_whitespace() {
 
 #[test]
 fn equivalent_desktop_json_can_be_saved_without_losing_rich_source_fields() {
-    let mut store = Store::open_monocode(Path::new(":memory:")).unwrap();
+    let mut store = Store::in_memory().unwrap();
     let (id, original) = saved(
         &store,
         json!([{"id":"u","role":"user","text":"Original","future":{"x":42}}]),
@@ -563,7 +471,7 @@ fn equivalent_desktop_json_can_be_saved_without_losing_rich_source_fields() {
         store.shared_blocks(id).unwrap()[0]["future"],
         json!({"x":42})
     );
-    assert_eq!(store.shared.as_ref().unwrap().snapshots.borrow().len(), 1);
+    assert_eq!(store.shared.snapshots.borrow().len(), 1);
 }
 
 #[test]
@@ -583,7 +491,7 @@ fn history_revision_keeps_numeric_types_and_normalizes_float_zero() {
 
 #[test]
 fn existing_side_questions_import_their_exact_source_bound_without_writes() {
-    let store = Store::open_monocode(Path::new(":memory:")).unwrap();
+    let store = Store::in_memory().unwrap();
     let thread = json!({
         "id":"saved-side", "sourceEndBlockId":"answer", "createdAt":30, "updatedAt":40,
         "status":"error", "harness":"claude", "model":"claude:claude-opus-4-6",
@@ -654,7 +562,7 @@ fn existing_side_questions_import_their_exact_source_bound_without_writes() {
 
 #[test]
 fn desktop_turn_receipts_restore_exact_model_timing_metrics_and_projected_offsets() {
-    let store = Store::open_monocode(Path::new(":memory:")).unwrap();
+    let store = Store::in_memory().unwrap();
     let source = json!([
         {"id":"hidden","role":"system","text":"","future":true},
         {"id":"first","role":"user","text":"Saved prompt","sentAt":90,"startedAt":100,
@@ -738,7 +646,7 @@ fn desktop_turn_receipts_restore_exact_model_timing_metrics_and_projected_offset
 
 #[test]
 fn fresh_native_turn_receipts_persist_source_fields_without_changing_saved_provenance() {
-    let mut store = Store::open_monocode(Path::new(":memory:")).unwrap();
+    let mut store = Store::in_memory().unwrap();
     let session = store.create("codex", "/project").unwrap();
     let mut transcript = Transcript::default();
     let prompt = transcript.begin("user");
@@ -803,7 +711,7 @@ fn fresh_native_turn_receipts_persist_source_fields_without_changing_saved_prove
 
 #[test]
 fn fresh_receipt_preserves_the_matching_desktop_model_id_spelling() {
-    let mut store = Store::open_monocode(Path::new(":memory:")).unwrap();
+    let mut store = Store::in_memory().unwrap();
     let (id, original) = saved(&store, json!([]));
     store
         .conn

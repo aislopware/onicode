@@ -1,16 +1,16 @@
-//! The Work hub over scripted trackers and a scripted `gh`: no network, no CLI. The Inbox's
-//! calls reach the trackers with what the viewer named and run a mutating op once; automations
+//! The Work hub over a scripted Inbox and a scripted `gh`: no network, no CLI. The Inbox's
+//! calls reach GitHub with what the viewer named and run a mutating op once; automations
 //! round-trip through the store the workspace hub schedules from; and linked activity shows an
 //! item exactly when it changed after the session last saw it, reading an unchanged item's feeds
 //! once.
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures::executor::block_on;
 use onicode_core::automations::AutomationUpsert;
-use onicode_core::inbox::{Checks, Details, Diff, Item, Snapshot, Status, Thread, ViewState};
+use onicode_core::inbox::{Checks, Details, Diff, Item, Snapshot, Thread, ViewState};
 use onicode_core::store::Store;
 use onicode_protocol::sessions::{Session, WorkItem};
 use onicode_protocol::work::{
@@ -26,27 +26,27 @@ use crate::turn::{Database, locked};
 use crate::workspace::WorkspaceHub;
 
 fn store() -> Database {
-    Arc::new(Mutex::new(Store::open(Path::new(":memory:")).unwrap()))
+    Arc::new(Mutex::new(Store::in_memory().unwrap()))
 }
 
-/// Trackers that list one item per project and count the actions they run.
+/// An Inbox that lists one item per project and counts the actions it runs.
 #[derive(Default)]
 struct Scripted {
-    listed: Mutex<Vec<(PathBuf, Vec<PathBuf>, String)>>,
+    listed: Mutex<Vec<(PathBuf, Vec<PathBuf>, bool)>>,
     actions: AtomicUsize,
 }
 
 impl Trackers for Scripted {
     fn list(&self, at: &Place, projects: &[PathBuf], state: &ViewState) -> Snapshot {
-        self.listed
-            .lock()
-            .unwrap()
-            .push((at.cwd.clone(), projects.to_vec(), state.source.clone()));
+        self.listed.lock().unwrap().push((
+            at.cwd.clone(),
+            projects.to_vec(),
+            state.filters.assigned_to_me,
+        ));
         Snapshot {
             items: projects
                 .iter()
                 .map(|project| Item {
-                    provider: "github".into(),
                     project_path: project.to_string_lossy().into_owned(),
                     ..Item::default()
                 })
@@ -75,20 +75,6 @@ impl Trackers for Scripted {
         Ok(body)
     }
 
-    fn connect(
-        &self,
-        _: &Place,
-        _: &str,
-        _: String,
-        _: String,
-        _: String,
-    ) -> Result<Status, String> {
-        Ok(Status {
-            connected: true,
-            ..Status::default()
-        })
-    }
-
     fn action(&self, _: &Place, item: &Item, action: &str) -> Result<Item, String> {
         self.actions.fetch_add(1, Ordering::Relaxed);
         Ok(Item {
@@ -103,14 +89,6 @@ impl Trackers for Scripted {
 
     fn avatar(&self, url: &str) -> Result<Vec<u8>, String> {
         Ok(url.as_bytes().to_vec())
-    }
-
-    fn processes(&self) -> Result<Vec<onicode_protocol::work::AgentProcess>, String> {
-        Ok(Vec::new())
-    }
-
-    fn stop_tool(&self, _: u32, _: &str) -> Result<(), String> {
-        Ok(())
     }
 }
 
@@ -195,10 +173,8 @@ fn the_inbox_lists_what_the_viewer_names_with_the_engines_sessions() {
     let trackers = Arc::new(Scripted::default());
     let hub = hub(&store, trackers.clone(), Arc::new(Hub::new(UPDATED, true)));
     let session = locked(&store).unwrap().create("claude", "/a").unwrap();
-    let state = ViewState {
-        source: "linear".into(),
-        ..ViewState::default()
-    };
+    let mut state = ViewState::default();
+    state.filters.assigned_to_me = true;
     let listing = block_on(hub.inbox_list(InboxList {
         cwd: "/a".into(),
         projects: vec!["/a".into(), "/b".into()],
@@ -212,7 +188,7 @@ fn the_inbox_lists_what_the_viewer_names_with_the_engines_sessions() {
         vec![(
             PathBuf::from("/a"),
             vec![PathBuf::from("/a"), PathBuf::from("/b")],
-            "linear".to_owned()
+            true
         )]
     );
 }

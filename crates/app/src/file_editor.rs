@@ -48,7 +48,6 @@ actions!(
         MatchCase,
         WholeWord,
         Regex,
-        Format,
         PreviousChange,
         NextChange,
         RevertChange
@@ -63,7 +62,6 @@ pub(crate) fn bind(cx: &mut App) {
             Replace,
             Some("FileEditor"),
         ),
-        KeyBinding::new("alt-shift-f", Format, Some("FileEditor")),
         KeyBinding::new("alt-z", ToggleWordWrap, Some("FileEditor")),
         KeyBinding::new("alt-c", MatchCase, Some("FileEditor")),
         KeyBinding::new("alt-w", WholeWord, Some("FileEditor")),
@@ -199,9 +197,8 @@ pub(crate) struct FileEditor {
     regex: bool,
     search_invalid: bool,
     search_task: Option<Task<()>>,
-    matches: Vec<crate::editor_analysis::SearchMatch>,
+    matches: Vec<search::Match>,
     autosave: Option<Task<()>>,
-    formatting: Option<Task<()>>,
     pub show_diff: bool,
     change_index: usize,
     match_index: usize,
@@ -259,7 +256,6 @@ impl FileEditor {
             field.set_font_size(12.);
             field
         });
-        input.update(cx, |input, _| input.set_editor_path(path.clone()));
         let subscriptions = vec![
             cx.subscribe(&input, |this, _, _: &input::Changed, cx| this.edited(cx)),
             cx.subscribe(&input, |this, _, action: &input::CodeAction, cx| {
@@ -348,7 +344,6 @@ impl FileEditor {
             search_invalid: false,
             search_task: None,
             autosave: None,
-            formatting: None,
             show_diff: false,
             change_index: 0,
             matches: Vec::new(),
@@ -623,10 +618,6 @@ impl FileEditor {
         }
         self.schedule_analysis(cx);
         self.schedule_autosave(cx);
-        if self.dirty {
-            self.input
-                .update(cx, |input, cx| input.schedule_completion(false, cx));
-        }
         if self.search_open {
             self.find_matches(cx);
         }
@@ -688,25 +679,13 @@ impl FileEditor {
         let text = self.input.read(cx).content.clone();
         let original = self.git_original.clone();
         let path = self.path.clone();
-        let syntax = crate::editor_syntax::supports(&path).then(|| self.syntax.clone());
+        let syntax = self.syntax.clone();
+        // An incremental parse costs about a frame, so analysis runs per edit.
         self.analysis = Some(cx.spawn(async move |this, cx| {
-            // An incremental parse costs about a frame, so native analysis
-            // runs per edit. The QuickJS fallback reparses everything, so it
-            // waits for a pause in typing.
-            if syntax.is_none() {
-                cx.background_executor()
-                    .timer(Duration::from_millis(150))
-                    .await;
-            }
             let source = text.clone();
             let base = original.clone();
             let work = cx.background_executor().spawn(async move {
-                match syntax {
-                    Some(syntax) => {
-                        crate::editor_syntax::analyze(&syntax, &path, &source, base.as_deref())
-                    }
-                    None => crate::editor_analysis::analyze(&path, &source, base.as_deref()),
-                }
+                crate::editor_syntax::analyze(&syntax, &path, &source, base.as_deref())
             });
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -759,69 +738,13 @@ impl FileEditor {
         }));
     }
 
-    fn format_document(&mut self, cx: &mut Context<Self>) {
-        if self.document.is_none() || self.saving || self.input.read(cx).is_composing() {
-            return;
-        }
-        let source = self.input.read(cx).content.clone();
-        let at = self.input.read(cx).selection_range().end;
-        let path = self.path.clone();
-        self.formatting = Some(cx.spawn(async move |this, cx| {
-            let text = source.clone();
-            let result = cx
-                .background_executor()
-                .spawn(async move { crate::editor_analysis::format(&path, &text, at) })
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                if this.input.read(cx).content == source
-                    && !this.input.read(cx).is_composing()
-                    && let Ok(Some(result)) = result
-                    && result.formatted != source.as_ref()
-                {
-                    this.input.update(cx, |input, cx| {
-                        input.replace_bytes(0..source.len(), &result.formatted, result.cursor, cx)
-                    });
-                }
-            });
-        }));
-    }
-
     pub(crate) fn save(&mut self, cx: &mut Context<Self>) {
         if self.saving || self.input.read(cx).is_composing() || self.document.is_none() {
             return;
         }
-        let source = self.input.read(cx).content.clone();
-        let at = self.input.read(cx).selection_range().end;
-        let path = self.path.clone();
-        let format = cx
-            .try_global::<crate::settings::Preferences>()
-            .is_none_or(|p| p.format_on_save);
         self.saving = true;
         self.error = None;
         cx.spawn(async move |this, cx| {
-            if format {
-                let text = source.clone();
-                let result = cx
-                    .background_executor()
-                    .spawn(async move { crate::editor_analysis::format(&path, &text, at) })
-                    .await;
-                let _ = this.update(cx, |this, cx| {
-                    if this.input.read(cx).content == source
-                        && !this.input.read(cx).is_composing()
-                        && let Ok(Some(result)) = result
-                        && result.formatted != source.as_ref()
-                    {
-                        this.input.update(cx, |input, cx| {
-                            input.replace_bytes(
-                                0..source.len(),
-                                &result.formatted,
-                                result.cursor,
-                                cx,
-                            )
-                        });
-                    }
-                });
-            }
             let Ok(Some((write, saved))) = this.update(cx, |this, cx| {
                 if this.input.read(cx).is_composing() {
                     this.saving = false;
@@ -976,24 +899,14 @@ impl FileEditor {
             let text = source.clone();
             let result = cx
                 .background_executor()
-                .spawn(async move {
-                    crate::editor_analysis::search(&text, &query, &replacement, case, word, regex)
-                })
+                .spawn(async move { search::find(&text, &query, &replacement, case, word, regex) })
                 .await;
             let _ = this.update(cx, |this, cx| {
                 if this.input.read(cx).content != source {
                     return;
                 }
-                match result {
-                    Ok(result) => {
-                        this.matches = result.matches;
-                        this.search_invalid = result.invalid;
-                    }
-                    Err(_) => {
-                        this.matches.clear();
-                        this.search_invalid = true;
-                    }
-                }
+                this.search_invalid = result.is_none();
+                this.matches = result.unwrap_or_default();
                 this.match_index = this
                     .matches
                     .iter()
@@ -1280,7 +1193,6 @@ impl gpui::Render for FileEditor {
                 this.open_search(w, cx);
                 this.replace_open = true;
             }))
-            .on_action(cx.listener(|this, _: &Format, _, cx| this.format_document(cx)))
             .on_action(cx.listener(|this, _: &MatchCase, _, cx| {
                 if this.search_open {
                     this.match_case = !this.match_case;

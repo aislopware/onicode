@@ -1,10 +1,11 @@
 //! Working-copy operations used by the native composer. Git protects dirty files;
 //! these operations never force a checkout, stash, or discard changes.
 pub mod naming;
+pub mod turn;
 use std::path::{Path, PathBuf};
 
 pub use onicode_protocol::git::{
-    Branch, CommitFile, GitSnapshot as Snapshot, SessionChanges, Worktree, report,
+    Branch, CommitFile, GitSnapshot as Snapshot, SessionChanges, Worktree,
 };
 
 pub(crate) fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {

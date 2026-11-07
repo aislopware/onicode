@@ -111,8 +111,6 @@ pub struct Settings {
     #[serde(skip)]
     pub mono_message_id: Option<String>,
     #[serde(skip)]
-    pub internal_message: bool,
-    #[serde(skip)]
     pub attachments: Vec<std::path::PathBuf>,
     pub revision: u64,
     pub model: Option<String>,
@@ -124,10 +122,6 @@ pub struct Settings {
     /// Provider-advertised controls beyond the common effort/speed switches.
     pub model_settings: std::collections::HashMap<String, String>,
     pub plan: bool,
-    pub operator: bool,
-    /// A submitted /operator grants this thread access independently of its next draft.
-    pub operator_enabled: bool,
-    pub orchestrator: bool,
     pub new_worktree: bool,
     pub worktree_base: Option<String>,
     pub worktree_cwd: Option<String>,
@@ -169,6 +163,9 @@ pub struct TurnInfo {
     pub started_at: Option<u64>,
     pub completed_at: Option<u64>,
     pub metrics: Option<TurnMetrics>,
+    /// What the turn did to its checkout's Git state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git: Option<crate::git::TurnGit>,
 }
 impl TurnInfo {
     pub fn has_duration(&self) -> bool {

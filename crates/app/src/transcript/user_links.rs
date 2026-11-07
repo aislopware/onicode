@@ -460,7 +460,7 @@ impl TranscriptView {
                                     .items_center()
                                     .gap(px(6.))
                                     .child(crate::inbox::avatar_image(
-                                        "github", &name, &avatar, 16., window, cx,
+                                        &name, &avatar, 16., window, cx,
                                     ))
                                     .child(
                                         div()
@@ -547,7 +547,6 @@ impl TranscriptView {
                                         .border_1()
                                         .border_color(crate::theme::pane_fill())
                                         .child(crate::inbox::avatar_image(
-                                            "github",
                                             &person.login,
                                             &person.avatar_url,
                                             16.,

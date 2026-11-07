@@ -8,7 +8,7 @@
 //! `Engine::on`. An engine that goes offline leaves its rows as last seen, kept across launches,
 //! and a turn for one is refused with the status the engine gives.
 //!
-//! A peer project's folders, its sessions' reminders and its orchestration summaries live in
+//! A peer project's folders and its sessions' reminders live in
 //! that engine's workspace like its sessions: the shell lays them over its maps in the app's
 //! spelling (the project's URI, the app's rows), and every change to them, as to a session's
 //! pin, title or link, is a call to that engine naming its own rows. Its echo shows at once and
@@ -201,7 +201,6 @@ impl Shell {
                 state
                     .sessions
                     .iter()
-                    .filter(|summary| !summary.hidden)
                     .map(|summary| (peer.clone(), shown(&on, summary)))
                     .collect::<Vec<_>>()
             })
@@ -303,8 +302,8 @@ impl Shell {
         );
     }
 
-    /// Folds what `engine`'s workspace watch brought, then shows its sessions, folders,
-    /// reminders and orchestration summaries, settles the echoes of the calls it answered and
+    /// Folds what `engine`'s workspace watch brought, then shows its sessions, folders and
+    /// reminders, settles the echoes of the calls it answered and
     /// announces the reminders it fired.
     pub(super) fn apply_peer_workspace(
         &mut self,
@@ -384,7 +383,7 @@ impl Shell {
         }
     }
 
-    /// Lays every followed engine's folders, reminders and orchestration summaries in the
+    /// Lays every followed engine's folders and reminders in the
     /// projects the workspace holds on it over the shell's maps, in the app's spelling: each
     /// project under its URI, each session under the app's row. Called as the app's own
     /// engine's are laid, before the echoes in flight.
@@ -436,16 +435,6 @@ impl Shell {
                         ..reminder.clone()
                     })
                 }));
-            for lead in &state.orchestrations {
-                let Some(row) = rows.get(&lead.lead) else {
-                    continue;
-                };
-                let mut summary = lead.summary.clone();
-                for task in &mut summary.tasks {
-                    task.session = task.session.and_then(|id| rows.get(&id).copied());
-                }
-                self.orchestration_summaries.insert(*row, summary);
-            }
         }
         self.reminders
             .sort_by_key(|reminder| (reminder.due_at, reminder.session_id));
@@ -530,11 +519,6 @@ impl Shell {
         } else {
             self.draft_sessions.remove(&row);
         }
-        if summary.hidden {
-            self.sidebar_hidden_sessions.insert(row);
-        } else {
-            self.sidebar_hidden_sessions.remove(&row);
-        }
         self.session_worktrees.entry(row).or_insert_with(|| {
             summary
                 .worktree
@@ -552,8 +536,7 @@ mod tests {
     use gpui::TestAppContext;
     use onicode_protocol::SessionId;
     use onicode_protocol::session_groups::Folder;
-    use onicode_protocol::sessions::{Orchestration, SummaryTask};
-    use onicode_protocol::workspace::{Lead, Project};
+    use onicode_protocol::workspace::Project;
     use serde_json::json;
 
     use super::*;
@@ -616,7 +599,7 @@ mod tests {
             .unwrap();
     }
 
-    /// A peer project's folders, reminders and orchestration summaries show as the app spells
+    /// A peer project's folders and reminders show as the app spells
     /// them (its URI, the app's rows), and changing them, or pinning one of its sessions, goes
     /// to that engine naming its own rows. A change the engine cannot take is taken back at
     /// once, saying why, as a local one the engine refuses is.
@@ -645,16 +628,6 @@ mod tests {
                 due_at: 5_000,
                 fired_at: None,
             }],
-            orchestrations: vec![Lead {
-                lead: 7,
-                summary: Orchestration {
-                    tasks: vec![SummaryTask {
-                        session: Some(8),
-                        ..SummaryTask::default()
-                    }],
-                    live: true,
-                },
-            }],
             ..WorkspaceState::default()
         };
         let project = window
@@ -675,8 +648,6 @@ mod tests {
                         .any(|r| r.session_id == lead_row && r.due_at == 5_000)
                 );
                 assert!(shell.reminders.iter().all(|r| r.session_id != 7));
-                let run = &shell.orchestration_summaries[&lead_row];
-                assert_eq!(run.tasks[0].session, Some(worker_row));
                 let folder = Folder {
                     id: "g".into(),
                     name: "New".into(),
@@ -754,12 +725,10 @@ mod tests {
             key: row.to_string(),
             worktree: None,
             draft: false,
-            started_by: None,
             automation: None,
             busy: false,
             unread: false,
             model: None,
-            hidden: false,
         }
     }
 

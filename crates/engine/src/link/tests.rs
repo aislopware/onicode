@@ -301,8 +301,6 @@ fn create(dir: &Path) -> CreateSession {
         cwd: dir.display().to_string(),
         title: None,
         start: NewSession::Bare,
-        started_by: None,
-        scope: Vec::new(),
     }
 }
 

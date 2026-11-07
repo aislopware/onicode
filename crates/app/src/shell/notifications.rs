@@ -278,7 +278,7 @@ impl Shell {
                 AppUpdateEvent::Dismiss => {
                     this.notification_state
                         .installed
-                        .update(cx, |notice, cx| notice.set_notice(None, cx));
+                        .update(cx, |notice, cx| notice.set_version(None, cx));
                     this.invalidate_chrome(cx);
                     cx.notify();
                 }
@@ -293,27 +293,15 @@ impl Shell {
                 cx.notify();
             },
         ));
-        let work = cx.background_executor().spawn(async move {
-            onicode_update::channel::data_dir().and_then(onicode_update::transaction::report)
-        });
-        cx.spawn(async move |this, cx| {
-            let report = work.await;
-            let _ = this.update(cx, |this, cx| {
-                let Some(notice) = app_update::consume_startup_notice(
-                    &this.ui_state,
-                    report.as_ref(),
-                    onicode_update::app_version(),
-                ) else {
-                    return;
-                };
-                this.notification_state
-                    .installed
-                    .update(cx, |card, cx| card.set_notice(Some(notice), cx));
-                this.invalidate_chrome(cx);
-                cx.notify();
-            });
-        })
-        .detach();
+        if let Some(version) =
+            app_update::consume_startup_notice(&self.ui_state, onicode_update::app_version())
+        {
+            self.notification_state
+                .installed
+                .update(cx, |card, cx| card.set_version(Some(version), cx));
+            self.invalidate_chrome(cx);
+            cx.notify();
+        }
     }
 
     pub(super) fn start_native_notifications(&mut self, cx: &mut Context<Self>) {
@@ -394,7 +382,6 @@ impl Shell {
                     harness: Kind::from_id(&chat.summary.provider).label().to_owned(),
                     pending: chat.pending_notification_inputs(cx),
                     inbox_ask: false,
-                    orchestration_worker: self.orchestration_worker(chat.summary.id),
                     conversation_focused: false,
                 }
             })
@@ -509,7 +496,6 @@ impl Shell {
                 harness: Kind::from_id(&chat.summary.provider).label().to_owned(),
                 pending: chat.pending_notification_inputs(cx),
                 inbox_ask: false,
-                orchestration_worker: self.orchestration_worker(id),
                 conversation_focused: self.window_active
                     && self.workspace.active == Some(id)
                     && self.notice_session_visible(id)
@@ -1331,7 +1317,7 @@ mod tests {
         window
             .update(visual, |shell, _, cx| {
                 shell.notification_state.installed.update(cx, |notice, cx| {
-                    notice.set_notice(Some(app_update::Notice::Updated("1.2.3".into())), cx)
+                    notice.set_version(Some("1.2.3".into()), cx)
                 });
                 shell.invalidate_chrome(cx);
                 cx.notify();
@@ -1350,38 +1336,31 @@ mod tests {
             .unwrap();
     }
 
-    /// The card after an install opens What's new; after a rollback it only says so.
+    /// The card after an install opens What's new.
     #[gpui::test]
-    fn the_update_card_opens_whats_new_only_after_an_update(cx: &mut TestAppContext) {
+    fn the_update_card_opens_whats_new(cx: &mut TestAppContext) {
         let (window, _, _) = crate::shell::tests::window(cx);
         let visual = &mut VisualTestContext::from_window(window.into(), cx);
-        let show = |visual: &mut VisualTestContext, notice: app_update::Notice| {
-            window
-                .update(visual, |shell, _, cx| {
-                    shell
-                        .notification_state
-                        .installed
-                        .update(cx, |card, cx| card.set_notice(Some(notice), cx));
-                    shell.invalidate_chrome(cx);
-                    cx.notify();
-                })
-                .unwrap();
-            visual.run_until_parked();
-            visual.refresh().unwrap();
-            let card = visual.debug_bounds("open-installed-update").unwrap();
-            visual.simulate_click(card.center(), Default::default());
-            visual.run_until_parked();
-            window
-                .update(visual, |shell, _, _| {
-                    shell.notification_state.whats_new.is_some()
-                })
-                .unwrap()
-        };
-        let rolled_back = app_update::Notice::RolledBack {
-            version: "1.2.2".into(),
-            reason: None,
-        };
-        assert!(!show(visual, rolled_back));
-        assert!(show(visual, app_update::Notice::Updated("1.2.3".into())));
+        window
+            .update(visual, |shell, _, cx| {
+                shell
+                    .notification_state
+                    .installed
+                    .update(cx, |card, cx| card.set_version(Some("1.2.3".into()), cx));
+                shell.invalidate_chrome(cx);
+                cx.notify();
+            })
+            .unwrap();
+        visual.run_until_parked();
+        visual.refresh().unwrap();
+        let card = visual.debug_bounds("open-installed-update").unwrap();
+        visual.simulate_click(card.center(), Default::default());
+        visual.run_until_parked();
+        let opened = window
+            .update(visual, |shell, _, _| {
+                shell.notification_state.whats_new.is_some()
+            })
+            .unwrap();
+        assert!(opened);
     }
 }

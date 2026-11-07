@@ -1,5 +1,5 @@
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, SharedString, Window, div, px};
+use gpui::{AnyElement, Context, Window, div, px};
 
 use crate::settings::widgets::secondary_button;
 use crate::settings::{SettingsEvent, SettingsView};
@@ -12,115 +12,58 @@ impl SettingsView {
     ) -> Vec<AnyElement> {
         let now = crate::inbox::RelativeNow::read(window, cx);
         let mut page = vec![self.project_notification_settings(&now, cx)];
-        for (id, title, description, label, hint) in [
-            (
-                "github",
-                "GitHub",
-                "Pull requests, reviews, and issues, read through the GitHub CLI.",
-                "Connection",
-                "Install GitHub CLI from cli.github.com, run gh auth login in a terminal, then check again.",
+        let (connected, connection_label) = self
+            .ctx
+            .inbox_connection
+            .clone()
+            .unwrap_or_else(|| (false, "Checking connection…".into()));
+        let status = div()
+            .text_size(px(12.))
+            .text_color(content(if connected { 0.7 } else { 0.5 }))
+            .child(connection_label)
+            .into_any_element();
+        let controls = vec![
+            status,
+            secondary_button(
+                "github-installation-guide",
+                "Installation guide",
+                false,
+                false,
+            )
+            .child("Installation guide")
+            .on_click(|_, _, cx| cx.open_url("https://cli.github.com/"))
+            .into_any_element(),
+            secondary_button("github-check-again", "Check again", false, false)
+                .child("Check again")
+                .on_click(cx.listener(|_, _, _, cx| cx.emit(SettingsEvent::ManageInboxConnection)))
+                .into_any_element(),
+        ];
+        let row = self.row(
+            None,
+            false,
+            "Connection",
+            Some(
+                "Install GitHub CLI from cli.github.com, run gh auth login in a terminal, then \
+                 check again."
+                    .into(),
             ),
-            (
-                "gitlab",
-                "GitLab",
-                "Merge requests from GitLab.com or a self-managed instance.",
-                "Connection",
-                "Connect GitLab.com or a self-managed GitLab instance. Use a personal access token with API access; the token is stored locally and Disconnect deletes it.",
+            controls,
+        );
+        page.push(
+            self.group(
+                Some("github"),
+                false,
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(icon("inbox-github", 16.))
+                    .child("GitHub"),
+                Some("Pull requests, reviews, and issues, read through the GitHub CLI.".into()),
+                None,
+                vec![row],
             ),
-            (
-                "azuredevops",
-                "ADO",
-                "Pull requests and Boards work items from your ADO organization.",
-                "Connection",
-                "Connect your ADO organization with a personal access token (Boards + Repos read & write for comments). The token is stored locally and Disconnect deletes it.",
-            ),
-            (
-                "jira",
-                "Jira",
-                "Jira Cloud issues from the projects you pick.",
-                "Connection",
-                "Connect your Jira Cloud site with your email and an API token.",
-            ),
-            (
-                "linear",
-                "Linear",
-                "Issues assigned to you, from the teams you pick.",
-                "API key",
-                "Create a personal API key in Linear → Settings → Security & Access. Disconnect deletes it.",
-            ),
-        ] {
-            let (connected, connection_label) = self
-                .ctx
-                .inbox_connections
-                .get(id)
-                .cloned()
-                .unwrap_or_else(|| (false, "Checking connection…".into()));
-            let status = div()
-                .text_size(px(12.))
-                .text_color(content(if connected { 0.7 } else { 0.5 }))
-                .child(connection_label)
-                .into_any_element();
-            let controls = if id == "github" {
-                vec![
-                    status,
-                    secondary_button(
-                        "github-installation-guide",
-                        "Installation guide",
-                        false,
-                        false,
-                    )
-                    .child("Installation guide")
-                    .on_click(|_, _, cx| cx.open_url("https://cli.github.com/"))
-                    .into_any_element(),
-                    secondary_button("github-check-again", "Check again", false, false)
-                        .child("Check again")
-                        .on_click(cx.listener(|_, _, _, cx| {
-                            cx.emit(SettingsEvent::ManageInboxProvider("github".into()))
-                        }))
-                        .into_any_element(),
-                ]
-            } else {
-                vec![
-                    status,
-                    secondary_button(
-                        SharedString::from(format!("connect-{id}")),
-                        if connected { "Manage" } else { "Connect" },
-                        false,
-                        false,
-                    )
-                    .child(if connected { "Manage" } else { "Connect" })
-                    .on_click(cx.listener(move |_, _, _, cx| {
-                        cx.emit(SettingsEvent::ManageInboxProvider(id.into()))
-                    }))
-                    .into_any_element(),
-                ]
-            };
-            let row = self.row(None, false, label, Some(hint.into()), controls);
-            page.push(
-                self.group(
-                    Some(id),
-                    false,
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(icon(
-                            match id {
-                                "linear" => "inbox-linear",
-                                "jira" => "inbox-jira",
-                                "gitlab" => "inbox-gitlab",
-                                "azuredevops" => "inbox-azuredevops",
-                                _ => "inbox-github",
-                            },
-                            16.,
-                        ))
-                        .child(title),
-                    Some(description.into()),
-                    None,
-                    vec![row],
-                ),
-            );
-        }
+        );
         page
     }
 }

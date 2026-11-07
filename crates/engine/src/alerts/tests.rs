@@ -392,12 +392,10 @@ fn summary(row: i64, id: SessionId, busy: bool, unread: bool) -> SessionSummary 
         key: row.to_string(),
         worktree: None,
         draft: false,
-        started_by: None,
         automation: None,
         busy,
         unread,
         model: None,
-        hidden: false,
     }
 }
 

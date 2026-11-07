@@ -36,8 +36,6 @@ actions!(
         UnfoldCode,
         FoldAll,
         UnfoldAll,
-        Complete,
-        DismissCompletion,
         Undo,
         Redo,
         Indent,
@@ -119,14 +117,12 @@ pub fn bind(cx: &mut App) {
             Redo,
             Some("CodeEditor"),
         ),
-        KeyBinding::new("ctrl-space", Complete, Some("CodeEditor")),
         KeyBinding::new("cmd-alt-[", FoldCode, Some("CodeEditor")),
         KeyBinding::new("cmd-alt-]", UnfoldCode, Some("CodeEditor")),
         KeyBinding::new("ctrl-shift-[", FoldCode, Some("CodeEditor")),
         KeyBinding::new("ctrl-shift-]", UnfoldCode, Some("CodeEditor")),
         KeyBinding::new("cmd-alt-shift-[", FoldAll, Some("CodeEditor")),
         KeyBinding::new("cmd-alt-shift-]", UnfoldAll, Some("CodeEditor")),
-        KeyBinding::new("escape", DismissCompletion, Some("CodeEditor")),
         KeyBinding::new("tab", Indent, Some("CodeEditor")),
         KeyBinding::new("shift-tab", Outdent, Some("CodeEditor")),
     ]);
@@ -644,7 +640,6 @@ impl Input {
         self.manual_scroll = false;
         self.reveal_pending = self.reveal_in_parent;
         self.reveal_code();
-        self.clear_completion();
         let offset = self.clip_offset(offset);
         self.selection = offset..offset;
         self.reversed = false;
@@ -959,15 +954,11 @@ impl Input {
     }
 
     fn up(&mut self, _: &Up, _: &mut Window, cx: &mut Context<Self>) {
-        if !self.completion_step(true, cx) {
-            self.move_to(self.vertical(false), cx);
-        }
+        self.move_to(self.vertical(false), cx);
     }
 
     fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
-        if !self.completion_step(false, cx) {
-            self.move_to(self.vertical(true), cx);
-        }
+        self.move_to(self.vertical(true), cx);
     }
 
     fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
@@ -1035,9 +1026,6 @@ impl Input {
     }
 
     fn submit(&mut self, _: &Submit, w: &mut Window, cx: &mut Context<Self>) {
-        if self.accept_completion(cx) {
-            return;
-        }
         if self.secondary_submit {
             if self.code.is_some() {
                 let at = self.selection.start;
@@ -1936,8 +1924,6 @@ impl Render for Input {
             } else {
                 CursorStyle::IBeam
             })
-            .on_action(cx.listener(Self::start_completion))
-            .on_action(cx.listener(Self::dismiss_completion))
             .on_action(cx.listener(Self::fold))
             .on_action(cx.listener(Self::unfold))
             .on_action(cx.listener(Self::fold_all))
@@ -1991,7 +1977,6 @@ impl Render for Input {
                 InputElement { input: cx.entity() }.into_any_element()
             })
             .children(self.code_tooltip())
-            .children(self.completion_popup(cx))
             .children(self.hunk_actions(cx))
             .children(self.editing_menu(cx))
     }
@@ -2316,11 +2301,7 @@ mod native_input_tests {
         window
             .update(cx, |i, _, cx| i.enable_inline_commands(cx))
             .unwrap();
-        for (name, icon) in [
-            ("plan", "ai-idea"),
-            ("operator", "cursor-magic"),
-            ("orchestrator", "share"),
-        ] {
+        for (name, icon) in [("plan", "ai-idea"), ("draft", "circle-dashed-hi")] {
             let text = format!(
                 "/{name} café 🙂\nA long prompt that wraps across several visual lines and keeps the full input width."
             );

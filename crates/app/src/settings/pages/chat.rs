@@ -122,20 +122,6 @@ impl SettingsView {
                 )],
             ),
         ];
-        let editor = vec![self.row(
-            Some("format-on-save"),
-            true,
-            "Format on save",
-            Some("Format supported files with Prettier before saving.".into()),
-            vec![self.toggle(
-                "format-on-save",
-                "Format on save",
-                p.format_on_save,
-                false,
-                cx,
-                |this, on, cx| this.update(cx, |p| p.format_on_save = on),
-            )],
-        )];
         let review = vec![self.row(
             Some("diff-view"),
             true,
@@ -150,40 +136,23 @@ impl SettingsView {
                 |this, v, cx| this.update(cx, |p| p.diff_view = v.into()),
             )],
         )];
-        let extras = vec![
-            self.row(
-                Some("composer-mascot"),
-                true,
-                "Composer mascot",
-                Some("Show the project mascot while an agent works.".into()),
-                vec![self.toggle(
-                    "composer-mascot",
-                    "Composer mascot",
-                    p.composer_mascot,
-                    false,
-                    cx,
-                    |this, on, cx| this.update(cx, |p| p.composer_mascot = on),
-                )],
-            ),
-            self.row(
-                Some("empty-session"),
-                false,
+        let extras = vec![self.row(
+            Some("empty-session"),
+            true,
+            "Empty session",
+            Some("Stir dithered ink, or leave it blank.".into()),
+            vec![self.segmented(
+                "empty-session",
                 "Empty session",
-                Some("Stir dithered ink, play a game, or leave it blank.".into()),
-                vec![self.segmented(
-                    "empty-session",
-                    "Empty session",
-                    &p.empty_session,
-                    &[("ink", "Ink"), ("games", "Games"), ("none", "Off")],
-                    cx,
-                    |this, v, cx| this.update(cx, |p| p.empty_session = v.into()),
-                )],
-            ),
-        ];
+                &p.empty_session,
+                &[("ink", "Ink"), ("none", "Off")],
+                cx,
+                |this, v, cx| this.update(cx, |p| p.empty_session = v.into()),
+            )],
+        )];
         vec![
             self.group(None, true, "Transcript", None, None, transcript),
             self.group(None, false, "Composer", None, None, composer),
-            self.group(None, false, "Editor", None, None, editor),
             self.group(None, false, "Code review", None, None, review),
             self.group(None, false, "Extras", None, None, extras),
         ]

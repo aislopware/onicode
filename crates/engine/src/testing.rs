@@ -56,7 +56,7 @@ impl Seed {
             .map_err(|error| format!("Cannot take the engine lock: {error}"))?
             .ok_or("Another engine started meanwhile")?;
         let path = data_dir.join(DATABASE);
-        let store = Store::open_monocode(&path)
+        let store = Store::open(&path)
             .map_err(|error| format!("Cannot open {}: {error}", path.display()))?;
         Ok(write(&Self::new(Arc::new(Mutex::new(store)))))
     }

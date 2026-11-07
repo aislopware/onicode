@@ -1,33 +1,19 @@
-//! The post-update card (updated, or rolled back) and What's new. The updater
-//! itself is `updater.rs`; an install records the marker this card reads.
+//! The post-update card and What's new. The updater itself is `updater.rs`;
+//! an install records the marker this card reads.
 
 use gpui::prelude::*;
 use gpui::{Context, EventEmitter, FontWeight, Render, Role, Window, div, img, px};
-use onicode_update::{UpdateReport, UpdateState};
 
 use super::updater::{INSTALLED_MARKER, ReleaseNotes};
 use crate::markdown::{self, MarkdownRow, Tone};
 use crate::markdown_model;
 use crate::theme::*;
 use crate::ui_state::UiState;
-/// The id of the last update record (`onicode_update::transaction`) shown.
-const REPORT_SEEN: &str = "onicode.updateReportSeen";
 
-/// What the card says once, at launch.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Notice {
-    /// Running the version an update installed: the card opens What's new.
-    Updated(String),
-    /// An update was tried and didn't hold: `version` is what runs again.
-    RolledBack {
-        version: String,
-        reason: Option<String>,
-    },
-}
-
+/// The card to show once at launch: the version an install this app made.
 /// The marker names a version; only that version running proves the install
-/// worked. Cleared whatever it says (an empty value is cleared).
-fn consume_marker(ui_state: &UiState, running: &str) -> Option<String> {
+/// worked, and then the marker is spent.
+pub(crate) fn consume_startup_notice(ui_state: &UiState, running: &str) -> Option<String> {
     let raw = ui_state.get(INSTALLED_MARKER)?;
     if raw.is_empty() {
         return None;
@@ -46,82 +32,37 @@ fn consume_marker(ui_state: &UiState, running: &str) -> Option<String> {
     ui_state.set(INSTALLED_MARKER, String::new());
     version
 }
-
-/// The card to show once at launch: a rollback the update record holds, an
-/// install this app made (its marker names the running version), or one made
-/// from another device. A record is shown once, by its id.
-pub(crate) fn consume_startup_notice(
-    ui_state: &UiState,
-    report: Option<&UpdateReport>,
-    running: &str,
-) -> Option<Notice> {
-    let installed = consume_marker(ui_state, running);
-    let report = match report {
-        Some(report)
-            if report.state != UpdateState::InProgress
-                && ui_state.get(REPORT_SEEN).as_deref() != Some(report.id.as_str()) =>
-        {
-            ui_state.set(REPORT_SEEN, report.id.clone());
-            Some(report)
-        }
-        _ => None,
-    };
-    let from_report = report.and_then(|report| match report.state {
-        UpdateState::RolledBack => Some(Notice::RolledBack {
-            version: report.from_version.clone(),
-            reason: report.reason.clone(),
-        }),
-        UpdateState::Updated if report.target_version == running => {
-            Some(Notice::Updated(report.target_version.clone()))
-        }
-        _ => None,
-    });
-    from_report.or(installed.map(Notice::Updated))
-}
 pub(crate) enum AppUpdateEvent {
     Open(String),
     Dismiss,
 }
+/// "Updated to {version}", which opens What's new.
 pub(crate) struct InstalledUpdateNotice {
-    notice: Option<Notice>,
+    version: Option<String>,
 }
 impl EventEmitter<AppUpdateEvent> for InstalledUpdateNotice {}
 impl InstalledUpdateNotice {
-    pub(crate) fn new(notice: Option<Notice>) -> Self {
-        Self { notice }
+    pub(crate) fn new(version: Option<String>) -> Self {
+        Self { version }
     }
 
-    pub(crate) fn set_notice(&mut self, notice: Option<Notice>, cx: &mut Context<Self>) {
-        if self.notice != notice {
-            self.notice = notice;
+    pub(crate) fn set_version(&mut self, version: Option<String>, cx: &mut Context<Self>) {
+        if self.version != version {
+            self.version = version;
             cx.notify();
         }
     }
 
     pub(crate) fn is_visible(&self) -> bool {
-        self.notice.is_some()
+        self.version.is_some()
     }
 }
 impl Render for InstalledUpdateNotice {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let Some(notice) = self.notice.clone() else {
+        let Some(version) = self.version.clone() else {
             return div().into_any_element();
         };
-        // Updated opens What's new; a rollback has nothing new to show.
-        let (label, detail, opens) = match notice {
-            Notice::Updated(version) => (
-                format!("Updated to {version}"),
-                "What's new".to_owned(),
-                Some(version),
-            ),
-            Notice::RolledBack { version, reason } => (
-                format!("Rolled back to {version}"),
-                reason.unwrap_or_else(|| {
-                    "The new version didn't start, so Onicode went back.".into()
-                }),
-                None,
-            ),
-        };
+        let label = format!("Updated to {version}");
         div()
             .id("installed-update-notice")
             .role(Role::Status)
@@ -142,17 +83,15 @@ impl Render for InstalledUpdateNotice {
                     .rounded(px(8.))
                     .p(px(8.))
                     .pr(px(32.))
-                    .when_some(opens, |d, version| {
-                        d.cursor_pointer()
-                            .hover(|s| {
-                                let mut accent = accent_color();
-                                accent.a = 0.1;
-                                s.bg(accent)
-                            })
-                            .on_click(cx.listener(move |_, _, _, cx| {
-                                cx.emit(AppUpdateEvent::Open(version.clone()))
-                            }))
+                    .cursor_pointer()
+                    .hover(|s| {
+                        let mut accent = accent_color();
+                        accent.a = 0.1;
+                        s.bg(accent)
                     })
+                    .on_click(cx.listener(move |_, _, _, cx| {
+                        cx.emit(AppUpdateEvent::Open(version.clone()))
+                    }))
                     .child(
                         div()
                             .mt(px(2.))
@@ -178,7 +117,7 @@ impl Render for InstalledUpdateNotice {
                                     .mt(px(2.))
                                     .text_size(px(11.))
                                     .text_color(content(0.5))
-                                    .child(detail),
+                                    .child("What's new"),
                             ),
                     ),
             )
@@ -370,70 +309,17 @@ impl Render for WhatsNew {
 mod tests {
     use super::*;
 
-    fn report(id: &str, state: UpdateState) -> UpdateReport {
-        UpdateReport {
-            id: id.into(),
-            from_version: "0.1.0".into(),
-            target_version: "0.2.0".into(),
-            state,
-            reason: Some("The new version stopped while starting.".into()),
-            finished_at: Some(1),
-        }
-    }
-
     #[test]
     fn installed_notice_requires_the_running_version_and_is_consumed_once() {
         let ui_state = UiState::memory();
         ui_state.set(INSTALLED_MARKER, r#"{"version":"99.0.0-preview.1"}"#.into());
-        assert!(consume_startup_notice(&ui_state, None, "0.2.0").is_none());
+        assert!(consume_startup_notice(&ui_state, "0.2.0").is_none());
         ui_state.set(INSTALLED_MARKER, r#"{"version":"0.2.0"}"#.into());
         assert_eq!(
-            consume_startup_notice(&ui_state, None, "0.2.0"),
-            Some(Notice::Updated("0.2.0".into()))
+            consume_startup_notice(&ui_state, "0.2.0"),
+            Some("0.2.0".into())
         );
-        assert!(consume_startup_notice(&ui_state, None, "0.2.0").is_none());
-    }
-
-    /// After the row's install: updated (What's new), or a trial that went
-    /// back, each said once.
-    #[test]
-    fn the_update_record_says_updated_or_rolled_back_once() {
-        let ui_state = UiState::memory();
-        // Still trying it out: nothing yet, and not marked seen.
-        let trying = report("a", UpdateState::InProgress);
-        assert!(consume_startup_notice(&ui_state, Some(&trying), "0.1.0").is_none());
-
-        let back = report("a", UpdateState::RolledBack);
-        assert_eq!(
-            consume_startup_notice(&ui_state, Some(&back), "0.1.0"),
-            Some(Notice::RolledBack {
-                version: "0.1.0".into(),
-                reason: Some("The new version stopped while starting.".into()),
-            })
-        );
-        assert!(consume_startup_notice(&ui_state, Some(&back), "0.1.0").is_none());
-
-        // An update from another device that held, seen by the version it installed.
-        let held = report("b", UpdateState::Updated);
-        assert!(consume_startup_notice(&ui_state, Some(&held), "0.1.0").is_none());
-        let again = report("c", UpdateState::Updated);
-        assert_eq!(
-            consume_startup_notice(&ui_state, Some(&again), "0.2.0"),
-            Some(Notice::Updated("0.2.0".into()))
-        );
-    }
-
-    #[test]
-    fn a_rollback_outranks_a_stale_install_marker() {
-        let ui_state = UiState::memory();
-        ui_state.set(INSTALLED_MARKER, r#"{"version":"0.1.0"}"#.into());
-        let back = report("a", UpdateState::RolledBack);
-        assert!(matches!(
-            consume_startup_notice(&ui_state, Some(&back), "0.1.0"),
-            Some(Notice::RolledBack { .. })
-        ));
-        // The marker was spent with it.
-        assert!(consume_startup_notice(&ui_state, None, "0.1.0").is_none());
+        assert!(consume_startup_notice(&ui_state, "0.2.0").is_none());
     }
 
     #[test]

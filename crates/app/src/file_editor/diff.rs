@@ -126,10 +126,10 @@ impl FileEditor {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    crate::editor_analysis::chunk_action(&original, &text, at, selection, stage)
+                    crate::editor_syntax::chunk_action(&original, &text, at, selection, stage)
                 })
                 .await;
-            let Ok(Some(mut text)) = result else {
+            let Some(mut text) = result else {
                 return;
             };
             if stage {

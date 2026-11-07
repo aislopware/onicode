@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 
 pub mod agents;
 pub mod alerts;
-pub mod app_access;
 pub mod b64;
 pub mod desktop;
 pub mod engine;
@@ -31,7 +30,7 @@ pub use ids::{EngineId, MessageId, OpId, ProjectRef, SessionId, SessionKey, Term
 /// The protocol's version. Peers with different values answer each other only the calls whose
 /// shapes are frozen: [`engine::Hello`], [`engine::EngineInfo`] and [`engine::UpdateEngine`].
 /// Separate from net's `WIRE`, so a mismatch can still say "Needs update".
-pub const PROTOCOL: u32 = 12;
+pub const PROTOCOL: u32 = 13;
 
 /// One request and its reply.
 pub trait Call {
@@ -191,7 +190,6 @@ pub const METHODS: &[Method] = &[
     call::<workspace::SearchSessions>(),
     call::<workspace::PreviewSession>(),
     call::<workspace::MarkSeen>(),
-    call::<workspace::SaveOrchestration>(),
     call::<workspace::GenerateTitle>(),
     call::<workspace::NameWorktree>(),
     call::<workspace::ListNotes>(),
@@ -292,7 +290,6 @@ pub const METHODS: &[Method] = &[
     // Engine settings.
     watch::<engine_settings::WatchEngineSettings>(),
     call::<engine_settings::SetEngineSetting>(),
-    call::<engine_settings::TakeViewerState>(),
     // Work.
     call::<work::InboxList>(),
     call::<work::ReadInboxDetails>(),
@@ -300,7 +297,6 @@ pub const METHODS: &[Method] = &[
     call::<work::ReadInboxDiff>(),
     call::<work::ReadInboxChecks>(),
     call::<work::PostInboxComment>(),
-    call::<work::ConnectInbox>(),
     call::<work::RunInboxAction>(),
     call::<work::InboxMedia>(),
     call::<work::InboxAvatar>(),
@@ -313,17 +309,8 @@ pub const METHODS: &[Method] = &[
     call::<work::HasEventAutomations>(),
     call::<work::ProjectGroups>(),
     call::<work::LinkedActivity>(),
-    call::<work::AgentProcesses>(),
-    call::<work::StopAgentTool>(),
     call::<work::ReadWorkItem>(),
     call::<work::ReadWorkItemDetails>(),
-    // App access.
-    call::<app_access::ReadAppReceipt>(),
-    call::<app_access::SaveAppReceipt>(),
-    call::<app_access::AppModels>(),
-    call::<app_access::StartAppSession>(),
-    call::<app_access::ReadAppConversation>(),
-    call::<app_access::AppNotes>(),
     // Settings pages.
     call::<settings_pages::ReadWorktreeMarks>(),
     // Alerts.
@@ -356,7 +343,6 @@ pub mod harness_updates;
 pub mod inbox;
 pub mod mcp;
 pub mod notes;
-pub mod orchestration;
 pub mod project_appearance;
 pub mod provider;
 pub mod response;
@@ -372,7 +358,6 @@ pub mod tool;
 pub mod transcript;
 pub mod usage;
 pub mod user_links;
-pub mod visual;
 
 /// A random 128-bit id as 32 hex digits.
 #[must_use]

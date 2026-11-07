@@ -3,7 +3,7 @@
 //! view cannot handle are disabled.
 use gpui::{App, KeyBinding, Menu, MenuItem, actions};
 
-use crate::file_editor::{Find, Format, ReloadFile, Replace, Save, ToggleAutosave, ToggleWordWrap};
+use crate::file_editor::{Find, ReloadFile, Replace, Save, ToggleAutosave, ToggleWordWrap};
 use crate::shell::*;
 use crate::{Quit, input};
 
@@ -98,7 +98,6 @@ pub(crate) fn install(prefs: &crate::settings::Preferences, cx: &mut App) {
             MenuItem::separator(),
             MenuItem::action("Find", Find),
             MenuItem::action("Replace", Replace),
-            MenuItem::action("Format Document", Format),
             MenuItem::action("Word Wrap", ToggleWordWrap).checked(prefs.file_word_wrap),
             MenuItem::separator(),
             MenuItem::action("Fold", input::FoldCode),

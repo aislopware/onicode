@@ -1,5 +1,5 @@
-//! A view adapter over the desktop schema: no imported sessions, replacement IDs,
-//! persistent native_* tables, or history conversion on open.
+//! The store's one layout, monocode's sessions schema: sessions keep their text ids (the store
+//! hands out stable numeric handles for them), and no history is converted on open.
 mod accounts;
 pub(super) mod blocks;
 mod edit;
@@ -7,7 +7,7 @@ mod rewind;
 mod settings;
 #[cfg(test)]
 mod tests;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -27,11 +27,11 @@ pub(super) struct Shared {
     pub(super) extras_db: Option<Connection>,
     snapshots: RefCell<HashMap<i64, HistoryRevision>>,
     queues: RefCell<HashMap<i64, String>>,
-    account_source: RefCell<Option<crate::accounts::Book>>,
-    preferences: std::sync::Arc<crate::desktop_preferences::DesktopPreferences>,
     read_only: bool,
     /// Session uids and processed ops when there is no sidecar to keep them in (`:memory:`).
     pub(super) ledger: RefCell<super::engine_ledger::MemoryLedger>,
+    /// The last time a session was stamped with ([`Store::stamp`]).
+    stamped: Cell<i64>,
 }
 
 /// A revision guard, rather than another owned copy of every rich source block.
@@ -114,15 +114,6 @@ fn sql<T>(result: rusqlite::Result<T>) -> Result<T, String> {
 fn parse<T: serde::de::DeserializeOwned>(raw: &str) -> Result<T, String> {
     serde_json::from_str(raw).map_err(|e| e.to_string())
 }
-/// Desktop app CLI requests name children `app-<caller>-<request>`.
-/// Both parts can contain hyphens, so the longest existing caller wins.
-fn started_caller<'a>(id: &'a str, ids: &HashSet<String>) -> Option<&'a str> {
-    let rest = id.strip_prefix("app-")?;
-    rest.match_indices('-')
-        .rev()
-        .map(|(index, _)| &rest[..index])
-        .find(|candidate| ids.contains(*candidate))
-}
 pub(super) fn encode<T: serde::Serialize>(value: &T) -> Result<String, String> {
     serde_json::to_string(value).map_err(|e| e.to_string())
 }
@@ -174,10 +165,15 @@ pub(super) fn project_turns(
                 .get("turnMetrics")
                 .filter(|value| value.is_object())
                 .and_then(|value| serde_json::from_value(value.clone()).ok());
+            let git = block
+                .get("turnGit")
+                .filter(|value| value.is_object())
+                .and_then(|value| serde_json::from_value(value.clone()).ok());
             if model.is_object()
                 || duration.is_some()
                 || started_at.is_some()
                 || metrics.is_some()
+                || git.is_some()
                 || block["providerTurnId"].is_string()
                 || joined_turn.is_some()
             {
@@ -195,6 +191,7 @@ pub(super) fn project_turns(
                         completed_at: started_at
                             .and_then(|at| at.checked_add(duration.unwrap_or(0))),
                         metrics,
+                        git,
                     },
                 );
             }
@@ -205,21 +202,23 @@ pub(super) fn project_turns(
 }
 
 impl Store {
-    /// Open the same sessions, notes and reminders as the desktop app. Only a
-    /// brand-new file gets a schema; existing schema/data is not migrated.
-    pub fn open_monocode(path: &Path) -> Result<Self, String> {
-        Self::open_shared(path, false, None)
+    /// Opens (creating when new) the database at `path`; `:memory:` is a private in-memory
+    /// store. Only a brand-new file gets a schema; an existing one is validated, never migrated.
+    pub fn open(path: &Path) -> Result<Self, String> {
+        Self::open_shared(path, false)
     }
 
-    pub fn read_monocode(path: &Path) -> Result<Self, String> {
-        Self::open_shared(path, true, None)
+    /// A private in-memory store on the same layout, for tests and an engine without a database.
+    pub fn in_memory() -> Result<Self, String> {
+        Self::open(Path::new(":memory:"))
     }
 
-    fn open_shared(
-        path: &Path,
-        read_only: bool,
-        preferences: Option<std::sync::Arc<crate::desktop_preferences::DesktopPreferences>>,
-    ) -> Result<Self, String> {
+    /// A read-only connection to an existing database.
+    pub fn open_read_only(path: &Path) -> Result<Self, String> {
+        Self::open_shared(path, true)
+    }
+
+    fn open_shared(path: &Path, read_only: bool) -> Result<Self, String> {
         let memory = path == Path::new(":memory:");
         let exists = !memory && path.exists();
         if !read_only && !exists {
@@ -268,25 +267,17 @@ impl Store {
         let store = Self {
             conn,
             path: path.into(),
-            shared: Some(Shared {
+            shared: Shared {
                 columns,
                 ids: RefCell::new(HashMap::new()),
                 extras: RefCell::new(extras),
                 extras_db,
                 snapshots: RefCell::new(HashMap::new()),
                 queues: RefCell::new(HashMap::new()),
-                account_source: RefCell::new(None),
-                preferences: preferences.unwrap_or_else(|| {
-                    std::sync::Arc::new(
-                        path.parent()
-                            .filter(|_| !memory)
-                            .map(crate::desktop_preferences::DesktopPreferences::load)
-                            .unwrap_or_default(),
-                    )
-                }),
                 read_only,
                 ledger: RefCell::default(),
-            }),
+                stamped: Cell::new(0),
+            },
         };
         // Register only identities here. No blocks_json is read at startup.
         let mut query = sql(store.conn.prepare("SELECT id FROM sessions"))?;
@@ -297,88 +288,57 @@ impl Store {
         Ok(store)
     }
 
-    pub fn uses_monocode_schema(&self) -> bool {
-        self.shared.is_some()
-    }
-
-    /// A read-only snapshot of desktop preferences, shared by this store's
-    /// consumers. Reopening the store refreshes it without per-message WebKit I/O.
-    pub fn desktop_preferences(&self) -> Option<&crate::desktop_preferences::DesktopPreferences> {
-        self.shared
-            .as_ref()
-            .map(|shared| shared.preferences.as_ref())
-    }
-
     pub(super) fn shared_search_reader(&self) -> Result<Self, String> {
-        Self::open_shared(
-            &self.path,
-            true,
-            self.shared
-                .as_ref()
-                .map(|shared| shared.preferences.clone()),
-        )
+        Self::open_shared(&self.path, true)
     }
 
     /// Resolve only a persisted identity; unlike CLI handle parsing this never
     /// treats a stale numeric-looking desktop ID as an existing session.
     pub fn resolve_existing_session_id(&self, id: &str) -> Option<i64> {
-        if self.shared.is_some() {
-            let exists = self
-                .conn
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?1)",
-                    [id],
-                    |r| r.get::<_, bool>(0),
-                )
-                .ok()?;
-            return exists.then(|| self.shared_register(id).ok()).flatten();
-        }
-        let id = id.parse::<i64>().ok()?;
-        self.sessions()
-            .ok()?
-            .iter()
-            .any(|s| s.id == id)
-            .then_some(id)
+        let exists = self
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?1)",
+                [id],
+                |r| r.get::<_, bool>(0),
+            )
+            .ok()?;
+        exists.then(|| self.shared_register(id).ok()).flatten()
     }
 
     /// UI handles are stable hashes; the database always retains its original IDs.
     pub fn persisted_session_id(&self, id: i64) -> Result<String, String> {
-        if let Some(shared) = &self.shared {
-            shared
-                .ids
-                .borrow()
-                .get(&id)
-                .cloned()
-                .ok_or_else(|| "Session no longer exists".into())
-        } else {
-            Ok(id.to_string())
-        }
+        self.shared
+            .ids
+            .borrow()
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| "Session no longer exists".into())
     }
 
     pub fn resolve_session_id(&self, id: &str) -> Result<i64, String> {
-        if let Some(shared) = &self.shared {
-            if let Some((key, _)) = shared
-                .ids
-                .borrow()
-                .iter()
-                .find(|(_, value)| value.as_str() == id)
-            {
-                return Ok(*key);
-            }
-            if sql(self.conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?1)",
-                [id],
-                |r| r.get::<_, bool>(0),
-            ))? {
-                return self.shared_register(id);
-            }
+        if let Some((key, _)) = self
+            .shared
+            .ids
+            .borrow()
+            .iter()
+            .find(|(_, value)| value.as_str() == id)
+        {
+            return Ok(*key);
+        }
+        if sql(self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?1)",
+            [id],
+            |r| r.get::<_, bool>(0),
+        ))? {
+            return self.shared_register(id);
         }
         id.parse::<i64>().map_err(|_| "Unknown session ID".into())
     }
 
     pub(super) fn shared_register(&self, id: &str) -> Result<i64, String> {
         let key = handle(id);
-        let mut ids = self.shared.as_ref().unwrap().ids.borrow_mut();
+        let mut ids = self.shared.ids.borrow_mut();
         if ids.get(&key).is_some_and(|existing| existing != id) {
             return Err("Session identity collision; the database has not been modified".into());
         }
@@ -387,7 +347,7 @@ impl Store {
     }
 
     pub(super) fn shared_writable(&self) -> Result<(), String> {
-        if self.shared.as_ref().unwrap().read_only {
+        if self.shared.read_only {
             Err("This Onicode store is read-only".into())
         } else {
             Ok(())
@@ -395,11 +355,21 @@ impl Store {
     }
 
     pub(super) fn shared_field(&self, name: &str, fallback: &str) -> String {
-        if self.shared.as_ref().unwrap().columns.contains(name) {
+        if self.shared.columns.contains(name) {
             name.into()
         } else {
             fallback.into()
         }
+    }
+
+    /// The time to stamp a session with: now, but always after the last stamp, so sessions made
+    /// or touched within one millisecond still sort newest first by `updated_at` alone, never by
+    /// their ids, which are random uuids.
+    fn stamp(&self) -> i64 {
+        let now = i64::try_from(crate::time::now_ms()).unwrap_or(i64::MAX);
+        let stamp = now.max(self.shared.stamped.get().saturating_add(1));
+        self.shared.stamped.set(stamp);
+        stamp
     }
 
     pub(super) fn shared_patch(&self, id: i64, fields: &[(&str, Value)]) -> Result<(), String> {
@@ -407,7 +377,7 @@ impl Store {
         let id = self.persisted_session_id(id)?;
         let fields: Vec<_> = fields
             .iter()
-            .filter(|(name, _)| self.shared.as_ref().unwrap().columns.contains(*name))
+            .filter(|(name, _)| self.shared.columns.contains(*name))
             .collect();
         if fields.is_empty() {
             return Ok(());
@@ -444,19 +414,12 @@ impl Store {
                 }
             }
         }
-        Ok(self
-            .shared
-            .as_ref()
-            .unwrap()
-            .extras
-            .borrow()
-            .get(key)
-            .cloned())
+        Ok(self.shared.extras.borrow().get(key).cloned())
     }
 
     pub(super) fn shared_delete_setting(&self, key: &str) -> Result<(), String> {
         self.shared_writable()?;
-        let shared = self.shared.as_ref().unwrap();
+        let shared = &self.shared;
         if let Some(conn) = &shared.extras_db {
             sql(conn.execute("DELETE FROM settings WHERE key=?1", params![key]))?;
         }
@@ -466,7 +429,7 @@ impl Store {
 
     pub(super) fn shared_save_setting(&self, key: &str, value: &str) -> Result<(), String> {
         self.shared_writable()?;
-        let shared = self.shared.as_ref().unwrap();
+        let shared = &self.shared;
         if shared
             .extras
             .borrow()
@@ -506,7 +469,6 @@ impl Store {
                 ("archived", "0"),
                 ("pinned", "0"),
                 ("linked_work_item_json", "NULL"),
-                ("sidebar_hidden", "0"),
             ]
             .into_iter()
             .map(|(name, default)| self.shared_field(name, default)),
@@ -517,11 +479,8 @@ impl Store {
             " INDEXED BY sessions_cwd_cover_idx"
         } else { "" };
         let mut filters = vec!["1=1".to_string()];
-        if self.shared.as_ref().unwrap().columns.contains("inbox_ask") {
+        if self.shared.columns.contains("inbox_ask") {
             filters.push("id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)".into());
-        }
-        if has_table(&self.conn, "orchestration_workers")? {
-            filters.push("id NOT IN (SELECT session_id FROM orchestration_workers)".into());
         }
         let mut query = sql(self.conn.prepare(&format!(
             "SELECT {columns} FROM sessions{index} WHERE {} ORDER BY updated_at DESC,id",
@@ -529,15 +488,9 @@ impl Store {
         )))?;
         let mut rows = sql(query.query([]))?;
         let mut result = Vec::new();
-        let mut hidden = HashSet::new();
-        let mut originals = HashMap::new();
         while let Some(row) = sql(rows.next())? {
             let original: String = sql(row.get(0))?;
             let id = self.shared_register(&original)?;
-            if sql(row.get::<_, bool>(10))? {
-                hidden.insert(id);
-            }
-            originals.insert(id, original);
             result.push(Session {
                 id,
                 title: sql(row.get(1))?,
@@ -551,20 +504,6 @@ impl Store {
                 work_item: sql(row.get::<_, Option<String>>(9))?.and_then(|raw| parse(&raw).ok()),
             });
         }
-        // Keep the source sidebar's compatibility exception for hidden
-        // /operator launches. A hidden conversation cannot be a listed
-        // caller. The UI also checks project/worktree scope.
-        let shown: HashMap<_, _> = result
-            .iter()
-            .filter(|s| !hidden.contains(&s.id) && s.has_messages)
-            .map(|s| (originals[&s.id].clone(), s.cwd.clone()))
-            .collect();
-        let shown_ids = shown.keys().cloned().collect();
-        result.retain(|s| {
-            !hidden.contains(&s.id)
-                || started_caller(&originals[&s.id], &shown_ids)
-                    .is_some_and(|caller| shown[caller] == s.cwd)
-        });
         Ok(result)
     }
 
@@ -602,7 +541,7 @@ impl Store {
             }
             return Ok((existing, false));
         }
-        let now = crate::time::now_ms().min(i64::MAX as u64) as i64;
+        let now = self.stamp();
         let title = format!("New {label} session");
         sql(self.conn.execute("INSERT INTO sessions(id,cwd,harness,model,model_settings,runtime_mode,title,blocks_json,created_at,updated_at)
             VALUES(?1,?2,?3,?4,'{}','supervised',?5,'[]',?6,?6)",
@@ -633,14 +572,6 @@ impl Store {
                     .into_iter()
                     .map(|name| self.shared_field(name, "NULL")),
             )
-            .chain([
-                "cwd".to_owned(),
-                "provider_session_id".to_owned(),
-                self.shared_field(
-                    "has_user_message",
-                    "CASE WHEN blocks_json!='[]' THEN 1 ELSE 0 END",
-                ),
-            ])
             .collect::<Vec<_>>()
             .join(",");
         let raw = sql(self
@@ -657,54 +588,20 @@ impl Store {
                         r.get::<_, Option<String>>(4)?,
                         r.get::<_, Option<bool>>(5)?,
                         r.get::<_, Option<String>>(6)?,
-                        r.get::<_, String>(7)?,
-                        r.get::<_, Option<String>>(8)?,
-                        r.get::<_, bool>(9)?,
                     ))
                 },
             )
             .optional())?;
-        let Some((
-            provider,
-            model,
-            controls,
-            access,
-            cwd,
-            removed,
-            account,
-            project,
-            provider_id,
-            has_messages,
-        )) = raw
-        else {
+        let Some((provider, model, controls, access, cwd, removed, account)) = raw else {
             return Ok(None);
         };
-        let mut controls: HashMap<String, String> = parse(&controls)?;
+        let controls: HashMap<String, String> = parse(&controls)?;
         let mut settings: Settings = self
             .shared_setting(&format!("agent:{id}"))?
             .map(|raw| parse(&raw))
             .transpose()?
             .unwrap_or_default();
         settings.model = onicode_protocol::sessions::native_model(&model, &provider);
-        // A prior native launch may have created an untouched default blank.
-        // Seed only that blank, never a saved or resumed conversation's model.
-        let default_controls = controls.iter().all(|(key, value)| {
-            (key == "fast" && value == "false") || (key == "serviceTier" && value == "default")
-        });
-        if settings.model.is_none()
-            && default_controls
-            && settings.revision == 0
-            && !has_messages
-            && provider_id.is_none()
-        {
-            if let Some(defaults) = self
-                .desktop_preferences()
-                .and_then(|preferences| preferences.session_defaults(&provider, &project))
-            {
-                settings.model = defaults.model;
-                controls = defaults.model_settings;
-            }
-        }
         settings.access = crate::agent::AccessMode::from_id(&access);
         settings.effort = [
             "effort",
@@ -725,19 +622,6 @@ impl Store {
         // Desktop blocks are authoritative. Native-only legacy metadata remains
         // available, but cannot override a saved desktop turn's identity/time.
         let blocks = self.shared_blocks(id)?;
-        settings.operator_enabled |= blocks.iter().any(|block| {
-            block["role"] == "user"
-                && block["draft"] != true
-                && block["internal"] != true
-                && (block["onicode"] == true
-                    || ["mono", "onicode"].into_iter().any(|command| {
-                        crate::composer::consume_command(
-                            block["text"].as_str().unwrap_or_default(),
-                            command,
-                        )
-                        .is_some()
-                    }))
-        });
         for (turn, source) in project_turns(&blocks)? {
             let info = settings.turns.entry(turn).or_default();
             if !source.provider.is_empty() {
@@ -765,6 +649,9 @@ impl Store {
             }
             if source.metrics.is_some() {
                 info.metrics = source.metrics;
+            }
+            if source.git.is_some() {
+                info.git = source.git;
             }
         }
         Ok(Some(settings))
@@ -844,8 +731,6 @@ impl Store {
         let mut blocks = self.shared_blocks(id)?;
         if self
             .shared
-            .as_ref()
-            .unwrap()
             .snapshots
             .borrow()
             .get(&id)
@@ -922,6 +807,9 @@ impl Store {
             if let Some(metrics) = info.metrics.filter(|metrics| metrics.reported()) {
                 fields.push(("turnMetrics", json!(metrics)));
             }
+            if let Some(git) = &info.git {
+                fields.push(("turnGit", json!(git)));
+            }
             for (key, value) in fields {
                 if block[key].is_null() {
                     block[key] = value;
@@ -946,8 +834,6 @@ impl Store {
         sql(tx.commit())?;
         if changed {
             self.shared
-                .as_ref()
-                .unwrap()
                 .snapshots
                 .borrow_mut()
                 .insert(id, HistoryRevision::of(&blocks));
@@ -973,11 +859,15 @@ impl Store {
     }
 
     pub(super) fn shared_blocks(&self, id: i64) -> Result<Vec<Value>, String> {
-        let raw: String = sql(self.conn.query_row(
-            "SELECT blocks_json FROM sessions WHERE id=?1",
-            [self.persisted_session_id(id)?],
-            |r| r.get(0),
-        ))?;
+        let raw: String = sql(self
+            .conn
+            .query_row(
+                "SELECT blocks_json FROM sessions WHERE id=?1",
+                [self.persisted_session_id(id)?],
+                |r| r.get(0),
+            )
+            .optional())?
+        .ok_or("Session no longer exists")?;
         parse(&raw)
     }
 
@@ -985,8 +875,6 @@ impl Store {
         let blocks = self.shared_blocks(id)?;
         let rows = blocks::project(&blocks)?;
         self.shared
-            .as_ref()
-            .unwrap()
             .snapshots
             .borrow_mut()
             .insert(id, HistoryRevision::of(&blocks));
@@ -1028,8 +916,6 @@ impl Store {
         let current = self.shared_blocks(id)?;
         if self
             .shared
-            .as_ref()
-            .unwrap()
             .snapshots
             .borrow()
             .get(&id)
@@ -1065,20 +951,13 @@ impl Store {
         }
 
         if !rows.is_empty() {
-            self.shared_patch(id, &[("updated_at", json!(crate::time::now_ms()))])?;
+            self.shared_patch(id, &[("updated_at", json!(self.stamp()))])?;
         }
         sql(tx.commit())?;
         if let Some(queue) = next_queue {
-            self.shared
-                .as_ref()
-                .unwrap()
-                .queues
-                .borrow_mut()
-                .insert(id, queue);
+            self.shared.queues.borrow_mut().insert(id, queue);
         }
         self.shared
-            .as_ref()
-            .unwrap()
             .snapshots
             .borrow_mut()
             .insert(id, HistoryRevision::of(&next));
@@ -1138,8 +1017,6 @@ impl Store {
     /// The sessions whose saved settings hold an armed usage limit; the hub parses each match.
     pub(super) fn shared_armed_usage_limits(&self) -> Vec<i64> {
         self.shared
-            .as_ref()
-            .unwrap()
             .extras
             .borrow()
             .iter()
@@ -1161,63 +1038,12 @@ impl Store {
             .optional())
     }
 
-    pub(super) fn shared_sidebar_hidden(&self) -> Result<HashSet<i64>, String> {
-        let mut query = sql(self.conn.prepare(&format!(
-            "SELECT id FROM sessions WHERE {}!=0",
-            self.shared_field("sidebar_hidden", "0")
-        )))?;
-        let mut out = HashSet::new();
-        for id in sql(query.query_map([], |r| r.get::<_, String>(0)))? {
-            out.insert(self.shared_register(&sql(id)?)?);
-        }
-        Ok(out)
-    }
-
-    pub(super) fn shared_started_links(&self) -> Result<HashMap<i64, i64>, String> {
-        let mut query = sql(self.conn.prepare(&format!(
-            "SELECT id,{} FROM sessions",
-            self.shared_field("sidebar_hidden", "0")
-        )))?;
-        let rows: Vec<(String, bool)> = sql(query.query_map([], |r| Ok((r.get(0)?, r.get(1)?))))?
-            .collect::<rusqlite::Result<_>>()
-            .map_err(|e| e.to_string())?;
-        let ids = rows.iter().map(|(id, _)| id.clone()).collect();
-        let shown = rows
-            .iter()
-            .filter(|(_, hidden)| !hidden)
-            .map(|(id, _)| id.clone())
-            .collect();
-        rows.iter()
-            .filter_map(|(id, hidden)| {
-                started_caller(id, if *hidden { &shown } else { &ids }).map(|caller| (id, caller))
-            })
-            .map(|(id, caller)| Ok((self.shared_register(id)?, self.shared_register(caller)?)))
-            .collect()
-    }
-
     pub(super) fn shared_pins(&self, ids: &[i64], pinned: bool) -> Result<(), String> {
         let tx = sql(self.conn.unchecked_transaction())?;
         for id in ids {
             self.shared_patch(*id, &[("pinned", json!(pinned))])?;
         }
         sql(tx.commit())
-    }
-
-    pub(super) fn shared_settings_with_prefix(
-        &self,
-        prefix: &str,
-    ) -> Result<Vec<(i64, String)>, String> {
-        Ok(self
-            .shared
-            .as_ref()
-            .unwrap()
-            .extras
-            .borrow()
-            .iter()
-            .filter_map(|(key, value)| {
-                Some((key.strip_prefix(prefix)?.parse().ok()?, value.clone()))
-            })
-            .collect())
     }
 
     pub(super) fn shared_drafts(&self) -> Result<HashSet<i64>, String> {
@@ -1233,56 +1059,8 @@ impl Store {
     }
 
     pub(super) fn shared_groups(&self, cwd: &str) -> Result<crate::session_groups::Groups, String> {
-        if let Some(raw) = self.shared_setting(&format!("groups:{cwd}"))? {
-            return parse(&raw);
-        }
-        Ok(self
-            .desktop_preferences()
-            .and_then(|preferences| {
-                preferences.groups(cwd, |id| self.resolve_existing_session_id(id))
-            })
-            .unwrap_or_default())
-    }
-
-    pub(super) fn shared_ui_state(&self) -> Result<Option<String>, String> {
-        let saved = self.shared_setting("workspace")?;
-        let mut workspace = saved.as_deref().map(parse::<Value>).transpose()?;
-        if has_table(&self.conn, "workspace_snapshot")? {
-            let raw: Option<String> = sql(self
-                .conn
-                .query_row(
-                    "SELECT snapshot_json FROM workspace_snapshot WHERE id=1",
-                    [],
-                    |r| r.get(0),
-                )
-                .optional())?;
-            if let Some(raw) = raw {
-                let snapshot: Value = parse(&raw)?;
-                if workspace.is_none() {
-                    workspace = Some(
-                        crate::desktop_preferences::DesktopPreferences::workspace_snapshot(
-                            &snapshot,
-                            |id| self.resolve_existing_session_id(id),
-                        ),
-                    );
-                } else if let Some(saved) = workspace.as_mut().and_then(Value::as_object_mut) {
-                    // Preserve the source snapshot alongside native layouts;
-                    // unsupported panes can be recovered without rewriting it.
-                    saved
-                        .entry("desktop_workspace_snapshot")
-                        .or_insert(snapshot);
-                }
-            }
-        }
-        let mut merged = workspace.clone().unwrap_or_else(|| json!({}));
-        if let Some(preferences) = self.desktop_preferences() {
-            preferences.apply_workspace(&mut merged);
-        }
-        if merged.as_object().is_some_and(|object| !object.is_empty()) {
-            Ok(Some(merged.to_string()))
-        } else {
-            Ok(workspace.map(|value| value.to_string()))
-        }
+        self.shared_setting(&format!("groups:{cwd}"))?
+            .map_or_else(|| Ok(Default::default()), |raw| parse(&raw))
     }
 
     pub(super) fn shared_reminders(&self) -> Result<Vec<Reminder>, String> {
@@ -1381,9 +1159,6 @@ impl Store {
         for (table, column) in [
             ("session_reminders", "session_id"),
             ("in_flight_sessions", "session_id"),
-            ("orchestration_workers", "session_id"),
-            ("orchestration_sidebar", "lead_id"),
-            ("orchestration_runs", "lead_id"),
         ] {
             if has_table(&self.conn, table)? {
                 sql(self.conn.execute(
@@ -1396,12 +1171,7 @@ impl Store {
             .conn
             .execute("DELETE FROM sessions WHERE id=?1", [original]))?;
         sql(tx.commit())?;
-        self.shared
-            .as_ref()
-            .unwrap()
-            .snapshots
-            .borrow_mut()
-            .remove(&id);
+        self.shared.snapshots.borrow_mut().remove(&id);
         Ok(())
     }
 
@@ -1531,12 +1301,7 @@ impl Store {
             .map(|raw| parse(&raw))
             .transpose()?
             .unwrap_or_default();
-        self.shared
-            .as_ref()
-            .unwrap()
-            .queues
-            .borrow_mut()
-            .insert(id, raw.clone());
+        self.shared.queues.borrow_mut().insert(id, raw.clone());
         state.messages = parse::<Vec<Value>>(&raw)?.iter().map(follow_up).collect();
         let blocks = self.shared_blocks(id)?;
         state.draft = None;
@@ -1572,8 +1337,6 @@ impl Store {
         ))?;
         if self
             .shared
-            .as_ref()
-            .unwrap()
             .queues
             .borrow()
             .get(&id)
@@ -1608,8 +1371,6 @@ impl Store {
         let mut blocks = self.shared_blocks(id)?;
         if self
             .shared
-            .as_ref()
-            .unwrap()
             .snapshots
             .borrow()
             .get(&id)
@@ -1639,14 +1400,10 @@ impl Store {
         self.shared_store_blocks(id, &blocks)?;
         sql(tx.commit())?;
         self.shared
-            .as_ref()
-            .unwrap()
             .snapshots
             .borrow_mut()
             .insert(id, HistoryRevision::of(&blocks));
         self.shared
-            .as_ref()
-            .unwrap()
             .queues
             .borrow_mut()
             .insert(id, encode(&messages)?);

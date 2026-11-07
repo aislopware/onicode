@@ -1,7 +1,7 @@
-//! The file editor's syntax on Tree-sitter: highlight tokens, folds, syntax
+//! The file editor's analysis on Tree-sitter: highlight tokens, folds, syntax
 //! errors and the git gutter, in the `Analysis` shape the editor renders. A
 //! session keeps its last tree, so an edit reparses and re-highlights only the
-//! lines it touched. Languages without a grammar here use the QuickJS path.
+//! lines it touched. A file without a grammar here is plain text with a gutter.
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::{Mutex, OnceLock};
@@ -12,7 +12,174 @@ use streaming_iterator::StreamingIterator;
 use tree_sitter::{InputEdit, Language, Node, Parser, Point, Query, QueryCursor, Tree};
 use tree_sitter_language::LanguageFn;
 
-use crate::editor_analysis::{Analysis, Change, Diagnostic, Edit, Fold, Token};
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Analysis {
+    pub diagnostics: Vec<Diagnostic>,
+    pub changes: Vec<Change>,
+    pub folds: Vec<Fold>,
+    pub tokens: Vec<Token>,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct Token {
+    pub from: usize,
+    pub to: usize,
+    pub kind: SharedString,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct Diagnostic {
+    pub from: usize,
+    pub to: usize,
+    pub severity: String,
+    pub message: String,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct Change {
+    pub kind: String,
+    pub from: usize,
+    pub to: usize,
+    pub deleted: usize,
+    pub original: String,
+    pub old_line: usize,
+    pub tokens: Vec<Token>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Fold {
+    pub from: usize,
+    pub to: usize,
+}
+/// The one contiguous replacement between two texts, found by trimming their
+/// common prefix and suffix. Typing, undo, reloads and IME all reduce to it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Edit {
+    pub start: usize,
+    pub old_end: usize,
+    pub new_end: usize,
+}
+impl Edit {
+    pub(crate) fn between(old: &str, new: &str) -> Option<Self> {
+        if old == new {
+            return None;
+        }
+        let (a, b) = (old.as_bytes(), new.as_bytes());
+        let mut start = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+        let room = a.len().min(b.len()) - start;
+        let suffix = a
+            .iter()
+            .rev()
+            .zip(b.iter().rev())
+            .take(room)
+            .take_while(|(x, y)| x == y)
+            .count();
+        // The shared bytes are identical, so both texts agree on boundaries.
+        while !old.is_char_boundary(start) {
+            start -= 1;
+        }
+        let (mut old_end, mut new_end) = (a.len() - suffix, b.len() - suffix);
+        while !old.is_char_boundary(old_end) {
+            old_end += 1;
+            new_end += 1;
+        }
+        Some(Self {
+            start,
+            old_end,
+            new_end,
+        })
+    }
+
+    /// Where `from..to` lands after the edit. Ranges around the edit stretch
+    /// over the new text, ranges cut by it are trimmed, and ranges inside the
+    /// replaced text are gone.
+    pub(crate) fn map(&self, from: usize, to: usize) -> Option<(usize, usize)> {
+        let shift = |at: usize| at - self.old_end + self.new_end;
+        if to <= self.start {
+            return Some((from, to));
+        }
+        if from >= self.old_end {
+            return Some((shift(from), shift(to)));
+        }
+        let from = if from <= self.start {
+            from
+        } else {
+            self.new_end
+        };
+        let to = if to >= self.old_end {
+            shift(to)
+        } else {
+            self.start
+        };
+        (from < to).then_some((from, to))
+    }
+}
+impl Analysis {
+    /// Last results moved through an edit, so the buffer keeps its colours,
+    /// markers and gutter until fresh analysis arrives instead of flashing.
+    pub(crate) fn remapped(&self, edit: Edit) -> Self {
+        let tokens = self
+            .tokens
+            .iter()
+            .filter_map(|t| {
+                let (from, to) = edit.map(t.from, t.to)?;
+                Some(Token {
+                    from,
+                    to,
+                    kind: t.kind.clone(),
+                })
+            })
+            .collect();
+        let diagnostics = self
+            .diagnostics
+            .iter()
+            .filter_map(|d| {
+                let (from, to) = edit.map(d.from, d.to)?;
+                Some(Diagnostic {
+                    from,
+                    to,
+                    ..d.clone()
+                })
+            })
+            .collect();
+        let changes = self
+            .changes
+            .iter()
+            .filter_map(|c| {
+                let (from, to) = edit.map(c.from, c.to)?;
+                Some(Change {
+                    from,
+                    to,
+                    ..c.clone()
+                })
+            })
+            .collect();
+        let folds = self
+            .folds
+            .iter()
+            .filter_map(|f| {
+                let (from, to) = edit.map(f.from, f.to)?;
+                Some(Fold { from, to })
+            })
+            .collect();
+        Self {
+            diagnostics,
+            changes,
+            folds,
+            tokens,
+        }
+    }
+}
+impl Diagnostic {
+    pub fn range(&self) -> Range<usize> {
+        self.from..self.to
+    }
+
+    pub fn priority(&self) -> u8 {
+        match self.severity.as_str() {
+            "error" => 3,
+            "warning" => 2,
+            "info" => 1,
+            _ => 0,
+        }
+    }
+}
 
 /// Mirrors editorLint.ts: past this a file is a viewer, not linted.
 const MAX_LINT_BYTES: usize = 512 * 1024;
@@ -74,11 +241,6 @@ fn language_for_path(path: &str) -> Option<Lang> {
             _ => return None,
         },
     })
-}
-
-/// Whether `path` is analysed natively; everything else uses QuickJS.
-pub(crate) fn supports(path: &str) -> bool {
-    language_for_path(path).is_some()
 }
 
 /// Same list as LINTABLE_EXTENSIONS in editorLint.ts.
@@ -643,9 +805,30 @@ impl<'a> Lines<'a> {
     }
 }
 
-/// The git gutter: line chunks between the baseline and the buffer, in the
-/// shape the CodeMirror `Chunk.build` path produced.
-fn changes(original: &str, current: &str, original_tokens: &[Token]) -> Vec<Change> {
+/// A chunk of lines that differ between the baseline (`a`) and the buffer
+/// (`b`), as @codemirror/merge's `Chunk.build` reports it: each `to` is one past
+/// the chunk's last line break, or the text's length plus one when that line
+/// ends the text without one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Chunk {
+    from_a: usize,
+    to_a: usize,
+    from_b: usize,
+    to_b: usize,
+    /// The baseline's changed lines, zero-based.
+    lines_a: (usize, usize),
+}
+impl Chunk {
+    fn end_a(&self) -> usize {
+        self.from_a.max(self.to_a.saturating_sub(1))
+    }
+
+    fn end_b(&self) -> usize {
+        self.from_b.max(self.to_b.saturating_sub(1))
+    }
+}
+
+fn chunks(original: &str, current: &str) -> Vec<Chunk> {
     let diff = similar::TextDiff::configure()
         .algorithm(similar::Algorithm::Myers)
         .deadline(Instant::now() + Duration::from_millis(100))
@@ -681,23 +864,39 @@ fn changes(original: &str, current: &str, original_tokens: &[Token]) -> Vec<Chan
         .into_iter()
         .map(|(a, b)| {
             let from_a = old.start(a.start);
-            let to_a = if a.is_empty() { from_a } else { old.end(a.end) };
             let from_b = new.start(b.start);
-            let to_b = if b.is_empty() { from_b } else { new.end(b.end) };
-            let end_b = from_b.max(to_b.saturating_sub(1));
+            Chunk {
+                from_a,
+                to_a: if a.is_empty() { from_a } else { old.end(a.end) },
+                from_b,
+                to_b: if b.is_empty() { from_b } else { new.end(b.end) },
+                lines_a: (a.start, a.len()),
+            }
+        })
+        .collect()
+}
+
+/// The git gutter: line chunks between the baseline and the buffer, in the
+/// shape the CodeMirror `Chunk.build` path produced.
+fn changes(original: &str, current: &str, original_tokens: &[Token]) -> Vec<Change> {
+    chunks(original, current)
+        .into_iter()
+        .map(|chunk| {
+            let (from_a, to_a) = (chunk.from_a, chunk.to_a);
+            let (first, count) = chunk.lines_a;
             let slice = &original[from_a.min(original.len())..to_a.min(original.len())];
             Change {
-                kind: match (a.is_empty(), b.is_empty()) {
+                kind: match (from_a == to_a, chunk.from_b == chunk.to_b) {
                     (false, false) => "mod",
                     (false, true) => "del",
                     _ => "add",
                 }
                 .into(),
-                from: from_b.min(current.len()),
-                to: end_b.min(current.len()),
-                deleted: a.len().max(1),
+                from: chunk.from_b.min(current.len()),
+                to: chunk.end_b().min(current.len()),
+                deleted: count.max(1),
                 original: slice.to_owned(),
-                old_line: a.start + 1,
+                old_line: first + 1,
                 tokens: original_tokens
                     .iter()
                     .filter(|t| t.to > from_a && t.from < to_a)
@@ -710,6 +909,147 @@ fn changes(original: &str, current: &str, original_tokens: &[Token]) -> Vec<Chan
             }
         })
         .collect()
+}
+
+/// A text's lines as CodeMirror numbers them: from 1, and a final line after
+/// a trailing line break.
+struct Numbered<'a> {
+    text: &'a str,
+    starts: Vec<usize>,
+}
+impl<'a> Numbered<'a> {
+    fn new(text: &'a str) -> Self {
+        let mut starts = vec![0];
+        starts.extend(text.match_indices('\n').map(|(at, _)| at + 1));
+        Self { text, starts }
+    }
+
+    /// The number of the line holding `at`.
+    fn at(&self, at: usize) -> usize {
+        self.starts
+            .partition_point(|start| *start <= at.min(self.text.len()))
+    }
+
+    /// Line `number`'s start and the end of its text, before its line break.
+    fn line(&self, number: usize) -> (usize, usize) {
+        let from = self.starts[number - 1];
+        let to = self
+            .starts
+            .get(number)
+            .map_or(self.text.len(), |next| next - 1);
+        (from, to)
+    }
+
+    /// Lines `first..=last` with the line break after them.
+    fn span(&self, first: usize, last: usize) -> (usize, usize) {
+        (self.line(first).0, self.line(last).1 + 1)
+    }
+
+    /// The first and last lines a chunk side `from..to` covers.
+    fn covered(&self, from: usize, to: usize, end: usize) -> Option<(usize, usize)> {
+        if from == to {
+            return None;
+        }
+        if self.text.is_empty() {
+            return Some((1, 1));
+        }
+        let first = from.min(self.text.len());
+        let last = first.max(end.min(self.text.len()).saturating_sub(1));
+        Some((self.at(first), self.at(last)))
+    }
+}
+
+/// Stages (`stage`) or reverts the chunk at `at` in the buffer, narrowed to
+/// the lines a non-empty `selection` covers: the baseline with the buffer's
+/// version of it when staging, or the buffer with the baseline's when
+/// reverting. Ports the editor's `stageChunkText`/`revertChunkText`.
+pub(crate) fn chunk_action(
+    original: &str,
+    current: &str,
+    at: usize,
+    selection: Range<usize>,
+    stage: bool,
+) -> Option<String> {
+    let all = chunks(original, current);
+    let mut chunk = chunk_at(current, &all, at)?;
+    // CodeMirror counts the empty line after a final line break as a line,
+    // so a side that is empty at the end of its text covers that line when
+    // the other side runs to the end of its own text without a line break.
+    if chunk.from_a == chunk.to_a && chunk.from_a == original.len() && chunk.to_b > current.len() {
+        chunk.to_a += 1;
+    }
+    if chunk.from_b == chunk.to_b && chunk.from_b == current.len() && chunk.to_a > original.len() {
+        chunk.to_b += 1;
+    }
+    let (from_a, to_a, from_b, to_b) = narrow(original, current, chunk, selection);
+    let (source, target, from, to, at_from, at_to) = if stage {
+        (current, original, from_b, to_b, from_a, to_a)
+    } else {
+        (original, current, from_a, to_a, from_b, to_b)
+    };
+    let mut insert = source[from..from.max(to.saturating_sub(1)).min(source.len())].to_owned();
+    if from != to && at_to <= target.len() {
+        insert.push('\n');
+    }
+    let end = target.len().min(at_to);
+    Some(format!("{}{insert}{}", &target[..at_from], &target[end..]))
+}
+
+/// The chunk holding `at`, or a deletion on its line.
+fn chunk_at(current: &str, chunks: &[Chunk], at: usize) -> Option<Chunk> {
+    let at = at.min(current.len());
+    if let Some(chunk) = chunks.iter().find(|c| c.from_b <= at && c.end_b() >= at) {
+        return Some(*chunk);
+    }
+    if current.is_empty() {
+        return chunks.first().copied();
+    }
+    let lines = Numbered::new(current);
+    let (from, to) = lines.line(lines.at(at));
+    chunks
+        .iter()
+        .find(|c| c.from_b == c.to_b && c.from_b >= from && c.from_b <= to + 1)
+        .copied()
+}
+
+/// The part of `chunk` a selection's lines cover. A selection inside a
+/// chunk whose sides have as many lines takes the matching baseline lines;
+/// otherwise the whole baseline side stays.
+fn narrow(
+    original: &str,
+    current: &str,
+    chunk: Chunk,
+    selection: Range<usize>,
+) -> (usize, usize, usize, usize) {
+    let whole = (chunk.from_a, chunk.to_a, chunk.from_b, chunk.to_b);
+    let (a, b) = (Numbered::new(original), Numbered::new(current));
+    let selected = (!selection.is_empty()).then(|| {
+        let (start, end) = (selection.start, selection.end);
+        let first = b.at(start);
+        let mut last = b.at(end);
+        if b.line(last).0 == end {
+            last = first.max(last - 1);
+        }
+        (first, last)
+    });
+    let (Some((sel_first, sel_last)), Some((b_first, b_last))) =
+        (selected, b.covered(chunk.from_b, chunk.to_b, chunk.end_b()))
+    else {
+        return whole;
+    };
+    let (first, last) = (sel_first.max(b_first), sel_last.min(b_last));
+    if first > last || (first == b_first && last == b_last) {
+        return whole;
+    }
+    let (from_b, to_b) = b.span(first, last);
+    match a.covered(chunk.from_a, chunk.to_a, chunk.end_a()) {
+        Some((a_first, a_last)) if a_last - a_first == b_last - b_first => {
+            let start = a_first + first - b_first;
+            let (from_a, to_a) = a.span(start, start + last - first);
+            (from_a, to_a, from_b, to_b)
+        }
+        _ => (chunk.from_a, chunk.to_a, from_b, to_b),
+    }
 }
 
 fn point(text: &str, at: usize) -> Point {
@@ -908,7 +1248,8 @@ impl Session {
 }
 
 /// Analyses `text` in the session held for a file, starting one for `path`
-/// (or replacing a renamed file's) as needed.
+/// (or replacing a renamed file's) as needed. A file without a grammar is
+/// plain text: only its git gutter is drawn.
 pub(crate) fn analyze(
     session: &Mutex<Option<Session>>,
     path: &str,
@@ -919,10 +1260,16 @@ pub(crate) fn analyze(
     if session.as_ref().is_none_or(|s| s.path() != path) {
         *session = Session::new(path);
     }
-    let session = session
-        .as_mut()
-        .ok_or_else(|| format!("no syntax grammar for {path}"))?;
-    Ok(session.analyze(text, original))
+    Ok(match session.as_mut() {
+        Some(session) => session.analyze(text, original),
+        None => Analysis {
+            changes: original
+                .filter(|original| *original != text)
+                .map(|original| changes(original, text, &[]))
+                .unwrap_or_default(),
+            ..Analysis::default()
+        },
+    })
 }
 
 #[cfg(test)]
@@ -989,12 +1336,13 @@ export function Counter({ start }: { start: number }) {
             assert_eq!(language_for_path(path), Some(lang));
             assert!(grammar(lang).is_some(), "{lang:?} query must compile");
         }
-        assert!(
-            !supports("a.swift"),
-            "other languages keep the QuickJS path"
+        assert_eq!(
+            language_for_path("a.swift"),
+            None,
+            "other languages show plain text"
         );
         // The Zig grammar rejects ZON roots such as `.{ .x = 1 }`.
-        assert!(!supports("build.zig.zon"));
+        assert_eq!(language_for_path("build.zig.zon"), None);
     }
 
     #[test]
@@ -1279,5 +1627,122 @@ pub fn fence() void {
             .find(|t| t.kind == "var(--syntax-string)")
             .unwrap();
         assert_eq!(&change.original[string.from..string.to], "\"x\"");
+    }
+}
+
+#[cfg(test)]
+mod edit_tests {
+    use super::*;
+
+    #[test]
+    fn edits_trim_shared_text_on_character_boundaries() {
+        assert_eq!(Edit::between("abc", "abc"), None);
+        assert_eq!(
+            Edit::between("let a;", "let ab;"),
+            Some(Edit {
+                start: 5,
+                old_end: 5,
+                new_end: 6
+            })
+        );
+        // é and è share their first UTF-8 byte; the edit covers whole chars.
+        assert_eq!(
+            Edit::between("aéb", "aèb"),
+            Some(Edit {
+                start: 1,
+                old_end: 3,
+                new_end: 3
+            })
+        );
+    }
+
+    #[test]
+    fn remapping_keeps_colours_through_an_edit() {
+        let token = |from, to| Token {
+            from,
+            to,
+            kind: "var(--syntax-string)".into(),
+        };
+        let analysis = Analysis {
+            tokens: vec![token(0, 3), token(4, 9), token(10, 12)],
+            ..Default::default()
+        };
+        // Typing inside the middle token stretches it; later ones shift.
+        let typed = Edit::between("let \"abc\" x;", "let \"abXc\" x;").unwrap();
+        let spans: Vec<_> = analysis
+            .remapped(typed)
+            .tokens
+            .iter()
+            .map(|t| (t.from, t.to))
+            .collect();
+        assert_eq!(spans, [(0, 3), (4, 10), (11, 13)]);
+        // Deleting a token's whole text drops it.
+        let gone = Edit {
+            start: 4,
+            old_end: 9,
+            new_end: 4,
+        };
+        assert_eq!(analysis.remapped(gone).tokens.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod chunk_tests {
+    use super::*;
+
+    #[test]
+    fn hunk_actions_preserve_eof_newlines_and_selected_line_scope() {
+        for (original, current) in [
+            ("a\nb\n", "a\nx\nb\n"),
+            ("a", "a\nx"),
+            ("🙂\nb\n", "🙂\nc\n"),
+            ("old\n", ""),
+            ("", "new"),
+            ("a\n", "a\nb"),
+            ("a\n", "a\nb\n"),
+            ("a\nb", "a\n"),
+        ] {
+            let all = changes(original, current, &[]);
+            let at = all[0].from;
+            assert_eq!(
+                chunk_action(original, current, at, at..at, false).as_deref(),
+                Some(original),
+                "revert {original:?} → {current:?}"
+            );
+            assert_eq!(
+                chunk_action(original, current, at, at..at, true).as_deref(),
+                Some(current),
+                "stage {original:?} → {current:?}"
+            );
+        }
+        let original = "one\ntwo\nthree\n";
+        let current = "ONE\nTWO\nthree\n";
+        assert_eq!(
+            chunk_action(original, current, 0, 0..3, true).as_deref(),
+            Some("ONE\ntwo\nthree\n")
+        );
+        assert_eq!(
+            chunk_action(original, current, 4, 4..7, false).as_deref(),
+            Some("ONE\ntwo\nthree\n")
+        );
+        // Unequal sides: the selected buffer lines replace the whole baseline side.
+        assert_eq!(
+            chunk_action("one\nthree\n", "ONE\nTWO\nthree\n", 0, 0..3, true).as_deref(),
+            Some("ONE\nthree\n")
+        );
+        assert_eq!(chunk_action("a\n", "a\n", 0, 0..0, true), None);
+    }
+
+    #[test]
+    fn a_file_without_a_grammar_is_plain_text_with_a_gutter() {
+        let session = Mutex::new(None);
+        let analysis = analyze(&session, "notes.txt", "a\nB\n", Some("a\nb\n")).unwrap();
+        assert!(analysis.tokens.is_empty() && analysis.folds.is_empty());
+        assert!(analysis.diagnostics.is_empty());
+        assert_eq!(analysis.changes.len(), 1);
+        assert_eq!(
+            (analysis.changes[0].kind.as_str(), analysis.changes[0].from),
+            ("mod", 2)
+        );
     }
 }

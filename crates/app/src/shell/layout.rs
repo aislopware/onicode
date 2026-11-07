@@ -1,8 +1,6 @@
 // Navigation and frame style are independent. The original layout adds a
 // project rail beside the sessions sidebar. The new layout keeps one sidebar
 // and offers either an inset rounded card or the existing full-height boxy frame.
-use std::collections::HashMap;
-
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Context, CursorStyle, Entity, MouseButton, MouseDownEvent, Role, StyleRefinement,
@@ -10,9 +8,7 @@ use gpui::{
 };
 
 use super::{CORNER_BUTTONS_WIDTH, CORNER_CONTROL_GAP, Shell, titlebar_drag_area};
-use crate::popover::{Anchor, popover};
 use crate::project_tabs::{TabReveal, tab_button};
-use crate::resource_pressure::SessionInfo;
 use crate::right_panel::{RightPanel, RightTab};
 use crate::theme::*;
 use crate::workspace::TitleTab;
@@ -163,8 +159,6 @@ impl Shell {
         }
         self.usage_footer
             .update(cx, |footer, cx| footer.set_classic(classic, cx));
-        self.resources
-            .update(cx, |monitor, cx| monitor.set_classic(classic, cx));
         self.invalidate_chrome(cx);
         self.drop_peek();
         if !self.workspace.classic_layout && !self.query.is_empty() {
@@ -190,8 +184,6 @@ impl Shell {
         let classic = self.workspace.boxy_layout();
         self.usage_footer
             .update(cx, |footer, cx| footer.set_classic(classic, cx));
-        self.resources
-            .update(cx, |monitor, cx| monitor.set_classic(classic, cx));
         if classic {
             return vec![self.classic_body(
                 sidebar_width,
@@ -739,96 +731,7 @@ impl Shell {
                     .clone()
                     .cached(StyleRefinement::default().flex_1().min_w_0().h(px(height))),
             )
-            .map(|d| {
-                let pressure = self.pressure_chip(cx);
-                let terminal = self.terminal_footer(cx);
-                let between = pressure.is_some() && terminal.is_some();
-                d.children(pressure)
-                    .when(between, |d| {
-                        d.child(
-                            super::terminal_dock::footer_separator()
-                                .mr(px(super::terminal_dock::FOOTER_GAP + 3.))
-                                .when(!self.workspace.boxy_layout(), |d| d.mb(px(2.))),
-                        )
-                    })
-                    .children(terminal)
-            })
-    }
-
-    /// ResourcePressureNotice's chip, just before the terminal controls.
-    fn pressure_chip(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if !self.resources.read(cx).chip_shown() {
-            return None;
-        }
-        let classic = self.workspace.boxy_layout();
-        // The terminal group sits one footer gap on; alone, the chip takes its inset margin.
-        let alone = self.app_view_open() || self.workspace.project.is_empty();
-        Some(
-            div()
-                .flex_shrink_0()
-                .map(|d| match (classic, alone) {
-                    (true, true) => d,
-                    (true, false) => d.mr(px(super::terminal_dock::FOOTER_GAP)),
-                    (false, true) => d.mr(px(6.)).pb(px(2.)),
-                    (false, false) => d.mr(px(super::terminal_dock::FOOTER_GAP)).pb(px(2.)),
-                })
-                .child(self.resources.clone())
-                .into_any_element(),
-        )
-    }
-
-    /// Modal.tsx at size `sm` with `fitViewport`: 420px, centred.
-    pub(super) fn resource_modal(
-        &self,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        if !self.resources.read(cx).is_open() {
-            return None;
-        }
-        let sessions: HashMap<i64, SessionInfo> = self
-            .sessions
-            .iter()
-            .map(|(id, session)| {
-                let summary = &session.read(cx).summary;
-                let info = SessionInfo {
-                    title: summary.title.clone().into(),
-                    provider: summary.provider.clone(),
-                };
-                (*id, info)
-            })
-            .collect();
-        let content = self
-            .resources
-            .update(cx, |monitor, cx| monitor.dialog(&sessions, window, cx));
-        let viewport = window.viewport_size();
-        let width = 420f32.min(viewport.width.as_f32() - 24.);
-        let height = (self.resources.read(cx).measured_height().unwrap_or(240.) + 2.)
-            .min(viewport.height.as_f32() - 32.);
-        let anchor = Anchor::Point(gpui::point(
-            px((viewport.width.as_f32() - width) / 2.),
-            px((viewport.height.as_f32() - height) / 2.),
-        ));
-        let monitor = self.resources.downgrade();
-        Some(
-            div()
-                .absolute()
-                .size_full()
-                .child(crate::modal::scrim("running-work-scrim"))
-                .child(
-                    popover("running-work-modal", anchor)
-                        .modal_surface(self.workspace.boxy_layout())
-                        .width(width)
-                        .gap(0.)
-                        .max_height(viewport.height.as_f32() - 32.)
-                        .priority(60)
-                        .on_dismiss(move |window, cx| {
-                            let _ = monitor.update(cx, |monitor, cx| monitor.close(window, cx));
-                        })
-                        .child(content),
-                )
-                .into_any_element(),
-        )
+            .children(self.terminal_footer(cx))
     }
 }
 

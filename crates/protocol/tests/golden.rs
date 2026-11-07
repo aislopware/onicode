@@ -46,8 +46,8 @@ use onicode_protocol::transcript::Row;
 use onicode_protocol::workspace::{
     Archive, ClaimInboxEvents, CreateNote, CreateSession, Delete, DeleteNote, FinishAutomationRun,
     GenerateTitle, ListNotes, MarkSeen, NameWorktree, NewSession, Pin, PrepareAutomationRun,
-    PreviewSession, ReminderChange, Rename, SaveGroups, SaveOrchestration, SaveResponseNote,
-    SearchSessions, SetReminder, SetWorkItem, UpsertNote, WatchWorkspace,
+    PreviewSession, ReminderChange, Rename, SaveGroups, SaveResponseNote, SearchSessions,
+    SetReminder, SetWorkItem, UpsertNote, WatchWorkspace,
 };
 use onicode_protocol::{
     Call, Cursor, Item, METHODS, MessageId, Method, MethodKind, OpId, PROTOCOL, Rejection, Routed,
@@ -274,7 +274,6 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<SearchSessions>();
     shapes.call::<PreviewSession>();
     shapes.call::<MarkSeen>();
-    shapes.call::<SaveOrchestration>();
     shapes.call::<GenerateTitle>();
     shapes.call::<NameWorktree>();
     shapes.call::<ListNotes>();
@@ -375,7 +374,6 @@ fn shapes() -> (Vec<Method>, String) {
     // Engine settings.
     shapes.watch::<engine_settings::WatchEngineSettings>();
     shapes.call::<engine_settings::SetEngineSetting>();
-    shapes.call::<engine_settings::TakeViewerState>();
     // Work.
     shapes.call::<onicode_protocol::work::InboxList>();
     shapes.call::<onicode_protocol::work::ReadInboxDetails>();
@@ -383,7 +381,6 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<onicode_protocol::work::ReadInboxDiff>();
     shapes.call::<onicode_protocol::work::ReadInboxChecks>();
     shapes.call::<onicode_protocol::work::PostInboxComment>();
-    shapes.call::<onicode_protocol::work::ConnectInbox>();
     shapes.call::<onicode_protocol::work::RunInboxAction>();
     shapes.call::<onicode_protocol::work::InboxMedia>();
     shapes.call::<onicode_protocol::work::InboxAvatar>();
@@ -396,17 +393,8 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<onicode_protocol::work::HasEventAutomations>();
     shapes.call::<onicode_protocol::work::ProjectGroups>();
     shapes.call::<onicode_protocol::work::LinkedActivity>();
-    shapes.call::<onicode_protocol::work::AgentProcesses>();
-    shapes.call::<onicode_protocol::work::StopAgentTool>();
     shapes.call::<onicode_protocol::work::ReadWorkItem>();
     shapes.call::<onicode_protocol::work::ReadWorkItemDetails>();
-    // App access.
-    shapes.call::<onicode_protocol::app_access::ReadAppReceipt>();
-    shapes.call::<onicode_protocol::app_access::SaveAppReceipt>();
-    shapes.call::<onicode_protocol::app_access::AppModels>();
-    shapes.call::<onicode_protocol::app_access::StartAppSession>();
-    shapes.call::<onicode_protocol::app_access::ReadAppConversation>();
-    shapes.call::<onicode_protocol::app_access::AppNotes>();
     // Settings pages.
     shapes.call::<onicode_protocol::settings_pages::ReadWorktreeMarks>();
     // Alerts.

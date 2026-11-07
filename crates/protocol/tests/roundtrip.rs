@@ -13,6 +13,7 @@ use onicode_protocol::engine::{
     MachineKind, MachineLink, Machines, StopEngine, UpdateEngine, UpdateStarted, WatchMachines,
 };
 use onicode_protocol::follow_up::{Message, State};
+use onicode_protocol::git::{CommitFile, TurnCommit, TurnGit, TurnPush};
 use onicode_protocol::provider::{BackgroundTask, Kind, NativeCommand, NativeSubcommand};
 use onicode_protocol::session::{
     Answer, Btw, BtwAnswer, BtwThread, BtwThreads, Configure, Decide, EditLastTurn, EditedTurn,
@@ -21,17 +22,14 @@ use onicode_protocol::session::{
     SessionRecord, SessionState, Steer, SteerNow, Stop, StopBtw, SwitchProvider, TranscriptPage,
     TurnContext, TurnState, Verdict, WatchSession,
 };
-use onicode_protocol::sessions::{
-    Folder, Groups, Orchestration, Reminder, Session, SummaryTask, TextModel, WorkItem,
-};
+use onicode_protocol::sessions::{Folder, Groups, Reminder, Session, TextModel, WorkItem};
 use onicode_protocol::transcript::Row;
 use onicode_protocol::usage::Limit;
 use onicode_protocol::workspace::{
     Archive, ClaimInboxEvents, CreateNote, CreateSession, Created, Delete, DeleteNote,
-    FinishAutomationRun, GenerateTitle, Lead, MarkSeen, NameWorktree, Named, NewSession, Pin,
-    Preview, PreviewSession, Project, ReminderChange, Rename, SaveGroups, SaveOrchestration,
-    SearchSessions, SessionDefaults, SessionSummary, SetReminder, SetWorkItem, WatchWorkspace,
-    WorkspaceEvent, WorkspaceState,
+    FinishAutomationRun, GenerateTitle, MarkSeen, NameWorktree, Named, NewSession, Pin, Preview,
+    PreviewSession, Project, ReminderChange, Rename, SaveGroups, SearchSessions, SessionDefaults,
+    SessionSummary, SetReminder, SetWorkItem, WatchWorkspace, WorkspaceEvent, WorkspaceState,
 };
 use onicode_protocol::{
     Cursor, EngineId, Item, MessageId, OpId, Outcome, ProjectRef, Rejection, Routed, SessionId,
@@ -254,6 +252,7 @@ fn turn_info() -> impl Strategy<Value = TurnInfo> {
         option::of(any::<u64>()),
         option::of(any::<u64>()),
         option::of(metrics()),
+        option::of(turn_git()),
     )
         .prop_map(
             |(
@@ -267,6 +266,7 @@ fn turn_info() -> impl Strategy<Value = TurnInfo> {
                 started_at,
                 completed_at,
                 metrics,
+                git,
             )| TurnInfo {
                 joined_turn,
                 provider_turn_id,
@@ -278,8 +278,52 @@ fn turn_info() -> impl Strategy<Value = TurnInfo> {
                 started_at,
                 completed_at,
                 metrics,
+                git,
             },
         )
+}
+
+fn turn_git() -> impl Strategy<Value = TurnGit> {
+    let commit = (text(), text(), any::<u64>(), any::<u64>(), any::<u64>()).prop_map(
+        |(hash, subject, files, additions, deletions)| TurnCommit {
+            hash,
+            subject,
+            files,
+            additions,
+            deletions,
+        },
+    );
+    let staged = (text(), option::of(any::<u64>()), option::of(any::<u64>())).prop_map(
+        |(path, additions, deletions)| CommitFile {
+            path,
+            additions,
+            deletions,
+        },
+    );
+    let push =
+        (text(), option::of(text()), option::of(text())).prop_map(|(upstream, repo, web)| {
+            TurnPush {
+                upstream,
+                repo,
+                web,
+            }
+        });
+    (
+        option::of(text()),
+        vec(commit, 0..3),
+        vec(staged, 0..3),
+        any::<u64>(),
+        any::<u64>(),
+        option::of(push),
+    )
+        .prop_map(|(branch, commits, staged, ahead, behind, push)| TurnGit {
+            branch,
+            commits,
+            staged,
+            ahead,
+            behind,
+            push,
+        })
 }
 
 fn handoff() -> impl Strategy<Value = Handoff> {
@@ -366,9 +410,6 @@ fn settings() -> impl Strategy<Value = Settings> {
         (
             any::<bool>(),
             any::<bool>(),
-            any::<bool>(),
-            any::<bool>(),
-            any::<bool>(),
             option::of(text()),
             option::of(text()),
             any::<bool>(),
@@ -393,9 +434,6 @@ fn settings() -> impl Strategy<Value = Settings> {
                 ),
                 (
                     plan,
-                    operator,
-                    operator_enabled,
-                    orchestrator,
                     new_worktree,
                     worktree_base,
                     worktree_cwd,
@@ -416,9 +454,6 @@ fn settings() -> impl Strategy<Value = Settings> {
                     thinking,
                     model_settings,
                     plan,
-                    operator,
-                    operator_enabled,
-                    orchestrator,
                     new_worktree,
                     worktree_base,
                     worktree_cwd,
@@ -679,7 +714,6 @@ fn send() -> impl Strategy<Value = Send> {
             option::of(text()),
             hash_map(text(), text(), 0..3),
             option::of(text()),
-            any::<bool>(),
         )),
     )
         .prop_map(|(session, message, text, attachments, turn)| Send {
@@ -687,12 +721,11 @@ fn send() -> impl Strategy<Value = Send> {
             message,
             text,
             attachments,
-            turn: turn.map(|(prepared_prompt, environment, queued, internal)| {
+            turn: turn.map(|(prepared_prompt, environment, queued)| {
                 Box::new(TurnContext {
                     prepared_prompt,
                     environment,
                     queued,
-                    internal,
                     ..TurnContext::default()
                 })
             }),
@@ -1027,35 +1060,23 @@ fn summary() -> impl Strategy<Value = SessionSummary> {
         (session_id(), stored_session(), text()),
         option::of(text()),
         any::<bool>(),
-        option::of(any::<i64>()),
         option::of(text()),
         any::<bool>(),
         any::<bool>(),
-        (option::of(text()), any::<bool>()),
+        option::of(text()),
     )
         .prop_map(
-            |(
-                (id, session, key),
-                worktree,
-                draft,
-                started_by,
-                automation,
-                busy,
-                unread,
-                (model, hidden),
-            )| {
+            |((id, session, key), worktree, draft, automation, busy, unread, model)| {
                 SessionSummary {
                     id,
                     session,
                     key,
                     worktree,
                     draft,
-                    started_by,
                     automation,
                     busy,
                     unread,
                     model,
-                    hidden,
                 }
             },
         )
@@ -1110,46 +1131,12 @@ fn reminder() -> impl Strategy<Value = Reminder> {
     )
 }
 
-fn lead() -> impl Strategy<Value = Lead> {
-    (
-        any::<i64>(),
-        vec(
-            (
-                option::of(any::<i64>()),
-                text(),
-                text(),
-                option::of(text()),
-                text(),
-            ),
-            0..3,
-        ),
-        any::<bool>(),
-    )
-        .prop_map(|(lead, tasks, live)| Lead {
-            lead,
-            summary: Orchestration {
-                tasks: tasks
-                    .into_iter()
-                    .map(|(session, title, provider, model, status)| SummaryTask {
-                        session,
-                        title,
-                        provider,
-                        model,
-                        status,
-                    })
-                    .collect(),
-                live,
-            },
-        })
-}
-
 fn workspace_event() -> impl Strategy<Value = WorkspaceEvent> {
     prop_oneof![
         summary().prop_map(|summary| WorkspaceEvent::Session(Box::new(summary))),
         any::<i64>().prop_map(WorkspaceEvent::Removed),
         project().prop_map(WorkspaceEvent::Project),
         vec(reminder(), 0..3).prop_map(WorkspaceEvent::Reminders),
-        lead().prop_map(WorkspaceEvent::Orchestration),
         any::<usize>().prop_map(WorkspaceEvent::Notes),
         text().prop_map(WorkspaceEvent::AutomationTaken),
         (op_id(), outcome()).prop_map(|(op, outcome)| WorkspaceEvent::Receipt { op, outcome }),
@@ -1161,19 +1148,15 @@ fn workspace_state() -> impl Strategy<Value = WorkspaceState> {
         vec(summary(), 0..3),
         vec(project(), 0..3),
         vec(reminder(), 0..3),
-        vec(lead(), 0..2),
         any::<usize>(),
     )
-        .prop_map(
-            |(sessions, projects, reminders, orchestrations, notes)| WorkspaceState {
-                sessions,
-                projects,
-                reminders,
-                orchestrations,
-                notes,
-                automations: Vec::new(),
-            },
-        )
+        .prop_map(|(sessions, projects, reminders, notes)| WorkspaceState {
+            sessions,
+            projects,
+            reminders,
+            notes,
+            automations: Vec::new(),
+        })
 }
 
 fn reminder_change() -> impl Strategy<Value = ReminderChange> {
@@ -1252,13 +1235,11 @@ proptest! {
         cwd in text(),
         title in option::of(text()),
         start in new_session(),
-        started_by in option::of(any::<i64>()),
-        scope in vec(text(), 0..3),
         outcome in outcome(),
         created in option::of(summary()),
         settings in option::of(settings()),
     ) {
-        round_trips(&CreateSession { session, provider, cwd, title, start, started_by, scope })?;
+        round_trips(&CreateSession { session, provider, cwd, title, start })?;
         round_trips(&Created {
             outcome,
             session: created.map(Box::new),
@@ -1289,7 +1270,6 @@ proptest! {
     fn workspace_chores(
         project in text(),
         groups in groups(),
-        lead in lead(),
         session in any::<i64>(),
         message in text(),
         model in text_model(),
@@ -1297,7 +1277,6 @@ proptest! {
         run in text(),
     ) {
         round_trips(&SaveGroups { project: project.clone(), groups })?;
-        round_trips(&SaveOrchestration { lead: lead.lead, summary: lead.summary })?;
         round_trips(&SearchSessions { query: message.clone(), search: run.clone() })?;
         round_trips(&PreviewSession { session })?;
         round_trips(&Preview { model: branch.clone(), worktree: Some(project.clone()) })?;

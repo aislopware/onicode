@@ -42,6 +42,4 @@ menu's "Check for Updates…" and What's new. monocode's Minisign feed is gone. 
 stages the release (download with progress, checksum, the staged binary's `--version`, which must print
 `onicode <version>`), swaps the bundle and relaunches. The engine comes with the bundle: the relaunched app
 finds the engine of the old build still running, and its link replaces it (engine.md, "Step 8 as built").
-An update another device asks of the engine leaves its `update-transaction.json` record; the app reads it at
-launch and shows "Rolled back to …" in the same card when the trial didn't hold.
 `onicode_update::app_version()` is the app's one version.

@@ -1,7 +1,7 @@
 //! The empty session's canvas. The pointer stirs ink through a small smoke
 //! field that drifts, curls and fades; holding charges a vortex that pulls
 //! the ink into a spiral, and letting go bursts it outward as a shockwave.
-//! Painted on the charts' 3px Bayer grid so it reads as the same halftone.
+//! Painted on a 3px Bayer grid so it reads as halftone.
 //!
 //! The field moves on the shared pulse: each tick steps it and notifies the
 //! view, and painting only draws what the last step left. A frame that draws
@@ -19,8 +19,8 @@ use gpui::{
     Point, Render, Window, canvas, div, point, px, rgb, size,
 };
 
+use crate::dither;
 use crate::session_mark::SPINNER_ROWS;
-use crate::visuals::dither;
 
 /// Side of a smoke cell; the dither samples the field every 3px.
 const FIELD: f32 = 6.;

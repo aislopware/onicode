@@ -28,7 +28,7 @@ impl Store {
         self.shared_store_blocks(id, next)?;
         let mut fields =
             vec![
-                ("updated_at", json!(crate::time::now_ms())),
+                ("updated_at", json!(self.stamp())),
                 (
                     "has_user_message",
                     json!(next.iter().any(|b| b["role"] == "user"
@@ -41,12 +41,10 @@ impl Store {
         }
         self.shared_patch(id, &fields)?;
         sql(tx.commit())?;
-        if let Some(shared) = self.shared.as_ref() {
-            shared
-                .snapshots
-                .borrow_mut()
-                .insert(id, HistoryRevision::of(next));
-        }
+        self.shared
+            .snapshots
+            .borrow_mut()
+            .insert(id, HistoryRevision::of(next));
         Ok(())
     }
 }

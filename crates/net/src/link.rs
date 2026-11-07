@@ -5,15 +5,13 @@
 //! stream kinds of the transport design (§3.2): every stream is bidirectional and opens with a
 //! [`StreamHead`]; the dialer's first stream is the control stream.
 //!
-//! A terminal's output lost in one packet holds back that terminal alone, never another
-//! stream's echo. Priorities come with each stream: one carrying an echo is raised to
-//! [`crate::transport::ECHO_PRIORITY`] and leaves in the next packet, unpaced, and is never held
-//! for send-buffer room a flood has taken (noq-proto patch 23).
+//! A stream's data lost in one packet holds back that stream alone. Priorities come with each
+//! stream's kind ([`crate::StreamKind::priority`]).
 //!
-//! A key and its echo also go as a datagram copy ([`Link::copy`]), a couple of milliseconds
-//! after the stream copy, in a packet of their own: when the stream's packet is lost, the copy
-//! arrives a round trip or two before the retransmission would. The receiver keeps whichever
-//! comes first (it deduplicates by sequence number).
+//! A remote desktop input also goes as a datagram copy ([`Link::copy`]), a couple of
+//! milliseconds after the stream copy, in a packet of their own: when the stream's packet is
+//! lost, the copy arrives a round trip or two before the retransmission would. The receiver
+//! keeps whichever comes first (it deduplicates by sequence number).
 //!
 //! QUIC's send buffer is held to twice the congestion window (`SendWindow`): what a flood
 //! queues past that waits in the stream's queue, where [`StreamTx::pending`] counts it, so the
@@ -198,7 +196,7 @@ impl Link {
 
     /// Sends `data`, already sent on a stream, again as a datagram on `channel` after
     /// [`COPY_DELAY`], if the path takes a datagram that large and hardly any are queued; else
-    /// not at all. For a key and its echo: small, and worth a round trip.
+    /// not at all. For an input: small, and worth a round trip.
     pub fn copy(&self, channel: u8, data: &[u8]) {
         let Ok(datagram) = self.datagram_bytes(channel, data) else {
             return;

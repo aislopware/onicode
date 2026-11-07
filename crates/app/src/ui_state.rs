@@ -2,9 +2,6 @@
 //! preferences (`workspace`), and the markers the app keeps for itself (what the Inbox, the update
 //! report and linked work items last showed). One `ui.sqlite3` in the app's data directory,
 //! read whole at launch and written on its own thread, so neither touches the main thread's frame.
-//!
-//! monocode kept these in its own store's settings. The engine hands them over once
-//! ([`UiState::adopt`]), and the app keeps them here from then on.
 #![expect(
     clippy::disallowed_types,
     reason = "`ui.sqlite3` is the app's own file, never the engine's store"
@@ -14,18 +11,12 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
 
 use gpui::Global;
-use onicode_protocol::OpId;
-use onicode_protocol::engine_settings::TakeViewerState;
 use rusqlite::{Connection, params};
-
-use crate::engine_client::Engine;
 
 /// The file, in the app's data directory.
 pub(crate) const FILE: &str = "ui.sqlite3";
 /// The saved window, layout and preferences, as JSON.
 pub(crate) const WORKSPACE: &str = "workspace";
-/// Set once the engine handed over what its store kept for the app.
-const ADOPTED: &str = "viewer-state-adopted";
 
 enum Write {
     Set(String, String),
@@ -115,27 +106,6 @@ impl UiState {
             let _ = flushed.recv();
         }
     }
-
-    /// Takes what `engine`'s store kept for the app before the app kept its own (monocode's
-    /// saved workspace and markers), once: a later launch finds it adopted and asks nothing.
-    /// Runs before the first frame, which reads the saved workspace.
-    pub(crate) fn adopt(&self, engine: &Engine) -> Result<(), String> {
-        if self.get(ADOPTED).is_some() {
-            return Ok(());
-        }
-        let taken = futures::executor::block_on(
-            engine.call::<TakeViewerState>(Some(OpId::new()), TakeViewerState {}),
-        )?;
-        for (key, value) in taken.values {
-            // The app's own value wins over the one the engine kept.
-            if self.get(&key).is_none() {
-                self.set(&key, value);
-            }
-        }
-        self.set(ADOPTED, "1".to_owned());
-        self.flush();
-        Ok(())
-    }
 }
 
 fn read(connection: &Connection) -> rusqlite::Result<HashMap<String, String>> {
@@ -185,6 +155,8 @@ pub(crate) fn shared(cx: &mut gpui::App) -> UiState {
 
 #[cfg(test)]
 mod tests {
+    use onicode_protocol::OpId;
+
     use super::*;
 
     /// A directory of its own under the system's temporary one, removed when dropped.
@@ -203,60 +175,19 @@ mod tests {
         }
     }
 
-    #[gpui::test]
-    fn a_monocode_workspace_moves_into_the_app_once(cx: &mut gpui::TestAppContext) {
-        let engine = cx.update(Engine::memory);
-        let saved = r#"{"window":{"width":1280.0,"height":800.0},"preferences":{"theme":"Dark"}}"#;
-        let seed = engine.seed();
-        seed.save_setting(WORKSPACE, saved).unwrap();
-        seed.save_setting("native-inbox-state", r#"{"seen":["a"]}"#)
-            .unwrap();
-        let scratch = Scratch::new("adopt");
-
-        let first = UiState::open(&scratch.0).unwrap();
-        first.adopt(&engine).unwrap();
-        assert_eq!(first.get(WORKSPACE).as_deref(), Some(saved));
-        assert_eq!(
-            first.get("native-inbox-state").as_deref(),
-            Some(r#"{"seen":["a"]}"#)
-        );
-        assert_eq!(
-            seed.setting(WORKSPACE).unwrap(),
-            None,
-            "the engine forgot it"
-        );
-        drop(first);
-
-        // The second launch reads the file and asks the engine nothing.
-        let calls = |cx: &mut gpui::TestAppContext| {
-            cx.update(|cx| crate::engine_client::calls_for_test(&engine, cx).len())
-        };
-        let before = calls(cx);
-        seed.save_setting(WORKSPACE, r#"{"preferences":{"theme":"Light"}}"#)
-            .unwrap();
-        let second = UiState::open(&scratch.0).unwrap();
-        second.adopt(&engine).unwrap();
-        assert_eq!(second.get(WORKSPACE).as_deref(), Some(saved));
-        assert_eq!(calls(cx), before);
-        assert!(
-            seed.setting(WORKSPACE).unwrap().is_some(),
-            "left where it was"
-        );
-    }
-
     #[test]
     fn a_write_reads_back_at_once_and_survives_a_reopen() {
         let scratch = Scratch::new("reopen");
         let state = UiState::open(&scratch.0).unwrap();
-        state.set("onicode.updateReportSeen", "1.2.0".to_owned());
+        state.set("onicode.installedUpdate", "1.2.0".to_owned());
         assert_eq!(
-            state.get("onicode.updateReportSeen").as_deref(),
+            state.get("onicode.installedUpdate").as_deref(),
             Some("1.2.0")
         );
         state.flush();
         let reopened = UiState::open(&scratch.0).unwrap();
         assert_eq!(
-            reopened.get("onicode.updateReportSeen").as_deref(),
+            reopened.get("onicode.installedUpdate").as_deref(),
             Some("1.2.0")
         );
     }

@@ -38,7 +38,6 @@ pub struct TransportConfig {
     pub(crate) send_window: u64,
     pub(crate) send_fairness: bool,
     pub(crate) stream_priority_before_datagrams: Option<i32>,
-    pub(crate) stream_priority_unpaced: Option<i32>,
 
     pub(crate) packet_threshold: u32,
     pub(crate) time_threshold: f32,
@@ -188,29 +187,6 @@ impl TransportConfig {
     /// pending starves datagrams.
     pub fn stream_priority_before_datagrams(&mut self, value: Option<i32>) -> &mut Self {
         self.stream_priority_before_datagrams = value;
-        self
-    }
-
-    /// Stream priority at or above which pending stream data does not wait for the pacer.
-    ///
-    /// The pacer holds a packet until its bytes are earned at the pacing rate and sets a timer
-    /// for the shortfall. A runtime's timer is coarse (tokio's wheel is a millisecond, and an OS
-    /// may coalesce on top), so a packet the rate earns in a fraction of a millisecond can wait
-    /// one or two. With `Some(threshold)`, a datagram is started without the pacing check
-    /// whenever a stream at `threshold` or above has data pending. Its packet takes that data
-    /// first (streams go by priority), and whatever room is left is filled as usual. The
-    /// congestion window still applies. The pacer is charged for the packet as for any other, so
-    /// the rate holds over time.
-    ///
-    /// This suits small interactive messages, such as a terminal's echo, sharing a paced
-    /// connection with a media flood. A stream at the threshold that always has data pending is
-    /// never paced.
-    ///
-    /// A stream at the threshold also writes past [`Self::send_window`]: only the peer's flow
-    /// control bounds it. Other streams that filled the window would otherwise hold its write
-    /// until acknowledgements freed room, and they take that room as fast as it comes.
-    pub fn stream_priority_unpaced(&mut self, value: Option<i32>) -> &mut Self {
-        self.stream_priority_unpaced = value;
         self
     }
 
@@ -630,7 +606,6 @@ impl Default for TransportConfig {
             send_window: (8 * STREAM_RWND).into(),
             send_fairness: true,
             stream_priority_before_datagrams: None,
-            stream_priority_unpaced: None,
 
             packet_threshold: 3,
             time_threshold: 9.0 / 8.0,
@@ -686,7 +661,6 @@ impl fmt::Debug for TransportConfig {
             send_window,
             send_fairness,
             stream_priority_before_datagrams,
-            stream_priority_unpaced,
             packet_threshold,
             time_threshold,
             initial_rtt,
@@ -730,7 +704,6 @@ impl fmt::Debug for TransportConfig {
                 "stream_priority_before_datagrams",
                 stream_priority_before_datagrams,
             )
-            .field("stream_priority_unpaced", stream_priority_unpaced)
             .field("packet_threshold", packet_threshold)
             .field("time_threshold", time_threshold)
             .field("initial_rtt", initial_rtt)

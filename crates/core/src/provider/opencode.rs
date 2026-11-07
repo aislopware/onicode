@@ -124,7 +124,6 @@ fn park(server: Server, request: &Request, session: String) {
     if IDLE_LIMIT.load(Ordering::Relaxed) == 0 {
         return;
     }
-    process::mark_idle(server.child.id(), true);
     {
         let mut pool = idle().lock().unwrap_or_else(|e| e.into_inner());
         pool.push(Idle {
@@ -301,7 +300,6 @@ fn connect(
             if found.at.elapsed() < Duration::from_secs(3 * 60)
                 && matches!(found.server.child.try_wait(), Ok(None))
             {
-                process::mark_idle(found.server.child.id(), false);
                 return Ok((
                     Client::new(found.server.url.clone(), directory, false, None),
                     Some(found.server),
@@ -511,9 +509,6 @@ pub(super) fn run(
             if let Some(result) = state.terminal.take() {
                 result?;
                 return emit(vec![Event::Done]);
-            }
-            if crate::visual_bridge::configured(&request.settings.environment) {
-                emit(Vec::new())?;
             }
             if !connected && started.elapsed() >= Duration::from_secs(30) {
                 return Err("OpenCode event stream startup timed out".into());

@@ -472,7 +472,7 @@ pub(crate) const ACTIVITY_TILE: TileSize = TileSize {
 
 /// A transcript work phase's tile, coloured by the kind of work like an
 /// app icon: commands on a dark terminal tile, edits amber, reading and
-/// searching blue, sub-agents violet, the app's own visuals neutral.
+/// searching blue, sub-agents violet, anything else neutral.
 /// A work phase's tile face, its mark and the ink that suits other marks
 /// on it: white on a coloured tile, the theme's ink on a neutral one.
 pub(crate) fn activity_face(glyph: &'static str) -> (Face, AnyElement, Hsla) {
@@ -490,12 +490,6 @@ pub(crate) fn activity_face(glyph: &'static str) -> (Face, AnyElement, Hsla) {
         "pencil-line" => (fill(0xf6b44b, 0xe08a12), white("pencil-line", 12.), ink),
         "search" => (fill(0x6aaeff, 0x2f6fe4), white("search", 12.), ink),
         "bot" => (fill(0xa98bf5, 0x7246e0), white("bot", 12.), ink),
-        // The app's own logo keeps its colours.
-        "onicode" => (
-            Face::Neutral,
-            crate::activity::glyph("onicode", 12.).into_any_element(),
-            tile_ink(),
-        ),
         other => (
             Face::Neutral,
             icon(other, 12.).text_color(tile_ink()).into_any_element(),

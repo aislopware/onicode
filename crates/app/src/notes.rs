@@ -92,7 +92,6 @@ impl Notes {
         let body = cx.new(|cx| {
             let mut input = Input::editor(cx);
             input.set_font_size(13.);
-            input.set_editor_path("note.md".into());
             input.set_max_chars(notes::MAX_BODY);
             input
         });
@@ -182,7 +181,7 @@ impl Notes {
     fn highlight_source(&self, cx: &mut Context<Self>) {
         let text = self.body.read(cx).content.clone();
         let mut at = 0;
-        let mut analysis = crate::editor_analysis::Analysis::default();
+        let mut analysis = crate::editor_syntax::Analysis::default();
         for line in text.split_inclusive('\n') {
             let start = at;
             at += line.len();
@@ -192,7 +191,7 @@ impl Notes {
                 && (1..=6).contains(&count)
                 && trimmed[count..].starts_with(char::is_whitespace)
             {
-                analysis.tokens.push(crate::editor_analysis::Token {
+                analysis.tokens.push(crate::editor_syntax::Token {
                     from: start,
                     to: at - usize::from(line.ends_with('\n')),
                     kind: "var(--color-markdown-heading)".into(),

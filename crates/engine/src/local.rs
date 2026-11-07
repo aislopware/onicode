@@ -11,7 +11,6 @@ use tokio::sync::Notify;
 
 use crate::accounts::{AccountsHub, AccountsService, AgentProbe, CliProbe};
 use crate::alerts::{AlertsHub, AlertsService, SystemBanners};
-use crate::app_access::{AppAccessHub, AppAccessService};
 use crate::desktop::DesktopService;
 use crate::files::{FilesHub, FilesService};
 use crate::git::{CheckoutHub, GitService};
@@ -77,7 +76,6 @@ pub struct Local {
     pub accounts: Arc<AccountsHub>,
     pub settings: Arc<SettingsHub>,
     pub work: Arc<WorkHub>,
-    pub app_access: Arc<AppAccessHub>,
     /// What needs the owner, and the banners it posts.
     pub alerts: Arc<AlertsHub>,
     /// Every terminal's shell. A quiet engine starts none.
@@ -99,7 +97,7 @@ impl Local {
     /// The engine over the store in `data_dir`, created if missing.
     pub fn open(data_dir: &Path, spawn: Arc<dyn Spawn>, options: Options) -> Result<Self, String> {
         let path = data_dir.join(DATABASE);
-        let store = Store::open_monocode(&path)
+        let store = Store::open(&path)
             .map_err(|error| format!("Cannot open {}: {error}", path.display()))?;
         onicode_core::checkpoint::init(data_dir.join("checkpoints"));
         Self::over(Arc::new(Mutex::new(store)), spawn, options)
@@ -107,7 +105,7 @@ impl Local {
 
     /// An engine over a store in memory: a test's, or a viewer's whose data cannot open.
     pub fn memory(spawn: Arc<dyn Spawn>, options: Options) -> Result<Self, String> {
-        let store = Store::open(Path::new(":memory:"))?;
+        let store = Store::in_memory()?;
         Self::over(Arc::new(Mutex::new(store)), spawn, options)
     }
 
@@ -151,11 +149,10 @@ impl Local {
             spawn.clone(),
         );
         let terminal = if options.quiet {
-            TerminalHub::quiet(spawn.clone())
+            TerminalHub::quiet(spawn)
         } else {
-            TerminalHub::new(spawn.clone())
+            TerminalHub::new(spawn)
         };
-        let app_access = AppAccessHub::new(store.clone(), workspace.clone(), spawn);
         let alerts = AlertsHub::new(Arc::new(SystemBanners));
         let stop = Arc::new(Notify::new());
         let service = EngineService::new(
@@ -168,7 +165,6 @@ impl Local {
         .with(Arc::new(SettingsService::new(settings.clone())))
         .with(Arc::new(SettingsPagesService::new(git.clone())))
         .with(Arc::new(WorkService::new(work.clone())))
-        .with(Arc::new(AppAccessService::new(app_access.clone())))
         .with(Arc::new(TerminalService::new(terminal.clone())))
         .with(Arc::new(MachinesService::new(machines.clone())))
         .with(Arc::new(AlertsService::new(alerts.clone())))
@@ -192,7 +188,6 @@ impl Local {
             accounts,
             settings,
             work,
-            app_access,
             alerts,
             terminal,
             machines,
@@ -262,7 +257,7 @@ impl Local {
     /// The store's sessions, read only, without opening it for writing: `--check-data`.
     pub fn check_data(data_dir: &Path) -> Result<(PathBuf, usize), String> {
         let path = data_dir.join(DATABASE);
-        let store = Store::read_monocode(&path)?;
+        let store = Store::open_read_only(&path)?;
         Ok((path.clone(), store.sessions()?.len()))
     }
 

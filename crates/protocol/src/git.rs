@@ -9,8 +9,6 @@
 //! The engine runs Git in two lanes: what a person waits on (these calls and the watch's
 //! refreshes) never queues behind background work such as pull-request discovery
 //! ([`PrStatus`]) or the watch's periodic repair reads.
-pub mod report;
-
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -70,6 +68,47 @@ pub struct CommitFile {
     /// `None` for binary files.
     pub additions: Option<u64>,
     pub deletions: Option<u64>,
+}
+
+/// What a turn did to its checkout, read from Git when the turn ended, against where HEAD, its
+/// upstream and the index stood when it started: the commits HEAD gained, what the turn left
+/// staged, and the push when the upstream moved to HEAD. A turn that moved none of them has none.
+/// It rides in the turn's receipt ([`TurnInfo`](crate::agent::TurnInfo)) and is what the
+/// transcript's commit card shows.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TurnGit {
+    /// The branch HEAD is on when the turn ended; `None` when detached.
+    pub branch: Option<String>,
+    /// Oldest first.
+    pub commits: Vec<TurnCommit>,
+    /// The index against HEAD, when the turn changed it.
+    pub staged: Vec<CommitFile>,
+    /// Commits HEAD has that its upstream lacks, and the reverse, when the turn ended.
+    pub ahead: u64,
+    pub behind: u64,
+    pub push: Option<TurnPush>,
+}
+
+/// A commit HEAD gained during a turn, as `git log --numstat` counts it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TurnCommit {
+    pub hash: String,
+    pub subject: String,
+    pub files: u64,
+    pub additions: u64,
+    pub deletions: u64,
+}
+
+/// The upstream moved to HEAD during a turn.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TurnPush {
+    /// The upstream as Git abbreviates it, such as `origin/main`.
+    pub upstream: String,
+    /// `owner/repo` for a hosted remote.
+    pub repo: Option<String>,
+    /// The repository's web page, for a hosted remote.
+    pub web: Option<String>,
 }
 
 /// A checkout's status as of a read: the changed files with the branch, upstream and counts, and
@@ -360,7 +399,7 @@ git_call!(CreatePr, agent: false, reply: String);
 pub enum NewWorktree {
     /// A new branch at the checkout's HEAD: the sidebar's worktree switcher.
     Named { branch: String },
-    /// A branch from `base`, or the existing branch with `existing`: Settings and the app bridge.
+    /// A branch from `base`, or the existing branch with `existing`: what Settings creates.
     Project {
         branch: String,
         base: Option<String>,

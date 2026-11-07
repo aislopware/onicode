@@ -300,7 +300,6 @@ pub(super) fn take(key: &str) -> Option<Parked> {
     {
         return None;
     }
-    process::mark_idle(parked.wire.child.id(), false);
     Some(parked)
 }
 pub(super) fn put(wire: Wire, mut protocol: Protocol) {
@@ -315,7 +314,6 @@ pub(super) fn put(wire: Wire, mut protocol: Protocol) {
     protocol.request.prompt.clear();
     protocol.request.settings.attachments.clear();
     protocol.request.settings.turns.clear();
-    process::mark_idle(wire.child.id(), true);
     let mut pool = idle_pool().lock().unwrap();
     pool.push(Parked {
         wire,
@@ -364,7 +362,6 @@ pub(super) fn settle_cancelled(mut wire: Wire, mut protocol: Protocol) {
     let owner = process::owner();
     let binding = Binding::request(&protocol.request);
     let epoch = *epochs().lock().unwrap().entry(binding.clone()).or_default();
-    process::mark_idle(wire.child.id(), true);
     thread::spawn(move || {
         let settle = move || {
             let started = Instant::now();

@@ -1918,27 +1918,20 @@ mod tests {
     }
 
     #[gpui::test]
-    fn expanded_folders_use_compact_connected_rows_and_keep_operator_children(
-        cx: &mut TestAppContext,
-    ) {
+    fn expanded_folders_use_compact_connected_rows(cx: &mut TestAppContext) {
         let (window, a, b) = setup(cx);
-        let (plain, child) = window
+        let plain = window
             .update(cx, |shell, _, cx| {
-                let mut ids = Vec::new();
-                for _ in 0..2 {
-                    let mut summary = crate::engine_client::create_for_test(
-                        &shell.engine,
-                        "codex",
-                        &shell.workspace.project,
-                        cx,
-                    );
-                    summary.has_messages = true;
-                    ids.push(summary.id);
-                    shell.add(summary, cx);
-                    shell.sessions[ids.last().unwrap()]
-                        .update(cx, |chat, _| chat.summary.has_messages = true);
-                }
-                let (plain, child) = (ids[0], ids[1]);
+                let mut summary = crate::engine_client::create_for_test(
+                    &shell.engine,
+                    "codex",
+                    &shell.workspace.project,
+                    cx,
+                );
+                summary.has_messages = true;
+                let plain = summary.id;
+                shell.add(summary, cx);
+                shell.sessions[&plain].update(cx, |chat, _| chat.summary.has_messages = true);
                 shell.save_groups(
                     "save folders",
                     shell.workspace.project.clone(),
@@ -1953,10 +1946,9 @@ mod tests {
                     },
                     cx,
                 );
-                shell.started_by.insert(child, a);
                 shell.workspace.active = Some(a);
                 shell.invalidate_chrome(cx);
-                (plain, child)
+                plain
             })
             .unwrap();
         cx.refresh().unwrap();
@@ -1975,8 +1967,6 @@ mod tests {
         assert_eq!(second.left(), first.left());
         assert_eq!(second.size.height, px(28.));
         assert_eq!(row(visual, plain).unwrap().size.height, px(32.));
-        let started = row(visual, child).expect("a folder member keeps its Operator rail");
-        assert_eq!(started.left() - first.left(), px(30.));
         window
             .update(visual, |shell, _, cx| {
                 shell.change_sidebar_option("compact-session-cards", cx);
@@ -1985,7 +1975,6 @@ mod tests {
         visual.run_until_parked();
         assert_eq!(row(visual, a).unwrap().size.height, px(28.));
         assert_eq!(row(visual, b).unwrap().size.height, px(28.));
-        assert_eq!(row(visual, child).unwrap().size.height, px(28.));
         assert_eq!(row(visual, plain).unwrap().size.height, px(60.));
         window
             .update(visual, |_, window, _| {
@@ -2016,7 +2005,7 @@ mod tests {
                                 .as_solid()
                                 .is_some_and(|color| color == crate::theme::rail_color())
                     }),
-                    "the same spine as Operator rows connects folder members"
+                    "a spine connects folder members"
                 );
             })
             .unwrap();
@@ -2028,7 +2017,6 @@ mod tests {
         visual.refresh().unwrap();
         assert!(row(visual, a).is_none());
         assert!(row(visual, b).is_none());
-        assert!(row(visual, child).is_none());
         window
             .update(visual, |shell, _, cx| {
                 shell.query = "new".into();
@@ -2422,7 +2410,10 @@ mod tests {
                 assert!(saved_session(shell, a).is_none());
                 assert!(shell.mirror.state().reminders.is_empty());
                 assert!(saved_groups(shell).folders.is_empty());
-                assert!(shell.engine.seed().rows(a).unwrap().is_empty());
+                assert!(
+                    shell.engine.seed().rows(a).is_err(),
+                    "its history went with it"
+                );
             })
             .unwrap();
     }

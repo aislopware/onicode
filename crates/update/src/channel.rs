@@ -1,10 +1,8 @@
 //! Release channels: `stable` (everyone) and `beta` (Onicode.app testers).
 //!
 //! The channel a Mac follows is kept in the data dir, `update-channel.json`,
-//! where every updater reads it on each check: the app's own (whichever
-//! interface is installed) and the engine's report. It is a file, not the
-//! environment, so it survives the app replacing itself and an engine never
-//! inherits a channel from whoever started it.
+//! where the app's updater reads it on each check. It is a file, not the
+//! environment, so it survives the app replacing itself.
 //!
 //! Only macOS app installs follow it. Source builds are always on stable: beta
 //! publishes the macOS app alone.
@@ -128,7 +126,7 @@ pub fn claim_for_beta_build(data_dir: &Path, build: &str) -> std::io::Result<boo
 static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// Where this process reads the channel from: the data dir, set once at
-/// startup by the app and by the engine. Unset, it's stable.
+/// startup by the app. Unset, it's stable.
 pub fn set_data_dir(dir: &Path) {
     let _ = DATA_DIR.set(dir.to_path_buf());
 }
@@ -156,8 +154,7 @@ fn recorded(dir: &Path) -> Option<ChannelRecord> {
 }
 
 /// A choice someone made stands. With none on record (the app hasn't run since it
-/// was installed, say) an app stays on the channel it was built for: an update
-/// asked from another device must not move a beta app off beta by default.
+/// was installed, say) an app stays on the channel it was built for.
 fn choice_for(record: Option<ChannelRecord>, app_version: Option<&str>) -> Channel {
     match record {
         Some(record) => record.channel,

@@ -1,13 +1,10 @@
 //! Provider accounts: which account a session or a background chore runs on, and the book of
 //! every account a person added. Where an account keeps its files is the engine's.
-mod desktop;
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-pub use self::desktop::DesktopOverrides;
 use crate::provider::Kind;
 
 pub const DEFAULT: &str = "default";

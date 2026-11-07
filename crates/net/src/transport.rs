@@ -34,14 +34,13 @@ pub const MIN_MTU: u16 = 1200;
 /// The socket's receive buffer; macOS's default (768 KiB) overflows when a burst lands while
 /// the endpoint's task is late.
 const RECEIVE_BUFFER: usize = 4 << 20;
-/// Datagram buffers (the echo copies are small; this bounds a burst of them). noq drops the
+/// Datagram buffers (input copies are small; this bounds a burst of them). noq drops the
 /// oldest datagram when full.
 pub const DATAGRAM_BUFFER: usize = 1 << 20;
 /// Initial congestion window in packets: a LAN or a tailnet affords Chromium's burst, and the
 /// first screenful of a terminal is tens of kilobytes.
 const INITIAL_WINDOW_PACKETS: u64 = 32;
-/// Streams each way at once: an RPC call each, a terminal each, a tunnel's connections (a
-/// browser opens six per origin), a file each.
+/// Streams each way at once: an RPC call each (a terminal's watch among them), a file each.
 pub const MAX_STREAMS: u32 = 1024;
 
 /// A stream's receive window. quinn's default (1.25 MB) is 100 Mbit/s at 100 ms; a tailnet path
@@ -58,13 +57,8 @@ pub const CONNECTION_WINDOW: u32 = 64 << 20;
 /// the congestion window, which past a fast path's BDP already lets every byte BBR would send).
 pub const SEND_WINDOW: u64 = 64 << 20;
 
-/// Lowest send priority that goes ahead of queued datagrams: control, RPC, docs, registry and
-/// terminal streams.
+/// Lowest send priority that goes ahead of queued datagrams: control and RPC streams.
 pub const AHEAD_OF_DATAGRAMS: i32 = 0;
-/// A stream while it carries an echo: it leaves in the next packet, ahead of every other
-/// stream, unpaced, and past the send window (noq-proto patches 8 and 23; slopty: p99 beside
-/// six flooding sessions 30–73 → 11–25 ms).
-pub const ECHO_PRIORITY: i32 = 1;
 
 /// Set to `0`, a macOS endpoint sends and receives one datagram a call instead of through
 /// Apple's batched `sendmsg_x` and `recvmsg_x` (to measure against the plain path).
@@ -101,8 +95,7 @@ pub fn transport_config(seed: Option<u64>) -> TransportConfig {
         .send_window(SEND_WINDOW)
         .max_concurrent_bidi_streams(VarInt::from_u32(MAX_STREAMS))
         .max_concurrent_uni_streams(VarInt::from_u32(MAX_STREAMS))
-        .stream_priority_before_datagrams(Some(AHEAD_OF_DATAGRAMS))
-        .stream_priority_unpaced(Some(ECHO_PRIORITY));
+        .stream_priority_before_datagrams(Some(AHEAD_OF_DATAGRAMS));
     config
 }
 

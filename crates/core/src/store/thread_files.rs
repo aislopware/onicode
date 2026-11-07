@@ -115,7 +115,7 @@ impl Store {
     /// crash between deleting the conversation and its folder, or a deletion by
     /// another app sharing this database. Returns how many were removed.
     pub fn sweep_thread_dirs(&self) -> Result<usize, String> {
-        if self.shared.is_some() && self.shared_writable().is_err() {
+        if self.shared_writable().is_err() {
             return Ok(0);
         }
         let Some(root) = self.threads_root() else {
@@ -145,20 +145,12 @@ impl Store {
     }
 
     fn session_row_exists(&self, id: &str) -> Result<bool, String> {
-        let (query, key): (&str, &dyn rusqlite::ToSql) = if self.shared.is_some() {
-            ("SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?1)", &id)
-        } else {
-            match id.parse::<i64>() {
-                Ok(_) => (
-                    "SELECT EXISTS(SELECT 1 FROM native_sessions WHERE id=?1)",
-                    &id,
-                ),
-                // Not a native id; keep the folder rather than guess.
-                Err(_) => return Ok(true),
-            }
-        };
         self.conn
-            .query_row(query, [key], |row| row.get(0))
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?1)",
+                [id],
+                |row| row.get(0),
+            )
             .map_err(|e| e.to_string())
     }
 }
@@ -200,7 +192,7 @@ mod tests {
     #[test]
     fn deleting_a_session_removes_its_folder_and_sweep_clears_orphans() {
         let temp = tempfile::tempdir().unwrap();
-        let mut store = Store::open_monocode(&temp.path().join("sessions.db")).unwrap();
+        let mut store = Store::open(&temp.path().join("sessions.db")).unwrap();
         let kept = store.create("claude", "/tmp").unwrap().id;
         let deleted = store.create("claude", "/tmp").unwrap().id;
         let kept_dir = store.thread_attachments_dir(kept).unwrap().unwrap();
@@ -224,7 +216,7 @@ mod tests {
     #[test]
     fn adopting_moves_only_staged_files() {
         let temp = tempfile::tempdir().unwrap();
-        let store = Store::open_monocode(&temp.path().join("data/sessions.db")).unwrap();
+        let store = Store::open(&temp.path().join("data/sessions.db")).unwrap();
         let id = store.create("claude", "/tmp").unwrap().id;
         let staging = temp.path().join("staging");
         std::fs::create_dir_all(&staging).unwrap();
@@ -249,8 +241,8 @@ mod tests {
     #[test]
     fn sweep_preserves_other_database_files() {
         let temp = tempfile::tempdir().unwrap();
-        let live = Store::open_monocode(&temp.path().join("live.db")).unwrap();
-        let backup = Store::open_monocode(&temp.path().join("backup.db")).unwrap();
+        let live = Store::open(&temp.path().join("live.db")).unwrap();
+        let backup = Store::open(&temp.path().join("backup.db")).unwrap();
         let id = live.create("claude", "/tmp").unwrap().id;
         let image = live
             .thread_attachments_dir(id)
@@ -273,13 +265,13 @@ mod tests {
     #[test]
     fn deleting_conversation_preserves_legacy_files_shared_with_backup() {
         let temp = tempfile::tempdir().unwrap();
-        let live = Store::open_monocode(&temp.path().join("live.db")).unwrap();
+        let live = Store::open(&temp.path().join("live.db")).unwrap();
         let id = live.create("claude", "/tmp").unwrap().id;
         let persisted = live.persisted_session_id(id).unwrap();
         drop(live);
         std::fs::copy(temp.path().join("live.db"), temp.path().join("backup.db")).unwrap();
-        let mut live = Store::open_monocode(&temp.path().join("live.db")).unwrap();
-        let backup = Store::open_monocode(&temp.path().join("backup.db")).unwrap();
+        let mut live = Store::open(&temp.path().join("live.db")).unwrap();
+        let backup = Store::open(&temp.path().join("backup.db")).unwrap();
         assert!(backup.session_row_exists(&persisted).unwrap());
         let id = live.resolve_session_id(&persisted).unwrap();
         let image = temp
@@ -299,7 +291,7 @@ mod tests {
     #[test]
     fn adopting_parent_escape_preserves_original() {
         let temp = tempfile::tempdir().unwrap();
-        let mut store = Store::open_monocode(&temp.path().join("sessions.db")).unwrap();
+        let mut store = Store::open(&temp.path().join("sessions.db")).unwrap();
         let id = store.create("claude", "/tmp").unwrap().id;
         let staging = temp.path().join("staging");
         std::fs::create_dir_all(&staging).unwrap();
@@ -316,7 +308,7 @@ mod tests {
     #[test]
     fn adopting_symlink_escape_preserves_original() {
         let temp = tempfile::tempdir().unwrap();
-        let mut store = Store::open_monocode(&temp.path().join("sessions.db")).unwrap();
+        let mut store = Store::open(&temp.path().join("sessions.db")).unwrap();
         let id = store.create("claude", "/tmp").unwrap().id;
         let staging = temp.path().join("staging");
         std::fs::create_dir_all(&staging).unwrap();

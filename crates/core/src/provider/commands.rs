@@ -163,10 +163,10 @@ mod tests {
             "/omp:custom tail"
         );
         assert_eq!(native_prompt(Kind::Pi, "/omp:compact"), "/omp:compact");
-        assert_eq!(native_invocation(Kind::Omp, "visualize"), "omp:visualize");
+        assert_eq!(native_invocation(Kind::Omp, "plan"), "omp:plan");
         assert_eq!(
-            native_prompt(Kind::Omp, "/omp:visualize latency"),
-            "/visualize latency"
+            native_prompt(Kind::Omp, "/omp:plan latency"),
+            "/plan latency"
         );
     }
     #[test]

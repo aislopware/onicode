@@ -1,11 +1,11 @@
-//! The link on a simulated network, in virtual time (`onicode_net_sim`): a key's echo beside a
-//! flood, a flood that stops soon after Ctrl-C, loss and reordering, a Wi-Fi blackout ridden out
-//! and one that ends the link, a seed that repeats its run to the packet, a lost key carried by
-//! its datagram copy, packets that never pass the tailnet's MTU, and builds that refuse each
-//! other's wire. Nothing reads a real clock, so a minute's outage takes milliseconds and every
-//! number here is the same on every run.
+//! The link on a simulated network, in virtual time (`onicode_net_sim`): a flood that stops soon
+//! after Ctrl-C, loss and reordering, a Wi-Fi blackout ridden out and one that ends the link, a
+//! seed that repeats its run to the packet, a lost key carried by its datagram copy, packets that
+//! never pass the tailnet's MTU, and builds that refuse each other's wire. Nothing reads a real
+//! clock, so a minute's outage takes milliseconds and every number here is the same on every run.
 //!
-//! Ported from axolotty's `axquic` `tests/sim.rs` (MIT); its lanes are terminal streams here.
+//! Ported from axolotty's `axquic` `tests/sim.rs` (MIT); its lanes are file streams here, and its
+//! copies go on the desktop input channel.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -16,7 +16,7 @@ use bytes::Bytes;
 use onicode_net::hello::{self, Hello, Role, Session};
 use onicode_net::link::Link;
 use onicode_net::stream::{StreamHead, StreamKind, channel};
-use onicode_net::transport::{ECHO_PRIORITY, PATH_MTU, endpoint_on};
+use onicode_net::transport::{AHEAD_OF_DATAGRAMS, PATH_MTU, endpoint_on};
 use onicode_net::{NetError, StreamTx, close};
 use onicode_net_sim::{Faults, Net, report_seed, shape};
 use tokio::sync::mpsc;
@@ -24,7 +24,7 @@ use tokio::time::Instant;
 
 const KEYS: u32 = 120;
 const KEY_EVERY: Duration = Duration::from_millis(30);
-/// Flood lanes are this and up; a terminal's lanes are below.
+/// Flood lanes are this and up; the keys' and echoes' lanes are below.
 const FLOOD_BASE: u32 = 100;
 const KEY_LANE: u32 = 0;
 const ECHO_LANE: u32 = 9;
@@ -105,7 +105,7 @@ impl Got {
     }
 }
 
-/// One end's streams, a terminal stream per lane, opened by its first bytes.
+/// One end's streams, a stream per lane, opened by its first bytes.
 #[derive(Clone)]
 struct Side {
     link: Link,
@@ -132,19 +132,23 @@ impl Side {
         if found.is_some() {
             return found;
         }
-        let head = StreamHead::new(StreamKind::Terminal, lane.to_string());
+        let head = StreamHead::new(StreamKind::File, lane.to_string());
         let (tx, _rx) = self.link.open(&head).await.ok()?;
+        // As in the app: a flood is file transfers, behind the datagrams; keys and echoes go
+        // ahead of them, as an RPC stream does.
+        if lane < FLOOD_BASE {
+            tx.set_priority(AHEAD_OF_DATAGRAMS);
+        }
         let tx = Arc::new(tx);
         self.lanes.lock().unwrap().insert(lane, Arc::clone(&tx));
         Some(tx)
     }
 
-    /// Queues `data` on `lane` at `priority`.
-    async fn send(&self, lane: u32, priority: i32, data: Bytes) {
+    /// Queues `data` on `lane`.
+    async fn send(&self, lane: u32, data: Bytes) {
         let Some(tx) = self.tx(lane).await else {
             return;
         };
-        tx.set_priority(priority);
         tx.send(data);
     }
 
@@ -152,7 +156,7 @@ impl Side {
     fn copy(&self, lane: u32, data: &[u8]) {
         let mut d = lane.to_be_bytes().to_vec();
         d.extend_from_slice(data);
-        self.link.copy(channel::TERMINAL_COPY, &d);
+        self.link.copy(channel::DESKTOP_INPUT, &d);
     }
 
     fn pending(&self, lane: u32) -> usize {
@@ -189,7 +193,7 @@ impl Side {
         let (link, g, n) = (self.link.clone(), Arc::clone(&got), notify.clone());
         tokio::spawn(async move {
             while let Ok((chan, d)) = link.recv_datagram().await {
-                if chan != channel::TERMINAL_COPY || d.len() < 4 {
+                if chan != channel::DESKTOP_INPUT || d.len() < 4 {
                     continue;
                 }
                 let lane = u32::from_be_bytes([d[0], d[1], d[2], d[3]]);
@@ -270,7 +274,7 @@ fn flood(side: &Side, lanes: u32) -> tokio::task::JoinHandle<()> {
         loop {
             for lane in FLOOD_BASE..FLOOD_BASE + lanes {
                 while side.pending(lane) < 256 << 10 {
-                    side.send(lane, 0, chunk.clone()).await;
+                    side.send(lane, chunk.clone()).await;
                 }
             }
             tokio::time::sleep(Duration::from_millis(1)).await;
@@ -278,23 +282,21 @@ fn flood(side: &Side, lanes: u32) -> tokio::task::JoinHandle<()> {
     })
 }
 
-/// A key every 30 ms, each echoed by the far side the moment it is applied, at
-/// `echo_priority`; with `copies`, each key and echo also goes as a datagram copy. Returns each
-/// key's time to its echo, as the app would apply it.
-async fn type_keys(p: &mut Pair, echo_priority: i32, copies: bool) -> Vec<Duration> {
+/// A key every 30 ms, each echoed by the far side the moment it is applied; with `copies`, each
+/// key and echo also goes as a datagram copy. Returns each key's time to its echo, as the app
+/// would apply it.
+async fn type_keys(p: &mut Pair, copies: bool) -> Vec<Duration> {
     let server = p.server.clone();
     let s = Arc::clone(&p.s);
     let mut s_rx = std::mem::replace(&mut p.s_rx, mpsc::unbounded_channel().1);
-    // The far side: every key applied is echoed back on the terminal's lane, in order.
+    // The far side: every key applied is echoed back on the echo lane, in order.
     let echoer = tokio::spawn(async move {
         let mut echoed = 0;
         while s_rx.recv().await.is_some() {
             let applied = s.applied(KEY_LANE).len() as u32;
             for id in echoed..applied {
                 let echo = id.to_be_bytes();
-                server
-                    .send(ECHO_LANE, echo_priority, Bytes::copy_from_slice(&echo))
-                    .await;
+                server.send(ECHO_LANE, Bytes::copy_from_slice(&echo)).await;
                 if copies {
                     server.copy(ECHO_LANE, &echo);
                 }
@@ -306,11 +308,7 @@ async fn type_keys(p: &mut Pair, echo_priority: i32, copies: bool) -> Vec<Durati
     for k in 0..KEYS {
         sent.push(Instant::now());
         p.client
-            .send(
-                KEY_LANE,
-                ECHO_PRIORITY,
-                Bytes::copy_from_slice(&k.to_be_bytes()),
-            )
+            .send(KEY_LANE, Bytes::copy_from_slice(&k.to_be_bytes()))
             .await;
         if copies {
             p.client.copy(KEY_LANE, &k.to_be_bytes());
@@ -370,99 +368,6 @@ fn seeds(gate: u64) -> Vec<u64> {
     {
         Some(n) => (1..=n).collect(),
         None => vec![gate],
-    }
-}
-
-/// Twelve terminals stream a build log on the far Mac while the person types in another: the
-/// echo leaves ahead of all of them, so it waits on the path's queue, not behind twelve
-/// packets of other terminals' output per hop. The same echo at the terminals' own priority is
-/// the canary: it is shown slower in the same run, so the bound can fail.
-#[tokio::test(start_paused = true)]
-async fn an_echo_beside_a_flood_waits_on_the_path_not_the_flood() {
-    const TERMINALS: u32 = 12;
-    let mean = |v: &[Duration]| v.iter().sum::<Duration>() / v.len() as u32;
-    let mut held = Vec::new();
-    for seed in seeds(11) {
-        let _seed = report_seed(
-            "an_echo_beside_a_flood_waits_on_the_path_not_the_flood",
-            seed,
-        );
-        let mut idle = pair(Faults::over(wifi()), seed).await;
-        let alone = type_keys(&mut idle, ECHO_PRIORITY, false).await;
-        idle.client.close();
-
-        let run = async |priority: i32| {
-            let mut p = pair(Faults::over(wifi()), seed).await;
-            let f = flood(&p.server, TERMINALS);
-            tokio::time::sleep(Duration::from_millis(500)).await; // the flood fills the path first
-            let start = Instant::now();
-            let echoes = type_keys(&mut p, priority, false).await;
-            let rate = flooded(&p.c) as f64
-                / 1e6
-                / (start.elapsed() + Duration::from_millis(500)).as_secs_f64();
-            let bandwidth = p.server.link.bandwidth();
-            f.abort();
-            p.client.close();
-            (echoes, rate, p.net.counts(), bandwidth)
-        };
-        let (lifted, rate, counts, bandwidth) = run(ECHO_PRIORITY).await;
-        let (level, _, _, _) = run(0).await;
-
-        let q = |v: &[Duration], f| ms(quantile(v, f));
-        println!(
-            "seed {seed}: echo p50/p99/max ms idle {:.0}/{:.0}/{:.0}, flooded {:.0}/{:.0}/{:.0}, flooded level {:.0}/{:.0}/{:.0}; flood {rate:.2} MB/s (BBR reads {:.2}), overflowed {} lost {} of {}",
-            q(&alone, 0.5),
-            q(&alone, 0.99),
-            q(&alone, 1.0),
-            q(&lifted, 0.5),
-            q(&lifted, 0.99),
-            q(&lifted, 1.0),
-            q(&level, 0.5),
-            q(&level, 0.99),
-            q(&level, 1.0),
-            bandwidth.unwrap_or(0) as f64 / 1e6,
-            counts.shaped.overflowed,
-            counts.shaped.lost,
-            counts.shaped.sent,
-        );
-        if std::env::var_os("ONICODE_SIM_REPORT").is_some() {
-            continue;
-        }
-        assert!(
-            rate > 4.0,
-            "seed {seed}: the flood still has most of the 5 MB/s link ({rate:.2})"
-        );
-        // The app sizes how far a terminal may fall behind by this, so it has to be near the
-        // truth. BBR's is a windowed maximum, and jitter bunches acknowledgements (axquic read
-        // 5.3–6.1 over 20 seeds).
-        let bandwidth = bandwidth.expect("measured while flooding") as f64 / 1e6;
-        assert!(
-            (4.5..=7.0).contains(&bandwidth),
-            "seed {seed}: BBR reads the 5 MB/s link as {bandwidth:.2} MB/s"
-        );
-        // What the flood adds to an echo is the bottleneck's standing queue: BBR's bound on what
-        // is in flight, about two round trips at this rate (15–17 ms over 30 seeds in axquic;
-        // before the send window was fitted and an echo exempt from it, 100–450 ms in half).
-        let added = quantile(&lifted, 1.0).saturating_sub(quantile(&alone, 1.0));
-        assert!(
-            added <= Duration::from_millis(20),
-            "seed {seed}: the flood adds {added:?} to an echo"
-        );
-        assert!(
-            counts.largest <= u64::from(PATH_MTU),
-            "seed {seed}: a {}-byte datagram",
-            counts.largest
-        );
-        held.push(mean(&level).saturating_sub(mean(&lifted)));
-    }
-    // The canary: the same echo at the terminals' priority waits its turn behind them. By how
-    // much varies with the seed (0.3–3 ms on average over 100), so it is held over the sweep.
-    if !held.is_empty() {
-        let held = mean(&held);
-        assert!(
-            held >= Duration::from_millis(1),
-            "unlifted, the echo waits its turn ({held:?})"
-        );
     }
 }
 
@@ -540,7 +445,7 @@ async fn loss_and_reordering_cost_time_not_bytes() {
     let message = |i: u32, l: u32| -> Vec<u8> { (i ^ l).to_be_bytes().repeat(256) };
     for i in 0..400_u32 {
         for &l in &lanes {
-            p.server.send(l, 0, Bytes::from(message(i, l))).await;
+            p.server.send(l, Bytes::from(message(i, l))).await;
         }
         if i % 16 == 0 {
             tokio::time::sleep(Duration::from_millis(1)).await;
@@ -581,9 +486,9 @@ async fn a_blackout_shorter_than_the_idle_timeout_is_ridden_out() {
     );
     let mut p = pair(Faults::over(wifi()), SEED).await;
     p.net.blackout(Duration::from_secs(10));
-    p.server.send(5, 0, Bytes::from_static(b"during")).await;
+    p.server.send(5, Bytes::from_static(b"during")).await;
     tokio::time::sleep(Duration::from_secs(12)).await;
-    p.server.send(5, 0, Bytes::from_static(b"after!")).await;
+    p.server.send(5, Bytes::from_static(b"after!")).await;
     let c = Arc::clone(&p.c);
     tokio::time::timeout(Duration::from_secs(5), async {
         while c.lane_len(5) < 12 {
@@ -636,7 +541,7 @@ async fn a_seed_repeats_its_run() {
         )
         .await;
         let f = flood(&p.server, 4);
-        let echoes = type_keys(&mut p, ECHO_PRIORITY, true).await;
+        let echoes = type_keys(&mut p, true).await;
         f.abort();
         p.client.close();
         (p.net.digest(), echoes)
@@ -671,11 +576,11 @@ async fn a_lost_key_or_echo_is_carried_by_its_copy() {
         let _seed = report_seed("a_lost_key_or_echo_is_carried_by_its_copy", seed);
         for (copies, out, faults) in [(true, &mut copied, lossy()), (false, &mut alone, lossy())] {
             let mut p = pair(faults, seed).await;
-            out.extend(type_keys(&mut p, ECHO_PRIORITY, copies).await);
+            out.extend(type_keys(&mut p, copies).await);
             p.client.close();
         }
         let mut p = pair(Faults::over(wifi()), seed).await;
-        clean.extend(type_keys(&mut p, ECHO_PRIORITY, true).await);
+        clean.extend(type_keys(&mut p, true).await);
         p.client.close();
         println!(
             "loss seed {seed}: copied p99 so far {:.0} ms",

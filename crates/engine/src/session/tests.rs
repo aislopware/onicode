@@ -128,7 +128,7 @@ impl Harness {
 
     /// A hub over a store holding one session of `provider`.
     fn of(provider: &str, limits: Limits) -> Self {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let store = Store::in_memory().unwrap();
         let id = store.create(provider, "/project").unwrap().id;
         Self::over(Arc::new(Mutex::new(store)), id, limits)
     }
@@ -1099,7 +1099,7 @@ impl Spawn for Tokio {
 async fn the_service_serves_a_turn_over_rpc() {
     use onicode_protocol::{Call, Routed, Watch};
 
-    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let store = Store::in_memory().unwrap();
     let id = store.create("codex", "/project").unwrap().id;
     let jobs = Jobs::default();
     let hub = SessionHub::with_runner(
@@ -1252,7 +1252,7 @@ for line in sys.stdin:
     )
     .unwrap();
     std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let store = Store::open_monocode(&dir.path().join("sessions.db")).unwrap();
+    let store = Store::open(&dir.path().join("sessions.db")).unwrap();
     let summary = store.create("codex", dir.path().to_str().unwrap()).unwrap();
     let id = summary.id;
     let store: Database = Arc::new(Mutex::new(store));
@@ -1293,7 +1293,7 @@ for line in sys.stdin:
             attachments: Vec::new(),
             turn: Some(Box::new(TurnContext {
                 summary,
-                // In process the whole struct crosses: no visual bridge for a text-only turn.
+                // In process the whole struct crosses.
                 settings: Settings {
                     text_only: true,
                     ..Settings::default()
@@ -2728,4 +2728,40 @@ fn a_disarmed_limit_waits_for_the_person() {
         world.stored().usage_limit.is_some(),
         "the limit stays for the banner"
     );
+}
+
+#[test]
+fn a_finished_turns_git_reaches_the_viewers_last_update() {
+    let git = onicode_protocol::git::TurnGit {
+        branch: Some("main".into()),
+        ahead: 1,
+        ..Default::default()
+    };
+    let mut viewer = Viewer::default();
+    let finished = viewer.absorb(Item::Events {
+        first: 1,
+        last: 2,
+        events: vec![
+            SessionEvent::TurnFinished {
+                turn: 1,
+                info: onicode_core::agent::TurnInfo {
+                    git: Some(git.clone()),
+                    ..Default::default()
+                },
+            },
+            SessionEvent::Status {
+                status: "Ready".into(),
+                turn: Some(session::TurnState {
+                    provider_turn_id: None,
+                    ready: false,
+                    finished: true,
+                }),
+            },
+        ],
+    });
+    assert!(finished);
+    let update = viewer.take().expect("the last update");
+    assert!(update.finished);
+    assert_eq!(update.git, Some(git));
+    assert_eq!(viewer.state().settings.turns[&1].git, update.git);
 }

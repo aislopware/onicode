@@ -4,8 +4,8 @@
 //! either engine. The host's ledger answers a call delivered twice (a reply lost with its link)
 //! with its first receipt, so a delivery that cannot tell whether it landed simply goes again.
 //!
-//! The native schema keeps the entries in `outbox`; the desktop schema's settings sidecar keeps
-//! them in its own `outbox` (sidecar version 3); a `:memory:` desktop store keeps them in memory.
+//! The settings sidecar keeps the entries in its `outbox` (sidecar version 3); a `:memory:` store
+//! keeps them in memory.
 use rusqlite::params;
 
 use super::Store;
@@ -29,12 +29,9 @@ fn sql<T>(result: rusqlite::Result<T>) -> Result<T, String> {
     result.map_err(|e| e.to_string())
 }
 
-/// The connection that holds the outbox table, or `None` for a desktop store in memory.
+/// The connection that holds the outbox table, or `None` for a store in memory.
 fn table(store: &Store) -> Option<&rusqlite::Connection> {
-    match &store.shared {
-        None => Some(&store.conn),
-        Some(shared) => shared.extras_db.as_ref(),
-    }
+    store.shared.extras_db.as_ref()
 }
 
 impl Store {
@@ -42,10 +39,7 @@ impl Store {
     /// first entry of an op stands, as the host's first receipt does.
     pub fn outbox_put(&self, entry: &OutboxEntry) -> Result<bool, String> {
         let Some(conn) = table(self) else {
-            let Some(shared) = &self.shared else {
-                return Ok(false);
-            };
-            let mut ledger = shared.ledger.borrow_mut();
+            let mut ledger = self.shared.ledger.borrow_mut();
             if ledger.outbox.iter().any(|held| held.op == entry.op) {
                 return Ok(false);
             }
@@ -65,18 +59,13 @@ impl Store {
         let Some(conn) = table(self) else {
             return Ok(self
                 .shared
-                .as_ref()
-                .map(|shared| {
-                    shared
-                        .ledger
-                        .borrow()
-                        .outbox
-                        .iter()
-                        .filter(|entry| entry.engine == engine)
-                        .cloned()
-                        .collect()
-                })
-                .unwrap_or_default());
+                .ledger
+                .borrow()
+                .outbox
+                .iter()
+                .filter(|entry| entry.engine == engine)
+                .cloned()
+                .collect());
         };
         let mut query = sql(conn
             .prepare("SELECT op,engine,method,params,at FROM outbox WHERE engine=?1 ORDER BY n"))?;
@@ -97,17 +86,12 @@ impl Store {
         let Some(conn) = table(self) else {
             let mut engines: Vec<String> = self
                 .shared
-                .as_ref()
-                .map(|shared| {
-                    shared
-                        .ledger
-                        .borrow()
-                        .outbox
-                        .iter()
-                        .map(|entry| entry.engine.clone())
-                        .collect()
-                })
-                .unwrap_or_default();
+                .ledger
+                .borrow()
+                .outbox
+                .iter()
+                .map(|entry| entry.engine.clone())
+                .collect();
             engines.sort();
             engines.dedup();
             return Ok(engines);
@@ -120,14 +104,13 @@ impl Store {
     /// Whether `op` waits in the outbox.
     pub fn outbox_holds(&self, op: &str) -> Result<bool, String> {
         let Some(conn) = table(self) else {
-            return Ok(self.shared.as_ref().is_some_and(|shared| {
-                shared
-                    .ledger
-                    .borrow()
-                    .outbox
-                    .iter()
-                    .any(|entry| entry.op == op)
-            }));
+            return Ok(self
+                .shared
+                .ledger
+                .borrow()
+                .outbox
+                .iter()
+                .any(|entry| entry.op == op));
         };
         let count: i64 = sql(conn.query_row(
             "SELECT COUNT(*) FROM outbox WHERE op=?1",
@@ -140,13 +123,11 @@ impl Store {
     /// Takes `op` out of the outbox: its engine answered it.
     pub fn outbox_remove(&self, op: &str) -> Result<(), String> {
         let Some(conn) = table(self) else {
-            if let Some(shared) = &self.shared {
-                shared
-                    .ledger
-                    .borrow_mut()
-                    .outbox
-                    .retain(|entry| entry.op != op);
-            }
+            self.shared
+                .ledger
+                .borrow_mut()
+                .outbox
+                .retain(|entry| entry.op != op);
             return Ok(());
         };
         sql(conn.execute("DELETE FROM outbox WHERE op=?1", [op]))?;
@@ -168,16 +149,14 @@ mod tests {
         }
     }
 
-    /// Every layout keeps one entry per op, in the order they were put in, per engine, and
+    /// A store keeps one entry per op, in the order they were put in, per engine, and
     /// forgets one once removed; a file store keeps them across a reopen.
     #[test]
     fn the_outbox_keeps_one_entry_per_op_in_order() {
         let dir = tempfile::tempdir().unwrap();
         let stores = [
-            Store::open(std::path::Path::new(":memory:")).unwrap(),
-            Store::open(&dir.path().join("native.db")).unwrap(),
-            Store::open_monocode(std::path::Path::new(":memory:")).unwrap(),
-            Store::open_monocode(&dir.path().join("monocode.db")).unwrap(),
+            Store::in_memory().unwrap(),
+            Store::open(&dir.path().join("monocode.db")).unwrap(),
         ];
         for store in &stores {
             assert!(store.outbox_put(&entry("b", "mac", 2)).unwrap());
@@ -201,9 +180,8 @@ mod tests {
             assert_eq!(store.outbox_for("mac").unwrap(), [entry("a", "mac", 1)]);
         }
         drop(stores);
-        let native = Store::open(&dir.path().join("native.db")).unwrap();
-        assert_eq!(native.outbox_for("mac").unwrap(), [entry("a", "mac", 1)]);
-        let desktop = Store::open_monocode(&dir.path().join("monocode.db")).unwrap();
-        assert_eq!(desktop.outbox_for("vps").unwrap(), [entry("c", "vps", 3)]);
+        let reopened = Store::open(&dir.path().join("monocode.db")).unwrap();
+        assert_eq!(reopened.outbox_for("mac").unwrap(), [entry("a", "mac", 1)]);
+        assert_eq!(reopened.outbox_for("vps").unwrap(), [entry("c", "vps", 3)]);
     }
 }

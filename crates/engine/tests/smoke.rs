@@ -137,8 +137,6 @@ fn the_engine_binary_serves_a_turn() {
                     cwd: dir.path().display().to_string(),
                     title: None,
                     start: NewSession::Bare,
-                    started_by: None,
-                    scope: Vec::new(),
                 },
             )
             .await

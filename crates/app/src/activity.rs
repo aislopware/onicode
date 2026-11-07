@@ -119,19 +119,6 @@ impl Element for Shimmer {
     }
 }
 
-/// A work icon by name. `monocode` is the app's own logo, for its tools.
-pub(crate) fn glyph(name: &'static str, side: f32) -> gpui::Div {
-    if name == "onicode" {
-        return gpui::div()
-            .size(gpui::px(side))
-            .flex_shrink_0()
-            .child(gpui::img("monocode.png").size(gpui::px(side)));
-    }
-    gpui::div()
-        .size(gpui::px(side))
-        .flex_shrink_0()
-        .child(crate::theme::icon(name, side))
-}
 pub(crate) fn file_icon(path: &str, side: f32) -> AnyElement {
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
     crate::file_icons::file_type_icon(name, false, false, side)
@@ -147,14 +134,10 @@ pub(crate) fn summary(tools: &[ToolCall], live: bool) -> (String, &'static str) 
     let mut agents = 0;
     let mut failed_agents = 0;
     let mut others = 0;
-    let mut charts = 0;
-    let mut chart_steps = 0;
     let mut current = "think";
     for tool in tools {
         let (action, target) = tool.summary();
-        let visual = tool.visual_step();
         let kind = match action.as_str() {
-            _ if visual.is_some() => "visual",
             "Read" | "List" | "Search" | "Find" => "research",
             "Edit" | "Write" => "edit",
             "Run" => "run",
@@ -166,13 +149,6 @@ pub(crate) fn summary(tools: &[ToolCall], live: bool) -> (String, &'static str) 
         }
         if live {
             current = kind;
-        }
-        if let Some(step) = visual {
-            chart_steps += 1;
-            if step == onicode_protocol::tool::VisualStep::Show {
-                charts += 1;
-            }
-            continue;
         }
         match action.as_str() {
             "Read" => {
@@ -254,21 +230,6 @@ pub(crate) fn summary(tools: &[ToolCall], live: bool) -> (String, &'static str) 
                         format!("{commands} commands")
                     }
                 ),
-                "visual" if charts == 0 => if live {
-                    "Planning a chart"
-                } else {
-                    "Planned a chart"
-                }
-                .into(),
-                "visual" => format!(
-                    "{} {}",
-                    if live { "Drawing" } else { "Drew" },
-                    if charts == 1 {
-                        "a chart".into()
-                    } else {
-                        format!("{charts} charts")
-                    }
-                ),
                 "agent" => format!(
                     "{} {}",
                     if live { "Running" } else { "Ran" },
@@ -300,7 +261,6 @@ pub(crate) fn summary(tools: &[ToolCall], live: bool) -> (String, &'static str) 
         (agents, "bot"),
         (read_calls + searches, "search"),
         (others, "terminal"),
-        (chart_steps, "onicode"),
     ] {
         if count > most {
             most = count;
@@ -317,7 +277,7 @@ pub(crate) fn rail_branch(last: bool, branch: bool) -> impl IntoElement {
     rail_branch_at(last, branch, 0.)
 }
 /// The same rail for a step whose content sits `offset` lower, as the
-/// sidebar's `.orchestration-tree-step` does with its 2px padding.
+/// sidebar folder's step does with its 2px padding.
 pub(crate) fn rail_branch_at(last: bool, branch: bool, offset: f32) -> impl IntoElement {
     rail_from(6., last, branch, offset)
 }

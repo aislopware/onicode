@@ -149,7 +149,7 @@ struct Chat {
     title: String,
     provider: String,
     cwd: String,
-    /// Archived, an operator's hidden child, or started by another chat.
+    /// Archived.
     side: bool,
     busy: bool,
     /// The workspace's unread mark, as last read.
@@ -191,10 +191,10 @@ impl Chat {
         self.title.clone_from(&summary.session.title);
         self.provider.clone_from(&summary.session.provider);
         self.cwd.clone_from(&summary.session.cwd);
-        self.side = summary.session.archived || summary.hidden || summary.started_by.is_some();
+        self.side = summary.session.archived;
     }
 
-    fn fact(&self, worker: bool) -> Fact {
+    fn fact(&self) -> Fact {
         let need = self
             .run
             .approvals
@@ -223,7 +223,7 @@ impl Chat {
             ended: self.ended,
             unseen: self.unseen,
             active_at: self.active_at,
-            quiet: self.side || worker,
+            quiet: self.side,
         }
     }
 }
@@ -331,8 +331,6 @@ pub(crate) struct Step {
 struct Inner {
     alerter: Alerter,
     chats: HashMap<i64, Chat>,
-    /// Each orchestration lead's workers, which alert through their lead.
-    leads: HashMap<i64, Vec<i64>>,
     terminals: HashMap<TerminalId, Term>,
     reports: HashMap<String, Report>,
     prefs: Prefs,
@@ -343,15 +341,9 @@ struct Inner {
 }
 
 impl Inner {
-    fn worker(&self, row: i64) -> bool {
-        self.leads.values().any(|workers| workers.contains(&row))
-    }
-
     fn observe(&mut self, row: i64, now: u64) {
-        let worker = self.worker(row);
         if let Some(chat) = self.chats.get(&row) {
-            self.alerter
-                .observe(Key::Session(row), chat.fact(worker), now);
+            self.alerter.observe(Key::Session(row), chat.fact(), now);
         }
     }
 
@@ -368,8 +360,7 @@ impl Inner {
             if chat.busy {
                 wants.watch.push((row, chat.session));
             }
-            let worker = self.worker(row);
-            self.alerter.seed(Key::Session(row), chat.fact(worker));
+            self.alerter.seed(Key::Session(row), chat.fact());
             self.chats.insert(row, chat);
             return;
         }
@@ -398,13 +389,6 @@ impl Inner {
             wants.ended.push((row, chat.session));
         }
         self.observe(row, now);
-    }
-
-    fn leads(&mut self, lead: i64, workers: Vec<i64>, now: u64) {
-        let before = self.leads.insert(lead, workers.clone()).unwrap_or_default();
-        for row in before.into_iter().chain(workers) {
-            self.observe(row, now);
-        }
     }
 
     /// Drops reports that went stale, then takes in what the fresh ones have on screen: those
@@ -620,7 +604,6 @@ impl AlertsHub {
             inner: Mutex::new(Inner {
                 alerter: Alerter::default(),
                 chats: HashMap::new(),
-                leads: HashMap::new(),
                 terminals: HashMap::new(),
                 reports: HashMap::new(),
                 prefs: Prefs {
@@ -699,11 +682,6 @@ impl AlertsHub {
         let mut inner = self.lock();
         match item {
             Item::Snapshot { state, .. } => {
-                inner.leads = state
-                    .orchestrations
-                    .iter()
-                    .map(|lead| (lead.lead, workers(&lead.summary.tasks)))
-                    .collect();
                 let rows: HashSet<i64> = state
                     .sessions
                     .iter()
@@ -732,10 +710,6 @@ impl AlertsHub {
                         WorkspaceEvent::Removed(row) => {
                             inner.forget(row);
                             wants.unwatch.push(row);
-                        }
-                        WorkspaceEvent::Orchestration(lead) => {
-                            let workers = workers(&lead.summary.tasks);
-                            inner.leads(lead.lead, workers, now);
                         }
                         _ => {}
                     }
@@ -909,9 +883,4 @@ impl AlertsHub {
         }
         step
     }
-}
-
-/// The sessions an orchestration's tasks run in.
-fn workers(tasks: &[onicode_protocol::sessions::SummaryTask]) -> Vec<i64> {
-    tasks.iter().filter_map(|task| task.session).collect()
 }

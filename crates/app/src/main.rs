@@ -14,13 +14,11 @@ mod accounts;
 mod activity;
 mod app_log;
 mod app_menu;
-mod arcade;
 mod assets;
 mod automations;
 mod changes;
 mod composer_completion;
 mod composer_motion;
-mod composer_runner;
 mod context_meter;
 mod conversation;
 // A Mac's whole display in a window of its own (remote-desktop.md): macOS only.
@@ -29,7 +27,7 @@ mod desktop;
 #[cfg(debug_assertions)]
 mod dev_reload;
 mod diff_view;
-mod editor_analysis;
+mod dither;
 mod editor_scrollbar;
 mod editor_syntax;
 mod engine_client;
@@ -78,7 +76,6 @@ mod questions;
 mod quick_composer;
 mod quick_open;
 mod reflow_motion;
-mod resource_pressure;
 mod response_actions;
 mod reveal;
 mod review;
@@ -103,7 +100,6 @@ mod traffic_lights;
 mod transcript;
 mod ui_state;
 mod usage_footer;
-mod visuals;
 #[cfg(test)]
 mod wheel_glide_tests;
 mod window_state;
@@ -178,47 +174,9 @@ fn main() {
         println!("onicode {}", onicode_update::app_version());
         return;
     }
-    if cli_args.first().is_some_and(|a| a == "visual-mcp") {
-        if let Err(error) = onicode_core::visual_bridge::mcp_stdio() {
-            eprintln!("{error}");
-            std::process::exit(1);
-        }
-        return;
-    }
-    if cli_args.first().is_some_and(|a| a == "visual") {
-        match onicode_core::visual_bridge::client(&cli_args[1..]) {
-            Ok(value) => {
-                println!("{value}");
-                if value.get("ok") == Some(&serde_json::Value::Bool(false)) {
-                    std::process::exit(1);
-                }
-            }
-            Err(error) => {
-                println!("{}", serde_json::json!({"ok":false,"error":error}));
-                std::process::exit(1);
-            }
-        }
-        return;
-    }
-    if cli_args.first().is_some_and(|a| a == "app") {
-        match onicode_core::app_access::bridge::client(&cli_args[1..]) {
-            Ok(value) => {
-                println!("{value}");
-                if value.get("ok") == Some(&serde_json::Value::Bool(false)) {
-                    std::process::exit(1);
-                }
-            }
-            Err(error) => {
-                println!("{}", serde_json::json!({"ok":false,"error":error}));
-                std::process::exit(1);
-            }
-        }
-        return;
-    }
     let mut args = std::env::args().skip(1);
     let mut fixture = false;
     let mut chat_fixture = false;
-    let mut visual_fixture = false;
     let mut check_data = false;
     let mut explicit_cwd = false;
     let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -226,7 +184,6 @@ fn main() {
         match arg.as_str() {
             "--fixture" => fixture = true,
             "--chat-fixture" => chat_fixture = true,
-            "--visual-fixture" => visual_fixture = true,
             "--check-data" => check_data = true,
             "--cwd" => {
                 explicit_cwd = true;
@@ -234,7 +191,7 @@ fn main() {
             }
             "--help" | "-h" => {
                 println!(
-                    "onicode [--cwd PATH] [--check-data]\nData lives in ~/Library/Application Support/Onicode (Onicode Development for debug builds, or ONICODE_DATA_DIR).\n--fixture, --chat-fixture and --visual-fixture add local samples to debug builds' data only.\nvisual docs prints the native visual SDK reference.\nvisual check/show --input FILE validates or publishes native session visuals.\nvisual-mcp runs the session visual tool server over standard input/output.\n--check-data validates and lists the store read-only, then exits."
+                    "onicode [--cwd PATH] [--check-data]\nData lives in ~/Library/Application Support/Onicode (Onicode Development for debug builds, or ONICODE_DATA_DIR).\n--fixture and --chat-fixture add local samples to debug builds' data only.\n--check-data validates and lists the store read-only, then exits."
                 );
                 return;
             }
@@ -244,7 +201,7 @@ fn main() {
             }
         }
     }
-    if !cfg!(debug_assertions) && (fixture || chat_fixture || visual_fixture) {
+    if !cfg!(debug_assertions) && (fixture || chat_fixture) {
         eprintln!("Fixtures are for debug builds; they never go into your Onicode data.");
         std::process::exit(2);
     }
@@ -278,7 +235,6 @@ fn main() {
     let samples = Fixtures {
         scroll: fixture,
         chat: chat_fixture,
-        visual: visual_fixture,
     };
     app_log::init();
     let platform = gpui_platform::current_platform(false);
@@ -386,12 +342,11 @@ struct Launch {
 struct Fixtures {
     scroll: bool,
     chat: bool,
-    visual: bool,
 }
 
 impl Fixtures {
     fn any(self) -> bool {
-        self.scroll || self.chat || self.visual
+        self.scroll || self.chat
     }
 }
 
@@ -433,9 +388,6 @@ fn launch(
         eprintln!("{error}");
         std::process::exit(1);
     });
-    if let Err(error) = ui_state.adopt(&engine) {
-        eprintln!("Cannot take the saved workspace from the engine: {error}");
-    }
     cx.set_global(ui_state::Shared(ui_state.clone()));
     let saved = ui_state.get(ui_state::WORKSPACE);
     let stored = engine
@@ -476,8 +428,6 @@ fn launch(
                 cwd: cwd.clone(),
                 title: None,
                 start: NewSession::Bare,
-                started_by: None,
-                scope: Vec::new(),
             },
         ));
         match created.map(|created| created.session) {
@@ -520,14 +470,6 @@ fn seed_fixtures(data: &std::path::Path, cwd: &str, samples: Fixtures) -> Result
             let s = seed.create("codex", cwd)?;
             seed.title(s.id, "Native chat · Markdown and tools")?;
             seed.write_rows(s.id, 0, &fixtures::chat().rows)?;
-        }
-        if samples.visual {
-            let s = seed.create("codex", cwd)?;
-            seed.title(s.id, "Native visuals · Controls, charts and 3D")?;
-            seed.write_rows(s.id, 0, &fixtures::visuals().rows)?;
-            let s = seed.create("claude", cwd)?;
-            seed.title(s.id, "Native visuals · Charts inside an answer")?;
-            seed.write_rows(s.id, 0, &fixtures::visual_story().rows)?;
         }
         Ok(())
     })?

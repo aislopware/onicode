@@ -202,8 +202,6 @@ impl Shell {
         settings.worktree_cwd =
             (automation.workspace_mode == "existing").then(|| automation.worktree_cwd.clone());
         settings.plan = false;
-        settings.operator = false;
-        settings.orchestrator = false;
         settings.prepared_prompt = None;
         let revision = self.navigation_revision;
         let body = PrepareAutomationRun {

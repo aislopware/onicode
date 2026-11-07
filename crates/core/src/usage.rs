@@ -174,12 +174,6 @@ mod tests {
         assert!(!limit.resume_due(229_999, false));
         assert!(!limit.resume_due(230_000, true));
         assert!(limit.resume_due(230_000, false));
-        assert!(Limit::from_error("usage_limit_reached").is_some());
-        assert!(Limit::from_error("insufficient_quota").is_some());
-        assert!(Limit::from_error("rate_limit").is_some());
-        assert!(Limit::from_error("You've hit your session limit · resets 5:30pm").is_some());
-        assert!(Limit::from_error("429: rate limit exceeded, retry in 3 seconds").is_none());
-        assert!(Limit::from_error("Network timeout").is_none());
     }
 
     #[test]

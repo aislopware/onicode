@@ -1,26 +1,12 @@
-//! The inbox's data: issues, pull requests and work items the trackers list, how a viewer
-//! filters them and what it has seen. Fetching them is the engine's.
-use std::collections::{BTreeMap, HashMap, HashSet};
+//! The inbox's data: the GitHub issues and pull requests `gh` lists, how a viewer filters them
+//! and what it has seen. Fetching them is the engine's.
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use chrono::{Datelike, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 
 use crate::session_groups::WorkItem;
-
-pub const PROVIDERS: [&str; 5] = ["github", "linear", "jira", "gitlab", "azuredevops"];
-pub fn provider_label(provider: &str) -> &'static str {
-    match provider {
-        "linear" => "Linear",
-        "jira" => "Jira",
-        "gitlab" => "GitLab",
-        "azuredevops" => "ADO",
-        _ => "GitHub",
-    }
-}
-pub fn is_tracker(provider: &str) -> bool {
-    matches!(provider, "linear" | "jira")
-}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", rename = "InboxLabel")]
@@ -39,15 +25,11 @@ pub struct Person {
 // name.
 #[serde(default, rename = "InboxItem", rename_all = "camelCase")]
 pub struct Item {
-    pub provider: String,
     pub kind: String,
-    pub id: String,
-    pub identifier: String,
     pub number: i64,
     pub title: String,
     pub url: String,
     pub state: String,
-    pub state_type: String,
     pub state_reason: String,
     pub created_at: String,
     pub updated_at: String,
@@ -55,38 +37,11 @@ pub struct Item {
     pub assignees: Vec<Person>,
     pub draft: bool,
     pub repo: String,
-    pub team_id: String,
-    pub team_name: String,
-    pub project_id: String,
-    pub project_name: String,
     pub project_path: String,
-    pub attention_reason: String,
 }
 impl Item {
     pub fn key(&self) -> String {
-        let identity = if self.provider == "linear" {
-            let id = if self.identifier.trim().is_empty() {
-                self.id.trim()
-            } else {
-                self.identifier.trim()
-            };
-            if id.is_empty() {
-                format!("linear:{}", self.number)
-            } else {
-                id.to_lowercase()
-            }
-        } else if self.provider == "jira" {
-            let id = if self.id.trim().is_empty() {
-                self.identifier.trim()
-            } else {
-                self.id.trim()
-            };
-            if id.is_empty() {
-                format!("jira:{}", self.number)
-            } else {
-                id.to_lowercase()
-            }
-        } else if !self.repo.trim().is_empty() {
+        if !self.repo.trim().is_empty() {
             format!(
                 "{}:{}:{}",
                 self.repo.trim().to_lowercase(),
@@ -97,16 +52,11 @@ impl Item {
             self.url.trim().to_lowercase()
         } else {
             format!("{}:{}", self.kind, self.number)
-        };
-        format!("{}:{identity}", self.provider)
+        }
     }
 
     pub fn reference(&self) -> String {
-        if self.identifier.is_empty() {
-            format!("#{}", self.number)
-        } else {
-            self.identifier.clone()
-        }
+        format!("#{}", self.number)
     }
 
     pub fn updated_ms(&self) -> i64 {
@@ -116,11 +66,7 @@ impl Item {
     pub fn status(&self) -> &'static str {
         if self.state.eq_ignore_ascii_case("merged") {
             "Merged"
-        } else if matches!(
-            self.state.to_lowercase().as_str(),
-            "closed" | "done" | "resolved" | "removed" | "completed"
-        ) || matches!(self.state_type.as_str(), "completed" | "canceled" | "done")
-        {
+        } else if self.state.eq_ignore_ascii_case("closed") {
             "Closed"
         } else if self.draft {
             "Draft"
@@ -140,13 +86,12 @@ impl Item {
 
     pub fn prompt(&self, body: &str, ask: bool) -> String {
         format!(
-            "{}\n\n{} {}: {}\n{}\n\n{}",
+            "{}\n\nGitHub {}: {}\n{}\n\n{}",
             if ask {
                 "Help me understand and discuss this work item."
             } else {
                 "Work on this item. Read its description and discussion, inspect the project, and implement the required changes."
             },
-            provider_label(&self.provider),
             self.reference(),
             self.title,
             self.url,
@@ -253,24 +198,14 @@ pub struct Checks {
     pub head_oid: String,
     pub checks: Vec<Check>,
 }
-/// Named `InboxStatus` on the wire.
+/// GitHub's connection: whether `gh` is installed and signed in to github.com. Named
+/// `InboxStatus` on the wire.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename = "InboxStatus", rename_all = "camelCase")]
 pub struct Status {
     pub connected: bool,
     pub installed: bool,
     pub authenticated: bool,
-    pub url: String,
-    pub site: String,
-    pub email: String,
-    pub organization: String,
-}
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename = "InboxOption")]
-pub struct OptionRow {
-    pub id: String,
-    pub name: String,
-    pub key: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -287,7 +222,6 @@ pub struct StatusFilter {
 pub struct Filters {
     pub assigned_to_me: bool,
     pub hidden_projects: Vec<String>,
-    pub hidden_linear_projects: Vec<String>,
     pub hidden_kinds: Vec<String>,
     pub time: String,
     pub status: StatusFilter,
@@ -297,7 +231,6 @@ impl Default for Filters {
         Self {
             assigned_to_me: false,
             hidden_projects: vec![],
-            hidden_linear_projects: vec![],
             hidden_kinds: vec![],
             time: "all".into(),
             status: StatusFilter::default(),
@@ -313,40 +246,19 @@ impl Filters {
         }
     }
 
-    pub fn matches(&self, item: &Item, source: &str, search: &str) -> bool {
-        if item.provider != source {
-            return false;
-        }
-        let tracker = is_tracker(source);
-        if !tracker
-            && !((source == "gitlab" || source == "azuredevops") && self.assigned_to_me)
-            && self.hidden_projects.contains(&item.project_path)
-        {
-            return false;
-        }
-        if !tracker && self.hidden_kinds.contains(&item.kind) {
-            return false;
-        }
-        let linear_project = if item.project_id.is_empty() {
-            "~none"
-        } else {
-            &item.project_id
-        };
-        if source == "linear"
-            && self
-                .hidden_linear_projects
-                .iter()
-                .any(|id| id == linear_project)
+    pub fn matches(&self, item: &Item, search: &str) -> bool {
+        if self.hidden_projects.contains(&item.project_path)
+            || self.hidden_kinds.contains(&item.kind)
         {
             return false;
         }
         let s = &self.status;
-        if (s.open || s.closed || (!tracker && (s.draft || s.merged)))
+        if (s.open || s.closed || s.draft || s.merged)
             && !match item.status() {
                 "Open" => s.open,
-                "Draft" => s.draft && !tracker,
+                "Draft" => s.draft,
                 "Closed" => s.closed,
-                "Merged" => s.merged && !tracker,
+                "Merged" => s.merged,
                 _ => true,
             }
         {
@@ -367,12 +279,10 @@ impl Filters {
             return false;
         }
         let text = format!(
-            "{} {} {} {} {} {}",
+            "{} {} {} {}",
             item.title,
             item.reference(),
-            item.number,
             item.repo,
-            item.team_name,
             item.labels
                 .iter()
                 .map(|l| l.name.as_str())
@@ -417,21 +327,15 @@ impl Seen {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename = "InboxViewState")]
 pub struct ViewState {
-    pub source: String,
     pub filters: Filters,
     pub seen: Seen,
-    pub hidden_linear_teams: Vec<String>,
-    pub hidden_jira_projects: Vec<String>,
     pub list_width: f32,
 }
 impl Default for ViewState {
     fn default() -> Self {
         Self {
-            source: "github".into(),
             filters: Filters::default(),
             seen: Seen::default(),
-            hidden_linear_teams: vec![],
-            hidden_jira_projects: vec![],
             list_width: 280.,
         }
     }
@@ -444,17 +348,11 @@ impl ViewState {
             .collect::<Vec<_>>();
         paths.sort();
         paths.dedup();
-        let mut teams = self.hidden_linear_teams.clone();
-        teams.sort();
-        let mut jira = self.hidden_jira_projects.clone();
-        jira.sort();
         format!(
-            "{}:{}:{}:{}:{}",
+            "{}:{}:{}",
             self.filters.assigned_to_me,
             self.filters.fetch_state(),
-            paths.join("|"),
-            teams.join(","),
-            jira.join(",")
+            paths.join("|")
         )
     }
 }
@@ -463,74 +361,48 @@ impl ViewState {
 #[serde(rename = "InboxSnapshot")]
 pub struct Snapshot {
     pub items: Vec<Item>,
-    pub errors: BTreeMap<String, String>,
-    pub connections: BTreeMap<String, Status>,
-    pub linear_teams: Vec<OptionRow>,
-    pub jira_projects: Vec<OptionRow>,
+    /// Why the fetch failed, if it did.
+    pub error: Option<String>,
+    pub connection: Status,
 }
 
-/// The Tauri InboxNotificationTracker: provider baselines and revisions are
-/// separate from the user's read state. Startup and query changes never
-/// trigger automations for an existing backlog.
+/// The Tauri InboxNotificationTracker: the baseline and revisions are separate from the user's
+/// read state. Startup, failed fetches and query changes never trigger automations for an
+/// existing backlog.
 #[derive(Clone, Debug, Default)]
 pub struct NotificationTracker {
     revisions: HashMap<String, i64>,
-    primed: HashSet<String>,
+    primed: bool,
     scope: Option<String>,
 }
 impl NotificationTracker {
     pub fn observe(&mut self, snapshot: &Snapshot, scope: String) -> Vec<Item> {
         if self.scope.as_ref() != Some(&scope) {
-            self.primed.clear();
+            self.primed = false;
         }
         self.scope = Some(scope);
+        if snapshot.error.is_some() {
+            return vec![];
+        }
         let mut appeared = vec![];
         for item in &snapshot.items {
-            if snapshot.errors.contains_key(&item.provider) {
-                continue;
-            }
             let at = item.updated_ms();
             if at == 0 {
                 continue;
             }
-            let project = match item.provider.as_str() {
-                "linear" if !item.project_id.is_empty() => {
-                    format!("linear:project:{}", item.project_id)
-                }
-                "linear" => format!("linear:team:{}:unassigned", item.team_id),
-                "jira" => format!(
-                    "jira:{}:project:{}",
-                    item.url
-                        .split('/')
-                        .nth(2)
-                        .unwrap_or("unknown")
-                        .to_lowercase(),
-                    if item.team_id.is_empty() {
-                        &item.repo
-                    } else {
-                        &item.team_id
-                    }
-                ),
-                _ if !item.project_path.is_empty() => crate::files::path_key(&item.project_path),
-                _ => format!("{}:{}", item.provider, item.repo.to_lowercase()),
-            };
-            let id = if item.id.is_empty() {
-                item.number.to_string()
+            let project = if item.project_path.is_empty() {
+                item.repo.to_lowercase()
             } else {
-                item.id.clone()
+                crate::files::path_key(&item.project_path)
             };
-            let key = format!("{project}:{}:{id}", item.kind);
+            let key = format!("{project}:{}:{}", item.kind, item.number);
             let previous = self.revisions.get(&key).copied();
-            if self.primed.contains(&item.provider) && previous.is_none() {
+            if self.primed && previous.is_none() {
                 appeared.push(item.clone());
             }
             self.revisions.insert(key, previous.unwrap_or(0).max(at));
         }
-        for provider in PROVIDERS {
-            if !snapshot.errors.contains_key(provider) {
-                self.primed.insert(provider.into());
-            }
-        }
+        self.primed = true;
         appeared
     }
 }

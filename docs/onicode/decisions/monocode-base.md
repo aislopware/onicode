@@ -11,7 +11,7 @@ The study behind this is in `.research/monocode/` (ui.md, core.md, carry-over.md
 
 ## What stays Onicode's
 The tailnet transport (net, net-sim, tailnet, peer, rpc, the vendored noq), remote desktop (the ten desktop crates),
-grants, notify, update and launch came over unchanged. Transfer, clipboard, the libghostty terminal, alerts and
+grants, update and launch came over unchanged. Transfer, clipboard, the libghostty terminal, alerts and
 keep-awake, and the iOS app return by intent from main's history, on the new base.
 
 ## Shape
@@ -26,10 +26,10 @@ not carried over. A control plane has one authority per session, and the host is
 
 ## Features
 Kept: everything the shell shows. That covers the sidebar, live agents card and peek; tabs, decks and splits; the
-transcript with its reveal pacing, phases, tasks, visuals and Mermaid; the composer with its pickers, queue/steer and
+transcript with its reveal pacing, phases, tasks and Mermaid; the composer with its pickers, queue/steer and
 BTW; approvals and questions; the terminal dock; the explorer, editor, search, changes, diff and review panes; quick
-open and the quick composer; notes, automations and orchestration; the inbox; accounts; settings and keybindings;
-the decorations (mascots, ink, arcade), which are part of the feel.
+open and the quick composer; notes and automations; the GitHub inbox; accounts; settings and keybindings;
+the decorations (mascots, ink), which are part of the feel.
 
 Dropped:
 - **Monos.** A 17k-line persona-agent suite (habits, heartbeat, soul, menu-bar chat) whose runtime is unverified
@@ -43,10 +43,10 @@ Dropped:
   private endpoints; Codex's meter uses its app-server and stays. The "Identify as Monocode to Claude" relabelling
   and the deletion of Claude's Keychain item go too.
 - **The Tauri data readers.** The app keeps its own data in `~/Library/Application Support/Onicode`; the Tauri
-  database import and web-view preference reads go when the store moves into the engine.
+  database import, the web-view preference reads and the old `<db>.gpui.json` settings import are gone.
 - **Updater and star prompt.** monocode's Minisign feed is replaced by Onicode's updater, and the "star us" prompt
   goes.
-- **Windows, Linux and Azure DevOps paths.** Out of Onicode's platforms (`platform.md`).
+- **Windows and Linux paths.** Out of Onicode's platforms (`platform.md`).
 
 ## Look on Onicode's stack
 monocode's look rests on its patched GPUI. Onicode keeps the look and replaces the stack: the app moves to gpui-fast
@@ -68,3 +68,39 @@ the dropped meters. A gap is left empty only when filling it would be complex an
 5. Transfer, clipboard and explorer across machines.
 6. Alerts and keep-awake, remote desktop and onboarding grants.
 7. The iOS app on the engine protocol.
+
+## Error-prone and extremely complex features go
+Ruled 2026-11-07 by the owner: a feature that is error-prone and extremely complex is deleted or simplified, with
+nothing left dormant.
+- **The legacy store layout and monocode-data import.** The store had two schemas behind every method (the
+  prototype `native_*` tables and monocode's sessions layout) while production used only the second; it now has
+  that one layout, opened by `Store::open` (or `Store::in_memory`), and reads no monocode desktop preferences.
+- **Inbox trackers other than GitHub.** Linear, Jira, GitLab and Azure DevOps went with their adapters, token file
+  formats, connection UI and automation triggers; the Inbox reads GitHub through `gh`, and the media fetcher stays
+  for GitHub's attachments.
+- **The regex commit card.** The transcript's commit card was built by regex over the agent's shell command and
+  git's locale-dependent output; the engine now reads git itself (`LC_ALL=C`) around each turn.
+- **Usage limits and attachments guessed from text.** A limit is the one the provider reports (Claude's rate-limit
+  info or error code, Codex's `usageLimitExceeded`), never limit wording in a transcript or status, and editing the
+  last turn trusts its saved attachments rather than guessing them from an old Markdown link format.
+- **Session visuals and `/visualize`.** Agent-written JavaScript ran in QuickJS behind a hand-written, token-guarded
+  loopback TCP protocol and an MCP stdio server inside the app and engine binaries, injected into every provider's
+  config; charts in answers are Markdown and Mermaid now.
+- **The arcade games and the composer runner mascot.** JavaScript physics stepped every frame in QuickJS, and the
+  app panicked if its interpreter failed to start; the empty session keeps the ink canvas, and projects keep their
+  mascots.
+- **The editor's QuickJS analysis path.** A second analysis beside Tree-sitter re-evaluated a 1.2 MB CodeMirror
+  bundle per keystroke for completions and grammar-less files, and a 2.1 MB Prettier bundle for Format and format on
+  save. Tree-sitter is the only syntax (a file without a grammar is plain text with its git gutter); Find and
+  Replace run on the `regex` crate and staging or reverting a hunk is ported to Rust; completions, Emmet and
+  formatting are gone. With these three, `rquickjs` leaves the build.
+- **Orchestrator mode.** A JSON plan parsed out of the model's free text drove a dispatcher that started workers by
+  dependency and file scope on one checkout, behind a sidebar tree, hidden worker sessions and a coordinator that
+  wrote back into the lead's chat; upstream monocode #1334 removes it. `/orchestrator`, the plan card, the
+  orchestration summaries and `SaveOrchestration` are gone.
+- **Operator mode.** A bridge socket and per-thread grants let an agent drive Onicode through an `onicode app` CLI,
+  with receipts, hidden launched chats and a codex network exception; upstream monocode #1334 replaces it.
+  `/operator`, the App access group and the `app` subcommand are gone.
+- **The resource pressure chip.** It guessed CPU pressure from thresholds and timer lateness, parsed `ps`, and
+  killed agent tools by pid; the footer chip, its dialog and `AgentProcesses`/`StopAgentTool` are gone, and a
+  session's Stop button stops its turn.
