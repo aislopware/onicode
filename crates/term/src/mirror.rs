@@ -1631,6 +1631,61 @@ mod tests {
         assert_eq!(m.text(), truth.text());
     }
 
+    /// A terminal decoded from a snapshot, fed, encoded and decoded again keeps its scrollback
+    /// when it next scrolls, as a relayout's rebuild does (CI's shrunk case of
+    /// `a_mirror_ahead_of_the_host_comes_back_to_the_hosts_terminal`): libghostty's default
+    /// 10 kB byte limit pruned the decoded terminal's compact history page whole.
+    #[test]
+    fn a_terminal_decoded_twice_keeps_its_scrollback_as_it_scrolls() {
+        let blank = host(10, 4).snapshot().unwrap();
+        let mut once = Mirror::from_snapshot(&blank).unwrap();
+        let mut direct = Mirror::new(size(10, 4));
+        let early = b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\n";
+        once.feed(early);
+        direct.feed(early);
+        let mut encoded = Vec::new();
+        once.term.encode_snapshot(&mut encoded).unwrap();
+        let mut twice = Mirror::from_snapshot(&encoded).unwrap();
+        for bytes in [&b"aa"[..], b"aaa a aa "] {
+            twice.feed(bytes);
+            direct.feed(bytes);
+        }
+        twice.select_all();
+        direct.select_all();
+        assert_eq!(twice.selection_text(), direct.selection_text());
+    }
+
+    /// The same, through a relayout whose output crossed the host's resize.
+    #[test]
+    fn a_relayout_rebuild_keeps_the_scrollback() {
+        let mut host = host(10, 4);
+        let snapshot = host.snapshot().unwrap();
+        let (prefix, history) = crate::snapshot::split(snapshot.clone());
+        let mut m = Mirror::attach(&prefix, size(10, 4));
+        m.history(&history);
+        let mut truth = Mirror::from_snapshot(&snapshot).unwrap();
+        for bytes in [
+            "\r\na aa  aa\u{e9}\u{6f22}\r\n".as_bytes(),
+            b"\r\n\x1b[?1049h\x1b[?1049l\r\n\r\n",
+        ] {
+            host.feed(bytes);
+            m.feed(bytes);
+            truth.feed(bytes);
+        }
+        m.relayout(size(6, 2));
+        for bytes in [&b"aa"[..], b"aaa a aa "] {
+            host.feed(bytes);
+            m.feed(bytes);
+            truth.feed(bytes);
+        }
+        m.resize(size(6, 2));
+        truth.resize(size(6, 2));
+        assert!(!m.ahead());
+        m.select_all();
+        truth.select_all();
+        assert_eq!(m.selection_text(), truth.selection_text());
+    }
+
     /// One step of a host, its stream and a viewer that lays its mirror out ahead of the host.
     #[derive(Clone, Debug)]
     enum Op {

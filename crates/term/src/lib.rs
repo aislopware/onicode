@@ -32,8 +32,13 @@ const MAX_CONTINUATION_BYTES: usize = 16 << 20;
 
 /// What the host and every mirror start with: TerminalView's scrollback, palette and blinking
 /// beam. A program changes these for itself; these are what a reset returns to.
+///
+/// Scrollback is bounded by lines alone. libghostty's default 10 kB byte limit sits below one
+/// page, so it held only because a full-size page outlasts it; a terminal decoded from a
+/// snapshot holds its history in compact pages, and the next scroll pruned them whole.
 fn configure(term: &mut Terminal<'static, 'static>) {
     let _ = term.set_scrollback_max_lines(Some(SCROLLBACK_LINES));
+    let _ = term.set_scrollback_max_bytes(None);
     let _ = term.set_default_color_palette(Some(palette::palette()));
     let _ = term.set_default_cursor_style(Some(CursorStyle::Bar));
     let _ = term.set_default_cursor_blink(Some(true));

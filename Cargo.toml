@@ -302,7 +302,7 @@ notify = "8.2.1"
 # Terminal emulation (docs/onicode/decisions/terminal.md): aislopware/libghostty-rs, which pins the
 # aislopware/ghostty commit whose libghostty-vt it builds. Pinned by rev: the engine's host and the
 # app's mirror must run the same snapshot format.
-libghostty-vt = { git = "https://github.com/aislopware/libghostty-rs", rev = "899d642661e40530716f80a25ffac586f0db1e98" }
+libghostty-vt = { git = "https://github.com/aislopware/libghostty-rs", rev = "42946d984cb6f249ce371f5adf2dd3e4c3d1b603" }
 # Markdown parsing only: no HTML writer, no CLI options.
 pulldown-cmark = { version = "0.13.6", default-features = false }
 unicode-segmentation = "1"
